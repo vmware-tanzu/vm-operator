@@ -220,7 +220,7 @@ func (vs *vSphereVMProvider) getVirtualMachineSnapshotsForVM(
 		}
 	}
 
-	vmCtx.Logger.V(4).Info("Found VirtualMachineSnapshot objects for VM",
+	vmCtx.Logger.V(4).Info("Current count of VirtualMachineSnapshot objects for VM",
 		"count", len(vmSnapshots))
 
 	return vmSnapshots, nil

@@ -44,6 +44,15 @@ import (
 
 const (
 	controllerName = "volumebatch"
+	// In BatchAttachment status, CSI hardcode a volume name entry with :detaching
+	// suffix if it's being detached.
+	// Note: The reason why we have this suffix is because there is a case that
+	// a volume's PVC was changed, that means we need to detach current vol,
+	// and attach another one. But since volume name is unique, and there is a
+	// chance that detaching can fail, so there might be some time we need to
+	// keep track of both old volume and new volume at the same time in vm status.
+	// Then we would need a distinct volume name for these two disks.
+	volumeNameDetachSuffix = ":detaching"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -90,8 +99,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		return fmt.Errorf("failed to start VirtualMachine watch: %w", err)
 	}
 
-	// TODO (Oracle RAC): Update any comment or log message that includes
-	// CnsNodeVMBatchAttachment to new format once the API format is changed.
 	// Watch for changes to CnsNodeVMBatchAttachment, and enqueue a
 	// request to the owner VirtualMachine.
 	if err := c.Watch(source.Kind(
@@ -250,20 +257,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		return nil
 	}
 
-	// Get existing batch attachment for this VM
-	batchAttachment, err := r.getBatchAttachmentForVM(ctx)
-	if err != nil {
-		return fmt.Errorf("error getting existing CnsNodeVMBatchAttachment for VM: %w", err)
-	}
-
-	// Only need to validate the hardware for once during the first time of
-	// creating the batchAttachment.
-	if batchAttachment == nil && len(ctx.VM.Spec.Volumes) > 0 {
-		if err := r.validateHardwareVersion(ctx); err != nil {
-			return fmt.Errorf("hardware version validation failed: %w", err)
-		}
-	}
-
 	legacyAttachments, err := pkgutil.GetCnsNodeVMAttachmentsForVM(ctx, r.Client, ctx.VM)
 	if err != nil {
 		return fmt.Errorf(
@@ -287,12 +280,63 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		// tracked by both legacy and batch methods.
 	}
 
-	// Process volumes and create/update batch attachment
-	processErr := r.processBatchAttachment(ctx, batchAttachment, legacyAttachments)
+	// Get existing VM managed volumes status. Since we only update managed
+	// volumes here, we skip all classic volumes.
+	existingVMManagedVolStatus := map[string]vmopv1.VirtualMachineVolumeStatus{}
+	for _, vol := range ctx.VM.Status.Volumes {
+		if vol.Type != vmopv1.VolumeTypeClassic {
+			existingVMManagedVolStatus[vol.Name] = vol
+		}
+	}
+
+	volumeSpecsForBatch, volumeSpecsForLegacy := categorizeVolumeSpecs(ctx, legacyAttachments)
+
+	// Get existing batch attachment for this VM.
+	batchAttachment, err := r.getBatchAttachmentForVM(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting existing CnsNodeVMBatchAttachment for VM: %w", err)
+	}
+	// Only need to validate the hardware for once during the first time of
+	// creating the batchAttachment.
+	if batchAttachment == nil && len(volumeSpecsForBatch) > 0 {
+		if err := r.validateHardwareVersion(ctx); err != nil {
+			return fmt.Errorf("hardware version validation failed: %w", err)
+		}
+	}
+
+	// Process volumes and create/update batch attachment.
+	// filter Volume spec that doesn't cause error and return them
+	// for constructing the VM's volumeStatus.
+	filteredVolumeSpecsForBatch, processErr :=
+		r.processBatchAttachmentAndFilterVolumeSpecs(
+			ctx,
+			volumeSpecsForBatch,
+		)
 	if processErr != nil {
-		ctx.Logger.Error(processErr, "Error processing CnsNodeVmBatchAttachments")
+		ctx.Logger.Error(processErr, "Error processing CnsNodeVMBatchAttachments")
 		// Keep going to return aggregated error below.
 	}
+
+	volumeStatusesForBatch := r.getVMVolStatusesFromBatchAttachment(
+		ctx,
+		batchAttachment,
+		filteredVolumeSpecsForBatch,
+		existingVMManagedVolStatus,
+	)
+
+	volumeStatusesForLegacy := r.getVMVolStatusesFromLegacyAttachments(
+		ctx,
+		legacyAttachments,
+		attachmentsToDelete,
+		existingVMManagedVolStatus,
+		volumeSpecsForLegacy,
+	)
+
+	updateVMVolumeStatus(
+		ctx,
+		volumeStatusesForBatch,
+		volumeStatusesForLegacy,
+	)
 
 	return errOrNoRequeueErr(deleteErr, processErr)
 }
@@ -326,67 +370,19 @@ func (r *Reconciler) getBatchAttachmentForVM(
 	return attachment, nil
 }
 
-func (r *Reconciler) processBatchAttachment(
+// processBatchAttachmentAndFilterVolumeSpecs processes the batch attachment and returns the
+// volume specs constructed for the batch attachment.
+func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	ctx *pkgctx.VolumeContext,
-	existingAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
-	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment) error {
-
-	// Filter volumes that have PVC source and are not already tracked
-	// by legacy CnsNodeVmAttachment
-	pvcVolumes := make([]vmopv1.VirtualMachineVolume, 0)
-	for _, vol := range ctx.VM.Spec.Volumes {
-		if vol.PersistentVolumeClaim != nil {
-			// Check if this volume is already managed by a legacy
-			// CnsNodeVmAttachment. It is safe to rely on the
-			// attachment name for the volume since that's a contract
-			// with CSI.
-			attachmentNameForVol := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, vol.Name)
-			if legacyAttachment, ok := legacyAttachments[attachmentNameForVol]; ok {
-				// Only skip the volume if the legacy attachment's PVC name matches
-				// the current volume's PVC name. If they don't match, the legacy
-				// attachment is stale and will be deleted, so we should include
-				// this volume in the batch.
-				if legacyAttachment.Spec.VolumeName == vol.PersistentVolumeClaim.ClaimName {
-					ctx.Logger.V(4).Info("skipping volume since it is tracked by a CnsNodeVmAttachment",
-						"volume", vol.Name)
-					continue
-				}
-			}
-
-			// Only include greenfield volumes that are not tracked by
-			// legacy CnsNodeVmAttachment
-			pvcVolumes = append(pvcVolumes, vol)
-		}
-	}
-
-	if len(pvcVolumes) == 0 {
-		// No PVC volumes to process
-		if existingAttachment != nil {
-			ctx.Logger.Info("Delete existing CnsNodeVMBatchAttachment",
-				"batchAttachment", existingAttachment.Name,
-				"namespace", existingAttachment.Namespace)
-			err := r.Client.Delete(ctx, existingAttachment)
-			if err != nil && !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to delete CnsNodeVMBatchAttachment: %w", err)
-			}
-		}
-		return nil
-	}
-
-	curVolumeAttachSpecMap := make(map[string]cnsv1alpha1.VolumeSpec)
-	if existingAttachment != nil {
-		for _, volSpec := range existingAttachment.Spec.Volumes {
-			curVolumeAttachSpecMap[volSpec.Name] = volSpec
-		}
-	}
-
+	vmVolumeSpecsForBatch []vmopv1.VirtualMachineVolume,
+) ([]cnsv1alpha1.VolumeSpec, error) {
 	var (
-		retErr           error
 		toBeBuiltPvcVols = make([]vmopv1.VirtualMachineVolume, 0)
+		retErr           error
 	)
 
-	for _, vol := range pvcVolumes {
-		if err := r.handlePVCWithWFFC(ctx, vol, curVolumeAttachSpecMap); err != nil {
+	for _, vol := range vmVolumeSpecsForBatch {
+		if err := r.handlePVCWithWFFC(ctx, vol); err != nil {
 			retErr = errOrNoRequeueErr(retErr, err)
 		} else {
 			toBeBuiltPvcVols = append(toBeBuiltPvcVols, vol)
@@ -398,20 +394,18 @@ func (r *Reconciler) processBatchAttachment(
 		retErr = errOrNoRequeueErr(retErr, err)
 	}
 
-	// Create or update batch attachment
-	if err := r.CreateOrUpdateBatchAttachment(
-		ctx, existingAttachment, volumeSpecs); err != nil {
+	// Create or update batch attachment.
+	if err := r.createOrUpdateBatchAttachment(ctx, volumeSpecs); err != nil {
 		retErr = errOrNoRequeueErr(retErr, err)
 	}
 
-	return retErr
+	return volumeSpecs, retErr
 }
 
-// CreateOrUpdateBatchAttachment handles the creation or update of
+// createOrUpdateBatchAttachment handles the creation or update of
 // CnsNodeVMBatchAttachment.
-func (r *Reconciler) CreateOrUpdateBatchAttachment(
+func (r *Reconciler) createOrUpdateBatchAttachment(
 	ctx *pkgctx.VolumeContext,
-	existingBatchAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	volumeSpecs []cnsv1alpha1.VolumeSpec) error {
 
 	// Validate the volume specs before attempting to create/update
@@ -462,9 +456,6 @@ func (r *Reconciler) CreateOrUpdateBatchAttachment(
 		ctx.Logger.Info("Updated CnsNodeVMBatchAttachment",
 			"attachment", attachmentName)
 	}
-
-	// Update VM.status.volumes after BatchAttachment is created or updated.
-	r.updateVMVolumeStatus(ctx, existingBatchAttachment, volumeSpecs)
 
 	return nil
 }
@@ -602,18 +593,18 @@ func (r *Reconciler) applyApplicationTypePresets(
 	return nil
 }
 
-// updateVMVolumeStatus updates managed volumes from VM.status.volumes list
-// with data extracted from existingBatchAttachment.status.volumeStatus
-// and volumeSpecs.
+// getVMVolStatusesFromBatchAttachment filters vm managed volumes status with
+// data extracted from existingBatchAttachment.status.volumeStatus and volumeSpecs
+// and return it.
 // If there is existing volume status in batchAttachment.status and volume's PVC hasn't been
 // changed, then just construct a detailed vmVolStatus using those info.
 // Otherwise just add a basic status.
-// In the end add both managed volumes and unmanaged volumes to vm.status.volumes
-// and sort this array based on diskUUID.
-func (r *Reconciler) updateVMVolumeStatus(
+func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 	ctx *pkgctx.VolumeContext,
 	existingAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
-	volumeSpecs []cnsv1alpha1.VolumeSpec) {
+	volumeSpecs []cnsv1alpha1.VolumeSpec,
+	existingVMManagedVolStatus map[string]vmopv1.VirtualMachineVolumeStatus,
+) []vmopv1.VirtualMachineVolumeStatus {
 
 	// Update VM.Status.Volumes based on the batch attachment status
 	volumeStatuses := make([]vmopv1.VirtualMachineVolumeStatus, 0, len(ctx.VM.Status.Volumes))
@@ -622,14 +613,6 @@ func (r *Reconciler) updateVMVolumeStatus(
 	if existingAttachment != nil {
 		for _, volStatus := range existingAttachment.Status.VolumeStatus {
 			existingAttachVolStatus[volStatus.Name] = volStatus
-		}
-	}
-
-	existingVMManagedVolStatus := map[string]vmopv1.VirtualMachineVolumeStatus{}
-	for i := range ctx.VM.Status.Volumes {
-		vol := ctx.VM.Status.Volumes[i]
-		if vol.Type != vmopv1.VolumeTypeClassic {
-			existingVMManagedVolStatus[vol.Name] = vol
 		}
 	}
 
@@ -646,21 +629,16 @@ func (r *Reconciler) updateVMVolumeStatus(
 		if volStatus, ok := existingAttachVolStatus[vol.Name]; ok &&
 			vol.PersistentVolumeClaim.ClaimName == volStatus.PersistentVolumeClaim.ClaimName {
 
-			vmVolStatus = vmopv1.VirtualMachineVolumeStatus{
-				Name:     volStatus.Name,
-				Type:     vmopv1.VolumeTypeManaged,
-				Attached: volStatus.PersistentVolumeClaim.Attached,
-				DiskUUID: volStatus.PersistentVolumeClaim.DiskUUID,
-				Error:    pkgutil.SanitizeCNSErrorMessage(volStatus.PersistentVolumeClaim.Error),
-				Used:     existingVMManagedVolStatus[vol.Name].Used,
-				Crypto:   existingVMManagedVolStatus[vol.Name].Crypto,
-			}
+			vmVolStatus = attachmentStatusToVolumeStatus(volStatus.Name, volStatus)
+			vmVolStatus.Used = existingVMManagedVolStatus[vol.Name].Used
+			vmVolStatus.Crypto = existingVMManagedVolStatus[vol.Name].Crypto
 
 			// Add PVC capacity information
 			if err := r.updateVolumeStatusWithPVCInfo(
 				ctx,
 				volStatus.PersistentVolumeClaim.ClaimName,
 				&vmVolStatus); err != nil {
+
 				ctx.Logger.Error(err, "failed to get volume status limit")
 			}
 		}
@@ -668,16 +646,13 @@ func (r *Reconciler) updateVMVolumeStatus(
 		volumeStatuses = append(volumeStatuses, vmVolStatus)
 	}
 
-	// Remove any managed volumes from the existing status.
-	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
-		func(e vmopv1.VirtualMachineVolumeStatus) bool {
-			return e.Type != vmopv1.VolumeTypeClassic
-		})
+	volumeStatuses = append(volumeStatuses,
+		getVolumeStatusWithDetachingVolumeFromBatchAttachment(
+			existingAttachVolStatus,
+		)...,
+	)
 
-	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, volumeStatuses...)
-
-	// Sort the volume statuses to ensure consistent ordering.
-	vmopv1.SortVirtualMachineVolumeStatuses(ctx.VM.Status.Volumes)
+	return volumeStatuses
 }
 
 func (r *Reconciler) updateVolumeStatusWithPVCInfo(
@@ -738,17 +713,9 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(_ *pkgctx.VolumeContext) (bool
 func (r *Reconciler) handlePVCWithWFFC(
 	ctx *pkgctx.VolumeContext,
 	volume vmopv1.VirtualMachineVolume,
-	curVolumeAttachSpecMap map[string]cnsv1alpha1.VolumeSpec,
 ) error {
 
 	if volume.PersistentVolumeClaim == nil || volume.PersistentVolumeClaim.InstanceVolumeClaim != nil {
-		return nil
-	}
-
-	if s, ok := curVolumeAttachSpecMap[volume.PersistentVolumeClaim.ClaimName]; ok &&
-		volume.PersistentVolumeClaim.ClaimName == s.PersistentVolumeClaim.ClaimName {
-		// Skip the volumes that's already in BatchAttachment spec and still
-		// points to the same PVC.
 		return nil
 	}
 
@@ -904,4 +871,230 @@ func (r *Reconciler) attachmentsToDelete(
 	}
 
 	return attachmentsToDelete
+}
+
+// getVolumeStatusesWithDetachingVolumeInLegacyAttachment checks legacy
+// orphaned attachments and find volumes that are being detached, update the
+// volumeStatuses with these detaching disks, return them.
+func getVolumeStatusesWithDetachingVolumeInLegacyAttachment(
+	ctx *pkgctx.VolumeContext,
+	orphanedAttachmentsMap map[string]cnsv1alpha1.CnsNodeVmAttachment,
+) []vmopv1.VirtualMachineVolumeStatus {
+
+	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
+	// Maintain mapping of diskUUID -> attachment.
+	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachmentsMap))
+	for _, attachment := range orphanedAttachmentsMap {
+		if uuid := attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID]; uuid != "" {
+			uuidAttachments[uuid] = attachment
+		}
+	}
+
+	// For the current Volumes in the Status, if there is an orphaned volume with
+	// diskUUID set, add an Status entry for this volume with detaching suffix.
+	// This can lead to some odd results and we should rethink if we actually
+	// want this behavior. It can be nice though to show detaching volumes. It would be nice if
+	// the Volume status has a reference to the CnsNodeVmAttachment.
+	// Once its attachment is deleted, the volume status will be removed.
+	for _, volume := range ctx.VM.Status.Volumes {
+		if attachment, ok := uuidAttachments[volume.DiskUUID]; ok {
+			volName := volume.Name
+			if !strings.HasSuffix(volName, volumeNameDetachSuffix) {
+				volName += volumeNameDetachSuffix
+			}
+			volumeStatuses = append(volumeStatuses, legacyAttachmentToVolumeStatus(volName, attachment))
+		}
+	}
+
+	return volumeStatuses
+}
+
+// getVolumeStatusWithDetachingVolumeFromBatchAttachment gets any disks that are
+// in detaching state in batchAttachment.status and return them.
+// These volumes that are being detached all has same suffix ':detaching'.
+func getVolumeStatusWithDetachingVolumeFromBatchAttachment(
+	existingAttachVolStatus map[string]cnsv1alpha1.VolumeStatus,
+) []vmopv1.VirtualMachineVolumeStatus {
+	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
+
+	for _, volStatus := range existingAttachVolStatus {
+		volName := volStatus.Name
+		if strings.HasSuffix(volName, volumeNameDetachSuffix) {
+			volumeStatuses = append(volumeStatuses,
+				attachmentStatusToVolumeStatus(volName, volStatus),
+			)
+		}
+	}
+
+	return volumeStatuses
+}
+
+func attachmentStatusToVolumeStatus(
+	volName string,
+	volStatus cnsv1alpha1.VolumeStatus) vmopv1.VirtualMachineVolumeStatus {
+
+	return vmopv1.VirtualMachineVolumeStatus{
+		Name:     volName,
+		Attached: volStatus.PersistentVolumeClaim.Attached,
+		DiskUUID: volStatus.PersistentVolumeClaim.DiskUUID,
+		Error:    pkgutil.SanitizeCNSErrorMessage(volStatus.PersistentVolumeClaim.Error),
+		Type:     vmopv1.VolumeTypeManaged,
+	}
+}
+
+func legacyAttachmentToVolumeStatus(
+	volumeName string,
+	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1.VirtualMachineVolumeStatus {
+
+	return vmopv1.VirtualMachineVolumeStatus{
+		Name:     volumeName, // Name of the volume as in the Spec
+		Attached: attachment.Status.Attached,
+		DiskUUID: attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID],
+		Error:    pkgutil.SanitizeCNSErrorMessage(attachment.Status.Error),
+		Type:     vmopv1.VolumeTypeManaged,
+	}
+}
+
+// getVMVolStatusesFromLegacyAttachments processes the legacy attachments and returns the
+// volume statuses that are tracked by the legacy attachments.
+func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
+	ctx *pkgctx.VolumeContext,
+	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
+	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment,
+	existingVMManagedVolStatus map[string]vmopv1.VirtualMachineVolumeStatus,
+	vmVolumeSpecsForLegacy []vmopv1.VirtualMachineVolume,
+) []vmopv1.VirtualMachineVolumeStatus {
+
+	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
+	// Maintain the mapping of AttachmentName -> Attachment.
+	orphanedAttachmentsMap := make(map[string]cnsv1alpha1.CnsNodeVmAttachment)
+	for _, o := range orphanedAttachments {
+		orphanedAttachmentsMap[o.Name] = o
+	}
+
+	for _, vol := range vmVolumeSpecsForLegacy {
+		// Check if this volume is already managed by a legacy
+		// CnsNodeVmAttachment.
+		// When we create legacyAttachment, we use volume name as its name.
+		attachmentNameForVol := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, vol.Name)
+		if att, ok := legacyAttachments[attachmentNameForVol]; ok {
+			// If its PVC hasn't been changed, get its detailed info from
+			// vm.status.vol and legacyAttachment.
+			if vol.PersistentVolumeClaim.ClaimName == att.Spec.VolumeName {
+				vmVolStatus := legacyAttachmentToVolumeStatus(vol.Name, att)
+				vmVolStatus.Used = existingVMManagedVolStatus[vol.Name].Used
+				vmVolStatus.Crypto = existingVMManagedVolStatus[vol.Name].Crypto
+
+				// Add PVC capacity information
+				if err := r.updateVolumeStatusWithPVCInfo(
+					ctx,
+					vol.PersistentVolumeClaim.ClaimName,
+					&vmVolStatus); err != nil {
+
+					ctx.Logger.Error(err, "failed to get volume status limit")
+				}
+
+				volumeStatuses = append(volumeStatuses, vmVolStatus)
+			} else {
+				// If the PVC has been changed for this legacy volume, remove it
+				// from orphanedAttachmentsForStatusUpdate so that later this
+				// volume won't be added to vm volume status as a detaching
+				// volume. Since its status might still be Attached: true,
+				// which will be confusing for the user.
+				// With this logic, there is a timing window after the ClaimName
+				// is modified but before CNS (Cloud Native Storage) completes
+				// the volume detachment associated with the old name.
+				// During this window, the status is stale.
+				// This risk is considered acceptable because modifying the
+				// ClaimName is expected to be a rare event.
+				delete(orphanedAttachmentsMap, att.Name)
+			}
+		}
+	}
+
+	// For legacy attachments that are not tracked by the VM spec,
+	// add them to the volume status with detaching suffix.
+	volumeStatuses = append(volumeStatuses,
+		getVolumeStatusesWithDetachingVolumeInLegacyAttachment(
+			ctx,
+			orphanedAttachmentsMap,
+		)...,
+	)
+
+	// processBatchAttachment already added the batch attachment volumes
+	// and classic volumes to the VM status.
+	return volumeStatuses
+}
+
+// updateVMVolumeStatus clears any managed volume status then adds given
+// volume status info to vm.status.volumes, then sorts the status.
+func updateVMVolumeStatus(
+	ctx *pkgctx.VolumeContext,
+	v1, v2 []vmopv1.VirtualMachineVolumeStatus,
+) {
+
+	// Remove any managed volumes from the existing status.
+	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
+		func(e vmopv1.VirtualMachineVolumeStatus) bool {
+			return e.Type != vmopv1.VolumeTypeClassic
+		})
+
+	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, v1...)
+	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, v2...)
+
+	// Sort the volume statuses to ensure consistent ordering.
+	vmopv1.SortVirtualMachineVolumeStatuses(ctx.VM.Status.Volumes)
+}
+
+// categorizeVolumeSpecs categorizes the volume specs into two categories:
+// forBatch and forLegacy.
+//  1. forBatch are the volume specs that are not tracked by legacy CnsNodeVmAttachment
+//     or the legacy attachment's PVC name does not match the current volume's PVC name.
+//  2. forLegacy are the volume specs that are tracked by legacy CnsNodeVmAttachment
+//     and the legacy attachment's PVC name matches the current volume's PVC name.
+func categorizeVolumeSpecs(
+	ctx *pkgctx.VolumeContext,
+	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
+) (forBatch, forLegacy []vmopv1.VirtualMachineVolume) {
+
+	// Filter volumes that have PVC source and are not already tracked
+	// by legacy CnsNodeVmAttachment
+	volumeSpecsForBatch := []vmopv1.VirtualMachineVolume{}
+	volumeSpecsForLegacy := []vmopv1.VirtualMachineVolume{}
+	for _, vol := range ctx.VM.Spec.Volumes {
+		if vol.PersistentVolumeClaim == nil {
+			continue
+		}
+		if vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
+			// Skip unmanaged volumes.
+			continue
+		}
+		// Check if this volume is already managed by a legacy
+		// CnsNodeVmAttachment.
+		// When we create legacyAttachment, we use volume name as its name.
+		attachmentNameForVol := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, vol.Name)
+		if legacyAttachment, ok := legacyAttachments[attachmentNameForVol]; ok {
+
+			// Need to process the volume for legacy attachment even if the PVC
+			// name changed, since when we construct VM volume status, we need to
+			// take care of this volume separately: removing it from VM volume
+			// status.
+			volumeSpecsForLegacy = append(volumeSpecsForLegacy, vol)
+
+			// For batch attachment, no need to process the volume if the legacy
+			// attachment's PVC name matches the current volume's PVC name since
+			// are still be tracked by the legacy attachment.
+			if legacyAttachment.Spec.VolumeName == vol.PersistentVolumeClaim.ClaimName {
+				ctx.Logger.V(4).Info("skipping volume for processing batchAttachment since it is tracked by a CnsNodeVmAttachment",
+					"volume", vol.Name)
+
+				continue
+			}
+		}
+
+		// Only include greenfield volumes that are not tracked by
+		// legacy CnsNodeVmAttachment
+		volumeSpecsForBatch = append(volumeSpecsForBatch, vol)
+	}
+	return volumeSpecsForBatch, volumeSpecsForLegacy
 }

@@ -275,6 +275,18 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		return err
 	}
 
+	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		if err := reconcileVirtualControllers(
+			vmCtx,
+			s.K8sClient,
+			vmCtx.VM,
+			vcVM,
+			vmCtx.MoVM); err != nil {
+
+			return err
+		}
+	}
+
 	if err := s.reconcileVolumes(vmCtx); err != nil {
 		return err
 	}
@@ -1169,23 +1181,48 @@ func reconcileVSpherePolicies(
 	return nil
 }
 
+// reconcileVirtualControllers check if VM need virtual controller changes
+// If yes, reconfigures VM with those changes.
 func reconcileVirtualControllers(
-	ctx context.Context,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	vm *vmopv1.VirtualMachine,
 	vcVM *object.VirtualMachine,
-	moVM mo.VirtualMachine,
-	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+	moVM mo.VirtualMachine) error {
 
-	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling virtual controllers")
+	pkglog.FromContextOrDefault(vmCtx).V(4).Info("Reconciling virtual controllers")
 
-	return vmconfvirtualcontroller.Reconcile(
-		ctx,
+	if vmCtx.MoVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOff {
+		// As long as the VM is in powerOff state, we could reconfigure it.
+		// Otherwise continue silently with other reconfigure
+		return nil
+	}
+
+	configSpec := vimtypes.VirtualMachineConfigSpec{}
+
+	pkglog.FromContextOrDefault(vmCtx).V(4).Info("Reconciling vSphere policies")
+
+	if err := vmconfvirtualcontroller.Reconcile(
+		vmCtx,
 		k8sClient,
 		vcVM.Client(),
 		vm,
 		moVM,
-		configSpec)
+		&configSpec); err != nil {
+
+		return err
+	}
+
+	if len(configSpec.DeviceChange) > 0 {
+		resVM := res.NewVMFromObject(vcVM)
+		if _, err := resVM.Reconfigure(vmCtx, &configSpec); err != nil {
+			return err
+		}
+
+		return ErrReconfigure
+	}
+
+	return nil
 }
 
 func doReconfigure(
@@ -1235,19 +1272,6 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
 		if err := reconcileVSpherePolicies(
-			ctx,
-			k8sClient,
-			vm,
-			vcVM,
-			moVM,
-			&configSpec); err != nil {
-
-			return err
-		}
-	}
-
-	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-		if err := reconcileVirtualControllers(
 			ctx,
 			k8sClient,
 			vm,

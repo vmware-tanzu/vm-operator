@@ -210,8 +210,18 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		}
 	}
 
+	if ctx.VM.Status.InstanceUUID == "" {
+		// CSI requires the InstanceUUID to match up the batch
+		// attachment request with the VM.
+		if len(ctx.VM.Spec.Volumes) != 0 {
+			ctx.Logger.Info("VM Status does not yet have InstanceUUID. Deferring volume attachment")
+		}
+		return nil
+	}
+
 	if ctx.VM.Status.BiosUUID == "" {
-		// CNS requires the BiosUUID to match up the attachment request with the VM.
+		// CSI requires the BiosUUID to match up the legacy attachment
+		// request with the VM.
 		if len(ctx.VM.Spec.Volumes) != 0 {
 			ctx.Logger.Info("VM Status does not yet have BiosUUID. Deferring volume attachment")
 		}
@@ -403,7 +413,7 @@ func (r *Reconciler) CreateOrUpdateBatchAttachment(
 
 			// Update the Spec with the desired volumeSpecs
 			batchAttachment.Spec = cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
-				NodeUUID: vm.Status.BiosUUID,
+				NodeUUID: vm.Status.InstanceUUID,
 				Volumes:  volumeSpecs,
 			}
 

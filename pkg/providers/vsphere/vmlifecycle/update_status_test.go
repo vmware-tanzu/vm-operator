@@ -1730,8 +1730,10 @@ var _ = Describe("UpdateStatus", func() {
 				Expect(vmCtx.VM.Status.Hardware.Controllers).To(HaveLen(4))
 
 				controllerTypes := make([]vmopv1.VirtualControllerType, 0, 4)
+				controllerKeys := make([]int32, 0, 4)
 				for _, controller := range vmCtx.VM.Status.Hardware.Controllers {
 					controllerTypes = append(controllerTypes, controller.Type)
+					controllerKeys = append(controllerKeys, controller.DeviceKey)
 					Expect(controller.BusNumber).To(Equal(int32(0)))
 				}
 
@@ -1740,6 +1742,13 @@ var _ = Describe("UpdateStatus", func() {
 					vmopv1.VirtualControllerTypeSCSI,
 					vmopv1.VirtualControllerTypeSATA,
 					vmopv1.VirtualControllerTypeNVME,
+				))
+
+				Expect(controllerKeys).To(ContainElements(
+					int32(200),
+					int32(1000),
+					int32(15000),
+					int32(20000),
 				))
 			})
 		})
@@ -1762,6 +1771,12 @@ var _ = Describe("UpdateStatus", func() {
 									Key:           2000,
 									ControllerKey: 1000,
 									UnitNumber:    ptr.To(int32(0)),
+									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "/vmfs/volumes/datastore1/vm1/disk1.vmdk",
+										},
+										Uuid: "test-uuid-123",
+									},
 								},
 							},
 							&vimtypes.VirtualIDEController{
@@ -1777,6 +1792,11 @@ var _ = Describe("UpdateStatus", func() {
 									Key:           3000,
 									ControllerKey: 200,
 									UnitNumber:    ptr.To(int32(0)),
+									Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "/vmfs/volumes/datastore1/vm1/ubuntu.iso",
+										},
+									},
 								},
 							},
 						},
@@ -1799,14 +1819,18 @@ var _ = Describe("UpdateStatus", func() {
 				}
 
 				Expect(scsiController).ToNot(BeNil())
+				Expect(scsiController.DeviceKey).To(Equal(int32(1000)))
 				Expect(scsiController.BusNumber).To(Equal(int32(0)))
 				Expect(scsiController.Devices).To(HaveLen(1))
+				Expect(scsiController.Devices[0].Name).To(Equal("test-uuid-123"))
 				Expect(scsiController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(scsiController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeDisk))
 
 				Expect(ideController).ToNot(BeNil())
+				Expect(ideController.DeviceKey).To(Equal(int32(200)))
 				Expect(ideController.BusNumber).To(Equal(int32(0)))
 				Expect(ideController.Devices).To(HaveLen(1))
+				Expect(ideController.Devices[0].Name).To(Equal("CDROM-0"))
 				Expect(ideController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(ideController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeCDROM))
 			})

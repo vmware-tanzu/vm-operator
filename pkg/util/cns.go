@@ -5,11 +5,15 @@
 package util
 
 import (
-	"fmt"
 	"strings"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
+
+type ControllerID struct {
+	ControllerType vmopv1.VirtualControllerType
+	BusNumber      int32
+}
 
 // CNSAttachmentNameForVolume returns the name of the CnsNodeVmAttachment based
 // on the VM and Volume name.
@@ -28,16 +32,6 @@ func CNSAttachmentNameForVolume(vmName, volumeName string) string {
 // CnsNodeVmBatchAttachment based on the VM name.
 func CNSBatchAttachmentNameForVM(vmName string) string {
 	return vmName
-}
-
-// BuildControllerKey builds a controller key that CNS can understand
-// Format: <type>:<busNumber> or just <type> if bus number not specified.
-func BuildControllerKey(controllerType vmopv1.VirtualControllerType, busNumber *int32) string {
-	if busNumber != nil {
-		return fmt.Sprintf("%s:%d", controllerType, *busNumber)
-	}
-
-	return string(controllerType)
 }
 
 // SanitizeCNSErrorMessage checks if error message contains opId, if yes,

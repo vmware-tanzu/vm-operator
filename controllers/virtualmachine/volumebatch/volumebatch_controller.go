@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -187,7 +188,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 	}
 
 	if err := r.ReconcileNormal(volCtx); err != nil {
-		return ctrl.Result{}, err
+		return pkgerr.ResultFromError(err)
 	}
 
 	// TODO: In case of instance storage volumes, we need to make
@@ -234,8 +235,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 
 	legacyAttachments, err := r.getAttachmentsForVM(ctx)
 	if err != nil {
-		ctx.Logger.Error(err, "Error getting existing CnsNodeVmAttachments for VM")
-		return err
+		return fmt.Errorf(
+			"error getting existing CnsNodeVmAttachments for VM: %w", err)
 	}
 
 	// Get legacy CnsNodeVmAttachments for this VM. We need to handle
@@ -256,11 +257,13 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	}
 
 	// Process volumes and create/update batch attachment
-	if err := r.processBatchAttachment(ctx, batchAttachment, legacyAttachments); err != nil {
-		return fmt.Errorf("error processing CnsNodeVmBatchAttachment: %w", err)
+	processErr := r.processBatchAttachment(ctx, batchAttachment, legacyAttachments)
+	if processErr != nil {
+		ctx.Logger.Error(processErr, "Error processing CnsNodeVmBatchAttachments")
+		// Keep going to return aggregated error below.
 	}
 
-	return nil
+	return pkgerr.AggregateOrNoRequeue([]error{deleteErr, processErr})
 }
 
 // getBatchAttachmentForVM returns the CnsNodeVmBatchAttachment resource for the
@@ -297,9 +300,13 @@ func (r *Reconciler) processBatchAttachment(
 	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
 	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment) error {
 
+	var (
+		pvcVolumes = map[string]vmopv1.VirtualMachineVolume{}
+		retErrs    []error
+	)
+
 	// Filter volumes that have PVC source and are not already tracked
 	// by legacy CnsNodeVmAttachment
-	pvcVolumes := make([]vmopv1.VirtualMachineVolume, 0)
 	for _, vol := range ctx.VM.Spec.Volumes {
 		if vol.PersistentVolumeClaim != nil {
 			// Check if this volume is already managed by a legacy
@@ -321,7 +328,7 @@ func (r *Reconciler) processBatchAttachment(
 
 			// Only include greenfield volumes that are not tracked by
 			// legacy CnsNodeVmAttachment
-			pvcVolumes = append(pvcVolumes, vol)
+			pvcVolumes[vol.Name] = vol
 		}
 	}
 
@@ -345,27 +352,26 @@ func (r *Reconciler) processBatchAttachment(
 			curVolumeAttachSpecMap[volSpec.Name] = volSpec
 		}
 	}
-	var createErrs []error
-	for _, vol := range pvcVolumes {
+
+	for volName, vol := range pvcVolumes {
 		if err := r.handlePVCWithWFFC(ctx, vol, curVolumeAttachSpecMap); err != nil {
-			createErrs = append(createErrs, err)
+			retErrs = append(retErrs, err)
+			delete(pvcVolumes, volName)
 		}
 	}
 
-	// Return early if the WFFC handling has error.
-	// TODO (Oracle RAC): Do we reflect this as part of volume status for better
-	// visibility to the user? Looks like old logic didn't do it.
-	if len(createErrs) > 0 {
-		return apierrorsutil.NewAggregate(createErrs)
-	}
-
-	volumeSpecs, err := r.buildVolumeSpecs(pvcVolumes)
+	volumeSpecs, err := r.buildVolumeSpecs(pvcVolumes, ctx.VM.Status.Hardware)
 	if err != nil {
-		return fmt.Errorf("failed to build volume specs: %w", err)
+		retErrs = append(retErrs, fmt.Errorf("failed to build volume specs: %w", err))
 	}
 
 	// Create or update batch attachment
-	return r.CreateOrUpdateBatchAttachment(ctx, existingAttachment, volumeSpecs)
+	if err := r.CreateOrUpdateBatchAttachment(
+		ctx, existingAttachment, volumeSpecs); err != nil {
+		retErrs = append(retErrs, err)
+	}
+
+	return pkgerr.AggregateOrNoRequeue(retErrs)
 }
 
 // CreateOrUpdateBatchAttachment handles the creation or update of
@@ -433,70 +439,104 @@ func (r *Reconciler) CreateOrUpdateBatchAttachment(
 // buildVolumeSpecs builds a volume spec that will be used to create
 // the CnsNodeVmBatchAttachment object.
 func (r *Reconciler) buildVolumeSpecs(
-	volumes []vmopv1.VirtualMachineVolume,
+	volumes map[string]vmopv1.VirtualMachineVolume,
+	hardware *vmopv1.VirtualMachineHardwareStatus,
 ) ([]cnsv1alpha1.VolumeSpec, error) {
 
-	volumeSpecs := make([]cnsv1alpha1.VolumeSpec, 0, len(volumes))
+	// Return nil and wait for next reconcile when the status is updated if
+	// hardware is nil Or noops when there is no volumes to be attached.
+	if hardware == nil || len(volumes) == 0 {
+		return nil, nil
+	}
+
+	var (
+		volumeSpecs   = make([]cnsv1alpha1.VolumeSpec, 0, len(volumes))
+		ctrlDevKeyMap = make(map[pkgutil.ControllerID]int32)
+		retErrs       []error
+	)
+
+	for _, ctrlStatus := range hardware.Controllers {
+		ctrlDevKeyMap[pkgutil.ControllerID{
+			ControllerType: ctrlStatus.Type,
+			BusNumber:      ctrlStatus.BusNumber,
+		}] = ctrlStatus.DeviceKey
+	}
 
 	for _, vol := range volumes {
+
 		pvcSpec := vol.PersistentVolumeClaim
+
+		// The validating webhook should have verified it already.
+		// It returns NoRequeueError because we do not want to keep reconciling
+		// volume with incorrect spec unless the spec is fixed.
+		if pvcSpec.ControllerBusNumber == nil {
+			retErrs = append(retErrs, pkgerr.NoRequeueError{
+				Message: fmt.Sprintf(
+					"volume %q is missing controller bus number", vol.Name)})
+			continue
+		}
+
+		ctrlDevKey, ok := ctrlDevKeyMap[pkgutil.ControllerID{
+			ControllerType: pvcSpec.ControllerType,
+			BusNumber:      *pvcSpec.ControllerBusNumber,
+		}]
+		if !ok {
+			retErrs = append(retErrs, pkgerr.NoRequeueNoErr(fmt.Sprintf(
+				"wating for the device controller %q %q to be created for volume %q",
+				pvcSpec.ControllerType, *pvcSpec.ControllerBusNumber, vol.Name)))
+			continue
+		}
 
 		// Map VM volume spec to CNS batch attachment spec
 		cnsVolumeSpec := cnsv1alpha1.VolumeSpec{
 			Name: vol.Name,
 			PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
-				ClaimName: pvcSpec.ClaimName,
+				ClaimName:     pvcSpec.ClaimName,
+				ControllerKey: strconv.Itoa(int(ctrlDevKey)),
+				UnitNumber:    strconv.Itoa(int(*pvcSpec.UnitNumber)),
 			},
 		}
 
 		// Apply application type presets first
 		// Ideally, this would already have been mutated by the webhook, but just handle that here anyway.
 		if err := r.applyApplicationTypePresets(pvcSpec, &cnsVolumeSpec); err != nil {
-			return nil, fmt.Errorf("failed to apply application type presets for volume %s: %w",
-				vol.Name, err)
+			retErrs = append(retErrs, pkgerr.NoRequeueError{
+				Message: fmt.Errorf("failed to apply application type presets for volume %s: %w",
+					vol.Name, err).Error(),
+			})
+			continue
 		}
 
 		// Map disk mode (can override application type presets)
-		if pvcSpec.DiskMode != "" {
-			switch pvcSpec.DiskMode {
-			case vmopv1.VolumeDiskModePersistent:
-				cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.Persistent
-			case vmopv1.VolumeDiskModeIndependentPersistent:
-				cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.IndependentPersistent
-			default:
-				return nil, fmt.Errorf("unsupported disk mode: %s for volume %s",
-					pvcSpec.DiskMode, vol.Name)
-			}
+		switch pvcSpec.DiskMode {
+		case vmopv1.VolumeDiskModePersistent:
+			cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.Persistent
+		case vmopv1.VolumeDiskModeIndependentPersistent:
+			cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.IndependentPersistent
+		default:
+			retErrs = append(retErrs, pkgerr.NoRequeueError{
+				Message: fmt.Sprintf("unsupported disk mode: %s for volume %s",
+					pvcSpec.DiskMode, vol.Name)})
+			continue
 		}
 
 		// Map sharing mode (can override application type presets)
-		if pvcSpec.SharingMode != "" {
-			switch pvcSpec.SharingMode {
-			case vmopv1.VolumeSharingModeNone:
-				cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingNone
-			case vmopv1.VolumeSharingModeMultiWriter:
-				cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingMultiWriter
-			default:
-				return nil, fmt.Errorf("unsupported sharing mode: %s for volume %s",
-					pvcSpec.SharingMode, vol.Name)
-			}
-		}
-
-		// Map controller key (combination of controller type and bus number)
-		if pvcSpec.ControllerType != "" || pvcSpec.ControllerBusNumber != nil {
-			controllerKey := pkgutil.BuildControllerKey(pvcSpec.ControllerType, pvcSpec.ControllerBusNumber)
-			cnsVolumeSpec.PersistentVolumeClaim.ControllerKey = controllerKey
-		}
-
-		// Map unit number
-		if pvcSpec.UnitNumber != nil {
-			cnsVolumeSpec.PersistentVolumeClaim.UnitNumber = strconv.Itoa(int(*pvcSpec.UnitNumber))
+		switch pvcSpec.SharingMode {
+		case vmopv1.VolumeSharingModeNone:
+			cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingNone
+		case vmopv1.VolumeSharingModeMultiWriter:
+			cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingMultiWriter
+		default:
+			retErrs = append(retErrs, pkgerr.NoRequeueError{
+				Message: fmt.Sprintf("unsupported sharing mode: %s for volume %s",
+					pvcSpec.SharingMode, vol.Name)})
+			continue
 		}
 
 		volumeSpecs = append(volumeSpecs, cnsVolumeSpec)
 	}
 
-	return volumeSpecs, nil
+	return volumeSpecs, pkgerr.AggregateOrNoRequeue(retErrs)
 }
 
 func (r *Reconciler) applyApplicationTypePresets(

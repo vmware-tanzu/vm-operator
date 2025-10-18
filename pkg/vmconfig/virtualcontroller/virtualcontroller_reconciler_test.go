@@ -73,6 +73,9 @@ var _ = Describe("Reconcile", func() {
 
 		moVM = mo.VirtualMachine{
 			Config: &vimtypes.VirtualMachineConfigInfo{},
+			Runtime: vimtypes.VirtualMachineRuntimeInfo{
+				PowerState: vimtypes.VirtualMachinePowerStatePoweredOff,
+			},
 		}
 
 		configSpec = &vimtypes.VirtualMachineConfigSpec{}
@@ -100,6 +103,7 @@ var _ = Describe("Reconcile", func() {
 			JustBeforeEach(func() {
 				ctx = nil
 			})
+
 			It("should panic", func() {
 				fn := func() {
 					_ = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
@@ -112,6 +116,7 @@ var _ = Describe("Reconcile", func() {
 			JustBeforeEach(func() {
 				k8sClient = nil
 			})
+
 			It("should panic", func() {
 				fn := func() {
 					_ = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
@@ -204,12 +209,12 @@ var _ = Describe("Reconcile", func() {
 
 				When("VM is powered on", func() {
 					BeforeEach(func() {
-						vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 					})
 
-					It("should return an error", func() {
-						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).
-							To(MatchError("cannot add/edit/remove controllers when the VM is powered on"))
+					It("should succeeds without making any changes", func() {
+						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(configSpec.DeviceChange).To(HaveLen(0))
 					})
 				})
 

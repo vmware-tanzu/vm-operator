@@ -275,10 +275,6 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		return err
 	}
 
-	if err := s.reconcileVolumes(vmCtx); err != nil {
-		return err
-	}
-
 	if vmCtx.VM.Spec.GuestID == "" {
 		// Assume the guest ID is valid until we know otherwise.
 		conditions.Delete(vmCtx.VM, vmopv1.GuestIDReconfiguredCondition)
@@ -326,6 +322,14 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 				return err
 			}
 		}
+	}
+
+	// Moved down below doReconfigure because this function returns error
+	// when volume is not ready. But sometimes this could due to corresponding
+	// virtualcontrollers are not ready, while configuring virtualcontrollers
+	// happens in doReconfigure.
+	if err := s.reconcileVolumes(vmCtx); err != nil {
+		return err
 	}
 
 	return s.reconcileNetworkAndGuestCustomizationState(
@@ -1169,6 +1173,8 @@ func reconcileVSpherePolicies(
 	return nil
 }
 
+// reconcileVirtualControllers check if VM need virtual controller changes,
+// If yes, update configSpec.DeviceChange.
 func reconcileVirtualControllers(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1179,13 +1185,18 @@ func reconcileVirtualControllers(
 
 	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling virtual controllers")
 
-	return vmconfvirtualcontroller.Reconcile(
+	if err := vmconfvirtualcontroller.Reconcile(
 		ctx,
 		k8sClient,
 		vcVM.Client(),
 		vm,
 		moVM,
-		configSpec)
+		configSpec); err != nil {
+
+		return err
+	}
+
+	return nil
 }
 
 func doReconfigure(

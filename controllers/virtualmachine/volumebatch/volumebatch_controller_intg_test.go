@@ -165,9 +165,9 @@ func intgTestsReconcile() {
 		return vm
 	}
 
-	getCnsNodeVMBatchAttachment := func(vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVmBatchAttachment {
+	getCnsNodeVMBatchAttachment := func(vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVMBatchAttachment {
 		objectKey := client.ObjectKey{Name: util.CNSBatchAttachmentNameForVM(vm.Name), Namespace: vm.Namespace}
-		attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{}
+		attachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
 		if err := ctx.Client.Get(ctx, objectKey, attachment); err == nil {
 			return attachment
 		}
@@ -209,7 +209,7 @@ func intgTestsReconcile() {
 					Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 				})
 
-				By("CnsNodeVmBatchAttachment should not be created for volume", func() {
+				By("CnsNodeVMBatchAttachment should not be created for volume", func() {
 					Consistently(func(g Gomega) {
 						g.Expect(getCnsNodeVMBatchAttachment(vm)).To(BeNil())
 					}, "3s").Should(Succeed())
@@ -253,8 +253,8 @@ func intgTestsReconcile() {
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
-			By("CnsNodeVmBatchAttachment should be created for volume", func() {
-				var attachment *cnsv1alpha1.CnsNodeVmBatchAttachment
+			By("CnsNodeVMBatchAttachment should be created for volume", func() {
+				var attachment *cnsv1alpha1.CnsNodeVMBatchAttachment
 				Eventually(func(g Gomega) {
 					attachment = getCnsNodeVMBatchAttachment(vm)
 					g.Expect(attachment).ToNot(BeNil())
@@ -289,7 +289,7 @@ func intgTestsReconcile() {
 						Name: vmVolume1.Name,
 						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 							Attached:  true,
-							Diskuuid:  dummyDiskUUID1,
+							DiskUUID:  dummyDiskUUID1,
 							ClaimName: vmVolume1.PersistentVolumeClaim.ClaimName,
 							Error:     errMsg,
 						},
@@ -347,8 +347,8 @@ func intgTestsReconcile() {
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
-			By("CnsNodeVmBatchAttachment should be created", func() {
-				var attachment *cnsv1alpha1.CnsNodeVmBatchAttachment
+			By("CnsNodeVMBatchAttachment should be created", func() {
+				var attachment *cnsv1alpha1.CnsNodeVMBatchAttachment
 				Eventually(func(g Gomega) {
 					attachment = getCnsNodeVMBatchAttachment(vm)
 					g.Expect(attachment).ToNot(BeNil())
@@ -385,7 +385,7 @@ func intgTestsReconcile() {
 						Name: vmVolume1.Name,
 						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 							Attached:  true,
-							Diskuuid:  dummyDiskUUID1,
+							DiskUUID:  dummyDiskUUID1,
 							ClaimName: vmVolume1.PersistentVolumeClaim.ClaimName,
 						},
 					},
@@ -403,7 +403,7 @@ func intgTestsReconcile() {
 						Name: vmVolume2.Name,
 						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 							Attached:  true,
-							Diskuuid:  dummyDiskUUID2,
+							DiskUUID:  dummyDiskUUID2,
 							ClaimName: vmVolume2.PersistentVolumeClaim.ClaimName,
 						},
 					},

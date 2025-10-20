@@ -17,8 +17,6 @@ const (
 	VirtualControllerTypeSATA VirtualControllerType = "SATA"
 )
 
-// +kubebuilder:validation:Enum=None;Physical;Virtual
-
 type VirtualControllerSharingMode string
 
 const (
@@ -75,6 +73,7 @@ type NVMEControllerSpec struct {
 
 	// +optional
 	// +kubebuilder:default=None
+	// +kubebuilder:validation:Enum=None;Physical
 
 	// SharingMode describes the sharing mode for the controller.
 	//
@@ -119,6 +118,7 @@ type SCSIControllerSpec struct {
 
 	// +optional
 	// +kubebuilder:default=None
+	// +kubebuilder:validation:Enum=None;Physical;Virtual
 
 	// SharingMode describes the sharing mode for the controller.
 	//

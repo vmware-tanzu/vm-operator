@@ -6571,7 +6571,6 @@ spec:
                                   enum:
                                   - None
                                   - Physical
-                                  - Virtual
                                   type: string
                               required:
                               - busNumber

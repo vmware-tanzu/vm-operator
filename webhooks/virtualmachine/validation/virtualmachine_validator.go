@@ -175,6 +175,8 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBiosUUID(ctx, vm)...)
+
 	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 		fieldErrs = append(fieldErrs, v.validatePVCUnmanagedVolumeClaimInfo(ctx, vm)...)
 	}
@@ -2539,6 +2541,18 @@ func (v validator) validatePVCUnmanagedVolumeClaimImmutability(
 				}
 			}
 		}
+	}
+
+	return allErrs
+}
+
+// validateBiosUUID validates that a non-empty spec.biosUUID is a valid UUID.
+func (v validator) validateBiosUUID(_ *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	fieldPath := field.NewPath("spec", "biosUUID")
+	if vm.Spec.BiosUUID != "" && uuid.Validate(vm.Spec.BiosUUID) != nil {
+		allErrs = append(allErrs, field.Invalid(fieldPath, vm.Spec.BiosUUID, "must provide a valid UUID"))
 	}
 
 	return allErrs

@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -183,7 +184,6 @@ func unitTestsValidateCreate() {
 		powerState                 vmopv1.VirtualMachinePowerState
 		nextRestartTime            string
 		instanceUUID               string
-		biosUUID                   string
 		applyPowerStateChangeTime  string
 	}
 
@@ -221,7 +221,6 @@ func unitTestsValidateCreate() {
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 		ctx.vm.Spec.InstanceUUID = args.instanceUUID
-		ctx.vm.Spec.BiosUUID = args.biosUUID
 
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -284,7 +283,6 @@ func unitTestsValidateCreate() {
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
 		Entry("should allow creating VM with instanceUUID set by admin user", createArgs{instanceUUID: "uuid", isServiceUser: true}, true, nil, nil),
-		Entry("should allow creating VM with biosUUID set by admin user", createArgs{biosUUID: "uuid", isServiceUser: true}, true, nil, nil),
 		Entry("should allow creating VM with valid apply power state change time annotation by admin user",
 			createArgs{applyPowerStateChangeTime: time.Now().Format(time.RFC3339Nano), isServiceUser: true}, true, nil, nil),
 		Entry("should disallow creating VM with non-empty, invalid apply power state change time annotation",
@@ -3812,6 +3810,38 @@ func unitTestsValidateCreate() {
 								},
 							},
 						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("spec.biosUUID", func() {
+		DescribeTable("create", doTest,
+			Entry("should allow when VM specifies valid UUID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BiosUUID = uuid.NewString()
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should not allow when VM specifies invalid UUID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BiosUUID = "invalid UUID"
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "biosUUID"), "invalid UUID", "must provide a valid UUID").Error(),
+					),
+				},
+			),
+			Entry("should allow when VM specifies no UUID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BiosUUID = ""
 					},
 					expectAllowed: true,
 				},

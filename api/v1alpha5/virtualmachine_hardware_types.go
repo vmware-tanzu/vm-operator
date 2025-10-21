@@ -229,7 +229,7 @@ type VirtualMachineCdromSpec struct {
 	//   - IDE                -- 4 total (2 per controller)
 	//   - SATA               -- 120 total (30 per controller)
 	//
-	// Defaults to IDE when controllerBusNumber is also omitted; otherwise the
+	// Defaults to IDE when controllerBusNumber is set; otherwise the
 	// default value is determined by the logic outlined in the description of
 	// the controllerBusNumber field.
 	ControllerType VirtualControllerType `json:"controllerType,omitempty"`

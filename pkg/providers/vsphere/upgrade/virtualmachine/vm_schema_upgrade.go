@@ -17,7 +17,9 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	vmprovider "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -74,7 +76,7 @@ func ReconcileSchemaUpgrade(
 	reconcileInstanceUUID(ctx, vm, moVM)
 	reconcileCloudInitInstanceUUID(ctx, vm, moVM)
 	reconcileControllers(ctx, vm, moVM)
-	reconcileDevices(ctx, vm, moVM)
+	reconcileDevices(ctx, vm, moVM, k8sClient)
 
 	// Indicate the VM has been upgraded.
 	if vm.Annotations == nil {
@@ -183,6 +185,12 @@ func reconcileControllers(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM controllers")
+
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		logger.V(4).Info("Skipping controllers reconciliation due to" +
+			"disabled VMSharedDisks capability")
+		return
+	}
 
 	for i := range moVM.Config.Hardware.Device {
 		switch d := moVM.Config.Hardware.Device[i].(type) {
@@ -397,10 +405,30 @@ func reconcileSCSIController(
 func reconcileDevices(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine) {
+	moVM mo.VirtualMachine,
+	k8sClient ctrlclient.Client) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM devices")
+
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		logger.V(4).Info("Skipping devices reconciliation due to" +
+			"disabled VMSharedDisks capability")
+		return
+	}
+
+	// Build a map of controller key to controller info from VM status.
+	// Note: vm.status is always reconciled before calling this function,
+	// and DeviceKey is a required field.
+	ctrlKeyToCtrlStatus := make(map[int32]vmopv1.VirtualControllerStatus)
+	if vm.Status.Hardware != nil {
+		for _, ctrl := range vm.Status.Hardware.Controllers {
+			ctrlKeyToCtrlStatus[ctrl.DeviceKey] = ctrl
+		}
+	}
+
+	// Build a map of backing file name to CD-ROM device.
+	var cdromDevices []*vimtypes.VirtualCdrom
 
 	for i := range moVM.Config.Hardware.Device {
 		switch d := moVM.Config.Hardware.Device[i].(type) {
@@ -409,9 +437,11 @@ func reconcileDevices(
 			reconcileVirtualDisk(ctx, vm, d)
 
 		case *vimtypes.VirtualCdrom:
-			reconcileVirtualCDROM(ctx, vm, d)
+			cdromDevices = append(cdromDevices, d)
 		}
 	}
+
+	reconcileVirtualCDROMs(ctx, k8sClient, vm, ctrlKeyToCtrlStatus, cdromDevices)
 }
 
 func reconcileVirtualDisk(
@@ -424,12 +454,70 @@ func reconcileVirtualDisk(
 
 }
 
-func reconcileVirtualCDROM(
+// reconcileVirtualCDROMs reconciles the VM's CD-ROM devices during schema
+// upgrade. It maps CD-ROM devices from the vSphere VM configuration to the
+// VirtualMachine spec, updating the unit number, controller type, and
+// controller bus number for each CD-ROM device based on the backing file name
+// and controller information.
+func reconcileVirtualCDROMs(
 	ctx context.Context,
-	_ *vmopv1.VirtualMachine,
-	_ *vimtypes.VirtualCdrom) {
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	ctrlKeyToCtrlStatus map[int32]vmopv1.VirtualControllerStatus,
+	cdromDevices []*vimtypes.VirtualCdrom) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM CD-ROM")
 
+	if vm.Spec.Hardware == nil {
+		return
+	}
+
+	// Build a map of backing file name to CD-ROM device info.
+	// Devices point to the same ISO image are blocked
+	// by the VM validating webhook and CD-ROM reconciler.
+	bFileNameToCdromInfo := make(map[string]util.VirtualCdromInfo)
+	for _, cdrom := range cdromDevices {
+		cdi := util.GetVirtualCdromInfo(cdrom)
+		if cdi.FileName != "" {
+			bFileNameToCdromInfo[cdi.FileName] = cdi
+		}
+	}
+
+	for i := range vm.Spec.Hardware.Cdrom {
+		spec := &vm.Spec.Hardware.Cdrom[i]
+
+		bFileName, err := vmprovider.GetBackingFileNameByImageRef(
+			ctx, k8sClient, spec.Image, vm.Namespace, false, nil)
+		if err != nil {
+			logger.Error(err, "Error getting backing file name", "spec", spec)
+			continue
+		}
+
+		info, ok := bFileNameToCdromInfo[bFileName]
+		if !ok {
+			continue
+		}
+		ctrl, ok := ctrlKeyToCtrlStatus[info.ControllerKey]
+		if !ok {
+			continue
+		}
+
+		if (spec.UnitNumber == nil ||
+			ptr.Equal(spec.UnitNumber, info.UnitNumber)) &&
+			(spec.ControllerBusNumber == nil ||
+				ptr.Equal(spec.ControllerBusNumber, &ctrl.BusNumber)) &&
+			(spec.ControllerType == "" ||
+				ctrl.Type == spec.ControllerType) {
+			spec.UnitNumber = info.UnitNumber
+			spec.ControllerType = ctrl.Type
+			spec.ControllerBusNumber = &ctrl.BusNumber
+		} else {
+			logger.V(4).Info("Skipping CD-ROM spec update",
+				"spec", spec,
+				"unitNumber", info.UnitNumber,
+				"controllerBusNumber", ctrl.BusNumber,
+				"controllerType", ctrl.Type)
+		}
+	}
 }

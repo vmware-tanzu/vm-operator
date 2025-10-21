@@ -12,17 +12,27 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	upgradevm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/upgrade/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
+)
+
+const (
+	testVMIName     = "test-vmi"
+	testVMIFileName = "test-file.iso"
+	testLibItemID   = "test-item-id"
 )
 
 var _ = Describe("ReconcileSchemaUpgrade", func() {
@@ -38,10 +48,17 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		pkg.BuildVersion = "v1.2.3"
 		ctx = pkgcfg.NewContextWithDefaultConfig()
 		ctx = logr.NewContext(ctx, klog.Background())
-		k8sClient = fake.NewFakeClient()
+
+		k8sInitObjs := builder.DummyImageAndItemObjectsForCdromBacking(
+			testVMIName, "default", "VirtualMachineImage", testVMIFileName, testLibItemID,
+			true, true, resource.MustParse("100Mi"), true, true, imgregv1a1.ContentLibraryItemTypeIso)
+
+		k8sClient = builder.NewFakeClient(k8sInitObjs...)
+
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
-				UID: types.UID("abc-123"),
+				UID:       types.UID("abc-123"),
+				Namespace: "default",
 			},
 		}
 		moVM = mo.VirtualMachine{
@@ -258,6 +275,12 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 			Context("Controller reconciliation", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+				})
+
 				Context("IDE Controllers", func() {
 					BeforeEach(func() {
 						moVM.Config.Hardware = vimtypes.VirtualHardware{
@@ -579,5 +602,229 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 		})
+	})
+
+	Context("reconcileVirtualCDROMs", func() {
+		var (
+			cdromSpec   vmopv1.VirtualMachineCdromSpec
+			moVM        mo.VirtualMachine
+			expectedErr error
+		)
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+			expectedErr = upgradevm.ErrUpgradeSchema
+			cdromSpec = vmopv1.VirtualMachineCdromSpec{
+				Image: vmopv1.VirtualMachineImageRef{
+					Kind: "VirtualMachineImage",
+					Name: "test-vmi",
+				},
+			}
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				Cdrom: []vmopv1.VirtualMachineCdromSpec{cdromSpec},
+			}
+			moVM = mo.VirtualMachine{
+				Config: &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{},
+					},
+				},
+			}
+		})
+
+		JustBeforeEach(func() {
+			err := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
+			if expectedErr == nil {
+				Expect(err).ToNot(HaveOccurred())
+			} else {
+				Expect(err).To(MatchError(expectedErr))
+			}
+		})
+
+		When("VM has no CD-ROM specs", func() {
+			BeforeEach(func() {
+				vm.Spec.Hardware = nil
+			})
+
+			It("should skip reconciliation", func() {
+				Expect(vm.Spec.Hardware).To(BeNil())
+			})
+		})
+
+		When("VM has empty CD-ROM specs", func() {
+			BeforeEach(func() {
+				vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					Cdrom: []vmopv1.VirtualMachineCdromSpec{},
+				}
+			})
+
+			It("should skip reconciliation", func() {
+				Expect(vm.Spec.Hardware.Cdrom).To(BeEmpty())
+			})
+		})
+
+		When("VM has CD-ROM specs but no matching devices", func() {
+			BeforeEach(func() {
+				// Add a CD-ROM device with different backing file.
+				cdromDevice := &vimtypes.VirtualCdrom{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key: 100,
+						DeviceInfo: &vimtypes.Description{
+							Label: "CD/DVD drive 1",
+						},
+						ControllerKey: 200,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "different-file.iso",
+							},
+						},
+					},
+				}
+				moVM.Config.Hardware.Device = append(
+					moVM.Config.Hardware.Device, cdromDevice)
+			})
+
+			It("should not modify CD-ROM specs", func() {
+				originalSpec := vm.Spec.Hardware.Cdrom[0]
+				Expect(vm.Spec.Hardware.Cdrom[0]).To(Equal(originalSpec))
+			})
+		})
+
+		When("VM has CD-ROM specs with matching backing files", func() {
+			var (
+				cdromDevice   *vimtypes.VirtualCdrom
+				ideController *vimtypes.VirtualIDEController
+			)
+
+			BeforeEach(func() {
+				ideController = &vimtypes.VirtualIDEController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 200,
+							DeviceInfo: &vimtypes.Description{
+								Label: "IDE 0",
+							},
+						},
+						BusNumber: 0,
+					},
+				}
+
+				cdromDevice = &vimtypes.VirtualCdrom{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key: 100,
+						DeviceInfo: &vimtypes.Description{
+							Label: "CD/DVD drive 1",
+						},
+						ControllerKey: 200,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "test-file.iso", // This should match the resolved file name
+							},
+						},
+					},
+				}
+
+				moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+					ideController, cdromDevice,
+				}
+
+				vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							DeviceKey: 200,
+							Type:      vmopv1.VirtualControllerTypeIDE,
+							BusNumber: 0,
+						},
+					},
+				}
+			})
+
+			It("should backfill controller information when backing files match", func() {
+				Expect(vm.Spec.Hardware.Cdrom).To(HaveLen(1))
+				cdromSpec := vm.Spec.Hardware.Cdrom[0]
+				Expect(cdromSpec.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
+				Expect(*cdromSpec.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*cdromSpec.UnitNumber).To(Equal(int32(0)))
+			})
+
+			When("controller type is empty", func() {
+				BeforeEach(func() {
+					vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(0))
+					vm.Spec.Hardware.Cdrom[0].ControllerType = ""
+					vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(0))
+				})
+
+				It("should update when controller type is empty", func() {
+					cdromSpec := vm.Spec.Hardware.Cdrom[0]
+					Expect(cdromSpec.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
+				})
+			})
+		})
+
+		When("VM has CD-ROM specs with SATA controller", func() {
+			var (
+				cdromDevice    *vimtypes.VirtualCdrom
+				sataController *vimtypes.VirtualAHCIController
+			)
+
+			BeforeEach(func() {
+				sataController = &vimtypes.VirtualAHCIController{
+					VirtualSATAController: vimtypes.VirtualSATAController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 300,
+								DeviceInfo: &vimtypes.Description{
+									Label: "SATA 0",
+								},
+							},
+							BusNumber: 0,
+						},
+					},
+				}
+
+				cdromDevice = &vimtypes.VirtualCdrom{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key: 100,
+						DeviceInfo: &vimtypes.Description{
+							Label: "CD/DVD drive 1",
+						},
+						ControllerKey: 300,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "test-file.iso",
+							},
+						},
+					},
+				}
+
+				moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+					sataController, cdromDevice,
+				}
+
+				vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							DeviceKey: 300,
+							Type:      vmopv1.VirtualControllerTypeSATA,
+							BusNumber: 0,
+						},
+					},
+				}
+			})
+
+			It("should backfill SATA controller information when backing files match", func() {
+				Expect(vm.Spec.Hardware.Cdrom).To(HaveLen(1))
+				cdromSpec := vm.Spec.Hardware.Cdrom[0]
+				Expect(cdromSpec.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSATA))
+				Expect(*cdromSpec.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*cdromSpec.UnitNumber).To(Equal(int32(0)))
+			})
+		})
+
 	})
 })

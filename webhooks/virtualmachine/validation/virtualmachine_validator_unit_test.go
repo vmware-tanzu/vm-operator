@@ -187,6 +187,8 @@ func unitTestsValidateCreate() {
 		nextRestartTime            string
 		instanceUUID               string
 		applyPowerStateChangeTime  string
+		cdromControllerTypeOnly    bool
+		cdromControllerBusOnly     bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -220,6 +222,15 @@ func unitTestsValidateCreate() {
 			ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
 		}
 
+		if args.cdromControllerTypeOnly {
+			ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeIDE
+			ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = nil
+		}
+		if args.cdromControllerBusOnly {
+			ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = ""
+			ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(0))
+		}
+
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 		ctx.vm.Spec.InstanceUUID = args.instanceUUID
@@ -242,6 +253,7 @@ func unitTestsValidateCreate() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.WorkloadDomainIsolation = true
+			config.Features.VMSharedDisks = true
 		})
 	})
 
@@ -252,6 +264,7 @@ func unitTestsValidateCreate() {
 	specPath := field.NewPath("spec")
 	volPath := specPath.Child("volumes")
 	nextRestartTimePath := specPath.Child("nextRestartTime")
+	cdromPath := specPath.Child("hardware", "cdrom").Index(0)
 	now := time.Now().UTC()
 
 	DescribeTable("create table", validateCreate,
@@ -290,6 +303,11 @@ func unitTestsValidateCreate() {
 		Entry("should disallow creating VM with non-empty, invalid apply power state change time annotation",
 			createArgs{applyPowerStateChangeTime: "hello", isServiceUser: true}, false,
 			field.Invalid(field.NewPath("metadata").Child("annotations").Key(pkgconst.ApplyPowerStateTimeAnnotation), "hello", "must be formatted as RFC3339Nano").Error(), nil),
+
+		Entry("should deny CD-ROM with only controllerType set", createArgs{cdromControllerTypeOnly: true}, false,
+			field.Invalid(cdromPath.Child("controllerBusNumber"), nil, "must be set when controllerType is specified").Error(), nil),
+		Entry("should deny CD-ROM with only controllerBusNumber set", createArgs{cdromControllerBusOnly: true}, false,
+			field.Invalid(cdromPath.Child("controllerType"), "", "must be set when controllerBusNumber is specified").Error(), nil),
 	)
 
 	doTest := func(args testParams) {
@@ -5723,14 +5741,27 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("disallow changing CD-ROM name when VM is powered on",
+			Entry("disallow adding CD-ROM when VM is powered on",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Hardware.Cdrom[0].Name = "new3"
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom[0].name: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].name: Forbidden: adding new CD-ROMs is not allowed when VM is powered on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow removing CD-ROMs when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},

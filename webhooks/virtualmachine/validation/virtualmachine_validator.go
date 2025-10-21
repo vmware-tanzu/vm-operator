@@ -65,6 +65,8 @@ const (
 	readinessProbeOnlyOneAction                = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
 	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
+	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
+	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
 	storageClassNotFoundFmt                    = "Storage policy %s does not exist"
 	storageClassNotAssignedFmt                 = "Storage policy is not associated with the namespace %s"
 	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
@@ -84,6 +86,8 @@ const (
 	invalidImageKind                           = "supported: " + vmiKind + "; " + cvmiKind
 	invalidZone                                = "cannot use zone that is being deleted"
 	restrictedToPrivUsers                      = "restricted to privileged users"
+	controllerBusNumberRangeFmt                = "%s controllerBusNumber must be in the range of 0 to %d"
+	unitNumberRangeFmt                         = "%s unitNumber must be in the range of 0 to %d"
 	addRestrictedAnnotation                    = "adding this annotation is restricted to privileged users"
 	delRestrictedAnnotation                    = "removing this annotation is restricted to privileged users"
 	modRestrictedAnnotation                    = "modifying this annotation is restricted to privileged users"
@@ -2169,8 +2173,8 @@ func (v validator) validateNetworkHostAndDomainName(
 }
 
 func (v validator) validateCdrom(
-	_ *pkgctx.WebhookRequestContext,
-	newVM, _ *vmopv1.VirtualMachine) field.ErrorList {
+	ctx *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
 		allErrs field.ErrorList
@@ -2215,11 +2219,21 @@ func (v validator) validateCdrom(
 		}
 	}
 
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if oldVM == nil {
+			if newVM.Spec.Hardware != nil {
+				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
+			}
+		} else {
+			allErrs = append(allErrs, v.validateCdromControllerSpecsOnUpdate(newCD, f)...)
+		}
+	}
+
 	return allErrs
 }
 
 func (v validator) validateCdromWhenPoweredOn(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
@@ -2249,14 +2263,29 @@ func (v validator) validateCdromWhenPoweredOn(
 		oldCdromNameToImage[c.Name] = c.Image
 	}
 
+	newCdromNames := make(map[string]bool, len(newCD))
+	for _, c := range newCD {
+		newCdromNames[c.Name] = true
+	}
+	for _, oldCdrom := range oldCD {
+		if !newCdromNames[oldCdrom.Name] {
+			// Removing CD-ROMs is not allowed when VM is powered on.
+			allErrs = append(allErrs, field.Forbidden(f.Child("name"), removingCdromNotAllowedWhenPowerOn))
+		}
+	}
+
 	for i, c := range newCD {
 		if oldImage, ok := oldCdromNameToImage[c.Name]; !ok {
-			// CD-ROM name is changed.
-			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("name"), updatesNotAllowedWhenPowerOn))
+			// Adding new CD-ROMs is not allowed when VM is powered on.
+			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("name"), addingNewCdromNotAllowedWhenPowerOn))
 		} else if !reflect.DeepEqual(c.Image, oldImage) {
 			// CD-ROM image is changed.
 			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("image"), updatesNotAllowedWhenPowerOn))
 		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
 	}
 
 	return allErrs

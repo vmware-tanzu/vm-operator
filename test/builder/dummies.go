@@ -389,7 +389,10 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 			Hardware: &vmopv1.VirtualMachineHardwareSpec{
 				Cdrom: []vmopv1.VirtualMachineCdromSpec{
 					{
-						Name: "cdrom1",
+						Name:                "cdrom1",
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 						Image: vmopv1.VirtualMachineImageRef{
 							Kind: vmiKind,
 							Name: DummyVMIName,
@@ -398,7 +401,10 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 						AllowGuestControl: ptr.To(true),
 					},
 					{
-						Name: "cdrom2",
+						Name:                "cdrom2",
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(1)),
 						Image: vmopv1.VirtualMachineImageRef{
 							Kind: cvmiKind,
 							Name: DummyCVMIName,
@@ -754,4 +760,69 @@ func DummyImageAndItemObjectsForCdromBacking(
 	}
 
 	return []ctrlclient.Object{imageObj}
+}
+
+func DummyCdromDevice(key, controllerKey, unitNumber int32, fileName string) *vimtypes.VirtualCdrom {
+	return &vimtypes.VirtualCdrom{
+		VirtualDevice: vimtypes.VirtualDevice{
+			Key:           key,
+			ControllerKey: controllerKey,
+			UnitNumber:    &unitNumber,
+			Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					FileName: fileName,
+				},
+			},
+		},
+	}
+}
+
+func DummyIDEController(key, busNumber int32, devices []int32) *vimtypes.VirtualIDEController {
+	return &vimtypes.VirtualIDEController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+			Device:    devices,
+		},
+	}
+}
+
+func DummySATAController(key, busNumber int32, devices []int32) *vimtypes.VirtualAHCIController {
+	return &vimtypes.VirtualAHCIController{
+		VirtualSATAController: vimtypes.VirtualSATAController{
+			VirtualController: vimtypes.VirtualController{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key: key,
+				},
+				BusNumber: busNumber,
+				Device:    devices,
+			},
+		},
+	}
+}
+
+func DummyCdromSpec(
+	name string,
+	imageName string,
+	imageKind string,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32,
+	unitNumber *int32,
+	allowGuestControl *bool,
+	connected *bool) vmopv1.VirtualMachineCdromSpec {
+
+	return vmopv1.VirtualMachineCdromSpec{
+		Name: name,
+		Image: vmopv1.VirtualMachineImageRef{
+			Name: imageName,
+			Kind: imageKind,
+		},
+		ControllerType:      controllerType,
+		ControllerBusNumber: controllerBusNumber,
+		UnitNumber:          unitNumber,
+		AllowGuestControl:   allowGuestControl,
+		Connected:           connected,
+	}
 }

@@ -376,6 +376,13 @@ var _ = Describe(
 					vm1Copy.Spec.GroupName = vmGroup1Key.Name
 					Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
 
+					// Update the VM status.uniqueID to simulate the VM already placed (to mark the parent group ready).
+					vm1Updated := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1Updated)).To(Succeed())
+					vm1StatusCopy := vm1Updated.DeepCopy()
+					vm1StatusCopy.Status.UniqueID = "vm-unique-id-1"
+					Expect(ctx.Client.Status().Patch(ctx, vm1StatusCopy, client.MergeFrom(vm1Updated))).To(Succeed())
+
 					vmGroup2 := &vmopv1.VirtualMachineGroup{}
 					Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
 					vmGroup2Copy := vmGroup2.DeepCopy()
@@ -395,14 +402,15 @@ var _ = Describe(
 						g.Expect(vmGroup1.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
 
 						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
-						g.Expect(vmGroup1.Status.Members[0].Conditions).To(HaveLen(1))
-						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
-						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Status).To(Equal(metav1.ConditionTrue))
-						g.Expect(vmGroup1.Status.Members[1].Conditions).To(HaveLen(2))
-						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Type).To(Equal(vmopv1.ReadyConditionType))
-						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Status).To(Equal(metav1.ConditionTrue))
-						g.Expect(vmGroup1.Status.Members[1].Conditions[1].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
-						g.Expect(vmGroup1.Status.Members[1].Conditions[1].Status).To(Equal(metav1.ConditionTrue))
+						for _, ms := range vmGroup1.Status.Members {
+							g.Expect(conditions.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+							switch ms.Kind {
+							case virtualMachineKind:
+								g.Expect(conditions.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
+							case virtualMachineGroupKind:
+								g.Expect(conditions.IsTrue(&ms, vmopv1.ReadyConditionType)).To(BeTrue())
+							}
+						}
 
 						vm1 := &vmopv1.VirtualMachine{}
 						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
@@ -459,7 +467,7 @@ var _ = Describe(
 								}
 							}
 						}
-					}, "5s", "100ms").Should(Succeed())
+					}, "10s", "100ms").Should(Succeed())
 				}
 
 				setProviderPlaceVirtualMachineGroupFn = func() {

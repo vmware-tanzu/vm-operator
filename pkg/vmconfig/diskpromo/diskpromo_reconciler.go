@@ -186,10 +186,14 @@ func (r reconciler) Reconcile(
 					if tBack.Parent != nil {
 						childDisks = append(childDisks, *d)
 					}
-				case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-					if tBack.Parent != nil {
-						childDisks = append(childDisks, *d)
-					}
+					// TODO(akutz) It does not appear SparseVer2 is supported on
+					//             ESX any longer. Verify this before removing
+					//             this commented block.
+					//
+					// case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+					// 	if tBack.Parent != nil {
+					// 		childDisks = append(childDisks, *d)
+					// 	}
 				}
 			}
 		}
@@ -200,8 +204,30 @@ func (r reconciler) Reconcile(
 		"childDisks", len(childDisks))
 
 	if len(childDisks) == 0 {
-		logger.V(4).Info(
-			"Skipping disk promotion for VM with no disks to promote")
+		if c := pkgcond.Get(
+			vm,
+			vmopv1.VirtualMachineDiskPromotionSynced); c != nil {
+
+			if c.Reason == ReasonRunning {
+
+				// If the VM has the VirtualMachineDiskPromotionSynced
+				// condition with a Reason=Running, and the VM no longer has
+				// any child disks that are candidates for promotion, it means
+				// promotion completed successfully. However, for some reason
+				// the code up above that marks the condition as True did not
+				// execute. This is because the disk promo Task went out of
+				// scope and was not found by the time the VM was reconciled
+				// again.
+				//
+				// Ensure the promotion is marked completed.
+				pkgcond.MarkTrue(
+					vm,
+					vmopv1.VirtualMachineDiskPromotionSynced)
+			}
+		} else {
+			logger.V(4).Info(
+				"Skipping disk promotion for VM with no disks to promote")
+		}
 		return nil
 	}
 
@@ -291,6 +317,13 @@ func (r reconciler) Reconcile(
 
 	logger.Info("Disk promotion task created",
 		"taskRef", task.Reference().Value)
+
+	pkgcond.MarkFalse(
+		vm,
+		vmopv1.VirtualMachineDiskPromotionSynced,
+		ReasonRunning,
+		"%s",
+		"Promotion is running")
 
 	return ErrPromoteDisks
 }

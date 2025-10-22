@@ -7023,7 +7023,7 @@ func unitTestsValidateUpdate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim"), "null", apivalidation.FieldImmutableErrorMsg).Error(),
+						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim"), nil, apivalidation.FieldImmutableErrorMsg).Error(),
 					),
 				},
 			),

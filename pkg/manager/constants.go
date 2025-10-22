@@ -15,7 +15,7 @@ const (
 
 	// DefaultSyncPeriod is the default value for the eponymous
 	// manager option.
-	DefaultSyncPeriod = time.Minute * 10
+	DefaultSyncPeriod = time.Minute * 30
 
 	// DefaultMaxConcurrentReconciles is the default value for the eponymous
 	// manager option.
@@ -65,4 +65,8 @@ const (
 	// DefaultInstanceStoragePVPlacementFailedTTL is the default wait time before declaring PV placement failed
 	// after error annotation is set on PVC.
 	DefaultInstanceStoragePVPlacementFailedTTL = 5 * time.Minute
+
+	// DefaultUsePriorityQueue is the default value for the eponymous manager
+	// option.
+	DefaultUsePriorityQueue = true
 )

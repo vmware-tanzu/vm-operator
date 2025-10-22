@@ -54,7 +54,7 @@ func Default() Config {
 		ProfilerAddr:                 ":8073",
 		RateLimitBurst:               1000,
 		RateLimitQPS:                 500,
-		SyncPeriod:                   10 * time.Minute,
+		SyncPeriod:                   30 * time.Minute,
 		WatchNamespace:               "",
 		WebhookServiceContainerPort:  9878,
 		WebhookServiceName:           defaultPrefix + "webhook-service",

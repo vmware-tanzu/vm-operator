@@ -151,6 +151,23 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Entering createOrUpdateVirtualMachine")
 
+	if vm.APIVersion == "" || vm.Kind == "" {
+		// Updating to controller-runtime v0.22.3 also updates the k8s.io/yaml
+		// dependency, which now returns an error when marshalling objects from
+		// JSON to YAML if the object's GVK is missing. Since client-go does not
+		// set the API Version or Kind when unmarshaling an object from the API
+		// server (see https://github.com/kubernetes/client-go/issues/541), this
+		// seems like a bug/issue with their interop. Since backup does need to
+		// marshal from JSON-to-YAML, ensure the VM's GVK is set correctly early
+		// in case others encounter this as well.
+		if err := kubeutil.SyncGVKToObject(
+			vm,
+			vs.k8sClient.Scheme()); err != nil {
+
+			return nil, fmt.Errorf("failed to sync vm gvk: %w", err)
+		}
+	}
+
 	vmNamespacedName := vm.NamespacedName()
 
 	if _, ok := currentlyReconciling.Load(vmNamespacedName); ok {

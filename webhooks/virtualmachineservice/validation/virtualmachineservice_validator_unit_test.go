@@ -228,7 +228,7 @@ func unitTestsValidateCreate() {
 				},
 			},
 		),
-		Entry("should deny duplicate protocol/port", "spec.ports[1]: Duplicate value: v1alpha5.VirtualMachineServicePort",
+		Entry("should deny duplicate protocol/port", `spec.ports[1]: Duplicate value: {"name":"","protocol":"TCP","port":80,"targetPort":0}`,
 			[]vmopv1.VirtualMachineServicePort{
 				{
 					Name:       "port1",

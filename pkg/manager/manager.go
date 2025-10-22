@@ -14,6 +14,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcfg "sigs.k8s.io/controller-runtime/pkg/config"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -116,6 +117,9 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 					&appsv1.Deployment{},
 				},
 			},
+		},
+		Controller: ctrlcfg.Controller{
+			UsePriorityQueue: opts.UsePriorityQueue,
 		},
 		Metrics: metricsserver.Options{
 			BindAddress: opts.MetricsAddr,

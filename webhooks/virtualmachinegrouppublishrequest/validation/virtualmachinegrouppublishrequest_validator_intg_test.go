@@ -242,7 +242,7 @@ func intgTestsValidateUpdate() {
 				fmt.Sprintf("spec.source: Invalid value: %q: field is immutable", ctx.vmGroupPubReq.Spec.Source)))
 			Expect(updateErr.Error()).To(ContainSubstring(
 				fmt.Sprintf("spec.target: Invalid value: %q: field is immutable", ctx.vmGroupPubReq.Spec.Target)))
-			Expect(updateErr.Error()).To(ContainSubstring("spec.virtualMachines: Invalid value: []string(nil): field is immutable"))
+			Expect(updateErr.Error()).To(ContainSubstring("spec.virtualMachines: Invalid value: null: field is immutable"))
 		})
 	})
 

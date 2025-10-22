@@ -386,11 +386,10 @@ func reconcileStatusStorage(
 	_ ReconcileStatusData) []error { //nolint:unparam
 
 	var errs []error
+
 	updateChangeBlockTracking(vmCtx.VM, vmCtx.MoVM)
 	updateVolumeStatus(vmCtx)
-	if err := updateStorageUsage(vmCtx); err != nil {
-		errs = append(errs, err)
-	}
+	errs = append(errs, updateStorageUsage(vmCtx)...)
 
 	return errs
 }
@@ -1075,7 +1074,7 @@ func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine
 	}
 }
 
-func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) error {
+func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) []error {
 
 	var (
 		other           int64
@@ -1084,11 +1083,11 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) error {
 		vmSnapshotUsed  int64
 		volSnapshotUsed int64
 
-		err error
-
 		moVM        = vmCtx.MoVM
 		vm          = vmCtx.VM
 		snapEnabled = pkgcfg.FromContext(vmCtx).Features.VMSnapshots
+
+		errs []error
 	)
 	// Get the storage consumed by non-disks.
 	if moVM.LayoutEx != nil {
@@ -1135,9 +1134,12 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) error {
 
 	// Get the storage consumed by snapshots.
 	if snapEnabled {
+		var err error
 		vmSnapshotUsed, volSnapshotUsed, err = virtualmachine.GetAllSnapshotSize(vmCtx, moVM)
 		if err != nil {
-			return err
+			errs = append(errs,
+				fmt.Errorf("failed to compute snapshot size of VM: %w", err),
+			)
 		}
 	}
 
@@ -1146,7 +1148,7 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) error {
 		other == 0 &&
 		vmSnapshotUsed == 0 &&
 		volSnapshotUsed == 0 {
-		return nil
+		return errs
 	}
 
 	if vm.Status.Storage == nil {
@@ -1193,7 +1195,7 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) error {
 
 	vm.Status.Storage.Total = kubeutil.BytesToResource(disksReqd + other)
 
-	return nil
+	return errs
 }
 
 func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
@@ -1285,6 +1287,13 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 					ProviderID: di.CryptoKey.ProviderID,
 					KeyID:      di.CryptoKey.KeyID,
 				}
+			}
+			// This is for a rare case when VM is upgraded from v1alpha3 to
+			// v1alpha4+. Since vm.status.volume.requested was introduced in
+			// v1alpha4. So we need to patch it if it's missing from status for
+			// Classic disk. Managed disk is taken care of in volume controller.
+			if !isFCD && vm.Status.Volumes[diskIndex].Requested == nil {
+				vm.Status.Volumes[diskIndex].Requested = kubeutil.BytesToResource(di.CapacityInBytes)
 			}
 		} else if !isFCD {
 			// The disk is a classic, non-FCD that must be added to the list of

@@ -1331,6 +1331,69 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
+			When("brownfield vm was upgraded from v1alpha3 VM, it has a classic volume which doesn't has 'requested'", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-104",
+							DiskUUID: "104",
+							Type:     vmopv1.VolumeTypeClassic, // requested type
+							Attached: true,
+							Limit:    kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Used:     kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+							// No requested.
+						},
+					}
+				})
+				Specify("status.volumes includes this volume and its requested is patched", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(HaveLen(5))
+					Expect(vmCtx.VM.Status.Volumes[4]).To(Equal(
+						vmopv1.VirtualMachineVolumeStatus{
+							Name:      "my-disk-104",
+							DiskUUID:  "104",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes), // Patched.
+							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+						},
+					))
+				})
+			})
+
+			When("brownfield vm was upgraded from v1alpha3 VM, it has a managed volume which doesn't has 'requested'", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-105",
+							DiskUUID: "105",
+							Type:     vmopv1.VolumeTypeManaged,
+							Attached: false,
+							Limit:    kubeutil.BytesToResource(100 * oneGiBInBytes),
+							// No requested.
+						},
+					}
+				})
+				Specify("status.volumes includes this volume but skip patching its used since it should be patched by volume controller", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(HaveLen(6))
+					Expect(vmCtx.VM.Status.Volumes[5]).To(Equal(
+						vmopv1.VirtualMachineVolumeStatus{
+							Name:     "my-disk-105",
+							DiskUUID: "105",
+							Type:     vmopv1.VolumeTypeManaged,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								KeyID:      "my-key-id",
+								ProviderID: "my-provider-id",
+							},
+							Attached: false,
+							Limit:    kubeutil.BytesToResource(100 * oneGiBInBytes),
+							Used:     kubeutil.BytesToResource(500 + (50 * oneGiBInBytes)),
+							// No requested.
+						},
+					))
+				})
+			})
+
 			When("disk has multiple chains", func() {
 				BeforeEach(func() {
 					vmCtx.MoVM.LayoutEx.Disk = []vimtypes.VirtualMachineFileLayoutExDiskLayout{

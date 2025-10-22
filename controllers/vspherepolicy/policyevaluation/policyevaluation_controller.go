@@ -85,12 +85,12 @@ type Reconciler struct {
 	Recorder record.Recorder
 }
 
-// +kubebuilder:rbac:groups=placement.vmware.com,resources=policyevaluations,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=placement.vmware.com,resources=policyevaluations/status,verbs=get
-// +kubebuilder:rbac:groups=placement.vmware.com,resources=computepolicies,verbs=get;list;watch
-// +kubebuilder:rbac:groups=placement.vmware.com,resources=computepolicies/status,verbs=get
-// +kubebuilder:rbac:groups=placement.vmware.com,resources=tagpolicies,verbs=get;list;watch
-// +kubebuilder:rbac:groups=placement.vmware.com,resources=tagpolicies/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=policyevaluations,verbs=create;get;list;watch;update;patch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=policyevaluations/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=computepolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=computepolicies/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies/status,verbs=get
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,

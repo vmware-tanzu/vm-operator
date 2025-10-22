@@ -849,8 +849,7 @@ func isMemberReady(ms vmopv1.VirtualMachineGroupMemberStatus) (bool, string) {
 	case vmKind:
 		expectedConditions = []string{
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-			// TODO(sai): Uncomment this once the placement is implemented.
-			// vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+			vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 		}
 	case vmgKind:
 		expectedConditions = []string{

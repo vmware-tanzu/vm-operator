@@ -13,7 +13,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -276,36 +275,47 @@ func (r *Reconciler) ReconcileSPUForVMSnapshot(
 			"failed to list VirtualMachineSnapshots in namespace %s: %w", namespace, err)
 	}
 
-	var vmNames *sets.Set[string]
+	// Record VMs that are being deleted so we could skip reporting their
+	// snapshot requested/used capacity in SPU.
+	// NOTE: we are not using a Set here because we also need to know whether
+	// the snapshot belongs to the VM which are not sharing the same StorageClass
+	// as the current SPU. It's possible when calculating requested capacity since
+	// VM could has different SC while its PVCs might have same SC.
+	var vmDeletionState *map[string]bool
 	for _, vmSnapshot := range vmSnapshotList.Items {
-		// Update the usage only when the CSI has marked the VMSnapshot with volume sync completed.
+
+		if !vmSnapshot.ObjectMeta.DeletionTimestamp.IsZero() {
+			// If the snapshot is being deleted, skip including its
+			// requested/used capacity.
+			continue
+		}
+
+		// Initialize vmDeletionState only once.
+		if vmDeletionState == nil {
+			tmp := make(map[string]bool, len(vms))
+			for _, vm := range vms {
+				tmp[vm.Name] = !vm.ObjectMeta.DeletionTimestamp.IsZero()
+			}
+			vmDeletionState = &tmp
+		}
+
+		// Update the usage only when the CSI has marked the VMSnapshot with
+		// volume sync completed.
 		if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
 			constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
 
-			if vmNames == nil {
-				s := make(sets.Set[string], len(vms))
-				for i := range vms {
-					s.Insert(vms[i].Name)
-				}
-				vmNames = &s
-			}
-
 			// Report the snapshot's used capacity.
-			if err := r.reportUsedForSnapshot(
-				ctx, &vmSnapshot, &totalUsed, *vmNames); err != nil {
-				return fmt.Errorf(
-					"failed to report used capacity for %q: %w",
-					vmSnapshot.NamespacedName(), err)
-			}
+			r.reportUsedForSnapshot(
+				ctx, &vmSnapshot, &totalUsed, *vmDeletionState)
 		} else {
-			// Report the snapshot's reserved capacity at worst case.
-			if err := r.reportReservedForSnapshot(
-				ctx, &vmSnapshot, &totalReserved, spu.Spec.StorageClassName); err != nil {
 
-				return fmt.Errorf(
-					"failed to report reserved capacity for %q: %w",
-					vmSnapshot.NamespacedName(), err)
-			}
+			// Report the snapshot's reserved capacity in the worst-case scenario.
+			r.reportReservedForSnapshot(
+				ctx,
+				&vmSnapshot,
+				&totalReserved,
+				spu.Spec.StorageClassName,
+				*vmDeletionState)
 		}
 	}
 
@@ -404,21 +414,41 @@ func (r *Reconciler) reportReservedForSnapshot(
 	ctx context.Context,
 	vmSnapshot *vmopv1.VirtualMachineSnapshot,
 	total *resource.Quantity,
-	storageClass string) error {
+	storageClass string,
+	vmDeletionState map[string]bool) {
 
 	if vmSnapshot.Spec.VMName == "" {
-		return fmt.Errorf("vmName is not set")
+		// This shouldn't happen though since our validation webhhook guards this.
+		// Check anyway.
+		return
+	}
+
+	// 'ok' could be false, which means VM itself has different StorageClass
+	// than the SPU, but its PVCs might share the same SC as this SPU.
+	// So we still want to include this snapshot's requested capacity in the SPU.
+	//
+	// But we are not doing a Get() call here to check whether the owner VM (which
+	// is not part of the vmDeletionState map) has been deleted or not, because:
+	// 1. This is a rare case, this means after Snapshot is created, before CSI
+	//    has done the volume synce, the owner VM is deleted.
+	// 2. VMSnapshot controller will enqueue another SPU event if the Snapshot
+	//    is GCed after VM is deleted. And the SPU's requested capacity will be
+	//    corrected in later reconcile immediately.
+	if beingDeleted, ok := vmDeletionState[vmSnapshot.Spec.VMName]; ok && beingDeleted {
+		// The owner VM is being deleted, skip calculating
+		// capacity for this snapshot.
+		return
 	}
 
 	logger := pkglog.FromContextOrDefault(ctx)
-
 	// It's possible that the snapshot's requested capacity is not updated yet,
-	// so we skip the calculation for now
+	// so we skip calculating.
 	if vmSnapshot.Status.Storage == nil || vmSnapshot.Status.Storage.Requested == nil {
 		logger.V(5).Info("snapshot has no requested capacity reported by controller yet, "+
 			"skip calculating reserved capacity for it", "snapshot", vmSnapshot.Name)
-		return nil
+		return
 	}
+
 	// Loop through all the requested capacities and add the requested capacity
 	// with the same storage class as the SPU's storage class.
 	for _, requested := range vmSnapshot.Status.Storage.Requested {
@@ -429,8 +459,6 @@ func (r *Reconciler) reportReservedForSnapshot(
 			break
 		}
 	}
-
-	return nil
 }
 
 // reportUsedForSnapshot reports the used capacity for a snapshot.
@@ -439,16 +467,30 @@ func (r *Reconciler) reportUsedForSnapshot(
 	ctx context.Context,
 	vmSnapshot *vmopv1.VirtualMachineSnapshot,
 	total *resource.Quantity,
-	vmNames sets.Set[string]) error {
+	vmDeletionState map[string]bool) {
 
 	if vmSnapshot.Spec.VMName == "" {
-		return fmt.Errorf("vmName is not set")
+		// This shouldn't happen though since our validation webhhook guards this.
+		// Check anyway.
+		return
 	}
 
-	if !vmNames.Has(vmSnapshot.Spec.VMName) {
-		// The VMs listed are filtered by their StorageClass, so this means this snapshot is not
-		// for this SPU's StorageClass.
-		return nil
+	beingDeleted, ok := vmDeletionState[vmSnapshot.Spec.VMName]
+	if !ok {
+		// The VMs listed are filtered by the SPU's StorageClass, if the
+		// snapshot's owner VM is not in this list, that means its StorageClass
+		// doesn't match SPU's StorageClass. We skip reporting its used capacity
+		// to this SPU.
+		// We don't care about VM that has different StorageClass even though
+		// they might have PVC that has same StorageClass. Since we don't include
+		// PVC's usage in VMSnapshot usage.
+		return
+	}
+
+	if beingDeleted {
+		// The owner VM is being deleted, that means this snapshot will be cleaned
+		// up soon. Skip reporting the used capacity of this Snapshot.
+		return
 	}
 
 	// There might be chance that VMSnapshot's marked as CSIVolumeSync completed but VMSnapshot controller
@@ -457,10 +499,8 @@ func (r *Reconciler) reportUsedForSnapshot(
 		logger := pkglog.FromContextOrDefault(ctx)
 		logger.V(5).Info("snapshot has no used capacity reported by controller yet, "+
 			"skip calculating used capacity for it", "snapshot", vmSnapshot.Name)
-		return nil
+		return
 	}
 
 	total.Add(*vmSnapshot.Status.Storage.Used)
-
-	return nil
 }

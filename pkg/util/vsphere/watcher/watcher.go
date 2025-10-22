@@ -27,7 +27,34 @@ func DefaultWatchedPropertyPaths() []string {
 		"config.extraConfig",
 		"config.hardware.device",
 		"config.keyId",
-		"guest.ipStack",
+
+		// The following property is omitted because it would cause too much
+		// noise due to VKS VMs. These VMs see changes to their IP routes
+		// constantly due to new pods spinning up, resulting in the creation of
+		// new Docker bridge interfaces and routes.
+		//
+		//     "guest.ipStack",
+		//
+		// It is also not possible to get indexed property paths for the
+		// following:
+		//
+		//     "guest.ipStack[0].dnsConfig",
+		//     "guest.ipStack[0].ipRoute[0]",
+		//     "guest.ipStack[0].ipRoute[1]",
+		//     "guest.ipStack[1].dnsConfig",
+		//     "guest.ipStack[1].ipRoute[0]",
+		//     "guest.ipStack[1].ipRoute[1]",
+		//
+		// Therefore, to obviate the relentless signal created by the IP routes
+		// from VKS nodes, the async watcher will not be able to provide signal
+		// when something about a VM's "guest.ipStack" property path changes.
+		//
+		// This is largely okay since the "guest.net" and "summary.guest"
+		// property paths already cover most of the signal we would want anyway.
+		//
+		// It is just a shame that we cannot monitor the first and second routes
+		// for a VM's guest.
+
 		"guest.net",
 		"guestHeartbeatStatus",
 		"rootSnapshot",

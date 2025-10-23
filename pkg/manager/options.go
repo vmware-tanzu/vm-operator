@@ -18,7 +18,6 @@ import (
 	// +kubebuilder:scaffold:imports
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // AddToManagerFunc is a function that can be optionally specified with
@@ -140,7 +139,7 @@ type Options struct {
 	// queue feature is enabled.
 	//
 	// Defaults to true.
-	UsePriorityQueue *bool
+	UsePriorityQueue bool
 
 	Logger     *logr.Logger
 	KubeConfig *rest.Config
@@ -224,9 +223,4 @@ func (o *Options) defaults() {
 	if o.AddToManager == nil {
 		o.AddToManager = AddToManagerNoopFn
 	}
-
-	if o.UsePriorityQueue == nil {
-		o.UsePriorityQueue = ptr.To(DefaultUsePriorityQueue)
-	}
-
 }

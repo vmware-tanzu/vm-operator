@@ -292,7 +292,7 @@ func initFlags() {
 		"Enable webhook client verification on the webhook server.",
 	)
 	flag.BoolVar(
-		managerOpts.UsePriorityQueue,
+		&managerOpts.UsePriorityQueue,
 		"use-priority-queue",
 		true,
 		"Enable the priority queue feature.",

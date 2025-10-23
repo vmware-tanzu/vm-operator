@@ -119,7 +119,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 			},
 		},
 		Controller: ctrlcfg.Controller{
-			UsePriorityQueue: opts.UsePriorityQueue,
+			UsePriorityQueue: &opts.UsePriorityQueue,
 		},
 		Metrics: metricsserver.Options{
 			BindAddress: opts.MetricsAddr,

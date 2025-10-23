@@ -162,6 +162,11 @@ type VirtualControllerStatus struct {
 	// Type describes the observed type of the controller.
 	Type VirtualControllerType `json:"type"`
 
+	// +required
+
+	// DeviceKey describes the observed device key of the controller.
+	DeviceKey int32 `json:"deviceKey"`
+
 	// +optional
 	// +listType=map
 	// +listMapKey=name

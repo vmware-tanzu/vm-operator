@@ -236,4 +236,8 @@ const (
 
 	// VCFAIDAnnotationKey is the annotation key for the VCFA ID for GOSC customization.
 	VCFAIDAnnotationKey = "vmoperator.vmware.com/vcfa-id"
+
+	// CreatedByLabel is the label key that indicates an object was
+	// created on behalf of a VM Operator VM. The value is the name of a VM.
+	CreatedByLabel = "vmoperator.vmware.com/created-by"
 )

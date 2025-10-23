@@ -398,13 +398,75 @@ func CnsRegisterVolumeToVirtualMachineMapper(
 	ctx context.Context,
 	k8sClient client.Client) handler.MapFunc {
 
-	// TODO(AllDisksArePVCs)
-	//
-	// Implement this function. Please see the function
-	// reconcileUnmanagedToManagedDisks from vmprovider_vm.go for more
-	// information on how to implement this function.
+	if ctx == nil {
+		panic("context is nil")
+	}
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
 
-	return nil
+	// For a given CnsRegisterVolume, return reconcile requests for the VM
+	// that owns it.
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		if ctx == nil {
+			panic("context is nil")
+		}
+		if o == nil {
+			panic("object is nil")
+		}
+
+		logger := pkglog.FromContextOrDefault(ctx).
+			WithValues("name", o.GetName(), "namespace", o.GetNamespace())
+		logger.V(4).Info("Reconciling VMs due to CnsRegisterVolume event")
+
+		var requests []reconcile.Request
+
+		// Method 1: Check owner references for direct VM ownership
+		for _, ownerRef := range o.GetOwnerReferences() {
+			if ownerRef.Kind == "VirtualMachine" && ownerRef.APIVersion == vmopv1.GroupVersion.String() {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Namespace: o.GetNamespace(),
+						Name:      ownerRef.Name,
+					},
+				})
+				logger.V(4).Info("Found VM owner reference", "vm", ownerRef.Name)
+			}
+		}
+
+		// Method 2: Check labels for VM association (vmoperator.vmware.com/created-by)
+		if vmName, ok := o.GetLabels()["vmoperator.vmware.com/created-by"]; ok {
+			// Verify this VM exists before adding a reconcile request
+			vm := &vmopv1.VirtualMachine{}
+			vmKey := client.ObjectKey{Namespace: o.GetNamespace(), Name: vmName}
+			if err := k8sClient.Get(ctx, vmKey, vm); err == nil {
+				// Add request only if we haven't already added it via owner reference
+				found := false
+				for _, req := range requests {
+					if req.NamespacedName.Name == vmName && req.NamespacedName.Namespace == o.GetNamespace() {
+						found = true
+						break
+					}
+				}
+				if !found {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: vmKey,
+					})
+					logger.V(4).Info("Found VM via label", "vm", vmName)
+				}
+			} else if !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to verify VM existence", "vm", vmName)
+			}
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling VMs due to CnsRegisterVolume watch",
+				"requests", requests)
+		}
+
+		return requests
+	}
 }
 
 // KubernetesNodeLabelKey is the name of the label key used to identify a

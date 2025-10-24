@@ -126,6 +126,10 @@ func init() {
 	MutateOnUpdateFuncs.Store(
 		"update.vmoperator.vmware.com/set-default-cdrom-image-kind",
 		(MutateOnUpdateFn)(SetDefaultCdromImgKindOnUpdate))
+
+	MutateOnUpdateFuncs.Store(
+		"update.vmoperator.vmware.com/mutate-cdrom-controller",
+		(MutateOnUpdateFn)(MutateCdromControllerOnUpdate))
 }
 
 // NewMutator returns the package's Mutator.

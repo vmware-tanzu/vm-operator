@@ -5684,14 +5684,27 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("disallow changing CD-ROM name when VM is powered on",
+			Entry("disallow adding CD-ROM when VM is powered on",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Hardware.Cdrom[0].Name = "new3"
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom[0].name: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].name: Forbidden: adding new CD-ROMs is not allowed when VM is powered on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow removing CD-ROMs when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},

@@ -19,7 +19,10 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -45,6 +48,7 @@ func UpdateCdromDeviceChanges(
 	var (
 		deviceChanges                  = make([]vimtypes.BaseVirtualDeviceConfigSpec, 0)
 		curCdromBackingFileNameToSpec  = make(map[string]vmopv1.VirtualMachineCdromSpec)
+		newCdromBackingFileNameToSpec  = make(map[string]vmopv1.VirtualMachineCdromSpec)
 		expectedBackingFileNameToCdrom = make(map[string]vimtypes.BaseVirtualDevice, len(hw.Cdrom))
 		libManager                     = library.NewManager(restClient)
 	)
@@ -53,7 +57,7 @@ func UpdateCdromDeviceChanges(
 		imageRef := specCdrom.Image
 		// Sync the content library file if needed to connect the CD-ROM device.
 		syncFile := ptr.Deref(specCdrom.Connected)
-		bFileName, err := getBackingFileNameByImageRef(vmCtx, libManager, k8sClient, syncFile, imageRef)
+		bFileName, err := GetBackingFileNameByImageRef(vmCtx, k8sClient, imageRef, vmCtx.VM.Namespace, syncFile, libManager)
 		if err != nil {
 			return nil, fmt.Errorf("error getting backing file name by image ref %s: %w", imageRef, err)
 		}
@@ -84,6 +88,7 @@ func UpdateCdromDeviceChanges(
 				Device:    cdrom,
 				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			})
+			newCdromBackingFileNameToSpec[bFileName] = specCdrom
 		}
 
 		expectedBackingFileNameToCdrom[bFileName] = cdrom
@@ -113,13 +118,20 @@ func UpdateCdromDeviceChanges(
 		})
 	}
 
-	// Ensure all CD-ROM devices are assigned to controllers with proper slots.
-	// This may result new controllers to be added if none is available.
-	newControllers, err := ensureAllCdromsHaveControllers(expectedBackingFileNameToCdrom, newCurDevices)
-	if err != nil {
-		return nil, err
+	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		if err := ensureAllCdromsHaveControllersAssigned(
+			expectedBackingFileNameToCdrom, newCurDevices, newCdromBackingFileNameToSpec); err != nil {
+			return nil, err
+		}
+	} else {
+		// Ensure all CD-ROM devices are assigned to controllers with proper slots.
+		// This may result new controllers to be added if none is available.
+		newControllers, err := ensureAllCdromsHaveControllers(expectedBackingFileNameToCdrom, newCurDevices)
+		if err != nil {
+			return nil, err
+		}
+		deviceChanges = append(deviceChanges, newControllers...)
 	}
-	deviceChanges = append(deviceChanges, newControllers...)
 
 	// Check and update existing CD-ROM devices' connection state if needed.
 	// Add them to the device changes with "Edit" operation.
@@ -159,7 +171,7 @@ func UpdateConfigSpecCdromDeviceConnection(
 		imageRef := specCdrom.Image
 		// Sync the content library file if needed to connect the CD-ROM device.
 		syncFile := ptr.Deref(specCdrom.Connected)
-		bFileName, err := getBackingFileNameByImageRef(vmCtx, libManager, k8sClient, syncFile, imageRef)
+		bFileName, err := GetBackingFileNameByImageRef(vmCtx, k8sClient, imageRef, vmCtx.VM.Namespace, syncFile, libManager)
 		if err != nil {
 			return fmt.Errorf("error getting backing file name by image ref %s: %w", imageRef, err)
 		}
@@ -189,30 +201,32 @@ func UpdateConfigSpecCdromDeviceConnection(
 	return nil
 }
 
-// getBackingFileNameByImageRef returns the ISO type content library file name
+// GetBackingFileNameByImageRef returns the ISO type content library file name
 // based on the given VirtualMachineImageRef. It also syncs the content library
 // if needed to ensure the file is available for CD-ROM connection.
-func getBackingFileNameByImageRef(
-	vmCtx pkgctx.VirtualMachineContext,
-	libManager *library.Manager,
+func GetBackingFileNameByImageRef(
+	ctx context.Context,
 	client ctrlclient.Client,
+	imageRef vmopv1.VirtualMachineImageRef,
+	ns string,
 	syncFile bool,
-	imageRef vmopv1.VirtualMachineImageRef) (string, error) {
+	libManager *library.Manager) (string, error) {
 
 	var (
 		libItemUUID string
 		itemStatus  imgregv1a1.ContentLibraryItemStatus
 		err         error
+		logger      = pkglog.FromContextOrDefault(ctx)
 	)
 
 	switch imageRef.Kind {
 	case vmiKind:
-		libItemUUID, itemStatus, err = processImage(vmCtx, client, imageRef.Name, vmCtx.VM.Namespace)
+		libItemUUID, itemStatus, err = processImage(ctx, client, imageRef.Name, ns)
 		if err != nil {
 			return "", err
 		}
 	case cvmiKind:
-		libItemUUID, itemStatus, err = processImage(vmCtx, client, imageRef.Name, "")
+		libItemUUID, itemStatus, err = processImage(ctx, client, imageRef.Name, "")
 		if err != nil {
 			return "", err
 		}
@@ -227,12 +241,15 @@ func getBackingFileNameByImageRef(
 	// Subscribed content library item file may not always be stored in VC.
 	// Sync the item to ensure the file is available for CD-ROM connection.
 	if syncFile && (!itemStatus.Cached || itemStatus.SizeInBytes.IsZero()) {
-		vmCtx.Logger.V(2).Info("Syncing content library item", "libItemUUID", libItemUUID)
-		libItem, err := libManager.GetLibraryItem(vmCtx, libItemUUID)
+		if libManager == nil {
+			return "", fmt.Errorf("error syncing due to nil library manager")
+		}
+		logger.V(2).Info("Syncing content library item", "libItemUUID", libItemUUID)
+		libItem, err := libManager.GetLibraryItem(ctx, libItemUUID)
 		if err != nil {
 			return "", fmt.Errorf("error getting library item %s to sync: %w", libItemUUID, err)
 		}
-		if err := libManager.SyncLibraryItem(vmCtx, libItem, true); err != nil {
+		if err := libManager.SyncLibraryItem(ctx, libItem, true); err != nil {
 			return "", fmt.Errorf("error syncing library item %s: %w", libItemUUID, err)
 		}
 	}
@@ -518,4 +535,101 @@ func updateCurCdromsConnectionState(
 	}
 
 	return deviceChanges
+}
+
+// buildControllerMaps creates maps for fast controller lookup and unit number tracking.
+// It returns two maps:
+// - A map of ControllerID to BaseVirtualController for controller lookup by type and bus number.
+// - A map of ControllerID to used unit numbers for conflict detection.
+func buildControllerMaps(curDevices object.VirtualDeviceList) (
+	map[pkgutil.ControllerID]vimtypes.BaseVirtualController,
+	map[pkgutil.ControllerID]map[int32]struct{}) {
+
+	ctrlMap := make(map[pkgutil.ControllerID]vimtypes.BaseVirtualController)
+	ctrlKeyMap := make(map[int32]pkgutil.ControllerID)
+	ctrlUsedUnitNumMap := make(map[pkgutil.ControllerID]map[int32]struct{})
+
+	for _, device := range curDevices {
+		switch controller := device.(type) {
+		case *vimtypes.VirtualIDEController:
+			key := pkgutil.ControllerID{
+				ControllerType: vmopv1.VirtualControllerTypeIDE,
+				BusNumber:      controller.BusNumber,
+			}
+			ctrlMap[key] = controller.GetVirtualController()
+			ctrlKeyMap[controller.Key] = key
+			ctrlUsedUnitNumMap[key] = make(map[int32]struct{})
+
+		case vimtypes.BaseVirtualSATAController:
+			sataCtrl := controller.GetVirtualSATAController()
+			key := pkgutil.ControllerID{
+				ControllerType: vmopv1.VirtualControllerTypeSATA,
+				BusNumber:      sataCtrl.BusNumber,
+			}
+			ctrlMap[key] = sataCtrl.GetVirtualController()
+			ctrlKeyMap[sataCtrl.Key] = key
+			ctrlUsedUnitNumMap[key] = make(map[int32]struct{})
+		}
+	}
+
+	for _, device := range curDevices {
+		ctrlKey := device.GetVirtualDevice().ControllerKey
+		unitNum := device.GetVirtualDevice().UnitNumber
+
+		if ctrlKey == 0 || unitNum == nil {
+			continue
+		}
+
+		if ctrlID, ok := ctrlKeyMap[ctrlKey]; ok {
+			ctrlUsedUnitNumMap[ctrlID][*unitNum] = struct{}{}
+		}
+	}
+
+	return ctrlMap, ctrlUsedUnitNumMap
+}
+
+// ensureAllCdromsHaveControllersAssigned ensures all CD-ROM devices are
+// assigned to controllers based on their predefined controller information when
+// VMSharedDisks capability is enabled. Each CD-ROM spec must have controllerType,
+// controllerBusNumber, and unitNumber defined. This is guaranteed by the schema
+// upgrade to backfill the old CD-ROM specs and the CD-ROM mutating webhook.
+func ensureAllCdromsHaveControllersAssigned(
+	expectedCdromDevices map[string]vimtypes.BaseVirtualDevice,
+	curDevices object.VirtualDeviceList,
+	newCdromBackingFileNameToSpec map[string]vmopv1.VirtualMachineCdromSpec) error {
+
+	ctrlMap, ctrlUsedUnitNumMap := buildControllerMaps(curDevices)
+
+	for bFileName, cdrom := range expectedCdromDevices {
+		if cdrom.GetVirtualDevice().ControllerKey != 0 {
+			// CD-ROM is already assigned to a controller.
+			continue
+		}
+
+		spec := newCdromBackingFileNameToSpec[bFileName]
+
+		if spec.ControllerType == "" || spec.ControllerBusNumber == nil || spec.UnitNumber == nil {
+			return fmt.Errorf("CD-ROM spec does not have all the controller information: %+v", spec)
+		}
+
+		ctrlKey := pkgutil.ControllerID{
+			ControllerType: spec.ControllerType,
+			BusNumber:      *spec.ControllerBusNumber,
+		}
+		ctrl, exists := ctrlMap[ctrlKey]
+		if !exists {
+			return fmt.Errorf("controller not found: type=%s, busNumber=%d",
+				spec.ControllerType, *spec.ControllerBusNumber)
+		}
+		if _, used := ctrlUsedUnitNumMap[ctrlKey][*spec.UnitNumber]; used {
+			return fmt.Errorf("found a CD-ROM spec with a used unitNumber %d", *spec.UnitNumber)
+		}
+
+		curDevices.AssignController(cdrom, ctrl)
+		cdrom.GetVirtualDevice().UnitNumber = spec.UnitNumber
+		curDevices = append(curDevices, cdrom)
+		ctrlUsedUnitNumMap[ctrlKey][*spec.UnitNumber] = struct{}{}
+	}
+
+	return nil
 }

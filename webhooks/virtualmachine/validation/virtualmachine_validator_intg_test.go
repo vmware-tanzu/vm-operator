@@ -38,6 +38,7 @@ func intgTests() {
 			testlabels.Webhook,
 		),
 		intgTestsValidateUpdate,
+		intgTestsValidateCdromController,
 	)
 	Describe(
 		"Delete",
@@ -317,7 +318,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				expectedReason := field.Forbidden(field.NewPath("spec", "hardware", "cdrom[0]", "name"),
-					"updates to this field is not allowed when VM power is on").Error()
+					"adding new CD-ROMs is not allowed when VM is powered on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})

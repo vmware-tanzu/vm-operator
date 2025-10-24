@@ -79,6 +79,8 @@ var _ = Describe("Start", func() {
 	}
 
 	BeforeEach(func() {
+		watcher.Cache.Clear()
+
 		ctx = pkgcfg.NewContextWithDefaultConfig()
 		ctx, cancel = context.WithCancel(ctx)
 		ctx = logr.NewContext(ctx, testutil.GinkgoLogr(5))

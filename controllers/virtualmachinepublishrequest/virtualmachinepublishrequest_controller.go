@@ -45,8 +45,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 const (
@@ -500,7 +500,7 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 		return fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
 
-	if !pkgutil.IsNil(item) {
+	if !pkgnil.IsNil(item) {
 		objKey := client.ObjectKey{Name: vmPubReq.Spec.Target.Location.Name, Namespace: vmPubReq.Namespace}
 		ctx.Logger.Info("target item already exists in the content library",
 			"library", objKey, "itemName", targetItemName)
@@ -992,7 +992,7 @@ func (r *Reconciler) findCorrelatedItemIDByName(ctx *pkgctx.VirtualMachinePublis
 		return "", fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
 
-	if !pkgutil.IsNil(item) {
+	if !pkgnil.IsNil(item) {
 		// Item already exists in the content library, check if it is created from
 		// this VirtualMachinePublishRequest from its description.
 		// If VC forgets the task, or the task hadn't proceeded far enough to be submitted to VC

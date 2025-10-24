@@ -1,8 +1,8 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package util_test
+package nil_test
 
 import (
 	"bytes"
@@ -11,14 +11,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 var _ = Describe("IsNil", func() {
 
 	DescribeTable("value type is not concrete",
 		func(f func() any, expected bool) {
-			Ω(util.IsNil(f())).Should(Equal(expected))
+			Ω(pkgnil.IsNil(f())).Should(Equal(expected))
 		},
 		Entry("nil", func() any { return nil }, true),
 		Entry("a string", func() any { return "hello" }, false),
@@ -34,13 +34,13 @@ var _ = Describe("IsNil", func() {
 			When("nil", func() {
 				It("should return false", func() {
 					var v *bytes.Buffer = nil
-					Ω(util.IsNil(v)).Should(BeTrue())
+					Ω(pkgnil.IsNil(v)).Should(BeTrue())
 				})
 			})
 			When("not-nil", func() {
 				It("should return false", func() {
 					v := &bytes.Buffer{}
-					Ω(util.IsNil(v)).Should(BeFalse())
+					Ω(pkgnil.IsNil(v)).Should(BeFalse())
 				})
 			})
 		})
@@ -48,13 +48,13 @@ var _ = Describe("IsNil", func() {
 			When("nil", func() {
 				It("should return false", func() {
 					var v io.Reader = nil
-					Ω(util.IsNil(v)).Should(BeTrue())
+					Ω(pkgnil.IsNil(v)).Should(BeTrue())
 				})
 			})
 			When("not-nil", func() {
 				It("should return false", func() {
 					var v io.Reader = &bytes.Buffer{}
-					Ω(util.IsNil(v)).Should(BeFalse())
+					Ω(pkgnil.IsNil(v)).Should(BeFalse())
 				})
 			})
 		})

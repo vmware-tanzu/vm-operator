@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	zonectrl "github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -347,14 +346,9 @@ var _ = Describe(
 				Specify("a reconcile request should be received", func() {
 					chanSource := cource.FromContext(ctx, "VirtualMachine")
 					var e event.GenericEvent
-					Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
-						Object: &vmopv1.VirtualMachine{
-							ObjectMeta: metav1.ObjectMeta{
-								Namespace: vcSimCtx.NSInfo.Namespace,
-								Name:      vmName,
-							},
-						},
-					})))
+					Eventually(chanSource).Should(Receive(&e))
+					Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+					Expect(e.Object.GetName()).To(Equal(vmName))
 				})
 
 				When("a Zone that is being deleted", func() {
@@ -375,14 +369,9 @@ var _ = Describe(
 							By("a reconcile request should be received", func() {
 								chanSource := cource.FromContext(ctx, "VirtualMachine")
 								var e event.GenericEvent
-								Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
-									Object: &vmopv1.VirtualMachine{
-										ObjectMeta: metav1.ObjectMeta{
-											Namespace: vcSimCtx.NSInfo.Namespace,
-											Name:      vmName,
-										},
-									},
-								})))
+								Eventually(chanSource).Should(Receive(&e))
+								Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+								Expect(e.Object.GetName()).To(Equal(vmName))
 							})
 
 							By("add a custom finalizer and mark the zone for deletion", func() {
@@ -429,14 +418,9 @@ var _ = Describe(
 							By("a reconcile request should still be received", func() {
 								chanSource := cource.FromContext(ctx, "VirtualMachine")
 								var e event.GenericEvent
-								Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
-									Object: &vmopv1.VirtualMachine{
-										ObjectMeta: metav1.ObjectMeta{
-											Namespace: vcSimCtx.NSInfo.Namespace,
-											Name:      vmName,
-										},
-									},
-								})))
+								Eventually(chanSource).Should(Receive(&e))
+								Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+								Expect(e.Object.GetName()).To(Equal(vmName))
 							})
 						})
 					})
@@ -469,14 +453,9 @@ var _ = Describe(
 							By("first reconcile event should be received", func() {
 								chanSource := cource.FromContext(ctx, "VirtualMachine")
 								var e event.GenericEvent
-								Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
-									Object: &vmopv1.VirtualMachine{
-										ObjectMeta: metav1.ObjectMeta{
-											Namespace: vcSimCtx.NSInfo.Namespace,
-											Name:      vmName,
-										},
-									},
-								})))
+								Eventually(chanSource).Should(Receive(&e))
+								Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+								Expect(e.Object.GetName()).To(Equal(vmName))
 							})
 
 							By("add a custom finalizer to the VM, remove the controller finalizer and mark the zone for deletion", func() {
@@ -554,14 +533,9 @@ var _ = Describe(
 					Specify("a reconcile request should still be received", func() {
 						chanSource := cource.FromContext(ctx, "VirtualMachine")
 						var e event.GenericEvent
-						Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
-							Object: &vmopv1.VirtualMachine{
-								ObjectMeta: metav1.ObjectMeta{
-									Namespace: vcSimCtx.NSInfo.Namespace,
-									Name:      vmName,
-								},
-							},
-						})))
+						Eventually(chanSource).Should(Receive(&e))
+						Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+						Expect(e.Object.GetName()).To(Equal(vmName))
 
 						By("bogus zone should not have finalizer applied", func() {
 							zone := topologyv1.Zone{
@@ -581,14 +555,9 @@ var _ = Describe(
 					Specify("a second reconcile request should be received", func() {
 						chanSource := cource.FromContext(ctx, "VirtualMachine")
 						var e1 event.GenericEvent
-						Eventually(chanSource).Should(Receive(&e1, Equal(event.GenericEvent{
-							Object: &vmopv1.VirtualMachine{
-								ObjectMeta: metav1.ObjectMeta{
-									Namespace: vcSimCtx.NSInfo.Namespace,
-									Name:      vmName,
-								},
-							},
-						})))
+						Eventually(chanSource).Should(Receive(&e1))
+						Expect(e1.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+						Expect(e1.Object.GetName()).To(Equal(vmName))
 
 						t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
 							ExtraConfig: []vimtypes.BaseOptionValue{
@@ -603,28 +572,18 @@ var _ = Describe(
 						Expect(t.Wait(ctx)).To(Succeed())
 
 						var e2 event.GenericEvent
-						Eventually(chanSource).Should(Receive(&e2, Equal(event.GenericEvent{
-							Object: &vmopv1.VirtualMachine{
-								ObjectMeta: metav1.ObjectMeta{
-									Namespace: vcSimCtx.NSInfo.Namespace,
-									Name:      vmName,
-								},
-							},
-						})))
+						Eventually(chanSource).Should(Receive(&e2))
+						Expect(e2.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+						Expect(e2.Object.GetName()).To(Equal(vmName))
 					})
 
 					When("the namespacedName has an invalid namespace", func() {
 						Specify("a second reconcile request should not be received", func() {
 							chanSource := cource.FromContext(ctx, "VirtualMachine")
-							var e1 event.GenericEvent
-							Eventually(chanSource).Should(Receive(&e1, Equal(event.GenericEvent{
-								Object: &vmopv1.VirtualMachine{
-									ObjectMeta: metav1.ObjectMeta{
-										Namespace: vcSimCtx.NSInfo.Namespace,
-										Name:      vmName,
-									},
-								},
-							})))
+							var e event.GenericEvent
+							Eventually(chanSource).Should(Receive(&e))
+							Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+							Expect(e.Object.GetName()).To(Equal(vmName))
 
 							t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
 								ExtraConfig: []vimtypes.BaseOptionValue{

@@ -14,12 +14,10 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -187,15 +185,11 @@ var _ = Describe(
 					})
 					Specify("a reconcile request should be enqueued for vm", func() {
 						chanSource := cource.FromContext(ctx, "VirtualMachine")
+
 						var e event.GenericEvent
-						Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
-							Object: &vmopv1.VirtualMachine{
-								ObjectMeta: metav1.ObjectMeta{
-									Namespace: vcSimCtx.NSInfo.Namespace,
-									Name:      vmName,
-								},
-							},
-						})))
+						Eventually(chanSource).Should(Receive(&e))
+						Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+						Expect(e.Object.GetName()).To(Equal(vmName))
 					})
 
 					When("a single zone with the vm's folder is removed", func() {
@@ -241,14 +235,9 @@ var _ = Describe(
 							Expect(t.Wait(ctx)).To(Succeed())
 
 							var e event.GenericEvent
-							Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
-								Object: &vmopv1.VirtualMachine{
-									ObjectMeta: metav1.ObjectMeta{
-										Namespace: vcSimCtx.NSInfo.Namespace,
-										Name:      vmName,
-									},
-								},
-							})))
+							Eventually(chanSource).Should(Receive(&e))
+							Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+							Expect(e.Object.GetName()).To(Equal(vmName))
 						})
 					})
 

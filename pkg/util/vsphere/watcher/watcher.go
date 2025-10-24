@@ -6,18 +6,24 @@ package watcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/methods"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // DefaultWatchedPropertyPaths returns the default set of property paths to
@@ -28,12 +34,13 @@ func DefaultWatchedPropertyPaths() []string {
 		"config.hardware.device",
 		"config.keyId",
 
-		// The following property is omitted because it would cause too much
+		// The following properties are omitted because it would cause too much
 		// noise due to VKS VMs. These VMs see changes to their IP routes
 		// constantly due to new pods spinning up, resulting in the creation of
 		// new Docker bridge interfaces and routes.
 		//
 		//     "guest.ipStack",
+		//     "guest.net",
 		//
 		// It is also not possible to get indexed property paths for the
 		// following:
@@ -49,13 +56,9 @@ func DefaultWatchedPropertyPaths() []string {
 		// from VKS nodes, the async watcher will not be able to provide signal
 		// when something about a VM's "guest.ipStack" property path changes.
 		//
-		// This is largely okay since the "guest.net" and "summary.guest"
-		// property paths already cover most of the signal we would want anyway.
-		//
 		// It is just a shame that we cannot monitor the first and second routes
 		// for a VM's guest.
 
-		"guest.net",
 		"guestHeartbeatStatus",
 		"rootSnapshot",
 		"snapshot",
@@ -65,7 +68,9 @@ func DefaultWatchedPropertyPaths() []string {
 		"summary.runtime.connectionState",
 		"summary.runtime.host",
 		"summary.runtime.powerState",
-		"summary.storage.timestamp",
+
+		// This property changes whether or not the storage has been updated.
+		// "summary.storage.timestamp",
 	}
 }
 
@@ -82,13 +87,77 @@ var defaultIgnoredExtraConfigKeys = []string{
 	backupapi.PVCDiskDataExtraConfigKey,
 	backupapi.VMResourceYAMLExtraConfigKey,
 	"govcsim",
+	extraConfigNamespacedNameKey,
+
+	"nvram",
+	"svga.present",
+	"pciBridge0.present",
+	"pciBridge4.present",
+	"pciBridge4.virtualDev",
+	"pciBridge4.functions",
+	"pciBridge5.present",
+	"pciBridge5.virtualDev",
+	"pciBridge5.functions",
+	"pciBridge6.present",
+	"pciBridge6.virtualDev",
+	"pciBridge6.functions",
+	"pciBridge7.present",
+	"pciBridge7.virtualDev",
+	"pciBridge7.functions",
+	"hpet0.present",
+	"scsi0.pciSlotNumber",
+	"disk.enableUUID",
+	"vmware.tools.gosc.ignoretoolscheck",
+	"vmprov.keepDisks",
+	"viv.moid",
+	"guestinfo.vmservice.defer-cloud-init",
 	"guestinfo.metadata",
 	"guestinfo.metadata.encoding",
 	"guestinfo.userdata",
 	"guestinfo.userdata.encoding",
 	"guestinfo.vendordata",
 	"guestinfo.vendordata.encoding",
-	extraConfigNamespacedNameKey,
+	"vmxstats.filename",
+	"numa.autosize.cookie",
+	"numa.autosize.vcpu.maxPerVirtualNode",
+	"sched.swap.derivedName",
+	"pciBridge0.pciSlotNumber",
+	"pciBridge4.pciSlotNumber",
+	"pciBridge5.pciSlotNumber",
+	"pciBridge6.pciSlotNumber",
+	"pciBridge7.pciSlotNumber",
+	"ethernet0.pciSlotNumber",
+	"scsi0:0.redo",
+	"scsi0:1.redo",
+	"scsi0:2.redo",
+	"scsi0.sasWWID",
+	"vmotion.checkpointFBSize",
+	"vmotion.checkpointSVGAPrimarySize",
+	"vmotion.svga.mobMaxSize",
+	"vmotion.svga.graphicsMemoryKB",
+	"monitor.phys_bits_used",
+	"softPowerOff",
+	"tools.capability.verifiedSamlToken",
+	"guestInfo.detailed.data",
+	"scsi0:3.redo",
+	"scsi0:4.redo",
+	"scsi0:5.redo",
+	"scsi0:6.redo",
+	"scsi0:8.redo",
+	"scsi0:9.redo",
+	"scsi0:10.redo",
+	"scsi0:11.redo",
+	"vmware.tools.internalversion",
+	"vmware.tools.requiredversion",
+	"migrate.hostLogState",
+	"migrate.migrationId",
+	"migrate.hostLog",
+	"guestinfo.appInfo",
+	"guestinfo.vmtools.buildNumber",
+	"guestinfo.vmtools.description",
+	"guestinfo.vmtools.versionNumber",
+	"guestinfo.vmtools.versionString",
+	"guestinfo.vmware.components.available",
 }
 
 type moRef = vimtypes.ManagedObjectReference
@@ -101,7 +170,8 @@ type LookupNamespacedNameResult struct {
 
 	// Verified indicates whether or not the VM's Kubernetes resource has the
 	// vSphere VM's managed object ID in status.uniqueID.
-	Verified bool
+	Verified    bool
+	VerifiedObj any
 
 	// Deleted indicates whether the VM's Kubernetes resource has a
 	// non-zero deletion timestamp.
@@ -129,7 +199,8 @@ type Result struct {
 
 	// Verified is true if the VirtualMachine resource identified by Namespace
 	// and Name has already been verified to exist in this Kubernetes cluster.
-	Verified bool
+	Verified    bool
+	VerifiedObj any
 }
 
 type Watcher struct {
@@ -291,12 +362,18 @@ func Start(
 	// Update the context with this watcher.
 	setContext(ctx, w)
 
-	var cancel context.CancelFunc
+	var (
+		cancel  context.CancelFunc
+		version string
+	)
+
 	ctx, cancel = context.WithCancel(ctx)
 	w.cancel = cancel
 
 	go func() {
 		defer func() {
+			logger.Info("Exiting watching VMs", "version", version)
+
 			// Remove this watcher from the context. While there is no watcher
 			// in the context, calls to Add/Remove will fail.
 			setContext(ctx, nil)
@@ -304,14 +381,46 @@ func Start(
 			w.close()
 		}()
 
-		if err := w.pc.WaitForUpdatesEx(
-			ctx,
-			&property.WaitOptions{},
-			func(ou []vimtypes.ObjectUpdate) bool {
-				return w.onUpdate(ctx, ou)
-			}); err != nil {
+		req := vimtypes.WaitForUpdatesEx{
+			This: w.pc.Reference(),
+			Options: &vimtypes.WaitOptions{
+				MaxWaitSeconds:   ptr.To[int32](60 * 5),
+				MaxObjectUpdates: 100,
+			},
+			Version: version,
+		}
 
-			w.setErr(err)
+		for {
+			logger.V(4).Info("Waiting for updates while watching VMs",
+				"version", version)
+
+			res, err := methods.WaitForUpdatesEx(ctx, w.client, &req)
+			if err != nil {
+				if ctx.Err() == context.Canceled {
+					w.setErr(w.pc.CancelWaitForUpdates(context.Background()))
+					return
+				}
+				w.setErr(err)
+				return
+			}
+
+			set := res.Returnval
+			if set == nil {
+				if req.Options != nil && req.Options.MaxWaitSeconds != nil {
+					continue // WaitOptions.MaxWaitSeconds exceeded
+				}
+				// Retry if the result came back empty
+				continue
+			}
+
+			version = set.Version
+			req.Version = version
+
+			for _, fs := range set.FilterSet {
+				if w.onUpdate(ctx, fs.ObjectSet) {
+					return
+				}
+			}
 		}
 	}()
 
@@ -326,6 +435,12 @@ const (
 	extraConfigNamespaceNamePropPath = extraConfigPropPath + `["` + extraConfigNamespaceNameKey + `"]`
 )
 
+var (
+	// Cache is the map used to cache results.
+	Cache          sync.Map
+	vmCacheFlusher sync.Once
+)
+
 type objUpdate struct {
 	kind    vimtypes.ObjectUpdateKind
 	changes []vimtypes.PropertyChange
@@ -334,6 +449,16 @@ type objUpdate struct {
 func (w *Watcher) onUpdate(
 	ctx context.Context,
 	ou []vimtypes.ObjectUpdate) bool {
+
+	// Ensure vmCache is cleared once an hour.
+	vmCacheFlusher.Do(func() {
+		ticker := time.NewTicker(60 * time.Minute)
+		go func() {
+			for range ticker.C {
+				Cache.Clear()
+			}
+		}()
+	})
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("OnUpdate", "objectUpdates", ou)
@@ -379,30 +504,110 @@ func (w *Watcher) onObject(
 		WithValues("obj", obj)
 
 	var (
-		namespace string
-		name      string
-		verified  bool
-		deleted   bool
+		namespace   string
+		name        string
+		verified    bool
+		verifiedObj any
+		deleted     bool
+		props       = map[string]string{}
 	)
 
 	// This update will be skipped if after removing all of the changes for
 	// the ignoredExtraConfigKeys there is nothing left.
-	var ignoredChanges int
 	for i := range update.changes {
-		c := update.changes[i]
-		ignore := false
-		if c.Name == extraConfigPropPath {
-			if aov, ok := c.Val.(vimtypes.ArrayOfOptionValue); ok {
-				ignore, namespace, name = checkExtraConfig(
-					aov, w.ignoredExtraConfigKeys)
+		var (
+			val any
+			c   = update.changes[i]
+		)
+		switch c.Name {
+		case extraConfigPropPath:
+			if tval, ok := c.Val.(vimtypes.ArrayOfOptionValue); ok {
+				var ec []vimtypes.BaseOptionValue
+				ec, namespace, name = checkExtraConfig(
+					tval, w.ignoredExtraConfigKeys)
+				if len(ec) > 0 {
+					val = ec
+				}
+			} else {
+				logger.Error(
+					nil,
+					"invalid property",
+					"key", c.Name, "val", c.Val)
 			}
+		case "config.hardware.device":
+			if tval, ok := c.Val.(vimtypes.ArrayOfVirtualDevice); ok {
+				slices.SortFunc(
+					tval.VirtualDevice,
+					func(a, b vimtypes.BaseVirtualDevice) int {
+						ad, bd := a.GetVirtualDevice(), b.GetVirtualDevice()
+						switch {
+						case ad.Key < bd.Key:
+							return -1
+						case ad.Key > bd.Key:
+							return 1
+						}
+						return 0
+					})
+				val = tval.VirtualDevice
+			} else {
+				logger.Error(
+					nil,
+					"invalid property",
+					"key", c.Name, "val", c.Val)
+			}
+		default:
+			val = c.Val
 		}
-		if ignore {
-			ignoredChanges++
+
+		if !pkgnil.IsNil(val) {
+			hashedVal, err := hashProp(obj, c.Name, val)
+			if err != nil {
+				return err
+			}
+			props[c.Name] = hashedVal
 		}
 	}
-	if ignoredChanges == len(update.changes) {
-		logger.V(5).Info("skipping async signal", "reason", "ignored changes")
+
+	var areChanges bool
+	if cachedPropsObj, ok := Cache.Load(obj); !ok {
+		Cache.Store(obj, props)
+		areChanges = true
+		logger.V(4).Info("Cached object miss", "props", props)
+	} else {
+		cachedProps := cachedPropsObj.(map[string]string)
+		for key, newVal := range props {
+			if oldVal, ok := cachedProps[key]; !ok {
+				areChanges = true
+				cachedProps[key] = newVal
+				logger.V(4).Info("Cached property miss",
+					"key", key,
+					"newVal", newVal)
+			} else {
+				var (
+					l = 5
+					r = "noop"
+				)
+				if oldVal != newVal {
+					l = 4
+					r = "update"
+					areChanges = true
+					cachedProps[key] = newVal
+				}
+				logger.V(l).Info("Cached property hit",
+					"key", key,
+					"newVal", newVal,
+					"oldVal", oldVal,
+					"result", r)
+			}
+		}
+		if areChanges {
+			Cache.Store(obj, cachedProps)
+		}
+	}
+	if areChanges {
+		logger.V(4).Info("Allowing async signal", "reason", "changes")
+	} else {
+		logger.V(5).Info("Skipping async signal", "reason", "no changes")
 		return nil
 	}
 
@@ -415,6 +620,7 @@ func (w *Watcher) onObject(
 			name = r.Name
 		}
 		verified = r.Verified
+		verifiedObj = r.VerifiedObj
 		deleted = r.Deleted
 	}
 
@@ -427,7 +633,7 @@ func (w *Watcher) onObject(
 		// reconcile. Since the VM is being deleted, we would then issue another
 		// Delete call to the vSphere VM, triggering another Reload call,
 		// triggering another property collector signal. Rinse and repeat.
-		logger.V(5).Info("skipping async signal",
+		logger.V(5).Info("Skipping async signal",
 			"reason", "vm is being deleted")
 		return nil
 	}
@@ -438,7 +644,7 @@ func (w *Watcher) onObject(
 		// result when the object is entering the scope of the watcher and the
 		// corresponding Kubernetes object already exists with a matching
 		// status.uniqueID field.
-		logger.V(5).Info("skipping async signal",
+		logger.V(5).Info("Skipping async signal",
 			"reason", "verified vm entered scope")
 		return nil
 	}
@@ -459,13 +665,14 @@ func (w *Watcher) onObject(
 
 	if namespace != "" && name != "" {
 		r := Result{
-			Namespace: namespace,
-			Name:      name,
-			Ref:       obj,
-			Verified:  verified,
+			Namespace:   namespace,
+			Name:        name,
+			Ref:         obj,
+			Verified:    verified,
+			VerifiedObj: verifiedObj,
 		}
 
-		logger.V(4).Info("Sending result", "result", r)
+		logger.V(4).Info("Sending async result", "result", r)
 
 		go func(r Result) {
 			w.chanResult <- r
@@ -477,9 +684,8 @@ func (w *Watcher) onObject(
 
 func checkExtraConfig(
 	aov vimtypes.ArrayOfOptionValue,
-	ignoredKeys map[string]struct{}) (ignore bool, namespace, name string) {
-
-	hasNonIgnoredKey := false
+	ignoredKeys map[string]struct{}) (
+	nonIgnoredKeys []vimtypes.BaseOptionValue, namespace, name string) {
 
 	for j := range aov.OptionValue {
 		if ov := aov.OptionValue[j].GetOptionValue(); ov != nil {
@@ -492,17 +698,25 @@ func checkExtraConfig(
 					}
 				}
 			}
-			// Note if the key cannot be ignored.
+			// Record the key if it is not ignored.
 			if _, ok := ignoredKeys[ov.Key]; !ok {
-				hasNonIgnoredKey = true
-			}
-			if hasNonIgnoredKey && (namespace != "" && name != "") {
-				break
+				nonIgnoredKeys = append(nonIgnoredKeys, ov)
 			}
 		}
 	}
 
-	return !hasNonIgnoredKey, namespace, name
+	slices.SortFunc(nonIgnoredKeys, func(a, b vimtypes.BaseOptionValue) int {
+		ao, bo := a.GetOptionValue(), b.GetOptionValue()
+		switch {
+		case ao.Key < bo.Key:
+			return -1
+		case ao.Key > bo.Key:
+			return 1
+		}
+		return 0
+	})
+
+	return nonIgnoredKeys, namespace, name
 }
 
 func (w *Watcher) add(ctx context.Context, ref moRef, id string) error {
@@ -645,6 +859,7 @@ func namespacedNameFromObjContent(
 
 func viewToVM(ref moRef, watchedPropertyPaths []string) vimtypes.CreateFilter {
 	return vimtypes.CreateFilter{
+		PartialUpdates: false,
 		Spec: vimtypes.PropertyFilterSpec{
 			ObjectSet: []vimtypes.ObjectSpec{
 				{
@@ -706,4 +921,20 @@ func toSet[K comparable](s []K) map[K]struct{} {
 		r[s[i]] = struct{}{}
 	}
 	return r
+}
+
+func hashProp(obj moRef, key string, val any) (string, error) {
+	data, err := json.Marshal(val)
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed to marshal properties to json for vm %s prop %s: %w",
+			obj, key, err)
+	}
+	h := xxhash.New()
+	if _, err := h.Write(data); err != nil {
+		return "", fmt.Errorf(
+			"failed to hash properties for vm %s prop %s: %w",
+			obj, key, err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }

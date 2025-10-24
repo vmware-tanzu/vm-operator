@@ -1931,6 +1931,10 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		oldVM = &vmopv1.VirtualMachine{}
 	}
 
+	if vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] != oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}

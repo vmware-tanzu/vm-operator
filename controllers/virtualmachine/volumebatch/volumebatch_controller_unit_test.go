@@ -7,7 +7,6 @@ package volumebatch_test
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1183,7 +1182,6 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 
 				It("returns error", func() {
-					fmt.Println(initObjects)
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(MatchError(ContainSubstring("PVC with WFFC storage class support is not enabled")))
 				})

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -85,12 +86,11 @@ func unitTestsReconcile() {
 			spuForVMSnapshot spqv1.StoragePolicyUsage
 		)
 
-		assertReportedTotalsWithOffsetIgnoreError := func(
+		assertReportedTotalsIgnoreError := func(
 			spu spqv1.StoragePolicyUsage,
-			expReserved, expUsed resource.Quantity,
-			offset int) {
+			expReserved, expUsed resource.Quantity) {
 
-			assertReportedTotalsWithOffset(spu, nil, nil, expReserved, expUsed, offset)
+			assertReportedTotals(spu, nil, nil, expReserved, expUsed)
 		}
 
 		BeforeEach(func() {
@@ -220,8 +220,8 @@ func unitTestsReconcile() {
 			})
 			It("should report the correct usage", func() {
 				Expect(err).To(Succeed())
-				assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
-				assertReportedTotalsWithOffsetIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB, 1)
+				assertReportedTotalsIgnoreError(spuForVM, zeroQuantity, size10GB)
+				assertReportedTotalsIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB)
 			})
 
 			Context("There are VM with different storage class", func() {
@@ -241,7 +241,7 @@ func unitTestsReconcile() {
 					}
 				})
 				Specify("the reported information should only include VMs that use the same storage class", func() {
-					assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
+					assertReportedTotalsIgnoreError(spuForVM, zeroQuantity, size10GB)
 				})
 			})
 		})
@@ -259,7 +259,7 @@ func unitTestsReconcile() {
 						"failed to get StoragePolicyUsage %s/%s-vm-usage: "+
 							"storagepolicyusages.cns.vmware.com \"%s-vm-usage\" not found",
 						inNamespace, inName, inName)))
-				assertReportedTotalsWithOffsetIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB, 1)
+				assertReportedTotalsIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB)
 			})
 		})
 
@@ -276,7 +276,7 @@ func unitTestsReconcile() {
 						"failed to get StoragePolicyUsage %s/%s-vmsnapshot-usage: "+
 							"storagepolicyusages.cns.vmware.com \"%s-vmsnapshot-usage\" not found",
 						inNamespace, inName, inName)))
-				assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
+				assertReportedTotalsIgnoreError(spuForVM, zeroQuantity, size10GB)
 			})
 		})
 
@@ -508,13 +508,13 @@ func unitTestsReconcileSPUForVM() {
 		spu spqv1.StoragePolicyUsage,
 		actErr, expErr error) {
 
-		assertReportedTotalsWithOffset(
+		assertReportedTotals(
 			spu,
 			actErr,
 			expErr,
 			zeroQuantity,
 			zeroQuantity,
-			2)
+		)
 	}
 
 	assertReportedTotals := func(
@@ -522,26 +522,26 @@ func unitTestsReconcileSPUForVM() {
 		actErr, expErr error,
 		expReserved, expUsed resource.Quantity) {
 
-		assertReportedTotalsWithOffset(
+		assertReportedTotals(
 			spu,
 			actErr,
 			expErr,
 			expReserved,
 			expUsed,
-			2)
+		)
 	}
 
 	assertZeroReportedTotals := func(
 		spu spqv1.StoragePolicyUsage,
 		actErr, expErr error) {
 
-		assertReportedTotalsWithOffset(
+		assertReportedTotals(
 			spu,
 			actErr,
 			expErr,
 			zeroQuantity,
 			zeroQuantity,
-			2)
+		)
 	}
 
 	errFailedToGetImg := func(vm vmopv1.VirtualMachine) error {
@@ -997,9 +997,10 @@ func unitTestsReconcileSPUForVM() {
 
 func unitTestsReconcileSPUForVMSnapshot() {
 	const (
-		fake      = "fake"
-		namespace = "default"
-		name      = "my-storage-class"
+		fake        = "fake"
+		namespace   = "default"
+		name        = "my-storage-class"
+		differentSC = "different-storage-class"
 	)
 
 	var (
@@ -1108,7 +1109,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 
 		When("no VirtualMachineSnapshot is found", func() {
 			It("should report the snapshot's reserved capacity with 0Gi", func() {
-				assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, zeroQuantity, 1)
+				assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
 			})
 		})
 
@@ -1116,6 +1117,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 			BeforeEach(func() {
 				vm1 = builder.DummyBasicVirtualMachine("vm1", inNamespace)
 				vm1.Spec.StorageClass = inName
+
 				vmSnapshot1 = builder.DummyVirtualMachineSnapshot(inNamespace, "snapshot1", "vm1")
 				vmSnapshot1.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{
 					Used: &size10GB,
@@ -1135,7 +1137,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 				})
 
 				It("should report the snapshot's reserved capacity with VM's classic disk capacity, and ignore the used capacity", func() {
-					assertReportedTotalsWithOffset(spu, err, nil, size10GB, zeroQuantity, 1)
+					assertReportedTotals(spu, err, nil, size10GB, zeroQuantity)
 				})
 
 				When("CSIVSphereVolumeSyncAnnotation is not set", func() {
@@ -1144,7 +1146,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 					})
 
 					It("should report the snapshot's reserved capacity with VM's classic disk capacity, and used capacity with 0Gi", func() {
-						assertReportedTotalsWithOffset(spu, err, nil, size10GB, zeroQuantity, 1)
+						assertReportedTotals(spu, err, nil, size10GB, zeroQuantity)
 					})
 				})
 
@@ -1153,7 +1155,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 						vmSnapshot1.Status.Storage.Requested = nil
 					})
 					It("should ignore the snapshot when calculating the reserved capacity", func() {
-						assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, zeroQuantity, 1)
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
 					})
 				})
 
@@ -1161,17 +1163,38 @@ func unitTestsReconcileSPUForVMSnapshot() {
 					BeforeEach(func() {
 						vmSnapshot1.Spec.VMName = ""
 					})
-					It("should return an error", func() {
-						Expect(err).To(HaveOccurred())
+					It("should ignore the snapshot when calculating the reserved capacity", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
+					})
+				})
+
+				When("VM is being deleted", func() {
+					BeforeEach(func() {
+						vm1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+						vm1.ObjectMeta.Finalizers = []string{"dummy-vm-finalizer"}
+					})
+
+					It("should ignore the snapshot when calculating the reserved and used capacity", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
+					})
+				})
+
+				When("Snapshot is being deleted", func() {
+					BeforeEach(func() {
+						vmSnapshot1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+					})
+
+					It("should ignore the snapshot when calculating the reserved and used capacity", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
 					})
 				})
 
 				When("The requested storage class doesn't match the SPU's storage class", func() {
 					BeforeEach(func() {
-						vmSnapshot1.Status.Storage.Requested[0].StorageClass = "different-storage-class"
+						vmSnapshot1.Status.Storage.Requested[0].StorageClass = differentSC
 					})
 					It("should ignore the snapshot when calculating the reserved and used capacity", func() {
-						assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, zeroQuantity, 1)
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
 					})
 				})
 			})
@@ -1184,15 +1207,36 @@ func unitTestsReconcileSPUForVMSnapshot() {
 				})
 
 				It("should ignore the reserved capacity, and report the used capacity with VM's used capacity", func() {
-					assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, size10GB, 1)
+					assertReportedTotals(spu, err, nil, zeroQuantity, size10GB)
 				})
 
 				When("VMName of the VirtualMachineSnapshot is not set", func() {
 					BeforeEach(func() {
 						vmSnapshot1.Spec.VMName = ""
 					})
-					It("should return an error", func() {
-						Expect(err).To(HaveOccurred())
+					It("should ignore the snapshot when calculating the reserved capacity", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
+					})
+				})
+
+				When("VM is being deleted", func() {
+					BeforeEach(func() {
+						vm1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+						vm1.ObjectMeta.Finalizers = []string{"dummy-vm-finalizer"}
+					})
+
+					It("should report the snapshot's reserved capacity with 0Gi, and used capacity with 0Gi", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
+					})
+				})
+
+				When("Snapshot is being deleted", func() {
+					BeforeEach(func() {
+						vmSnapshot1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+					})
+
+					It("should report the snapshot's reserved capacity with 0Gi, and used capacity with 0Gi", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
 					})
 				})
 
@@ -1201,7 +1245,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 						vmSnapshot1.Status.Storage.Used = nil
 					})
 					It("should report the snapshot's reserved capacity with 0Gi, and used capacity with 0Gi", func() {
-						assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, zeroQuantity, 1)
+						assertReportedTotals(spu, err, nil, zeroQuantity, zeroQuantity)
 					})
 				})
 			})
@@ -1211,6 +1255,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 			BeforeEach(func() {
 				vm1 = builder.DummyBasicVirtualMachine("vm1", inNamespace)
 				vm1.Spec.StorageClass = inName
+
 				vmSnapshot1 = builder.DummyVirtualMachineSnapshot(inNamespace, "snapshot1", vm1.Name)
 				vmSnapshot1.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{
 					Used: &size10GB,
@@ -1223,6 +1268,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 				}
 				vm2 = builder.DummyBasicVirtualMachine("vm2", inNamespace)
 				vm2.Spec.StorageClass = inName
+
 				vmSnapshot2 = builder.DummyVirtualMachineSnapshot(inNamespace, "snapshot2", vm2.Name)
 				vmSnapshot2.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{
 					Used: &size20GB,
@@ -1240,7 +1286,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 					vmSnapshot1.Status.Storage.Requested = nil
 				})
 				It("should skip the snapshot with empty status.requested", func() {
-					assertReportedTotalsWithOffset(spu, err, nil, size20GB, zeroQuantity, 1)
+					assertReportedTotals(spu, err, nil, size20GB, zeroQuantity)
 				})
 			})
 
@@ -1254,7 +1300,39 @@ func unitTestsReconcileSPUForVMSnapshot() {
 					}
 				})
 				It("should report the snapshot's reserved capacity with sum of the two VMs' reserved capacity, ignore the used capacity", func() {
-					assertReportedTotalsWithOffset(spu, err, nil, size30GB, zeroQuantity, 1)
+					assertReportedTotals(spu, err, nil, size30GB, zeroQuantity)
+				})
+
+				When("VM1 (vmSnapshot1's owner) is being deleted", func() {
+					BeforeEach(func() {
+						vm1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+						vm1.ObjectMeta.Finalizers = []string{"dummy-vm-finalizer"}
+					})
+
+					It("should only report the reserved and used capacity of the snapshot whose owner VM is not being deleted", func() {
+						assertReportedTotals(spu, err, nil, size20GB, zeroQuantity)
+					})
+				})
+
+				When("Snapshot is being deleted", func() {
+					BeforeEach(func() {
+						vmSnapshot1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+					})
+
+					It("should only report the reserved and used capacity of the snapshot that is not being deleted", func() {
+						assertReportedTotals(spu, err, nil, size20GB, zeroQuantity)
+					})
+				})
+
+				When("vmSnapshot1's VMRef has different storage class and it's being deleted", func() {
+					BeforeEach(func() {
+						vm1.Spec.StorageClass = differentSC
+						vm1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+						vm1.ObjectMeta.Finalizers = []string{"dummy-vm-finalizer"}
+					})
+					It("should still report the reserved capacity of the snapshot if it has PVC that use same SC", func() {
+						assertReportedTotals(spu, err, nil, size30GB, zeroQuantity)
+					})
 				})
 			})
 
@@ -1269,7 +1347,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 				})
 
 				It("should ignore the reserved capacity, and report the used capacity with sum of the two VMs' used capacity", func() {
-					assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, size30GB, 1)
+					assertReportedTotals(spu, err, nil, zeroQuantity, size30GB)
 				})
 
 				When("vmSnapshot2 has no used capacity reported by controller yet", func() {
@@ -1277,16 +1355,48 @@ func unitTestsReconcileSPUForVMSnapshot() {
 						vmSnapshot1.Status.Storage.Used = nil
 					})
 					It("should report the snapshot's reserved capacity with 0Gi, and used capacity with the used capacity of vmSnapshot2", func() {
-						assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, size20GB, 1)
+						assertReportedTotals(spu, err, nil, zeroQuantity, size20GB)
 					})
 				})
 
 				When("vmSnapshot1's VMRef has different storage class", func() {
 					BeforeEach(func() {
-						vm1.Spec.StorageClass = "different-storage-class"
+						vm1.Spec.StorageClass = differentSC
 					})
 					It("should only report the reserved and used capacity of the snapshot with the same storage class", func() {
-						assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, size20GB, 1)
+						assertReportedTotals(spu, err, nil, zeroQuantity, size20GB)
+					})
+				})
+
+				When("VM1 (vmSnapshot1's owner) is being deleted", func() {
+					BeforeEach(func() {
+						vm1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+						vm1.ObjectMeta.Finalizers = []string{"dummy-vm-finalizer"}
+					})
+
+					It("should only report the reserved and used capacity of the snapshot whose owner VM is not being deleted", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, size20GB)
+					})
+				})
+
+				When("Snapshot is being deleted", func() {
+					BeforeEach(func() {
+						vmSnapshot1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+					})
+
+					It("should only report the reserved and used capacity of the snapshot that is not being deleted", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, size20GB)
+					})
+				})
+
+				When("vmSnapshot1's VMRef has different storage class and it's being deleted", func() {
+					BeforeEach(func() {
+						vm1.Spec.StorageClass = differentSC
+						vm1.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+						vm1.ObjectMeta.Finalizers = []string{"dummy-vm-finalizer"}
+					})
+					It("should only report the reserved and used capacity of the snapshot with the same storage class", func() {
+						assertReportedTotals(spu, err, nil, zeroQuantity, size20GB)
 					})
 				})
 			})
@@ -1302,29 +1412,30 @@ func unitTestsReconcileSPUForVMSnapshot() {
 				})
 
 				It("should report the snapshot's reserved capacity with not completed VM's reserved capacity, and used capacity with completed VM's used capacity", func() {
-					assertReportedTotalsWithOffset(spu, err, nil, size10GB, size20GB, 1)
+					assertReportedTotals(spu, err, nil, size10GB, size20GB)
 				})
 			})
 		})
 	})
 }
 
-func assertReportedTotalsWithOffset(
+func assertReportedTotals(
 	spu spqv1.StoragePolicyUsage,
 	actErr, expErr error,
-	expReserved, expUsed resource.Quantity,
-	offset int) {
+	expReserved, expUsed resource.Quantity) {
+
+	GinkgoHelper()
 
 	if expErr != nil {
-		ExpectWithOffset(offset, actErr).To(HaveOccurred(), "err should have occurred")
-		ExpectWithOffset(offset, actErr).To(MatchError(expErr.Error()), "errors do not match")
+		Expect(actErr).To(HaveOccurred(), "err should have occurred")
+		Expect(actErr).To(MatchError(expErr.Error()), "errors do not match")
 		return
 	}
 
-	ExpectWithOffset(offset, actErr).ToNot(HaveOccurred(), "err should not have occurred")
-	ExpectWithOffset(offset, spu.Status.ResourceTypeLevelQuotaUsage).ToNot(BeNil(), "spu status should be non-nil")
-	ExpectWithOffset(offset, spu.Status.ResourceTypeLevelQuotaUsage.Reserved).ToNot(BeNil(), "reserved should be non-nil")
-	ExpectWithOffset(offset, spu.Status.ResourceTypeLevelQuotaUsage.Reserved.Value()).To(Equal(expReserved.Value()), fmt.Sprintf("reserved should be %s", &expReserved))
-	ExpectWithOffset(offset, spu.Status.ResourceTypeLevelQuotaUsage.Used).ToNot(BeNil(), "used should be non-nil")
-	ExpectWithOffset(offset, spu.Status.ResourceTypeLevelQuotaUsage.Used.Value()).To(Equal(expUsed.Value()), fmt.Sprintf("used should be %s", &expUsed))
+	Expect(actErr).ToNot(HaveOccurred(), "err should not have occurred")
+	Expect(spu.Status.ResourceTypeLevelQuotaUsage).ToNot(BeNil(), "spu status should be non-nil")
+	Expect(spu.Status.ResourceTypeLevelQuotaUsage.Reserved).ToNot(BeNil(), "reserved should be non-nil")
+	Expect(spu.Status.ResourceTypeLevelQuotaUsage.Reserved.Value()).To(Equal(expReserved.Value()), fmt.Sprintf("reserved should be %s", &expReserved))
+	Expect(spu.Status.ResourceTypeLevelQuotaUsage.Used).ToNot(BeNil(), "used should be non-nil")
+	Expect(spu.Status.ResourceTypeLevelQuotaUsage.Used.Value()).To(Equal(expUsed.Value()), fmt.Sprintf("used should be %s", &expUsed))
 }

@@ -7,10 +7,6 @@ package network
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
-
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
@@ -59,60 +55,15 @@ func (n nsxOpaqueBacking) Summary(_ context.Context) (*vimtypes.OpaqueNetworkSum
 	}, nil
 }
 
-var (
-	// uuidToDVPGCache contains the cache used look up the CCR's DPVG for a
-	// given LogicalSwitchUUID.
-	uuidToDVPGCache sync.Map
-
-	clearUUIDToDVPGCache sync.Once
-)
-
+// searchNsxtNetworkReference takes in NSX-T LogicalSwitchUUID and returns the reference of the network.
 func searchNsxtNetworkReference(
 	ctx context.Context,
 	ccr *object.ClusterComputeResource,
 	networkID string) (object.NetworkReference, error) {
 
-	clearUUIDToDVPGCache.Do(func() {
-		// Start goroutine to periodically clear the cache.
-		go func() {
-			logger := ctrl.Log.WithName("nsx-dvpg-cache-clearer")
-			ticker := time.NewTicker(time.Minute * 60)
-			for range ticker.C {
-				logger.Info("Clearing NSX LogicalSwitchUUID to DVPG cache")
-				uuidToDVPGCache.Clear()
-			}
-		}()
-	})
-
-	key := ccr.Reference().Value
-
-	if c, ok := uuidToDVPGCache.Load(key); ok {
-		cc := c.(map[string]vimtypes.ManagedObjectReference)
-		if dvpg, ok := cc[networkID]; ok {
-			return object.NewDistributedVirtualPortgroup(ccr.Client(), dvpg), nil
-		}
-	}
-
-	// On either miss - CCR or UUID not found - try to refresh the DVPGs for the CCR,
-	// and always store the latest results in the cache. We could  CompareAndSwap()
-	// instead but let's have the latest win.
-	uuidsToDPVG, err := getDVPGsForCCR(ctx, ccr)
-	if err != nil {
-		return nil, err
-	}
-	uuidToDVPGCache.Store(key, uuidsToDPVG)
-
-	if dvpg, ok := uuidsToDPVG[networkID]; ok {
-		return object.NewDistributedVirtualPortgroup(ccr.Client(), dvpg), nil
-	}
-
-	return nil, fmt.Errorf("no DVPG with NSX network ID %q found", networkID)
-}
-
-func getDVPGsForCCR(
-	ctx context.Context,
-	ccr *object.ClusterComputeResource) (map[string]vimtypes.ManagedObjectReference, error) {
-
+	// This is more or less how the old code did it. We could save repeated work by moving this
+	// into the callers since it will always be for the same CCR, but the common case is one NIC,
+	// or at most a handful, so that's for later.
 	var obj mo.ClusterComputeResource
 	if err := ccr.Properties(ctx, ccr.Reference(), []string{"network"}, &obj); err != nil {
 		return nil, err
@@ -126,7 +77,7 @@ func getDVPGsForCCR(
 	}
 
 	if len(dvpgsMoRefs) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("ClusterComputeResource %s has no DVPGs", ccr.Reference().Value)
 	}
 
 	var dvpgs []mo.DistributedVirtualPortgroup
@@ -135,12 +86,21 @@ func getDVPGsForCCR(
 		return nil, err
 	}
 
-	uuidToDPVG := make(map[string]vimtypes.ManagedObjectReference, len(dvpgs))
+	var dvpgMoRefs []vimtypes.ManagedObjectReference
 	for _, dvpg := range dvpgs {
-		if uuid := dvpg.Config.LogicalSwitchUuid; uuid != "" {
-			uuidToDPVG[uuid] = dvpg.Reference()
+		if dvpg.Config.LogicalSwitchUuid == networkID {
+			dvpgMoRefs = append(dvpgMoRefs, dvpg.Reference())
 		}
 	}
 
-	return uuidToDPVG, nil
+	switch len(dvpgMoRefs) {
+	case 1:
+		return object.NewDistributedVirtualPortgroup(ccr.Client(), dvpgMoRefs[0]), nil
+	case 0:
+		return nil, fmt.Errorf("no DVPG with NSX network ID %q found", networkID)
+	default:
+		// The LogicalSwitchUuid is supposed to be unique per CCR, so this is likely an NCP
+		// misconfiguration, and we don't know which one to pick.
+		return nil, fmt.Errorf("multiple DVPGs (%d) with NSX network ID %q found", len(dvpgMoRefs), networkID)
+	}
 }

@@ -68,7 +68,7 @@ func KnownObjectTypes() []client.Object {
 		&vmopv1.VirtualMachineSnapshot{},
 		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
-		&cnsv1alpha1.CnsNodeVmBatchAttachment{},
+		&cnsv1alpha1.CnsNodeVMBatchAttachment{},
 		&spqv1.StoragePolicyQuota{},
 		&spqv1.StoragePolicyUsage{},
 		&spqv1.StorageQuota{},

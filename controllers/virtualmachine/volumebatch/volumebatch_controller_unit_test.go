@@ -197,12 +197,12 @@ func unitTestsReconcile() {
 		vmVolumeWithPVC1 = nil
 	})
 
-	getCNSBatchAttachmentForVolumeName := func(ctx *builder.UnitTestContextForController, vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVmBatchAttachment {
+	getCNSBatchAttachmentForVolumeName := func(ctx *builder.UnitTestContextForController, vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVMBatchAttachment {
 
 		GinkgoHelper()
 
 		objectKey := client.ObjectKey{Name: util.CNSBatchAttachmentNameForVM(vm.Name), Namespace: vm.Namespace}
-		attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{}
+		attachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
 
 		err := ctx.Client.Get(ctx, objectKey, attachment)
 		if err == nil {
@@ -247,7 +247,7 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
 
-				By("Did not create CnsNodeVmBatchAttachment", func() {
+				By("Did not create CnsNodeVMBatchAttachment", func() {
 					Expect(getCNSBatchAttachmentForVolumeName(ctx, vm)).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
@@ -533,8 +533,10 @@ func unitTestsReconcile() {
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
 
 					attVol1 := attachment.Spec.Volumes[0]
-					Expect(attVol1.PersistentVolumeClaim.ControllerKey).To(Equal("1000"))
-					Expect(attVol1.PersistentVolumeClaim.UnitNumber).To(Equal("5"))
+					Expect(attVol1.PersistentVolumeClaim.ControllerKey).
+						To(Equal(ptr.To(int32(1000))))
+					Expect(attVol1.PersistentVolumeClaim.UnitNumber).
+						To(Equal(ptr.To(int32(5))))
 				})
 			})
 		})
@@ -850,7 +852,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					Name: vmVol.Name,
 					PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 						Attached:  true,
-						Diskuuid:  dummyDiskUUID,
+						DiskUUID:  dummyDiskUUID,
 						ClaimName: claimName1,
 						Error:     awfulErrMsg,
 					},
@@ -889,9 +891,9 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				initObjects = append(initObjects, boundPVC1, boundPVC2)
 			})
 
-			// We sort by DiskUUID, but the volumes in CnsNodeVmBatchAttachment
+			// We sort by DiskUUID, but the volumes in CnsNodeVMBatchAttachment
 			// haven't been "attached" yet, so expect the Spec.Volumes order.
-			When("CnsNodeVmBatchAttachment do not have DiskUUID set", func() {
+			When("CnsNodeVMBatchAttachment do not have DiskUUID set", func() {
 				It("returns success", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
@@ -908,7 +910,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 			})
 
-			When("CnsNodeVmBatchAttachment have DiskUUID set", func() {
+			When("CnsNodeVMBatchAttachment have DiskUUID set", func() {
 				dummyDiskUUID1 := "z"
 				dummyDiskUUID2 := "a"
 
@@ -920,7 +922,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
 								Attached:  true,
-								Diskuuid:  dummyDiskUUID1,
+								DiskUUID:  dummyDiskUUID1,
 							},
 						},
 						cnsv1alpha1.VolumeStatus{
@@ -928,7 +930,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName2,
 								Attached:  true,
-								Diskuuid:  dummyDiskUUID2,
+								DiskUUID:  dummyDiskUUID2,
 							},
 						},
 					)
@@ -1260,15 +1262,15 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 			})
 
-			When("There an existing CnsNodeVmBatchAttachment has the PVC in spec", func() {
-				var batchAtt *cnsv1alpha1.CnsNodeVmBatchAttachment
+			When("There an existing CnsNodeVMBatchAttachment has the PVC in spec", func() {
+				var batchAtt *cnsv1alpha1.CnsNodeVMBatchAttachment
 				BeforeEach(func() {
-					batchAtt = &cnsv1alpha1.CnsNodeVmBatchAttachment{
+					batchAtt = &cnsv1alpha1.CnsNodeVMBatchAttachment{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
 							Namespace: vm.Namespace,
 						},
-						Spec: cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
+						Spec: cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
 							Volumes: []cnsv1alpha1.VolumeSpec{
 								{
 									Name: "cns-volume-1",
@@ -1303,8 +1305,8 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 			})
 		})
 
-		When("There is an existing CnsNodeVmBatchAttachment", func() {
-			var attachment *cnsv1alpha1.CnsNodeVmBatchAttachment
+		When("There is an existing CnsNodeVMBatchAttachment", func() {
+			var attachment *cnsv1alpha1.CnsNodeVMBatchAttachment
 			BeforeEach(func() {
 				attachment = cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{})
 			})
@@ -1393,7 +1395,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 func assertBatchAttachmentSpec(
 	vm *vmopv1.VirtualMachine,
-	attachment *cnsv1alpha1.CnsNodeVmBatchAttachment) {
+	attachment *cnsv1alpha1.CnsNodeVMBatchAttachment) {
 
 	GinkgoHelper()
 
@@ -1409,9 +1411,9 @@ func assertBatchAttachmentSpec(
 
 func cnsBatchAttachmentForVMVolume(
 	vm *vmopv1.VirtualMachine,
-	vmVols []vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmBatchAttachment {
+	vmVols []vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVMBatchAttachment {
 	t := true
-	batchAttachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
+	batchAttachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
 			Namespace: vm.Namespace,
@@ -1426,11 +1428,11 @@ func cnsBatchAttachmentForVMVolume(
 				},
 			},
 		},
-		Spec: cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
+		Spec: cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
 			NodeUUID: vm.Status.InstanceUUID,
 			Volumes:  []cnsv1alpha1.VolumeSpec{},
 		},
-		Status: cnsv1alpha1.CnsNodeVmBatchAttachmentStatus{
+		Status: cnsv1alpha1.CnsNodeVMBatchAttachmentStatus{
 			VolumeStatus: []cnsv1alpha1.VolumeStatus{},
 		},
 	}
@@ -1447,7 +1449,7 @@ func cnsBatchAttachmentForVMVolume(
 
 func assertVMVolStatusFromBatchAttachmentStatus(
 	vm *vmopv1.VirtualMachine,
-	attachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	attachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	vmVolStatusIndex,
 	attachmentStatusIndex int) {
 
@@ -1459,13 +1461,13 @@ func assertVMVolStatusFromBatchAttachmentStatus(
 	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")
 	Expect(vmVolStatus.Name).To(Equal(attachmentVolStatus.Name), "volume name should match")
 	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Attached), "attached should match")
-	Expect(vmVolStatus.DiskUUID).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Diskuuid), "diskuuid should match")
+	Expect(vmVolStatus.DiskUUID).To(Equal(attachmentVolStatus.PersistentVolumeClaim.DiskUUID), "diskuuid should match")
 	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Error), "error shouuld match")
 }
 
 func assertVMVolStatusFromBatchAttachmentSpec(
 	vm *vmopv1.VirtualMachine,
-	attachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	attachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	vmVolStatusIndex,
 	attachmentStatusIndex int) {
 

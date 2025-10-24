@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -29,6 +28,7 @@ import (
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -91,20 +91,20 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 
 	// TODO (Oracle RAC): Update any comment or log message that includes
-	// CnsNodeVmBatchAttachment to new format once the API format is changed.
-	// Watch for changes to CnsNodeVmBatchAttachment, and enqueue a
+	// CnsNodeVMBatchAttachment to new format once the API format is changed.
+	// Watch for changes to CnsNodeVMBatchAttachment, and enqueue a
 	// request to the owner VirtualMachine.
 	if err := c.Watch(source.Kind(
 		mgr.GetCache(),
-		&cnsv1alpha1.CnsNodeVmBatchAttachment{},
-		handler.TypedEnqueueRequestForOwner[*cnsv1alpha1.CnsNodeVmBatchAttachment](
+		&cnsv1alpha1.CnsNodeVMBatchAttachment{},
+		handler.TypedEnqueueRequestForOwner[*cnsv1alpha1.CnsNodeVMBatchAttachment](
 			mgr.GetScheme(),
 			mgr.GetRESTMapper(),
 			&vmopv1.VirtualMachine{},
 			handler.OnlyControllerOwner(),
 		),
 	)); err != nil {
-		return fmt.Errorf("failed to start CnsNodeVmBatchAttachment watch: %w", err)
+		return fmt.Errorf("failed to start CnsNodeVMBatchAttachment watch: %w", err)
 	}
 
 	return nil
@@ -253,7 +253,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	// Get existing batch attachment for this VM
 	batchAttachment, err := r.getBatchAttachmentForVM(ctx)
 	if err != nil {
-		return fmt.Errorf("error getting existing CnsNodeVmBatchAttachment for VM: %w", err)
+		return fmt.Errorf("error getting existing CnsNodeVMBatchAttachment for VM: %w", err)
 	}
 
 	// Only need to validate the hardware for once during the first time of
@@ -297,21 +297,21 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	return errOrNoRequeueErr(deleteErr, processErr)
 }
 
-// getBatchAttachmentForVM returns the CnsNodeVmBatchAttachment resource for the
+// getBatchAttachmentForVM returns the CnsNodeVMBatchAttachment resource for the
 // VM. We assume that the name of the resource matches the name of the VM.
 // Returns nil if no CNSNodeVMBatchAttachment resource exists for the VM.
 func (r *Reconciler) getBatchAttachmentForVM(
 	ctx *pkgctx.VolumeContext,
-) (*cnsv1alpha1.CnsNodeVmBatchAttachment, error) {
+) (*cnsv1alpha1.CnsNodeVMBatchAttachment, error) {
 
-	attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{}
+	attachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
 
 	if err := r.Client.Get(ctx, client.ObjectKey{
 		Name:      pkgutil.CNSBatchAttachmentNameForVM(ctx.VM.Name),
 		Namespace: ctx.VM.Namespace,
 	}, attachment); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to find CnsNodeVmBatchAttachment: %w", err)
+			return nil, fmt.Errorf("failed to find CnsNodeVMBatchAttachment: %w", err)
 		}
 
 		return nil, nil
@@ -319,7 +319,7 @@ func (r *Reconciler) getBatchAttachmentForVM(
 
 	// Ensure that the attachment is owned by the VM.
 	if !metav1.IsControlledBy(attachment, ctx.VM) {
-		return nil, fmt.Errorf("CnsNodeVmBatchAttachment %s has a different controlling owner",
+		return nil, fmt.Errorf("CnsNodeVMBatchAttachment %s has a different controlling owner",
 			attachment.Name)
 	}
 
@@ -328,7 +328,7 @@ func (r *Reconciler) getBatchAttachmentForVM(
 
 func (r *Reconciler) processBatchAttachment(
 	ctx *pkgctx.VolumeContext,
-	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	existingAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment) error {
 
 	// Filter volumes that have PVC source and are not already tracked
@@ -362,12 +362,12 @@ func (r *Reconciler) processBatchAttachment(
 	if len(pvcVolumes) == 0 {
 		// No PVC volumes to process
 		if existingAttachment != nil {
-			ctx.Logger.Info("Delete existing CnsNodeVmBatchAttachment",
+			ctx.Logger.Info("Delete existing CnsNodeVMBatchAttachment",
 				"batchAttachment", existingAttachment.Name,
 				"namespace", existingAttachment.Namespace)
 			err := r.Client.Delete(ctx, existingAttachment)
 			if err != nil && !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to delete CnsNodeVmBatchAttachment: %w", err)
+				return fmt.Errorf("failed to delete CnsNodeVMBatchAttachment: %w", err)
 			}
 		}
 		return nil
@@ -408,10 +408,10 @@ func (r *Reconciler) processBatchAttachment(
 }
 
 // CreateOrUpdateBatchAttachment handles the creation or update of
-// CnsNodeVmBatchAttachment.
+// CnsNodeVMBatchAttachment.
 func (r *Reconciler) CreateOrUpdateBatchAttachment(
 	ctx *pkgctx.VolumeContext,
-	existingBatchAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	existingBatchAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	volumeSpecs []cnsv1alpha1.VolumeSpec) error {
 
 	// Validate the volume specs before attempting to create/update
@@ -421,7 +421,7 @@ func (r *Reconciler) CreateOrUpdateBatchAttachment(
 
 	vm := ctx.VM
 	attachmentName := pkgutil.CNSBatchAttachmentNameForVM(vm.Name)
-	batchAttachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
+	batchAttachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      attachmentName,
 			Namespace: vm.Namespace,
@@ -437,11 +437,11 @@ func (r *Reconciler) CreateOrUpdateBatchAttachment(
 				vm, batchAttachment, r.Client.Scheme(),
 			); err != nil {
 				return fmt.Errorf("failed to set controller reference "+
-					"on CnsNodeVmBatchAttachment: %w", err)
+					"on CnsNodeVMBatchAttachment: %w", err)
 			}
 
 			// Update the Spec with the desired volumeSpecs
-			batchAttachment.Spec = cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
+			batchAttachment.Spec = cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
 				NodeUUID: vm.Status.InstanceUUID,
 				Volumes:  volumeSpecs,
 			}
@@ -450,16 +450,16 @@ func (r *Reconciler) CreateOrUpdateBatchAttachment(
 		})
 
 	if err != nil {
-		return fmt.Errorf("failed to create or patch CnsNodeVmBatchAttachment %s: %w",
+		return fmt.Errorf("failed to create or patch CnsNodeVMBatchAttachment %s: %w",
 			attachmentName, err)
 	}
 
 	switch operationResult {
 	case controllerutil.OperationResultCreated:
-		ctx.Logger.Info("Created CnsNodeVmBatchAttachment",
+		ctx.Logger.Info("Created CnsNodeVMBatchAttachment",
 			"attachment", attachmentName)
 	case controllerutil.OperationResultUpdated:
-		ctx.Logger.Info("Updated CnsNodeVmBatchAttachment",
+		ctx.Logger.Info("Updated CnsNodeVMBatchAttachment",
 			"attachment", attachmentName)
 	}
 
@@ -470,7 +470,7 @@ func (r *Reconciler) CreateOrUpdateBatchAttachment(
 }
 
 // buildVolumeSpecs builds a volume spec that will be used to create
-// the CnsNodeVmBatchAttachment object.
+// the CnsNodeVMBatchAttachment object.
 func (r *Reconciler) buildVolumeSpecs(
 	volumes []vmopv1.VirtualMachineVolume,
 	hardware *vmopv1.VirtualMachineHardwareStatus,
@@ -525,12 +525,12 @@ func (r *Reconciler) buildVolumeSpecs(
 			Name: vol.Name,
 			PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
 				ClaimName:     pvcSpec.ClaimName,
-				ControllerKey: strconv.Itoa(int(ctrlDevKey)),
+				ControllerKey: ptr.To(ctrlDevKey),
 			},
 		}
 
 		if pvcSpec.UnitNumber != nil {
-			cnsVolumeSpec.PersistentVolumeClaim.UnitNumber = strconv.Itoa(int(*pvcSpec.UnitNumber))
+			cnsVolumeSpec.PersistentVolumeClaim.UnitNumber = pvcSpec.UnitNumber
 		}
 
 		// Apply application type presets first
@@ -612,7 +612,7 @@ func (r *Reconciler) applyApplicationTypePresets(
 // and sort this array based on diskUUID.
 func (r *Reconciler) updateVMVolumeStatus(
 	ctx *pkgctx.VolumeContext,
-	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	existingAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	volumeSpecs []cnsv1alpha1.VolumeSpec) {
 
 	// Update VM.Status.Volumes based on the batch attachment status
@@ -650,7 +650,7 @@ func (r *Reconciler) updateVMVolumeStatus(
 				Name:     volStatus.Name,
 				Type:     vmopv1.VolumeTypeManaged,
 				Attached: volStatus.PersistentVolumeClaim.Attached,
-				DiskUUID: volStatus.PersistentVolumeClaim.Diskuuid,
+				DiskUUID: volStatus.PersistentVolumeClaim.DiskUUID,
 				Error:    pkgutil.SanitizeCNSErrorMessage(volStatus.PersistentVolumeClaim.Error),
 				Used:     existingVMManagedVolStatus[vol.Name].Used,
 				Crypto:   existingVMManagedVolStatus[vol.Name].Crypto,

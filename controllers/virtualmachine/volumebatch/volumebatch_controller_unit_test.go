@@ -7,7 +7,6 @@ package volumebatch_test
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -51,12 +50,15 @@ func unitTests() {
 
 func unitTestsReconcile() {
 	const (
-		ns                = "dummy-ns"
-		dummyBiosUUID     = "dummy-bios-uuid"
-		dummyInstanceUUID = "dummy-instance-uuid"
-		dummyDiskUUID     = "111-222-333-disk-uuid"
-		claimName1        = "pvc-volume-1"
-		claimName2        = "pvc-volume-2"
+		ns                    = "dummy-ns"
+		dummyBiosUUID         = "dummy-bios-uuid"
+		dummyInstanceUUID     = "dummy-instance-uuid"
+		dummyDiskUUID         = "111-222-333-disk-uuid"
+		claimName1            = "pvc-volume-1"
+		claimName2            = "pvc-volume-2"
+		volumeName1           = "cns-volume-1"
+		volumeName2           = "cns-volume-2"
+		detachingVolumeSuffix = ":detaching"
 	)
 	var (
 		reconciler     *volumebatch.Reconciler
@@ -97,7 +99,7 @@ func unitTestsReconcile() {
 		}
 
 		vmVolumeWithPVC1 = &vmopv1.VirtualMachineVolume{
-			Name: "cns-volume-1",
+			Name: volumeName1,
 			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
@@ -123,7 +125,7 @@ func unitTestsReconcile() {
 		}
 
 		vmVolumeWithPVC2 = &vmopv1.VirtualMachineVolume{
-			Name: "cns-volume-2",
+			Name: volumeName2,
 			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
@@ -229,7 +231,7 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
 
-				By("Did not create CnsNodeVmBatchAttachment", func() {
+				By("Did not create CnsNodeVMBatchAttachment", func() {
 					Expect(getCNSBatchAttachmentForVolumeName(ctx, vm)).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
@@ -334,165 +336,6 @@ func unitTestsReconcile() {
 				})
 			})
 
-			When("volumes are already tracked by legacy CnsNodeVmAttachment", func() {
-				var (
-					vmVolumeWithPVC2 *vmopv1.VirtualMachineVolume
-					boundPVC2        *corev1.PersistentVolumeClaim
-					legacyAttachment *cnsv1alpha1.CnsNodeVmAttachment
-				)
-
-				BeforeEach(func() {
-					// Create a second volume.  This one will be tracked by batch attach.
-					vmVolumeWithPVC2 = &vmopv1.VirtualMachineVolume{
-						Name: "cns-volume-2",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "pvc-volume-2",
-								},
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(1)),
-								DiskMode:            vmopv1.VolumeDiskModePersistent,
-								SharingMode:         vmopv1.VolumeSharingModeNone,
-							},
-						},
-					}
-
-					boundPVC2 = &corev1.PersistentVolumeClaim{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      vmVolumeWithPVC2.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
-							Namespace: ns,
-						},
-						Status: corev1.PersistentVolumeClaimStatus{
-							Phase: corev1.ClaimBound,
-						},
-					}
-
-					// Create a CnsNodeVmAttachment for the first volume to simulate brownfield attached volume.
-					legacyAttachment = &cnsv1alpha1.CnsNodeVmAttachment{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      util.CNSAttachmentNameForVolume(vm.Name, vmVolumeWithPVC1.Name), // "dummy-vm-cns-volume-1"
-							Namespace: ns,
-						},
-						Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
-							NodeUUID:   dummyBiosUUID,
-							VolumeName: vmVolumeWithPVC1.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
-						},
-						Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
-							Attached: true,
-						},
-					}
-
-					// Add both volumes to the VM spec
-					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{*vmVolumeWithPVC1, *vmVolumeWithPVC2}
-
-					initObjects = append(initObjects, boundPVC2, legacyAttachment)
-				})
-
-				It("should exclude legacy-tracked volumes from batch attachment", func() {
-					err := reconciler.ReconcileNormal(volCtx)
-					Expect(err).NotTo(HaveOccurred())
-
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-
-					// Batch attachment should be created only for the greenfield volume
-					Expect(attachment).NotTo(BeNil())
-					Expect(attachment.Spec.Volumes).To(HaveLen(1))
-					attVol := attachment.Spec.Volumes[0]
-					Expect(attVol.Name).To(Equal("cns-volume-2"))
-					Expect(attVol.PersistentVolumeClaim.ClaimName).To(Equal("pvc-volume-2"))
-
-					// Verify the legacy attachment still exists.
-					legacyAttachmentKey := client.ObjectKey{
-						Name:      util.CNSAttachmentNameForVolume(vm.Name, vmVolumeWithPVC1.Name),
-						Namespace: ns,
-					}
-					existingLegacyAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
-					err = ctx.Client.Get(ctx, legacyAttachmentKey, existingLegacyAttachment)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(existingLegacyAttachment.Spec.VolumeName).To(Equal("pvc-volume-1"))
-				})
-
-				When("all volumes are tracked by legacy attachments", func() {
-					BeforeEach(func() {
-						// Create a legacy attachment for the second volume too
-						legacyAttachment2 := &cnsv1alpha1.CnsNodeVmAttachment{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      util.CNSAttachmentNameForVolume(vm.Name, vmVolumeWithPVC2.Name), // "dummy-vm-cns-volume-2"
-								Namespace: ns,
-							},
-							Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
-								NodeUUID:   dummyBiosUUID,
-								VolumeName: vmVolumeWithPVC2.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
-							},
-							Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
-								Attached: true,
-							},
-						}
-						initObjects = append(initObjects, legacyAttachment2)
-					})
-
-					It("should not create batch attachment when all volumes are handled by legacy attachments", func() {
-						err := reconciler.ReconcileNormal(volCtx)
-						Expect(err).NotTo(HaveOccurred())
-
-						// No batch attachment should be created since all volumes are legacy-tracked
-						attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-						Expect(attachment).To(BeNil())
-					})
-				})
-
-				When("legacy attachment has different NodeUUID", func() {
-					BeforeEach(func() {
-						legacyAttachment.Spec.NodeUUID = "stale-bios-uuid"
-					})
-
-					It("should treat volume as greenfield and include in batch", func() {
-						err := reconciler.ReconcileNormal(volCtx)
-						Expect(err).NotTo(HaveOccurred())
-
-						attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-
-						// Both volumes should be in the batch since
-						// the legacy attachment's node UUID doesn't
-						// match this VM's BIOS UUID.
-						Expect(attachment).NotTo(BeNil())
-						Expect(attachment.Spec.Volumes).To(HaveLen(2))
-
-						volumeNames := make([]string, len(attachment.Spec.Volumes))
-						for i, vol := range attachment.Spec.Volumes {
-							volumeNames[i] = vol.Name
-						}
-						Expect(volumeNames).To(ConsistOf("cns-volume-1", "cns-volume-2"))
-					})
-				})
-
-				When("legacy attachment has different PVC name", func() {
-					BeforeEach(func() {
-						// Make the legacy attachment point to a different PVC
-						legacyAttachment.Spec.VolumeName = "different-pvc"
-					})
-
-					It("should treat volume as greenfield and include in batch", func() {
-						err := reconciler.ReconcileNormal(volCtx)
-						Expect(err).NotTo(HaveOccurred())
-
-						attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-
-						// Both volumes should be in the batch since the legacy attachment points to different PVC
-						Expect(attachment).NotTo(BeNil())
-						Expect(attachment.Spec.Volumes).To(HaveLen(2), "Both volumes should be treated as greenfield when legacy attachment has different PVC")
-
-						volumeNames := make([]string, len(attachment.Spec.Volumes))
-						for i, vol := range attachment.Spec.Volumes {
-							volumeNames[i] = vol.Name
-						}
-						Expect(volumeNames).To(ConsistOf("cns-volume-1", "cns-volume-2"))
-					})
-				})
-			})
-
 			When("there is a PVC with application type: Oracle RAC", func() {
 				BeforeEach(func() {
 					vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC // This sets IndependentPersistent + MultiWriter
@@ -541,39 +384,117 @@ func unitTestsReconcile() {
 			})
 		})
 
-		When("VM has legacy CnsNodeVmAttachment resources", func() {
+		When("VM Spec.Volumes is empty and there are legacy CnsNodeVmAttachment resources", func() {
 			var (
-				legacyAttachment1 *cnsv1alpha1.CnsNodeVmAttachment
-				legacyAttachment2 *cnsv1alpha1.CnsNodeVmAttachment
+				legacyAttachment1     *cnsv1alpha1.CnsNodeVmAttachment
+				legacyAttachment2     *cnsv1alpha1.CnsNodeVmAttachment
+				legacyAttachmentName1 string
+				legacyAttachmentName2 string
+				vmVolWithLegacy1      *vmopv1.VirtualMachineVolume
+				legacyPVC1            *corev1.PersistentVolumeClaim
+				vmVolWithLegacy2      *vmopv1.VirtualMachineVolume
+				legacyPVC2            *corev1.PersistentVolumeClaim
+			)
+
+			const (
+				legacyPVCName1 = "legacy-pvc-1"
+				legacyPVCName2 = "legacy-pvc-2"
+
+				legacyVolumeName1 = "legacy-volume-1"
+				legacyVolumeName2 = "legacy-volume-2"
+
+				diskUUID1 = "diskuuid1"
+				diskUUID2 = "diskuuid2"
 			)
 
 			BeforeEach(func() {
+				legacyAttachmentName1 = util.CNSAttachmentNameForVolume(vm.Name, legacyVolumeName1)
+				legacyAttachmentName2 = util.CNSAttachmentNameForVolume(vm.Name, legacyVolumeName2)
 				// Create legacy attachments for testing
 				legacyAttachment1 = &cnsv1alpha1.CnsNodeVmAttachment{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      util.CNSAttachmentNameForVolume(vm.Name, "legacy-volume-1"),
+						Name:      legacyAttachmentName1,
 						Namespace: ns,
 					},
 					Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
 						NodeUUID:   dummyBiosUUID,
-						VolumeName: "legacy-pvc-1",
+						VolumeName: legacyPVCName1,
 					},
 					Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
 						Attached: true,
+						AttachmentMetadata: map[string]string{
+							cnsv1alpha1.AttributeFirstClassDiskUUID: diskUUID1,
+						},
 					},
 				}
 
 				legacyAttachment2 = &cnsv1alpha1.CnsNodeVmAttachment{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      util.CNSAttachmentNameForVolume(vm.Name, "legacy-volume-2"),
+						Name:      legacyAttachmentName2,
 						Namespace: ns,
 					},
 					Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
 						NodeUUID:   dummyBiosUUID,
-						VolumeName: "legacy-pvc-2",
+						VolumeName: legacyPVCName2,
 					},
 					Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
 						Attached: false,
+						AttachmentMetadata: map[string]string{
+							cnsv1alpha1.AttributeFirstClassDiskUUID: diskUUID2,
+						},
+					},
+				}
+
+				vmVolWithLegacy1 = &vmopv1.VirtualMachineVolume{
+					Name: legacyVolumeName1,
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: legacyPVCName1,
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
+							DiskMode:            vmopv1.VolumeDiskModePersistent,
+							SharingMode:         vmopv1.VolumeSharingModeNone,
+						},
+					},
+				}
+
+				legacyPVC1 = &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      legacyPVCName1,
+						Namespace: ns,
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimBound,
+					},
+				}
+
+				// legacy volume 2 still has same PVC name as VM spec
+				vmVolWithLegacy2 = &vmopv1.VirtualMachineVolume{
+					Name: legacyVolumeName2,
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: legacyPVCName2,
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
+							DiskMode:            vmopv1.VolumeDiskModePersistent,
+							SharingMode:         vmopv1.VolumeSharingModeNone,
+						},
+					},
+				}
+
+				legacyPVC2 = &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      legacyPVCName2,
+						Namespace: ns,
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimBound,
 					},
 				}
 			})
@@ -604,35 +525,21 @@ func unitTestsReconcile() {
 					// No batch attachment should be created since no volumes in spec
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).To(BeNil())
+
+					By("VM Status.Volumes should not contain legacy volume", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(0))
+					})
 				})
 			})
 
-			When("legacy attachments exist and corresponding volumes are in VM spec", func() {
+			When("legacy attachments exist and one corresponding volume is in VM spec", func() {
 				BeforeEach(func() {
+					// legacy volume 1 is in VM spec
+					legacyAttachment1.Spec.VolumeName = legacyPVCName1
 					// Add a volume that matches legacy attachment
-					vmVolWithLegacy := &vmopv1.VirtualMachineVolume{
-						Name: "legacy-volume-1",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "legacy-pvc-1",
-								},
-							},
-						},
-					}
 
-					legacyPVC := &corev1.PersistentVolumeClaim{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "legacy-pvc-1",
-							Namespace: ns,
-						},
-						Status: corev1.PersistentVolumeClaimStatus{
-							Phase: corev1.ClaimBound,
-						},
-					}
-
-					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy)
-					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, legacyPVC)
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy1)
+					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, legacyPVC1)
 				})
 
 				It("should keep matching legacy attachments and delete orphaned ones", func() {
@@ -656,6 +563,41 @@ func unitTestsReconcile() {
 					// attachment
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).To(BeNil(), "Batch attachment should not be created when volume is tracked by matching legacy attachment")
+
+					By("VM Status.Volumes should contain legacy volume that is tracked by legacy attachment", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(legacyVolumeName1))
+						Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+						Expect(vm.Status.Volumes[0].DiskUUID).To(Equal(diskUUID1))
+					})
+				})
+			})
+
+			When("all volumes are tracked by legacy attachments and all in VM spec", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy1, *vmVolWithLegacy2)
+					// Create a legacy attachment for the second volume too
+					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, legacyPVC1, legacyPVC2)
+				})
+
+				It("should not create batch attachment when all volumes are handled by legacy attachments", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					// No batch attachment should be created since all volumes are legacy-tracked
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					Expect(attachment).To(BeNil())
+
+					By("VM Status.Volumes should contain the all volumes", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(legacyVolumeName1))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+						Expect(vm.Status.Volumes[0].DiskUUID).To(Equal(diskUUID1))
+						Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+						Expect(vm.Status.Volumes[1].Name).To(Equal(legacyVolumeName2))
+						Expect(vm.Status.Volumes[1].Type).To(Equal(vmopv1.VolumeTypeManaged))
+						Expect(vm.Status.Volumes[1].DiskUUID).To(Equal(diskUUID2))
+					})
 				})
 			})
 
@@ -663,7 +605,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					// Add a volume with same name but different PVC
 					vmVolWithDifferentPVC := &vmopv1.VirtualMachineVolume{
-						Name: "legacy-volume-1",
+						Name: legacyVolumeName1,
 						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
@@ -678,18 +620,10 @@ func unitTestsReconcile() {
 						},
 					}
 
-					differentPVC := &corev1.PersistentVolumeClaim{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "different-pvc",
-							Namespace: ns,
-						},
-						Status: corev1.PersistentVolumeClaimStatus{
-							Phase: corev1.ClaimBound,
-						},
-					}
+					legacyPVC1.Name = "different-pvc"
 
-					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithDifferentPVC)
-					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, differentPVC)
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithDifferentPVC, *vmVolWithLegacy2)
+					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, legacyPVC1, legacyPVC2)
 				})
 
 				It("should delete legacy attachment and create batch attachment", func() {
@@ -706,8 +640,8 @@ func unitTestsReconcile() {
 					err1 := ctx.Client.Get(ctx, legacyKey1, attachment1)
 					err2 := ctx.Client.Get(ctx, legacyKey2, attachment2)
 
-					Expect(apierrors.IsNotFound(err1)).To(BeTrue(), "Legacy attachment with wrong PVC should be deleted")
-					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Orphaned legacy attachment should be deleted")
+					Expect(apierrors.IsNotFound(err1)).To(BeTrue(), "Legacy attachment with different PVC should be deleted")
+					Expect(err2).ToNot(HaveOccurred(), "Legacy attachment with same PVC should not be deleted")
 
 					// Batch attachment should be created for the volume
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
@@ -715,6 +649,59 @@ func unitTestsReconcile() {
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
 					Expect(batchAttachment.Spec.Volumes[0].Name).To(Equal("legacy-volume-1"))
 					Expect(batchAttachment.Spec.Volumes[0].PersistentVolumeClaim.ClaimName).To(Equal("different-pvc"))
+
+					By("VM Status.Volumes should contain the all volumes", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						// volume1's status is refreshed, fetched from batch attachment.
+						Expect(vm.Status.Volumes[0].Name).To(Equal(legacyVolumeName1))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+						Expect(vm.Status.Volumes[0].Attached).To(BeFalse())
+						Expect(vm.Status.Volumes[1].Name).To(Equal(legacyVolumeName2))
+						Expect(vm.Status.Volumes[1].Type).To(Equal(vmopv1.VolumeTypeManaged))
+						Expect(vm.Status.Volumes[1].DiskUUID).To(Equal(diskUUID2))
+					})
+				})
+			})
+
+			When("legacy attachment exist in vm status but not in vm spec", func() {
+				BeforeEach(func() {
+					legacyVolumeStatus := vmopv1.VirtualMachineVolumeStatus{
+						Name:     legacyVolumeName1,
+						Attached: true,
+						DiskUUID: diskUUID1,
+						Type:     vmopv1.VolumeTypeManaged,
+					}
+					legacyAttachment1.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID] = diskUUID1
+
+					vm.Status.Volumes = append(vm.Status.Volumes, legacyVolumeStatus)
+
+					initObjects = append(initObjects, legacyAttachment1)
+				})
+
+				It("should delete legacy attachment and add detaching volume to VM Status.Volumes", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify legacy attachments were deleted (PVC mismatch makes them orphaned)
+					legacyKey1 := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					legacyKey2 := client.ObjectKey{Name: legacyAttachment2.Name, Namespace: ns}
+
+					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					attachment2 := &cnsv1alpha1.CnsNodeVmAttachment{}
+
+					err1 := ctx.Client.Get(ctx, legacyKey1, attachment1)
+					err2 := ctx.Client.Get(ctx, legacyKey2, attachment2)
+
+					Expect(apierrors.IsNotFound(err1)).To(BeTrue(), "Legacy attachment should be deleted")
+					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Orphaned legacy attachment should be deleted")
+
+					By("VM Status.Volumes should contain the volume 1 with detaching suffix", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(legacyVolumeName1 + detachingVolumeSuffix))
+						Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+						Expect(vm.Status.Volumes[0].DiskUUID).To(Equal(diskUUID1))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+					})
 				})
 			})
 
@@ -723,34 +710,8 @@ func unitTestsReconcile() {
 					// Make legacy attachment have stale NodeUUID
 					legacyAttachment1.Spec.NodeUUID = "stale-bios-uuid"
 
-					vmVolWithLegacy := &vmopv1.VirtualMachineVolume{
-						Name: "legacy-volume-1",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "legacy-pvc-1",
-								},
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
-								DiskMode:            vmopv1.VolumeDiskModePersistent,
-								SharingMode:         vmopv1.VolumeSharingModeNone,
-							},
-						},
-					}
-
-					legacyPVC := &corev1.PersistentVolumeClaim{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "legacy-pvc-1",
-							Namespace: ns,
-						},
-						Status: corev1.PersistentVolumeClaimStatus{
-							Phase: corev1.ClaimBound,
-						},
-					}
-
-					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy)
-					initObjects = append(initObjects, legacyAttachment1, legacyPVC)
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy1)
+					initObjects = append(initObjects, legacyAttachment1, legacyPVC1)
 				})
 
 				It("should treat volume as greenfield and create batch attachment", func() {
@@ -769,6 +730,13 @@ func unitTestsReconcile() {
 					Expect(batchAttachment).ToNot(BeNil())
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
 					Expect(batchAttachment.Spec.Volumes[0].Name).To(Equal("legacy-volume-1"))
+
+					By("VM Status.Volumes should contain refreshed volume that is tracked by batch attachment", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(legacyVolumeName1))
+						Expect(vm.Status.Volumes[0].Attached).To(BeFalse())
+						Expect(vm.Status.Volumes[0].DiskUUID).To(BeEmpty())
+					})
 				})
 			})
 
@@ -796,11 +764,26 @@ func unitTestsReconcile() {
 					// No batch attachment should be created due to error
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).To(BeNil())
+
+					By("VM Status.Volumes should not be updated either", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(0))
+					})
 				})
 			})
 
-			When("error occurs while deleting legacy attachments", func() {
+			When("error occurs while deleting orphaned legacy attachments", func() {
 				BeforeEach(func() {
+					legacyVolumeStatus := vmopv1.VirtualMachineVolumeStatus{
+						Name:     legacyVolumeName1,
+						Attached: true,
+						DiskUUID: diskUUID1,
+						Type:     vmopv1.VolumeTypeManaged,
+					}
+
+					legacyAttachment1.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID] = diskUUID1
+
+					vm.Status.Volumes = append(vm.Status.Volumes, legacyVolumeStatus)
+
 					// Add orphaned legacy attachment
 					initObjects = append(initObjects, legacyAttachment1)
 
@@ -826,6 +809,14 @@ func unitTestsReconcile() {
 					// Batch processing should continue normally (no volumes to process in this case)
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).To(BeNil())
+
+					By("VM Status.Volumes should still contain the volume in the status", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(legacyVolumeName1 + detachingVolumeSuffix))
+						Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+						Expect(vm.Status.Volumes[0].DiskUUID).To(Equal(diskUUID1))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+					})
 				})
 			})
 		})
@@ -1183,7 +1174,6 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 
 				It("returns error", func() {
-					fmt.Println(initObjects)
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(MatchError(ContainSubstring("PVC with WFFC storage class support is not enabled")))
 				})
@@ -1305,7 +1295,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 			})
 		})
 
-		When("There is an existing CnsNodeVMBatchAttachment", func() {
+		When("VM Spec.Volumes is empty and there is an existing CnsNodeVMBatchAttachment", func() {
 			var attachment *cnsv1alpha1.CnsNodeVMBatchAttachment
 			BeforeEach(func() {
 				attachment = cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{})
@@ -1372,6 +1362,38 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 						Expect(vm.Status.Volumes).To(HaveLen(1))
 						Expect(attachment.Status.VolumeStatus).To(HaveLen(1))
 						assertVMVolStatusFromBatchAttachmentSpec(vm, attachment, 0, 0)
+					})
+				})
+			})
+
+			When("existing CnsNodeVMBatchAttachment has detaching volume in status", func() {
+				BeforeEach(func() {
+					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
+						cnsv1alpha1.VolumeStatus{
+							Name: volumeName1 + detachingVolumeSuffix,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								ClaimName: claimName1,
+								Attached:  true,
+								DiskUUID:  dummyDiskUUID,
+							},
+						},
+					)
+					initObjects = append(initObjects, attachment)
+				})
+
+				It("returns success and refresh the vm volume status", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					Expect(attachment).To(BeNil())
+
+					By("VM Status.Volumes should contain the volume with detaching suffix", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(volumeName1 + detachingVolumeSuffix))
+						Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+						Expect(vm.Status.Volumes[0].DiskUUID).To(Equal(dummyDiskUUID))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
 					})
 				})
 			})

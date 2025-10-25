@@ -14,7 +14,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
@@ -83,10 +82,11 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
-	if vm.Status.PowerState == vmopv1.VirtualMachinePowerStateOn {
-		return pkgerr.NoRequeueError{
-			Message: "cannot add/edit/remove controllers when the VM is powered on",
-		}
+	if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOff {
+		// This shouldn't happen since validating webhook should've blocked this.
+		pkglog.FromContextOrDefault(ctx).Info("updating virtual controllers when VM is not powered off is not allowed, skip updating")
+
+		return nil
 	}
 
 	var (

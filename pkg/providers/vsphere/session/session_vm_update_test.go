@@ -826,7 +826,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 	})
 
 	assertUpdate := func() {
-		ExpectWithOffset(1, ctxop.IsUpdate(vmCtx)).To(BeTrue())
+		GinkgoHelper()
+
+		Expect(ctxop.IsUpdate(vmCtx)).To(BeTrue())
 	}
 
 	When("VM is powered off", func() {
@@ -1417,6 +1419,171 @@ var _ = Describe("UpdateVirtualMachine", func() {
 							// Ensure no policy-related keys exist
 							Expect(ecMap).ToNot(HaveKey(vmconfpolicy.ExtraConfigPolicyTagsKey))
 						}
+					})
+
+					assertUpdate()
+				})
+			})
+		})
+
+		Context("Virtual Controllers", func() {
+			BeforeEach(func() {
+				vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+			})
+
+			When("Capability is enabled", func() {
+
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+				})
+
+				It("should not add virtual controllers to VM during update when VM is powered on", func() {
+					By("Setting VM power state to On", func() {
+						vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+					})
+
+					By("Specifying virtual controllers in the VM spec", func() {
+						vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+							{
+								BusNumber: 1,
+							},
+						}
+					})
+
+					By("Updating the VM", func() {
+						// Update the VM
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					})
+
+					By("Verifying SATA controller was not added", func() {
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+						// Collect all the existing controller device keys.
+						sataControllerCount := 0
+						for _, d := range vmCtx.MoVM.Config.Hardware.Device {
+							if _, ok := d.(*vimtypes.VirtualAHCIController); ok {
+								sataControllerCount++
+							}
+						}
+						Expect(sataControllerCount).To(BeZero())
+						Expect(ctxop.IsUpdate(vmCtx)).ToNot(BeTrue())
+					})
+				})
+
+				It("should add virtual controllers to VM during update if VM is powered off", func() {
+					By("Setting up VM power state to Off", func() {
+						vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+					})
+
+					By("Specifying virtual controllers in the VM spec", func() {
+						vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+							{
+								BusNumber: 1,
+							},
+						}
+						vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
+							{
+								BusNumber:   1,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						}
+						vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+							{
+								BusNumber: 1,
+							},
+						}
+						vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   1,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+								Type:        vmopv1.SCSIControllerTypeLsiLogic,
+							},
+						}
+					})
+
+					By("Updating the VM", func() {
+						// Update the VM
+						err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+						Expect(errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+					})
+
+					By("Verifying virtual controllers were added", func() {
+						// Refresh VM properties
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+						// Collect all the existing controller device keys.
+						ideControllers := []vimtypes.VirtualIDEController{}
+						nvmeControllers := []vimtypes.VirtualNVMEController{}
+						sataControllers := []vimtypes.VirtualAHCIController{}
+						scsiControllers := []vimtypes.BaseVirtualSCSIController{}
+						for _, d := range vmCtx.MoVM.Config.Hardware.Device {
+							switch d := d.(type) {
+							case *vimtypes.VirtualIDEController:
+								ideControllers = append(ideControllers, *d)
+							case *vimtypes.VirtualNVMEController:
+								nvmeControllers = append(nvmeControllers, *d)
+							case *vimtypes.VirtualAHCIController:
+								sataControllers = append(sataControllers, *d)
+							case vimtypes.BaseVirtualSCSIController:
+								scsiControllers = append(scsiControllers, d)
+							}
+						}
+
+						Expect(len(ideControllers)).To(Equal(1))
+						Expect(ideControllers[0].BusNumber).To(Equal(int32(1)))
+						Expect(len(nvmeControllers)).To(Equal(1))
+						Expect(nvmeControllers[0].BusNumber).To(Equal(int32(1)))
+						Expect(len(sataControllers)).To(Equal(1))
+						Expect(sataControllers[0].BusNumber).To(Equal(int32(1)))
+						Expect(len(scsiControllers)).To(Equal(1))
+						Expect(scsiControllers[0].GetVirtualSCSIController().BusNumber).To(Equal(int32(1)))
+						_, ok := scsiControllers[0].(*vimtypes.VirtualLsiLogicController)
+						Expect(ok).To(BeTrue())
+					})
+
+					assertUpdate()
+				})
+			})
+
+			When("Capability is disabled", func() {
+
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = false
+					})
+				})
+
+				It("should not add virtual controllers to VM during update even if VM is powered off", func() {
+					By("Setting up VM power state to Off", func() {
+						vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+					})
+
+					By("Specifying virtual controllers in the VM spec", func() {
+						vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+							{
+								BusNumber: 1,
+							},
+						}
+					})
+
+					By("Updating the VM", func() {
+						// Update the VM
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+						// No-op
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					})
+
+					By("Verifying SATA controller was not added", func() {
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+						// Collect all the existing controller device keys.
+						sataControllerCount := 0
+						for _, d := range vmCtx.MoVM.Config.Hardware.Device {
+							if _, ok := d.(*vimtypes.VirtualAHCIController); ok {
+								sataControllerCount++
+							}
+						}
+						Expect(sataControllerCount).To(BeZero())
 					})
 
 					assertUpdate()

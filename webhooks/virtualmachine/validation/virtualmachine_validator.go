@@ -1129,15 +1129,24 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 	return allErrs
 }
 
+type deviceKey struct {
+	controllerType      vmopv1.VirtualControllerType
+	controllerBusNumber int32
+	unitNumber          int32
+}
+
 func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
-		allErrs       field.ErrorList
-		volumesPath   = field.NewPath("spec", "volumes")
-		volumeNames   = map[string]bool{}
-		oldVolumesMap = map[string]*vmopv1.VirtualMachineVolume{}
+		allErrs         field.ErrorList
+		volumesPath     = field.NewPath("spec", "volumes")
+		volumeSpecMap   = map[string]vmopv1.VirtualMachineVolume{}
+		oldVolumesMap   = map[string]*vmopv1.VirtualMachineVolume{}
+		newVolumesMap   = map[string]*vmopv1.VirtualMachineVolume{}
+		deviceVolumeMap = map[deviceKey]string{}
+		attachedDevices = map[deviceKey]struct{}{}
 	)
 
 	if oldVM != nil {
@@ -1148,31 +1157,103 @@ func (v validator) validateVolumes(
 		}
 	}
 
+	for _, vol := range vm.Spec.Volumes {
+		if _, isOldVol := oldVolumesMap[vol.Name]; !isOldVol {
+			newVolumesMap[vol.Name] = &vol
+		}
+	}
+
+	if vm.Status.Hardware != nil {
+		for _, controller := range vm.Status.Hardware.Controllers {
+			for _, device := range controller.Devices {
+				attachedDevices[deviceKey{
+					controllerType:      controller.Type,
+					controllerBusNumber: controller.BusNumber,
+					unitNumber:          device.UnitNumber,
+				}] = struct{}{}
+			}
+		}
+	}
+
 	for i, vol := range vm.Spec.Volumes {
 		volPath := volumesPath.Index(i)
 
 		if vol.Name != "" {
-			if volumeNames[vol.Name] {
-				allErrs = append(allErrs, field.Duplicate(volPath.Child("name"), vol.Name))
+			if _, found := volumeSpecMap[vol.Name]; found {
+				allErrs = append(allErrs, field.Duplicate(
+					volPath.Child("name"), vol.Name))
 			} else {
-				volumeNames[vol.Name] = true
+				volumeSpecMap[vol.Name] = vol
 			}
 		} else {
 			allErrs = append(allErrs, field.Required(volPath.Child("name"), ""))
 		}
 
 		if vol.Name != "" {
-			errs := validation.NameIsDNSSubdomain(pkgutil.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
+			errs := validation.NameIsDNSSubdomain(
+				pkgutil.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
 			for _, msg := range errs {
-				allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
+				allErrs = append(allErrs, field.Invalid(volPath.Child("name"),
+					vol.Name, msg))
 			}
 		}
 
 		if vol.PersistentVolumeClaim == nil {
-			allErrs = append(allErrs, field.Required(volPath.Child("persistentVolumeClaim"), ""))
+			allErrs = append(allErrs, field.Required(
+				volPath.Child("persistentVolumeClaim"), ""))
 		} else {
 			allErrs = append(allErrs,
-				v.validateVolumeWithPVC(ctx, oldVM, vm, oldVolumesMap[vol.Name], vol, volPath)...)
+				v.validateVolumeWithPVC(ctx, oldVM, vm, oldVolumesMap[vol.Name],
+					vol, volPath)...)
+
+			if vol.PersistentVolumeClaim.UnitNumber != nil &&
+				vol.PersistentVolumeClaim.ControllerBusNumber != nil &&
+				vol.PersistentVolumeClaim.ControllerType != "" {
+
+				unitNumber := *vol.PersistentVolumeClaim.UnitNumber
+				deviceKey := deviceKey{
+					controllerType:      vol.PersistentVolumeClaim.ControllerType,
+					controllerBusNumber: *vol.PersistentVolumeClaim.ControllerBusNumber,
+					unitNumber:          unitNumber,
+				}
+
+				if existingPVCName, found := deviceVolumeMap[deviceKey]; found {
+					allErrs = append(allErrs, field.Invalid(
+						volPath.Child("persistentVolumeClaim", "unitNumber"),
+						unitNumber,
+						fmt.Sprintf("unit number %d on controller %s "+
+							"(bus %d) is already used by PVC %s",
+							unitNumber,
+							deviceKey.controllerType,
+							deviceKey.controllerBusNumber,
+							existingPVCName,
+						),
+					))
+
+				} else {
+					deviceVolumeMap[deviceKey] = vol.PersistentVolumeClaim.ClaimName
+				}
+
+				// when checking if a unit is already used by an attached device,
+				// we only need to validate against new volumes,
+				// as old volumes are already validated and
+				// because we are not able to map devices in status to
+				// volumes in spec
+				if _, isNewVol := newVolumesMap[vol.Name]; isNewVol {
+					if _, found := attachedDevices[deviceKey]; found {
+						allErrs = append(allErrs, field.Invalid(
+							volPath.Child("persistentVolumeClaim", "unitNumber"),
+							unitNumber,
+							fmt.Sprintf("unit number %d on controller %s "+
+								"(bus %d) is already used by an attached device",
+								unitNumber,
+								deviceKey.controllerType,
+								deviceKey.controllerBusNumber,
+							),
+						))
+					}
+				}
+			}
 		}
 	}
 

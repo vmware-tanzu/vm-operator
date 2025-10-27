@@ -7,6 +7,7 @@ package validation_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -4085,6 +4086,8 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+
+	unitTestsValidateVolumeUnitNumber(doTest)
 }
 
 func unitTestsValidateUpdate() {
@@ -7278,6 +7281,282 @@ func unitTestsValidateUpdate() {
 		)
 	})
 
+	Context("Volume PVC UnitNumber conflicts with attached devices", func() {
+		DescribeTable("Updates", doTest,
+			Entry("should allow new volume with unit number not in status",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+										UnitNumber:          ptr.To(int32(0)),
+										ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+										ControllerBusNumber: ptr.To(int32(0)),
+									},
+								},
+							},
+						}
+
+						// New VM adds a second volume with different unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+									UnitNumber:          ptr.To(int32(1)),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To(int32(0)),
+								},
+							},
+						})
+
+						// Setup status with existing device
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 0,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny new volume with unit number already used by attached device",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+										UnitNumber:          ptr.To(int32(0)),
+										ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+										ControllerBusNumber: ptr.To(int32(0)),
+									},
+								},
+							},
+						}
+
+						// New VM adds a second volume with conflicting unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+									UnitNumber:          ptr.To(int32(5)),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To(int32(0)),
+								},
+							},
+						})
+
+						// Setup status with device at unit 5 (e.g., a CD-ROM or classic disk)
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 0,
+										},
+										{
+											Type:       vmopv1.VirtualDeviceTypeCDROM,
+											UnitNumber: 5,
+										},
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						"unit number 5 on controller SCSI (bus 0) is already used by an attached device",
+					),
+				},
+			),
+			Entry("should allow new volume on different controller even if same unit number exists",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+										UnitNumber:          ptr.To(int32(0)),
+										ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+										ControllerBusNumber: ptr.To(int32(0)),
+									},
+								},
+							},
+						}
+
+						// New VM adds volume on SATA controller with same unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+									UnitNumber:          ptr.To(int32(0)),
+									ControllerType:      vmopv1.VirtualControllerTypeSATA,
+									ControllerBusNumber: ptr.To(int32(0)),
+								},
+							},
+						})
+
+						// Setup status with SCSI device at unit 0
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 0,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow new volume on different bus even if same unit number exists",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+										UnitNumber:          ptr.To(int32(3)),
+										ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+										ControllerBusNumber: ptr.To(int32(0)),
+									},
+								},
+							},
+						}
+
+						// New VM adds volume on different SCSI bus with same unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+									UnitNumber:          ptr.To(int32(3)),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To(int32(1)),
+								},
+							},
+						})
+
+						// Setup status with device on bus 0
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 3,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should not check existing volumes against status",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with volume at unit 5
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+										UnitNumber:          ptr.To(int32(5)),
+										ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+										ControllerBusNumber: ptr.To(int32(0)),
+									},
+								},
+							},
+						}
+
+						// New VM keeps the same volume (no changes)
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+
+						// Setup status with device at unit 5 (the existing volume's device)
+						// This should be allowed because we don't validate old volumes against status
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 5,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	unitTestsValidateVolumeUnitNumber(doTest)
+
 	Context("PVC Access Mode and Sharing Mode Combinations", func() {
 		DescribeTable("validate PVC access mode and sharing mode combinations",
 			func(testName string,
@@ -7541,5 +7820,163 @@ func unitTestsValidateDelete() {
 			Expect(response.Allowed).To(BeTrue())
 			Expect(response.Result).ToNot(BeNil())
 		})
+	})
+}
+
+func unitTestsValidateVolumeUnitNumber(
+	doTest func(testParams),
+) {
+	Context("Volume PVC UnitNumber", func() {
+		type volumeConfig struct {
+			unitNumber          *int32
+			controllerType      vmopv1.VirtualControllerType
+			controllerBusNumber *int32
+		}
+
+		setupFnForVolumeUnitNumberUpdates := func(
+			volConfigs ...volumeConfig,
+		) func(ctx *unitValidatingWebhookContext) {
+
+			return func(ctx *unitValidatingWebhookContext) {
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+				for i, cfg := range volConfigs {
+					vol := vmopv1.VirtualMachineVolume{
+						Name: fmt.Sprintf("volume-%d", i),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: fmt.Sprintf("pvc-%d", i),
+								},
+								UnitNumber:          cfg.unitNumber,
+								ControllerType:      cfg.controllerType,
+								ControllerBusNumber: cfg.controllerBusNumber,
+							},
+						},
+					}
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vol)
+				}
+			}
+		}
+
+		DescribeTable("UnitNumber uniqueness per controller", doTest,
+			Entry("should allow VM with no controller specified",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{},
+						volumeConfig{},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with no unit numbers specified",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with unique unit numbers on same controller",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(1)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with same unit number on different controllers",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSATA,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with same unit number on different bus numbers",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(1)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny VM with duplicate unit numbers on same controller",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(3)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(3)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					validate: doValidateWithMsg(
+						"unit number 3 on controller SCSI (bus 0) is already used by PVC pvc-0",
+					),
+				},
+			),
+			Entry("should deny VM with duplicate unit numbers across three volumes on same controller",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(1)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					validate: doValidateWithMsg(
+						"unit number 0 on controller SCSI (bus 0) is already used by PVC pvc-0",
+					),
+				},
+			),
+		)
 	})
 }

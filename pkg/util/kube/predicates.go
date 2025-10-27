@@ -5,11 +5,11 @@
 package kube
 
 import (
-	"reflect"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 // TypedResourceVersionChangedPredicate implements a default update predicate
@@ -23,23 +23,11 @@ type TypedResourceVersionChangedPredicate[T metav1.Object] struct {
 func (TypedResourceVersionChangedPredicate[T]) Update(
 	e event.TypedUpdateEvent[T]) bool {
 
-	if isNil(e.ObjectOld) {
+	if pkgnil.IsNil(e.ObjectOld) {
 		return false
 	}
-	if isNil(e.ObjectNew) {
+	if pkgnil.IsNil(e.ObjectNew) {
 		return false
 	}
 	return e.ObjectNew.GetResourceVersion() != e.ObjectOld.GetResourceVersion()
-}
-
-func isNil(arg any) bool {
-	if v := reflect.ValueOf(arg); !v.IsValid() || ((v.Kind() == reflect.Ptr ||
-		v.Kind() == reflect.Interface ||
-		v.Kind() == reflect.Slice ||
-		v.Kind() == reflect.Map ||
-		v.Kind() == reflect.Chan ||
-		v.Kind() == reflect.Func) && v.IsNil()) {
-		return true
-	}
-	return false
 }

@@ -236,4 +236,8 @@ const (
 
 	// VCFAIDAnnotationKey is the annotation key for the VCFA ID for GOSC customization.
 	VCFAIDAnnotationKey = "vmoperator.vmware.com/vcfa-id"
+
+	// ReconcilePriorityAnnotationKey is the annotation key that specifies the
+	// reconcile priority for an object.
+	ReconcilePriorityAnnotationKey = "vmoperator.vmware.com.protected/reconcile-priority"
 )

@@ -1185,6 +1185,7 @@ func unitTestsValidateCreate() {
 			Entry("should disallow creating VM with admin-only annotations set by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
@@ -1196,6 +1197,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					validate: doValidateWithMsg(
+						field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -1213,6 +1215,7 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
+						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
@@ -1237,6 +1240,7 @@ func unitTestsValidateCreate() {
 						ctx.UserInfo.Username = fakeWCPUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
+						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
@@ -4550,6 +4554,7 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
 
+						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4561,6 +4566,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
+						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "101"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -4574,6 +4580,7 @@ func unitTestsValidateUpdate() {
 
 					},
 					validate: doValidateWithMsg(
+						field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -4590,6 +4597,7 @@ func unitTestsValidateUpdate() {
 			Entry("should disallow removing admin-only annotations by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4602,6 +4610,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					validate: doValidateWithMsg(
+						field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -4620,6 +4629,7 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
+						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4631,6 +4641,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
+						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "101"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -4650,6 +4661,7 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
+						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4678,6 +4690,7 @@ func unitTestsValidateUpdate() {
 						ctx.UserInfo.Username = privilegedUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
+						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4689,6 +4702,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
+						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "101"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -4716,6 +4730,7 @@ func unitTestsValidateUpdate() {
 						ctx.UserInfo.Username = privilegedUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
+						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal

@@ -7444,7 +7444,6 @@ spec:
                                   format: int32
                                   type: integer
                                 controllerType:
-                                  default: SCSI
                                   description: |-
                                     ControllerType describes the type of the controller to which this volume
                                     should be attached.

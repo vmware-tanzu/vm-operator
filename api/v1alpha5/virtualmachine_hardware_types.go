@@ -17,6 +17,19 @@ const (
 	VirtualControllerTypeSATA VirtualControllerType = "SATA"
 )
 
+// MaxCount returns the maximum number of controllers per VM.
+func (t VirtualControllerType) MaxCount() int32 {
+	switch t {
+	case VirtualControllerTypeIDE:
+		return 2
+	case VirtualControllerTypeNVME,
+		VirtualControllerTypeSATA,
+		VirtualControllerTypeSCSI:
+		return 4
+	}
+	return 0
+}
+
 type VirtualControllerSharingMode string
 
 const (
@@ -54,6 +67,21 @@ type IDEControllerSpec struct {
 	BusNumber int32 `json:"busNumber"`
 }
 
+// MaxSlots returns the maximum number of slots per IDE controller.
+func (c IDEControllerSpec) MaxSlots() int32 {
+	return 2
+}
+
+// MaxCount returns the maximum number of IDE controllers per VM.
+func (c IDEControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeIDE.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c IDEControllerSpec) ReservedUnitNumber() int32 {
+	return -1
+}
+
 type NVMEControllerSpec struct {
 	// +required
 	// +kubebuilder:validation:Minimum=0
@@ -81,6 +109,21 @@ type NVMEControllerSpec struct {
 	SharingMode VirtualControllerSharingMode `json:"sharingMode,omitempty"`
 }
 
+// MaxSlots returns the maximum number of slots per NVME controller.
+func (c NVMEControllerSpec) MaxSlots() int32 {
+	return 64
+}
+
+// MaxCount returns the maximum number of NVME controllers per VM.
+func (c NVMEControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeNVME.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c NVMEControllerSpec) ReservedUnitNumber() int32 {
+	return -1
+}
+
 type SATAControllerSpec struct {
 	// +required
 	// +kubebuilder:validation:Minimum=0
@@ -97,6 +140,21 @@ type SATAControllerSpec struct {
 	// Please note, most of the time this field should be empty so the system
 	// can pick an available slot.
 	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
+}
+
+// MaxSlots returns the maximum number of slots per SATA controller.
+func (c SATAControllerSpec) MaxSlots() int32 {
+	return 30
+}
+
+// MaxCount returns the maximum number of SATA controllers per VM.
+func (c SATAControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeSATA.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c SATAControllerSpec) ReservedUnitNumber() int32 {
+	return -1
 }
 
 type SCSIControllerSpec struct {
@@ -132,6 +190,33 @@ type SCSIControllerSpec struct {
 	//
 	// Defaults to ParaVirtual.
 	Type SCSIControllerType `json:"type,omitempty"`
+}
+
+// MaxSlots returns the maximum number of devices per SCSI controller type.
+// The controller itself occupies one slot (unit number seven).
+//
+// For all these sub-types, the max slots is one less than the capacity
+// since unit number seven is reserved for the SCSI controller itself.
+func (c SCSIControllerSpec) MaxSlots() int32 {
+	switch c.Type {
+	case SCSIControllerTypeParaVirtualSCSI:
+		return 63 // 64 targets - 1 for controller
+	case SCSIControllerTypeBusLogic,
+		SCSIControllerTypeLsiLogic,
+		SCSIControllerTypeLsiLogicSAS:
+		return 15 // 16 targets - 1 for controller
+	}
+	return 0
+}
+
+// MaxCount returns the maximum number of SCSI controllers per VM.
+func (c SCSIControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeSCSI.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c SCSIControllerSpec) ReservedUnitNumber() int32 {
+	return 7
 }
 
 type VirtualDeviceStatus struct {

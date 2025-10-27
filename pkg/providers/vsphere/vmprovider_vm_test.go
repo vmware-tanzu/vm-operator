@@ -3926,8 +3926,7 @@ func vmTests() {
 				clusterModName := "bogusClusterMod"
 				vm.Annotations["vsphere-cluster-module-group"] = clusterModName
 				err := createOrUpdateVM(ctx, vmProvider, vm)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("ClusterModule %q not found", clusterModName)))
+				Expect(err).To(MatchError("VirtualMachineSetResourcePolicy cluster module is not ready"))
 			})
 		})
 

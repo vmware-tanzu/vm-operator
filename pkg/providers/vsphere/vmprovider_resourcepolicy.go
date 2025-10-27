@@ -117,29 +117,6 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 	return apierrorsutil.NewAggregate(errs)
 }
 
-// doClusterModulesExist checks whether all the ClusterModules for the given VirtualMachineSetResourcePolicy
-// have been created and exist in VC for the Session's Cluster.
-func (vs *vSphereVMProvider) doClusterModulesExist(
-	ctx context.Context,
-	clusterModProvider clustermodules.Provider,
-	clusterRef vimtypes.ManagedObjectReference,
-	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error) {
-
-	for _, groupName := range resourcePolicy.Spec.ClusterModuleGroups {
-		_, moduleID := clustermodules.FindClusterModuleUUID(ctx, groupName, clusterRef, resourcePolicy)
-		if moduleID == "" {
-			return false, nil
-		}
-
-		exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
-		if !exists || err != nil {
-			return false, err
-		}
-	}
-
-	return true, nil
-}
-
 // createClusterModules creates all the ClusterModules that has not created yet for a
 // given VirtualMachineSetResourcePolicy in VC.
 func (vs *vSphereVMProvider) createClusterModules(

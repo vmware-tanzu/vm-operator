@@ -13,7 +13,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
+)
+
+const (
+	dummyVMName = "vm-123"
 )
 
 func scsiControllerTests() {
@@ -73,7 +78,7 @@ func scsiControllerMutationTests() {
 
 	Context("VM with UniqueID and no existing controllers", func() {
 		BeforeEach(func() {
-			ctx.vm.Status.UniqueID = "vm-123"
+			ctx.vm.Status.UniqueID = dummyVMName
 		})
 
 		When("single volume without explicit controller", func() {
@@ -243,7 +248,7 @@ func scsiControllerMutationTests() {
 
 	Context("VM with existing controllers", func() {
 		BeforeEach(func() {
-			ctx.vm.Status.UniqueID = "vm-123"
+			ctx.vm.Status.UniqueID = dummyVMName
 			ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 				SCSIControllers: []vmopv1.SCSIControllerSpec{
 					{
@@ -275,6 +280,8 @@ func scsiControllerMutationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -419,7 +426,6 @@ func scsiControllerMutationTests() {
 					},
 				}
 
-				busNum := int32(0)
 				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 					{
 						Name: "vol1",
@@ -428,7 +434,8 @@ func scsiControllerMutationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: &busNum,
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -505,7 +512,7 @@ func scsiControllerMutationTests() {
 
 	Context("Non-PVC volumes", func() {
 		BeforeEach(func() {
-			ctx.vm.Status.UniqueID = "vm-123"
+			ctx.vm.Status.UniqueID = dummyVMName
 			ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 				{
 					Name: "vol1",
@@ -529,7 +536,7 @@ func scsiControllerMutationTests() {
 	Context("Race condition prevention", func() {
 		When("new controller is created but slot might open before reconciliation", func() {
 			BeforeEach(func() {
-				ctx.vm.Status.UniqueID = "vm-123"
+				ctx.vm.Status.UniqueID = dummyVMName
 
 				// Controller at bus 0 is full
 				devices := make([]vmopv1.VirtualDeviceStatus, 63)
@@ -585,6 +592,240 @@ func scsiControllerMutationTests() {
 				// Volume should have controllerBusNumber set to new controller
 				Expect(ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber).ToNot(BeNil())
 				Expect(*ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(1)))
+			})
+		})
+	})
+
+	Context("Multiple volumes sharing newly created controller", func() {
+		When("two OracleRAC volumes need same sharing mode controller", func() {
+			BeforeEach(func() {
+				ctx.vm.Status.UniqueID = dummyVMName
+				// No existing controllers
+
+				// Two OracleRAC volumes (both need sharingMode=None)
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "oracle-vol1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc1",
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+							},
+						},
+					},
+					{
+						Name: "oracle-vol2",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc2",
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+							},
+						},
+					},
+				}
+			})
+
+			It("should create ONE controller and first volume triggers creation", func() {
+				mutated, err := mutation.AddSCSIControllersForVolumes(
+					&ctx.WebhookRequestContext,
+					ctx.Client,
+					ctx.vm,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mutated).To(BeTrue())
+
+				// Should have exactly 1 controller
+				Expect(ctx.vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+				controller := ctx.vm.Spec.Hardware.SCSIControllers[0]
+				Expect(controller.SharingMode).
+					To(Equal(vmopv1.VirtualControllerSharingModeNone))
+				Expect(controller.BusNumber).To(Equal(int32(0)))
+
+				// First volume triggers controller creation, so it gets
+				// controllerBusNumber set
+				vol1BusNum := ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber
+				Expect(vol1BusNum).ToNot(
+					BeNil(),
+					"Volume 1 should have controllerBusNumber set",
+				)
+				Expect(*vol1BusNum).To(Equal(controller.BusNumber))
+
+				// Second volume uses existing controller, so it also gets controllerBusNumber set
+				vol2BusNum := ctx.vm.Spec.Volumes[1].PersistentVolumeClaim.ControllerBusNumber
+				Expect(vol2BusNum).ToNot(
+					BeNil(),
+					"Volume 2 should have controllerBusNumber set",
+				)
+				Expect(*vol2BusNum).To(Equal(controller.BusNumber))
+			})
+		})
+
+		When("three volumes with different requirements", func() {
+			BeforeEach(func() {
+				ctx.vm.Status.UniqueID = dummyVMName
+				// No existing controllers
+
+				// Mix of OracleRAC, WSFC, and regular volumes
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "oracle-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc1",
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+							},
+						},
+					},
+					{
+						Name: "wsfc-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc2",
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+							},
+						},
+					},
+					{
+						Name: "regular-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc3",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should create appropriate controllers for each type", func() {
+				mutated, err := mutation.AddSCSIControllersForVolumes(
+					&ctx.WebhookRequestContext,
+					ctx.Client,
+					ctx.vm,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mutated).To(BeTrue())
+
+				// Should have 3 controllers (one for OracleRAC/None, one for WSFC/Physical, one for regular/None)
+				// Actually, OracleRAC and regular can share the same None controller
+				Expect(ctx.vm.Spec.Hardware.SCSIControllers).To(HaveLen(2))
+
+				// Find the Physical controller for WSFC
+				var physicalController *vmopv1.SCSIControllerSpec
+				var noneController *vmopv1.SCSIControllerSpec
+				for i := range ctx.vm.Spec.Hardware.SCSIControllers {
+					if ctx.vm.Spec.Hardware.SCSIControllers[i].SharingMode == vmopv1.VirtualControllerSharingModePhysical {
+						physicalController = &ctx.vm.Spec.Hardware.SCSIControllers[i]
+					} else if ctx.vm.Spec.Hardware.SCSIControllers[i].SharingMode == vmopv1.VirtualControllerSharingModeNone {
+						noneController = &ctx.vm.Spec.Hardware.SCSIControllers[i]
+					}
+				}
+
+				Expect(physicalController).ToNot(BeNil())
+				Expect(noneController).ToNot(BeNil())
+
+				// OracleRAC and regular volumes should use None controller
+				vol0BusNum := ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber
+				vol2BusNum := ctx.vm.Spec.Volumes[2].PersistentVolumeClaim.ControllerBusNumber
+				Expect(vol0BusNum).ToNot(BeNil(),
+					"Oracle volume should have controllerBusNumber set",
+				)
+				Expect(vol2BusNum).ToNot(BeNil(),
+					"Regular volume should have controllerBusNumber set",
+				)
+				Expect(*vol0BusNum).To(Equal(noneController.BusNumber))
+				Expect(*vol2BusNum).To(Equal(noneController.BusNumber))
+
+				// WSFC volume should use Physical controller
+				vol1BusNum := ctx.vm.Spec.Volumes[1].PersistentVolumeClaim.ControllerBusNumber
+				Expect(vol1BusNum).ToNot(BeNil(),
+					"WSFC volume should have controllerBusNumber set",
+				)
+				Expect(*vol1BusNum).To(Equal(physicalController.BusNumber))
+			})
+		})
+	})
+
+	Context("Maximum controllers reached", func() {
+		When("all 4 controllers exist and are full", func() {
+			BeforeEach(func() {
+				ctx.vm.Status.UniqueID = dummyVMName
+
+				// All controllers full (63 devices each)
+				devices := make([]vmopv1.VirtualDeviceStatus, 63)
+				for i := range devices {
+					devices[i] = vmopv1.VirtualDeviceStatus{
+						Type:       vmopv1.VirtualDeviceTypeDisk,
+						UnitNumber: int32(i),
+					}
+				}
+
+				// Create 4 controllers (maximum)
+				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{},
+				}
+
+				ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{},
+				}
+
+				for i := 0; i < 4; i++ {
+					ctx.vm.Spec.Hardware.SCSIControllers = append(
+						ctx.vm.Spec.Hardware.SCSIControllers,
+						vmopv1.SCSIControllerSpec{
+							BusNumber:   int32(i),
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+					)
+
+					ctx.vm.Status.Hardware.Controllers = append(
+						ctx.vm.Status.Hardware.Controllers,
+						vmopv1.VirtualControllerStatus{
+							Type:      vmopv1.VirtualControllerTypeSCSI,
+							BusNumber: int32(i),
+							Devices:   devices,
+						},
+					)
+				}
+
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "vol1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc1",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should not add controller and not return error", func() {
+				mutated, err := mutation.AddSCSIControllersForVolumes(
+					&ctx.WebhookRequestContext,
+					ctx.Client,
+					ctx.vm,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mutated).To(BeFalse())
+
+				// Still have 4 controllers
+				Expect(ctx.vm.Spec.Hardware.SCSIControllers).To(HaveLen(4))
+
+				// Volume should not have controllerBusNumber set
+				Expect(ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber).To(BeNil())
 			})
 		})
 	})

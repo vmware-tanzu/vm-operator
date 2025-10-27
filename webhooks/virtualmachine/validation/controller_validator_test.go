@@ -5,6 +5,8 @@
 package validation_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -13,6 +15,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -35,8 +38,8 @@ func scsiControllerValidationTests() {
 	)
 
 	BeforeEach(func() {
-		ctx = newUnitTestContextForValidatingWebhook(false)
-		ctx.vm.Status.UniqueID = "vm-123" // VM exists on infrastructure
+		ctx = newUnitTestContextForValidatingWebhook(true)
+		ctx.vm.Status.UniqueID = "vm-123"
 
 		// Enable VMSharedDisks feature flag for consistency
 		pkgcfg.SetContext(&ctx.WebhookRequestContext, func(config *pkgcfg.Config) {
@@ -44,10 +47,22 @@ func scsiControllerValidationTests() {
 		})
 	})
 
-	// Update ctx.Obj from ctx.vm before each test
+	// Update ctx.Obj and ctx.OldObj from ctx.vm and ctx.oldVM before each test
 	JustBeforeEach(func() {
+		// Sync hardware and volumes from vm to oldVM to avoid false hardware
+		// change detection. Tests modify ctx.vm but oldVM is created
+		// before BeforeEach runs
+		ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
+		ctx.oldVM.Spec.Volumes = append(
+			ctx.oldVM.Spec.Volumes,
+			ctx.vm.Spec.Volumes...,
+		)
+		ctx.oldVM.Status.Hardware = ctx.vm.Status.Hardware.DeepCopy()
+
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+		Expect(err).ToNot(HaveOccurred())
+		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -91,6 +106,8 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -98,7 +115,7 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should allow the volume", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
 			})
 		})
@@ -142,6 +159,8 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -149,11 +168,10 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should reject the volume", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("SCSI controller 0"))
-				Expect(string(response.Result.Reason)).To(ContainSubstring("cannot accommodate"))
-				Expect(string(response.Result.Reason)).To(ContainSubstring("Maximum slots: 63"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("controller SCSI:0 full"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("maxDevices: 63"))
 			})
 		})
 
@@ -196,6 +214,8 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -203,9 +223,10 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should reject the volume", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("Maximum slots: 15"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("controller SCSI:0 full"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("maxDevices: 15"))
 			})
 		})
 
@@ -241,54 +262,30 @@ func scsiControllerValidationTests() {
 				}
 
 				// Try to add 4 more volumes (would be 64 total, exceeds 63 max)
-				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-					{
-						Name: "vol1",
+				busNum := ptr.To(int32(0))
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+				for i := 0; i < 4; i++ {
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name: fmt.Sprintf("vol-%d", i+1),
 						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "pvc1",
+									ClaimName: fmt.Sprintf("pvc-%d", i+1),
 								},
+								ControllerBusNumber: busNum,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
-					},
-					{
-						Name: "vol2",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "pvc2",
-								},
-							},
-						},
-					},
-					{
-						Name: "vol3",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "pvc3",
-								},
-							},
-						},
-					},
-					{
-						Name: "vol4",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "pvc4",
-								},
-							},
-						},
-					},
+					})
 				}
 			})
 
 			It("should reject due to insufficient capacity", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("cannot accommodate 4 more volumes"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("controller SCSI:0 full"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("maxDevices: 63"))
 			})
 		})
 	})
@@ -316,7 +313,6 @@ func scsiControllerValidationTests() {
 					},
 				}
 
-				busNum := int32(0)
 				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 					{
 						Name: "vol1",
@@ -325,7 +321,8 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: &busNum,
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -333,7 +330,7 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should allow the volume", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
 			})
 		})
@@ -360,7 +357,6 @@ func scsiControllerValidationTests() {
 					},
 				}
 
-				busNum := int32(2) // Controller 2 doesn't exist
 				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 					{
 						Name: "vol1",
@@ -369,7 +365,8 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: &busNum,
+								ControllerBusNumber: ptr.To(int32(2)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -377,9 +374,9 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should reject the volume", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("SCSI controller with bus number 2 does not exist"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("controller SCSI:2 does not exist"))
 			})
 		})
 
@@ -415,6 +412,7 @@ func scsiControllerValidationTests() {
 									ClaimName: "pvc1",
 								},
 								ControllerBusNumber: &busNum,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -422,7 +420,7 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should reject the volume", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
 				Expect(string(response.Result.Reason)).To(ContainSubstring("must be between 0 and 3"))
 			})
@@ -430,9 +428,9 @@ func scsiControllerValidationTests() {
 	})
 
 	Context("Application type validation", func() {
-		When("OracleRAC volume without sharingMode=None controller", func() {
+		When("OracleRAC volume with mutation-added controller", func() {
 			BeforeEach(func() {
-				// Only have a Physical sharing mode controller
+				// Mutation webhook would have added a None controller for OracleRAC
 				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 					SCSIControllers: []vmopv1.SCSIControllerSpec{
 						{
@@ -461,22 +459,24 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
 				}
 			})
 
-			It("should allow (mutation webhook will add controller)", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			It("should allow (mutation webhook added controller)", func() {
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
 			})
 		})
 
-		When("MicrosoftWSFC volume without sharingMode=Physical controller", func() {
+		When("MicrosoftWSFC volume with mutation-added controller", func() {
 			BeforeEach(func() {
-				// Only have a None sharing mode controller
+				// Mutation webhook would have added a Physical controller for WSFC
 				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 					SCSIControllers: []vmopv1.SCSIControllerSpec{
 						{
@@ -505,15 +505,17 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+								ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
 				}
 			})
 
-			It("should allow (mutation webhook will add controller)", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			It("should allow (mutation webhook added controller)", func() {
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
 			})
 		})
@@ -548,7 +550,9 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -556,31 +560,7 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should allow the volume", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeTrue())
-			})
-		})
-	})
-
-	Context("No controllers specified", func() {
-		When("VM has volumes but no controllers", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-					{
-						Name: "vol1",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "pvc1",
-								},
-							},
-						},
-					},
-				}
-			})
-
-			It("should allow (mutation webhook will add controller)", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
 			})
 		})
@@ -629,7 +609,6 @@ func scsiControllerValidationTests() {
 					},
 				}
 
-				busNum1 := int32(1)
 				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 					{
 						Name: "vol1",
@@ -649,7 +628,8 @@ func scsiControllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc2",
 								},
-								ControllerBusNumber: &busNum1, // Explicitly targets full controller
+								ControllerBusNumber: ptr.To(int32(1)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							},
 						},
 					},
@@ -657,9 +637,10 @@ func scsiControllerValidationTests() {
 			})
 
 			It("should reject due to controller 1 being full", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("SCSI controller 1"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("controller SCSI:1 full"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("maxDevices: 15"))
 			})
 		})
 	})

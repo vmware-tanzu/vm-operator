@@ -160,7 +160,6 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
-	fieldErrs = append(fieldErrs, v.validateControllerSlots(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
@@ -1254,6 +1253,37 @@ func (v validator) validateVolumes(
 							),
 						))
 					}
+				}
+			}
+
+			pvc := vol.PersistentVolumeClaim
+			// Validate that controllerType is specified when controllerBusNumber is set
+			if pvc.ControllerBusNumber != nil && pvc.ControllerType == "" {
+				allErrs = append(allErrs, field.Required(
+					volPath.Child("persistentVolumeClaim", "controllerType"),
+					"",
+				))
+				continue
+			}
+
+			// Validate that when unitNumber is specified, both controllerType and
+			// controllerBusNumber must also be specified
+			if pvc.UnitNumber != nil {
+				if pvc.ControllerType == "" {
+					allErrs = append(allErrs, field.Required(
+						volPath.Child("persistentVolumeClaim", 
+							"controllerType"),
+						"",
+					))
+					continue
+				}
+				if pvc.ControllerBusNumber == nil {
+					allErrs = append(allErrs, field.Required(
+						volPath.Child("persistentVolumeClaim", 
+							"controllerBusNumber"),
+						"",
+					))
+					continue
 				}
 			}
 		}

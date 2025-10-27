@@ -23,7 +23,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 // ErrImageNotSynced is returned from GetImageInfo when the underlying content
@@ -46,10 +46,10 @@ func GetImageDiskInfo(
 	imgRef vmopv1.VirtualMachineImageRef,
 	namespace string) (ImageDiskInfo, error) {
 
-	if pkgutil.IsNil(ctx) {
+	if pkgnil.IsNil(ctx) {
 		panic("context is nil")
 	}
-	if pkgutil.IsNil(k8sClient) {
+	if pkgnil.IsNil(k8sClient) {
 		panic("k8sClient is nil")
 	}
 
@@ -96,10 +96,10 @@ func GetImage(
 	imgRef vmopv1.VirtualMachineImageRef,
 	namespace string) (vmopv1.VirtualMachineImage, error) {
 
-	if pkgutil.IsNil(ctx) {
+	if pkgnil.IsNil(ctx) {
 		panic("context is nil")
 	}
-	if pkgutil.IsNil(k8sClient) {
+	if pkgnil.IsNil(k8sClient) {
 		panic("k8sClient is nil")
 	}
 
@@ -180,10 +180,10 @@ func GetContentLibraryItemForImage(
 	k8sClient ctrlclient.Client,
 	img vmopv1.VirtualMachineImage) (imgregv1a1.ContentLibraryItem, error) {
 
-	if pkgutil.IsNil(ctx) {
+	if pkgnil.IsNil(ctx) {
 		panic("context is nil")
 	}
-	if pkgutil.IsNil(k8sClient) {
+	if pkgnil.IsNil(k8sClient) {
 		panic("k8sClient is nil")
 	}
 

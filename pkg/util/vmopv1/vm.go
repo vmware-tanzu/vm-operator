@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-logr/logr"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,12 +20,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/go-logr/logr"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -294,7 +293,7 @@ func SnapshotToVMMapperFn(
 		}
 
 		// Only process snapshots that are not ready.
-		if conditions.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+		if pkgcond.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
 			logger.V(4).Info("Skipping snapshot that is already ready")
 			return nil
 		}

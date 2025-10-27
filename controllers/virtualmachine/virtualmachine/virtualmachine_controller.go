@@ -26,7 +26,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -84,11 +84,19 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		proberManager)
 
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(controlledType).
+		Named(strings.ToLower(controlledTypeName)).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
 			SkipNameValidation:      SkipNameValidation,
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		})
+
+	// Watch VirtualMachines.
+	builder = builder.Watches(
+		controlledType,
+		&kubeutil.EnqueueRequestForObject{
+			Logger:      ctrl.Log.WithName("vmqueue"),
+			GetPriority: kubeutil.GetVirtualMachineReconcilePriority,
 		})
 
 	builder = builder.Watches(&vmopv1.VirtualMachineClass{},
@@ -105,7 +113,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	if pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 		builder = builder.WatchesRawSource(source.Channel(
 			cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
-			&handler.EnqueueRequestForObject{}))
+			&kubeutil.EnqueueRequestForObject{
+				Logger:      ctrl.Log.WithName("asyncvmqueue"),
+				GetPriority: kubeutil.GetVirtualMachineReconcilePriority,
+			}))
 	}
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
@@ -392,7 +403,7 @@ func requeueDelay(
 	// Create VMs on the provider. Do not queue immediately to avoid exponential
 	// backoff.
 	if ignoredCreateErr(err) ||
-		!conditions.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
+		!pkgcond.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
 
 		return pkgcfg.FromContext(ctx).CreateVMRequeueDelay
 	}
@@ -661,7 +672,7 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 	}
 
 	// Assert the image hardware is ready.
-	if !conditions.IsTrue(
+	if !pkgcond.IsTrue(
 		vmic,
 		vmopv1.VirtualMachineImageCacheConditionHardwareReady) {
 
@@ -695,7 +706,7 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 	}
 
 	// Assert the cached disks are ready.
-	if locStatus == nil || !conditions.IsTrue(
+	if locStatus == nil || !pkgcond.IsTrue(
 		locStatus,
 		vmopv1.ReadyConditionType) {
 

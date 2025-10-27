@@ -17,6 +17,7 @@ import (
 
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 // SourceFile refers to a file that is to be copied, including information about
@@ -81,10 +82,10 @@ func CacheStorageURIs(
 	dstDatacenter, srcDatacenter *object.Datacenter,
 	srcFiles ...SourceFile) ([]CachedFile, error) {
 
-	if pkgutil.IsNil(ctx) {
+	if pkgnil.IsNil(ctx) {
 		panic("context is nil")
 	}
-	if pkgutil.IsNil(client) {
+	if pkgnil.IsNil(client) {
 		panic("client is nil")
 	}
 	if dstDatacenter == nil {

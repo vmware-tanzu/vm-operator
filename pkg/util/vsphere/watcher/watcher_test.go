@@ -79,6 +79,8 @@ var _ = Describe("Start", func() {
 	}
 
 	BeforeEach(func() {
+		watcher.Cache.Purge()
+
 		ctx = pkgcfg.NewContextWithDefaultConfig()
 		ctx, cancel = context.WithCancel(ctx)
 		ctx = logr.NewContext(ctx, testutil.GinkgoLogr(5))
@@ -187,6 +189,8 @@ var _ = Describe("Start", func() {
 	})
 
 	AfterEach(func() {
+		logr.FromContextOrDiscard(ctx).Info("Cache stats", watcher.CacheGetStats()...)
+
 		cancel()
 		Eventually(w.Done(), time.Second*5).Should(BeClosed())
 		_ = client.Logout(ctx)

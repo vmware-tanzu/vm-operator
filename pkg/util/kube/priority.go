@@ -51,10 +51,10 @@ func (e EventType) String() string {
 const (
 	// PriorityGeneric is the priority for a generic event.
 	PriorityGeneric = iota + 1
-	// PriorityDelete is the priority for a delete event.
-	PriorityDelete
 	// PriorityUpdate is the priority for an update event.
 	PriorityUpdate
+	// PriorityDelete is the priority for a delete event.
+	PriorityDelete
 	// PriorityCreate is the priority for a create event.
 	PriorityCreate
 )
@@ -233,6 +233,10 @@ func addToQueueCreate[T client.Object, request comparable](
 
 	priorityQueue, isPriorityQueue := q.(priorityqueue.PriorityQueue[request])
 	if !isPriorityQueue {
+		logr.FromContextOrDiscard(ctx).V(4).Info(
+			"Adding to regular queue for event",
+			"eventType", EventCreate,
+			"item", item)
 		q.Add(item)
 		return
 	}
@@ -253,6 +257,7 @@ func addToQueueCreate[T client.Object, request comparable](
 		"Adding to priority queue for event",
 		"eventType", EventCreate,
 		"priority", priority,
+		"isInInitialList", evt.IsInInitialList,
 		"item", item)
 	priorityQueue.AddWithOpts(priorityqueue.AddOpts{Priority: priority}, item)
 }
@@ -268,14 +273,37 @@ func addToQueueUpdate[T client.Object, request comparable](
 	defaultPriority int,
 	getPriorityFn GetPriorityFn[T]) {
 
+	var (
+		oldGen, newGen int64
+		oldRes, newRes string
+	)
+
+	if !pkgnil.IsNil(evt.ObjectOld) {
+		oldGen = evt.ObjectOld.GetGeneration()
+		oldRes = evt.ObjectOld.GetResourceVersion()
+	}
+	if !pkgnil.IsNil(evt.ObjectNew) {
+		newGen = evt.ObjectNew.GetGeneration()
+		newRes = evt.ObjectNew.GetResourceVersion()
+	}
+
 	priorityQueue, isPriorityQueue := q.(priorityqueue.PriorityQueue[request])
 	if !isPriorityQueue {
+		logr.FromContextOrDiscard(ctx).V(4).Info(
+			"Adding to regular queue for event",
+			"eventType", EventUpdate,
+			"oldGeneration", oldGen,
+			"newGeneration", newGen,
+			"oldResourceVersion", oldRes,
+			"newResourceVersion", newRes,
+			"item", item)
 		q.Add(item)
 		return
 	}
 
 	var priority *int
-	if evt.ObjectOld.GetResourceVersion() == evt.ObjectNew.GetResourceVersion() {
+
+	if oldRes == newRes {
 		priority = ptr.To(handler.LowPriority)
 	} else {
 		priority = getPriority(
@@ -289,6 +317,10 @@ func addToQueueUpdate[T client.Object, request comparable](
 	logr.FromContextOrDiscard(ctx).V(4).Info(
 		"Adding to priority queue for event",
 		"eventType", EventUpdate,
+		"oldGeneration", oldGen,
+		"newGeneration", newGen,
+		"oldResourceVersion", oldRes,
+		"newResourceVersion", newRes,
 		"priority", priority,
 		"item", item)
 	priorityQueue.AddWithOpts(priorityqueue.AddOpts{Priority: priority}, item)
@@ -307,6 +339,10 @@ func addToQueueDelete[T client.Object, request comparable](
 
 	priorityQueue, isPriorityQueue := q.(priorityqueue.PriorityQueue[request])
 	if !isPriorityQueue {
+		logr.FromContextOrDiscard(ctx).V(4).Info(
+			"Adding to regular queue for event",
+			"eventType", EventDelete,
+			"item", item)
 		q.Add(item)
 		return
 	}
@@ -322,6 +358,7 @@ func addToQueueDelete[T client.Object, request comparable](
 		"Adding to priority queue for event",
 		"eventType", EventDelete,
 		"priority", priority,
+		"deleteStateUnknown", evt.DeleteStateUnknown,
 		"item", item)
 	priorityQueue.AddWithOpts(priorityqueue.AddOpts{Priority: priority}, item)
 }
@@ -339,6 +376,10 @@ func addToQueueGeneric[T client.Object, request comparable](
 
 	priorityQueue, isPriorityQueue := q.(priorityqueue.PriorityQueue[request])
 	if !isPriorityQueue {
+		logr.FromContextOrDiscard(ctx).V(4).Info(
+			"Adding to regular queue for event",
+			"eventType", EventGeneric,
+			"item", item)
 		q.Add(item)
 		return
 	}

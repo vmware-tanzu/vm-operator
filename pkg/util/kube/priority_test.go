@@ -304,9 +304,9 @@ var _ = Describe("TypedEnqueueRequestForObject", func() {
 	Context("Priority constants", func() {
 		It("should have defined priority constants", func() {
 			// Just verify the constants exist and are in expected order
-			Expect(kubeutil.PriorityCreate).To(BeNumerically(">", kubeutil.PriorityUpdate))
-			Expect(kubeutil.PriorityUpdate).To(BeNumerically(">", kubeutil.PriorityDelete))
-			Expect(kubeutil.PriorityDelete).To(BeNumerically(">", kubeutil.PriorityGeneric))
+			Expect(kubeutil.PriorityCreate).To(BeNumerically(">", kubeutil.PriorityDelete))
+			Expect(kubeutil.PriorityDelete).To(BeNumerically(">", kubeutil.PriorityUpdate))
+			Expect(kubeutil.PriorityUpdate).To(BeNumerically(">", kubeutil.PriorityGeneric))
 		})
 	})
 })

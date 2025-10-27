@@ -27,6 +27,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
+const (
+	summaryConfigName = "summary.config.name"
+)
+
 // DefaultWatchedPropertyPaths returns the default set of property paths to
 // watch.
 func DefaultWatchedPropertyPaths() []string {
@@ -63,7 +67,7 @@ func DefaultWatchedPropertyPaths() []string {
 		"guestHeartbeatStatus",
 		"rootSnapshot",
 		"snapshot",
-		"summary.config.name",
+		summaryConfigName,
 		"summary.guest",
 		"summary.overallStatus",
 		"summary.runtime.connectionState",
@@ -90,56 +94,22 @@ var defaultIgnoredExtraConfigKeys = []string{
 	"govcsim",
 	extraConfigNamespacedNameKey,
 
-	"nvram",
-	"svga.present",
-	"pciBridge0.present",
-	"pciBridge4.present",
-	"pciBridge4.virtualDev",
-	"pciBridge4.functions",
-	"pciBridge5.present",
-	"pciBridge5.virtualDev",
-	"pciBridge5.functions",
-	"pciBridge6.present",
-	"pciBridge6.virtualDev",
-	"pciBridge6.functions",
-	"pciBridge7.present",
-	"pciBridge7.virtualDev",
-	"pciBridge7.functions",
 	"hpet0.present",
-	"scsi0.pciSlotNumber",
 	"disk.enableUUID",
 	"vmware.tools.gosc.ignoretoolscheck",
 	"vmprov.keepDisks",
-	"viv.moid",
+
 	"guestinfo.vmservice.defer-cloud-init",
-	"guestinfo.metadata",
-	"guestinfo.metadata.encoding",
-	"guestinfo.userdata",
-	"guestinfo.userdata.encoding",
-	"guestinfo.vendordata",
-	"guestinfo.vendordata.encoding",
-	"vmxstats.filename",
+
 	"numa.autosize.cookie",
 	"numa.autosize.vcpu.maxPerVirtualNode",
 	"sched.swap.derivedName",
-	"pciBridge0.pciSlotNumber",
-	"pciBridge4.pciSlotNumber",
-	"pciBridge5.pciSlotNumber",
-	"pciBridge6.pciSlotNumber",
-	"pciBridge7.pciSlotNumber",
-	"ethernet0.pciSlotNumber",
+
 	"scsi0:0.redo",
+	"scsi0.sasWWID",
+
 	"scsi0:1.redo",
 	"scsi0:2.redo",
-	"scsi0.sasWWID",
-	"vmotion.checkpointFBSize",
-	"vmotion.checkpointSVGAPrimarySize",
-	"vmotion.svga.mobMaxSize",
-	"vmotion.svga.graphicsMemoryKB",
-	"monitor.phys_bits_used",
-	"softPowerOff",
-	"tools.capability.verifiedSamlToken",
-	"guestInfo.detailed.data",
 	"scsi0:3.redo",
 	"scsi0:4.redo",
 	"scsi0:5.redo",
@@ -148,6 +118,16 @@ var defaultIgnoredExtraConfigKeys = []string{
 	"scsi0:9.redo",
 	"scsi0:10.redo",
 	"scsi0:11.redo",
+
+	"vmotion.checkpointFBSize",
+	"vmotion.checkpointSVGAPrimarySize",
+	"vmotion.svga.mobMaxSize",
+	"vmotion.svga.graphicsMemoryKB",
+	"monitor.phys_bits_used",
+	"softPowerOff",
+	"tools.capability.verifiedSamlToken",
+	"guestInfo.detailed.data",
+
 	"vmware.tools.internalversion",
 	"vmware.tools.requiredversion",
 	"migrate.hostLogState",
@@ -159,6 +139,65 @@ var defaultIgnoredExtraConfigKeys = []string{
 	"guestinfo.vmtools.versionNumber",
 	"guestinfo.vmtools.versionString",
 	"guestinfo.vmware.components.available",
+
+	//
+	// !! Do not ignore !!
+	//
+	// The following properties are placed into the VM by VM Op when configuring
+	// bootstrap customization. If they change then the VM *should* be
+	// reconciled.
+	//
+	// "guestinfo.metadata",
+	// "guestinfo.metadata.encoding",
+	// "guestinfo.userdata",
+	// "guestinfo.userdata.encoding",
+	// "guestinfo.vendordata",
+	// "guestinfo.vendordata.encoding",
+
+	//
+	// !! Do not ignore !!
+	//
+	// The following properties are fairly static, but importantly they are part
+	// of the VM creation / resize lifecycle, and async signal relies on them
+	// to reconcile a VM post-create and/or post-resize.
+	//
+
+	// "nvram",
+	// "viv.moid",
+	// "svga.present",
+	// "vmxstats.filename",
+	// "ethernet0.pciSlotNumber",
+	// "ethernet1.pciSlotNumber",
+	// "ethernet2.pciSlotNumber",
+	// "ethernet3.pciSlotNumber",
+	// "ethernet4.pciSlotNumber",
+	// "ethernet5.pciSlotNumber",
+	// "ethernet6.pciSlotNumber",
+	// "ethernet7.pciSlotNumber",
+	// "ethernet8.pciSlotNumber",
+	// "ethernet9.pciSlotNumber",
+	// "pciBridge0.present",
+	// "pciBridge0.pciSlotNumber",
+	// "pciBridge4.present",
+	// "pciBridge4.pciSlotNumber",
+	// "pciBridge4.virtualDev",
+	// "pciBridge4.functions",
+	// "pciBridge5.present",
+	// "pciBridge5.pciSlotNumber",
+	// "pciBridge5.virtualDev",
+	// "pciBridge5.functions",
+	// "pciBridge6.present",
+	// "pciBridge6.pciSlotNumber",
+	// "pciBridge6.virtualDev",
+	// "pciBridge6.functions",
+	// "pciBridge7.present",
+	// "pciBridge7.pciSlotNumber",
+	// "pciBridge7.virtualDev",
+	// "pciBridge7.functions",
+	// "scsi0.pciSlotNumber",
+	// "scsi1.pciSlotNumber",
+	// "scsi2.pciSlotNumber",
+	// "scsi3.pciSlotNumber",
 }
 
 type moRef = vimtypes.ManagedObjectReference
@@ -547,6 +586,7 @@ func (w *Watcher) onUpdate(
 	return false
 }
 
+//nolint:gocyclo
 func (w *Watcher) onObject(
 	ctx context.Context,
 	obj moRef,
@@ -581,7 +621,7 @@ func (w *Watcher) onObject(
 				if len(ec) > 0 {
 					val = ec
 				}
-			} else {
+			} else if !pkgnil.IsNil(tval) {
 				logger.Error(
 					nil,
 					"invalid property",
@@ -602,7 +642,7 @@ func (w *Watcher) onObject(
 						return 0
 					})
 				val = tval.VirtualDevice
-			} else {
+			} else if !pkgnil.IsNil(tval) {
 				logger.Error(
 					nil,
 					"invalid property",
@@ -613,34 +653,45 @@ func (w *Watcher) onObject(
 		}
 
 		if !pkgnil.IsNil(val) {
-			hashedVal, err := hashProp(obj, c.Name, val)
-			if err != nil {
-				return err
+			if c.Name == summaryConfigName {
+				props[c.Name] = val.(string)
+			} else {
+				hashedVal, err := hashProp(obj, c.Name, val)
+				if err != nil {
+					return err
+				}
+				props[c.Name] = hashedVal
 			}
-			props[c.Name] = hashedVal
 		}
+	}
+
+	if vmName := props[summaryConfigName]; vmName != "" {
+		logger = logger.WithValues("vmName", vmName)
 	}
 
 	var areChanges bool
 	if cachedProps, ok := Cache.Get(obj); !ok {
 		Cache.Add(obj, props)
 		areChanges = true
-		logger.V(4).Info("Cached object miss", "props", props)
+		logger.V(2).Info("Cached object miss", "props", props)
 	} else {
+		if vmName := cachedProps[summaryConfigName]; vmName != "" {
+			logger = logger.WithValues("vmName", vmName)
+		}
 		for key, newVal := range props {
 			if oldVal, ok := cachedProps[key]; !ok {
 				areChanges = true
 				cachedProps[key] = newVal
-				logger.V(4).Info("Cached property miss",
+				logger.V(2).Info("Cached property miss",
 					"key", key,
 					"newVal", newVal)
 			} else {
 				var (
-					l = 5
+					l = 4
 					r = "noop"
 				)
 				if oldVal != newVal {
-					l = 4
+					l = 2
 					r = "update"
 					areChanges = true
 					cachedProps[key] = newVal
@@ -687,6 +738,7 @@ func (w *Watcher) onObject(
 		// triggering another property collector signal. Rinse and repeat.
 		logger.V(5).Info("Skipping async signal",
 			"reason", "vm is being deleted")
+		Cache.Remove(obj)
 		return nil
 	}
 

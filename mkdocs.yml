@@ -139,6 +139,7 @@ nav:
     - Guest Customization: concepts/workloads/guest.md
     - VirtualMachine Placement: concepts/workloads/vm-placement.md
     - VirtualMachineGroup: concepts/workloads/vm-group.md
+    - VirtualMachineSnapshot: concepts/workloads/vm-snapshot.md
   - Images:
     - concepts/images/README.md
     - VirtualMachineImage: concepts/images/vm-image.md
@@ -181,4 +182,3 @@ nav:
     - Build from Source: ref/proj/build.md
     - Create a Release: ref/proj/release.md
     - Writing Documentation: ref/proj/docs.md
-

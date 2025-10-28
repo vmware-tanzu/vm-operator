@@ -157,14 +157,12 @@ func (v validator) validateCdromControllerSpecsOnCreate(
 		hasControllerBusNumber := cdrom.ControllerBusNumber != nil
 
 		if hasControllerType && !hasControllerBusNumber {
-			allErrs = append(allErrs, field.Invalid(
+			allErrs = append(allErrs, field.Required(
 				cdromFieldPath.Child("controllerBusNumber"),
-				cdrom.ControllerBusNumber,
 				"must be set when controllerType is specified"))
 		} else if !hasControllerType && hasControllerBusNumber {
-			allErrs = append(allErrs, field.Invalid(
+			allErrs = append(allErrs, field.Required(
 				cdromFieldPath.Child("controllerType"),
-				cdrom.ControllerType,
 				"must be set when controllerBusNumber is specified"))
 		}
 	}

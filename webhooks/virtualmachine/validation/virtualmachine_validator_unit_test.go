@@ -187,8 +187,6 @@ func unitTestsValidateCreate() {
 		nextRestartTime            string
 		instanceUUID               string
 		applyPowerStateChangeTime  string
-		cdromControllerTypeOnly    bool
-		cdromControllerBusOnly     bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -220,15 +218,6 @@ func unitTestsValidateCreate() {
 
 		if args.applyPowerStateChangeTime != "" {
 			ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
-		}
-
-		if args.cdromControllerTypeOnly {
-			ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeIDE
-			ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = nil
-		}
-		if args.cdromControllerBusOnly {
-			ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = ""
-			ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(0))
 		}
 
 		ctx.vm.Spec.PowerState = args.powerState
@@ -264,7 +253,6 @@ func unitTestsValidateCreate() {
 	specPath := field.NewPath("spec")
 	volPath := specPath.Child("volumes")
 	nextRestartTimePath := specPath.Child("nextRestartTime")
-	cdromPath := specPath.Child("hardware", "cdrom").Index(0)
 	now := time.Now().UTC()
 
 	DescribeTable("create table", validateCreate,
@@ -303,11 +291,6 @@ func unitTestsValidateCreate() {
 		Entry("should disallow creating VM with non-empty, invalid apply power state change time annotation",
 			createArgs{applyPowerStateChangeTime: "hello", isServiceUser: true}, false,
 			field.Invalid(field.NewPath("metadata").Child("annotations").Key(pkgconst.ApplyPowerStateTimeAnnotation), "hello", "must be formatted as RFC3339Nano").Error(), nil),
-
-		Entry("should deny CD-ROM with only controllerType set", createArgs{cdromControllerTypeOnly: true}, false,
-			field.Invalid(cdromPath.Child("controllerBusNumber"), nil, "must be set when controllerType is specified").Error(), nil),
-		Entry("should deny CD-ROM with only controllerBusNumber set", createArgs{cdromControllerBusOnly: true}, false,
-			field.Invalid(cdromPath.Child("controllerType"), "", "must be set when controllerBusNumber is specified").Error(), nil),
 	)
 
 	doTest := func(args testParams) {
@@ -3034,6 +3017,32 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.hardware.cdrom[1].image.name: Duplicate value: "vmi-dummy"`),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow creating a VM with CD-ROM that has only controllerType set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeIDE
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = nil
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom[0].controllerBusNumber: Required value: must be set when controllerType is specified`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow creating a VM with CD-ROM that has only controllerBusNumber set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = ""
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(0))
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom[0].controllerType: Required value: must be set when controllerBusNumber is specified`,
+					),
 					expectAllowed: false,
 				},
 			),

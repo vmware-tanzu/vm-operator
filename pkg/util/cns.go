@@ -5,9 +5,14 @@
 package util
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 )
 
 const (
@@ -69,4 +74,44 @@ func SanitizeCNSErrorMessage(msg string) string {
 	}
 
 	return msg
+}
+
+// GetCnsNodeVMAttachmentsForVM returns the existing CnsNodeVmAttachments for
+// the specified VM by filtering attachments that match the VM's BiosUUID.
+//
+// The function queries CnsNodeVmAttachment objects in the VM's namespace
+// using the VM's BiosUUID (spec.nodeuuid field in the attachment) to find
+// all attachments belonging to this VM. This includes both active and
+// orphaned attachments.
+//
+// Returns a map where the key is the attachment name and the value is the
+// CnsNodeVmAttachment object.
+func GetCnsNodeVMAttachmentsForVM(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+) (map[string]cnsv1alpha1.CnsNodeVmAttachment, error) {
+
+	if vm.Status.BiosUUID == "" {
+		return nil, nil
+	}
+
+	list := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+	err := k8sClient.List(
+		ctx,
+		list,
+		ctrlclient.InNamespace(vm.Namespace),
+		ctrlclient.MatchingFields{"spec.nodeuuid": vm.Status.BiosUUID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list CnsNodeVmAttachments: %w", err)
+	}
+
+	attachments := make(
+		map[string]cnsv1alpha1.CnsNodeVmAttachment,
+		len(list.Items))
+	for _, attachment := range list.Items {
+		attachments[attachment.Name] = attachment
+	}
+
+	return attachments, nil
 }

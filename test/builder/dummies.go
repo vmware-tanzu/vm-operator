@@ -28,6 +28,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -824,5 +825,71 @@ func DummyCdromSpec(
 		UnitNumber:          unitNumber,
 		AllowGuestControl:   allowGuestControl,
 		Connected:           connected,
+	}
+}
+
+func DummySCSIController(key, busNumber int32) *vimtypes.ParaVirtualSCSIController {
+	return &vimtypes.ParaVirtualSCSIController{
+		VirtualSCSIController: vimtypes.VirtualSCSIController{
+			VirtualController: vimtypes.VirtualController{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key: key,
+				},
+				BusNumber: busNumber,
+			},
+			SharedBus: vimtypes.VirtualSCSISharingNoSharing,
+		},
+	}
+}
+
+func DummyVirtualDisk(key, controllerKey, unitNumber int32, fileName, diskUUID string, capacityInBytes int64) *vimtypes.VirtualDisk {
+	disk := &vimtypes.VirtualDisk{
+		VirtualDevice: vimtypes.VirtualDevice{
+			Key:           key,
+			ControllerKey: controllerKey,
+			UnitNumber:    &unitNumber,
+			Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					FileName: fileName,
+				},
+			},
+		},
+		CapacityInBytes: capacityInBytes,
+	}
+	if diskUUID != "" {
+		disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).Uuid = diskUUID
+	}
+	return disk
+}
+
+func DummyPVCVolume(name, claimName string) vmopv1.VirtualMachineVolume {
+	return vmopv1.VirtualMachineVolume{
+		Name: name,
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		},
+	}
+}
+
+func DummyCnsNodeVMAttachment(name, namespace, nodeUUID, volumeName, diskUUID string, attached bool) *cnsv1alpha1.CnsNodeVmAttachment {
+	return &cnsv1alpha1.CnsNodeVmAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
+			NodeUUID:   nodeUUID,
+			VolumeName: volumeName,
+		},
+		Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
+			Attached: attached,
+			AttachmentMetadata: map[string]string{
+				cnsv1alpha1.AttributeFirstClassDiskUUID: diskUUID,
+			},
+		},
 	}
 }

@@ -297,6 +297,8 @@ func unitTestsReconcile() {
 		})
 
 		When("target is subject to quota validation", func() {
+			expectedCapacityValue := resource.NewQuantity(5*1024*1024*1024, resource.BinarySI)
+
 			BeforeEach(func() {
 				clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
 				clv1a2.Labels = map[string]string{
@@ -305,7 +307,18 @@ func unitTestsReconcile() {
 				initObjects = append(initObjects, clv1a2)
 
 				vm.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
-					Total: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+						Disks: resource.NewQuantity(16*1024*1024*1024, resource.BinarySI),
+					},
+					Total: resource.NewQuantity(21*1024*1024*1024, resource.BinarySI),
+					Used: &vmopv1.VirtualMachineStorageStatusUsed{
+						Disks: resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+						Snapshots: &vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{
+							VM:     resource.NewQuantity(64*1024*1024, resource.BinarySI),
+							Volume: resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+						},
+						Other: resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+					},
 				}
 			})
 			JustBeforeEach(func() {
@@ -326,15 +339,39 @@ func unitTestsReconcile() {
 				})
 
 				When("vm status.storage is not empty", func() {
-					It("should apply the correct annotations and not return an error", func() {
-						_, err := reconciler.ReconcileNormal(vmpubCtx)
-						Expect(err).NotTo(HaveOccurred())
-						Expect(vmpub.Annotations).NotTo(BeEmpty())
+					When("vm status.storage.used is empty", func() {
+						BeforeEach(func() {
+							vm.Status.Storage.Used = nil
+						})
+						It("should leave the request untouched and return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).To(HaveOccurred())
+							Expect(vmpub.Annotations).To(BeEmpty())
+						})
+					})
 
-						Expect(vmpub.Annotations).To(HaveKeyWithValue(
-							pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
-						Expect(vmpub.Annotations).To(HaveKeyWithValue(
-							pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, vm.Status.Storage.Total.String()))
+					When("vm status.storage.used contains only empty values", func() {
+						BeforeEach(func() {
+							vm.Status.Storage.Used = &vmopv1.VirtualMachineStorageStatusUsed{}
+						})
+						It("should leave the request untouched and return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).To(HaveOccurred())
+							Expect(vmpub.Annotations).To(BeEmpty())
+						})
+					})
+
+					When("vm status.storage.used is not empty", func() {
+						It("should apply the correct annotations and not return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).NotTo(HaveOccurred())
+							Expect(vmpub.Annotations).NotTo(BeEmpty())
+
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
+						})
 					})
 				})
 			})
@@ -343,7 +380,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmpub.Annotations = map[string]string{
 						pkgconst.AsyncQuotaPerformCheckAnnotationKey:           "true",
-						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey: vm.Status.Storage.Total.String(),
+						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey: expectedCapacityValue.String(),
 					}
 				})
 
@@ -355,7 +392,7 @@ func unitTestsReconcile() {
 					Expect(vmpub.Annotations).To(HaveKeyWithValue(
 						pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
 					Expect(vmpub.Annotations).To(HaveKeyWithValue(
-						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, vm.Status.Storage.Total.String()))
+						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
 				})
 			})
 

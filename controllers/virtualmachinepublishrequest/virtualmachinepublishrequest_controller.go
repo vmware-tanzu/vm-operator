@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -554,17 +555,29 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 	// validation. We need to apply this annotation along with the requested capacity annotation
 	// and await processing.
 	if !metav1.HasAnnotation(vmPubReq.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
-		vm := ctx.VM
-		if vm.Status.Storage != nil && vm.Status.Storage.Total != nil {
-			if vmPubReq.Annotations == nil {
-				vmPubReq.Annotations = make(map[string]string)
-			}
-			vmPubReq.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
-			vmPubReq.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] = vm.Status.Storage.Total.String()
+		if ctx.VM.Status.Storage != nil && ctx.VM.Status.Storage.Used != nil {
+			storageUsed := ctx.VM.Status.Storage.Used
 
-			return pkgerr.NoRequeueNoErr("quota validation is needed for this request")
+			used := resource.NewQuantity(0, resource.BinarySI)
+			if disksUsed := storageUsed.Disks; disksUsed != nil {
+				used.Add(*disksUsed)
+			}
+
+			if otherUsed := storageUsed.Other; otherUsed != nil {
+				used.Add(*otherUsed)
+			}
+
+			if !used.Equal(*resource.NewQuantity(0, resource.BinarySI)) {
+				if vmPubReq.Annotations == nil {
+					vmPubReq.Annotations = make(map[string]string)
+				}
+				vmPubReq.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
+				vmPubReq.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] = used.String()
+
+				return pkgerr.NoRequeueNoErr("quota validation is needed for this request")
+			}
 		}
-		return fmt.Errorf("unable get storage total for VM %q for quota validation", vm.Name)
+		return fmt.Errorf("unable get storage used for VM %q for quota validation", ctx.VM.NamespacedName())
 	}
 	// Check for the existence of the requested-quota annotation. If this annotation is present, then we are
 	// currently awaiting quota verification, and we should halt any further processing. Ideally we should

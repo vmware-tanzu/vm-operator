@@ -267,6 +267,41 @@ func Install( //nolint:gocyclo
 						}
 					}
 
+					if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("volumes", "[]", "persistentVolumeClaim", "applicationType"),
+							specFieldPath("volumes", "[]", "persistentVolumeClaim", "controllerBusNumber"),
+							specFieldPath("volumes", "[]", "persistentVolumeClaim", "controllerType"),
+							specFieldPath("volumes", "[]", "persistentVolumeClaim", "diskMode"),
+							specFieldPath("volumes", "[]", "persistentVolumeClaim", "sharingMode"),
+							specFieldPath("volumes", "[]", "persistentVolumeClaim", "unitNumber"),
+
+							specFieldPath("hardware", "ideControllers"),
+							specFieldPath("hardware", "nvmeControllers"),
+							specFieldPath("hardware", "sataControllers"),
+							specFieldPath("hardware", "scsiControllers"),
+							// Only remove part of RAC related fields, keeping
+							// the remaining cdrom configs.
+							specFieldPath("hardware", "cdrom", "[]", "controllerBusNumber"),
+							specFieldPath("hardware", "cdrom", "[]", "controllerType"),
+							specFieldPath("hardware", "cdrom", "[]", "unitNumber"),
+
+							statusFieldPath("volumes", "[]", "controllerBusNumber"),
+							statusFieldPath("volumes", "[]", "controllerType"),
+							statusFieldPath("volumes", "[]", "diskMode"),
+							statusFieldPath("volumes", "[]", "sharingMode"),
+
+							statusFieldPath("hardware", "controllers"),
+						); err != nil {
+
+							return err
+						}
+					}
+
 					return nil
 				}); err != nil {
 
@@ -314,17 +349,17 @@ func removeFields(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 
-	for j := range fields {
+	for _, f := range fields {
 		if !shouldRemoveFields {
 			logger.Info(
 				"Skipping CRD field removal",
 				"kind", k,
-				"field", strings.Join(fields[j], "."))
+				"field", strings.Join(f, "."))
 		} else {
 			logger.Info(
 				"Removing CRD field",
 				"kind", k,
-				"field", strings.Join(fields[j], "."))
+				"field", strings.Join(f, "."))
 
 			versions, _, err := unstructured.NestedSlice(
 				c.Object, "spec", "versions")
@@ -335,7 +370,7 @@ func removeFields(
 
 			for k := range versions {
 				v := versions[k].(map[string]any)
-				unstructured.RemoveNestedField(v, fields[j]...)
+				unstructured.RemoveNestedField(v, f...)
 			}
 
 			if err := unstructured.SetNestedSlice(
@@ -505,6 +540,11 @@ func specFieldPath(fieldNames ...string) []string {
 	result := []string{"schema", "openAPIV3Schema", "properties", "spec", "properties"}
 	result = append(result, fieldNames[0])
 	for _, name := range fieldNames[1:] {
+		// Use "[]" to indicate previous element is an array type.
+		if name == "[]" {
+			result = append(result, "items")
+			continue
+		}
 		result = append(result, "properties", name)
 	}
 	return result
@@ -514,6 +554,11 @@ func statusFieldPath(fieldNames ...string) []string {
 	result := []string{"schema", "openAPIV3Schema", "properties", "status", "properties"}
 	result = append(result, fieldNames[0])
 	for _, name := range fieldNames[1:] {
+		// Use "[]" to indicate previous element is an array type.
+		if name == "[]" {
+			result = append(result, "items")
+			continue
+		}
 		result = append(result, "properties", name)
 	}
 	return result

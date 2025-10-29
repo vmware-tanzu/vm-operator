@@ -258,23 +258,27 @@ var _ = Describe("CreateConfigSpec", func() {
 			})
 		})
 
-		When("VM has a valid firmware override annotation", func() {
+		When("VM has a valid firmware set in boot options", func() {
 			BeforeEach(func() {
-				vm.Annotations[constants.FirmwareOverrideAnnotation] = "efi"
+				vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+					Firmware: vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+				}
 			})
 
-			It("config spec has overridden firmware annotation", func() {
-				Expect(configSpec.Firmware).To(Equal(vm.Annotations[constants.FirmwareOverrideAnnotation]))
+			It("config spec has firmware from VM boot options", func() {
+				Expect(configSpec.Firmware).To(Equal(string(vm.Spec.BootOptions.Firmware)))
 			})
 		})
 
-		When("VM has an invalid firmware override annotation", func() {
+		When("VM has an invalid firmware set in boot options", func() {
 			BeforeEach(func() {
-				vm.Annotations[constants.FirmwareOverrideAnnotation] = "foo"
+				vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+					Firmware: "foo",
+				}
 			})
 
 			It("config spec doesn't have the invalid value", func() {
-				Expect(configSpec.Firmware).ToNot(Equal(vm.Annotations[constants.FirmwareOverrideAnnotation]))
+				Expect(configSpec.Firmware).ToNot(Equal(string(vm.Spec.BootOptions.Firmware)))
 			})
 		})
 

@@ -590,6 +590,7 @@ func CompareBootOptions(
 			EnterBIOSSetup:       cs.BootOptions.EnterBIOSSetup,
 			EfiSecureBootEnabled: cs.BootOptions.EfiSecureBootEnabled,
 			NetworkBootProtocol:  cs.BootOptions.NetworkBootProtocol,
+			BootOrder:            cs.BootOptions.BootOrder,
 		}
 	} else {
 		outCS.BootOptions = &vimtypes.VirtualMachineBootOptions{}
@@ -599,6 +600,10 @@ func CompareBootOptions(
 		cmpPtr(ci.BootOptions.EnterBIOSSetup, cs.BootOptions.EnterBIOSSetup, &outCS.BootOptions.EnterBIOSSetup)
 		cmpPtr(ci.BootOptions.EfiSecureBootEnabled, cs.BootOptions.EfiSecureBootEnabled, &outCS.BootOptions.EfiSecureBootEnabled)
 		cmp(ci.BootOptions.NetworkBootProtocol, cs.BootOptions.NetworkBootProtocol, &outCS.BootOptions.NetworkBootProtocol)
+
+		if !reflect.DeepEqual(ci.BootOptions.BootOrder, cs.BootOptions.BootOrder) {
+			outCS.BootOptions.BootOrder = cs.BootOptions.BootOrder
+		}
 	}
 
 	// At this point, if desired has all nil (ie) there was no change, nil out boot options to prevent unwanted reconfigures.

@@ -668,6 +668,7 @@ var _ = Describe(
 
 		AfterEach(func() {
 			vcSimCtx.AfterEach()
+			vcSimCtx = nil
 		})
 
 		JustBeforeEach(func() {

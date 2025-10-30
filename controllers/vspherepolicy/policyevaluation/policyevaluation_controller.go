@@ -86,7 +86,7 @@ type Reconciler struct {
 }
 
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=policyevaluations,verbs=create;get;list;watch;update;patch
-// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=policyevaluations/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=policyevaluations/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=computepolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=computepolicies/status,verbs=get
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies,verbs=get;list;watch
@@ -134,8 +134,8 @@ func (r *Reconciler) ReconcileDelete(
 }
 
 const (
-	failMatchingPolicies = "failed to reconcile matching policies"
-	failExplicitPolicies = "failed to reconcile explicit policies"
+	failMandatoryPolicies = "failed to reconcile mandatory policies"
+	failExplicitPolicies  = "failed to reconcile explicit policies"
 )
 
 func (r *Reconciler) ReconcileNormal(
@@ -150,14 +150,14 @@ func (r *Reconciler) ReconcileNormal(
 	// Clear existing policies before reconciliation.
 	obj.Status.Policies = nil
 
-	if err := r.reconcileMatchingPolicies(ctx, obj); err != nil {
+	if err := r.reconcileMandatoryPolicies(ctx, obj); err != nil {
 		conditions.MarkError(
 			obj,
 			vspherepolv1.ReadyConditionType,
-			failMatchingPolicies,
+			failMandatoryPolicies,
 			err)
 		return ctrl.Result{}, fmt.Errorf(
-			failMatchingPolicies+": %w", err)
+			failMandatoryPolicies+": %w", err)
 	}
 
 	if err := r.reconcileExplicitPolicies(ctx, obj); err != nil {
@@ -179,19 +179,19 @@ func (r *Reconciler) ReconcileNormal(
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) reconcileMatchingPolicies(
+func (r *Reconciler) reconcileMandatoryPolicies(
 	ctx context.Context,
 	obj *vspherepolv1.PolicyEvaluation) error {
 
-	if err := r.reconcileMatchingComputePolicies(ctx, obj); err != nil {
+	if err := r.reconcileMandatoryComputePolicies(ctx, obj); err != nil {
 		return fmt.Errorf(
-			"failed to reconcile matching compute policies: %w", err)
+			"failed to reconcile mandatory compute policies: %w", err)
 	}
 
 	return nil
 }
 
-func (r *Reconciler) reconcileMatchingComputePolicies(
+func (r *Reconciler) reconcileMandatoryComputePolicies(
 	ctx context.Context,
 	obj *vspherepolv1.PolicyEvaluation) error {
 
@@ -205,6 +205,11 @@ func (r *Reconciler) reconcileMatchingComputePolicies(
 	}
 
 	for _, p := range list.Items {
+		// Only mandatory policies should be automatically applied.
+		if p.Spec.EnforcementMode != vspherepolv1.PolicyEnforcementModeMandatory {
+			continue
+		}
+
 		matches, err := matchesPolicy(obj, p)
 		if err != nil {
 			return err
@@ -538,6 +543,14 @@ func (r *Reconciler) addComputePolicyRef(
 
 	if err := r.Client.Get(ctx, key, &pol); err != nil {
 		return fmt.Errorf("failed to get compute policy: %w", err)
+	}
+
+	matches, err := matchesPolicy(obj, pol)
+	if err != nil {
+		return err
+	}
+	if !matches {
+		return fmt.Errorf("compute policy %q does not match", pol.Name)
 	}
 
 	return r.addComputePolicy(ctx, obj, pol)

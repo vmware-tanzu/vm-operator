@@ -160,7 +160,7 @@ var _ = Describe("Reconcile", func() {
 				Expect(updated.Status.Policies).To(BeEmpty())
 			})
 
-			Context("with matching compute policy", func() {
+			Context("with mandatory compute policy", func() {
 				var computePolicy *vspherepolv1.ComputePolicy
 
 				BeforeEach(func() {
@@ -676,7 +676,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(policy.APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
 						Expect(policy.Kind).To(Equal("ComputePolicy"))
 					}
-					Expect(policyNames).To(ConsistOf("policy-1", "policy-2"))
+					Expect(policyNames).To(ConsistOf("policy-1"))
 				})
 			})
 
@@ -1036,7 +1036,7 @@ var _ = Describe("Reconcile", func() {
 					}
 				})
 
-				It("should include explicitly referenced policies", func() {
+				It("should return an error if the explicit policy does not match", func() {
 					req := ctrl.Request{
 						NamespacedName: types.NamespacedName{
 							Name:      obj.Name,
@@ -1045,15 +1045,10 @@ var _ = Describe("Reconcile", func() {
 					}
 
 					result, err := reconciler.Reconcile(ctx, req)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("compute policy \"explicit-compute-policy\" does not match"))
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
-					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
-					Expect(updated.Status.Policies).To(HaveLen(1))
-					Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
-					Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
-					Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 				})
 
 				Context("when explicit policy does not exist", func() {
@@ -1104,6 +1099,65 @@ var _ = Describe("Reconcile", func() {
 						var updated vspherepolv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
+					})
+				})
+
+				Context("when explicit policy matches", func() {
+					BeforeEach(func() {
+						computePolicy = &vspherepolv1.ComputePolicy{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "explicit-matching-compute-policy",
+								Namespace: namespace,
+							},
+							Spec: vspherepolv1.ComputePolicySpec{
+								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+								Match: &vspherepolv1.MatchSpec{
+									Workload: &vspherepolv1.MatchWorkloadSpec{
+										Labels: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "env",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"prod"},
+											},
+										},
+									},
+								},
+							},
+						}
+						withObjs = append(withObjs, computePolicy)
+
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "ComputePolicy",
+								Name:       "explicit-matching-compute-policy",
+							},
+						}
+						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+							Labels: map[string]string{
+								"env": "prod",
+							},
+						}
+					})
+
+					It("should add the policy to the status", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(HaveLen(1))
+						Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
+						Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+						Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
+						Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 					})
 				})
 			})
@@ -1940,7 +1994,7 @@ var _ = Describe("Reconcile", func() {
 
 						result, err := reconciler.Reconcile(ctx, req)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("failed to reconcile matching policies"))
+						Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory policies"))
 						Expect(result).To(Equal(ctrl.Result{}))
 					})
 				})
@@ -2024,7 +2078,7 @@ var _ = Describe("Reconcile", func() {
 
 				result, err := reconciler.Reconcile(ctx, req)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to reconcile matching policies"))
+				Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory policies"))
 				Expect(err.Error()).To(ContainSubstring("failed to list compute policies"))
 				Expect(result).To(Equal(ctrl.Result{}))
 			})

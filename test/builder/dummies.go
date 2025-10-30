@@ -933,7 +933,71 @@ func DummyCdromSpec(
 	}
 }
 
-func DummyParaVirtualSCSIController(key, busNumber int32) *vimtypes.ParaVirtualSCSIController {
+func DummyPCIController(
+	key, busNumber int32, devices []int32) *vimtypes.VirtualPCIController {
+
+	return &vimtypes.VirtualPCIController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+			Device:    devices,
+		},
+	}
+}
+
+func DummyLsiLogicController(
+	key, busNumber int32,
+	sharedBus vimtypes.VirtualSCSISharing) *vimtypes.VirtualLsiLogicController {
+
+	return &vimtypes.VirtualLsiLogicController{
+		VirtualSCSIController: vimtypes.VirtualSCSIController{
+			VirtualController: vimtypes.VirtualController{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key: key,
+				},
+				BusNumber: busNumber,
+			},
+			SharedBus: sharedBus,
+		},
+	}
+}
+
+func DummyBusLogicController(
+	key, busNumber int32,
+	sharedBus vimtypes.VirtualSCSISharing) *vimtypes.VirtualBusLogicController {
+
+	return &vimtypes.VirtualBusLogicController{
+		VirtualSCSIController: vimtypes.VirtualSCSIController{
+			VirtualController: vimtypes.VirtualController{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key: key,
+				},
+				BusNumber: busNumber,
+			},
+			SharedBus: sharedBus,
+		},
+	}
+}
+
+func DummyVirtualSATAController(
+	key, busNumber int32) *vimtypes.VirtualSATAController {
+
+	return &vimtypes.VirtualSATAController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+		},
+	}
+}
+
+func DummyParaVirtualSCSIController(
+	key, busNumber int32,
+	sharedBus vimtypes.VirtualSCSISharing) *vimtypes.ParaVirtualSCSIController {
+
 	return &vimtypes.ParaVirtualSCSIController{
 		VirtualSCSIController: vimtypes.VirtualSCSIController{
 			VirtualController: vimtypes.VirtualController{
@@ -942,7 +1006,7 @@ func DummyParaVirtualSCSIController(key, busNumber int32) *vimtypes.ParaVirtualS
 				},
 				BusNumber: busNumber,
 			},
-			SharedBus: vimtypes.VirtualSCSISharingNoSharing,
+			SharedBus: sharedBus,
 		},
 	}
 }

@@ -401,6 +401,39 @@ func (c ControllerID) Compare(b ControllerID) int {
 	return int(c.BusNumber - b.BusNumber)
 }
 
+// GetControllerID extracts ControllerID from a virtual device.
+// Returns nil if the device is not a controller or is nil.
+func GetControllerID(dev vimtypes.BaseVirtualDevice) *ControllerID {
+	if dev == nil {
+		return nil
+	}
+
+	switch ctrl := dev.(type) {
+	case *vimtypes.VirtualIDEController:
+		return &ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeIDE,
+			BusNumber:      ctrl.BusNumber,
+		}
+	case vimtypes.BaseVirtualSCSIController:
+		return &ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSCSI,
+			BusNumber:      ctrl.GetVirtualSCSIController().BusNumber,
+		}
+	case vimtypes.BaseVirtualSATAController:
+		return &ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSATA,
+			BusNumber:      ctrl.GetVirtualSATAController().BusNumber,
+		}
+	case *vimtypes.VirtualNVMEController:
+		return &ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeNVME,
+			BusNumber:      ctrl.BusNumber,
+		}
+	default:
+		return nil
+	}
+}
+
 // DevicePlacement represents the placement information for a virtual device
 // attached to a controller. It combines a unique key (such as volume name or
 // backing file name) with controller type, controller bus number, and unit
@@ -496,36 +529,13 @@ func BuildHardwareInfo(moVM mo.VirtualMachine) HardwareInfo {
 			continue
 		}
 
-		var controllerID ControllerID
-		switch ctrl := device.(type) {
-		case *vimtypes.VirtualIDEController:
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeIDE,
-				BusNumber:      ctrl.BusNumber,
-			}
-		case vimtypes.BaseVirtualSCSIController:
-			scsiCtrl := ctrl.GetVirtualSCSIController()
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeSCSI,
-				BusNumber:      scsiCtrl.BusNumber,
-			}
-		case vimtypes.BaseVirtualSATAController:
-			sataCtrl := ctrl.GetVirtualSATAController()
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeSATA,
-				BusNumber:      sataCtrl.BusNumber,
-			}
-		case *vimtypes.VirtualNVMEController:
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeNVME,
-				BusNumber:      ctrl.BusNumber,
-			}
-		default:
+		controllerID := GetControllerID(device)
+		if controllerID == nil {
 			continue
 		}
 
-		controllerInfoMap[deviceKey] = controllerID
-		hwInfo.Controllers.Insert(controllerID)
+		controllerInfoMap[deviceKey] = *controllerID
+		hwInfo.Controllers.Insert(*controllerID)
 	}
 
 	// Collect all attached virtual disks and CD-ROMs.

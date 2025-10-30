@@ -1769,39 +1769,13 @@ func reconcileStatusController(
 
 	// Collect all the controllers.
 	for _, device := range moVM.Config.Hardware.Device {
-		var cs *vmopv1.VirtualControllerStatus
-
-		switch ctrl := device.(type) {
-		case *vimtypes.VirtualIDEController:
-			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeIDE,
-			}
-
-		case vimtypes.BaseVirtualSCSIController:
-			scsiCtrl := ctrl.GetVirtualSCSIController()
-			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: scsiCtrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeSCSI,
-			}
-
-		case vimtypes.BaseVirtualSATAController:
-			sataCtrl := ctrl.GetVirtualSATAController()
-			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: sataCtrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeSATA,
-			}
-
-		case *vimtypes.VirtualNVMEController:
-			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeNVME,
-			}
-		}
-
-		if cs != nil {
+		if ctrlID := pkgutil.GetControllerID(device); ctrlID != nil {
 			deviceKey := device.GetVirtualDevice().Key
-			cs.DeviceKey = deviceKey
+			cs := &vmopv1.VirtualControllerStatus{
+				BusNumber: ctrlID.BusNumber,
+				Type:      ctrlID.ControllerType,
+				DeviceKey: deviceKey,
+			}
 			controllerKeyMap[deviceKey] = cs
 		}
 	}

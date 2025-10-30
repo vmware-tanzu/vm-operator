@@ -255,14 +255,14 @@ func reconcileIDEControllers(
 		)
 
 	for _, dev := range toRemove {
-		addDeviceChangeOp(configSpec,
+		AddDeviceChangeOp(configSpec,
 			dev,
 			vimtypes.VirtualDeviceConfigSpecOperationRemove)
 	}
 
 	for _, spec := range toAdd {
-		addDeviceChangeOp(configSpec,
-			newIDEController(spec, pciController, newDeviceKey),
+		AddDeviceChangeOp(configSpec,
+			NewIDEController(spec, pciController, newDeviceKey),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 }
@@ -302,19 +302,19 @@ func reconcileNVMEControllers(
 		)
 
 	for _, dev := range toRemove {
-		addDeviceChangeOp(configSpec,
+		AddDeviceChangeOp(configSpec,
 			dev,
 			vimtypes.VirtualDeviceConfigSpecOperationRemove)
 	}
 
 	for _, spec := range toAdd {
-		addDeviceChangeOp(configSpec,
-			newNVMEController(ctx, spec, pciController, newDeviceKey),
+		AddDeviceChangeOp(configSpec,
+			NewNVMEController(ctx, spec, pciController, newDeviceKey),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 
 	for _, dev := range toEdit {
-		addDeviceChangeOp(configSpec,
+		AddDeviceChangeOp(configSpec,
 			dev,
 			vimtypes.VirtualDeviceConfigSpecOperationEdit)
 	}
@@ -350,19 +350,19 @@ func reconcileSATAControllers(
 		)
 
 	for _, dev := range toRemove {
-		addDeviceChangeOp(configSpec,
+		AddDeviceChangeOp(configSpec,
 			dev,
 			vimtypes.VirtualDeviceConfigSpecOperationRemove)
 	}
 
 	for _, spec := range toAdd {
-		addDeviceChangeOp(configSpec,
-			newSATAController(spec, pciController, newDeviceKey),
+		AddDeviceChangeOp(configSpec,
+			NewSATAController(spec, pciController, newDeviceKey),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 
 	for _, dev := range toEdit {
-		addDeviceChangeOp(configSpec,
+		AddDeviceChangeOp(configSpec,
 			dev,
 			vimtypes.VirtualDeviceConfigSpecOperationEdit)
 	}
@@ -398,19 +398,19 @@ func reconcileSCSIControllers(
 		)
 
 	for _, dev := range toRemove {
-		addDeviceChangeOp(configSpec,
+		AddDeviceChangeOp(configSpec,
 			dev.(vimtypes.BaseVirtualDevice),
 			vimtypes.VirtualDeviceConfigSpecOperationRemove)
 	}
 
 	for _, spec := range toAdd {
-		addDeviceChangeOp(configSpec,
-			newSCSIController(ctx, spec, pciController, newDeviceKey).(vimtypes.BaseVirtualDevice),
+		AddDeviceChangeOp(configSpec,
+			NewSCSIController(ctx, spec, pciController, newDeviceKey).(vimtypes.BaseVirtualDevice),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 
 	for _, dev := range toEdit {
-		addDeviceChangeOp(configSpec,
+		AddDeviceChangeOp(configSpec,
 			dev.(vimtypes.BaseVirtualDevice),
 			vimtypes.VirtualDeviceConfigSpecOperationEdit)
 	}

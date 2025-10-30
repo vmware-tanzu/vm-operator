@@ -79,6 +79,52 @@ type testParams struct {
 	skipBypassUpgradeCheck bool
 }
 
+type protectedAnnotationTestCase struct {
+	annotationKey string
+	oldValue      string
+	newValue      string
+}
+
+// When defining any new protected annotations, be sure to add them to this
+// list so they are covered via test cases. A protected condition is one whose
+// key matches the regex `^.+\.protected(/.+)?$`.
+//
+// Examples that match:
+//   - fu.bar.protected
+//   - hello.world.protected/sub-key
+//   - vmoperator.vmware.com.protected/reconcile-priority
+//
+// Examples that do NOT match:
+//   - protected.fu.bar
+//   - hello.world.protected.against/sub-key
+var protectedAnnotationTestCases = []protectedAnnotationTestCase{
+	{
+		annotationKey: pkgconst.ReconcilePriorityAnnotationKey,
+		oldValue:      "100",
+		newValue:      "200",
+	},
+	{
+		annotationKey: pkgconst.SkipDeletePlatformResourceKey,
+		oldValue:      "true",
+		newValue:      "false",
+	},
+	{
+		annotationKey: pkgconst.ApplyPowerStateTimeAnnotation,
+		oldValue:      time.Now().Format(time.RFC3339Nano),
+		newValue:      time.Now().Add(time.Hour).Format(time.RFC3339Nano),
+	},
+	{
+		annotationKey: "hello.world.protected/condition-status",
+		oldValue:      "red",
+		newValue:      "green",
+	},
+	{
+		annotationKey: "condition.vmware.vmoperator.com.protected/hello-world",
+		oldValue:      "True",
+		newValue:      "False",
+	},
+}
+
 func bypassUpgradeCheck(ctx *context.Context, objects ...metav1.Object) {
 	pkgcfg.SetContext(*ctx, func(config *pkgcfg.Config) {
 		config.BuildVersion = fake
@@ -1186,26 +1232,20 @@ func unitTestsValidateCreate() {
 			Entry("should disallow creating VM with admin-only annotations set by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
@@ -1216,14 +1256,11 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
-						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -1241,14 +1278,11 @@ func unitTestsValidateCreate() {
 						ctx.UserInfo.Username = fakeWCPUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
-						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -1275,6 +1309,57 @@ func unitTestsValidateCreate() {
 						`metadata.annotations[vsphere-cluster-module-group]: Forbidden: cluster module assignment requires spec.reserved.resourcePolicyName to specify a VirtualMachineSetResourcePolicy`),
 				},
 			),
+		)
+
+		getProtectedAnnotationTableAllowCreate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.IsPrivilegedAccount = true
+							ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+						},
+						expectAllowed: true,
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should allow create with "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableDisallowCreate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+						},
+						validate: doValidateWithMsg(
+							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						),
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should disallow create with "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		DescribeTable("disallow create with protected annotations by non-privileged user",
+			getProtectedAnnotationTableDisallowCreate()...,
+		)
+
+		DescribeTable("allow create with protected annotations by non-privileged user",
+			getProtectedAnnotationTableAllowCreate()...,
 		)
 	})
 
@@ -4090,7 +4175,7 @@ func unitTestsValidateCreate() {
 	unitTestsValidateVolumeUnitNumber(doTest)
 }
 
-func unitTestsValidateUpdate() {
+func unitTestsValidateUpdate() { //nolint:gocyclo
 	var (
 		ctx *unitValidatingWebhookContext
 	)
@@ -4557,7 +4642,6 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
 
-						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4565,11 +4649,9 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
-						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "101"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -4577,13 +4659,11 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 
 					},
 					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -4591,7 +4671,6 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
@@ -4600,7 +4679,6 @@ func unitTestsValidateUpdate() {
 			Entry("should disallow removing admin-only annotations by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4608,12 +4686,10 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -4621,7 +4697,6 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
@@ -4632,7 +4707,6 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
-						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4640,11 +4714,9 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
-						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "101"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -4652,7 +4724,6 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
@@ -4664,7 +4735,6 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
-						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4673,7 +4743,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -4693,7 +4762,6 @@ func unitTestsValidateUpdate() {
 						ctx.UserInfo.Username = privilegedUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
-						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4701,11 +4769,9 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
-						ctx.vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "101"
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -4713,7 +4779,6 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
@@ -4733,7 +4798,6 @@ func unitTestsValidateUpdate() {
 						ctx.UserInfo.Username = privilegedUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
-						ctx.oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] = "100"
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -4741,7 +4805,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -4760,6 +4823,118 @@ func unitTestsValidateUpdate() {
 						`metadata.annotations[vsphere-cluster-module-group]: Forbidden: modifying this annotation is not allowed for non-admin users`),
 				},
 			),
+		)
+
+		getProtectedAnnotationTableAllowUpdate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.IsPrivilegedAccount = true
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							if tc.newValue != "" {
+								ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+							}
+						},
+						expectAllowed: true,
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should allow update of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableAllowRemoval := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.IsPrivilegedAccount = true
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							delete(ctx.vm.Annotations, tc.annotationKey)
+						},
+						expectAllowed: true,
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should allow removal of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableDisallowUpdate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							if tc.newValue != "" {
+								ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+							}
+						},
+						validate: doValidateWithMsg(
+							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						),
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should disallow update of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableDisallowRemoval := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							delete(ctx.vm.Annotations, tc.annotationKey)
+						},
+						validate: doValidateWithMsg(
+							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						),
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should disallow removal of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		DescribeTable("disallow update of protected annotations by non-privileged user",
+			getProtectedAnnotationTableDisallowUpdate()...,
+		)
+
+		DescribeTable("disallow removal of protected annotations by non-privileged user",
+			getProtectedAnnotationTableDisallowRemoval()...,
+		)
+
+		DescribeTable("allow update of protected annotations by privileged user",
+			getProtectedAnnotationTableAllowUpdate()...,
+		)
+
+		DescribeTable("allow removal of protected annotations by privileged user",
+			getProtectedAnnotationTableAllowRemoval()...,
 		)
 	})
 

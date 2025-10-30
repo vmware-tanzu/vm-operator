@@ -106,6 +106,182 @@ var _ = Describe("UpdateStatus", func() {
 		})
 	})
 
+	Context("Annotations to Conditions", func() {
+		const (
+			testAnnotationKey = "condition.vmoperator.vmware.com.protected/MyCondition"
+			testConditionType = "MyConditionType"
+			testReason        = "MyReason"
+			testMessage       = "My message"
+		)
+
+		Context("When annotation matches the protected condition pattern", func() {
+			When("annotation value has type and status=True", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";True",
+					}
+				})
+				It("should set condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				})
+			})
+
+			When("annotation value has type and status=False with reason and message", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";False;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should set condition to False with reason and message", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal(testReason))
+					Expect(cond.Message).To(Equal(testMessage))
+				})
+			})
+
+			When("annotation value has type and status=Unknown with reason and message", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";Unknown;UnknownReason;Unknown message",
+					}
+				})
+				It("should set condition to Unknown with reason and message", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+					Expect(cond.Reason).To(Equal("UnknownReason"))
+					Expect(cond.Message).To(Equal("Unknown message"))
+				})
+			})
+
+			When("annotation value has type and unrecognized status", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";InvalidStatus;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should set condition to Unknown", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+				})
+			})
+
+			When("annotation value has type but empty status", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should set condition to Unknown", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+				})
+			})
+
+			When("annotation value has only type", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType,
+					}
+				})
+				It("should set condition to Unknown", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+				})
+			})
+
+			When("annotation value is empty", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: "",
+					}
+				})
+				It("should not set any condition", func() {
+					cond := conditions.Get(vmCtx.VM, "")
+					Expect(cond).To(BeNil())
+				})
+			})
+
+			When("annotation value has no type (empty type)", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: ";True;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should not set a condition for empty type", func() {
+					// Since type is empty, no condition with empty type should be set
+					// The function checks if t != "" before setting conditions
+					cond := conditions.Get(vmCtx.VM, "")
+					Expect(cond).To(BeNil())
+					// But Created condition should still exist
+					cond = conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
+					Expect(cond).ToNot(BeNil())
+				})
+			})
+
+			When("multiple protected condition annotations exist", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						"condition.vmoperator.vmware.com.protected/Condition1": "Type1;True",
+						"condition.vmoperator.vmware.com.protected/Condition2": "Type2;False;Reason2;Message2",
+						"condition.vmoperator.vmware.com.protected/Condition3": "Type3;Unknown;Reason3;Message3",
+					}
+				})
+				It("should set all conditions appropriately", func() {
+					cond1 := conditions.Get(vmCtx.VM, "Type1")
+					Expect(cond1).ToNot(BeNil())
+					Expect(cond1.Status).To(Equal(metav1.ConditionTrue))
+
+					cond2 := conditions.Get(vmCtx.VM, "Type2")
+					Expect(cond2).ToNot(BeNil())
+					Expect(cond2.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond2.Reason).To(Equal("Reason2"))
+					Expect(cond2.Message).To(Equal("Message2"))
+
+					cond3 := conditions.Get(vmCtx.VM, "Type3")
+					Expect(cond3).ToNot(BeNil())
+					Expect(cond3.Status).To(Equal(metav1.ConditionUnknown))
+					Expect(cond3.Reason).To(Equal("Reason3"))
+					Expect(cond3.Message).To(Equal("Message3"))
+				})
+			})
+		})
+
+		Context("When annotation does not match the protected condition pattern", func() {
+			When("annotation has different prefix", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						"other.annotation/MyCondition": testConditionType + ";True",
+					}
+				})
+				It("should not set any condition from this annotation", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).To(BeNil())
+				})
+			})
+
+			When("no annotations exist", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = nil
+				})
+				It("should have default conditions set by ReconcileStatus", func() {
+					// ReconcileStatus sets multiple conditions including Created and ReconcileReady
+					// Just verify the Created condition exists and no annotation-based conditions
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				})
+			})
+		})
+	})
+
 	Context("Network", func() {
 
 		Context("PrimaryIP", func() {

@@ -23,15 +23,25 @@ const (
 )
 
 type VirtualMachineImageCacheLocationSpec struct {
+
+	// +required
+	// +kubebuilder:validation:MinLength=1
+
 	// DatacenterID describes the ID of the datacenter to which the image should
 	// be cached.
 	DatacenterID string `json:"datacenterID"`
+
+	// +required
+	// +kubebuilder:validation:MinLength=1
 
 	// ProfileID describes the ID of the storage profile used to cache the
 	// image.
 	// Please note, this profile *must* include the datastore specified by the
 	// datastoreID field.
 	ProfileID string `json:"profileID"`
+
+	// +required
+	// +kubebuilder:validation:MinLength=1
 
 	// DatastoreID describes the ID of the datastore to which the image should
 	// be cached.

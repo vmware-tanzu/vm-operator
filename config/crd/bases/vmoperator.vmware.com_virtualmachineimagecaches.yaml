@@ -664,11 +664,13 @@ spec:
                       description: |-
                         DatacenterID describes the ID of the datacenter to which the image should
                         be cached.
+                      minLength: 1
                       type: string
                     datastoreID:
                       description: |-
                         DatastoreID describes the ID of the datastore to which the image should
                         be cached.
+                      minLength: 1
                       type: string
                     profileID:
                       description: |-
@@ -676,6 +678,7 @@ spec:
                         image.
                         Please note, this profile *must* include the datastore specified by the
                         datastoreID field.
+                      minLength: 1
                       type: string
                   required:
                   - datacenterID

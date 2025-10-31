@@ -2295,15 +2295,17 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	// Get the encryption class details for the VM.
 	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
-		if err := vmconfcrypto.Reconcile(
-			vmCtx,
-			vs.k8sClient,
-			vs.vcClient.VimClient(),
-			vmCtx.VM,
-			vmCtx.MoVM,
-			&createArgs.ConfigSpec); err != nil {
+		if vmCtx.VM.Spec.Crypto != nil && vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeNew {
+			if err := vmconfcrypto.Reconcile(
+				vmCtx,
+				vs.k8sClient,
+				vs.vcClient.VimClient(),
+				vmCtx.VM,
+				vmCtx.MoVM,
+				&createArgs.ConfigSpec); err != nil {
 
-			return err
+				return err
+			}
 		}
 	}
 
@@ -2449,6 +2451,15 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		false); err != nil {
 		return err
 	} else if len(srcEC) > 0 {
+		// When deploying from an image with type "vm" we do not want
+		// copy the encryption.bundle property if the vTPM mode specified
+		// in spec.crypto.vTPMMode is 'New'.
+		if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
+			vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeNew {
+			if _, ok := srcEC.GetString("encryption.bundle"); ok {
+				srcEC = srcEC.Delete("encryption.bundle")
+			}
+		}
 		if dstEC := createArgs.ConfigSpec.ExtraConfig; len(dstEC) == 0 {
 			// The current config spec doesn't have any extra config, so just
 			// set it to use the extra config from the image.
@@ -2599,7 +2610,27 @@ func (vs *vSphereVMProvider) getConfigSpecFromVM(
 			fmt.Errorf("failed to get configInfo for image vm")
 	}
 
-	return moVM.Config.ToConfigSpec(), nil
+	configSpec := moVM.Config.ToConfigSpec()
+
+	if cryptoKeyID := moVM.Config.KeyId; cryptoKeyID != nil && vmCtx.VM.Spec.Crypto != nil &&
+		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {
+
+		cryptoSpec := &vimtypes.CryptoSpecEncrypt{
+			CryptoKeyId: vimtypes.CryptoKeyId{
+				KeyId: cryptoKeyID.KeyId,
+			},
+		}
+
+		if cryptoKeyID.ProviderId != nil {
+			cryptoSpec.CryptoKeyId.ProviderId = &vimtypes.KeyProviderId{
+				Id: cryptoKeyID.ProviderId.Id,
+			}
+		}
+
+		configSpec.Crypto = cryptoSpec
+	}
+
+	return configSpec, nil
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(

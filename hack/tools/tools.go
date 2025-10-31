@@ -14,6 +14,7 @@ import (
 	_ "github.com/elastic/crd-ref-docs"
 	_ "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 	_ "github.com/onsi/ginkgo/v2/ginkgo"
+	_ "github.com/slsyy/mtimehash/cmd/mtimehash"
 	_ "golang.org/x/tools/cmd/goimports"
 	_ "golang.org/x/vuln/cmd/govulncheck"
 	_ "k8s.io/code-generator"

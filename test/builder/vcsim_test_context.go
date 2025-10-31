@@ -839,6 +839,13 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	clusterVMImage.Status.ProviderItemID = subLibItemOVAID
 	clusterVMImage.Status.ProviderContentVersion = subLibItemOVAVer
 	clusterVMImage.Status.Type = "OVF"
+	clusterVMImage.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+		{
+			Name:      "disk0",
+			Limit:     ptr.To(resource.MustParse("30Mi")),
+			Requested: ptr.To(resource.MustParse("30Mi")),
+		},
+	}
 	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 

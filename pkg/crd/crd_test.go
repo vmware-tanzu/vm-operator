@@ -86,7 +86,9 @@ func assertCRDsConsistOf[T any](
 	crds []T,
 	expectedNames ...string) {
 
-	ExpectWithOffset(1, expectedNames).To(HaveLen(len(crds)))
+	GinkgoHelper()
+
+	Expect(expectedNames).To(HaveLen(len(crds)))
 
 	actualNames := make([]string, len(crds))
 	for i := range crds {
@@ -103,7 +105,7 @@ func assertCRDsConsistOf[T any](
 
 	}
 
-	ExpectWithOffset(1, actualNames).To(ConsistOf(expectedNames))
+	Expect(actualNames).To(ConsistOf(expectedNames))
 }
 
 var _ = Describe("UnstructuredBases", func() {
@@ -205,6 +207,19 @@ var _ = Describe("Install", func() {
 				Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
 				Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
 				Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
+				Entry("ideControllers", "hardware.ideControllers"),
+				Entry("nvmeControllers", "hardware.nvmeControllers"),
+				Entry("sataControllers", "hardware.sataControllers"),
+				Entry("scsiControllers", "hardware.scsiControllers"),
+				Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
+				Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
+				Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
+				Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
+				Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
+				Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
+				Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
+				Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
+				Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
 			)
 
 			DescribeTable("vm api should not have status fields",
@@ -215,6 +230,11 @@ var _ = Describe("Install", func() {
 				Entry("currentSnapshot", "currentSnapshot"),
 				Entry("rootSnapshots", "rootSnapshots"),
 				Entry("policies", "policies"),
+				Entry("volumes diskMode", "volumes.[].diskMode"),
+				Entry("volumes sharingMode", "volumes.[].sharingMode"),
+				Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+				Entry("volumes controllerType", "volumes.[].controllerType"),
+				Entry("hardware controllers", "hardware.controllers"),
 			)
 		})
 
@@ -353,6 +373,49 @@ var _ = Describe("Install", func() {
 				Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
 				Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
 				Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
+			)
+		})
+
+		When("VM shared disks (OracleRAC) is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
+			})
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("ideControllers", "hardware.ideControllers"),
+				Entry("nvmeControllers", "hardware.nvmeControllers"),
+				Entry("sataControllers", "hardware.sataControllers"),
+				Entry("scsiControllers", "hardware.scsiControllers"),
+				Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
+				Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
+				Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
+				Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
+				Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
+				Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
+				Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
+				Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
+				Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
+			)
+			DescribeTable("vm api should have status fields",
+				func(field string) {
+					fields := statusFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("volumes diskMode", "volumes.[].diskMode"),
+				Entry("volumes sharingMode", "volumes.[].sharingMode"),
+				Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+				Entry("volumes controllerType", "volumes.[].controllerType"),
+				Entry("hardware controllers", "hardware.controllers"),
 			)
 		})
 
@@ -514,6 +577,19 @@ var _ = Describe("Install", func() {
 					Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
 					Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
 					Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
+					Entry("ideControllers", "hardware.ideControllers"),
+					Entry("nvmeControllers", "hardware.nvmeControllers"),
+					Entry("sataControllers", "hardware.sataControllers"),
+					Entry("scsiControllers", "hardware.scsiControllers"),
+					Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
+					Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
+					Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
+					Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
+					Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
+					Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
+					Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
+					Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
+					Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -524,6 +600,11 @@ var _ = Describe("Install", func() {
 					Entry("currentSnapshot", "currentSnapshot"),
 					Entry("rootSnapshots", "rootSnapshots"),
 					Entry("policies", "policies"),
+					Entry("volumes diskMode", "volumes.[].diskMode"),
+					Entry("volumes sharingMode", "volumes.[].sharingMode"),
+					Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+					Entry("volumes controllerType", "volumes.[].controllerType"),
+					Entry("hardware controllers", "hardware.controllers"),
 				)
 			})
 		})
@@ -560,6 +641,19 @@ var _ = Describe("Install", func() {
 					Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
 					Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
 					Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
+					Entry("ideControllers", "hardware.ideControllers"),
+					Entry("nvmeControllers", "hardware.nvmeControllers"),
+					Entry("sataControllers", "hardware.sataControllers"),
+					Entry("scsiControllers", "hardware.scsiControllers"),
+					Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
+					Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
+					Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
+					Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
+					Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
+					Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
+					Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
+					Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
+					Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -570,6 +664,11 @@ var _ = Describe("Install", func() {
 					Entry("currentSnapshot", "currentSnapshot"),
 					Entry("rootSnapshots", "rootSnapshots"),
 					Entry("policies", "policies"),
+					Entry("volumes diskMode", "volumes.[].diskMode"),
+					Entry("volumes sharingMode", "volumes.[].sharingMode"),
+					Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+					Entry("volumes controllerType", "volumes.[].controllerType"),
+					Entry("hardware controllers", "hardware.controllers"),
 				)
 
 				When("one of the crds is already deleted", func() {
@@ -607,6 +706,19 @@ var _ = Describe("Install", func() {
 						Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
 						Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
 						Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
+						Entry("ideControllers", "hardware.ideControllers"),
+						Entry("nvmeControllers", "hardware.nvmeControllers"),
+						Entry("sataControllers", "hardware.sataControllers"),
+						Entry("scsiControllers", "hardware.scsiControllers"),
+						Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
+						Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
+						Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
+						Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
+						Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
+						Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
+						Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
+						Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
+						Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
 					)
 
 					DescribeTable("vm api should have removed status fields",
@@ -617,6 +729,11 @@ var _ = Describe("Install", func() {
 						Entry("currentSnapshot", "currentSnapshot"),
 						Entry("rootSnapshots", "rootSnapshots"),
 						Entry("policies", "policies"),
+						Entry("volumes diskMode", "volumes.[].diskMode"),
+						Entry("volumes sharingMode", "volumes.[].sharingMode"),
+						Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+						Entry("volumes controllerType", "volumes.[].controllerType"),
+						Entry("hardware controllers", "hardware.controllers"),
 					)
 				})
 			})
@@ -638,6 +755,11 @@ func buildFieldPath(parentField string, fieldNames ...string) []string {
 	result := []string{"schema", "openAPIV3Schema", "properties", parentField, "properties"}
 	result = append(result, fieldNames[0])
 	for _, name := range fieldNames[1:] {
+		// Use "[]" to indicate previous element is an array type.
+		if name == "[]" {
+			result = append(result, "items")
+			continue
+		}
 		result = append(result, "properties", name)
 	}
 	return result

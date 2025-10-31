@@ -63,6 +63,7 @@ func ReconcileStatus(
 
 	var errs []error
 
+	errs = append(errs, reconcileStatusAnno2Conditions(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusClass(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusPowerState(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusIdentifiers(vmCtx, k8sClient, vcVM, data)...)
@@ -89,6 +90,53 @@ func ReconcileStatus(
 	MarkReconciliationCondition(vmCtx.VM)
 
 	return apierrorsutil.NewAggregate(errs)
+}
+
+var anno2ConditionRegex = regexp.MustCompile(`^condition.vmoperator.vmware.com.protected/(.+)?$`)
+
+// reconcileStatusAnno2Conditions sets conditions on the VM based on
+// annotation values.
+func reconcileStatusAnno2Conditions(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	for k, v := range vmCtx.VM.Annotations {
+		if anno2ConditionRegex.MatchString(k) {
+			var (
+				t string
+				s metav1.ConditionStatus
+				r string
+				m string
+			)
+			p := strings.Split(v, ";")
+			if len(p) > 0 {
+				t = p[0]
+			}
+			if len(p) > 1 {
+				s = metav1.ConditionStatus(p[1])
+			}
+			if len(p) > 2 {
+				r = p[2]
+			}
+			if len(p) > 3 {
+				m = p[3]
+			}
+			if t != "" {
+				switch s {
+				case metav1.ConditionFalse:
+					conditions.MarkFalse(vmCtx.VM, t, r, m+"%s", "")
+				case metav1.ConditionTrue:
+					conditions.MarkTrue(vmCtx.VM, t)
+				default:
+					conditions.MarkUnknown(vmCtx.VM, t, r, m+"%s", "")
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func reconcileStatusClass(

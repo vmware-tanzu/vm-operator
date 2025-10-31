@@ -135,6 +135,12 @@ func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	return autoConvert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineCryptoSpec_To_v1alpha4_VirtualMachineCryptoSpec(
+	in *vmopv1.VirtualMachineCryptoSpec, out *VirtualMachineCryptoSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineCryptoSpec_To_v1alpha4_VirtualMachineCryptoSpec(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(
 	in *vmopv1.VirtualMachineCryptoStatus, out *VirtualMachineCryptoStatus, s apiconversion.Scope) error {
 
@@ -193,6 +199,10 @@ func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
 
 func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
+}
+
+func restore_v1alpha5_VirtualMachineCryptoSpec(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Crypto = src.Spec.Crypto
 }
 
 func Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(
@@ -269,6 +279,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
+	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)

@@ -87,7 +87,7 @@ var (
 	ErrPromoteDisks           = vmconfdiskpromo.ErrPromoteDisks
 	ErrCreate                 = pkgerr.NoRequeueNoErr("created vm")
 	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
-	ErrSnapshotRevert         = pkgerr.RequeueError{Message: "reverted snapshot"}
+	ErrSnapshotRevert         = pkgerr.NoRequeueNoErr("reverted snapshot")
 	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
 )
 

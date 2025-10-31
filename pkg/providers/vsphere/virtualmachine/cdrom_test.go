@@ -1084,6 +1084,335 @@ func cdromTests() {
 				})
 			})
 		})
+
+		Context("VMSharedDisks capability enabled", func() {
+
+			BeforeEach(func() {
+				vmCtx.Context = pkgcfg.NewContext()
+				pkgcfg.SetContext(vmCtx.Context, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+
+				k8sInitObjs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, resource.MustParse("100Mi"), true, true, imgregv1a1.ContentLibraryItemTypeIso)
+				k8sInitObjs = append(k8sInitObjs, builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, resource.MustParse("100Mi"), true, true, imgregv1a1.ContentLibraryItemTypeIso)...)
+				k8sClient = builder.NewFakeClient(k8sInitObjs...)
+			})
+
+			JustBeforeEach(func() {
+				result, resultErr = virtualmachine.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
+			})
+
+			When("VM.Spec.Cdrom adds a new CD-ROM device with controller information", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(1)), ptr.To(true), ptr.To(true)),
+						},
+					}
+
+					curDevices = object.VirtualDeviceList{
+						builder.DummyIDEController(ideControllerKey, 0, []int32{}),
+					}
+				})
+
+				It("should add the new CD-ROM device with specified controller assignment", func() {
+					Expect(resultErr).ToNot(HaveOccurred())
+					Expect(result).To(HaveLen(1))
+					verifyCdromDeviceConfigSpec(result[0], vimtypes.VirtualDeviceConfigSpecOperationAdd, true, false, true, ideControllerKey, 1, vmiFileName)
+				})
+			})
+
+			When("VM.Spec.Cdrom adds a new CD-ROM device with SATA controller information", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(5)), ptr.To(true), ptr.To(true)),
+						},
+					}
+
+					curDevices = object.VirtualDeviceList{
+						builder.DummySATAController(sataControllerKey, 0, []int32{}),
+					}
+				})
+
+				It("should add the new CD-ROM device with specified SATA controller assignment", func() {
+					Expect(resultErr).ToNot(HaveOccurred())
+					Expect(result).To(HaveLen(1))
+					verifyCdromDeviceConfigSpec(result[0], vimtypes.VirtualDeviceConfigSpecOperationAdd, true, false, true, sataControllerKey, 5, vmiFileName)
+				})
+			})
+
+			When("VM.Spec.Cdrom specifies controller information but controller is not found", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0)), ptr.To(true), ptr.To(true)),
+						},
+					}
+
+					curDevices = object.VirtualDeviceList{}
+				})
+
+				It("should return an error", func() {
+					Expect(resultErr).To(HaveOccurred())
+					Expect(resultErr.Error()).To(ContainSubstring("controller not found"))
+				})
+			})
+
+			When("VM.Spec.Cdrom specifies incomplete controller information", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, "", nil, nil, ptr.To(true), ptr.To(true)),
+						},
+					}
+
+					curDevices = object.VirtualDeviceList{
+						builder.DummyIDEController(ideControllerKey, 0, []int32{}),
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(resultErr).To(HaveOccurred())
+					Expect(resultErr.Error()).To(ContainSubstring("all the controller information"))
+				})
+			})
+
+			When("VM.Spec.Cdrom adds multiple CD-ROM devices with different controllers", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0)), ptr.To(true), ptr.To(true)),
+							builder.DummyCdromSpec(cdromName2, cvmiName, cvmiKind, vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(10)), ptr.To(false), ptr.To(false)),
+						},
+					}
+
+					curDevices = object.VirtualDeviceList{
+						builder.DummyIDEController(ideControllerKey, 0, []int32{}),
+						builder.DummySATAController(sataControllerKey, 0, []int32{}),
+					}
+				})
+
+				It("should add both CD-ROM devices with correct controller assignments", func() {
+					Expect(resultErr).ToNot(HaveOccurred())
+					Expect(result).To(HaveLen(2))
+
+					verifyCdromDeviceConfigSpec(result[0], vimtypes.VirtualDeviceConfigSpecOperationAdd, true, false, true, ideControllerKey, 0, vmiFileName)
+					verifyCdromDeviceConfigSpec(result[1], vimtypes.VirtualDeviceConfigSpecOperationAdd, false, false, false, sataControllerKey, 10, cvmiFileName)
+				})
+			})
+
+			When("VM.Spec.Cdrom specifies unit number already used by existing device", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0)), ptr.To(true), ptr.To(true)),
+							builder.DummyCdromSpec(cdromName2, cvmiName, cvmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0)), ptr.To(false), ptr.To(false)),
+						},
+					}
+
+					curDevices = object.VirtualDeviceList{
+						builder.DummyIDEController(ideControllerKey, 0, []int32{}),
+					}
+				})
+
+				It("should return an error for duplicate unit number", func() {
+					Expect(resultErr).To(HaveOccurred())
+					Expect(resultErr.Error()).To(ContainSubstring("found a CD-ROM spec with a used unitNumber 0"))
+				})
+			})
+
+			When("VM has existing CD-ROM and placement changes", func() {
+
+				When("controller type changes from IDE to SATA", func() {
+
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(3)), ptr.To(true), ptr.To(false)),
+							},
+						}
+
+						curDevices = object.VirtualDeviceList{
+							builder.DummyIDEController(ideControllerKey, 0, []int32{cdromDeviceKey1}),
+							builder.DummySATAController(sataControllerKey, 0, []int32{}),
+							builder.DummyCdromDevice(cdromDeviceKey1, ideControllerKey, 0, vmiFileName),
+						}
+					})
+
+					It("should remove old CD-ROM and add new one with SATA controller", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(2))
+
+						// First operation should be remove.
+						removedDevice := verifyRemoveOperation(result[0], ideControllerKey)
+						Expect(removedDevice.Key).To(Equal(cdromDeviceKey1))
+
+						// Second operation should be add with new placement.
+						verifyCdromDeviceConfigSpec(result[1], vimtypes.VirtualDeviceConfigSpecOperationAdd, false, false, true, sataControllerKey, 3, vmiFileName)
+					})
+				})
+
+				When("controller bus number changes", func() {
+
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeSATA, ptr.To(int32(1)), ptr.To(int32(2)), ptr.To(true), ptr.To(true)),
+							},
+						}
+
+						curDevices = object.VirtualDeviceList{
+							builder.DummySATAController(sataControllerKey, 0, []int32{cdromDeviceKey1}),
+							builder.DummySATAController(sataControllerKey+1, 1, []int32{}),
+							builder.DummyCdromDevice(cdromDeviceKey1, sataControllerKey, 5, vmiFileName),
+						}
+					})
+
+					It("should remove old CD-ROM and add new one with different bus number", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(2))
+
+						// First operation should be remove.
+						removedDevice := verifyRemoveOperation(result[0], sataControllerKey)
+						Expect(removedDevice.Key).To(Equal(cdromDeviceKey1))
+						Expect(*removedDevice.UnitNumber).To(Equal(int32(5)))
+
+						// Second operation should be add with new placement.
+						verifyCdromDeviceConfigSpec(result[1], vimtypes.VirtualDeviceConfigSpecOperationAdd, true, false, true, sataControllerKey+1, 2, vmiFileName)
+					})
+				})
+
+				When("unit number changes on same controller", func() {
+
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(1)), ptr.To(true), ptr.To(false)),
+							},
+						}
+
+						curDevices = object.VirtualDeviceList{
+							builder.DummyIDEController(ideControllerKey, 0, []int32{cdromDeviceKey1}),
+							builder.DummyCdromDevice(cdromDeviceKey1, ideControllerKey, 0, vmiFileName),
+						}
+					})
+
+					It("should remove old CD-ROM and add new one with different unit number", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(2))
+
+						// First operation should be remove.
+						removedDevice := verifyRemoveOperation(result[0], ideControllerKey)
+						Expect(removedDevice.Key).To(Equal(cdromDeviceKey1))
+						Expect(*removedDevice.UnitNumber).To(Equal(int32(0)))
+
+						// Second operation should be add with new placement.
+						verifyCdromDeviceConfigSpec(result[1], vimtypes.VirtualDeviceConfigSpecOperationAdd, false, false, true, ideControllerKey, 1, vmiFileName)
+					})
+				})
+
+				When("no placement change, only connection state changes", func() {
+
+					BeforeEach(func() {
+						vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0)), ptr.To(true), ptr.To(true)),
+							},
+						}
+
+						curDevices = object.VirtualDeviceList{
+							builder.DummyIDEController(ideControllerKey, 0, []int32{cdromDeviceKey1}),
+							builder.DummyCdromDevice(cdromDeviceKey1, ideControllerKey, 0, vmiFileName),
+						}
+					})
+
+					It("should only update connection state without remove/add", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(1))
+
+						// Should only be edit operation for connection state.
+						Expect(result[0].GetVirtualDeviceConfigSpec().Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+						editedDevice := result[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualCdrom)
+						Expect(editedDevice.Key).To(Equal(cdromDeviceKey1))
+						Expect(editedDevice.ControllerKey).To(Equal(ideControllerKey))
+						Expect(*editedDevice.UnitNumber).To(Equal(int32(0)))
+						Expect(editedDevice.Connectable.Connected).To(BeTrue())
+					})
+				})
+
+				When("multiple CD-ROMs with mixed placement changes", func() {
+
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(5)), ptr.To(true), ptr.To(false)),
+								builder.DummyCdromSpec(cdromName2, cvmiName, cvmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(1)), ptr.To(false), ptr.To(false)),
+							},
+						}
+
+						curDevices = object.VirtualDeviceList{
+							builder.DummyIDEController(ideControllerKey, 0, []int32{cdromDeviceKey1, cdromDeviceKey2}),
+							builder.DummySATAController(sataControllerKey, 0, []int32{}),
+							builder.DummyCdromDevice(cdromDeviceKey1, ideControllerKey, 0, vmiFileName),
+							builder.DummyCdromDevice(cdromDeviceKey2, ideControllerKey, 1, cvmiFileName),
+						}
+					})
+
+					It("should remove and re-add first CD-ROM, keep second CD-ROM unchanged", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(2))
+
+						// First CD-ROM: should be removed and re-added.
+						removedDevice := verifyRemoveOperation(result[0], ideControllerKey)
+						Expect(removedDevice.Key).To(Equal(cdromDeviceKey1))
+
+						// New CD-ROM with SATA controller.
+						verifyCdromDeviceConfigSpec(result[1], vimtypes.VirtualDeviceConfigSpecOperationAdd, false, false, true, sataControllerKey, 5, vmiFileName)
+
+						// Verify second CD-ROM does not appear in device changes.
+						// Since it has no placement change, it should not be in the result.
+						for _, change := range result {
+							device := change.GetVirtualDeviceConfigSpec().Device
+							if cdrom, ok := device.(*vimtypes.VirtualCdrom); ok {
+								backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
+								Expect(backing.FileName).NotTo(Equal(cvmiFileName))
+							}
+						}
+					})
+				})
+
+				When("placement change but target controller does not exist", func() {
+
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(3)), ptr.To(true), ptr.To(false)),
+							},
+						}
+
+						curDevices = object.VirtualDeviceList{
+							builder.DummyIDEController(ideControllerKey, 0, []int32{cdromDeviceKey1}),
+							builder.DummyCdromDevice(cdromDeviceKey1, ideControllerKey, 0, vmiFileName),
+						}
+					})
+
+					It("should return an error when target controller is missing", func() {
+						Expect(resultErr).To(HaveOccurred())
+						Expect(resultErr.Error()).To(ContainSubstring("controller not found"))
+					})
+				})
+			})
+
+		})
 	})
 
 	Context("UpdateConfigSpecCdromDeviceConnection", func() {
@@ -1344,6 +1673,18 @@ func cdromTests() {
 			})
 		})
 	})
+}
+
+// verifyRemoveOperation verifies a CD-ROM remove operation and returns the removed device.
+func verifyRemoveOperation(
+	deviceConfigSpec vimtypes.BaseVirtualDeviceConfigSpec,
+	expectedControllerKey int32) *vimtypes.VirtualCdrom {
+
+	Expect(deviceConfigSpec.GetVirtualDeviceConfigSpec().Operation).To(
+		Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
+	removedDevice := deviceConfigSpec.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualCdrom)
+	Expect(removedDevice.ControllerKey).To(Equal(expectedControllerKey))
+	return removedDevice
 }
 
 // verifyCdromDeviceConfigSpec is a helper function to verify the given device

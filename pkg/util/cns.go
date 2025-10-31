@@ -10,6 +10,19 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+const (
+	// IDEControllerMaxSlotCount is the maximum number of slots
+	// per IDE controller.
+	IDEControllerMaxSlotCount = int32(2)
+	// IDEControllerMaxCount is the maximum number of IDE controllers.
+	IDEControllerMaxCount = int32(2)
+	// SATAControllerMaxSlotCount is the maximum number of slots
+	// per SATA controller.
+	SATAControllerMaxSlotCount = int32(30)
+	// SATAControllerMaxCount is the maximum number of SATA controllers.
+	SATAControllerMaxCount = int32(4)
+)
+
 // ControllerID represents a unique identifier for a virtual controller in a VM.
 // It combines the controller type (IDE, NVME, SCSI, or SATA) with a bus number
 // to uniquely identify a specific controller instance within the virtual machine.

@@ -674,7 +674,7 @@ func (vs *vSphereVMProvider) getCreateArgs(
 		}
 	}
 
-	if err := vs.vmCreateIsReady(vmCtx, vcClient, createArgs); err != nil {
+	if err := vs.vmCreateIsReady(vmCtx, createArgs); err != nil {
 		return nil, err
 	}
 
@@ -1936,17 +1936,18 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 
 func (vs *vSphereVMProvider) vmCreateIsReady(
 	vmCtx pkgctx.VirtualMachineContext,
-	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
 	if policy := createArgs.ResourcePolicy; policy != nil {
-		// TODO: May want to do this as to filter the placement candidates.
-		clusterModuleProvider := clustermodules.NewProvider(vcClient.RestClient())
-		exists, err := vs.doClusterModulesExist(vmCtx, clusterModuleProvider, createArgs.ClusterMoRef, policy)
-		if err != nil {
-			return err
-		} else if !exists {
-			return fmt.Errorf("VirtualMachineSetResourcePolicy cluster module is not ready")
+		if name := vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey]; name != "" {
+			_, moduleUUID := clustermodules.FindClusterModuleUUID(
+				vmCtx,
+				name,
+				createArgs.ClusterMoRef,
+				policy)
+			if moduleUUID == "" {
+				return fmt.Errorf("VirtualMachineSetResourcePolicy cluster module is not ready")
+			}
 		}
 	}
 

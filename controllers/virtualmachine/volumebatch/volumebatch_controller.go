@@ -264,7 +264,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		}
 	}
 
-	legacyAttachments, err := r.getAttachmentsForVM(ctx)
+	legacyAttachments, err := pkgutil.GetCnsNodeVMAttachmentsForVM(ctx, r.Client, ctx.VM)
 	if err != nil {
 		return fmt.Errorf(
 			"error getting existing CnsNodeVmAttachments for VM: %w", err)
@@ -851,33 +851,6 @@ func (r *Reconciler) validateVolumeSpecs(_ *pkgctx.VolumeContext, _ []cnsv1alpha
 	// - Controller capacity limits based on controller type
 
 	return nil
-}
-
-// Return the existing CnsNodeVmAttachments that are for this VM.
-func (r *Reconciler) getAttachmentsForVM(ctx *pkgctx.VolumeContext) (map[string]cnsv1alpha1.CnsNodeVmAttachment, error) {
-	// We need to filter the attachments for the ones for this VM. There are a few ways we can do this:
-	//  - Look at the OwnerRefs for this VM. Note that we'd need to compare by the UUID, not the name,
-	//    to handle the situation we the VM is deleted and recreated before the GC deletes any prior
-	//    attachments.
-	//  - Match the attachment NodeUUID to the VM BiosUUID.
-	//
-	// We use the NodeUUID option here. We do a List() here so we discover all attachments including
-	// orphaned ones for this VM (previous code used the VM Status.Volumes as the source of truth).
-
-	list := &cnsv1alpha1.CnsNodeVmAttachmentList{}
-	err := r.Client.List(ctx, list,
-		client.InNamespace(ctx.VM.Namespace),
-		client.MatchingFields{"spec.nodeuuid": ctx.VM.Status.BiosUUID})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list CnsNodeVmAttachments: %w", err)
-	}
-
-	attachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(list.Items))
-	for _, attachment := range list.Items {
-		attachments[attachment.Name] = attachment
-	}
-
-	return attachments, nil
 }
 
 func (r *Reconciler) deleteOrphanedAttachments(

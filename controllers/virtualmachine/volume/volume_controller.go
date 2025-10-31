@@ -16,6 +16,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -26,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -44,6 +46,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -216,11 +219,14 @@ type Reconciler struct {
 // controller can block for a long time, consuming all of the workers.
 func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	ctx = cource.JoinContext(ctx, r.Context)
 
 	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, request.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	origVM := vm.DeepCopy()
 
 	volCtx := &pkgctx.VolumeContext{
 		Context: ctx,
@@ -251,6 +257,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 				reterr = err
 			}
 			volCtx.Logger.Error(err, "patch failed")
+		} else if !apiequality.Semantic.DeepEqual(
+			vm.Status.Volumes,
+			origVM.Status.Volumes) {
+
+			// Notify the VM channel that the VM's status.volumes was updated.
+			chanSource := cource.FromContextWithBuffer(ctx, "VirtualMachineVolumes", 100)
+			chanSource <- event.GenericEvent{
+				Object: vm,
+			}
 		}
 	}()
 

@@ -3312,6 +3312,13 @@ func vmTests() {
 						// Set desired snapshot to first snapshot (revert from second to first)
 						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 
+						By("First reconcile should return ErrSnapshotRevert", func() {
+							_, createErr := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+							Expect(createErr).To(HaveOccurred())
+							Expect(errors.Is(createErr, vsphere.ErrSnapshotRevert))
+							Expect(pkgerr.IsNoRequeueError(createErr)).To(BeTrue(), "Should return NoRequeueError")
+						})
+
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 

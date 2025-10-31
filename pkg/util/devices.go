@@ -5,9 +5,7 @@
 package util
 
 import (
-	"path"
 	"reflect"
-	"strings"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
@@ -254,12 +252,9 @@ type VirtualDiskInfo struct {
 	Device          *vimtypes.VirtualDisk
 }
 
-// Name returns the name of the disk to use in the volume status.
-// TODO(akutz) This cannot be used in the status as it may not be unique.
+// Name returns the name of the disk to use in the volume status as well as
+// the UnmanagedVolumeSource.ID field.
 func (vdi VirtualDiskInfo) Name() string {
-	if vdi.FileName != "" {
-		return strings.TrimSuffix(path.Base(vdi.FileName), path.Ext(vdi.FileName))
-	}
 	return vdi.Label
 }
 

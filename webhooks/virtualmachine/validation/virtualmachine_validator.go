@@ -1167,17 +1167,17 @@ func (v validator) validateVolumes(
 		}
 	}
 
-	if vm.Status.Hardware != nil {
-		for _, controller := range vm.Status.Hardware.Controllers {
-			for _, device := range controller.Devices {
-				attachedDevices[deviceKey{
-					controllerType:      controller.Type,
-					controllerBusNumber: controller.BusNumber,
-					unitNumber:          device.UnitNumber,
-				}] = struct{}{}
-			}
-		}
-	}
+	// if vm.Status.Hardware != nil {
+	// 	for _, controller := range vm.Status.Hardware.Controllers {
+	// 		for _, device := range controller.Devices {
+	// 			attachedDevices[deviceKey{
+	// 				controllerType:      controller.Type,
+	// 				controllerBusNumber: controller.BusNumber,
+	// 				unitNumber:          device.UnitNumber,
+	// 			}] = struct{}{}
+	// 		}
+	// 	}
+	// }
 
 	for i, vol := range vm.Spec.Volumes {
 		volPath := volumesPath.Index(i)
@@ -2877,29 +2877,22 @@ func (v validator) validatePVCUnmanagedVolumeClaimInfo(
 
 				pp = pp.Child("unmanagedVolumeClaim")
 
-				switch uvc.Type {
-				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage:
-					if uvc.UUID == "" {
-						allErrs = append(allErrs, field.Required(
-							pp.Child("uuid"),
-							"uuid is required when type=FromImage"))
-					} else if _, err := uuid.Parse(uvc.UUID); err != nil {
-						allErrs = append(allErrs, field.Invalid(
-							pp.Child("uuid"),
-							uvc.UUID,
-							err.Error()))
-					}
-				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM:
+				if uvc.UUID == "" {
+					allErrs = append(allErrs, field.Required(
+						pp.Child("uuid"),
+						"uuid is required"))
+				} else if _, err := uuid.Parse(uvc.UUID); err != nil {
+					allErrs = append(allErrs, field.Invalid(
+						pp.Child("uuid"),
+						uvc.UUID,
+						err.Error()))
+				}
+
+				if uvc.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM {
 					if _, err := uuid.Parse(uvc.Name); err != nil {
 						allErrs = append(allErrs, field.Invalid(
 							pp.Child("name"),
-							uvc.UUID,
-							err.Error()))
-					}
-					if _, err := uuid.Parse(uvc.UUID); err != nil {
-						allErrs = append(allErrs, field.Invalid(
-							pp.Child("uuid"),
-							uvc.UUID,
+							uvc.Name,
 							err.Error()))
 					}
 				}

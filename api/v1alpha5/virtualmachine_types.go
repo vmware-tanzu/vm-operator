@@ -432,7 +432,32 @@ type VirtualMachineCryptoSpec struct {
 	//
 	// Defaults to true if omitted.
 	UseDefaultKeyProvider *bool `json:"useDefaultKeyProvider,omitempty"`
+
+	// +kubebuilder:default=New
+
+	// VTPMMode describes the desired behavior when deploying a VirtualMachine
+	// using a VirtualMachine-backed image which created from an encrypted
+	// VirtualMachine with a vTPM.
+	//
+	// The possible values for this field are:
+	//
+	// - Clone - The vTPM will be preserved from the VirtualMachineImage.
+	// - New - The vTPM will not be preserved.
+	//
+	// The default value of this field is New.
+	VTPMMode VirtualMachineCryptoVTPMMode `json:"vTPMMode,omitempty"`
 }
+
+// +kubebuilder:validation:Enum=Clone;New
+
+// VirtualMachineCryptoVTPMMode represents whether to preserve the vTPM
+// from an encrypted VirtualMachine-backed image when deploying a VirtualMachine.
+type VirtualMachineCryptoVTPMMode string
+
+const (
+	VirtualMachineCryptoVTPMModeClone VirtualMachineCryptoVTPMMode = "Clone"
+	VirtualMachineCryptoVTPMModeNew   VirtualMachineCryptoVTPMMode = "New"
+)
 
 // VirtualMachineBootOptionsBootableDevice represents a bootable device
 // that a VM may be booted from.

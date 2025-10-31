@@ -26,6 +26,8 @@ const (
 	sourceVirtualMachineType = "VirtualMachine"
 
 	itemDescriptionFormat = "virtualmachinepublishrequest.vmoperator.vmware.com: %s\n"
+
+	nvramExtraConfigKey = "nvram"
 )
 
 func CreateOVF(
@@ -105,6 +107,23 @@ func CloneVM(
 		Key:   vmopv1.VirtualMachinePublishRequestUUIDExtraConfigKey,
 		Value: string(vmPubReq.UID),
 	})
+
+	// Update the value of "nvram" in extraConfig so that the .nvram
+	// file shows up in layoutEx
+	for i := range filteredExtraConfig {
+		ov := filteredExtraConfig[i].GetOptionValue()
+
+		if ov != nil && ov.Key == nvramExtraConfigKey {
+			if _, ok := ov.Value.(string); ok {
+				nvramExtraConfigValue := fmt.Sprintf("%s.nvram", targetName)
+
+				filteredExtraConfig[i] = &vimtypes.OptionValue{
+					Key:   nvramExtraConfigKey,
+					Value: nvramExtraConfigValue,
+				}
+			}
+		}
+	}
 
 	cloneSpec := vimtypes.VirtualMachineCloneSpec{
 		Location: vimtypes.VirtualMachineRelocateSpec{

@@ -482,7 +482,7 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 		// content library whose storage policy does not support encryption, and
 		// ensure that the VM does not contain a mix of encrypted and unencrypted
 		// disks.
-		if ctx.VM.Status.Crypto != nil {
+		if ctx.VM.Status.Crypto != nil && slices.Contains(ctx.VM.Status.Crypto.Encrypted, vmopv1.VirtualMachineEncryptionTypeDisks) {
 			if err := r.checkIsTargetEncryptionValid(ctx); err != nil {
 				return err
 			}

@@ -327,7 +327,6 @@ rules:
   - vsphere.policy.vmware.com
   resources:
   - computepolicies/status
-  - policyevaluations/status
   - tagpolicies/status
   verbs:
   - get
@@ -342,3 +341,11 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - policyevaluations/status
+  verbs:
+  - get
+  - patch
+  - update

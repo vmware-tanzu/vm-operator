@@ -7,6 +7,9 @@ config/crd/external-crds/cns.vmware.com_*
 !config/crd/external-crds/cns.vmware.com_storagepolicyquotas.yaml
 !config/crd/external-crds/cns.vmware.com_storagepolicyusages.yaml
 
+# Do not inlcude GOSC VM mutation.
+webhooks/virtualmachine/mutation/gosc_*
+
 coverage*.html
 
 # Created by the VSCode ginkgo plug-in

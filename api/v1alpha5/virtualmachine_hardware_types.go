@@ -17,6 +17,45 @@ const (
 	VirtualControllerTypeSATA VirtualControllerType = "SATA"
 )
 
+// MaxSlots returns the maximum number of slots per controller type.
+// This method does not support SCSI controller type because it depends on the
+// SCSIControllerType. Use the MaxSlots() method on the SCSIControllerSpec type.
+func (t VirtualControllerType) MaxSlots() int32 {
+	switch t {
+	case VirtualControllerTypeIDE:
+		return 2
+	case VirtualControllerTypeSATA,
+		VirtualControllerTypeNVME:
+		return 4
+	case VirtualControllerTypeSCSI:
+		// should find the max slots by the SCSIControllerType.MaxSlots().
+		return 0
+	}
+	return 0
+}
+
+func (t VirtualControllerType) MaxPerVM() int32 {
+	switch t {
+	case VirtualControllerTypeIDE:
+		return 2
+	case VirtualControllerTypeNVME,
+		VirtualControllerTypeSATA,
+		VirtualControllerTypeSCSI:
+		return 4
+	}
+	return 0
+}
+
+// UnitNumber returns the unit number of the controller.
+// A value of -1 is returned if the controller type does not have a reserved
+// unit number.
+func (t VirtualControllerType) UnitNumber() int32 {
+	if t == VirtualControllerTypeSCSI {
+		return 7
+	}
+	return -1
+}
+
 type VirtualControllerSharingMode string
 
 const (
@@ -36,6 +75,26 @@ const (
 	SCSIControllerTypeLsiLogicSAS     SCSIControllerType = "LsiLogicSAS"
 )
 
+// MaxSlots returns the maximum number of devices per SCSI controller type.
+// Note: The controller itself occupies one slot (unit number 7).
+//
+// PVSCSI supports 64 devices per controller starting vSphere 6.7+.
+// Since min supported vSphere version is >= 8.0, this is a safe assumption.
+//
+// For all these sub-types, the max slots is 1 less than the capacity
+// since SCSI slot 7 is reserved for the controller itself.
+func (c SCSIControllerType) MaxSlots() int32 {
+	switch c {
+	case SCSIControllerTypeParaVirtualSCSI:
+		return 63 // 64 targets - 1 for controller
+	case SCSIControllerTypeBusLogic,
+		SCSIControllerTypeLsiLogic,
+		SCSIControllerTypeLsiLogicSAS:
+		return 15 // 16 targets - 1 for controller
+	}
+	return 0
+}
+
 // +kubebuilder:validation:Enum=CDROM;Disk
 
 type VirtualDeviceType string
@@ -52,6 +111,11 @@ type IDEControllerSpec struct {
 
 	// BusNumber describes the desired bus number of the controller.
 	BusNumber int32 `json:"busNumber"`
+}
+
+// MaxSlots returns the maximum number of slots per IDE controller.
+func (c IDEControllerSpec) MaxSlots() int32 {
+	return VirtualControllerTypeIDE.MaxSlots()
 }
 
 type NVMEControllerSpec struct {
@@ -81,6 +145,11 @@ type NVMEControllerSpec struct {
 	SharingMode VirtualControllerSharingMode `json:"sharingMode,omitempty"`
 }
 
+// MaxSlots returns the maximum number of slots per NVME controller.
+func (c NVMEControllerSpec) MaxSlots() int32 {
+	return VirtualControllerTypeNVME.MaxSlots()
+}
+
 type SATAControllerSpec struct {
 	// +required
 	// +kubebuilder:validation:Minimum=0
@@ -97,6 +166,11 @@ type SATAControllerSpec struct {
 	// Please note, most of the time this field should be empty so the system
 	// can pick an available slot.
 	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
+}
+
+// MaxSlots returns the maximum number of slots per SATA controller.
+func (c SATAControllerSpec) MaxSlots() int32 {
+	return VirtualControllerTypeSATA.MaxSlots()
 }
 
 type SCSIControllerSpec struct {
@@ -132,6 +206,19 @@ type SCSIControllerSpec struct {
 	//
 	// Defaults to ParaVirtual.
 	Type SCSIControllerType `json:"type,omitempty"`
+}
+
+// MaxSlots returns the maximum number of slots per SCSI controller.
+func (c SCSIControllerSpec) MaxSlots() int32 {
+	return c.Type.MaxSlots()
+}
+
+func NewEmptySCSIControllerSpec() SCSIControllerSpec {
+	return SCSIControllerSpec{BusNumber: -1}
+}
+
+func (c SCSIControllerSpec) IsValid() bool {
+	return c.BusNumber >= 0 && c.BusNumber < VirtualControllerTypeSCSI.MaxPerVM()
 }
 
 type VirtualDeviceStatus struct {

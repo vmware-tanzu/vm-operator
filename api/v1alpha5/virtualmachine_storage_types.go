@@ -217,6 +217,13 @@ type PersistentVolumeClaimVolumeSource struct {
 	UnitNumber *int32 `json:"unitNumber,omitempty"`
 }
 
+func (pvc *PersistentVolumeClaimVolumeSource) GetVirtualControllerSharingMode() VirtualControllerSharingMode {
+	if pvc.ApplicationType == VolumeApplicationTypeMicrosoftWSFC {
+		return VirtualControllerSharingModePhysical
+	}
+	return VirtualControllerSharingModeNone
+}
+
 // +kubebuilder:validation:Enum=FromImage;FromVM
 
 type UnmanagedVolumeClaimVolumeType string

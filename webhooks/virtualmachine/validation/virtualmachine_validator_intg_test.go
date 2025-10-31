@@ -157,6 +157,11 @@ func intgTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
+
+		// add controller bus number to all volumes
+		// to simulate what the mutation webhook would do
+		setControllerBusNumberOnVolumes(ctx.vm)
+
 		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 	})
 
@@ -308,6 +313,8 @@ func intgTestsValidateUpdate() {
 							},
 						},
 					})
+
+				setControllerBusNumberOnVolumes(ctx.vm)
 			})
 
 			It("does not reject the request", func() {

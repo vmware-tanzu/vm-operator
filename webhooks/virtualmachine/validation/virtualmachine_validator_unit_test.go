@@ -3689,20 +3689,35 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("should deny VM with FromImage UnmanagedVolumeClaim missing UUID",
+			Entry("should deny VM with UnmanagedVolumeClaim missing UUID",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
-								Name: "test-volume",
+								Name: "test-volume-1",
 								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
+											ClaimName: "test-pvc-1",
 										},
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "test-uvc",
+											Name: "test-uvc-1",
+											UUID: "",
+										},
+									},
+								},
+							},
+							{
+								Name: "test-volume-2",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc-2",
+										},
+										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
+											Name: "test-uvc-2",
 											UUID: "",
 										},
 									},
@@ -3712,25 +3727,41 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						field.Required(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "uuid is required when type=FromImage").Error(),
+						field.Required(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "uuid is required").Error(),
+						field.Required(field.NewPath("spec", "volumes").Index(1).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "uuid is required").Error(),
 					),
 				},
 			),
-			Entry("should deny VM with FromImage UnmanagedVolumeClaim invalid UUID",
+			Entry("should deny VM with UnmanagedVolumeClaim invalid UUID",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
-								Name: "test-volume",
+								Name: "test-volume-1",
 								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
+											ClaimName: "test-pvc-1",
 										},
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "test-uvc",
-											UUID: "invalid-uuid",
+											Name: "test-uvc-1",
+											UUID: "invalid-uuid-1",
+										},
+									},
+								},
+							},
+							{
+								Name: "test-volume-2",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc-2",
+										},
+										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
+											Name: "test-uvc-2",
+											UUID: "invalid-uuid-2",
 										},
 									},
 								},
@@ -3739,7 +3770,8 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "invalid-uuid", "invalid UUID length: 12").Error(),
+						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "invalid-uuid-1", "invalid UUID length: 14").Error(),
+						field.Invalid(field.NewPath("spec", "volumes").Index(1).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "invalid-uuid-2", "invalid UUID length: 14").Error(),
 					),
 				},
 			),

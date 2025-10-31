@@ -26,6 +26,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -1010,3 +1011,108 @@ var _ = DescribeTable("ConvertPowerState",
 		vmopv1.VirtualMachinePowerStateOff,
 	),
 )
+
+var _ = Describe("CnsRegisterVolumeToVirtualMachineMapper", func() {
+	var (
+		ctx        context.Context
+		k8sClient  ctrlclient.Client
+		vm         *vmopv1.VirtualMachine
+		mapperFunc func(context.Context, ctrlclient.Object) []reconcile.Request
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		k8sClient = builder.NewFakeClient()
+		vm = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-vm",
+				Namespace: "test-namespace",
+				UID:       types.UID("test-uid"),
+			},
+			Spec: vmopv1.VirtualMachineSpec{},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		mapperFunc = vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, k8sClient)
+	})
+
+	It("should panic with nil context", func() {
+		Expect(func() {
+			ctx = nil
+			vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, k8sClient)
+		}).To(Panic())
+	})
+
+	It("should panic with nil client", func() {
+		Expect(func() {
+			vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, nil)
+		}).To(Panic())
+	})
+
+	Context("when CnsRegisterVolume has owner reference to VM", func() {
+		var crv *cnsv1alpha1.CnsRegisterVolume
+
+		BeforeEach(func() {
+			crv = &cnsv1alpha1.CnsRegisterVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-crv",
+					Namespace: vm.Namespace,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: vmopv1.GroupVersion.String(),
+							Kind:       "VirtualMachine",
+							Name:       vm.Name,
+							UID:        vm.UID,
+						},
+					},
+				},
+				Spec: cnsv1alpha1.CnsRegisterVolumeSpec{
+					PvcName: "test-pvc",
+				},
+			}
+		})
+
+		It("should return reconcile request for the owner VM", func() {
+			requests := mapperFunc(ctx, crv)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].NamespacedName.Name).To(Equal(vm.Name))
+			Expect(requests[0].NamespacedName.Namespace).To(Equal(vm.Namespace))
+		})
+	})
+
+	Context("when CnsRegisterVolume has no VM association", func() {
+		var crv *cnsv1alpha1.CnsRegisterVolume
+
+		BeforeEach(func() {
+			crv = &cnsv1alpha1.CnsRegisterVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-crv",
+					Namespace: vm.Namespace,
+				},
+				Spec: cnsv1alpha1.CnsRegisterVolumeSpec{
+					PvcName: "test-pvc",
+				},
+			}
+		})
+
+		It("should return no reconcile requests", func() {
+			requests := mapperFunc(ctx, crv)
+			Expect(requests).To(HaveLen(0))
+		})
+	})
+
+	Context("when mapper function is called with nil context", func() {
+		It("should panic", func() {
+			Expect(func() {
+				mapperFunc(nil, &cnsv1alpha1.CnsRegisterVolume{})
+			}).To(Panic())
+		})
+	})
+
+	Context("when mapper function is called with nil object", func() {
+		It("should panic", func() {
+			Expect(func() {
+				mapperFunc(ctx, nil)
+			}).To(Panic())
+		})
+	})
+})

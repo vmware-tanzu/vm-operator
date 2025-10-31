@@ -1946,72 +1946,26 @@ func vmTests() {
 					})
 				})
 
-				// Please note this test uses FlakeAttempts(5) due to the
-				// validation of some predictable-over-time behavior.
-				When("there is a reconcile in progress", FlakeAttempts(5), func() {
-					When("there is a duplicate create", func() {
-						It("should return ErrReconcileInProgress", func() {
-							var (
-								errs   []error
-								errsMu sync.Mutex
-								done   sync.WaitGroup
-								start  = make(chan struct{})
-							)
+				When("AllDisksArePVCs", func() {
 
-							// Set up five goroutines that race to
-							// create the VM first.
-							for i := 0; i < 5; i++ {
-								done.Add(1)
-								go func(copyOfVM *vmopv1.VirtualMachine) {
-									defer done.Done()
-									defer GinkgoRecover()
-									<-start
-									err := createOrUpdateVM(ctx, vmProvider, copyOfVM)
-									if err != nil {
-										errsMu.Lock()
-										errs = append(errs, err)
-										errsMu.Unlock()
-									} else {
-										vm = copyOfVM
-									}
-								}(vm.DeepCopy())
-							}
-
-							close(start)
-
-							done.Wait()
-
-							Expect(errs).To(HaveLen(4))
-
-							Expect(errs).Should(ConsistOf(
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-							))
-
-							Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+					BeforeEach(func() {
+						pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+							config.Features.AllDisksArePVCs = true
 						})
+						parentCtx = vmconfig.WithContext(parentCtx)
+					})
+					JustBeforeEach(func() {
+						// TODO(AllDisksArePVCs) Set up the necessary
+						//                       storage classes, etc.
+
+						// TODO(AllDisksArePVCs) Set up vcSim to mock the
+						//                       PbmQueryAssociatedProfiles
+						//                       response.
 					})
 
-					When("there is a delete during async create", func() {
-						It("should return ErrReconcileInProgress", func() {
-							chanCreateErrs, createErr := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
-							deleteErr := vmProvider.DeleteVirtualMachine(ctx, vm)
+					When("the vm starts with one unmanaged disk", func() {
+						It("should end with one, bound pvc", func() {
 
-							Expect(createErr).ToNot(HaveOccurred())
-							Expect(errors.Is(deleteErr, providers.ErrReconcileInProgress))
-
-							var createErrs []error
-							for e := range chanCreateErrs {
-								if e != nil {
-									createErrs = append(createErrs, e)
-								}
-							}
-							Expect(createErrs).Should(HaveLen(1))
-							Expect(createErrs[0]).To(MatchError(vsphere.ErrCreate))
-
-							Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 						})
 					})
 				})

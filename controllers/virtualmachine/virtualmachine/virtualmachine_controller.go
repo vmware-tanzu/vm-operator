@@ -368,7 +368,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
 
-	if err := r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
+	err = r.ReconcileNormal(vmCtx)
+	if err != nil && !ignoredCreateErr(err) {
 		return pkgerr.ResultFromError(err)
 	}
 

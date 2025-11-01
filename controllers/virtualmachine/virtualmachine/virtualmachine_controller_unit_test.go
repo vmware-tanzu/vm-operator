@@ -8,11 +8,13 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -25,9 +27,11 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -95,6 +99,7 @@ func unitTestsReconcile() {
 			),
 		)
 		plainContext = ctxop.WithContext(plainContext)
+		plainContext = ovfcache.WithContext(plainContext)
 
 		reconciler = virtualmachine.NewReconciler(
 			plainContext,
@@ -120,6 +125,38 @@ func unitTestsReconcile() {
 		vmCtx = nil
 		reconciler = nil
 		fakeVMProvider = nil
+	})
+
+	Context("Reconcile", func() {
+		BeforeEach(func() {
+			initObjects = append(initObjects, vm)
+		})
+
+		When("reconcile fails with ErrReconcileInProgress error", func() {
+			It("should succeed but with requeue delay", func() {
+				var createAttempts int32
+
+				By("CreateOrUpdate func returns duplicate creates", func() {
+					providerfake.SetCreateOrUpdateFunction(
+						ctx,
+						fakeVMProvider,
+						func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+							atomic.AddInt32(&createAttempts, 1)
+							return providers.ErrReconcileInProgress
+						},
+					)
+				})
+
+				req := ctrl.Request{}
+				req.Namespace = vm.Namespace
+				req.Name = vm.Name
+
+				res, err := reconciler.Reconcile(ctx, req)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
+				Expect(res.RequeueAfter).To(Equal(pkgcfg.FromContext(ctx).CreateVMRequeueDelay))
+			})
+		})
 	})
 
 	Context("ReconcileNormal", func() {

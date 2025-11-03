@@ -2285,7 +2285,12 @@ func (v validator) validateCdromWhenPoweredOn(
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-		allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+		// Only validate when the VM power state is known which indicates that
+		// the VM exists on the vSphere and we have gone through at least
+		// one loop of reconciling the VM.
+		if oldVM.Status.PowerState != "" {
+			allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+		}
 	}
 
 	return allErrs

@@ -484,6 +484,8 @@ func intgTestsValidateCdromController() {
 			BeforeEach(func() {
 				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 				Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+				ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+				Expect(ctx.Client.Status().Update(ctx, ctx.vm)).To(Succeed())
 				ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
 				ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
 				ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))

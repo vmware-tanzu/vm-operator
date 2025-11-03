@@ -439,8 +439,10 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 
 	logger.Info("Successfully completed reverted snapshot")
 
-	// Return immediately after successful revert and spec restoration
-	// to trigger requeue. This ensures the next reconcile operates on
+	// Return a NoRequeue error so the updateVirtualMachine func exit
+	// immediately. A successful revert and spec restoration
+	// to will trigger another reconcile right after this one.
+	// This ensures the next reconcile operates on
 	// the updated VM spec, labels, and annotations. The VM status
 	// will be updated in the subsequent reconcile loop.
 	return ErrSnapshotRevert

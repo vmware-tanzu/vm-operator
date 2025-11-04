@@ -738,86 +738,61 @@ func (r *Reconciler) checkIsComplete(ctx *pkgctx.VirtualMachinePublishRequestCon
 }
 
 func (r *Reconciler) getPublishRequestTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
-	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
-		return r.getCloneVMTask(ctx)
-	}
-
-	return r.getCreateOVFTask(ctx)
-}
-
-// getCreateOVFTask gets task with description id com.vmware.ovfs.LibraryItem.capture and specified actid in taskManager.
-func (r *Reconciler) getCreateOVFTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
 	actID := getPublishRequestActID(ctx.VMPublishRequest)
 	logger := ctx.Logger.WithValues("activationID", actID)
 
-	tasks, err := r.VMProvider.GetTasksByActID(ctx, actID)
+	var (
+		descriptionID string
+		err           error
+		tasks         []vimtypes.TaskInfo
+		clonedVM      *vmopv1.VirtualMachine
+	)
+
+	descriptionID = OVFCaptureTaskDescriptionID
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
+		descriptionID = CloneTaskDescriptionID
+
+		vmPubReq := ctx.VMPublishRequest
+		if ctx.VM == nil {
+			vm := &vmopv1.VirtualMachine{}
+			objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
+			err := r.Get(ctx, objKey, vm)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					conditions.MarkError(vmPubReq,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+						vmopv1.SourceVirtualMachineNotExistReason,
+						err)
+				}
+				return nil, fmt.Errorf("failed to get VirtualMachine %v: %w", objKey, err)
+			}
+			ctx.VM = vm
+		}
+
+		clonedVM = ctx.VM
+	}
+	tasks, err = r.VMProvider.GetTasksByActID(ctx, clonedVM, actID)
+
 	if err != nil {
-		logger.Error(err, "failed to get task")
-		return nil, err
+		return nil, fmt.Errorf("failed to get tasks: %w", err)
 	}
 
 	if len(tasks) == 0 {
-		logger.V(5).Info("task doesn't exist", "actID", actID, "descriptionID", OVFCaptureTaskDescriptionID)
+		logger.V(5).Info("task doesn't exist", "descriptionID", descriptionID)
 		return nil, nil
 	}
 
 	// Return the first task.
-	// We would never send multiple CreateOvf requests with the same actID,
+	// We would never send multiple CreateOvf/CloneVM requests with the same actID,
 	// so that we should never get multiple tasks.
 	publishTask := &tasks[0]
-	if publishTask.DescriptionId != OVFCaptureTaskDescriptionID {
+	if publishTask.DescriptionId != descriptionID {
 		return nil, fmt.Errorf("failed to find expected task %s, found %s instead",
-			OVFCaptureTaskDescriptionID,
+			descriptionID,
 			publishTask.DescriptionId)
 	}
 
 	return publishTask, nil
-}
-
-// getCloneVMTask gets task with description id VirtualMachine.clone and whose result.Value is the MOID of the target
-// template.
-func (r *Reconciler) getCloneVMTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
-	vmPubReq := ctx.VMPublishRequest
-	targetItemName := vmPubReq.Status.TargetRef.Item.Name
-
-	if ctx.VM == nil {
-		vm := &vmopv1.VirtualMachine{}
-		objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
-		err := r.Get(ctx, objKey, vm)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				conditions.MarkError(vmPubReq,
-					vmopv1.VirtualMachinePublishRequestConditionSourceValid,
-					vmopv1.SourceVirtualMachineNotExistReason,
-					err)
-			}
-			return nil, fmt.Errorf("failed to get VirtualMachine %v: %w", objKey, err)
-		}
-		ctx.VM = vm
-	}
-
-	targetObjRef, err := r.VMProvider.GetItemFromInventoryByName(ctx, ctx.ContentLibraryV1A2.Spec.ID, targetItemName)
-	if err != nil {
-		return nil, fmt.Errorf("error getting item %q from inventory: %w", targetItemName, err)
-	}
-
-	if targetObjRef == nil {
-		ctx.Logger.V(4).Info("could not locate item in inventory", "itemName", targetItemName)
-		return nil, nil
-	}
-	targetMOID := targetObjRef.Reference().Value
-
-	tasks, err := r.VMProvider.GetCloneTasksForVM(ctx, ctx.VM, targetMOID, CloneTaskDescriptionID)
-	if err != nil {
-		return nil, fmt.Errorf("error getting recent clone tasks for VM %q: %w", ctx.VM.NamespacedName(), err)
-	}
-
-	if len(tasks) == 0 {
-		ctx.Logger.V(4).Info("failed to find recent clone task for VM", "VM", ctx.VM.NamespacedName())
-		return nil, nil
-	}
-
-	return &tasks[0], nil
 }
 
 // checkPubReqStatusAndShouldRepublish checks the publish request task status, mark Uploaded condition
@@ -873,8 +848,10 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 			return true, nil
 		}
 
-		// CreateOvf request has been sent but the task com.vmware.ovfs.LibraryItem.capture hasn't been
-		// submitted to the task manager yet. retry taskManager query at later reconcile.
+		// CreateOVF/CloneVM request has been sent but the task
+		// com.vmware.ovfs.LibraryItem.capture/VirtualMachine.clone
+		// hasn't been submitted to the task manager yet. retry
+		// taskManager query at later reconcile.
 		conditions.MarkFalse(ctx.VMPublishRequest,
 			vmopv1.VirtualMachinePublishRequestConditionUploaded,
 			vmopv1.UploadTaskNotStartedReason,
@@ -910,7 +887,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 			errMsg = task.Error.LocalizedMessage
 		}
 
-		logger.Error(err, "VM Publish failed, will retry this operation",
+		logger.Info("VM Publish failed, will retry this operation",
 			"actID", task.ActivationId, "descriptionID", task.DescriptionId)
 		conditions.MarkFalse(ctx.VMPublishRequest,
 			vmopv1.VirtualMachinePublishRequestConditionUploaded,
@@ -979,6 +956,7 @@ func (r *Reconciler) isItemCorrelatedWithVMPub(
 			tItem,
 			vmopv1.VirtualMachinePublishRequestUUIDExtraConfigKey,
 			string(ctx.VMPublishRequest.UID)); err != nil || !exists {
+
 			return "", false, err
 		}
 		return tItem.Reference().Value, true, nil

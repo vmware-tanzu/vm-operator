@@ -352,7 +352,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "publishVM")),
+		Context: context.WithValue(ctx, vimtypes.ID{}, fmt.Sprintf("%s-%s", vs.getOpID(ctx, vm, "publishVM"), actID)),
 		Logger:  logger,
 		VM:      vm,
 	}
@@ -391,12 +391,12 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 					return "", err
 				}
 			}
-			logger.V(4).Info("Publishing VM as cloned template")
+			logger.V(4).Info("Publishing VM as cloned template", "activationID", actID)
 
 			return virtualmachine.CloneVM(vmCtx, client.VimClient(), vmPub, v1a2contentLibrary, storagePolicyID)
 		}
 	}
-	logger.V(4).Info("Publishing VM as OVF")
+	logger.V(4).Info("Publishing VM as OVF", "activationID", actID)
 
 	return virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl, actID)
 }

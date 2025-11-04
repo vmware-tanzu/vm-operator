@@ -708,7 +708,7 @@ func unitTestsReconcile() {
 			When("Previous task doesn't exist", func() {
 				JustBeforeEach(func() {
 					fakeVMProvider.Lock()
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						return nil, nil
 					}
 					fakeVMProvider.Unlock()
@@ -747,7 +747,7 @@ func unitTestsReconcile() {
 							State:         vimtypes.TaskInfoStateSuccess,
 							QueueTime:     time.Now().Add(time.Minute),
 						}
-						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 							return []vimtypes.TaskInfo{*task}, nil
 						}
 					})
@@ -794,7 +794,7 @@ func unitTestsReconcile() {
 				When("Uploaded item id is valid", func() {
 					JustBeforeEach(func() {
 						fakeVMProvider.Lock()
-						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 							task := vimtypes.TaskInfo{
 								DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 								State:         vimtypes.TaskInfoStateSuccess,
@@ -810,7 +810,7 @@ func unitTestsReconcile() {
 					When("task succeeded but failed to parse item ID", func() {
 						JustBeforeEach(func() {
 							fakeVMProvider.Lock()
-							fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+							fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 								task := vimtypes.TaskInfo{
 									DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 									State:         vimtypes.TaskInfoStateSuccess,
@@ -983,12 +983,9 @@ func unitTestsReconcile() {
 								config.Features.InventoryContentLibrary = true
 							})
 
-							fakeVMProvider.GetCloneTasksForVMFn = func(
-								ctx context.Context,
-								vm *vmopv1.VirtualMachine,
-								moID, descriptionID string) ([]vimtypes.TaskInfo, error) {
-
+							fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) ([]vimtypes.TaskInfo, error) {
 								task := vimtypes.TaskInfo{
+									ActivationId:  actID,
 									DescriptionId: virtualmachinepublishrequest.CloneTaskDescriptionID,
 									State:         vimtypes.TaskInfoStateSuccess,
 									QueueTime:     time.Now().Add(time.Minute),
@@ -996,12 +993,6 @@ func unitTestsReconcile() {
 										Value: itemID},
 								}
 								return []vimtypes.TaskInfo{task}, nil
-							}
-							fakeVMProvider.GetItemFromInventoryByNameFn = func(
-								ctx context.Context,
-								contentLibrary, itemName string) (object.Reference, error) {
-
-								return object.VirtualMachine{}, nil
 							}
 						})
 
@@ -1051,7 +1042,7 @@ func unitTestsReconcile() {
 
 			When("Previous request failed", func() {
 				JustBeforeEach(func() {
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						currentTime := time.Now()
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
@@ -1120,7 +1111,7 @@ func unitTestsReconcile() {
 
 			When("Previous request is queued", func() {
 				JustBeforeEach(func() {
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateQueued,
@@ -1145,7 +1136,7 @@ func unitTestsReconcile() {
 
 			When("Previous request is in progress", func() {
 				JustBeforeEach(func() {
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateRunning,
@@ -1171,7 +1162,7 @@ func unitTestsReconcile() {
 			When("Prior task succeeded but lost track of this task", func() {
 				JustBeforeEach(func() {
 					fakeVMProvider.Lock()
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						return nil, nil
 					}
 					vmpub.UID = "123"

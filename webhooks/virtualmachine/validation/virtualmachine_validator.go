@@ -1993,6 +1993,52 @@ func (v validator) validateAvailabilityZone(
 	return allErrs
 }
 
+// protectedAnnotationRegex matches annotations with keys matching the pattern:
+// ^.+\.protected(/.+)?$
+//
+// Examples that match:
+//   - fu.bar.protected
+//   - hello.world.protected/sub-key
+//   - vmoperator.vmware.com.protected/reconcile-priority
+//
+// Examples that do NOT match:
+//   - protected.fu.bar
+//   - hello.world.protected.against/sub-key
+var protectedAnnotationRegex = regexp.MustCompile(`^.+\.protected(/.*)?$`)
+
+// validateProtectedAnnotations validates that annotations matching the
+// protected annotation pattern can only be modified by privileged users.
+func (v validator) validateProtectedAnnotations(vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+	annotationPath := field.NewPath("metadata", "annotations")
+
+	// Collect all protected annotation keys from both old and new VMs
+	protectedKeys := make(map[string]struct{})
+
+	for k := range vm.Annotations {
+		if protectedAnnotationRegex.MatchString(k) {
+			protectedKeys[k] = struct{}{}
+		}
+	}
+
+	for k := range oldVM.Annotations {
+		if protectedAnnotationRegex.MatchString(k) {
+			protectedKeys[k] = struct{}{}
+		}
+	}
+
+	// Check if any protected annotations have been modified
+	for k := range protectedKeys {
+		if vm.Annotations[k] != oldVM.Annotations[k] {
+			allErrs = append(allErrs, field.Forbidden(
+				annotationPath.Key(k),
+				modifyAnnotationNotAllowedForNonAdmin))
+		}
+	}
+
+	return allErrs
+}
+
 func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
@@ -2017,9 +2063,7 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		oldVM = &vmopv1.VirtualMachine{}
 	}
 
-	if vm.Annotations[pkgconst.ReconcilePriorityAnnotationKey] != oldVM.Annotations[pkgconst.ReconcilePriorityAnnotationKey] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ReconcilePriorityAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
-	}
+	allErrs = append(allErrs, v.validateProtectedAnnotations(vm, oldVM)...)
 
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
@@ -2039,14 +2083,6 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 
 	if vm.Annotations[vmopv1.ImportedVMAnnotation] != oldVM.Annotations[vmopv1.ImportedVMAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
-	}
-
-	if vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] != oldVM.Annotations[pkgconst.SkipDeletePlatformResourceKey] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), modifyAnnotationNotAllowedForNonAdmin))
-	}
-
-	if vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] != oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
 	for k := range anno2extraconfig.AnnotationsToExtraConfigKeys {

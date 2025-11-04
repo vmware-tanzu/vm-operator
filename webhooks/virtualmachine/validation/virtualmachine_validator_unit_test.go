@@ -5809,6 +5809,21 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
+			Entry("allow changing CD-ROM controller spec when status.PowerState is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
+					},
+					expectAllowed: true,
+				},
+			),
+
 			Entry("allow changing CD-ROM connection when VM is powered off",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

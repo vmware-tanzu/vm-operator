@@ -28,14 +28,6 @@ const (
 	SATAControllerMaxCount = int32(4)
 )
 
-// ControllerID represents a unique identifier for a virtual controller in a VM.
-// It combines the controller type (IDE, NVME, SCSI, or SATA) with a bus number
-// to uniquely identify a specific controller instance within the virtual machine.
-type ControllerID struct {
-	ControllerType vmopv1.VirtualControllerType
-	BusNumber      int32
-}
-
 // CNSAttachmentNameForVolume returns the name of the CnsNodeVmAttachment based
 // on the VM and Volume name.
 // This matches the naming used in previous code but there are situations where

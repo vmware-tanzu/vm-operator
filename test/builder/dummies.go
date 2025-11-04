@@ -320,6 +320,54 @@ func DummyInstanceStorageVirtualMachineVolumes() []vmopv1.VirtualMachineVolume {
 	}
 }
 
+func DummyPVCVirtualMachineVolume(
+	name string,
+	claimName string,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32,
+	unitNumber *int32) vmopv1.VirtualMachineVolume {
+	return vmopv1.VirtualMachineVolume{
+		Name: name,
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+				ControllerType:      controllerType,
+				ControllerBusNumber: controllerBusNumber,
+				UnitNumber:          unitNumber,
+			},
+		},
+	}
+}
+
+func DummyUnmanagedPVCVirtualMachineVolume(
+	name string,
+	claimName string,
+	unmanagedName string,
+	unmanagedType vmopv1.UnmanagedVolumeClaimVolumeType,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32,
+	unitNumber *int32) vmopv1.VirtualMachineVolume {
+	return vmopv1.VirtualMachineVolume{
+		Name: name,
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+				UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+					Name: unmanagedName,
+					Type: unmanagedType,
+				},
+				ControllerType:      controllerType,
+				ControllerBusNumber: controllerBusNumber,
+				UnitNumber:          unitNumber,
+			},
+		},
+	}
+}
+
 func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{
@@ -812,6 +860,55 @@ func DummySATAController(key, busNumber int32, devices []int32) *vimtypes.Virtua
 	}
 }
 
+func DummySCSIController(key, busNumber int32) *vimtypes.VirtualSCSIController {
+	return &vimtypes.VirtualSCSIController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+		},
+	}
+}
+
+func DummyNVMEController(key, busNumber int32) *vimtypes.VirtualNVMEController {
+	return &vimtypes.VirtualNVMEController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+		},
+	}
+}
+
+func DummyVirtualMachineConfigInfo(devices ...vimtypes.BaseVirtualDevice) *vimtypes.VirtualMachineConfigInfo {
+	return &vimtypes.VirtualMachineConfigInfo{
+		Hardware: vimtypes.VirtualHardware{
+			Device: devices,
+		},
+	}
+}
+
+func DummyVirtualDisk(key, controllerKey int32, unitNumber *int32, uuid, fileName string) *vimtypes.VirtualDisk {
+	if fileName == "" {
+		fileName = "/vmfs/volumes/datastore1/vm/disk.vmdk"
+	}
+	return &vimtypes.VirtualDisk{
+		VirtualDevice: vimtypes.VirtualDevice{
+			Key:           key,
+			ControllerKey: controllerKey,
+			UnitNumber:    unitNumber,
+			Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					FileName: fileName,
+				},
+				Uuid: uuid,
+			},
+		},
+	}
+}
+
 func DummyCdromSpec(
 	name string,
 	imageName string,
@@ -836,7 +933,7 @@ func DummyCdromSpec(
 	}
 }
 
-func DummySCSIController(key, busNumber int32) *vimtypes.ParaVirtualSCSIController {
+func DummyParaVirtualSCSIController(key, busNumber int32) *vimtypes.ParaVirtualSCSIController {
 	return &vimtypes.ParaVirtualSCSIController{
 		VirtualSCSIController: vimtypes.VirtualSCSIController{
 			VirtualController: vimtypes.VirtualController{
@@ -850,7 +947,7 @@ func DummySCSIController(key, busNumber int32) *vimtypes.ParaVirtualSCSIControll
 	}
 }
 
-func DummyVirtualDisk(key, controllerKey, unitNumber int32, fileName, diskUUID string, capacityInBytes int64) *vimtypes.VirtualDisk {
+func DummyVirtualDiskWithCapacity(key, controllerKey, unitNumber int32, fileName, diskUUID string, capacityInBytes int64) *vimtypes.VirtualDisk {
 	disk := &vimtypes.VirtualDisk{
 		VirtualDevice: vimtypes.VirtualDevice{
 			Key:           key,

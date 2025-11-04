@@ -9,14 +9,18 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	apirecord "k8s.io/client-go/tools/record"
@@ -1925,44 +1929,12 @@ var _ = Describe("UpdateStatus", func() {
 
 		When("VM has various controller types", func() {
 			BeforeEach(func() {
-				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
-					Hardware: vimtypes.VirtualHardware{
-						Device: []vimtypes.BaseVirtualDevice{
-							&vimtypes.VirtualIDEController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 200,
-									},
-									BusNumber: 0,
-								},
-							},
-							&vimtypes.VirtualSCSIController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 1000,
-									},
-									BusNumber: 0,
-								},
-							},
-							&vimtypes.VirtualSATAController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 15000,
-									},
-									BusNumber: 0,
-								},
-							},
-							&vimtypes.VirtualNVMEController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 20000,
-									},
-									BusNumber: 0,
-								},
-							},
-						},
-					},
-				}
+				vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+					builder.DummyIDEController(200, 0, nil),
+					builder.DummySCSIController(1000, 0),
+					builder.DummySATAController(15000, 0, nil),
+					builder.DummyNVMEController(20000, 0),
+				)
 			})
 			Specify("status.hardware.controllers should contain all controller types", func() {
 				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
@@ -2005,19 +1977,7 @@ var _ = Describe("UpdateStatus", func() {
 									BusNumber: 0,
 								},
 							},
-							&vimtypes.VirtualDisk{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Key:           2000,
-									ControllerKey: 1000,
-									UnitNumber:    ptr.To(int32(0)),
-									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
-										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-											FileName: "/vmfs/volumes/datastore1/vm1/disk1.vmdk",
-										},
-										Uuid: "test-uuid-123",
-									},
-								},
-							},
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "test-uuid-123", ""),
 							&vimtypes.VirtualIDEController{
 								VirtualController: vimtypes.VirtualController{
 									VirtualDevice: vimtypes.VirtualDevice{
@@ -2026,18 +1986,7 @@ var _ = Describe("UpdateStatus", func() {
 									BusNumber: 0,
 								},
 							},
-							&vimtypes.VirtualCdrom{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Key:           3000,
-									ControllerKey: 200,
-									UnitNumber:    ptr.To(int32(0)),
-									Backing: &vimtypes.VirtualCdromIsoBackingInfo{
-										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-											FileName: "/vmfs/volumes/datastore1/vm1/ubuntu.iso",
-										},
-									},
-								},
-							},
+							builder.DummyCdromDevice(3000, 200, 0, "/vmfs/volumes/datastore1/vm1/ubuntu.iso"),
 						},
 					},
 				}
@@ -2061,7 +2010,6 @@ var _ = Describe("UpdateStatus", func() {
 				Expect(scsiController.DeviceKey).To(Equal(int32(1000)))
 				Expect(scsiController.BusNumber).To(Equal(int32(0)))
 				Expect(scsiController.Devices).To(HaveLen(1))
-				Expect(scsiController.Devices[0].Name).To(Equal("test-uuid-123"))
 				Expect(scsiController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(scsiController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeDisk))
 
@@ -2069,9 +2017,783 @@ var _ = Describe("UpdateStatus", func() {
 				Expect(ideController.DeviceKey).To(Equal(int32(200)))
 				Expect(ideController.BusNumber).To(Equal(int32(0)))
 				Expect(ideController.Devices).To(HaveLen(1))
-				Expect(ideController.Devices[0].Name).To(Equal("CDROM-0"))
 				Expect(ideController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(ideController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeCDROM))
+			})
+		})
+
+		Context("HardwareCondition", func() {
+			// Constants for common condition messages
+			const (
+				aggregateMessagePrefix = "Hardware configuration issues detected. See"
+				aggregateMessageSuffix = "conditions for details."
+			)
+
+			// Child condition metadata for verification
+			childConditionInfo := map[string]struct {
+				conditionType string
+				falseReason   string
+			}{
+				vmopv1.VirtualMachineHardwareControllersVerified: {
+					conditionType: vmopv1.VirtualMachineHardwareControllersVerified,
+					falseReason:   vmopv1.VirtualMachineHardwareControllersMismatchReason,
+				},
+				vmopv1.VirtualMachineHardwareVolumesVerified: {
+					conditionType: vmopv1.VirtualMachineHardwareVolumesVerified,
+					falseReason:   vmopv1.VirtualMachineHardwareVolumesMismatchReason,
+				},
+				vmopv1.VirtualMachineHardwareCDROMVerified: {
+					conditionType: vmopv1.VirtualMachineHardwareCDROMVerified,
+					falseReason:   vmopv1.VirtualMachineHardwareCDROMMismatchReason,
+				},
+			}
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+				// Clear MoVM.Config so tests can set it up as needed.
+				// reconcileStatusController() will populate status from MoVM.Config.Hardware.Device.
+				vmCtx.MoVM.Config = nil
+				// Clear default volumes, CD-ROMs, and controllers from DummyVirtualMachine.
+				vmCtx.VM.Spec.Volumes = nil
+				vmCtx.VM.Spec.Hardware = nil
+			})
+
+			// Helper function to build aggregate condition message from condition types.
+			buildAggregateMessage := func(conditionTypes ...string) string {
+				if len(conditionTypes) == 0 {
+					return ""
+				}
+				return fmt.Sprintf("%s %s %s", aggregateMessagePrefix, strings.Join(conditionTypes, ", "), aggregateMessageSuffix)
+			}
+
+			// Helper function to verify a child condition with expected message or True status.
+			verifyChildCondition := func(
+				conditionType string,
+				expectedFalseReason string,
+				expectedMessage string,
+				shouldHaveIssues bool) {
+				childCond := conditions.Get(vmCtx.VM, conditionType)
+				if shouldHaveIssues {
+					Expect(childCond).ToNot(BeNil())
+					Expect(childCond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(childCond.Reason).To(Equal(expectedFalseReason))
+					Expect(childCond.Message).To(Equal(expectedMessage))
+				} else {
+					// Verify that condition without issues is True.
+					if childCond != nil {
+						Expect(childCond.Status).To(Equal(metav1.ConditionTrue))
+					}
+				}
+			}
+
+			// Helper function to assert condition is false with expected message.
+			// Also verifies that child conditions are set correctly with exact detailed messages.
+			// expectedChildMessages is a map from condition type to expected message string.
+			assertConditionFalse := func(expectedMessage string, expectedChildMessages map[string]string) {
+				cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineHardwareDeviceConfigVerified)
+				Expect(cond).ToNot(BeNil())
+				Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineHardwareDeviceConfigMismatchReason))
+				Expect(cond.Message).To(Equal(expectedMessage))
+
+				// Verify all child conditions using table-driven approach.
+				for conditionType, info := range childConditionInfo {
+					if expectedMsg, ok := expectedChildMessages[conditionType]; ok {
+						verifyChildCondition(info.conditionType, info.falseReason, expectedMsg, true)
+					} else {
+						verifyChildCondition(info.conditionType, "", "", false)
+					}
+				}
+			}
+
+			// Helper function to assert condition is true and all child conditions are true.
+			assertConditionTrue := func() {
+				cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineHardwareDeviceConfigVerified)
+				Expect(cond).To(HaveValue(HaveField("Status", Equal(metav1.ConditionTrue))))
+
+				// Verify all child conditions are True using table-driven approach.
+				for _, info := range childConditionInfo {
+					childCond := conditions.Get(vmCtx.VM, info.conditionType)
+					if childCond != nil {
+						Expect(childCond.Status).To(Equal(metav1.ConditionTrue))
+					}
+				}
+			}
+
+			// Helper function to set up SCSI controller in spec.
+			setupSCSIControllerInSpec := func(busNumber int32) {
+				if vmCtx.VM.Spec.Hardware == nil {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				vmCtx.VM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{BusNumber: busNumber},
+				}
+			}
+
+			// Helper function to set up IDE controller in spec.
+			setupIDEControllerInSpec := func(busNumber int32) {
+				if vmCtx.VM.Spec.Hardware == nil {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				vmCtx.VM.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{BusNumber: busNumber},
+				}
+			}
+
+			// Helper function to create a basic PVC volume setup.
+			setupPVCVolume := func(volumeName, pvcName string, controllerType vmopv1.VirtualControllerType, busNumber, unitNumber int32) {
+				vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					builder.DummyPVCVirtualMachineVolume(
+						volumeName,
+						pvcName,
+						controllerType,
+						ptr.To(busNumber),
+						ptr.To(unitNumber),
+					),
+				}
+			}
+
+			// Helper function to set up CD-ROM image objects.
+			setupCDROMImage := func(vmiName, vmiFileName string) {
+				vmCtx.VM.Namespace = ctx.PodNamespace
+				k8sObjs := builder.DummyImageAndItemObjectsForCdromBacking(
+					vmiName, ctx.PodNamespace, "VirtualMachineImage", vmiFileName,
+					"lib-item-uuid", true, true,
+					resource.MustParse("100Mi"),
+					true, true, imgregv1a1.ContentLibraryItemTypeIso)
+				for _, obj := range k8sObjs {
+					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+				}
+			}
+
+			Context("when all checks pass", func() {
+				When("SCSI and IDE controllers match", func() {
+					BeforeEach(func() {
+						// Set up matching controllers in spec and MoVM so status is populated correctly.
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{{BusNumber: 0}},
+							IDEControllers:  []vmopv1.IDEControllerSpec{{BusNumber: 0}},
+						}
+
+						// Set up MoVM.Config.Hardware.Device to match the spec.
+						// reconcileStatusController() will populate status from this.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyIDEController(200, 0, nil),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("SATA controller matches", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SATAControllers: []vmopv1.SATAControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+
+						// Set up MoVM.Config.Hardware.Device to have a SATA controller.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySATAController(15000, 0, nil),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("NVME controller matches", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							NVMEControllers: []vmopv1.NVMEControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+
+						// Set up MoVM.Config.Hardware.Device to have an NVME controller.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyNVMEController(20000, 0),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("when there are no controllers in spec or status", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("when hardware is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = nil
+						// MoVM.Config.Hardware.Device is already cleared in parent BeforeEach.
+						// reconcileStatusController() will return early without setting status.
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+			})
+
+			Context("controller mismatches", func() {
+				When("spec has controllers but moVM.Config is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						vmCtx.MoVM.Config = nil
+					})
+
+					It("should mark condition as false with concise summary", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0",
+							})
+					})
+				})
+
+				When("status has controllers but spec hardware is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = nil
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+					})
+
+					It("should mark the condition as false with concise summary", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "unexpected controllers: SCSI:0",
+							})
+					})
+				})
+
+				When("controller type mismatch", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller instead of SCSI.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+					})
+
+					It("should mark the condition as false", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
+							})
+					})
+				})
+
+				When("controller bus number mismatch", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with bus number 1.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 1),
+						)
+					})
+
+					It("should mark the condition as false", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: SCSI:1",
+							})
+					})
+				})
+
+				When("NVME controller mismatch", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							NVMEControllers: []vmopv1.NVMEControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller instead of NVME.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+					})
+
+					It("should mark the condition as false", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: NVME:0\nunexpected controllers: SCSI:0",
+							})
+					})
+				})
+			})
+
+			Context("PVC volume mismatches", func() {
+				When("spec has PVC volume but it's not attached", func() {
+					BeforeEach(func() {
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller but no disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should mark the condition as false with concise summary", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+							})
+					})
+				})
+
+				When("PVC volume has incomplete placement information", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "pvc-volume-incomplete",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc",
+										},
+										// Missing ControllerType, ControllerBusNumber, or UnitNumber.
+									},
+								},
+							},
+						}
+					})
+
+					It("should mark the condition as false with incomplete placement error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "PVC volumes with incomplete placement: pvc-volume-incomplete",
+							})
+					})
+				})
+
+				When("PVC volume is correctly attached", func() {
+					BeforeEach(func() {
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-123", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-123",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+						}
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("unexpected PVC volume is attached", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-123", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-123",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+						}
+					})
+
+					It("should mark the condition as false with unexpected PVC volumes error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "unexpected PVC volumes: pvc-volume-1 (SCSI:0:0)",
+							})
+					})
+				})
+			})
+
+			Context("CD-ROM device mismatches", func() {
+				const (
+					testVMIName     = "test-vmi"
+					testVMIFileName = "/vmfs/volumes/datastore1/test.iso"
+				)
+
+				BeforeEach(func() {
+					setupCDROMImage(testVMIName, testVMIFileName)
+
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(
+								"cdrom1",
+								testVMIName,
+								"VirtualMachineImage",
+								vmopv1.VirtualControllerTypeIDE,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+								nil,
+								nil,
+							),
+						},
+					}
+				})
+
+				When("spec has CD-ROM but it's not attached", func() {
+					BeforeEach(func() {
+						setupIDEControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller but no CD-ROM.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+					})
+
+					It("should mark the condition as false with missing CD-ROM devices error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: fmt.Sprintf("missing CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
+							})
+					})
+				})
+
+				When("CD-ROM device has incomplete placement information", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware.Cdrom[0].ControllerType = ""
+						vmCtx.VM.Spec.Hardware.Cdrom[0].ControllerBusNumber = nil
+						vmCtx.VM.Spec.Hardware.Cdrom[0].UnitNumber = nil
+					})
+
+					It("should mark the condition as false with incomplete placement error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: "CD-ROM devices with incomplete placement: cdrom1",
+							})
+					})
+				})
+
+				When("CD-ROM image reference cannot be resolved", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware.Cdrom[0].Image.Name = "non-existent-image"
+					})
+
+					It("should mark the condition as false with resolution error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: "CD-ROM devices with failed resolution: cdrom1",
+							})
+					})
+				})
+
+				When("CD-ROM device is correctly attached", func() {
+					BeforeEach(func() {
+						setupIDEControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller with a CD-ROM.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+							builder.DummyCdromDevice(3000, 200, 0, testVMIFileName),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("unexpected CD-ROM device is attached", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						setupIDEControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller with a CD-ROM.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+							builder.DummyCdromDevice(3000, 200, 0, testVMIFileName),
+						)
+					})
+
+					It("should mark the condition as false with unexpected CD-ROM devices error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: fmt.Sprintf("unexpected CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
+							})
+					})
+				})
+			})
+
+			Context("multiple items in same category", func() {
+				When("multiple missing controllers", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+								{BusNumber: 1},
+							},
+							IDEControllers: []vmopv1.IDEControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+					})
+
+					It("should format multiple controllers as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: IDE:0, SCSI:0, SCSI:1",
+							})
+					})
+				})
+
+				When("multiple unexpected controllers", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyIDEController(200, 0, nil),
+							builder.DummyNVMEController(20000, 0),
+						)
+					})
+
+					It("should format multiple controllers as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "unexpected controllers: IDE:0, NVME:0, SCSI:0",
+							})
+					})
+				})
+
+				When("multiple missing PVC volumes", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyPVCVirtualMachineVolume(
+								"pvc-volume-1",
+								"test-pvc-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+							builder.DummyPVCVirtualMachineVolume(
+								"pvc-volume-2",
+								"test-pvc-2",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(1)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller but no disks.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should format multiple PVC volumes as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing PVC volumes: pvc-volume-1 (SCSI:0:0), pvc-volume-2 (SCSI:0:1)",
+							})
+					})
+				})
+
+				When("multiple incomplete placement PVC volumes", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "pvc-volume-incomplete-1",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc-1",
+										},
+									},
+								},
+							},
+							{
+								Name: "pvc-volume-incomplete-2",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc-2",
+										},
+									},
+								},
+							},
+						}
+					})
+
+					It("should format multiple incomplete placement errors as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "PVC volumes with incomplete placement: pvc-volume-incomplete-1, pvc-volume-incomplete-2",
+							})
+					})
+				})
+			})
+
+			Context("multiple error scenarios", func() {
+				When("controllers and volumes have issues", func() {
+					BeforeEach(func() {
+						// Set up mismatches in controllers and PVC volumes.
+						setupSCSIControllerInSpec(0)
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller but no disk.
+						// This simulates the mismatch: spec wants SCSI but status has IDE.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should provide a concise summary of device types with issues", func() {
+						assertConditionFalse(
+							buildAggregateMessage(
+								vmopv1.VirtualMachineHardwareControllersVerified,
+								vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
+								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+							})
+					})
+				})
+
+				When("controllers, volumes, and CD-ROM all have issues", func() {
+					const (
+						testVMIName     = "test-vmi"
+						testVMIFileName = "/vmfs/volumes/datastore1/test.iso"
+					)
+
+					BeforeEach(func() {
+						setupCDROMImage(testVMIName, testVMIFileName)
+
+						// Set up mismatches in controllers, PVC volumes, and CD-ROM devices.
+						setupSCSIControllerInSpec(0)
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+
+						vmCtx.VM.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(
+								"cdrom1",
+								testVMIName,
+								"VirtualMachineImage",
+								vmopv1.VirtualControllerTypeIDE,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+								nil,
+								nil,
+							),
+						}
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller but no disk or CD-ROM.
+						// This simulates mismatches: spec wants SCSI controller, PVC volume, and CD-ROM but status has IDE controller only.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should provide a concise summary of all device types with issues", func() {
+						assertConditionFalse(
+							buildAggregateMessage(
+								vmopv1.VirtualMachineHardwareControllersVerified,
+								vmopv1.VirtualMachineHardwareVolumesVerified,
+								vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
+								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+								vmopv1.VirtualMachineHardwareCDROMVerified:       fmt.Sprintf("missing CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
+							})
+					})
+				})
+			})
+
+			Context("excluded volumes", func() {
+				BeforeEach(func() {
+					// Set up unmanaged PVC volume in spec (excluded from checks).
+					vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						builder.DummyUnmanagedPVCVirtualMachineVolume(
+							"unmanaged-pvc-volume",
+							"test-pvc",
+							"unmanaged-volume",
+							vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
+							vmopv1.VirtualControllerTypeSCSI,
+							ptr.To(int32(0)),
+							ptr.To(int32(0)),
+						),
+					}
+
+					setupSCSIControllerInSpec(0)
+
+					// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+					vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+						builder.DummySCSIController(1000, 0),
+						builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "classic-disk-uuid", ""),
+					)
+
+					// Classic volume in status should be excluded from PVC volume checks.
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "classic-volume",
+							DiskUUID: "classic-disk-uuid",
+							Type:     vmopv1.VolumeTypeClassic,
+						},
+					}
+				})
+
+				It("should exclude unmanaged PVC and classic volumes from checks and mark condition as true", func() {
+					assertConditionTrue()
+				})
 			})
 		})
 	})

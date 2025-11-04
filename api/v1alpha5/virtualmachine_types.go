@@ -56,6 +56,23 @@ const (
 	// VirtualMachineClassConfigurationSynced indicates that the VM's current configuration is synced to the
 	// current version of its VirtualMachineClass.
 	VirtualMachineClassConfigurationSynced = "VirtualMachineClassConfigurationSynced"
+
+	// VirtualMachineHardwareDeviceConfigVerified indicates that the VM's hardware
+	// device configuration (controllers, volumes, CD-ROM devices) matches the
+	// desired state specified in the spec.
+	VirtualMachineHardwareDeviceConfigVerified = "VirtualMachineHardwareDeviceConfigVerified"
+
+	// VirtualMachineHardwareControllersVerified indicates that the VM's hardware
+	// controllers match the desired state specified in the spec.
+	VirtualMachineHardwareControllersVerified = "VirtualMachineHardwareControllersVerified"
+
+	// VirtualMachineHardwareVolumesVerified indicates that the VM's hardware
+	// volumes match the desired state specified in the spec.
+	VirtualMachineHardwareVolumesVerified = "VirtualMachineHardwareVolumesVerified"
+
+	// VirtualMachineHardwareCDROMVerified indicates that the VM's hardware
+	// CD-ROM devices match the desired state specified in the spec.
+	VirtualMachineHardwareCDROMVerified = "VirtualMachineHardwareCDROMVerified"
 )
 
 const (
@@ -82,6 +99,23 @@ const (
 	// VirtualMachineSnapshotRevertFailedReason indicates that the
 	// revert operation failed for some reason.
 	VirtualMachineSnapshotRevertFailedReason = "VirtualMachineSnapshotRevertFailed"
+
+	// VirtualMachineHardwareControllersMismatchReason indicates that the VM's
+	// controller configuration does not match the desired state specified in the spec.
+	VirtualMachineHardwareControllersMismatchReason = "HardwareControllersMismatch"
+
+	// VirtualMachineHardwareVolumesMismatchReason indicates that the VM's
+	// volume configuration does not match the desired state specified in the spec.
+	VirtualMachineHardwareVolumesMismatchReason = "HardwareVolumesMismatch"
+
+	// VirtualMachineHardwareCDROMMismatchReason indicates that the VM's
+	// CD-ROM device configuration does not match the desired state specified in the spec.
+	VirtualMachineHardwareCDROMMismatchReason = "HardwareCDROMMismatch"
+
+	// VirtualMachineHardwareDeviceConfigMismatchReason indicates that the VM's
+	// hardware device configuration does not match the desired state specified
+	// in the spec. This is used for the aggregated condition.
+	VirtualMachineHardwareDeviceConfigMismatchReason = "HardwareDeviceConfigMismatch"
 )
 
 const (

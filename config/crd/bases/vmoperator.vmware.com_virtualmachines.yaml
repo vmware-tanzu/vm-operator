@@ -12492,10 +12492,6 @@ spec:
                             to the controller.
                           items:
                             properties:
-                              name:
-                                description: Name describes the name of the virtual
-                                  device.
-                                type: string
                               type:
                                 description: Type describes the type of the virtual
                                   device.
@@ -12509,14 +12505,12 @@ spec:
                                 format: int32
                                 type: integer
                             required:
-                            - name
                             - type
                             - unitNumber
                             type: object
                           type: array
                           x-kubernetes-list-map-keys:
-                          - name
-                          - type
+                          - unitNumber
                           x-kubernetes-list-type: map
                         type:
                           description: Type describes the observed type of the controller.

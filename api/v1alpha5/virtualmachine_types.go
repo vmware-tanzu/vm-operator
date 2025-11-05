@@ -39,6 +39,9 @@ const (
 	// VirtualMachineConditionNetworkReady indicates that the network prerequisites for the VM are ready.
 	VirtualMachineConditionNetworkReady = "VirtualMachineNetworkReady"
 
+	// VirtualMachineConditionImageCacheReady indicates that the VirtualMachineImageCache for the VM is ready.
+	VirtualMachineConditionImageCacheReady = "VirtualMachineConditionImageCacheReady"
+
 	// VirtualMachineConditionPlacementReady indicates that the placement decision for the VM is ready.
 	VirtualMachineConditionPlacementReady = "VirtualMachineConditionPlacementReady"
 

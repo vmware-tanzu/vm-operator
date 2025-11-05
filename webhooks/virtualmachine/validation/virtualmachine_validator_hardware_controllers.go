@@ -123,7 +123,7 @@ func (v validator) validateControllerSlots(
 	var (
 		// specControllers builds a map of controller ID to controller
 		// specification from spec.hardware.controllers.
-		specControllers = vmopv1util.BuildVMControllersMap(vm)
+		specControllers = vmopv1util.BuildVMControllersMap(*vm)
 
 		// occupiedSlots builds a map of controller ID to a map of unit numbers
 		// that are already in use on the specified controller.
@@ -188,7 +188,7 @@ func (v validator) validateControllerSlots(
 			exists           bool
 		)
 
-		if targetController, exists = specControllers[controllerKey]; !exists {
+		if targetController, exists = specControllers[controllerKey.ControllerType][controllerKey.BusNumber]; !exists {
 			allErrs = append(allErrs, field.Invalid(
 				volPath.Child("persistentVolumeClaim", "controllerBusNumber"),
 				controllerKey.BusNumber,

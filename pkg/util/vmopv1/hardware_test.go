@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -302,13 +301,10 @@ var _ = Describe("CreateNewController", func() {
 		func(controllerType vmopv1.VirtualControllerType) {
 			params := testParamsForController(controllerType)
 			busNumber := int32(3)
-			controllerID := pkgutil.ControllerID{
-				ControllerType: params.controllerType,
-				BusNumber:      busNumber,
-			}
 
 			controller := vmopv1util.CreateNewController(
-				controllerID,
+				params.controllerType,
+				busNumber,
 				vmopv1.VirtualControllerSharingModeNone,
 			)
 
@@ -324,13 +320,9 @@ var _ = Describe("CreateNewController", func() {
 	)
 
 	It("should create SCSI controller with ParaVirtualSCSI type by default", func() {
-		controllerID := pkgutil.ControllerID{
-			ControllerType: vmopv1.VirtualControllerTypeSCSI,
-			BusNumber:      0,
-		}
-
 		controller := vmopv1util.CreateNewController(
-			controllerID,
+			vmopv1.VirtualControllerTypeSCSI,
+			0,
 			vmopv1.VirtualControllerSharingModeNone,
 		)
 
@@ -340,13 +332,9 @@ var _ = Describe("CreateNewController", func() {
 	})
 
 	It("should create SCSI controller with specified sharing mode", func() {
-		controllerID := pkgutil.ControllerID{
-			ControllerType: vmopv1.VirtualControllerTypeSCSI,
-			BusNumber:      0,
-		}
-
 		controller := vmopv1util.CreateNewController(
-			controllerID,
+			vmopv1.VirtualControllerTypeSCSI,
+			0,
 			vmopv1.VirtualControllerSharingModePhysical,
 		)
 
@@ -356,13 +344,9 @@ var _ = Describe("CreateNewController", func() {
 	})
 
 	It("should create NVME controller with specified sharing mode", func() {
-		controllerID := pkgutil.ControllerID{
-			ControllerType: vmopv1.VirtualControllerTypeNVME,
-			BusNumber:      1,
-		}
-
 		controller := vmopv1util.CreateNewController(
-			controllerID,
+			vmopv1.VirtualControllerTypeNVME,
+			1,
 			vmopv1.VirtualControllerSharingModeVirtual,
 		)
 
@@ -372,13 +356,9 @@ var _ = Describe("CreateNewController", func() {
 	})
 
 	It("should return nil for unsupported controller type", func() {
-		controllerID := pkgutil.ControllerID{
-			ControllerType: "UnsupportedType",
-			BusNumber:      0,
-		}
-
 		controller := vmopv1util.CreateNewController(
-			controllerID,
+			"UnsupportedType",
+			0,
 			vmopv1.VirtualControllerSharingModeNone,
 		)
 

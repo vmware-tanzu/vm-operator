@@ -100,6 +100,7 @@ func intgTestsReconcile() {
 
 	AfterEach(func() {
 		vcSimCtx.AfterEach()
+		vcSimCtx = nil
 	})
 
 	Context("ReconcileNormal", func() {

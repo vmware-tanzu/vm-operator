@@ -38,7 +38,8 @@ import (
 )
 
 var _ = Describe(
-	"Start", Label(
+	"Start",
+	Label(
 		testlabels.EnvTest,
 		testlabels.Service,
 		testlabels.API,
@@ -101,6 +102,8 @@ var _ = Describe(
 		AfterEach(func() {
 			logr.FromContextOrDiscard(ctx).Info("Cache stats", watcher.CacheGetStats()...)
 			vcSimCtx.AfterEach()
+			vcSimCtx = nil
+			provider.Reset()
 		})
 
 		When("the client is no longer authenticated", func() {

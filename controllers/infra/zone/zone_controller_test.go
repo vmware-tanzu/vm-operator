@@ -92,6 +92,7 @@ var _ = Describe(
 
 		AfterEach(func() {
 			vcSimCtx.AfterEach()
+			vcSimCtx = nil
 		})
 
 		When("new zones are added", func() {

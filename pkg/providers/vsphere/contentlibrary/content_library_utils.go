@@ -14,7 +14,6 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vmdk"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -22,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -158,46 +158,21 @@ func UpdateVmiWithVirtualMachine(
 	for _, bd := range vm.Config.Hardware.Device {
 		if disk, ok := bd.(*vimtypes.VirtualDisk); ok {
 
-			var (
-				capacity *resource.Quantity
-				size     *resource.Quantity
-			)
-
-			var uuid string
-			switch tb := disk.Backing.(type) {
-			case *vimtypes.VirtualDiskSeSparseBackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskLocalPMemBackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo:
-				uuid = tb.Uuid
-			}
-
-			if uuid != "" {
+			if info := pkgutil.GetVirtualDiskInfo(disk); info.UUID != "" {
 				di, _ := vmdk.GetVirtualDiskInfoByUUID(
 					ctx,
 					nil,   /* client is nil since props are not re-fetched */
 					vm,    /* use props from this object */
 					false, /* do not refetch props */
 					false, /* include disks related to snapshots */
-					uuid)
-				capacity = kubeutil.BytesToResource(di.CapacityInBytes)
-				size = kubeutil.BytesToResource(di.Size)
+					info.UUID)
 
 				status.Disks = append(
 					status.Disks,
 					vmopv1.VirtualMachineImageDiskInfo{
-						Name:      uuid,
-						Limit:     capacity,
-						Requested: size,
+						Name:      info.UUID,
+						Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
+						Requested: kubeutil.BytesToResource(di.Size),
 					})
 			}
 		}

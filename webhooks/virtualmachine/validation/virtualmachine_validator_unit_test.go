@@ -3938,7 +3938,6 @@ func unitTestsValidateCreate() {
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 											Name: "test-uvc",
-											UUID: "550e8400-e29b-41d4-a716-446655440000",
 										},
 									},
 								},
@@ -3946,60 +3945,6 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: true,
-				},
-			),
-			Entry("should deny VM with FromImage UnmanagedVolumeClaim missing UUID",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "test-uvc",
-											UUID: "",
-										},
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Required(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "uuid is required when type=FromImage").Error(),
-					),
-				},
-			),
-			Entry("should deny VM with FromImage UnmanagedVolumeClaim invalid UUID",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "test-uvc",
-											UUID: "invalid-uuid",
-										},
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "invalid-uuid", "invalid UUID length: 12").Error(),
-					),
 				},
 			),
 			Entry("should allow VM with valid FromVM UnmanagedVolumeClaim",
@@ -4016,7 +3961,6 @@ func unitTestsValidateCreate() {
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 											Name: "550e8400-e29b-41d4-a716-446655440001",
-											UUID: "550e8400-e29b-41d4-a716-446655440002",
 										},
 									},
 								},
@@ -4024,60 +3968,6 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: true,
-				},
-			),
-			Entry("should deny VM with FromVM UnmanagedVolumeClaim invalid Name",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											Name: "invalid-name",
-											UUID: "550e8400-e29b-41d4-a716-446655440002",
-										},
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("name"), "550e8400-e29b-41d4-a716-446655440002", "invalid UUID length: 12").Error(),
-					),
-				},
-			),
-			Entry("should deny VM with FromVM UnmanagedVolumeClaim invalid UUID",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											Name: "550e8400-e29b-41d4-a716-446655440001",
-											UUID: "invalid-uuid",
-										},
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "invalid-uuid", "invalid UUID length: 12").Error(),
-					),
 				},
 			),
 			Entry("should allow VM with no UnmanagedVolumeClaim",
@@ -8094,7 +7984,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 											Name: "new-uvc",
-											UUID: "550e8400-e29b-41d4-a716-446655440000",
 										},
 									},
 								},
@@ -8119,7 +8008,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 											Name: "new-uvc",
-											UUID: "550e8400-e29b-41d4-a716-446655440000",
 										},
 									},
 								},
@@ -8148,7 +8036,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 											Name: "new-uvc",
-											UUID: "550e8400-e29b-41d4-a716-446655440000",
 										},
 									},
 								},
@@ -8160,35 +8047,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					expectAllowed: false,
 					validate: doValidateWithMsg(
 						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("name"), "new-uvc", apivalidation.FieldImmutableErrorMsg).Error(),
-					),
-				},
-			),
-			Entry("should deny VM update with immutable Name change",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "new-uvc",
-											UUID: "550e8400-e29b-41d4-a716-446655440000",
-										},
-									},
-								},
-							},
-						}
-						ctx.oldVM = ctx.vm.DeepCopy()
-						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID = "450e8400-e29b-41d4-a716-446655440000"
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("uuid"), "550e8400-e29b-41d4-a716-446655440000", apivalidation.FieldImmutableErrorMsg).Error(),
 					),
 				},
 			),
@@ -8206,7 +8064,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 											Name: "test-uvc",
-											UUID: "550e8400-e29b-41d4-a716-446655440000",
 										},
 									},
 								},
@@ -8238,7 +8095,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim = &vmopv1.UnmanagedVolumeClaimVolumeSource{
 							Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 							Name: "test-uvc",
-							UUID: "550e8400-e29b-41d4-a716-446655440000",
 						}
 					},
 					expectAllowed: false,

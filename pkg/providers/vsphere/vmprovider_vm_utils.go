@@ -609,6 +609,14 @@ func GetAttachedDiskUUIDToPVC(
 			continue
 		}
 
+		if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+			if vol.Type == vmopv1.VolumeTypeClassic {
+				// Do not worry about classic volumes that are not fully converted
+				// to PVCs yet.
+				continue
+			}
+		}
+
 		pvcName := vmVolNameToPVCName[vol.Name]
 		// This could happen if the volume was just removed from VM spec but not reconciled yet.
 		if pvcName == "" {

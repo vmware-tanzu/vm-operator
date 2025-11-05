@@ -17,6 +17,7 @@ GO_TEST_FLAGS+=("-v")           # verbose
 GO_TEST_FLAGS+=("-r")           # recursive
 GO_TEST_FLAGS+=("--race")       # check for possible races
 GO_TEST_FLAGS+=("--keep-going") # do not fail on the first error
+GO_TEST_FLAGS+=("--timeout=3h") # increase timeout
 
 # Only run tests that match given labels if LABEL_FILTER is non-empty.
 if [ -n "${LABEL_FILTER:-}" ]; then

@@ -107,6 +107,19 @@ rules:
 - apiGroups:
   - cns.vmware.com
   resources:
+  - cnsregistervolumes
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cns.vmware.com
+  resources:
   - storagepolicyquotas
   verbs:
   - delete

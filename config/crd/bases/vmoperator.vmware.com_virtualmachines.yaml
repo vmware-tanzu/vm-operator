@@ -12261,12 +12261,12 @@ spec:
                           properties:
                             name:
                               description: |-
-                                Name describes the name of the unmanaged volume.
+                                Name describes the information used to identify the unmanaged volume.
 
-                                For volumes from an image, the name is from the image's
+                                For volumes from an image, the value is from the image's
                                 status.disks[].name field.
 
-                                For volumes from the VM, the name is from the VM's
+                                For volumes from the VM, the value is from the VM's
                                 status.volumes[].name field.
 
                                 Please note, specifying the name of an existing, managed volume is not
@@ -12281,15 +12281,6 @@ spec:
                               enum:
                               - FromImage
                               - FromVM
-                              type: string
-                            uuid:
-                              description: |-
-                                UUID describes the UUID of the unmanaged volume.
-
-                                For volumes from an image, the value is mutated in on create operations.
-
-                                For volumes from the VM, this field may be omitted as its value is
-                                already stored in the name field.
                               type: string
                           required:
                           - name

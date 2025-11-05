@@ -24,7 +24,7 @@ import (
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -193,12 +193,12 @@ func DetermineHardwareVersion(
 	var minVerFromDevs vimtypes.HardwareVersion
 	switch {
 	case pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange):
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
+		minVerFromDevs = max(imageVersion, pkgconst.MinSupportedHWVersionForPCIPassthruDevices)
 	case HasPVC(vm):
 		// This only catches volumes set at VM create time.
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPVC)
+		minVerFromDevs = max(imageVersion, pkgconst.MinSupportedHWVersionForPVC)
 	case hasvTPM(configSpec.DeviceChange):
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForVTPM)
+		minVerFromDevs = max(imageVersion, pkgconst.MinSupportedHWVersionForVTPM)
 	}
 
 	// Return the larger of the two versions. If both versions are zero, then
@@ -397,13 +397,49 @@ func CnsRegisterVolumeToVirtualMachineMapper(
 	ctx context.Context,
 	k8sClient client.Client) handler.MapFunc {
 
-	// TODO(AllDisksArePVCs)
-	//
-	// Implement this function. Please see the function
-	// reconcileUnmanagedToManagedDisks from vmprovider_vm.go for more
-	// information on how to implement this function.
+	if ctx == nil {
+		panic("context is nil")
+	}
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
 
-	return nil
+	// For a given CnsRegisterVolume, return reconcile requests for the VM
+	// that owns it.
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		if ctx == nil {
+			panic("context is nil")
+		}
+		if o == nil {
+			panic("object is nil")
+		}
+
+		logger := pkglog.FromContextOrDefault(ctx).
+			WithValues("name", o.GetName(), "namespace", o.GetNamespace())
+		logger.V(4).Info("Reconciling VMs due to CnsRegisterVolume event")
+
+		var requests []reconcile.Request
+
+		for _, ownerRef := range o.GetOwnerReferences() {
+			if ownerRef.Kind == "VirtualMachine" {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Namespace: o.GetNamespace(),
+						Name:      ownerRef.Name,
+					},
+				})
+				logger.V(4).Info("Found VM owner reference", "vm", ownerRef.Name)
+			}
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling VMs due to CnsRegisterVolume watch",
+				"requests", requests)
+		}
+
+		return requests
+	}
 }
 
 // KubernetesNodeLabelKey is the name of the label key used to identify a

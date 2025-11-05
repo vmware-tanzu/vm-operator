@@ -96,69 +96,65 @@ func GetControllerSharingMode(
 // controller type, bus number, and sharing mode.
 // For SCSI controller type, the type is ParaVirtualSCSI by default.
 func CreateNewController(
-	controllerID pkgutil.ControllerID,
+	controllerType vmopv1.VirtualControllerType,
+	busNumber int32,
 	sharingMode vmopv1.VirtualControllerSharingMode,
 ) ControllerSpec {
-	switch controllerID.ControllerType {
+	switch controllerType {
 	case vmopv1.VirtualControllerTypeSCSI:
 		return vmopv1.SCSIControllerSpec{
-			BusNumber:   controllerID.BusNumber,
+			BusNumber:   busNumber,
 			Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
 			SharingMode: sharingMode,
 		}
 	case vmopv1.VirtualControllerTypeSATA:
 		return vmopv1.SATAControllerSpec{
-			BusNumber: controllerID.BusNumber,
+			BusNumber: busNumber,
 		}
 	case vmopv1.VirtualControllerTypeNVME:
 		return vmopv1.NVMEControllerSpec{
-			BusNumber:   controllerID.BusNumber,
+			BusNumber:   busNumber,
 			SharingMode: sharingMode,
 		}
 	case vmopv1.VirtualControllerTypeIDE:
 		return vmopv1.IDEControllerSpec{
-			BusNumber: controllerID.BusNumber,
+			BusNumber: busNumber,
 		}
 	default:
 		return nil
 	}
 }
 
-// BuildVMControllersMap builds a map of controller ID to controller specification
-// from the specified VM's spec.hardware.controllers.
+// BuildVMControllersMap builds a map of controller type to a map of bus number
+// to controller specification from the specified VM's spec.hardware.controllers.
 func BuildVMControllersMap(
-	vm *vmopv1.VirtualMachine,
-) map[pkgutil.ControllerID]ControllerSpec {
+	vm vmopv1.VirtualMachine,
+) map[vmopv1.VirtualControllerType]map[int32]ControllerSpec {
+
+	existingControllers := make(map[vmopv1.VirtualControllerType]map[int32]ControllerSpec)
 
 	if vm.Spec.Hardware == nil {
-		vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+		return existingControllers
 	}
 
-	existingControllers := make(map[pkgutil.ControllerID]ControllerSpec)
-
+	existingControllers[vmopv1.VirtualControllerTypeSCSI] = make(map[int32]ControllerSpec)
 	for _, controller := range vm.Spec.Hardware.SCSIControllers {
-		existingControllers[pkgutil.ControllerID{
-			ControllerType: vmopv1.VirtualControllerTypeSCSI,
-			BusNumber:      controller.BusNumber,
-		}] = controller
+		existingControllers[vmopv1.VirtualControllerTypeSCSI][controller.BusNumber] = controller
 	}
+
+	existingControllers[vmopv1.VirtualControllerTypeSATA] = make(map[int32]ControllerSpec)
 	for _, controller := range vm.Spec.Hardware.SATAControllers {
-		existingControllers[pkgutil.ControllerID{
-			ControllerType: vmopv1.VirtualControllerTypeSATA,
-			BusNumber:      controller.BusNumber,
-		}] = controller
+		existingControllers[vmopv1.VirtualControllerTypeSATA][controller.BusNumber] = controller
 	}
+
+	existingControllers[vmopv1.VirtualControllerTypeNVME] = make(map[int32]ControllerSpec)
 	for _, controller := range vm.Spec.Hardware.NVMEControllers {
-		existingControllers[pkgutil.ControllerID{
-			ControllerType: vmopv1.VirtualControllerTypeNVME,
-			BusNumber:      controller.BusNumber,
-		}] = controller
+		existingControllers[vmopv1.VirtualControllerTypeNVME][controller.BusNumber] = controller
 	}
+
+	existingControllers[vmopv1.VirtualControllerTypeIDE] = make(map[int32]ControllerSpec)
 	for _, controller := range vm.Spec.Hardware.IDEControllers {
-		existingControllers[pkgutil.ControllerID{
-			ControllerType: vmopv1.VirtualControllerTypeIDE,
-			BusNumber:      controller.BusNumber,
-		}] = controller
+		existingControllers[vmopv1.VirtualControllerTypeIDE][controller.BusNumber] = controller
 	}
 
 	return existingControllers

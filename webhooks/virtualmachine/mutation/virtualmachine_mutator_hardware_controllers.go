@@ -31,7 +31,7 @@ func AddControllersForVolumes(
 	}
 
 	var (
-		existingControllers = vmopv1util.BuildVMControllersMap(vm)
+		existingControllers = vmopv1util.BuildVMControllersMap(*vm)
 		occupiedSlots       = make(map[pkgutil.ControllerID]sets.Set[int32])
 		wasMutated          = false
 	)
@@ -71,9 +71,9 @@ func AddControllersForVolumes(
 
 		if targetController != nil && controllerID.BusNumber >= 0 {
 
-			if _, exists := existingControllers[controllerID]; !exists {
+			if _, exists := existingControllers[controllerID.ControllerType][controllerID.BusNumber]; !exists {
 				// Check if we can add a new controller.
-				if len(existingControllers) >= int(targetController.MaxCount()) {
+				if len(existingControllers[controllerID.ControllerType]) >= int(targetController.MaxCount()) {
 
 					// Skipping this volume because we cannot add more
 					// controllers. The validation webhook will throw an error
@@ -121,7 +121,7 @@ func AddControllersForVolumes(
 					)
 					continue
 				}
-				existingControllers[controllerID] = targetController
+				existingControllers[controllerID.ControllerType][controllerID.BusNumber] = targetController
 				wasMutated = true
 			}
 
@@ -150,7 +150,7 @@ func AddControllersForVolumes(
 			// If this volume doesn't have a unit number assigned yet,
 			// we need to track that a slot will be occupied.
 			if pvc.UnitNumber != nil {
-				occupiedSlots[controllerID][*pvc.UnitNumber] = struct{}{}
+				occupiedSlots[controllerID].Insert(*pvc.UnitNumber)
 			} else {
 				// Find and reserve the next available slot for this volume.
 				// The validation webhook will throw an error if a slot is
@@ -159,7 +159,7 @@ func AddControllersForVolumes(
 					targetController,
 					occupiedSlots[controllerID],
 				); nextUnit >= 0 {
-					occupiedSlots[controllerID][nextUnit] = struct{}{}
+					occupiedSlots[controllerID].Insert(nextUnit)
 					pvc.UnitNumber = &nextUnit
 					wasMutated = true
 				}
@@ -176,7 +176,7 @@ func AddControllersForVolumes(
 // occupied, the methods returns nil.
 func determineTargetController(
 	pvc *vmopv1.PersistentVolumeClaimVolumeSource,
-	existingControllers map[pkgutil.ControllerID]vmopv1util.ControllerSpec,
+	existingControllers map[vmopv1.VirtualControllerType]map[int32]vmopv1util.ControllerSpec,
 	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
 ) vmopv1util.ControllerSpec {
 
@@ -194,16 +194,13 @@ func determineTargetController(
 	// If a specific controller bus number is requested, return if one exists
 	// or create one.
 	if pvc.ControllerBusNumber != nil {
-		controllerID := pkgutil.ControllerID{
-			ControllerType: controllerType,
-			BusNumber:      *pvc.ControllerBusNumber,
-		}
 
-		if controller, exists := existingControllers[controllerID]; exists {
+		if controller, exists := existingControllers[controllerType][*pvc.ControllerBusNumber]; exists {
 			return controller
 		}
 
-		return vmopv1util.CreateNewController(controllerID, sharingMode)
+		return vmopv1util.CreateNewController(controllerType,
+			*pvc.ControllerBusNumber, sharingMode)
 	}
 
 	// If a specific bus number is not requested, get the first controller
@@ -214,7 +211,7 @@ func determineTargetController(
 			BusNumber:      busNum,
 		}
 
-		if controller, exists := existingControllers[controllerID]; exists {
+		if controller, exists := existingControllers[controllerType][busNum]; exists {
 
 			if occupiedSlots[controllerID] == nil {
 				occupiedSlots[controllerID] = sets.New[int32]()
@@ -235,12 +232,8 @@ func determineTargetController(
 	// If an existing controller does not exist with an available slot,
 	// create a new one if a bus is available.
 	for busNum := range controllerType.MaxCount() {
-		controllerID := pkgutil.ControllerID{
-			ControllerType: controllerType,
-			BusNumber:      busNum,
-		}
-		if _, exists := existingControllers[controllerID]; !exists {
-			return vmopv1util.CreateNewController(controllerID, sharingMode)
+		if _, exists := existingControllers[controllerType][busNum]; !exists {
+			return vmopv1util.CreateNewController(controllerType, busNum, sharingMode)
 		}
 	}
 

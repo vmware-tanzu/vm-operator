@@ -1088,5 +1088,76 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 				}
 			})
 		})
+
+		When("VM has controllers of different types", func() {
+			BeforeEach(func() {
+				// Setup VM with 3 SATA controllers and 1 IDE controller.
+				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					SATAControllers: []vmopv1.SATAControllerSpec{
+						{BusNumber: 0},
+						{BusNumber: 1},
+						{BusNumber: 2},
+					},
+					IDEControllers: []vmopv1.IDEControllerSpec{
+						{BusNumber: 0},
+					},
+				}
+
+				// Add volumes that use the existing SATA controllers.
+				for i := int32(0); i < 3; i++ {
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name: fmt.Sprintf("sata-vol-%d", i),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: fmt.Sprintf("sata-pvc-%d", i),
+								},
+								ControllerType:      vmopv1.VirtualControllerTypeSATA,
+								ControllerBusNumber: ptr.To(i),
+								UnitNumber:          ptr.To(int32(0)),
+							},
+						},
+					})
+				}
+
+				// Add a new SCSI volume that needs a controller.
+				ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+					Name: "scsi-vol",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "scsi-pvc",
+							},
+							ControllerType: vmopv1.VirtualControllerTypeSCSI,
+						},
+					},
+				})
+			})
+
+			It("should create SCSI controller despite having 4 controllers of other types", func() {
+				mutated, err := mutation.AddControllersForVolumes(
+					&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mutated).To(BeTrue())
+
+				// Should have created one SCSI controller.
+				Expect(ctx.vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+				Expect(ctx.vm.Spec.Hardware.SCSIControllers[0].BusNumber).To(Equal(int32(0)))
+
+				// SCSI volume should have placement assigned.
+				scsiVol := ctx.vm.Spec.Volumes[len(ctx.vm.Spec.Volumes)-1]
+				Expect(scsiVol.Name).To(Equal("scsi-vol"))
+				Expect(scsiVol.PersistentVolumeClaim.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
+				Expect(scsiVol.PersistentVolumeClaim.ControllerBusNumber).ToNot(BeNil())
+				Expect(*scsiVol.PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(scsiVol.PersistentVolumeClaim.UnitNumber).ToNot(BeNil())
+				// Unit number should be assigned.
+				Expect(*scsiVol.PersistentVolumeClaim.UnitNumber).To(BeNumerically(">=", 0))
+
+				// Should still have the original 3 SATA and 1 IDE controllers.
+				Expect(ctx.vm.Spec.Hardware.SATAControllers).To(HaveLen(3))
+				Expect(ctx.vm.Spec.Hardware.IDEControllers).To(HaveLen(1))
+			})
+		})
 	})
 }

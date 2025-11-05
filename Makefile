@@ -898,6 +898,10 @@ verify-codegen: ## Verify generated code
 verify-unfocus: ## Verify no tests have focus
 	hack/verify-unfocus.sh
 
+.PHONY: verify-filenames
+verify-filenames: ## Verify webhook files follow naming convention
+	hack/verify-filenames.sh
+
 .PHONY: verify-local-manifests
 verify-local-manifests: ## Verify the local manifests
 	VERIFY_MANIFESTS=true $(MAKE) deploy-local

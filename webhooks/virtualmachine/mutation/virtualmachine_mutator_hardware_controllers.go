@@ -24,7 +24,7 @@ import (
 // none are found, we add a controller.
 func AddControllersForVolumes(
 	ctx *pkgctx.WebhookRequestContext,
-	client ctrlclient.Client,
+	_ ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
 	volumes := vmopv1util.GetManagedVolumesWithPVC(*vm)
@@ -58,7 +58,6 @@ func AddControllersForVolumes(
 
 	// Process each volume to determine controller requirements.
 	for i := range volumes {
-
 		vol := &volumes[i]
 		pvc := vol.PersistentVolumeClaim
 
@@ -176,7 +175,7 @@ func AddControllersForVolumes(
 
 // determineTargetController determines a controller for the passed PVC.
 // The method will either return an available controller or create one.
-// If there are no slots in any any controllers or all the bus numbers are
+// If there are no slots in any controllers or all the bus numbers are
 // occupied, the methods returns nil.
 func determineTargetController(
 	ctx pkgctx.WebhookRequestContext,
@@ -214,7 +213,7 @@ func determineTargetController(
 	startingBusNum := int32(0)
 	if !pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 		// If all disks are PVCs is not enabled we need to skip bus number 0,
-		// because controller 0 and bus 0 are atleast reserved to the boot disk,
+		// because controller 0 and bus 0 are at least reserved to the boot disk,
 		// which will not be backfilled to the PVCs without this feature enabled.
 		startingBusNum = int32(1)
 	}

@@ -39,6 +39,7 @@ func controllerValidationTests() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
+		ctx.vm.Spec.Volumes = nil
 		ctx.vm.Status.UniqueID = "vm-123"
 
 		// Enable VMSharedDisks feature flag for consistency.
@@ -137,117 +138,13 @@ func controllerValidationTests() {
 					},
 				}
 
-				// Controller has 63 devices at max capacity.
+				// Controller has 63 usable devices at max capacity (64 slots - 1 reserved), with
+				// unit number 7 being reserved.
 				ctx.vm.Spec.Volumes = make([]vmopv1.VirtualMachineVolume, 63)
-				for i := 0; i < 63; i++ {
-					ctx.vm.Spec.Volumes[i] = vmopv1.VirtualMachineVolume{
-						Name: fmt.Sprintf("existing-vol-%d", i),
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
-								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(i)),
-							},
-						},
-					}
-				}
-
-				// Try to add one more volume - controller is already at max capacity.
-				// Since all slots are occupied, any unit we try will be "already in use".
-				ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-					Name: "vol1",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: "pvc1",
-							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(int32(0)),
-						},
-					},
-				})
-			})
-
-			It("should reject due to controller at capacity", func() {
-				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("already in use"))
-			})
-		})
-
-		When("BusLogic SCSI controller at capacity", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
-					{
-						BusNumber:   0,
-						Type:        vmopv1.SCSIControllerTypeBusLogic,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
-					},
-				}
-
-				// Controller has 15 devices at max capacity.
-				ctx.vm.Spec.Volumes = make([]vmopv1.VirtualMachineVolume, 15)
-				for i := 0; i < 15; i++ {
-					ctx.vm.Spec.Volumes[i] = vmopv1.VirtualMachineVolume{
-						Name: fmt.Sprintf("existing-vol-%d", i),
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
-								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(i)),
-							},
-						},
-					}
-				}
-
-				// Try to add one more volume - controller is already at max capacity.
-				// Since all slots are occupied, any unit we try will be "already in use".
-				ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-					Name: "vol1",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: "pvc1",
-							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(int32(0)), // Reuse slot 0
-						},
-					},
-				})
-			})
-
-			It("should reject due to controller at capacity", func() {
-				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("already in use"))
-			})
-		})
-
-		When("multiple volumes exceed controller capacity", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.SCSIControllers = append(
-					ctx.vm.Spec.Hardware.SCSIControllers,
-					vmopv1.SCSIControllerSpec{
-						BusNumber:   0,
-						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
-					},
-				)
-
-				// Controller has 62 devices. This fills all usable slots.
-				ctx.vm.Spec.Volumes = make([]vmopv1.VirtualMachineVolume, 62)
 				unitNum := int32(0)
 				for i := 0; i < 62; i++ {
-					if unitNum == 7 {
-						unitNum++ // Skip reserved unit 7.
+					if i == 7 {
+						unitNum++
 					}
 					ctx.vm.Spec.Volumes[i] = vmopv1.VirtualMachineVolume{
 						Name: fmt.Sprintf("existing-vol-%d", i),
@@ -265,8 +162,9 @@ func controllerValidationTests() {
 					unitNum++
 				}
 
-				// Try to add one more volume using an already-occupied slot.
-				ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+				// Try to add one more volume - controller is already at max capacity.
+				// Since all slots are occupied, any unit we try will be "already in use".
+				ctx.vm.Spec.Volumes[62] = vmopv1.VirtualMachineVolume{
 					Name: "vol-extra",
 					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
@@ -275,16 +173,74 @@ func controllerValidationTests() {
 							},
 							ControllerBusNumber: ptr.To(int32(0)),
 							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(int32(0)), // Reuse slot 0.
+							UnitNumber:          ptr.To(int32(42)),
 						},
 					},
-				})
+				}
+			})
+
+			It("should reject due to controller at capacity", func() {
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[62].persistentVolumeClaim.unitNumber: Invalid value: 42: controller unit number SCSI:0:42 is already in use"))
+			})
+		})
+
+		When("BusLogic SCSI controller at capacity", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeBusLogic,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+
+				// Controller has 14 usable devices at max capacity (15 slots - 1 reserved),
+				// unit number 7 being reserved.
+				ctx.vm.Spec.Volumes = make([]vmopv1.VirtualMachineVolume, 14)
+				unitNum := int32(0)
+				for i := 0; i < 13; i++ {
+					if unitNum == 7 {
+						unitNum++
+					}
+					ctx.vm.Spec.Volumes[i] = vmopv1.VirtualMachineVolume{
+						Name: fmt.Sprintf("existing-vol-%d", i),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
+								},
+								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								UnitNumber:          ptr.To(unitNum),
+							},
+						},
+					}
+					unitNum++
+				}
+
+				// Try to add one more volume - controller is already at max capacity.
+				// Since all slots are occupied, any unit we try will be "already in use".
+				ctx.vm.Spec.Volumes[13] = vmopv1.VirtualMachineVolume{
+					Name: "vol-extra",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc-extra",
+							},
+							ControllerBusNumber: ptr.To(int32(0)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							UnitNumber:          ptr.To(int32(10)),
+						},
+					},
+				}
 			})
 
 			It("should reject due to unit number already in use", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[13].persistentVolumeClaim.unitNumber: Invalid value: 10: controller unit number SCSI:0:10 is already in use"))
 			})
 		})
 	})
@@ -292,6 +248,11 @@ func controllerValidationTests() {
 	Context("Controller bus number 0 validation on CREATE", func() {
 		BeforeEach(func() {
 			ctx.oldVM = nil
+
+			// TODO: Fix test setup so it doesn't always assume update.
+			ctx.vm.Spec.Hardware.SCSIControllers = nil
+			ctx.vm.Spec.Hardware.SATAControllers = nil
+			ctx.vm.Spec.Hardware.NVMEControllers = nil
 		})
 
 		When("creating VM with SCSI controller at bus 0", func() {
@@ -308,7 +269,7 @@ func controllerValidationTests() {
 			It("should reject due to bus 0 being reserved", func() {
 				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("bus number 0 is reserved"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.scsiControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
 			})
 		})
 
@@ -324,7 +285,7 @@ func controllerValidationTests() {
 			It("should reject due to bus 0 being reserved", func() {
 				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("bus number 0 is reserved"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.sataControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
 			})
 		})
 
@@ -340,23 +301,7 @@ func controllerValidationTests() {
 			It("should reject due to bus 0 being reserved", func() {
 				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("bus number 0 is reserved"))
-			})
-		})
-
-		When("creating VM with IDE controller at bus 0", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
-					{
-						BusNumber: 0,
-					},
-				}
-			})
-
-			It("should reject due to bus 0 being reserved", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("bus number 0 is reserved"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.nvmeControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
 			})
 		})
 
@@ -369,8 +314,6 @@ func controllerValidationTests() {
 						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
-				// Clear volumes to avoid validation errors for non-existent controllers.
-				ctx.vm.Spec.Volumes = nil
 			})
 
 			It("should allow controller at bus 1", func() {
@@ -418,7 +361,7 @@ func controllerValidationTests() {
 			It("should reject due to bus 0 being reserved", func() {
 				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("bus number 0 is reserved"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.scsiControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
 			})
 		})
 	})
@@ -487,7 +430,7 @@ func controllerValidationTests() {
 			It("should reject the volume", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("controller SCSI:2 does not exist"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].persistentVolumeClaim.controllerBusNumber: Invalid value: 2: controller SCSI:2 does not exist"))
 			})
 		})
 
@@ -501,7 +444,6 @@ func controllerValidationTests() {
 					},
 				}
 
-				busNum := int32(5) // Out of range (max is 3).
 				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 					{
 						Name: "vol1",
@@ -510,7 +452,7 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: &busNum,
+								ControllerBusNumber: ptr.To(int32(5)), // Out of range (max is 3)
 								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 								UnitNumber:          ptr.To(int32(0)),
 							},
@@ -522,7 +464,7 @@ func controllerValidationTests() {
 			It("should reject the volume", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("must be between 0 and 3"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].persistentVolumeClaim.controllerBusNumber: Invalid value: 5: must be between 0 and 3"))
 			})
 		})
 	})
@@ -673,8 +615,7 @@ func controllerValidationTests() {
 			It("should reject due to unit number conflict with CD-ROM", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("unit number"))
-				Expect(string(response.Result.Reason)).To(ContainSubstring("already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].persistentVolumeClaim.unitNumber: Invalid value: 5: controller unit number SCSI:0:5 is already in use"))
 			})
 		})
 
@@ -779,8 +720,7 @@ func controllerValidationTests() {
 			It("should reject volume that conflicts with CD-ROM", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("unit number"))
-				Expect(string(response.Result.Reason)).To(ContainSubstring("already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[1].persistentVolumeClaim.unitNumber: Invalid value: 3: controller unit number SCSI:0:3 is already in use"))
 			})
 		})
 	})
@@ -860,7 +800,7 @@ func controllerValidationTests() {
 			It("should reject the volume", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[15].persistentVolumeClaim.unitNumber: Invalid value: 1: controller unit number SCSI:1:1 is already in use"))
 			})
 		})
 	})

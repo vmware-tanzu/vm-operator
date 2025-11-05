@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder_test
@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgctxfake "github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 )
@@ -123,23 +124,31 @@ var _ = Describe("NewMutatingWebhook", func() {
 
 		Context("Handle", func() {
 			Context("certificate verification", func() {
-				BeforeEach(func() {
-					dir := filepath.Dir(caFilePath)
-					err := os.MkdirAll(dir, 0755)
-					Expect(err).NotTo(HaveOccurred())
+				var (
+					certDir string
+				)
 
-					err = os.WriteFile(caFilePath, []byte(sampleCert), 0644)
+				BeforeEach(func() {
+					tmpDir, err := os.MkdirTemp(os.TempDir(), "")
 					Expect(err).NotTo(HaveOccurred())
+					certDir = tmpDir
+
+					ctx.Context = pkgcfg.UpdateContext(ctx.Context, func(config *pkgcfg.Config) {
+						config.WebhookSecretVolumeMountPath = certDir
+					})
+
+					caFilePath := filepath.Join(certDir, "client-ca", "ca.crt")
+					caFileDir := filepath.Dir(caFilePath)
+					Expect(os.MkdirAll(caFileDir, 0755)).To(Succeed())
+					Expect(os.WriteFile(caFilePath, []byte(sampleCert), 0644)).To(Succeed())
 
 					ctx.EnableWebhookClientVerification = true
 				})
 
 				AfterEach(func() {
-					err := os.Remove(caFilePath)
-					Expect(err).NotTo(HaveOccurred())
-
-					err = os.RemoveAll("/tmp/k8s-webhook-server")
-					Expect(err).NotTo(HaveOccurred())
+					if certDir != "" {
+						Expect(os.RemoveAll(certDir)).To(Succeed())
+					}
 				})
 
 				When("request has invalid peer certs", func() {

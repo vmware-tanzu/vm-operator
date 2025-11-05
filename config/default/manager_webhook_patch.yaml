@@ -34,20 +34,20 @@ spec:
             port: health-probe
         volumeMounts:
         - name: cert
-          mountPath: /tmp/k8s-webhook-server/serving-certs
+          mountPath: /etc/vmware/wcp/webhook-certs
           readOnly: true
         - name: client-ca
-          mountPath: /tmp/k8s-webhook-server/serving-certs/client-ca
+          mountPath: /etc/vmware/wcp/webhook-certs/client-ca
           readOnly: true
       volumes:
       - name: cert
         secret:
-          defaultMode: 0644
+          defaultMode: 0440
           secretName: WEBHOOK_SECRET_NAME_PLACEHOLDER
       - name: client-ca
         configMap:
           name: kube-root-ca.crt
-          defaultMode: 0644
+          defaultMode: 0440
           items:
           - key: "ca.crt"
             path: "ca.crt"

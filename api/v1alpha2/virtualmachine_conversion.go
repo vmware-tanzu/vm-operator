@@ -125,6 +125,12 @@ func Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolum
 	return autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineCryptoSpec_To_v1alpha2_VirtualMachineCryptoSpec(
+	in *vmopv1.VirtualMachineCryptoSpec, out *VirtualMachineCryptoSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineCryptoSpec_To_v1alpha2_VirtualMachineCryptoSpec(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachine_To_v1alpha2_VirtualMachine(
 	in *vmopv1.VirtualMachine, out *VirtualMachine, s apiconversion.Scope) error {
 
@@ -386,6 +392,10 @@ func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
 }
 
+func restore_v1alpha5_VirtualMachineCryptoSpec(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Crypto = src.Spec.Crypto
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -416,6 +426,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
+	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)
 
 	// END RESTORE
 

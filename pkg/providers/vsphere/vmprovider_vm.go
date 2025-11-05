@@ -2296,15 +2296,17 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	// Get the encryption class details for the VM.
 	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
-		if err := vmconfcrypto.Reconcile(
-			vmCtx,
-			vs.k8sClient,
-			vs.vcClient.VimClient(),
-			vmCtx.VM,
-			vmCtx.MoVM,
-			&createArgs.ConfigSpec); err != nil {
+		if vmCtx.VM.Spec.Crypto != nil && vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeNew {
+			if err := vmconfcrypto.Reconcile(
+				vmCtx,
+				vs.k8sClient,
+				vs.vcClient.VimClient(),
+				vmCtx.VM,
+				vmCtx.MoVM,
+				&createArgs.ConfigSpec); err != nil {
 
-			return err
+				return err
+			}
 		}
 	}
 
@@ -2330,6 +2332,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	if err := vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs); err != nil {
 		return err
 	}
+
+	vmCtx.Logger.V(4).Info("Completed generating config spec for VM create", "ConfigSpec", createArgs.ConfigSpec)
 
 	return nil
 }
@@ -2444,12 +2448,26 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	// Inherit the image's vAppConfig.
 	createArgs.ConfigSpec.VAppConfig = imgConfigSpec.VAppConfig
 
+	if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
+		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {
+		// Inherit the image's CryptoSpec
+		createArgs.ConfigSpec.Crypto = imgConfigSpec.Crypto
+	}
+
 	// Merge the image's extra config.
 	if srcEC, err := virtualmachine.FilteredExtraConfig(
 		imgConfigSpec.ExtraConfig,
 		false); err != nil {
 		return err
 	} else if len(srcEC) > 0 {
+		// When deploying from an image with type "vm" we do not want to
+		// copy the encryption.bundle property if the vTPM mode specified
+		// in spec.crypto.vTPMMode is 'New'.
+		if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
+			vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeNew {
+
+			srcEC = srcEC.Delete("encryption.bundle")
+		}
 		if dstEC := createArgs.ConfigSpec.ExtraConfig; len(dstEC) == 0 {
 			// The current config spec doesn't have any extra config, so just
 			// set it to use the extra config from the image.
@@ -2600,7 +2618,24 @@ func (vs *vSphereVMProvider) getConfigSpecFromVM(
 			fmt.Errorf("failed to get configInfo for image vm")
 	}
 
-	return moVM.Config.ToConfigSpec(), nil
+	configSpec := moVM.Config.ToConfigSpec()
+
+	if cryptoKeyID := moVM.Config.KeyId; cryptoKeyID != nil && vmCtx.VM.Spec.Crypto != nil &&
+		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {
+
+		cryptoSpec := &vimtypes.CryptoSpecEncrypt{
+			CryptoKeyId: vimtypes.CryptoKeyId{
+				KeyId:      cryptoKeyID.KeyId,
+				ProviderId: cryptoKeyID.ProviderId,
+			},
+		}
+
+		configSpec.Crypto = cryptoSpec
+
+		vmCtx.Logger.V(4).Info("Copied keyID into image's ConfigSpec.CryptoSpec", "CryptoSpec", cryptoSpec)
+	}
+
+	return configSpec, nil
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(

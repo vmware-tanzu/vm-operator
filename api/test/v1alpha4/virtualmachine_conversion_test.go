@@ -40,8 +40,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 						Image: &vmopv1.VirtualMachineImageRef{
 							Name: "my-name",
 						},
-						ImageName:    "my-name",
-						ClassName:    "my-class",
+						ImageName: "my-name",
+						ClassName: "my-class",
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							VTPMMode: vmopv1.VirtualMachineCryptoVTPMModeClone,
+						},
 						StorageClass: "my-storage-class",
 						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{

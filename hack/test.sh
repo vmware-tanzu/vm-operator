@@ -32,6 +32,9 @@ if [ -n "${COVERAGE_FILE:-}" ]; then
   GO_TEST_FLAGS+=("--coverprofile=${COVERAGE_FILE:-}")
 fi
 
+# Customize the ginkgo test suite timeout. By default it's 1h.
+GO_TEST_FLAGS+=("--timeout=3h")
+
 # Run the tests.
 # shellcheck disable=SC2086
 ginkgo "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" "${@:-}" || TEST_CMD_EXIT_CODE="${?}"

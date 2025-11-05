@@ -258,10 +258,9 @@ func intgTestsReconcile() {
 				Eventually(func(g Gomega) {
 					attachment = getCnsNodeVMBatchAttachment(vm)
 					g.Expect(attachment).ToNot(BeNil())
+					g.Expect(attachment.Spec.NodeUUID).To(Equal(dummyInstanceUUID))
+					g.Expect(attachment.Spec.Volumes).To(HaveLen(1))
 				}).Should(Succeed())
-
-				Expect(attachment.Spec.NodeUUID).To(Equal(dummyInstanceUUID))
-				Expect(attachment.Spec.Volumes).To(HaveLen(1))
 				Expect(attachment.Spec.Volumes[0].Name).To(Equal(vmVolume1.Name))
 			})
 
@@ -352,10 +351,9 @@ func intgTestsReconcile() {
 				Eventually(func(g Gomega) {
 					attachment = getCnsNodeVMBatchAttachment(vm)
 					g.Expect(attachment).ToNot(BeNil())
+					g.Expect(attachment.Spec.NodeUUID).To(Equal(dummyInstanceUUID))
+					g.Expect(attachment.Spec.Volumes).To(HaveLen(2))
 				}).Should(Succeed())
-
-				Expect(attachment.Spec.NodeUUID).To(Equal(dummyInstanceUUID))
-				Expect(attachment.Spec.Volumes).To(HaveLen(2))
 				Expect(attachment.Spec.Volumes[0].Name).To(Equal(vmVolume1.Name))
 				Expect(attachment.Spec.Volumes[1].Name).To(Equal(vmVolume2.Name))
 			})

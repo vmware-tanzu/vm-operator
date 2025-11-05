@@ -413,6 +413,12 @@ func (r *Reconciler) createOrUpdateBatchAttachment(
 		return fmt.Errorf("volume spec validation failed: %w", err)
 	}
 
+	// TODO (OracleRAC): workaround when batchAttachment.spec.volumeSpec is not
+	// empty. Will remove this once CSI has updated their API.
+	if volumeSpecs == nil {
+		volumeSpecs = make([]cnsv1alpha1.VolumeSpec, 0)
+	}
+
 	vm := ctx.VM
 	attachmentName := pkgutil.CNSBatchAttachmentNameForVM(vm.Name)
 	batchAttachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{

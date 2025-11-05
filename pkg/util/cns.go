@@ -50,7 +50,7 @@ func CNSAttachmentNameForVolume(vmName, volumeName string) string {
 }
 
 // CNSBatchAttachmentNameForVM returns the name of the
-// CnsNodeVmBatchAttachment based on the VM name.
+// CnsNodeVMBatchAttachment based on the VM name.
 func CNSBatchAttachmentNameForVM(vmName string) string {
 	return vmName
 }
@@ -58,11 +58,11 @@ func CNSBatchAttachmentNameForVM(vmName string) string {
 // SanitizeCNSErrorMessage checks if error message contains opId, if yes,
 // Only extract the prefix before first ":" and return it.
 // The CSI controller sometimes puts the serialized SOAP error into the
-// CnsNodeVmAttachment/CnsNodeVmBatchAttachment error field, which contains
+// CnsNodeVmAttachment/CnsNodeVMBatchAttachment error field, which contains
 // things like OpIds and pointers that change on every failed reconcile attempt.
 // Using this error as-is causes VM object churn, so try to avoid that here.
 // The full error message is always available
-// in the CnsNodeVmAttachment/CnsNodeVmBatchAttachment.
+// in the CnsNodeVmAttachment/CnsNodeVMBatchAttachment.
 //
 // Issue tracked in CSI repo for them to sanitize the error so we could get
 // rid of this func:

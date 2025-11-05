@@ -362,6 +362,15 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			}
 		}
 
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+			// Add controllers as needed for new volumes.
+			if ok, err := AddControllersForVolumes(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			} else if ok {
+				wasMutated = true
+			}
+		}
+
 		// Iterate over the externally registered mutate functions.
 		var rangeErr error
 		MutateOnUpdateFuncs.Range(func(_, value any) bool {

@@ -1,0 +1,182 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
+package vmopv1
+
+import (
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"k8s.io/apimachinery/pkg/util/sets"
+)
+
+// ControllerSpec is an interface describing a controller specification.
+type ControllerSpec interface {
+	// MaxSlots returns the maximum number of slots per controller type.
+	MaxSlots() int32
+
+	// MaxCount returns the maximum number of controllers per VM.
+	MaxCount() int32
+
+	// ReservedUnitNumber returns any reserved unit numbers or negative one
+	// if no reserved unit numbers are present.
+	ReservedUnitNumber() int32
+}
+
+// NextAvailableUnitNumber returns the first available unit number for the
+// specified controller. The occupiedSlots parameter should contain all unit
+// numbers that are already in use on the specified bus.
+// Returns the first available unit number, or negative one if no slots are
+// available.
+func NextAvailableUnitNumber(
+	controller ControllerSpec,
+	occupiedSlots sets.Set[int32],
+) int32 {
+	for unitNumber := int32(0); unitNumber < controller.MaxSlots(); unitNumber++ {
+		if _, exists := occupiedSlots[unitNumber]; !exists &&
+			unitNumber != controller.ReservedUnitNumber() {
+			return unitNumber
+		}
+	}
+	return -1
+}
+
+// GenerateControllerID generates a controller ID from a controller specification.
+// Returns a ControllerID with BusNumber set to negative one if the controller
+// type is not supported.
+func GenerateControllerID(
+	controller any,
+) pkgutil.ControllerID {
+
+	if controller == nil {
+		return pkgutil.ControllerID{BusNumber: -1}
+	}
+
+	switch c := controller.(type) {
+	case vmopv1.SCSIControllerSpec:
+		return pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSCSI,
+			BusNumber:      c.BusNumber,
+		}
+	case vmopv1.SATAControllerSpec:
+		return pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSATA,
+			BusNumber:      c.BusNumber,
+		}
+	case vmopv1.NVMEControllerSpec:
+		return pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeNVME,
+			BusNumber:      c.BusNumber,
+		}
+	case vmopv1.IDEControllerSpec:
+		return pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeIDE,
+			BusNumber:      c.BusNumber,
+		}
+	default:
+		return pkgutil.ControllerID{BusNumber: -1}
+	}
+}
+
+// GetControllerSharingMode returns the sharing mode for a controller.
+// Returns the sharing mode from the controller if supported, or None otherwise.
+func GetControllerSharingMode(
+	controller any,
+) vmopv1.VirtualControllerSharingMode {
+	switch c := controller.(type) {
+	case vmopv1.SCSIControllerSpec:
+		return c.SharingMode
+	case vmopv1.NVMEControllerSpec:
+		return c.SharingMode
+	}
+	return vmopv1.VirtualControllerSharingModeNone
+}
+
+// CreateNewController creates a new controller with the specified
+// controller type, bus number, and sharing mode.
+// For SCSI controller type, the type is ParaVirtualSCSI by default.
+func CreateNewController(
+	controllerID pkgutil.ControllerID,
+	sharingMode vmopv1.VirtualControllerSharingMode,
+) ControllerSpec {
+	switch controllerID.ControllerType {
+	case vmopv1.VirtualControllerTypeSCSI:
+		return vmopv1.SCSIControllerSpec{
+			BusNumber:   controllerID.BusNumber,
+			Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+			SharingMode: sharingMode,
+		}
+	case vmopv1.VirtualControllerTypeSATA:
+		return vmopv1.SATAControllerSpec{
+			BusNumber: controllerID.BusNumber,
+		}
+	case vmopv1.VirtualControllerTypeNVME:
+		return vmopv1.NVMEControllerSpec{
+			BusNumber:   controllerID.BusNumber,
+			SharingMode: sharingMode,
+		}
+	case vmopv1.VirtualControllerTypeIDE:
+		return vmopv1.IDEControllerSpec{
+			BusNumber: controllerID.BusNumber,
+		}
+	default:
+		return nil
+	}
+}
+
+// BuildVMControllersMap builds a map of controller ID to controller specification
+// from the specified VM's spec.hardware.controllers.
+func BuildVMControllersMap(
+	vm *vmopv1.VirtualMachine,
+) map[pkgutil.ControllerID]ControllerSpec {
+
+	if vm.Spec.Hardware == nil {
+		vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+	}
+
+	existingControllers := make(map[pkgutil.ControllerID]ControllerSpec)
+
+	for _, controller := range vm.Spec.Hardware.SCSIControllers {
+		existingControllers[pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSCSI,
+			BusNumber:      controller.BusNumber,
+		}] = controller
+	}
+	for _, controller := range vm.Spec.Hardware.SATAControllers {
+		existingControllers[pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSATA,
+			BusNumber:      controller.BusNumber,
+		}] = controller
+	}
+	for _, controller := range vm.Spec.Hardware.NVMEControllers {
+		existingControllers[pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeNVME,
+			BusNumber:      controller.BusNumber,
+		}] = controller
+	}
+	for _, controller := range vm.Spec.Hardware.IDEControllers {
+		existingControllers[pkgutil.ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeIDE,
+			BusNumber:      controller.BusNumber,
+		}] = controller
+	}
+
+	return existingControllers
+}
+
+// GetManagedVolumesWithPVC returns all volumes from the VM spec that have
+// a PersistentVolumeClaim and are managed (not instance storage).
+func GetManagedVolumesWithPVC(
+	vm vmopv1.VirtualMachine,
+) []vmopv1.VirtualMachineVolume {
+
+	volumes := []vmopv1.VirtualMachineVolume{}
+	for _, v := range vm.Spec.Volumes {
+		if v.PersistentVolumeClaim != nil &&
+			v.PersistentVolumeClaim.UnmanagedVolumeClaim == nil {
+			volumes = append(volumes, v)
+		}
+	}
+
+	return volumes
+}

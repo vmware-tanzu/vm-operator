@@ -84,6 +84,11 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace
 
+	// add controller bus number to all volumes to simulate what the mutation
+	// webhook would do. We use bus 1 because bus 0 is rejected for CREATE
+	// operations.
+	setControllerForPVCWithBusNumber(ctx.vm, 1)
+
 	return ctx
 }
 
@@ -157,6 +162,7 @@ func intgTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
+
 		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 	})
 
@@ -308,6 +314,8 @@ func intgTestsValidateUpdate() {
 							},
 						},
 					})
+
+				setControllerForPVCWithBusNumber(ctx.vm, 1)
 			})
 
 			It("does not reject the request", func() {

@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
@@ -1133,48 +1134,21 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 	return allErrs
 }
 
-type deviceKey struct {
-	controllerType      vmopv1.VirtualControllerType
-	controllerBusNumber int32
-	unitNumber          int32
-}
-
 func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
-		allErrs         field.ErrorList
-		volumesPath     = field.NewPath("spec", "volumes")
-		volumeSpecMap   = map[string]vmopv1.VirtualMachineVolume{}
-		oldVolumesMap   = map[string]*vmopv1.VirtualMachineVolume{}
-		newVolumesMap   = map[string]*vmopv1.VirtualMachineVolume{}
-		deviceVolumeMap = map[deviceKey]string{}
-		attachedDevices = map[deviceKey]struct{}{}
+		allErrs       field.ErrorList
+		volumesPath   = field.NewPath("spec", "volumes")
+		volumeSpecMap = sets.New[string]()
+		oldVolumesMap = map[string]*vmopv1.VirtualMachineVolume{}
 	)
 
 	if oldVM != nil {
 		for _, oldVol := range oldVM.Spec.Volumes {
 			if oldVol.Name != "" {
 				oldVolumesMap[oldVol.Name] = &oldVol
-			}
-		}
-	}
-
-	for _, vol := range vm.Spec.Volumes {
-		if _, isOldVol := oldVolumesMap[vol.Name]; !isOldVol {
-			newVolumesMap[vol.Name] = &vol
-		}
-	}
-
-	if vm.Status.Hardware != nil {
-		for _, controller := range vm.Status.Hardware.Controllers {
-			for _, device := range controller.Devices {
-				attachedDevices[deviceKey{
-					controllerType:      controller.Type,
-					controllerBusNumber: controller.BusNumber,
-					unitNumber:          device.UnitNumber,
-				}] = struct{}{}
 			}
 		}
 	}
@@ -1187,7 +1161,7 @@ func (v validator) validateVolumes(
 				allErrs = append(allErrs, field.Duplicate(
 					volPath.Child("name"), vol.Name))
 			} else {
-				volumeSpecMap[vol.Name] = vol
+				volumeSpecMap.Insert(vol.Name)
 			}
 		} else {
 			allErrs = append(allErrs, field.Required(volPath.Child("name"), ""))
@@ -1210,55 +1184,55 @@ func (v validator) validateVolumes(
 				v.validateVolumeWithPVC(ctx, oldVM, vm, oldVolumesMap[vol.Name],
 					vol, volPath)...)
 
-			if vol.PersistentVolumeClaim.UnitNumber != nil &&
-				vol.PersistentVolumeClaim.ControllerBusNumber != nil &&
-				vol.PersistentVolumeClaim.ControllerType != "" {
-
-				unitNumber := *vol.PersistentVolumeClaim.UnitNumber
-				deviceKey := deviceKey{
-					controllerType:      vol.PersistentVolumeClaim.ControllerType,
-					controllerBusNumber: *vol.PersistentVolumeClaim.ControllerBusNumber,
-					unitNumber:          unitNumber,
-				}
-
-				if existingPVCName, found := deviceVolumeMap[deviceKey]; found {
-					allErrs = append(allErrs, field.Invalid(
-						volPath.Child("persistentVolumeClaim", "unitNumber"),
-						unitNumber,
-						fmt.Sprintf("unit number %d on controller %s "+
-							"(bus %d) is already used by PVC %s",
-							unitNumber,
-							deviceKey.controllerType,
-							deviceKey.controllerBusNumber,
-							existingPVCName,
-						),
-					))
-
-				} else {
-					deviceVolumeMap[deviceKey] = vol.PersistentVolumeClaim.ClaimName
-				}
-
-				// when checking if a unit is already used by an attached device,
-				// we only need to validate against new volumes,
-				// as old volumes are already validated and
-				// because we are not able to map devices in status to
-				// volumes in spec
-				if _, isNewVol := newVolumesMap[vol.Name]; isNewVol {
-					if _, found := attachedDevices[deviceKey]; found {
-						allErrs = append(allErrs, field.Invalid(
-							volPath.Child("persistentVolumeClaim", "unitNumber"),
-							unitNumber,
-							fmt.Sprintf("unit number %d on controller %s "+
-								"(bus %d) is already used by an attached device",
-								unitNumber,
-								deviceKey.controllerType,
-								deviceKey.controllerBusNumber,
-							),
-						))
-					}
-				}
+			if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+				allErrs = append(allErrs,
+					v.validateControllerFields(vol, oldVM, *volPath)...,
+				)
 			}
 		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateControllerFields(
+	vol vmopv1.VirtualMachineVolume,
+	oldVM *vmopv1.VirtualMachine,
+	volPath field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+
+	pvc := vol.PersistentVolumeClaim
+
+	unitNumberRequired := oldVM != nil
+	if unitNumberRequired && pvc.UnitNumber == nil {
+		allErrs = append(allErrs, field.Required(
+			volPath.Child("persistentVolumeClaim",
+				"unitNumber"),
+			"",
+		))
+	}
+
+	controllerTypeRequired := oldVM != nil ||
+		pvc.UnitNumber != nil ||
+		pvc.ControllerBusNumber != nil
+	if controllerTypeRequired && pvc.ControllerType == "" {
+		allErrs = append(allErrs, field.Required(
+			volPath.Child("persistentVolumeClaim",
+				"controllerType"),
+			"",
+		))
+	}
+
+	controllerBusNumberRequired := oldVM != nil ||
+		pvc.UnitNumber != nil ||
+		pvc.ControllerType != ""
+	if controllerBusNumberRequired && pvc.ControllerBusNumber == nil {
+		allErrs = append(allErrs, field.Required(
+			volPath.Child("persistentVolumeClaim",
+				"controllerBusNumber"),
+			"",
+		))
 	}
 
 	return allErrs
@@ -1318,37 +1292,39 @@ func (v validator) validateVolumeWithPVC(
 			pvcPath.Child("unitNumber"))...)
 	}
 
-	// Validate PVC access mode, sharing mode, and controller combinations
-	// if VM is being created or the PVC is being updated.
-	// We skip the validation if the PVC is not being updated because
-	// we want to avoid rejecting an update because of an external state change.
-	volumeChanged := oldVol == nil || !equality.Semantic.DeepEqual(
-		*oldVol,
-		vol,
-	)
-	hardwareChanged := oldVM == nil || vm == nil || !equality.Semantic.DeepEqual(
-		oldVM.Spec.Hardware,
-		vm.Spec.Hardware,
-	)
-
-	if !ctx.IsPrivilegedAccount && (volumeChanged || hardwareChanged) {
-		allErrs = append(allErrs,
-			v.validatePVCAccessModeAndSharingModeCombinations(
-				ctx,
-				vm,
-				vol,
-				volPath,
-			)...,
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		// Validate PVC access mode, sharing mode, and controller combinations
+		// if VM is being created or the PVC is being updated.
+		// We skip the validation if the PVC is not being updated because
+		// we want to avoid rejecting an update because of an external state change.
+		volumeChanged := oldVol == nil || !equality.Semantic.DeepEqual(
+			*oldVol,
+			vol,
+		)
+		hardwareChanged := oldVM == nil || vm == nil || !equality.Semantic.DeepEqual(
+			oldVM.Spec.Hardware,
+			vm.Spec.Hardware,
 		)
 
-	} else {
-		ctx.Logger.V(4).Info(
-			"Skipping PVC access mode and sharing mode combinations validation",
-			"volume", vol.Name,
-			"volumeChanged", volumeChanged,
-			"hardwareChanged", hardwareChanged,
-			"isPrivilegedAccount", ctx.IsPrivilegedAccount,
-		)
+		if !ctx.IsPrivilegedAccount && (volumeChanged || hardwareChanged) {
+			allErrs = append(allErrs,
+				v.validatePVCAccessModeAndSharingModeCombinations(
+					ctx,
+					vm,
+					vol,
+					volPath,
+				)...,
+			)
+
+		} else {
+			ctx.Logger.V(4).Info(
+				"Skipping PVC access mode and sharing mode combinations validation",
+				"volume", vol.Name,
+				"volumeChanged", volumeChanged,
+				"hardwareChanged", hardwareChanged,
+				"isPrivilegedAccount", ctx.IsPrivilegedAccount,
+			)
+		}
 	}
 
 	return allErrs
@@ -1823,6 +1799,7 @@ func (v validator) validateHardware(
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, v.validateCdrom(ctx, newVM, oldVM)...)
+	allErrs = append(allErrs, v.validateControllers(ctx, newVM, oldVM)...)
 
 	return allErrs
 }

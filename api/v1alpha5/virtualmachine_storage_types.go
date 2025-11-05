@@ -152,7 +152,6 @@ type PersistentVolumeClaimVolumeSource struct {
 	ControllerBusNumber *int32 `json:"controllerBusNumber,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=SCSI
 
 	// ControllerType describes the type of the controller to which this volume
 	// should be attached.

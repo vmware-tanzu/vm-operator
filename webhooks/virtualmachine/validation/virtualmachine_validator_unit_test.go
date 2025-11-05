@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,6 +38,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -73,10 +75,11 @@ const (
 )
 
 type testParams struct {
-	setup                  func(ctx *unitValidatingWebhookContext)
-	validate               func(response admission.Response)
-	expectAllowed          bool
-	skipBypassUpgradeCheck bool
+	setup                   func(ctx *unitValidatingWebhookContext)
+	validate                func(response admission.Response)
+	expectAllowed           bool
+	skipBypassUpgradeCheck  bool
+	skipSetControllerForPVC bool
 }
 
 type protectedAnnotationTestCase struct {
@@ -171,6 +174,7 @@ func unitTests() {
 		),
 		unitTestsValidateUpdate,
 	)
+	controllerTests()
 	Describe(
 		"Delete",
 		Label(
@@ -192,17 +196,22 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm"
 	vm.Namespace = dummyNamespaceName
-	obj, err := builder.ToUnstructured(vm)
-	Expect(err).ToNot(HaveOccurred())
 
-	var oldVM *vmopv1.VirtualMachine
-	var oldObj *unstructured.Unstructured
+	var (
+		oldVM  *vmopv1.VirtualMachine
+		oldObj *unstructured.Unstructured
+		err    error
+	)
 
 	if isUpdate {
+		setControllerForPVC(vm)
 		oldVM = vm.DeepCopy()
 		oldObj, err = builder.ToUnstructured(oldVM)
 		Expect(err).ToNot(HaveOccurred())
 	}
+
+	obj, err := builder.ToUnstructured(vm)
+	Expect(err).ToNot(HaveOccurred())
 
 	az := builder.DummyAvailabilityZone()
 	zone := builder.DummyZone(dummyNamespaceName)
@@ -212,6 +221,72 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
 		vm:                                  vm,
 		oldVM:                               oldVM,
+	}
+}
+
+// setControllerForPVC sets controllerBusNumber and controllerType
+// on all PVC volumes to simulate the mutation webhook having run. This is
+// needed because this is required by the validation.
+func setControllerForPVC(vm *vmopv1.VirtualMachine) {
+	setControllerForPVCWithBusNumber(vm, 0)
+}
+
+func setControllerForPVCWithBusNumber(vm *vmopv1.VirtualMachine, defaultBusNum int32) {
+	hasPVCVolumes := false
+	busNumbersUsed := make(map[int32]bool)
+
+	for i := range vm.Spec.Volumes {
+		if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
+			hasPVCVolumes = true
+			if vm.Spec.Volumes[i].PersistentVolumeClaim.ControllerType == "" {
+				vm.Spec.Volumes[i].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+			}
+			if vm.Spec.Volumes[i].PersistentVolumeClaim.ControllerBusNumber == nil {
+				// Use the specified default bus number to avoid creating multiple controllers.
+				vm.Spec.Volumes[i].PersistentVolumeClaim.ControllerBusNumber = ptr.To(defaultBusNum)
+			}
+			if vm.Spec.Volumes[i].PersistentVolumeClaim.UnitNumber == nil {
+				vm.Spec.Volumes[i].PersistentVolumeClaim.UnitNumber = ptr.To(int32(i))
+			}
+
+			busNumbersUsed[*vm.Spec.Volumes[i].PersistentVolumeClaim.ControllerBusNumber] = true
+		}
+	}
+
+	// If we have PVC volumes and no SCSI controllers, add controllers for all bus numbers used
+	// to simulate what the mutation webhook would do.
+	if hasPVCVolumes {
+		if vm.Spec.Hardware == nil {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+		}
+		if len(vm.Spec.Hardware.SCSIControllers) == 0 {
+			// Create a controller for each bus number that's referenced by volumes.
+			for busNum := range busNumbersUsed {
+				vm.Spec.Hardware.SCSIControllers = append(
+					vm.Spec.Hardware.SCSIControllers,
+					vmopv1.SCSIControllerSpec{
+						BusNumber:   busNum,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				)
+			}
+		}
+
+		// Set controllerBusNumber on volumes that don't have it set.
+		// Use the first available SCSI controller's bus number.
+		var defaultBusNumber *int32
+		if len(vm.Spec.Hardware.SCSIControllers) > 0 {
+			defaultBusNumber = ptr.To(vm.Spec.Hardware.SCSIControllers[0].BusNumber)
+		}
+
+		for i := range vm.Spec.Volumes {
+			if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
+				if vm.Spec.Volumes[i].PersistentVolumeClaim.ControllerBusNumber == nil && defaultBusNumber != nil {
+					vm.Spec.Volumes[i].PersistentVolumeClaim.ControllerBusNumber = defaultBusNumber
+				}
+			}
+		}
 	}
 }
 
@@ -370,6 +445,77 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	Context("PVC Volume Controller Fields", func() {
+		DescribeTable("create", doTest,
+			Entry("should deny PVC volume with only controllerType set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = nil
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = nil
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("persistentVolumeClaim", "controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with only controllerBusNumber set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = ""
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = nil
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("persistentVolumeClaim", "controllerType"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with only unitNumber set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = ""
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = nil
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(0))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("persistentVolumeClaim", "controllerType"), "").Error(),
+						field.Required(volPath.Index(0).Child("persistentVolumeClaim", "controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with controllerType and unitNumber but no controllerBusNumber",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = nil
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(0))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("persistentVolumeClaim", "controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with controllerBusNumber and unitNumber but no controllerType",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = ""
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(0))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("persistentVolumeClaim", "controllerType"), "").Error(),
+					),
+				},
+			),
+		)
+	})
 
 	Context("availability zone and zone", func() {
 		DescribeTable("create", doTest,
@@ -2994,9 +3140,10 @@ func unitTestsValidateCreate() {
 			Entry("allow creating a VM with empty CD-ROM",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-							Cdrom: []vmopv1.VirtualMachineCdromSpec{},
+						if ctx.vm.Spec.Hardware == nil {
+							ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 						}
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
 					},
 					expectAllowed: true,
 				},
@@ -3978,13 +4125,13 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
-					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
 
 					// Add SCSI controller with None sharing mode
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
-								BusNumber:   0,
+								BusNumber:   1,
 								SharingMode: vmopv1.VirtualControllerSharingModeNone,
 							},
 						},
@@ -4087,13 +4234,13 @@ func unitTestsValidateCreate() {
 					// Configure VM with ReadWriteMany volume and Physical controller
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
-					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
 
 					// Add SCSI controller with Physical sharing mode
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
-								BusNumber:   0,
+								BusNumber:   1,
 								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 							},
 						},
@@ -4117,13 +4264,14 @@ func unitTestsValidateCreate() {
 					}
 					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
 
-					// Configure VM with ReadWriteMany volume but neither MultiWriter nor Physical controller
+					// Configure VM with ReadWriteMany volume but neither
+					// MultiWriter nor Physical controller.
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
 
-					// Add SCSI controller with None sharing mode
+					// Add SCSI controller with None sharing mode.
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
@@ -4154,13 +4302,13 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
-					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
 
 					// Add SCSI controller with Physical sharing mode
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
-								BusNumber:   0,
+								BusNumber:   1,
 								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 							},
 						},
@@ -4210,8 +4358,130 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+}
 
-	unitTestsValidateVolumeUnitNumber(doTest)
+type updateArgs struct {
+	isServiceUser               bool
+	changeInstanceUUID          bool
+	changeBiosUUID              bool
+	changeImageRef              bool
+	changeImageName             bool
+	changeStorageClass          bool
+	changeResourcePolicy        bool
+	assignZoneName              bool
+	changeZoneName              bool
+	unsetZone                   bool
+	isSysprepTransportUsed      bool
+	withInstanceStorageVolumes  bool
+	changeInstanceStorageVolume bool
+	oldInstanceUUID             string
+	oldBiosUUID                 string
+	oldPowerState               vmopv1.VirtualMachinePowerState
+	newPowerState               vmopv1.VirtualMachinePowerState
+	newPowerStateEmptyAllowed   bool
+	nextRestartTime             string
+	lastRestartTime             string
+	applyPowerStateChangeTime   string
+}
+
+func setupOldVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
+	// Init immutable fields that aren't set in the dummy VM.
+	if ctx.oldVM.Spec.Reserved == nil {
+		ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+	}
+	ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
+	ctx.oldVM.Spec.InstanceUUID = args.oldInstanceUUID
+	ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
+
+	if args.oldPowerState != "" {
+		ctx.oldVM.Spec.PowerState = args.oldPowerState
+	}
+	ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
+
+	if args.changeZoneName {
+		ctx.oldVM.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
+	}
+	if args.changeInstanceStorageVolume {
+		instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+		ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, instanceStorageVolumes...)
+	}
+
+	setControllerForPVC(ctx.oldVM)
+}
+
+func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
+	if args.isServiceUser {
+		ctx.IsPrivilegedAccount = true
+	}
+
+	if args.changeImageRef {
+		if ctx.vm.Spec.Image == nil {
+			ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+		}
+		ctx.vm.Spec.Image.Name += updateSuffix
+	}
+	if args.changeImageName {
+		ctx.vm.Spec.ImageName += updateSuffix
+	}
+	if args.changeInstanceUUID {
+		ctx.vm.Spec.InstanceUUID += updateSuffix
+	}
+	if args.changeBiosUUID {
+		ctx.vm.Spec.BiosUUID += updateSuffix
+	}
+	if args.changeStorageClass {
+		ctx.vm.Spec.StorageClass += updateSuffix
+	}
+
+	if ctx.vm.Spec.Reserved == nil {
+		ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+	}
+	ctx.vm.Spec.Reserved.ResourcePolicyName = "policy"
+	if args.changeResourcePolicy {
+		ctx.vm.Spec.Reserved.ResourcePolicyName = "policy" + updateSuffix
+	}
+
+	if args.assignZoneName {
+		ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
+	}
+	if args.changeZoneName {
+		if args.unsetZone {
+			delete(ctx.vm.Labels, corev1.LabelTopologyZone)
+		} else {
+			ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName + updateSuffix
+		}
+	}
+
+	if args.newPowerState != "" || args.newPowerStateEmptyAllowed {
+		ctx.vm.Spec.PowerState = args.newPowerState
+	}
+	if args.applyPowerStateChangeTime != "" {
+		ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
+	}
+	ctx.vm.Spec.NextRestartTime = args.nextRestartTime
+
+	if args.isSysprepTransportUsed {
+		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+		if ctx.vm.Spec.Bootstrap == nil {
+			ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+		}
+		ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{
+			RawSysprep: &common.SecretKeySelector{},
+		}
+	}
+
+	if args.withInstanceStorageVolumes {
+		instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+		ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+	}
+	if args.changeInstanceStorageVolume {
+		instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+		instanceStorageVolumes[0].Name += updateSuffix
+		ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+	}
+
+	// Set controllerBusNumber on volumes to simulate mutation webhook
+	setControllerForPVC(ctx.vm)
 }
 
 func unitTestsValidateUpdate() { //nolint:gocyclo
@@ -4219,118 +4489,11 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		ctx *unitValidatingWebhookContext
 	)
 
-	type updateArgs struct {
-		isServiceUser               bool
-		changeInstanceUUID          bool
-		changeBiosUUID              bool
-		changeImageRef              bool
-		changeImageName             bool
-		changeStorageClass          bool
-		changeResourcePolicy        bool
-		assignZoneName              bool
-		changeZoneName              bool
-		unsetZone                   bool
-		isSysprepTransportUsed      bool
-		withInstanceStorageVolumes  bool
-		changeInstanceStorageVolume bool
-		oldInstanceUUID             string
-		oldBiosUUID                 string
-		oldPowerState               vmopv1.VirtualMachinePowerState
-		newPowerState               vmopv1.VirtualMachinePowerState
-		newPowerStateEmptyAllowed   bool
-		nextRestartTime             string
-		lastRestartTime             string
-		applyPowerStateChangeTime   string
-	}
-
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
-
 		bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
 
-		// Init immutable fields that aren't set in the dummy VM.
-		if ctx.oldVM.Spec.Reserved == nil {
-			ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
-		}
-		ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
-		ctx.oldVM.Spec.InstanceUUID = args.oldInstanceUUID
-		ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
-
-		if args.isServiceUser {
-			ctx.IsPrivilegedAccount = true
-		}
-
-		if args.changeImageRef {
-			if ctx.vm.Spec.Image == nil {
-				ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
-			}
-			ctx.vm.Spec.Image.Name += updateSuffix
-		}
-		if args.changeImageName {
-			ctx.vm.Spec.ImageName += updateSuffix
-		}
-		if args.changeInstanceUUID {
-			ctx.vm.Spec.InstanceUUID += updateSuffix
-		}
-		if args.changeBiosUUID {
-			ctx.vm.Spec.BiosUUID += updateSuffix
-		}
-		if args.changeStorageClass {
-			ctx.vm.Spec.StorageClass += updateSuffix
-		}
-		if ctx.vm.Spec.Reserved == nil {
-			ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
-		}
-		ctx.vm.Spec.Reserved.ResourcePolicyName = "policy"
-		if args.changeResourcePolicy {
-			ctx.vm.Spec.Reserved.ResourcePolicyName = "policy" + updateSuffix
-		}
-		if args.assignZoneName {
-			ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
-		}
-		if args.changeZoneName {
-			ctx.oldVM.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
-			if args.unsetZone {
-				// Remove the zone label to test unsetting zone
-				delete(ctx.vm.Labels, corev1.LabelTopologyZone)
-			} else {
-				ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName + updateSuffix
-			}
-		}
-
-		if args.withInstanceStorageVolumes {
-			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
-			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
-		}
-		if args.changeInstanceStorageVolume {
-			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
-			ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, instanceStorageVolumes...)
-			instanceStorageVolumes[0].Name += updateSuffix
-			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
-		}
-
-		if args.isSysprepTransportUsed {
-			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-			if ctx.vm.Spec.Bootstrap == nil {
-				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
-			}
-			ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{
-				RawSysprep: &common.SecretKeySelector{},
-			}
-		}
-
-		if args.oldPowerState != "" {
-			ctx.oldVM.Spec.PowerState = args.oldPowerState
-		}
-		if args.newPowerState != "" || args.newPowerStateEmptyAllowed {
-			ctx.vm.Spec.PowerState = args.newPowerState
-		}
-
-		if args.applyPowerStateChangeTime != "" {
-			ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
-		}
-
-		ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
-		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
+		setupOldVMForUpdate(ctx, args)
+		setupNewVMForUpdate(ctx, args)
 
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -4358,6 +4521,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 
 	msg := "field is immutable"
 	volumesPath := field.NewPath("spec", "volumes")
+	volPath := field.NewPath("spec", "volumes")
 	powerStatePath := field.NewPath("spec", "powerState")
 	nextRestartTimePath := field.NewPath("spec", "nextRestartTime")
 
@@ -4418,6 +4582,14 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 	doTest := func(args testParams) {
 
 		args.setup(ctx)
+
+		// Set controllerBusNumber on volumes after setup to simulate mutation webhook
+		if !args.skipSetControllerForPVC {
+			setControllerForPVC(ctx.vm)
+			if ctx.oldVM != nil {
+				setControllerForPVC(ctx.oldVM)
+			}
+		}
 
 		if !args.skipBypassUpgradeCheck {
 			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
@@ -7800,6 +7972,97 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		)
 	})
 
+	Context("PVC Volume Controller Fields", func() {
+		const (
+			newVolName = "new-vol"
+			newPVCName = "new-pvc"
+		)
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
+		DescribeTable("update", doTest,
+			Entry("should deny UPDATE with missing unitNumber",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Add a new volume without unitNumber
+						newVol := ctx.vm.Spec.Volumes[0].DeepCopy()
+						newVol.Name = newVolName
+						newVol.PersistentVolumeClaim.ClaimName = newPVCName
+						newVol.PersistentVolumeClaim.UnitNumber = nil
+						newVol.PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *newVol)
+						// Add the controller to hardware spec for both oldVM and vm
+						newController := vmopv1.SCSIControllerSpec{
+							BusNumber: 1,
+							Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						}
+						ctx.vm.Spec.Hardware.SCSIControllers = append(ctx.vm.Spec.Hardware.SCSIControllers, newController)
+						ctx.oldVM.Spec.Hardware.SCSIControllers = append(ctx.oldVM.Spec.Hardware.SCSIControllers, newController)
+					},
+					expectAllowed:           false,
+					skipSetControllerForPVC: true,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(1).Child("persistentVolumeClaim", "unitNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny UPDATE with missing controllerType",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Add a new volume without controllerType
+						newVol := ctx.vm.Spec.Volumes[0].DeepCopy()
+						newVol.Name = newVolName
+						newVol.PersistentVolumeClaim.ClaimName = newPVCName
+						newVol.PersistentVolumeClaim.ControllerType = ""
+						newVol.PersistentVolumeClaim.UnitNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *newVol)
+					},
+					expectAllowed:           false,
+					skipSetControllerForPVC: true,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(1).Child("persistentVolumeClaim", "controllerType"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny UPDATE with missing controllerBusNumber",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Add a new volume without controllerBusNumber
+						newVol := ctx.vm.Spec.Volumes[0].DeepCopy()
+						newVol.Name = newVolName
+						newVol.PersistentVolumeClaim.ClaimName = newPVCName
+						newVol.PersistentVolumeClaim.ControllerBusNumber = nil
+						newVol.PersistentVolumeClaim.UnitNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *newVol)
+					},
+					expectAllowed:           false,
+					skipSetControllerForPVC: true,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(1).Child("persistentVolumeClaim", "controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should allow UPDATE with all controller fields set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// All fields are already set by setControllerForPVC
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
 	Context("Volume PVC UnmanagedVolumeClaim", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -7979,6 +8242,19 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 	})
 
 	Context("Volume PVC UnitNumber conflicts with attached devices", func() {
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
 		DescribeTable("Updates", doTest,
 			Entry("should allow new volume with unit number not in status",
 				testParams{
@@ -8035,7 +8311,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					expectAllowed: true,
 				},
 			),
-			Entry("should deny new volume with unit number already used by attached device",
+			Entry("should deny new volume with unit number already used by CD-ROM",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						// Setup old VM with one volume
@@ -8071,28 +8347,29 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 							},
 						})
 
-						// Setup status with device at unit 5 (e.g., a CD-ROM or classic disk)
-						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
-							Controllers: []vmopv1.VirtualControllerStatus{
+						// Add CD-ROM at unit five in spec.
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
 								{
-									Type:      vmopv1.VirtualControllerTypeSCSI,
-									BusNumber: 0,
-									Devices: []vmopv1.VirtualDeviceStatus{
-										{
-											Type:       vmopv1.VirtualDeviceTypeDisk,
-											UnitNumber: 0,
-										},
-										{
-											Type:       vmopv1.VirtualDeviceTypeCDROM,
-											UnitNumber: 5,
-										},
-									},
+									BusNumber:   0,
+									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
+								},
+							},
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name:                "cdrom1",
+									Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To(int32(0)),
+									UnitNumber:          ptr.To(int32(5)),
 								},
 							},
 						}
+						ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
 					},
 					validate: doValidateWithMsg(
-						"unit number 5 on controller SCSI (bus 0) is already used by an attached device",
+						"controller unit number SCSI:0:5 is already in use",
 					),
 				},
 			),
@@ -8115,6 +8392,15 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 								},
 							},
 						}
+						ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{
+									BusNumber:   0,
+									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
+								},
+							},
+						}
 
 						// New VM adds volume on SATA controller with same unit number
 						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
@@ -8131,6 +8417,14 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 								},
 							},
 						})
+
+						ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()
+						ctx.vm.Spec.Hardware.SATAControllers = append(
+							ctx.vm.Spec.Hardware.SATAControllers,
+							vmopv1.SATAControllerSpec{
+								BusNumber: 0,
+							},
+						)
 
 						// Setup status with SCSI device at unit 0
 						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
@@ -8171,8 +8465,25 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 							},
 						}
 
+						// Add SCSI controllers for both buses
+						ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{
+									BusNumber:   0,
+									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
+								},
+								{
+									BusNumber:   1,
+									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
+								},
+							},
+						}
+
 						// New VM adds volume on different SCSI bus with same unit number
 						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()
 						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 							Name: "new-volume",
 							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -8255,12 +8566,30 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 	unitTestsValidateVolumeUnitNumber(doTest)
 
 	Context("PVC Access Mode and Sharing Mode Combinations", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
 		DescribeTable("validate PVC access mode and sharing mode combinations",
 			func(testName string,
 				setup func(*unitValidatingWebhookContext),
 				expectAllowed bool) {
 
 				setup(ctx)
+
+				// Set controllerBusNumber on volumes to simulate mutation webhook
+				setControllerForPVC(ctx.vm)
+				if ctx.oldVM != nil {
+					setControllerForPVC(ctx.oldVM)
+				}
 
 				var err error
 				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -8403,7 +8732,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "non-existent-pvc",
 									},
-									SharingMode: vmopv1.VolumeSharingModeNone,
+									SharingMode:         vmopv1.VolumeSharingModeNone,
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To(int32(1)),
 								},
 							},
 						},
@@ -8413,6 +8744,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
 								BusNumber:   1,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
 								SharingMode: vmopv1.VirtualControllerSharingModeNone,
 							},
 						},
@@ -8443,23 +8775,24 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					}
 					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
 
-					// Ensure oldVM and vm have the same hardware
-					scsiController := vmopv1.SCSIControllerSpec{
-						BusNumber:   0,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
-					}
+					// Ensure oldVM and vm have the same hardware.
 					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							scsiController,
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+							{
+								BusNumber:   1,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
 						},
 					}
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							scsiController,
-						},
-					}
+					ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()
 
-					// Configure oldVM with a valid volume
+					// Configure oldVM with a valid volume.
 					oldVol := vmopv1.VirtualMachineVolume{
 						Name: "old-volume",
 						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -8467,14 +8800,17 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: dummyPVCName,
 								},
-								SharingMode: vmopv1.VolumeSharingModeNone,
+								SharingMode:         vmopv1.VolumeSharingModeNone,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(1)),
+								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
 					}
 					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{oldVol}
 
 					// Configure vm with an invalid volume (ReadWriteOnce with MultiWriter)
-					// but should be allowed for privileged account
+					// but should be allowed for privileged account.
 					newVol := vmopv1.VirtualMachineVolume{
 						Name: "new-volume",
 						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -8482,7 +8818,10 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: dummyPVCName,
 								},
-								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+								SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(1)),
+								UnitNumber:          ptr.To(int32(1)),
 							},
 						},
 					}
@@ -8533,9 +8872,15 @@ func unitTestsValidateVolumeUnitNumber(
 		setupFnForVolumeUnitNumberUpdates := func(
 			volConfigs ...volumeConfig,
 		) func(ctx *unitValidatingWebhookContext) {
-
 			return func(ctx *unitValidatingWebhookContext) {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+
 				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+				controllersToCreate := sets.New[pkgutil.ControllerID]()
+
 				for i, cfg := range volConfigs {
 					vol := vmopv1.VirtualMachineVolume{
 						Name: fmt.Sprintf("volume-%d", i),
@@ -8551,6 +8896,49 @@ func unitTestsValidateVolumeUnitNumber(
 						},
 					}
 					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vol)
+
+					if cfg.controllerBusNumber != nil {
+						controllersToCreate.Insert(pkgutil.ControllerID{
+							ControllerType: cfg.controllerType,
+							BusNumber:      *cfg.controllerBusNumber,
+						})
+					}
+				}
+
+				// Create controllers for all controllers referenced by volumes
+				for controllerID := range controllersToCreate {
+					switch controllerID.ControllerType {
+					case vmopv1.VirtualControllerTypeSCSI:
+						ctx.vm.Spec.Hardware.SCSIControllers = append(
+							ctx.vm.Spec.Hardware.SCSIControllers,
+							vmopv1.SCSIControllerSpec{
+								BusNumber:   controllerID.BusNumber,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						)
+					case vmopv1.VirtualControllerTypeSATA:
+						ctx.vm.Spec.Hardware.SATAControllers = append(
+							ctx.vm.Spec.Hardware.SATAControllers,
+							vmopv1.SATAControllerSpec{
+								BusNumber: controllerID.BusNumber,
+							},
+						)
+					case vmopv1.VirtualControllerTypeNVME:
+						ctx.vm.Spec.Hardware.NVMEControllers = append(
+							ctx.vm.Spec.Hardware.NVMEControllers,
+							vmopv1.NVMEControllerSpec{
+								BusNumber: controllerID.BusNumber,
+							},
+						)
+					case vmopv1.VirtualControllerTypeIDE:
+						ctx.vm.Spec.Hardware.IDEControllers = append(
+							ctx.vm.Spec.Hardware.IDEControllers,
+							vmopv1.IDEControllerSpec{
+								BusNumber: controllerID.BusNumber,
+							},
+						)
+					}
 				}
 			}
 		}
@@ -8646,7 +9034,7 @@ func unitTestsValidateVolumeUnitNumber(
 						},
 					),
 					validate: doValidateWithMsg(
-						"unit number 3 on controller SCSI (bus 0) is already used by PVC pvc-0",
+						"controller unit number SCSI:0:3 is already in use",
 					),
 				},
 			),
@@ -8670,7 +9058,7 @@ func unitTestsValidateVolumeUnitNumber(
 						},
 					),
 					validate: doValidateWithMsg(
-						"unit number 0 on controller SCSI (bus 0) is already used by PVC pvc-0",
+						"controller unit number SCSI:0:0 is already in use",
 					),
 				},
 			),

@@ -44,6 +44,8 @@ func uniTests() {
 		),
 		unitTestsMutating,
 	)
+
+	controllerTests()
 }
 
 type unitMutationWebhookContext struct {

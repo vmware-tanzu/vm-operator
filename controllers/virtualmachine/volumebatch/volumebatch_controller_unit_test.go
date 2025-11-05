@@ -1440,7 +1440,7 @@ func assertBatchAttachmentSpec(
 
 	GinkgoHelper()
 
-	Expect(attachment.Spec.NodeUUID).To(Equal(vm.Status.InstanceUUID))
+	Expect(attachment.Spec.InstanceUUID).To(Equal(vm.Status.InstanceUUID))
 
 	ownerRefs := attachment.GetOwnerReferences()
 	Expect(ownerRefs).To(HaveLen(1))
@@ -1470,8 +1470,8 @@ func cnsBatchAttachmentForVMVolume(
 			},
 		},
 		Spec: cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
-			NodeUUID: vm.Status.InstanceUUID,
-			Volumes:  []cnsv1alpha1.VolumeSpec{},
+			InstanceUUID: vm.Status.InstanceUUID,
+			Volumes:      []cnsv1alpha1.VolumeSpec{},
 		},
 		Status: cnsv1alpha1.CnsNodeVMBatchAttachmentStatus{
 			VolumeStatus: []cnsv1alpha1.VolumeStatus{},

@@ -2296,7 +2296,13 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	// Get the encryption class details for the VM.
 	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
-		if vmCtx.VM.Spec.Crypto != nil && vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeNew {
+		doCryptoReconcile := true
+		if vmCtx.VM.Spec.Crypto != nil {
+			// If vTPM mode is 'Clone', then we skip the below reconcile.
+			doCryptoReconcile = vmCtx.VM.Spec.Crypto.VTPMMode != vmopv1.VirtualMachineCryptoVTPMModeClone
+		}
+
+		if doCryptoReconcile {
 			if err := vmconfcrypto.Reconcile(
 				vmCtx,
 				vs.k8sClient,
@@ -2434,7 +2440,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		}
 		imgConfigSpec = cs
 	} else {
-		cs, err := vs.getConfigSpecFromVM(vmCtx, vmiCache)
+		cs, err := vs.getConfigSpecFromVM(vmCtx, vmiCache, createArgs.VMClass)
 		if err != nil {
 			return err
 		}
@@ -2587,7 +2593,8 @@ func (vs *vSphereVMProvider) getConfigSpecFromOVF(
 
 func (vs *vSphereVMProvider) getConfigSpecFromVM(
 	vmCtx pkgctx.VirtualMachineContext,
-	vmiCache vmopv1.VirtualMachineImageCache) (vimtypes.VirtualMachineConfigSpec, error) {
+	vmiCache vmopv1.VirtualMachineImageCache,
+	vmClass vmopv1.VirtualMachineClass) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	vcClient, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -2616,6 +2623,10 @@ func (vs *vSphereVMProvider) getConfigSpecFromVM(
 	if moVM.Config == nil {
 		return vimtypes.VirtualMachineConfigSpec{},
 			fmt.Errorf("failed to get configInfo for image vm")
+	}
+
+	if err := ensureValidvTPMConfig(vmCtx, vmClass, moVM.Config.Hardware.Device); err != nil {
+		return vimtypes.VirtualMachineConfigSpec{}, err
 	}
 
 	configSpec := moVM.Config.ToConfigSpec()

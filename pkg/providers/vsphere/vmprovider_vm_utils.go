@@ -32,6 +32,10 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
+const (
+	errInvalidvTPMConfig = "VM must specify a class configured with a vTPM when deploying from a VMI configured with a vTPM"
+)
+
 // TODO: This mostly just a placeholder until we spend time on something better. Individual types
 // don't make much sense since we don't lump everything under a single prereq condition anymore.
 func errToConditionReasonAndMessage(err error) (string, string) {
@@ -784,4 +788,33 @@ func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 	}
 	delete(vmCtx.VM.Labels, vmopv1.PausedVMLabelKey)
 	return false
+}
+
+func ensureValidvTPMConfig(
+	vmCtx pkgctx.VirtualMachineContext,
+	vmClass vmopv1.VirtualMachineClass,
+	devices []vimtypes.BaseVirtualDevice) error {
+
+	for _, device := range devices {
+		if _, ok := device.(*vimtypes.VirtualTPM); ok {
+			// Source is configured with a vTPM. Ensure
+			// the VM being created specifies a class which is
+			// configured with a vTPM. If the specified class is
+			// not configured with a vTPM, then return an error.
+			classConfigSpec, err := GetVMClassConfigSpec(vmCtx, vmClass.Spec.ConfigSpec)
+			if err != nil {
+				return fmt.Errorf("failed to get configSpec from vm class: %w", err)
+			}
+
+			for _, devChanges := range classConfigSpec.DeviceChange {
+				if _, ok = devChanges.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualTPM); ok {
+					return nil
+				}
+			}
+
+			return errors.New(errInvalidvTPMConfig)
+		}
+	}
+
+	return nil
 }

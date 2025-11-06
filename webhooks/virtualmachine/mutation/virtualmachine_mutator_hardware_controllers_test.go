@@ -194,9 +194,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 			ctx = getCtx()
 			ctx.vm.Status.UniqueID = dummyVMName
 			ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
-			if ctx.vm.Spec.Hardware != nil {
-				ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
-			}
+			ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 		})
 
 		DescribeTable("should create controller and assign placement when no controllers exist",
@@ -224,13 +222,13 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				// Should have created one controller.
 				Expect(params.getControllers(ctx.vm.Spec.Hardware)).To(Equal(1))
 				controller := params.getController(ctx.vm.Spec.Hardware, 0)
-				Expect(vmopv1util.GenerateControllerID(controller).BusNumber).To(Equal(int32(0)))
+				Expect(vmopv1util.GenerateControllerID(controller).BusNumber).To(Equal(int32(1)))
 
 				// Volume should have placement assigned.
 				pvc := ctx.vm.Spec.Volumes[0].PersistentVolumeClaim
 				Expect(pvc.ControllerType).To(Equal(controllerType))
 				Expect(pvc.ControllerBusNumber).ToNot(BeNil())
-				Expect(*pvc.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*pvc.ControllerBusNumber).To(Equal(int32(1)))
 				Expect(pvc.UnitNumber).ToNot(BeNil())
 				Expect(*pvc.UnitNumber).To(Equal(int32(0)))
 			},
@@ -486,7 +484,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 									ClaimName: "test-pvc",
 								},
 								ControllerType:      controllerType,
-								ControllerBusNumber: ptr.To(int32(2)),
+								ControllerBusNumber: ptr.To(int32(1)),
 							},
 						},
 					},
@@ -496,14 +494,14 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mutated).To(BeTrue())
 
-				// Should have created controller at bus 2.
+				// Should have created controller at bus 1.
 				Expect(params.getControllers(ctx.vm.Spec.Hardware)).To(Equal(1))
 				controller := params.getController(ctx.vm.Spec.Hardware, 0)
-				Expect(vmopv1util.GenerateControllerID(controller).BusNumber).To(Equal(int32(2)))
+				Expect(vmopv1util.GenerateControllerID(controller).BusNumber).To(Equal(int32(1)))
 
-				// Volume should be assigned to bus 2.
+				// Volume should be assigned to bus 1.
 				pvc := ctx.vm.Spec.Volumes[0].PersistentVolumeClaim
-				Expect(*pvc.ControllerBusNumber).To(Equal(int32(2)))
+				Expect(*pvc.ControllerBusNumber).To(Equal(int32(1)))
 			},
 			Entry("SCSI explicit bus number", vmopv1.VirtualControllerTypeSCSI),
 			Entry("SATA explicit bus number", vmopv1.VirtualControllerTypeSATA),
@@ -1028,15 +1026,15 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 				// Each volume should be assigned to its respective controller.
 				scsiVol := ctx.vm.Spec.Volumes[0].PersistentVolumeClaim
 				Expect(scsiVol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
-				Expect(*scsiVol.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*scsiVol.ControllerBusNumber).To(Equal(int32(1)))
 
 				sataVol := ctx.vm.Spec.Volumes[1].PersistentVolumeClaim
 				Expect(sataVol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSATA))
-				Expect(*sataVol.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*sataVol.ControllerBusNumber).To(Equal(int32(1)))
 
 				nvmeVol := ctx.vm.Spec.Volumes[2].PersistentVolumeClaim
 				Expect(nvmeVol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
-				Expect(*nvmeVol.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*nvmeVol.ControllerBusNumber).To(Equal(int32(1)))
 			})
 		})
 
@@ -1142,14 +1140,14 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 
 				// Should have created one SCSI controller.
 				Expect(ctx.vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
-				Expect(ctx.vm.Spec.Hardware.SCSIControllers[0].BusNumber).To(Equal(int32(0)))
+				Expect(ctx.vm.Spec.Hardware.SCSIControllers[0].BusNumber).To(Equal(int32(1)))
 
 				// SCSI volume should have placement assigned.
 				scsiVol := ctx.vm.Spec.Volumes[len(ctx.vm.Spec.Volumes)-1]
 				Expect(scsiVol.Name).To(Equal("scsi-vol"))
 				Expect(scsiVol.PersistentVolumeClaim.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 				Expect(scsiVol.PersistentVolumeClaim.ControllerBusNumber).ToNot(BeNil())
-				Expect(*scsiVol.PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*scsiVol.PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(1)))
 				Expect(scsiVol.PersistentVolumeClaim.UnitNumber).ToNot(BeNil())
 				// Unit number should be assigned.
 				Expect(*scsiVol.PersistentVolumeClaim.UnitNumber).To(BeNumerically(">=", 0))

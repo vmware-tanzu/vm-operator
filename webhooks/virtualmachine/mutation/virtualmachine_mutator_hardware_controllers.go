@@ -9,6 +9,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -31,9 +32,9 @@ func AddControllersForVolumes(
 	}
 
 	var (
-		existingControllers = vmopv1util.BuildVMControllersMap(*vm)
-		occupiedSlots       = make(map[pkgutil.ControllerID]sets.Set[int32])
-		wasMutated          = false
+		controllerSpecs = vmopv1util.NewControllerSpecs(*vm)
+		occupiedSlots   = make(map[pkgutil.ControllerID]sets.Set[int32])
+		wasMutated      = false
 	)
 
 	// Add CD-ROM controllers to the occupied slots to check for conflicts.
@@ -62,8 +63,9 @@ func AddControllersForVolumes(
 
 		// Determine the target controller based on volume configuration.
 		targetController := determineTargetController(
+			*ctx,
 			pvc,
-			existingControllers,
+			controllerSpecs,
 			occupiedSlots,
 		)
 
@@ -71,9 +73,9 @@ func AddControllersForVolumes(
 
 		if targetController != nil && controllerID.BusNumber >= 0 {
 
-			if _, exists := existingControllers[controllerID.ControllerType][controllerID.BusNumber]; !exists {
+			if _, ok := controllerSpecs.Get(controllerID.ControllerType, controllerID.BusNumber); !ok {
 				// Check if we can add a new controller.
-				if len(existingControllers[controllerID.ControllerType]) >= int(targetController.MaxCount()) {
+				if controllerSpecs.CountControllers(controllerID.ControllerType) >= int(targetController.MaxCount()) {
 
 					// Skipping this volume because we cannot add more
 					// controllers. The validation webhook will throw an error
@@ -121,7 +123,8 @@ func AddControllersForVolumes(
 					)
 					continue
 				}
-				existingControllers[controllerID.ControllerType][controllerID.BusNumber] = targetController
+				controllerSpecs.Set(controllerID.ControllerType,
+					controllerID.BusNumber, targetController)
 				wasMutated = true
 			}
 
@@ -175,8 +178,9 @@ func AddControllersForVolumes(
 // If there are no slots in any any controllers or all the bus numbers are
 // occupied, the methods returns nil.
 func determineTargetController(
+	ctx pkgctx.WebhookRequestContext,
 	pvc *vmopv1.PersistentVolumeClaimVolumeSource,
-	existingControllers map[vmopv1.VirtualControllerType]map[int32]vmopv1util.ControllerSpec,
+	controllerSpecs vmopv1util.ControllerSpecs,
 	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
 ) vmopv1util.ControllerSpec {
 
@@ -195,7 +199,8 @@ func determineTargetController(
 	// or create one.
 	if pvc.ControllerBusNumber != nil {
 
-		if controller, exists := existingControllers[controllerType][*pvc.ControllerBusNumber]; exists {
+		if controller, ok := controllerSpecs.
+			Get(controllerType, *pvc.ControllerBusNumber); ok {
 			return controller
 		}
 
@@ -211,7 +216,7 @@ func determineTargetController(
 			BusNumber:      busNum,
 		}
 
-		if controller, exists := existingControllers[controllerType][busNum]; exists {
+		if controller, ok := controllerSpecs.Get(controllerType, busNum); ok {
 
 			if occupiedSlots[controllerID] == nil {
 				occupiedSlots[controllerID] = sets.New[int32]()
@@ -231,8 +236,15 @@ func determineTargetController(
 
 	// If an existing controller does not exist with an available slot,
 	// create a new one if a bus is available.
-	for busNum := range controllerType.MaxCount() {
-		if _, exists := existingControllers[controllerType][busNum]; !exists {
+	startingBusNum := int32(0)
+	if !pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		// If all disks are PVCs is not enabled we need to skip bus number 0,
+		// because controller 0 and bus 0 are atleast reserved to the boot disk,
+		// which will not be backfilled to the PVCs without this feature enabled.
+		startingBusNum = int32(1)
+	}
+	for busNum := startingBusNum; busNum < controllerType.MaxCount(); busNum++ {
+		if _, ok := controllerSpecs.Get(controllerType, busNum); !ok {
 			return vmopv1util.CreateNewController(controllerType, busNum, sharingMode)
 		}
 	}

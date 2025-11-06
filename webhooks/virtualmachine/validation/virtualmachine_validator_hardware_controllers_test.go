@@ -75,13 +75,11 @@ func controllerValidationTests() {
 	Context("Controller capacity validation", func() {
 		When("volume fits on existing controller", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -131,13 +129,11 @@ func controllerValidationTests() {
 
 		When("ParaVirtual SCSI controller at capacity", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -185,13 +181,11 @@ func controllerValidationTests() {
 
 		When("BusLogic SCSI controller at capacity", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeBusLogic,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeBusLogic,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -239,15 +233,14 @@ func controllerValidationTests() {
 
 		When("multiple volumes exceed controller capacity", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = append(
+					ctx.vm.Spec.Hardware.SCSIControllers,
+					vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
-				}
+				)
 
 				// Controller has 62 devices. This fills all usable slots.
 				ctx.vm.Spec.Volumes = make([]vmopv1.VirtualMachineVolume, 62)
@@ -303,13 +296,11 @@ func controllerValidationTests() {
 
 		When("creating VM with SCSI controller at bus 0", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 			})
@@ -323,11 +314,9 @@ func controllerValidationTests() {
 
 		When("creating VM with SATA controller at bus 0", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SATAControllers: []vmopv1.SATAControllerSpec{
-						{
-							BusNumber: 0,
-						},
+				ctx.vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+					{
+						BusNumber: 0,
 					},
 				}
 			})
@@ -341,11 +330,9 @@ func controllerValidationTests() {
 
 		When("creating VM with NVME controller at bus 0", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					NVMEControllers: []vmopv1.NVMEControllerSpec{
-						{
-							BusNumber: 0,
-						},
+				ctx.vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
+					{
+						BusNumber: 0,
 					},
 				}
 			})
@@ -359,11 +346,9 @@ func controllerValidationTests() {
 
 		When("creating VM with IDE controller at bus 0", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					IDEControllers: []vmopv1.IDEControllerSpec{
-						{
-							BusNumber: 0,
-						},
+				ctx.vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{
+						BusNumber: 0,
 					},
 				}
 			})
@@ -377,13 +362,11 @@ func controllerValidationTests() {
 
 		When("creating VM with SCSI controller at bus 1", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   1,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 				// Clear volumes to avoid validation errors for non-existent controllers.
@@ -400,13 +383,11 @@ func controllerValidationTests() {
 			BeforeEach(func() {
 				// Create a new oldVM to simulate an update.
 				ctx.oldVM = ctx.vm.DeepCopy()
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 			})
@@ -420,18 +401,16 @@ func controllerValidationTests() {
 		When("creating VM with multiple controllers, one at bus 0", func() {
 			BeforeEach(func() {
 				ctx.oldVM = nil
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
-						{
-							BusNumber:   1,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 			})
@@ -447,13 +426,11 @@ func controllerValidationTests() {
 	Context("Controller bus number validation on UPDATE", func() {
 		When("volume specifies valid controller bus number", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -482,13 +459,11 @@ func controllerValidationTests() {
 
 		When("volume specifies non-existent controller bus number", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -518,13 +493,11 @@ func controllerValidationTests() {
 
 		When("volume specifies out-of-range bus number", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -558,13 +531,11 @@ func controllerValidationTests() {
 		When("OracleRAC volume with mutation-added controller", func() {
 			BeforeEach(func() {
 				// Mutation webhook would have added a None controller for OracleRAC.
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -595,13 +566,11 @@ func controllerValidationTests() {
 		When("MicrosoftWSFC volume with mutation-added controller", func() {
 			BeforeEach(func() {
 				// Mutation webhook would have added a Physical controller for WSFC.
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 					},
 				}
 
@@ -631,13 +600,11 @@ func controllerValidationTests() {
 
 		When("OracleRAC volume with appropriate controller", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 
@@ -669,22 +636,20 @@ func controllerValidationTests() {
 	Context("CD-ROM conflict validation", func() {
 		When("volume tries to use slot occupied by CD-ROM", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
-					Cdrom: []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name:                "cdrom1",
-							Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							ControllerBusNumber: ptr.To(int32(0)),
-							UnitNumber:          ptr.To(int32(5)),
-						},
+				}
+				ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					{
+						Name:                "cdrom1",
+						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(5)),
 					},
 				}
 
@@ -715,22 +680,20 @@ func controllerValidationTests() {
 
 		When("volume uses different slot than CD-ROM", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
-					Cdrom: []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name:                "cdrom1",
-							Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							ControllerBusNumber: ptr.To(int32(0)),
-							UnitNumber:          ptr.To(int32(5)),
-						},
+				}
+				ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					{
+						Name:                "cdrom1",
+						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(5)),
 					},
 				}
 
@@ -759,29 +722,27 @@ func controllerValidationTests() {
 
 		When("multiple CD-ROMs occupy slots", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
-					Cdrom: []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name:                "cdrom1",
-							Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso-1", Kind: "VirtualMachineImage"},
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							ControllerBusNumber: ptr.To(int32(0)),
-							UnitNumber:          ptr.To(int32(3)),
-						},
-						{
-							Name:                "cdrom2",
-							Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso-2", Kind: "VirtualMachineImage"},
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							ControllerBusNumber: ptr.To(int32(0)),
-							UnitNumber:          ptr.To(int32(5)),
-						},
+				}
+				ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					{
+						Name:                "cdrom1",
+						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso-1", Kind: "VirtualMachineImage"},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(3)),
+					},
+					{
+						Name:                "cdrom2",
+						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso-2", Kind: "VirtualMachineImage"},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(5)),
 					},
 				}
 
@@ -828,18 +789,16 @@ func controllerValidationTests() {
 		When("some volumes fit, some don't", func() {
 			BeforeEach(func() {
 				// Two controllers with different capacities.
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
-						{
-							BusNumber:   1,
-							Type:        vmopv1.SCSIControllerTypeBusLogic,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeBusLogic,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
 

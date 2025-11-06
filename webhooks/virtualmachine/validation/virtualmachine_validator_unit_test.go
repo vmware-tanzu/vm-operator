@@ -4027,12 +4027,10 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
 
 					// Add SCSI controller with None sharing mode
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber:   1,
-								SharingMode: vmopv1.VirtualControllerSharingModeNone,
-							},
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
 						},
 					}
 				},
@@ -4082,12 +4080,10 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
 
 					// Add SCSI controller with Physical sharing mode
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber:   0,
-								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
-							},
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 						},
 					}
 				},
@@ -4136,12 +4132,10 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
 
 					// Add SCSI controller with Physical sharing mode
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber:   1,
-								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
-							},
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 						},
 					}
 				},
@@ -4171,12 +4165,10 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
 
 					// Add SCSI controller with None sharing mode.
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber:   0,
-								SharingMode: vmopv1.VirtualControllerSharingModeNone,
-							},
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
 						},
 					}
 				},
@@ -4204,12 +4196,10 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
 
 					// Add SCSI controller with Physical sharing mode
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber:   1,
-								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
-							},
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 						},
 					}
 				},
@@ -7563,10 +7553,8 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					if ctx.vm.Spec.Hardware == nil {
 						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 					}
-					ctx.vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
-						{BusNumber: 0},
-						{BusNumber: 1},
-					}
+					// we have two IDE controllers by default.
+					ctx.vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{}
 				},
 				skipBypassUpgradeCheck: true,
 				expectAllowed:          false,
@@ -8213,22 +8201,20 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						})
 
 						// Add CD-ROM at unit five in spec.
-						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-							SCSIControllers: []vmopv1.SCSIControllerSpec{
-								{
-									BusNumber:   0,
-									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-									SharingMode: vmopv1.VirtualControllerSharingModeNone,
-								},
+						ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
 							},
-							Cdrom: []vmopv1.VirtualMachineCdromSpec{
-								{
-									Name:                "cdrom1",
-									Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
-									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(5)),
-								},
+						}
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name:                "cdrom1",
+								Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(5)),
 							},
 						}
 						ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
@@ -8257,13 +8243,11 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 								},
 							},
 						}
-						ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-							SCSIControllers: []vmopv1.SCSIControllerSpec{
-								{
-									BusNumber:   0,
-									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-									SharingMode: vmopv1.VirtualControllerSharingModeNone,
-								},
+						ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
 							},
 						}
 
@@ -8331,18 +8315,16 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						}
 
 						// Add SCSI controllers for both buses
-						ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-							SCSIControllers: []vmopv1.SCSIControllerSpec{
-								{
-									BusNumber:   0,
-									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-									SharingMode: vmopv1.VirtualControllerSharingModeNone,
-								},
-								{
-									BusNumber:   1,
-									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-									SharingMode: vmopv1.VirtualControllerSharingModeNone,
-								},
+						ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+							{
+								BusNumber:   1,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
 							},
 						}
 
@@ -8487,15 +8469,11 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						BusNumber:   0,
 						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					}
-					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							scsiController,
-						},
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						scsiController,
 					}
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							scsiController,
-						},
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						scsiController,
 					}
 
 					// Configure oldVM with a valid volume
@@ -8566,10 +8544,8 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						BusNumber:   0,
 						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					}
-					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							oldScsiController,
-						},
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						oldScsiController,
 					}
 
 					// Configure vm with an invalid controller (Physical sharing)
@@ -8577,10 +8553,8 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						BusNumber:   0,
 						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 					}
-					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							newScsiController,
-						},
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						newScsiController,
 					}
 				},
 				false,
@@ -8605,13 +8579,11 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						},
 					}
 
-					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber:   1,
-								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-								SharingMode: vmopv1.VirtualControllerSharingModeNone,
-							},
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
 						},
 					}
 
@@ -8641,18 +8613,16 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
 
 					// Ensure oldVM and vm have the same hardware.
-					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber:   0,
-								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-								SharingMode: vmopv1.VirtualControllerSharingModeNone,
-							},
-							{
-								BusNumber:   1,
-								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-								SharingMode: vmopv1.VirtualControllerSharingModeNone,
-							},
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+						{
+							BusNumber:   1,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
 						},
 					}
 					ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()

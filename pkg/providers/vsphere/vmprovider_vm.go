@@ -29,7 +29,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -1100,144 +1099,6 @@ func (vs *vSphereVMProvider) reconcileBackfillUnmanagedDisks(
 		vmCtx.VM,
 		vmCtx.MoVM,
 		nil)
-}
-
-// isUnmanagedVolumeFromImage checks if a volume is an unmanaged volume of type
-// "FromImage".
-func isUnmanagedVolumeFromImage(
-	vol *vmopv1.VirtualMachineVolume) bool {
-
-	return vol != nil &&
-		vol.PersistentVolumeClaim != nil &&
-		vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil &&
-		vol.PersistentVolumeClaim.UnmanagedVolumeClaim.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage
-}
-
-// updateDiskDeviceFromPVC updates a disk device configuration from PVC
-// information.
-func (vs *vSphereVMProvider) updateDiskDeviceFromPVC(
-	disk *vimtypes.VirtualDisk,
-	pvc *corev1.PersistentVolumeClaim,
-	deviceChange *vimtypes.BaseVirtualDeviceConfigSpec) error {
-
-	_, ok := (*deviceChange).(*vimtypes.VirtualDeviceConfigSpec)
-	if !ok {
-		return fmt.Errorf("device change is not a VirtualDeviceConfigSpec")
-	}
-
-	// Get PVC storage class
-	storageClass := pvc.Spec.StorageClassName
-
-	// Get PVC requested capacity
-	var pvcCapacity *resource.Quantity
-	if requestedStorage, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
-		pvcCapacity = &requestedStorage
-	}
-
-	// Update disk capacity if PVC capacity is larger than current disk capacity
-	if pvcCapacity != nil {
-		pvcCapacityBytes, ok := pvcCapacity.AsInt64()
-		if ok {
-			currentCapacityBytes := disk.CapacityInBytes
-			if pvcCapacityBytes > currentCapacityBytes {
-				disk.CapacityInBytes = pvcCapacityBytes
-				// Also update CapacityInKB for consistency
-				disk.CapacityInKB = pvcCapacityBytes / 1024
-			}
-		}
-	}
-
-	// TODO(AllDisksArePVCs)
-	//
-	//
-	// Implement this function. For example, for each of the non-FCD disks in
-	// vmCtx.MoVM.Config.Hardware.Devices, do the following:
-	//
-	// 1. Iterate over spec.volumes and look for an entry with an
-	//    unmanagedVolumeSource with a type of "FromVM" and name set to
-	//    the value that identifies the current disk (the logic for
-	//    deriving this name is located in the updateVolumeStatus
-	//    function in the file vmlifecycle/update_status.go).
-	//
-	// 2. If no such entry exists, then add one. Ensure the information
-	//    about the volume matches the disk's current information, such
-	//    as its controller key, controller type, unit number, etc.
-	//
-	//    If no entry existed, then use random value (that is DNS safe)
-	//    for the value of the claimName field.
-	//
-	// 3. Use the controllerutil.CreateOrPatch function to ensure a
-	//    PersistentVolumeClaim object exists for this disk. The PVC
-	//    *must* have a spec.dataSourceRef set that points to this VM.
-	//    See https://kubernetes.io/docs/concepts/storage/persistent-volumes/#using-volume-populators
-	//    for more information on this field.
-	//
-	//    The name of this PVC *must* match the value of
-	//    spec.volumes[].persistentVolumeClaim.claimName from the prior
-	//    step.
-	//
-	//    The PVC should also have an OwnerRef set that points back to
-	//    this VirtualMachine object. If the prior step created a *new*
-	//    entry in spec.volumes, then this OwnerRef should be a
-	//    ControllerOwnerRef.
-	//
-	//    If the PVC does have a ControllerOwnerRef that points to
-	//    this VM, then the PVC's storageClass,
-	//    resources.requests.storage, and resources.limits.storage
-	//    fields should have their values set to match the analogous
-	//    values of the current disk if those fields's values are empty.
-	//    The same goes for its crypto-related information (TODO -- find
-	//    the PVC annotation that specifies the BYOK EncryptionClass).
-	//
-	//    The use of the ControllerOwnerRef allows us to determine if the
-	//    PVC was created by VM Operator or by an external actor, such as
-	//    a DevOps user or Blueprint service. In the case of the latter,
-	//    they may pre-create the PVC object with the dataSourceRef field
-	//    pointing to this VM in order to ensure the unmanaged volume is
-	//    migrated to a new storage class and/or resized when being
-	//    converted to a managed volume (PVC). Therefore, we only want to
-	//    set those fields if VM Op was the one to create the PVC in the
-	//    first place.
-	//
-	// 4. If the PVC object's status.phase field is empty, then use the
-	//    controllerutil.CreateOrPatch function to ensure a
-	//    CnsRegisterVolume object exists for this disk.
-	//
-	//    See https://docs.google.com/document/d/1L6hGuRMY2Caci5OZyZMxp84Bpquw-WCX2ZQQ_2d5mlE/edit?usp=sharing
-	//    for more details on how CnsRegisterVolume is being augmented.
-	//
-	//    The CnsRegisterVolume field pvcName should match the name of
-	//    the PVC created/patched in the previous step.
-	//
-	//    The CnsRegisterVolume object should have an OwnerRef set to
-	//    this VM.
-	//
-	//    The CnsRegisterVolume object should have a label, ex.
-	//    vmoperator.vmware.com/created-by, with a value that is this
-	//    VM's name.
-	//
-	// 5. If the CnsRegisterVolume status indicates the operation is
-	//    complete, then delete the CnsRegisterVolume object.
-	//
-	// If there were a non-zero number of unmanaged volumes in the above
-	// loop, after the loop, return early with a sentinel NonRequeue
-	// error indicating we are waiting on unmanaged volume upgrades. The
-	// VirtualMachine controller will re-reconcile this VM when any
-	// CnsRegisterVolume objects with OwnerRefs that point to this VM are
-	// modified.
-	//
-	// If there were zero unmanaged volumes in the above loop, after the
-	// loop, uses the K8s client to list all CnsRegisterVolume objects
-	// with a label vmoperator.vmware.com/created-by whose value is the
-	// name of the current VM. If there are any, then delete them.
-	//
-	// Update storage class information on the disk device
-	// This would typically involve setting storage policy or other
-	// storage-related configurations based on the PVC's storage class. For now,
-	// we'll just note that we have the storage class.
-	_ = storageClass // Acknowledge we have the storage class for future use
-
-	return nil
 }
 
 func (vs *vSphereVMProvider) reconcileSchemaUpgrade(
@@ -2568,76 +2429,133 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
-	// Check if the feature is enabled
-	if !pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
-		return nil
-	}
-
 	if createArgs.ConfigSpec.DeviceChange == nil {
 		return nil
 	}
 
-	// Build a map of volumes by name for quick lookup
-	volumeByName := make(map[string]*vmopv1.VirtualMachineVolume)
-	for i := range vmCtx.VM.Spec.Volumes {
-		vol := &vmCtx.VM.Spec.Volumes[i]
-		volumeByName[vol.Name] = vol
+	// lookup map to avoid iterating over the volumes for each disk
+	unmanagedVolumeClaimsFromImage := make(map[string]vmopv1.VirtualMachineVolume)
+	for _, vol := range vmCtx.VM.Spec.Volumes {
+		if vol.PersistentVolumeClaim == nil {
+			continue
+		}
+
+		unmanagedVolumeClaim := vol.PersistentVolumeClaim.UnmanagedVolumeClaim
+		if unmanagedVolumeClaim == nil {
+			continue
+		}
+
+		if unmanagedVolumeClaim.Type != vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
+			continue
+		}
+
+		unmanagedVolumeClaimsFromImage[unmanagedVolumeClaim.Name] = vol
 	}
+
+	// TODO: The logic below (device change iteration) need to be refactored.
+	//	     UUID will hence cease to be used for disk identification.
+	//
+	// Step 1: Iterate over the device changes to ensure the bus number,
+	//		   controllers, etc are populated.
+	// Step 2: Use GetUnmanagedVolumeInfoFromConfigSpec to get the required
+	// 		   info for each volume from the config spec and populate the
+	//		   spec.volumes accordingly.
+	// Step 3: Iterate over the device changes again to update the capacity
+	//		   and storage profile from the PVCs.
 
 	var errs []error
 
-	// Iterate through device changes to find disks
-	for i, deviceChange := range createArgs.ConfigSpec.DeviceChange {
-		deviceSpec, ok := deviceChange.(*vimtypes.VirtualDeviceConfigSpec)
-		if !ok || deviceSpec.Device == nil {
-			continue
-		}
-
-		disk, ok := deviceSpec.Device.(*vimtypes.VirtualDisk)
-		if !ok {
-			continue
-		}
-
-		// The device label, prior to the actual create, will match the value
-		// from UVC.Name.
-		//
-		// disk.DeviceInfo.GetDescription().Label
-
-		// Generate disk name using the same logic as content library utils
-		diskInfo := pkgutil.GetVirtualDiskInfo(disk)
-		diskName := diskInfo.Name()
-		if diskName == "" {
-			continue
-		}
-
-		// Step 1: Look for volume entry with unmanagedVolumeSource type "FromImage"
-		volume, exists := volumeByName[diskName]
-		if !exists || !isUnmanagedVolumeFromImage(volume) {
-			continue // Step 2: Skip if no such entry exists
-		}
-
-		// Step 3: Get the PVC
-		pvcName := volume.PersistentVolumeClaim.ClaimName
-		pvc := &corev1.PersistentVolumeClaim{}
-		pvcKey := ctrlclient.ObjectKey{Namespace: vmCtx.VM.Namespace, Name: pvcName}
-
-		if err := vs.k8sClient.Get(vmCtx, pvcKey, pvc); err != nil {
-			if apierrors.IsNotFound(err) {
-				errs = append(errs, fmt.Errorf("PVC %s for disk %s is missing and VM creation cannot proceed", pvcName, diskName))
-			} else {
-				errs = append(errs, fmt.Errorf("failed to get PVC %s for disk %s: %w", pvcName, diskName, err))
+	for _, deviceChange := range createArgs.ConfigSpec.DeviceChange {
+		if deviceSpec := deviceChange.GetVirtualDeviceConfigSpec(); deviceSpec != nil {
+			if disk, ok := deviceSpec.Device.(*vimtypes.VirtualDisk); ok {
+				if di := disk.DeviceInfo; di != nil {
+					if d := di.GetDescription(); d != nil {
+						volume, ok := unmanagedVolumeClaimsFromImage[d.Label]
+						if ok {
+							// update the storage profile and size based on the PVC
+							if err := vs.updateDiskDeviceFromPVC(
+								vmCtx,
+								volume.PersistentVolumeClaim.ClaimName,
+								createArgs.Storage.StorageClassToPolicyID,
+								deviceSpec,
+								disk,
+							); err != nil {
+								errs = append(errs, err)
+							}
+						}
+					}
+				}
 			}
-			continue
-		}
-
-		// Step 4: Update disk device with PVC information
-		if err := vs.updateDiskDeviceFromPVC(disk, pvc, &createArgs.ConfigSpec.DeviceChange[i]); err != nil {
-			errs = append(errs, fmt.Errorf("failed to update disk device %s from PVC %s: %w", diskName, pvcName, err))
 		}
 	}
 
 	if len(errs) > 0 {
 		return apierrorsutil.NewAggregate(errs)
+	}
+
+	return nil
+}
+
+func (vs *vSphereVMProvider) updateDiskDeviceFromPVC(
+	vmCtx pkgctx.VirtualMachineContext,
+	claimName string,
+	storageClassToPolicyID map[string]string,
+	deviceSpec *vimtypes.VirtualDeviceConfigSpec,
+	disk *vimtypes.VirtualDisk,
+) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := ctrlclient.ObjectKey{
+		Namespace: vmCtx.VM.Namespace,
+		Name:      claimName,
+	}
+
+	if err := vs.k8sClient.Get(vmCtx, key, pvc); err != nil {
+		if apierrors.IsNotFound(err) {
+			// we will likely never hit this case since the PVCs are
+			// validated during the prerequisite checks
+			return fmt.Errorf(
+				"pvc %s not found for the specified claim", key,
+			)
+		}
+
+		return fmt.Errorf(
+			"failed to get pvc %s for the specified claim: %w", key, err,
+		)
+	}
+
+	// Update disk device with PVC information
+	// - Set the profile based on the PVC's storage class
+	// - Adjust disk size if PVC requests more than image disk size
+	storageClassName := pvc.Spec.StorageClassName
+
+	if storageClassName == nil {
+		return fmt.Errorf(
+			"pvc %s has no storage class", key,
+		)
+	}
+
+	profileID, ok := storageClassToPolicyID[*storageClassName]
+	if !ok || profileID == "" {
+		return fmt.Errorf(
+			"no Policy ID mapping exists or empty Policy ID for the storage class: %s",
+			*storageClassName,
+		)
+	}
+
+	deviceSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+		&vimtypes.VirtualMachineDefinedProfileSpec{
+			ProfileId: profileID,
+		},
+	}
+
+	// NOTE: For Linked Clone mode, the disk size is determined by the base image.
+	if pvcCapacity, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok && !pvcCapacity.IsZero() {
+		pvcSizeBytes := pvcCapacity.Value()
+
+		diskSizeBytes := disk.CapacityInBytes
+		if pvcSizeBytes > diskSizeBytes {
+			disk.CapacityInBytes = pvcSizeBytes
+		}
 	}
 
 	return nil

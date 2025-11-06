@@ -182,10 +182,6 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBiosUUID(ctx, vm)...)
 
-	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-		fieldErrs = append(fieldErrs, v.validatePVCUnmanagedVolumeClaimInfo(ctx, vm)...)
-	}
-
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())
@@ -1137,6 +1133,11 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if ctx.IsPrivilegedAccount {
+		// TODO(akutz) Dedupe this against Faisal's outstanding change.
+		return nil
+	}
 
 	var (
 		allErrs       field.ErrorList
@@ -2876,58 +2877,6 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 	return allErrs
 }
 
-func (v validator) validatePVCUnmanagedVolumeClaimInfo(
-	_ *pkgctx.WebhookRequestContext,
-	newVM *vmopv1.VirtualMachine) field.ErrorList {
-
-	var (
-		allErrs field.ErrorList
-		p       = field.NewPath("spec", "volumes")
-	)
-
-	for i, v := range newVM.Spec.Volumes {
-
-		pp := p.Index(i)
-		if pvc := v.PersistentVolumeClaim; pvc != nil {
-
-			pp = pp.Child("persistentVolumeClaim")
-			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-
-				pp = pp.Child("unmanagedVolumeClaim")
-
-				switch uvc.Type {
-				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage:
-					if uvc.UUID == "" {
-						allErrs = append(allErrs, field.Required(
-							pp.Child("uuid"),
-							"uuid is required when type=FromImage"))
-					} else if _, err := uuid.Parse(uvc.UUID); err != nil {
-						allErrs = append(allErrs, field.Invalid(
-							pp.Child("uuid"),
-							uvc.UUID,
-							err.Error()))
-					}
-				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM:
-					if _, err := uuid.Parse(uvc.Name); err != nil {
-						allErrs = append(allErrs, field.Invalid(
-							pp.Child("name"),
-							uvc.UUID,
-							err.Error()))
-					}
-					if _, err := uuid.Parse(uvc.UUID); err != nil {
-						allErrs = append(allErrs, field.Invalid(
-							pp.Child("uuid"),
-							uvc.UUID,
-							err.Error()))
-					}
-				}
-			}
-		}
-	}
-
-	return allErrs
-}
-
 func (v validator) validatePVCUnmanagedVolumeClaimImmutability(
 	_ *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
@@ -2962,11 +2911,6 @@ func (v validator) validatePVCUnmanagedVolumeClaimImmutability(
 					}
 					if err := validation.ValidateImmutableField(
 						uvc.Name, oldUVC.Name, pp.Child("name"),
-					); err != nil {
-						allErrs = append(allErrs, err...)
-					}
-					if err := validation.ValidateImmutableField(
-						uvc.UUID, oldUVC.UUID, pp.Child("uuid"),
 					); err != nil {
 						allErrs = append(allErrs, err...)
 					}

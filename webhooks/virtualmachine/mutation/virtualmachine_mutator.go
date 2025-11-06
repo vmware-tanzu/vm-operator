@@ -290,11 +290,6 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 				return admission.Denied(err.Error())
 			}
 		}
-		if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-			if _, err := SetPVCUnmanagedVolumeClaimUUIDs(ctx, m.client, modified); err != nil {
-				return admission.Denied(err.Error())
-			}
-		}
 
 		// Iterate over the externally registered mutate functions.
 		var rangeErr error
@@ -350,14 +345,6 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 				wasMutated = true
 			}
 			if ok := CleanupApplyPowerStateChangeTimeAnno(ctx, modified, oldVM); ok {
-				wasMutated = true
-			}
-		}
-
-		if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-			if ok, err := SetPVCUnmanagedVolumeClaimUUIDs(ctx, m.client, modified); err != nil {
-				return admission.Denied(err.Error())
-			} else if ok {
 				wasMutated = true
 			}
 		}
@@ -1010,34 +997,6 @@ func SetPVCVolumeDefaultsOnCreate(
 					string(vmopv1.VolumeApplicationTypeOracleRAC),
 					string(vmopv1.VolumeApplicationTypeMicrosoftWSFC),
 				})
-		}
-	}
-	return wasMutated, nil
-}
-
-func SetPVCUnmanagedVolumeClaimUUIDs(
-	ctx *pkgctx.WebhookRequestContext,
-	c ctrlclient.Client,
-	vm *vmopv1.VirtualMachine) (bool, error) {
-
-	var wasMutated bool
-	for i := range vm.Spec.Volumes {
-		v := &vm.Spec.Volumes[i]
-		if pvc := v.PersistentVolumeClaim; pvc != nil {
-			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-				switch uvc.Type {
-				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage:
-					if uvc.UUID == "" {
-						uvc.UUID = uuid.NewString()
-						wasMutated = true
-					}
-				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM:
-					if uvc.UUID == "" {
-						uvc.UUID = uvc.Name
-						wasMutated = true
-					}
-				}
-			}
 		}
 	}
 	return wasMutated, nil

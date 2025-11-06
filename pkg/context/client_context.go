@@ -7,6 +7,7 @@ package context
 import (
 	"context"
 
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 )
@@ -16,6 +17,7 @@ type clientContextKey uint8
 const (
 	vimClientContextKey clientContextKey = iota
 	restClientContextKey
+	finderClientContextKey
 )
 
 func WithVimClient(
@@ -58,4 +60,23 @@ func GetRestClient(ctx context.Context) *rest.Client {
 	}
 
 	return val
+}
+
+// WithFinder returns a new context with the finder inside of it.
+func WithFinder(ctx context.Context, finder *find.Finder) context.Context {
+	return context.WithValue(ctx, finderClientContextKey, finder)
+}
+
+// GetFinder returns the finder from a context.
+// Nil is returned if the finder is not present in the context.
+func GetFinder(ctx context.Context) *find.Finder {
+	obj := ctx.Value(finderClientContextKey)
+	if obj == nil {
+		return nil
+	}
+	c, ok := obj.(*find.Finder)
+	if !ok {
+		return nil
+	}
+	return c
 }

@@ -32,7 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -1257,7 +1257,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes includes the classic disks", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1270,7 +1270,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1279,7 +1279,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1288,7 +1288,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1297,7 +1297,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1325,7 +1325,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes includes the pvc and classic disks", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1338,7 +1338,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1347,7 +1347,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1356,7 +1356,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1365,7 +1365,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1394,7 +1394,7 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:      "my-disk-106",
+							Name:      pkgutil.GeneratePVCName("disk", "106"),
 							DiskUUID:  "106",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1406,7 +1406,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes no longer includes the stale classic disk", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1419,7 +1419,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1428,7 +1428,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1437,7 +1437,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1446,7 +1446,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1468,7 +1468,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes omits the classic disk w invalid path", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1477,7 +1477,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1486,7 +1486,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1495,7 +1495,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1511,7 +1511,7 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-104",
+							Name:     pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID: "104",
 							Type:     vmopv1.VolumeTypeClassic, // requested type
 							Attached: true,
@@ -1525,7 +1525,7 @@ var _ = Describe("UpdateStatus", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(HaveLen(5))
 					Expect(vmCtx.VM.Status.Volumes[4]).To(Equal(
 						vmopv1.VirtualMachineVolumeStatus{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1644,7 +1644,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes is calculated", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1657,7 +1657,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + 1*oneGiBInBytes + 500 + 0.25*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1666,7 +1666,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + 0.25*oneGiBInBytes + 500 + 1*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1675,7 +1675,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + 0.5*oneGiBInBytes + 500 + 0.25*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1684,7 +1684,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + 1*oneGiBInBytes + 500 + 0.5*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1762,7 +1762,7 @@ var _ = Describe("UpdateStatus", func() {
 					Specify("status.volumes is calculated, and value of 'used' only includes the files in the last chain", func() {
 						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 							{
-								Name:     "my-disk-100",
+								Name:     pkgutil.GeneratePVCName("disk", "100"),
 								DiskUUID: "100",
 								Type:     vmopv1.VolumeTypeClassic,
 								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1775,7 +1775,7 @@ var _ = Describe("UpdateStatus", func() {
 								Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 							},
 							{
-								Name:      "my-disk-101",
+								Name:      pkgutil.GeneratePVCName("disk", "101"),
 								DiskUUID:  "101",
 								Type:      vmopv1.VolumeTypeClassic,
 								Attached:  true,
@@ -1784,7 +1784,7 @@ var _ = Describe("UpdateStatus", func() {
 								Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 							},
 							{
-								Name:      "my-disk-102",
+								Name:      pkgutil.GeneratePVCName("disk", "102"),
 								DiskUUID:  "102",
 								Type:      vmopv1.VolumeTypeClassic,
 								Attached:  true,
@@ -1793,7 +1793,7 @@ var _ = Describe("UpdateStatus", func() {
 								Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 							},
 							{
-								Name:      "my-disk-103",
+								Name:      pkgutil.GeneratePVCName("disk", "103"),
 								DiskUUID:  "103",
 								Type:      vmopv1.VolumeTypeClassic,
 								Attached:  true,
@@ -1802,7 +1802,7 @@ var _ = Describe("UpdateStatus", func() {
 								Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 							},
 							{
-								Name:      "my-disk-104",
+								Name:      pkgutil.GeneratePVCName("disk", "104"),
 								DiskUUID:  "104",
 								Type:      vmopv1.VolumeTypeClassic,
 								Attached:  true,
@@ -1842,7 +1842,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes is calculated, and value of 'used' is 0", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1855,7 +1855,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1864,7 +1864,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1873,7 +1873,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1882,7 +1882,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -2605,8 +2605,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is 1", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "1",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "1",
 					}
 				})
 				It("sets condition true", func() {
@@ -2619,8 +2619,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is true and there is a reason", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "true,my-reason",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "true,my-reason",
 					}
 				})
 				It("sets condition true", func() {
@@ -2634,8 +2634,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is true and there is a reason and message", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "true,my-reason,my,comma,delimited,message",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "true,my-reason,my,comma,delimited,message",
 					}
 				})
 				It("sets condition true", func() {
@@ -2652,8 +2652,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is 0", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "0",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "0",
 					}
 				})
 				It("sets condition false", func() {
@@ -2667,8 +2667,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is non-truthy", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "not a boolean value",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "not a boolean value",
 					}
 				})
 				It("sets condition false", func() {
@@ -2682,8 +2682,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is false and there is a reason", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "false,my-reason",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "false,my-reason",
 					}
 				})
 				It("sets condition false", func() {
@@ -2697,8 +2697,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is false and there is a reason and message", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "false,my-reason,my,comma,delimited,message",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "false,my-reason,my,comma,delimited,message",
 					}
 				})
 				It("sets condition false", func() {

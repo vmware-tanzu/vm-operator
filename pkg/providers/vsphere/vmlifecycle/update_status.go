@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"path"
 	"reflect"
 	"regexp"
 	"slices"
@@ -1353,9 +1352,9 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				false,       /* do not refetch props */
 				snapEnabled, /* exclude disks related to snapshots */
 				diskUUID)
-			dp := diskPath.Path
+
 			volStatus := vmopv1.VirtualMachineVolumeStatus{
-				Name:      strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
+				Name:      pkgutil.GeneratePVCName("disk", diskUUID),
 				Type:      vmopv1.VolumeTypeClassic,
 				Attached:  true,
 				DiskUUID:  diskUUID,

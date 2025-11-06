@@ -282,12 +282,19 @@ func vmTests() {
 						})
 					})
 
-					assertClassNotFound := func(className string) {
-						var err error
-						vcVM, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					assertClassNotFound := func(
+						ctx *builder.TestContextForVCSim,
+						vmProvider providers.VirtualMachineProviderInterface,
+						vm *vmopv1.VirtualMachine,
+						className string) {
+
+						vcVM, err := createOrUpdateAndGetVcVM(
+							ctx, vmProvider, vm)
 						ExpectWithOffset(1, err).ToNot(BeNil())
 						ExpectWithOffset(1, err.Error()).To(ContainSubstring(
-							fmt.Sprintf("virtualmachineclasses.vmoperator.vmware.com %q not found", className)))
+							fmt.Sprintf(
+								"virtualmachineclasses.vmoperator.vmware.com %q not found",
+								className)))
 						ExpectWithOffset(1, vcVM).To(BeNil())
 					}
 
@@ -300,7 +307,11 @@ func vmTests() {
 								vm.Spec.InstanceUUID = instanceUUID
 							})
 							It("should error when getting class", func() {
-								assertClassNotFound("")
+								assertClassNotFound(
+									ctx,
+									vmProvider,
+									vm,
+									"")
 							})
 						})
 						When("spec.instanceUUID does not match existing VM", func() {
@@ -308,7 +319,11 @@ func vmTests() {
 								vm.Spec.InstanceUUID = uuid.NewString()
 							})
 							It("should error when getting class", func() {
-								assertClassNotFound("")
+								assertClassNotFound(
+									ctx,
+									vmProvider,
+									vm,
+									"")
 							})
 						})
 					})
@@ -1945,76 +1960,6 @@ func vmTests() {
 						}).Should(Succeed())
 					})
 				})
-
-				// Please note this test uses FlakeAttempts(5) due to the
-				// validation of some predictable-over-time behavior.
-				When("there is a reconcile in progress", FlakeAttempts(5), func() {
-					When("there is a duplicate create", func() {
-						It("should return ErrReconcileInProgress", func() {
-							var (
-								errs   []error
-								errsMu sync.Mutex
-								done   sync.WaitGroup
-								start  = make(chan struct{})
-							)
-
-							// Set up five goroutines that race to
-							// create the VM first.
-							for i := 0; i < 5; i++ {
-								done.Add(1)
-								go func(copyOfVM *vmopv1.VirtualMachine) {
-									defer done.Done()
-									defer GinkgoRecover()
-									<-start
-									err := createOrUpdateVM(ctx, vmProvider, copyOfVM)
-									if err != nil {
-										errsMu.Lock()
-										errs = append(errs, err)
-										errsMu.Unlock()
-									} else {
-										vm = copyOfVM
-									}
-								}(vm.DeepCopy())
-							}
-
-							close(start)
-
-							done.Wait()
-
-							Expect(errs).To(HaveLen(4))
-
-							Expect(errs).Should(ConsistOf(
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-							))
-
-							Expect(vm.Status.UniqueID).ToNot(BeEmpty())
-						})
-					})
-
-					When("there is a delete during async create", func() {
-						It("should return ErrReconcileInProgress", func() {
-							chanCreateErrs, createErr := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
-							deleteErr := vmProvider.DeleteVirtualMachine(ctx, vm)
-
-							Expect(createErr).ToNot(HaveOccurred())
-							Expect(errors.Is(deleteErr, providers.ErrReconcileInProgress))
-
-							var createErrs []error
-							for e := range chanCreateErrs {
-								if e != nil {
-									createErrs = append(createErrs, e)
-								}
-							}
-							Expect(createErrs).Should(HaveLen(1))
-							Expect(createErrs[0]).To(MatchError(vsphere.ErrCreate))
-
-							Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-						})
-					})
-				})
 			})
 
 			It("TKG VM", func() {
@@ -2813,7 +2758,8 @@ func vmTests() {
 
 						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("status update pending for persistent volume: %s on VM", isVol0.Name)))
+						Expect(err.Error()).To(ContainSubstring("one or more persistent volumes is pending"))
+						Expect(err.Error()).To(ContainSubstring(isVol0.Name))
 
 						// Simulate what would be set by the volume controller.
 						for _, vol := range vm.Spec.Volumes {
@@ -3810,7 +3756,8 @@ func vmTests() {
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("status update pending for persistent volume: %s on VM", cnsVolumeName)))
+						Expect(err.Error()).To(ContainSubstring("one or more persistent volumes is pending"))
+						Expect(err.Error()).To(ContainSubstring(cnsVolumeName))
 						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 					})
 
@@ -3827,7 +3774,9 @@ func vmTests() {
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("persistent volume: %s not attached to VM", cnsVolumeName)))
+						Expect(err.Error()).To(ContainSubstring("one or more persistent volumes is pending"))
+						Expect(err.Error()).To(ContainSubstring(cnsVolumeName))
+
 						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 					})
 

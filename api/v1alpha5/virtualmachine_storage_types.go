@@ -221,8 +221,8 @@ type PersistentVolumeClaimVolumeSource struct {
 type UnmanagedVolumeClaimVolumeType string
 
 const (
-	UnmanagedVolumeClaimVolumeTypeFromImage = "FromImage"
-	UnmanagedVolumeClaimVolumeTypeFromVM    = "FromVM"
+	UnmanagedVolumeClaimVolumeTypeFromImage UnmanagedVolumeClaimVolumeType = "FromImage"
+	UnmanagedVolumeClaimVolumeTypeFromVM    UnmanagedVolumeClaimVolumeType = "FromVM"
 )
 
 type UnmanagedVolumeClaimVolumeSource struct {
@@ -236,27 +236,17 @@ type UnmanagedVolumeClaimVolumeSource struct {
 
 	// +required
 
-	// Name describes the name of the unmanaged volume.
+	// Name describes the information used to identify the unmanaged volume.
 	//
-	// For volumes from an image, the name is from the image's
+	// For volumes from an image, the value is from the image's
 	// status.disks[].name field.
 	//
-	// For volumes from the VM, the name is from the VM's
+	// For volumes from the VM, the value is from the VM's
 	// status.volumes[].name field.
 	//
 	// Please note, specifying the name of an existing, managed volume is not
 	// supported and will be ignored.
 	Name string `json:"name"`
-
-	// +optional
-
-	// UUID describes the UUID of the unmanaged volume.
-	//
-	// For volumes from an image, the value is mutated in on create operations.
-	//
-	// For volumes from the VM, this field may be omitted as its value is
-	// already stored in the name field.
-	UUID string `json:"uuid,omitempty"`
 }
 
 // InstanceVolumeClaimVolumeSource contains information about the instance

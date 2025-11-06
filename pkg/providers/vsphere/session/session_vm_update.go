@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
@@ -45,6 +46,7 @@ import (
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
+	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
 var (
@@ -86,6 +88,10 @@ func (s *Session) UpdateVirtualMachine(
 	)
 
 	vmCtx.Context = pkgctx.WithRestClient(vmCtx.Context, s.Client.RestClient())
+
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+		vmCtx.Context = pkgctx.WithFinder(vmCtx.Context, s.Client.Finder())
+	}
 
 	switch {
 	case powerState == vimtypes.VirtualMachinePowerStateSuspended:
@@ -695,28 +701,46 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 		return nil
 	}
 
-	// If VM spec has a PVC, check if the volume is attached before powering on
-	for _, volume := range vmCtx.VM.Spec.Volumes {
-		if volume.PersistentVolumeClaim == nil {
-			// Only handle PVC volumes here. In v1a1 we had non-PVC ("vsphereVolumes") but those are gone.
-			continue
-		}
+	// If VM spec has a PVC, check if the volume is attached before powering on.
+	var (
+		notFoundNames   []string
+		unattachedNames []string
+	)
 
-		// BMV: We should not use the Status as the SoT here. What a mess.
-		found := false
-		for _, volumeStatus := range vmCtx.VM.Status.Volumes {
-			if volumeStatus.Name == volume.Name {
-				found = true
-				if !volumeStatus.Attached {
-					return fmt.Errorf("persistent volume: %s not attached to VM", volume.Name)
+	for _, volume := range vmCtx.VM.Spec.Volumes {
+		if pvc := volume.PersistentVolumeClaim; pvc != nil {
+			found := false
+			for _, volumeStatus := range vmCtx.VM.Status.Volumes {
+				if volumeStatus.Name == volume.Name {
+					found = true
+					if !volumeStatus.Attached {
+						attached := false
+						if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+							if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
+								attached = true
+							}
+						}
+						if !attached {
+							unattachedNames = append(
+								unattachedNames,
+								volume.Name)
+						}
+					}
+					break
 				}
-				break
+			}
+			if !found {
+				notFoundNames = append(notFoundNames, volume.Name)
 			}
 		}
+	}
 
-		if !found {
-			return fmt.Errorf("status update pending for persistent volume: %s on VM", volume.Name)
-		}
+	if len(notFoundNames) > 0 || len(unattachedNames) > 0 {
+		return fmt.Errorf(
+			"one or more persistent volumes is pending: "+
+				"notFound=%q, notAttached=%q",
+			strings.Join(notFoundNames, ","),
+			strings.Join(unattachedNames, ","))
 	}
 
 	return nil
@@ -1120,6 +1144,25 @@ func reconcileDiskPromo(
 		configSpec)
 }
 
+func reconcileRegisterUnmanagedDisks(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling unmanaged disks")
+
+	return vmconfunmanagedvolsreg.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func reconcileAnnotationsToExtraConfig(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1242,6 +1285,19 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
 		if err := reconcileCrypto(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		if err := reconcileRegisterUnmanagedDisks(
 			ctx,
 			k8sClient,
 			vm,

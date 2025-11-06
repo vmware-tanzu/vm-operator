@@ -35,6 +35,7 @@ func vcSimTests() {
 	Describe("VirtualMachineUtilsTest", vmUtilTests)
 	Describe("VirtualMachineGroup", vmGroupTests)
 	Describe("VirtualMachineSnapshot", vmSnapshotTests)
+	Describe("VirtualMachineUnmanagedVolumes", unmanagedVolumesTests)
 }
 
 func TestVSphereProvider(t *testing.T) {
@@ -101,7 +102,8 @@ func createOrUpdateVM(
 				errors.Is(err, vsphere.ErrPromoteDisks),
 				errors.Is(err, vsphere.ErrSnapshotRevert),
 				errors.Is(err, vsphere.ErrPolicyNotReady),
-				errors.Is(err, vsphere.ErrUpgradeSchema):
+				errors.Is(err, vsphere.ErrUpgradeSchema),
+				errors.Is(err, vsphere.ErrUnmanagedVolsBackfill):
 
 				repeat = true
 			default:

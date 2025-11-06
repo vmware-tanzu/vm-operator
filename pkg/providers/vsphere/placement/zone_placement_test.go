@@ -203,7 +203,7 @@ func vcSimPlacement() {
 					Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
 					Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
-					Expect(err).To(MatchError("no placement candidates available"))
+					Expect(err).To(MatchError(placement.ErrNoPlacementCandidates))
 					Expect(result).To(BeNil())
 				})
 			})
@@ -236,7 +236,7 @@ func vcSimPlacement() {
 					It("returns error", func() {
 						constraints.Zones = sets.New("bogus-zone")
 						_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
-						Expect(err).To(MatchError("no placement candidates available after applying zone constraints: bogus-zone"))
+						Expect(err).To(MatchError("no candidates remaining after applying zone constraints bogus-zone: no placement candidates"))
 					})
 				})
 
@@ -360,7 +360,7 @@ func vcSimPlacement() {
 
 				It("returns an error", func() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
-					Expect(err).To(MatchError("no placement candidates available"))
+					Expect(err).To(MatchError(placement.ErrNoPlacementCandidates))
 					Expect(result).To(BeNil())
 				})
 			})
@@ -428,7 +428,7 @@ func vcSimPlacement() {
 				It("returns error", func() {
 					constraints.Zones = sets.New("bogus-zone")
 					_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
-					Expect(err).To(MatchError("no placement candidates available after applying zone constraints: bogus-zone"))
+					Expect(err).To(MatchError("no candidates remaining after applying zone constraints bogus-zone: no placement candidates"))
 				})
 			})
 

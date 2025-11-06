@@ -6,8 +6,6 @@ package placement
 
 import (
 	"context"
-	"fmt"
-	"math/rand"
 
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vim25"
@@ -31,7 +29,7 @@ func GroupPlacement(
 	}
 
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no placement candidates available")
+		return nil, ErrNoPlacementCandidates
 	}
 
 	recommendations, err := getGroupPlacementRecommendations(ctx, vcClient, finder, candidates, configSpecs)
@@ -40,23 +38,21 @@ func GroupPlacement(
 	}
 
 	results := map[string]Result{}
-	for vmName, vmRecommendations := range recommendations {
-		selectedRecommendation := vmRecommendations[rand.Intn(len(vmRecommendations))] // nolint:gosec
-
+	for vmName, recommendation := range recommendations {
 		if pkgcfg.FromContext(ctx).Features.FastDeploy {
 			// Get the name and type of the datastores.
-			if err := getDatastoreProperties(ctx, vcClient, &selectedRecommendation); err != nil {
+			if err := getDatastoreProperties(ctx, vcClient, &recommendation); err != nil {
 				return nil, err
 			}
 		}
 
-		zoneName := resourcePoolToZoneName[selectedRecommendation.PoolMoRef.Value]
+		zoneName := resourcePoolToZoneName[recommendation.PoolMoRef.Value]
 
 		result := Result{
 			ZoneName:   zoneName,
-			PoolMoRef:  selectedRecommendation.PoolMoRef,
-			HostMoRef:  selectedRecommendation.HostMoRef,
-			Datastores: selectedRecommendation.Datastores,
+			PoolMoRef:  recommendation.PoolMoRef,
+			HostMoRef:  recommendation.HostMoRef,
+			Datastores: recommendation.Datastores,
 		}
 
 		results[vmName] = result
@@ -70,7 +66,7 @@ func getGroupPlacementRecommendations(
 	vcClient *vim25.Client,
 	finder *find.Finder,
 	candidates map[string][]string,
-	configSpecs []vimtypes.VirtualMachineConfigSpec) (map[string][]Recommendation, error) {
+	configSpecs []vimtypes.VirtualMachineConfigSpec) (map[string]Recommendation, error) {
 
 	var candidateRPMoRefs []vimtypes.ManagedObjectReference
 

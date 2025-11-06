@@ -442,8 +442,8 @@ func (r *Reconciler) createOrUpdateBatchAttachment(
 
 			// Update the Spec with the desired volumeSpecs
 			batchAttachment.Spec = cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
-				NodeUUID: vm.Status.InstanceUUID,
-				Volumes:  volumeSpecs,
+				InstanceUUID: vm.Status.InstanceUUID,
+				Volumes:      volumeSpecs,
 			}
 
 			return nil

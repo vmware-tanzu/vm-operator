@@ -74,6 +74,10 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusController(vmCtx, k8sClient, vcVM, data)...)
 
+	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		errs = append(errs, reconcileHardwareCondition(vmCtx, k8sClient, vcVM, data)...)
+	}
+
 	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
 		errs = append(errs, reconcileStatusProbe(vmCtx, k8sClient, vcVM, data)...)
 	}
@@ -1810,13 +1814,10 @@ func reconcileStatusController(
 		}
 	}
 
-	diskNames := map[string]struct{}{}
-
 	// Collect all devices attached to controllers.
 	for _, device := range moVM.Config.Hardware.Device {
 
 		var (
-			name          string
 			unitNumber    *int32
 			controllerKey int32
 			deviceType    vmopv1.VirtualDeviceType
@@ -1825,14 +1826,12 @@ func reconcileStatusController(
 		switch dev := device.(type) {
 		case *vimtypes.VirtualDisk:
 			vdi := pkgutil.GetVirtualDiskInfo(dev)
-			name = vdi.UUID
 			unitNumber = vdi.UnitNumber
 			controllerKey = vdi.ControllerKey
 			deviceType = vmopv1.VirtualDeviceTypeDisk
 
 		case *vimtypes.VirtualCdrom:
 			cdi := pkgutil.GetVirtualCdromInfo(dev)
-			name = cdi.DeviceName
 			unitNumber = cdi.UnitNumber
 			controllerKey = cdi.ControllerKey
 			deviceType = vmopv1.VirtualDeviceTypeCDROM
@@ -1844,21 +1843,7 @@ func reconcileStatusController(
 			continue
 		}
 
-		// set to fallback name if the name is missing
-		if name == "" {
-			deviceCount := len(controllerKeyMap[controllerKey].Devices)
-			name = fmt.Sprintf("%s-%d", deviceType, deviceCount)
-			for {
-				if _, ok := diskNames[name]; !ok {
-					break
-				}
-				name += fmt.Sprintf("-%d", deviceCount)
-			}
-		}
-		diskNames[name] = struct{}{}
-
 		deviceStatus := vmopv1.VirtualDeviceStatus{
-			Name:       name,
 			Type:       deviceType,
 			UnitNumber: *unitNumber,
 		}

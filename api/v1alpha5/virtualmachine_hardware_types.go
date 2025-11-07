@@ -222,11 +222,6 @@ func (c SCSIControllerSpec) ReservedUnitNumber() int32 {
 type VirtualDeviceStatus struct {
 	// +required
 
-	// Name describes the name of the virtual device.
-	Name string `json:"name"`
-
-	// +required
-
 	// Type describes the type of the virtual device.
 	Type VirtualDeviceType `json:"type"`
 
@@ -254,8 +249,7 @@ type VirtualControllerStatus struct {
 
 	// +optional
 	// +listType=map
-	// +listMapKey=name
-	// +listMapKey=type
+	// +listMapKey=unitNumber
 
 	// Devices describes the observed devices connected to the controller.
 	Devices []VirtualDeviceStatus `json:"devices,omitempty"`

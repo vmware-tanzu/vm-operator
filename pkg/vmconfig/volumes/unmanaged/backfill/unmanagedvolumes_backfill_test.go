@@ -346,6 +346,7 @@ var _ = Describe("Reconcile", func() {
 						VirtualDevice: vimtypes.VirtualDevice{
 							Key:           300,
 							ControllerKey: 100,
+							UnitNumber:    ptr.To[int32](0),
 							Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
 								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 									FileName: "[LocalDS_0] vm1/fcd-disk.vmdk",
@@ -392,6 +393,7 @@ var _ = Describe("Reconcile", func() {
 						VirtualDevice: vimtypes.VirtualDevice{
 							Key:           300,
 							ControllerKey: 100,
+							UnitNumber:    ptr.To[int32](0),
 							Backing: &vimtypes.VirtualDiskSparseVer1BackingInfo{
 								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 									FileName: "[LocalDS_0] vm1/no-uuid-disk.vmdk",
@@ -434,6 +436,7 @@ var _ = Describe("Reconcile", func() {
 						VirtualDevice: vimtypes.VirtualDevice{
 							Key:           300,
 							ControllerKey: 100,
+							UnitNumber:    ptr.To[int32](0),
 							Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
 								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
 								Uuid:                         "no-filename-uuid-123",
@@ -475,6 +478,7 @@ var _ = Describe("Reconcile", func() {
 						VirtualDevice: vimtypes.VirtualDevice{
 							Key:           300,
 							ControllerKey: 100,
+							UnitNumber:    ptr.To[int32](0),
 							Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
 								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 									FileName: "[LocalDS_0] vm1/child-disk.vmdk",
@@ -525,6 +529,7 @@ var _ = Describe("Reconcile", func() {
 						VirtualDevice: vimtypes.VirtualDevice{
 							Key:           300,
 							ControllerKey: 100,
+							UnitNumber:    ptr.To[int32](0),
 							Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
 								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 									FileName: "[LocalDS_0] vm1/child-disk.vmdk",

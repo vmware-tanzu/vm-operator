@@ -998,6 +998,17 @@ var _ = Describe("UpdateStatus", func() {
 				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
 					Hardware: vimtypes.VirtualHardware{
 						Device: []vimtypes.BaseVirtualDevice{
+							&vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										BusNumber: 0,
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 200,
+										},
+									},
+								},
+							},
+
 							// classic
 							&vimtypes.VirtualDisk{
 								VirtualDevice: vimtypes.VirtualDevice{
@@ -1013,7 +1024,9 @@ var _ = Describe("UpdateStatus", func() {
 											},
 										},
 									},
-									Key: 100,
+									Key:           100,
+									ControllerKey: 200,
+									UnitNumber:    ptr.To[int32](3),
 								},
 								CapacityInBytes: 10 * oneGiBInBytes,
 							},
@@ -1026,7 +1039,8 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "101",
 									},
-									Key: 101,
+									Key:        101,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 1 * oneGiBInBytes,
 							},
@@ -1039,7 +1053,8 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "102",
 									},
-									Key: 102,
+									Key:        102,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 2 * oneGiBInBytes,
 							},
@@ -1052,7 +1067,8 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "103",
 									},
-									Key: 103,
+									Key:        103,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 3 * oneGiBInBytes,
 							},
@@ -1063,7 +1079,8 @@ var _ = Describe("UpdateStatus", func() {
 										DescriptorFileName: "[datastore] vm/my-disk-104.vmdk",
 										Uuid:               "104",
 									},
-									Key: 104,
+									Key:        104,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 4 * oneGiBInBytes,
 							},
@@ -1082,7 +1099,8 @@ var _ = Describe("UpdateStatus", func() {
 											},
 										},
 									},
-									Key: 105,
+									Key:        105,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 5 * oneGiBInBytes,
 								VDiskId: &vimtypes.ID{
@@ -1390,7 +1408,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
-			When("vm.status.volumes has a stale classic disk", func() {
+			When("vm.status.volumes has a stale (no longer exists) classic disk", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
@@ -1458,10 +1476,90 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
+			When("vm.status.volumes has a stale (not in spec) classic disk", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: pkgutil.GeneratePVCName("disk", "100"),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+									UnitNumber:          ptr.To[int32](3),
+								},
+							},
+						},
+					}
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:      "my-old-name",
+							DiskUUID:  "100",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						},
+					}
+				})
+				Specify("status.volumes no longer includes the stale classic disk", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
+							DiskUUID: "100",
+							Type:     vmopv1.VolumeTypeClassic,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								ProviderID: "my-provider-id",
+								KeyID:      "my-key-id",
+							},
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
+							DiskUUID:  "101",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
+							DiskUUID:  "102",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
+							DiskUUID:  "103",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
+							DiskUUID:  "104",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+
 			When("there is a classic disk w an invalid path", func() {
 				BeforeEach(func() {
 					vmCtx.MoVM.Config.Hardware.
-						Device[0].(*vimtypes.VirtualDisk).
+						Device[1].(*vimtypes.VirtualDisk).
 						Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).
 						FileName = "invalid"
 				})
@@ -1507,7 +1605,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
-			When("brownfield vm was upgraded from v1alpha3 VM, it has a classic volume which doesn't has 'requested'", func() {
+			When("brownfield vm was upgraded from v1alpha3 VM, it has a classic volume which doesn't have 'requested'", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{

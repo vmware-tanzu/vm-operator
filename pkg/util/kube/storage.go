@@ -61,6 +61,11 @@ func GetPVCZoneConstraints(
 	var zones sets.Set[string]
 
 	for _, pvc := range pvcs {
+		if pvc.Spec.DataSourceRef != nil {
+			// Do not worry about PVCs with data source refs.
+			continue
+		}
+
 		var z sets.Set[string]
 
 		// We don't expect anything else but check since we check CSI specific annotations below.

@@ -7781,6 +7781,18 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 	})
 
 	Context("Volume PVC immutable fields", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
 		DescribeTable("Updates", doTest,
 			Entry("should allow identical ApplicationType",
 				testParams{

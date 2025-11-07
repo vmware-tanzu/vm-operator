@@ -156,6 +156,7 @@ func controllerMutationTests() {
 	testControllerTypeAgnostic(func() *unitMutationWebhookContext { return ctx })
 	testSCSISharingMode(func() *unitMutationWebhookContext { return ctx })
 	testMultipleControllerTypes(func() *unitMutationWebhookContext { return ctx })
+	testSetPVCVolumesDefaults(func() *unitMutationWebhookContext { return ctx })
 }
 
 func testNonPVCVolumes(getCtx func() *unitMutationWebhookContext) {
@@ -279,7 +280,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 				}
 				params.setControllers(ctx.vm.Spec.Hardware, []vmopv1util.ControllerSpec{
-					params.createController(0, vmopv1.VirtualControllerSharingModeNone),
+					params.createController(1, vmopv1.VirtualControllerSharingModeNone),
 				})
 
 				// Add existing volume in spec at unit 0 to show controller has some capacity used.
@@ -292,7 +293,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 									ClaimName: "existing-pvc",
 								},
 								ControllerType:      controllerType,
-								ControllerBusNumber: ptr.To(int32(0)),
+								ControllerBusNumber: ptr.To(int32(1)),
 								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
@@ -319,9 +320,9 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 
 				// New volume should be assigned to existing controller.
 				pvc := ctx.vm.Spec.Volumes[1].PersistentVolumeClaim
-				Expect(*pvc.ControllerBusNumber).To(Equal(int32(0)))
+				Expect(*pvc.ControllerBusNumber).To(Equal(int32(1)))
 				Expect(pvc.UnitNumber).ToNot(BeNil())
-				Expect(*pvc.UnitNumber).To(Equal(int32(1))) // Unit 0 is occupied by existing volume.
+				Expect(*pvc.UnitNumber).To(Equal(int32(1))) // Should not use Bus 1, and 0 is occupied.
 			},
 			Entry("SCSI controller", vmopv1.VirtualControllerTypeSCSI),
 			Entry("SATA controller", vmopv1.VirtualControllerTypeSATA),
@@ -334,7 +335,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				params := controllerTestParamsForType(controllerType)
 
 				// Create first controller.
-				firstController := params.createController(0, vmopv1.VirtualControllerSharingModeNone)
+				firstController := params.createController(1, vmopv1.VirtualControllerSharingModeNone)
 				maxSlots := firstController.MaxSlots()
 				reservedUnit := firstController.ReservedUnitNumber()
 
@@ -355,7 +356,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 										ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 									},
 									ControllerType:      controllerType,
-									ControllerBusNumber: ptr.To(int32(0)),
+									ControllerBusNumber: ptr.To(int32(1)),
 									UnitNumber:          ptr.To(i),
 								},
 							},
@@ -376,20 +377,25 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 					},
 				})
 
+				// IDE only have 2 buses
 				mutated, err := mutation.AddControllersForVolumes(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
 				Expect(err).ToNot(HaveOccurred())
+				if controllerType == vmopv1.VirtualControllerTypeIDE {
+					Expect(mutated).To(BeFalse())
+					return
+				}
 				Expect(mutated).To(BeTrue())
 
 				// Should have 2 controllers now.
 				Expect(params.getControllers(ctx.vm.Spec.Hardware)).To(Equal(2))
 
-				// Second controller should be at bus 1.
+				// Second controller should be at bus 2, index 1. Since bus Number 0 is skipped
 				secondController := params.getController(ctx.vm.Spec.Hardware, 1)
-				Expect(vmopv1util.GenerateControllerID(secondController).BusNumber).To(Equal(int32(1)))
+				Expect(vmopv1util.GenerateControllerID(secondController).BusNumber).To(Equal(int32(2)))
 
 				// New volume should be assigned to new controller.
 				pvc := ctx.vm.Spec.Volumes[len(ctx.vm.Spec.Volumes)-1].PersistentVolumeClaim
-				Expect(*pvc.ControllerBusNumber).To(Equal(int32(1)))
+				Expect(*pvc.ControllerBusNumber).To(Equal(int32(2)))
 				Expect(*pvc.UnitNumber).To(Equal(int32(0)))
 			},
 			Entry("SCSI controller at capacity", vmopv1.VirtualControllerTypeSCSI),
@@ -413,7 +419,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 
 				// Create max controllers and fill them all using volumes in spec.
 				controllers := make([]vmopv1util.ControllerSpec, 0, maxPerVM)
-				for busNum := int32(0); busNum < maxPerVM; busNum++ {
+				for busNum := range maxPerVM {
 					controller := params.createController(busNum, vmopv1.VirtualControllerSharingModeNone)
 					controllers = append(controllers, controller)
 
@@ -562,7 +568,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				if ctx.vm.Spec.Hardware == nil {
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 				}
-				controller := params.createController(0, vmopv1.VirtualControllerSharingModeNone)
+				controller := params.createController(1, vmopv1.VirtualControllerSharingModeNone)
 				params.setControllers(ctx.vm.Spec.Hardware, []vmopv1util.ControllerSpec{controller})
 
 				// Determine how many volumes to add based on controller capacity.
@@ -625,7 +631,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				if ctx.vm.Spec.Hardware == nil {
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 				}
-				controller := params.createController(0, vmopv1.VirtualControllerSharingModeNone)
+				controller := params.createController(1, vmopv1.VirtualControllerSharingModeNone)
 				params.setControllers(ctx.vm.Spec.Hardware, []vmopv1util.ControllerSpec{controller})
 
 				reservedUnit := controller.ReservedUnitNumber()
@@ -671,7 +677,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				if ctx.vm.Spec.Hardware == nil {
 					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 				}
-				controller := params.createController(0, vmopv1.VirtualControllerSharingModeNone)
+				controller := params.createController(1, vmopv1.VirtualControllerSharingModeNone)
 				params.setControllers(ctx.vm.Spec.Hardware, []vmopv1util.ControllerSpec{controller})
 
 				// Add status with disk device at unit 0 (should be ignored).
@@ -680,7 +686,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 					Controllers: []vmopv1.VirtualControllerStatus{
 						{
 							Type:      controllerType,
-							BusNumber: 0,
+							BusNumber: 1,
 							Devices: []vmopv1.VirtualDeviceStatus{
 								{
 									Type:       vmopv1.VirtualDeviceTypeDisk,
@@ -700,7 +706,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 								ClaimName: "new-pvc",
 							},
 							ControllerType:      controllerType,
-							ControllerBusNumber: ptr.To(int32(0)),
+							ControllerBusNumber: ptr.To(int32(1)),
 						},
 					},
 				})
@@ -1155,6 +1161,149 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 				// Should still have the original 3 SATA and 1 IDE controllers.
 				Expect(ctx.vm.Spec.Hardware.SATAControllers).To(HaveLen(3))
 				Expect(ctx.vm.Spec.Hardware.IDEControllers).To(HaveLen(1))
+			})
+		})
+	})
+}
+
+func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
+	Describe("SetPVCVolumeDefaults", func() {
+		var (
+			vm         *vmopv1.VirtualMachine
+			wasMutated bool
+			err        error
+			ctx        *unitMutationWebhookContext
+		)
+
+		BeforeEach(func() {
+			ctx = getCtx()
+
+			vm = ctx.vm.DeepCopy()
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name: "test-volume",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc",
+							},
+						},
+					},
+				},
+			}
+		})
+
+		JustBeforeEach(func() {
+			wasMutated, err = mutation.SetPVCVolumeDefaults(&ctx.WebhookRequestContext, ctx.Client, vm)
+		})
+
+		When("vm has pvc and it doesn't have application type", func() {
+			It("should not set any defaults", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType).To(BeEmpty())
+			})
+		})
+
+		When("vm has pvc and it has application type OracleRAC", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+			})
+
+			It("should set the default PVC volume application type", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
+			})
+		})
+
+		When("vm has pvc and it has application type MicrosoftWSFC", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+			})
+
+			It("should set the default PVC volume application type", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
+			})
+		})
+
+		When("vm has pvc and it has application type other than OracleRAC or MicrosoftWSFC", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+					Name: "test-volume-2",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc-2",
+							},
+							ApplicationType: "invalid",
+						},
+					},
+				})
+			})
+
+			It("should return error with unsupported application type", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(
+					"spec[1].persistentVolumeClaim.applicationType: " +
+						"Unsupported value: \"invalid\":" +
+						" supported values: \"OracleRAC\", \"MicrosoftWSFC\""))
+				Expect(wasMutated).To(BeFalse())
+			})
+		})
+
+		When("vm has multiple pvcs and different application types", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+				vm.Spec.Volumes = append(vm.Spec.Volumes,
+					vmopv1.VirtualMachineVolume{
+						Name: "test-volume-2",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-2",
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+							},
+						},
+					},
+					vmopv1.VirtualMachineVolume{
+						Name: "test-volume-3",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-3",
+								},
+							},
+						},
+					},
+				)
+			})
+
+			It("should set the PVC volume with correct disk mode and sharing mode", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
+				Expect(vm.Spec.Volumes[1].PersistentVolumeClaim.DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
+				Expect(vm.Spec.Volumes[1].PersistentVolumeClaim.SharingMode).To(BeEmpty())
+				Expect(vm.Spec.Volumes[2].PersistentVolumeClaim.DiskMode).To(BeEmpty())
+				Expect(vm.Spec.Volumes[2].PersistentVolumeClaim.SharingMode).To(BeEmpty())
+			})
+		})
+
+		When("vm has no pvc", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+			})
+
+			It("should not set any defaults disk mode and sharing mode", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
 			})
 		})
 	})

@@ -12,6 +12,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
@@ -23,6 +24,7 @@ const (
 	invalidControllerCapacityFmt           = "controller %s:%d full, maxDevices: %d"
 	invalidUnitNumberInUse                 = "controller unit number %s:%d:%d is already in use"
 	invalidControllerBusNumberZero         = "bus number 0 is reserved for the default controller"
+	invalidControllersCountFmt             = "must have exactly %d controllers"
 )
 
 // validateControllers validates that all volumes are attached
@@ -49,7 +51,7 @@ func (v validator) validateControllers(
 	}
 
 	var allErrs field.ErrorList
-	volumesPath := field.NewPath("spec", "hardware")
+	hardwarePath := field.NewPath("spec", "hardware")
 
 	// Validate that when creating a VM, the bus number is not 0 because
 	// it is reserved for the default controller.
@@ -57,7 +59,7 @@ func (v validator) validateControllers(
 	for _, controller := range vm.Spec.Hardware.SCSIControllers {
 		if oldVM == nil && controller.BusNumber == 0 {
 			allErrs = append(allErrs, field.Invalid(
-				volumesPath.Child("scsiControllers", "busNumber"),
+				hardwarePath.Child("scsiControllers", "busNumber"),
 				controller.BusNumber,
 				invalidControllerBusNumberZero,
 			))
@@ -68,7 +70,7 @@ func (v validator) validateControllers(
 	for _, controller := range vm.Spec.Hardware.SATAControllers {
 		if oldVM == nil && controller.BusNumber == 0 {
 			allErrs = append(allErrs, field.Invalid(
-				volumesPath.Child("sataControllers", "busNumber"),
+				hardwarePath.Child("sataControllers", "busNumber"),
 				controller.BusNumber,
 				invalidControllerBusNumberZero,
 			))
@@ -79,7 +81,7 @@ func (v validator) validateControllers(
 	for _, controller := range vm.Spec.Hardware.NVMEControllers {
 		if oldVM == nil && controller.BusNumber == 0 {
 			allErrs = append(allErrs, field.Invalid(
-				volumesPath.Child("nvmeControllers", "busNumber"),
+				hardwarePath.Child("nvmeControllers", "busNumber"),
 				controller.BusNumber,
 				invalidControllerBusNumberZero,
 			))
@@ -87,15 +89,14 @@ func (v validator) validateControllers(
 		}
 	}
 
-	for _, controller := range vm.Spec.Hardware.IDEControllers {
-		if oldVM == nil && controller.BusNumber == 0 {
-			allErrs = append(allErrs, field.Invalid(
-				volumesPath.Child("ideControllers", "busNumber"),
-				controller.BusNumber,
-				invalidControllerBusNumberZero,
-			))
-			continue
-		}
+	maxIDEControllers := int(vmopv1.VirtualControllerTypeIDE.MaxCount())
+	numIDEControllers := len(vm.Spec.Hardware.IDEControllers)
+	if numIDEControllers != maxIDEControllers {
+		allErrs = append(allErrs, field.Invalid(
+			hardwarePath.Child("ideControllers"),
+			fmt.Sprintf("%d controllers", numIDEControllers),
+			fmt.Sprintf(invalidControllersCountFmt, maxIDEControllers),
+		))
 	}
 
 	allErrs = append(allErrs, v.validateControllerSlots(ctx, vm)...)
@@ -104,12 +105,8 @@ func (v validator) validateControllers(
 }
 
 func (v validator) validateControllerSlots(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
-
-	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-		return nil
-	}
 
 	var allErrs field.ErrorList
 
@@ -121,13 +118,13 @@ func (v validator) validateControllerSlots(
 	volumesPath := field.NewPath("spec", "volumes")
 
 	var (
-		// specControllers builds a map of controller ID to controller
-		// specification from spec.hardware.controllers.
-		specControllers = vmopv1util.BuildVMControllersMap(*vm)
+		// controllerSpecs is a collection of controller specifications from
+		// the VM's spec.hardware.controllers.
+		controllerSpecs = vmopv1util.NewControllerSpecs(*vm)
 
 		// occupiedSlots builds a map of controller ID to a map of unit numbers
 		// that are already in use on the specified controller.
-		occupiedSlots = make(map[pkgutil.ControllerID]map[int32]struct{})
+		occupiedSlots = make(map[pkgutil.ControllerID]sets.Set[int32])
 	)
 
 	// Add CD-ROM controllers to the occupied slots to check for conflicts.
@@ -142,9 +139,9 @@ func (v validator) validateControllerSlots(
 			}
 
 			if occupiedSlots[controllerID] == nil {
-				occupiedSlots[controllerID] = make(map[int32]struct{})
+				occupiedSlots[controllerID] = sets.New[int32]()
 			}
-			occupiedSlots[controllerID][*cdrom.UnitNumber] = struct{}{}
+			occupiedSlots[controllerID].Insert(*cdrom.UnitNumber)
 		}
 	}
 
@@ -188,7 +185,8 @@ func (v validator) validateControllerSlots(
 			exists           bool
 		)
 
-		if targetController, exists = specControllers[controllerKey.ControllerType][controllerKey.BusNumber]; !exists {
+		if targetController, exists = controllerSpecs.Get(
+			controllerKey.ControllerType, controllerKey.BusNumber); !exists {
 			allErrs = append(allErrs, field.Invalid(
 				volPath.Child("persistentVolumeClaim", "controllerBusNumber"),
 				controllerKey.BusNumber,
@@ -229,11 +227,11 @@ func (v validator) validateControllerSlots(
 		}
 
 		if occupiedSlots[controllerKey] == nil {
-			occupiedSlots[controllerKey] = make(map[int32]struct{})
+			occupiedSlots[controllerKey] = sets.New[int32]()
 		}
 
 		// Validate unit number is not already in use.
-		if _, exists := occupiedSlots[controllerKey][unitNum]; exists {
+		if occupiedSlots[controllerKey].Has(unitNum) {
 			allErrs = append(allErrs, field.Invalid(
 				volPath.Child("persistentVolumeClaim", "unitNumber"),
 				unitNum,
@@ -247,8 +245,7 @@ func (v validator) validateControllerSlots(
 		}
 
 		// Validate controller is not at capacity after adding this volume.
-		//nolint:gosec // disable G115 - len() result is bounded by MaxSlots which is int32.
-		if int32(len(occupiedSlots[controllerKey])) >= targetController.MaxSlots() {
+		if occupiedSlots[controllerKey].Len() >= int(targetController.MaxSlots()) {
 			allErrs = append(allErrs, field.Invalid(
 				volPath.Child("persistentVolumeClaim", "unitNumber"),
 				unitNum,
@@ -259,7 +256,7 @@ func (v validator) validateControllerSlots(
 		}
 
 		// Mark this slot as occupied for subsequent volumes.
-		occupiedSlots[controllerKey][unitNum] = struct{}{}
+		occupiedSlots[controllerKey].Insert(unitNum)
 	}
 
 	return allErrs

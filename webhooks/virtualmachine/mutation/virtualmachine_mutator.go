@@ -751,11 +751,18 @@ func SetDefaultControllers(
 	if vm.Spec.Hardware == nil {
 		vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 	}
-	vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
-		{BusNumber: 0},
-		{BusNumber: 1},
+
+	if len(vm.Spec.Hardware.IDEControllers) == 0 {
+		for i := int32(0); i < vmopv1.VirtualControllerTypeIDE.MaxCount(); i++ {
+			vm.Spec.Hardware.IDEControllers = append(
+				vm.Spec.Hardware.IDEControllers,
+				vmopv1.IDEControllerSpec{BusNumber: i},
+			)
+		}
+		return true, nil
 	}
-	return true, nil
+
+	return false, nil
 }
 
 // SetLastResizeAnnotations sets the last resize annotation as needed when the class name changes.

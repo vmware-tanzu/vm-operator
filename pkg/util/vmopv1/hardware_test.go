@@ -365,3 +365,199 @@ var _ = Describe("CreateNewController", func() {
 		Expect(controller).To(BeNil())
 	})
 })
+
+var _ = Describe("ControllerSpecs", func() {
+	var (
+		vm              vmopv1.VirtualMachine
+		controllerSpecs vmopv1util.ControllerSpecs
+	)
+
+	BeforeEach(func() {
+		vm = vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Hardware: &vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+						{
+							BusNumber:   1,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+						},
+					},
+					SATAControllers: []vmopv1.SATAControllerSpec{
+						{
+							BusNumber: 0,
+						},
+					},
+					NVMEControllers: []vmopv1.NVMEControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+					},
+					IDEControllers: []vmopv1.IDEControllerSpec{
+						{
+							BusNumber: 0,
+						},
+					},
+				},
+			},
+		}
+		controllerSpecs = vmopv1util.NewControllerSpecs(vm)
+	})
+
+	Describe("NewControllerSpecs", func() {
+		It("should create ControllerSpecs from VM hardware spec", func() {
+			Expect(controllerSpecs).ToNot(BeNil())
+		})
+
+		It("should handle VM with nil hardware spec", func() {
+			vmWithoutHardware := vmopv1.VirtualMachine{}
+			specs := vmopv1util.NewControllerSpecs(vmWithoutHardware)
+			Expect(specs).ToNot(BeNil())
+			Expect(specs.CountControllers(vmopv1.VirtualControllerTypeSCSI)).To(Equal(0))
+		})
+
+		It("should load all controller types", func() {
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSCSI)).To(Equal(2))
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSATA)).To(Equal(1))
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeNVME)).To(Equal(1))
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeIDE)).To(Equal(1))
+		})
+	})
+
+	Describe("Get", func() {
+		It("should retrieve existing controller by type and bus number", func() {
+			controller, ok := controllerSpecs.Get(vmopv1.VirtualControllerTypeSCSI, 0)
+			Expect(ok).To(BeTrue())
+			Expect(controller).ToNot(BeNil())
+
+			scsiController, ok := controller.(vmopv1.SCSIControllerSpec)
+			Expect(ok).To(BeTrue())
+			Expect(scsiController.BusNumber).To(Equal(int32(0)))
+			Expect(scsiController.Type).To(Equal(vmopv1.SCSIControllerTypeParaVirtualSCSI))
+		})
+
+		It("should return false for non-existent controller type", func() {
+			controller, ok := controllerSpecs.Get(vmopv1.VirtualControllerTypeSCSI, 99)
+			Expect(ok).To(BeFalse())
+			Expect(controller).To(BeNil())
+		})
+
+		It("should return false for non-existent bus number", func() {
+			emptyVM := vmopv1.VirtualMachine{}
+			emptySpecs := vmopv1util.NewControllerSpecs(emptyVM)
+			controller, ok := emptySpecs.Get(vmopv1.VirtualControllerTypeSCSI, 0)
+			Expect(ok).To(BeFalse())
+			Expect(controller).To(BeNil())
+		})
+
+		It("should retrieve controllers with different sharing modes", func() {
+			controller0, ok := controllerSpecs.Get(vmopv1.VirtualControllerTypeSCSI, 0)
+			Expect(ok).To(BeTrue())
+
+			controller1, ok := controllerSpecs.Get(vmopv1.VirtualControllerTypeSCSI, 1)
+			Expect(ok).To(BeTrue())
+
+			scsi0, ok := controller0.(vmopv1.SCSIControllerSpec)
+			Expect(ok).To(BeTrue())
+			Expect(scsi0.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
+
+			scsi1, ok := controller1.(vmopv1.SCSIControllerSpec)
+			Expect(ok).To(BeTrue())
+			Expect(scsi1.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModePhysical))
+		})
+	})
+
+	Describe("Set", func() {
+		It("should add a new controller", func() {
+			newController := vmopv1.SCSIControllerSpec{
+				BusNumber:   2,
+				Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+				SharingMode: vmopv1.VirtualControllerSharingModeVirtual,
+			}
+
+			controllerSpecs.Set(vmopv1.VirtualControllerTypeSCSI, 2, newController)
+
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSCSI)).To(Equal(3))
+			retrieved, ok := controllerSpecs.Get(vmopv1.VirtualControllerTypeSCSI, 2)
+			Expect(ok).To(BeTrue())
+			Expect(retrieved).ToNot(BeNil())
+
+			scsiController, ok := retrieved.(vmopv1.SCSIControllerSpec)
+			Expect(ok).To(BeTrue())
+			Expect(scsiController.BusNumber).To(Equal(int32(2)))
+			Expect(scsiController.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeVirtual))
+		})
+
+		It("should update an existing controller", func() {
+			updatedController := vmopv1.SCSIControllerSpec{
+				BusNumber:   0,
+				Type:        vmopv1.SCSIControllerTypeLsiLogic,
+				SharingMode: vmopv1.VirtualControllerSharingModeVirtual,
+			}
+
+			controllerSpecs.Set(vmopv1.VirtualControllerTypeSCSI, 0, updatedController)
+
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSCSI)).To(Equal(2))
+
+			retrieved, ok := controllerSpecs.Get(vmopv1.VirtualControllerTypeSCSI, 0)
+			Expect(ok).To(BeTrue())
+			scsiController, ok := retrieved.(vmopv1.SCSIControllerSpec)
+			Expect(ok).To(BeTrue())
+			Expect(scsiController.Type).To(Equal(vmopv1.SCSIControllerTypeLsiLogic))
+			Expect(scsiController.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeVirtual))
+		})
+
+		It("should add controller of new type", func() {
+			emptyVM := vmopv1.VirtualMachine{}
+			emptySpecs := vmopv1util.NewControllerSpecs(emptyVM)
+
+			newController := vmopv1.SATAControllerSpec{
+				BusNumber: 0,
+			}
+
+			emptySpecs.Set(vmopv1.VirtualControllerTypeSATA, 0, newController)
+
+			Expect(emptySpecs.CountControllers(vmopv1.VirtualControllerTypeSATA)).To(Equal(1))
+			retrieved, ok := emptySpecs.Get(vmopv1.VirtualControllerTypeSATA, 0)
+			Expect(ok).To(BeTrue())
+			Expect(retrieved).ToNot(BeNil())
+		})
+	})
+
+	Describe("CountControllers", func() {
+		It("should return correct count for each controller type", func() {
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSCSI)).To(Equal(2))
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSATA)).To(Equal(1))
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeNVME)).To(Equal(1))
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeIDE)).To(Equal(1))
+		})
+
+		It("should return 0 for controller type with no controllers", func() {
+			emptyVM := vmopv1.VirtualMachine{}
+			emptySpecs := vmopv1util.NewControllerSpecs(emptyVM)
+
+			Expect(emptySpecs.CountControllers(vmopv1.VirtualControllerTypeSCSI)).To(Equal(0))
+			Expect(emptySpecs.CountControllers(vmopv1.VirtualControllerTypeSATA)).To(Equal(0))
+			Expect(emptySpecs.CountControllers(vmopv1.VirtualControllerTypeNVME)).To(Equal(0))
+			Expect(emptySpecs.CountControllers(vmopv1.VirtualControllerTypeIDE)).To(Equal(0))
+		})
+
+		It("should update count after adding controllers", func() {
+			initialCount := controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSCSI)
+
+			newController := vmopv1.SCSIControllerSpec{
+				BusNumber: 3,
+				Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
+			}
+			controllerSpecs.Set(vmopv1.VirtualControllerTypeSCSI, 3, newController)
+
+			Expect(controllerSpecs.CountControllers(vmopv1.VirtualControllerTypeSCSI)).To(Equal(initialCount + 1))
+		})
+	})
+})

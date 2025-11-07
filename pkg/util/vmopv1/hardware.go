@@ -125,41 +125,6 @@ func CreateNewController(
 	}
 }
 
-// BuildVMControllersMap builds a map of controller type to a map of bus number
-// to controller specification from the specified VM's spec.hardware.controllers.
-func BuildVMControllersMap(
-	vm vmopv1.VirtualMachine,
-) map[vmopv1.VirtualControllerType]map[int32]ControllerSpec {
-
-	existingControllers := make(map[vmopv1.VirtualControllerType]map[int32]ControllerSpec)
-
-	if vm.Spec.Hardware == nil {
-		return existingControllers
-	}
-
-	existingControllers[vmopv1.VirtualControllerTypeSCSI] = make(map[int32]ControllerSpec)
-	for _, controller := range vm.Spec.Hardware.SCSIControllers {
-		existingControllers[vmopv1.VirtualControllerTypeSCSI][controller.BusNumber] = controller
-	}
-
-	existingControllers[vmopv1.VirtualControllerTypeSATA] = make(map[int32]ControllerSpec)
-	for _, controller := range vm.Spec.Hardware.SATAControllers {
-		existingControllers[vmopv1.VirtualControllerTypeSATA][controller.BusNumber] = controller
-	}
-
-	existingControllers[vmopv1.VirtualControllerTypeNVME] = make(map[int32]ControllerSpec)
-	for _, controller := range vm.Spec.Hardware.NVMEControllers {
-		existingControllers[vmopv1.VirtualControllerTypeNVME][controller.BusNumber] = controller
-	}
-
-	existingControllers[vmopv1.VirtualControllerTypeIDE] = make(map[int32]ControllerSpec)
-	for _, controller := range vm.Spec.Hardware.IDEControllers {
-		existingControllers[vmopv1.VirtualControllerTypeIDE][controller.BusNumber] = controller
-	}
-
-	return existingControllers
-}
-
 // GetManagedVolumesWithPVC returns all volumes from the VM spec that have
 // a PersistentVolumeClaim and are managed (not instance storage).
 func GetManagedVolumesWithPVC(
@@ -175,4 +140,98 @@ func GetManagedVolumesWithPVC(
 	}
 
 	return volumes
+}
+
+// ControllerSpecs is a collection of controller specifications.
+type ControllerSpecs struct {
+	// controllers is a map of controller type to a map of bus numbers to
+	// controller specifications.
+	controllers map[vmopv1.VirtualControllerType]map[int32]ControllerSpec
+}
+
+// NewControllerSpecs creates a new ControllerSpecs from the specified VM's
+// spec.hardware.controllers.
+func NewControllerSpecs(
+	vm vmopv1.VirtualMachine,
+) ControllerSpecs {
+
+	controllerSpecs := ControllerSpecs{
+		controllers: make(map[vmopv1.VirtualControllerType]map[int32]ControllerSpec),
+	}
+
+	if vm.Spec.Hardware == nil {
+		return controllerSpecs
+	}
+
+	for _, controller := range vm.Spec.Hardware.SCSIControllers {
+		controllerSpecs.Set(
+			vmopv1.VirtualControllerTypeSCSI,
+			controller.BusNumber,
+			controller,
+		)
+	}
+
+	for _, controller := range vm.Spec.Hardware.SATAControllers {
+		controllerSpecs.Set(
+			vmopv1.VirtualControllerTypeSATA,
+			controller.BusNumber,
+			controller,
+		)
+	}
+
+	for _, controller := range vm.Spec.Hardware.NVMEControllers {
+		controllerSpecs.Set(
+			vmopv1.VirtualControllerTypeNVME,
+			controller.BusNumber,
+			controller,
+		)
+	}
+
+	for _, controller := range vm.Spec.Hardware.IDEControllers {
+		controllerSpecs.Set(
+			vmopv1.VirtualControllerTypeIDE,
+			controller.BusNumber,
+			controller,
+		)
+	}
+
+	return controllerSpecs
+}
+
+// Get returns the controller specification for the specified
+// controller type and bus number. Returns (nil, false) if not found.
+func (c ControllerSpecs) Get(
+	controllerType vmopv1.VirtualControllerType,
+	busNumber int32,
+) (ControllerSpec, bool) {
+	if controllers, exists := c.controllers[controllerType]; exists {
+		if controller, exists := controllers[busNumber]; exists {
+			return controller, true
+		}
+	}
+	return nil, false
+}
+
+// Set sets the controller specification for the specified controller type and
+// bus number.
+func (c ControllerSpecs) Set(
+	controllerType vmopv1.VirtualControllerType,
+	busNumber int32,
+	controller ControllerSpec,
+) {
+	if _, exists := c.controllers[controllerType]; !exists {
+		c.controllers[controllerType] = make(map[int32]ControllerSpec)
+	}
+	c.controllers[controllerType][busNumber] = controller
+}
+
+// CountControllers returns the number of controllers for the specified
+// controller type.
+func (c ControllerSpecs) CountControllers(
+	controllerType vmopv1.VirtualControllerType,
+) int {
+	if _, exists := c.controllers[controllerType]; !exists {
+		return 0
+	}
+	return len(c.controllers[controllerType])
 }

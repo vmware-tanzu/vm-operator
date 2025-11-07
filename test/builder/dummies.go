@@ -414,6 +414,14 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 						AllowGuestControl: ptr.To(true),
 					},
 				},
+				IDEControllers: []vmopv1.IDEControllerSpec{
+					{
+						BusNumber: 0,
+					},
+					{
+						BusNumber: 1,
+					},
+				},
 			},
 			GuestID: string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
 		},

@@ -120,6 +120,14 @@ jobs:
     - name: Verify unfocus
       run: make verify-unfocus
 
+  verify-filenames:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Verify filenames
+      run: make verify-filenames
+
   verify-manifests:
     needs:
     - verify-go-modules

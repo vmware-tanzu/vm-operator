@@ -6,6 +6,7 @@ package mutation
 
 import (
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -208,9 +209,19 @@ func determineTargetController(
 			*pvc.ControllerBusNumber, sharingMode)
 	}
 
+	// If an existing controller does not exist with an available slot,
+	// create a new one if a bus is available.
+	startingBusNum := int32(0)
+	if !pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		// If all disks are PVCs is not enabled we need to skip bus number 0,
+		// because controller 0 and bus 0 are atleast reserved to the boot disk,
+		// which will not be backfilled to the PVCs without this feature enabled.
+		startingBusNum = int32(1)
+	}
+
 	// If a specific bus number is not requested, get the first controller
 	// matching the type and sharing mode and that has an available slot.
-	for busNum := range controllerType.MaxCount() {
+	for busNum := startingBusNum; busNum < controllerType.MaxCount(); busNum++ {
 		controllerID := pkgutil.ControllerID{
 			ControllerType: controllerType,
 			BusNumber:      busNum,
@@ -234,15 +245,6 @@ func determineTargetController(
 		}
 	}
 
-	// If an existing controller does not exist with an available slot,
-	// create a new one if a bus is available.
-	startingBusNum := int32(0)
-	if !pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-		// If all disks are PVCs is not enabled we need to skip bus number 0,
-		// because controller 0 and bus 0 are atleast reserved to the boot disk,
-		// which will not be backfilled to the PVCs without this feature enabled.
-		startingBusNum = int32(1)
-	}
 	for busNum := startingBusNum; busNum < controllerType.MaxCount(); busNum++ {
 		if _, ok := controllerSpecs.Get(controllerType, busNum); !ok {
 			return vmopv1util.CreateNewController(controllerType, busNum, sharingMode)
@@ -251,4 +253,47 @@ func determineTargetController(
 
 	// No available bus numbers found.
 	return nil
+}
+
+// SetPVCVolumeDefaults sets the default configuration for a volume
+// based on its application type.
+func SetPVCVolumeDefaults(
+	ctx *pkgctx.WebhookRequestContext,
+	c ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (bool, error) {
+
+	var wasMutated bool
+	for i, v := range vm.Spec.Volumes {
+		if v.PersistentVolumeClaim == nil {
+			continue
+		}
+
+		if v.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
+			continue
+		}
+
+		switch v.PersistentVolumeClaim.ApplicationType {
+		case vmopv1.VolumeApplicationTypeOracleRAC:
+			v.PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+			v.PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+			wasMutated = true
+		case vmopv1.VolumeApplicationTypeMicrosoftWSFC:
+			v.PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+			wasMutated = true
+		case "":
+			// Skip.
+		default:
+			// This should already fail at the schema validation already.
+			return false, field.NotSupported(
+				field.NewPath("spec").Index(i).
+					Child("persistentVolumeClaim").
+					Child("applicationType"),
+				v.PersistentVolumeClaim.ApplicationType,
+				[]string{
+					string(vmopv1.VolumeApplicationTypeOracleRAC),
+					string(vmopv1.VolumeApplicationTypeMicrosoftWSFC),
+				})
+		}
+	}
+	return wasMutated, nil
 }

@@ -790,7 +790,7 @@ func intgTestsMutating() {
 		})
 	})
 
-	Context("SetPVCVolumeDefaultsOnCreate", func() {
+	Context("SetPVCVolumeDefaults", func() {
 		JustBeforeEach(func() {
 			err := ctx.Client.Create(ctx, ctx.vm)
 			Expect(err).ToNot(HaveOccurred())

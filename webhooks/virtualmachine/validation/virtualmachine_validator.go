@@ -1259,41 +1259,41 @@ func (v validator) validateVolumeWithPVC(
 		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
 	}
 
-	if oldVol != nil && oldVol.PersistentVolumeClaim != nil &&
-		oldVol.PersistentVolumeClaim.ClaimName == vol.PersistentVolumeClaim.ClaimName {
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.PersistentVolumeClaim.ApplicationType,
-			oldVol.PersistentVolumeClaim.ApplicationType,
-			pvcPath.Child("applicationType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.PersistentVolumeClaim.ControllerBusNumber,
-			oldVol.PersistentVolumeClaim.ControllerBusNumber,
-			pvcPath.Child("controllerBusNumber"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.PersistentVolumeClaim.ControllerType,
-			oldVol.PersistentVolumeClaim.ControllerType,
-			pvcPath.Child("controllerType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.PersistentVolumeClaim.DiskMode,
-			oldVol.PersistentVolumeClaim.DiskMode,
-			pvcPath.Child("diskMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.PersistentVolumeClaim.SharingMode,
-			oldVol.PersistentVolumeClaim.SharingMode,
-			pvcPath.Child("sharingMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.PersistentVolumeClaim.UnitNumber,
-			oldVol.PersistentVolumeClaim.UnitNumber,
-			pvcPath.Child("unitNumber"))...)
-	}
-
 	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if oldVol != nil && oldVol.PersistentVolumeClaim != nil &&
+			oldVol.PersistentVolumeClaim.ClaimName == vol.PersistentVolumeClaim.ClaimName {
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.PersistentVolumeClaim.ApplicationType,
+				oldVol.PersistentVolumeClaim.ApplicationType,
+				pvcPath.Child("applicationType"))...)
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.PersistentVolumeClaim.ControllerBusNumber,
+				oldVol.PersistentVolumeClaim.ControllerBusNumber,
+				pvcPath.Child("controllerBusNumber"))...)
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.PersistentVolumeClaim.ControllerType,
+				oldVol.PersistentVolumeClaim.ControllerType,
+				pvcPath.Child("controllerType"))...)
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.PersistentVolumeClaim.DiskMode,
+				oldVol.PersistentVolumeClaim.DiskMode,
+				pvcPath.Child("diskMode"))...)
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.PersistentVolumeClaim.SharingMode,
+				oldVol.PersistentVolumeClaim.SharingMode,
+				pvcPath.Child("sharingMode"))...)
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.PersistentVolumeClaim.UnitNumber,
+				oldVol.PersistentVolumeClaim.UnitNumber,
+				pvcPath.Child("unitNumber"))...)
+		}
+
 		// Validate PVC access mode, sharing mode, and controller combinations
 		// if VM is being created or the PVC is being updated.
 		// We skip the validation if the PVC is not being updated because

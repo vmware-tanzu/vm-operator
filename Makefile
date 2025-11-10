@@ -107,7 +107,7 @@ IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
 # Code coverage files
-COVERAGE_FILE := cover.out
+COVERAGE_FILE ?= cover.out
 
 # Gather a set of root packages that have at least one file that matches
 # the pattern *_test.go as a child or descendent in that directory.
@@ -222,7 +222,6 @@ test-api: ## Run API tests
 
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)
-test-nocover: | test-api
 test-nocover: ## Run tests sans coverage
 	hack/test.sh $(COVERED_PKGS)
 
@@ -884,7 +883,11 @@ vulncheck-go: $(GOVULNCHECK)
 
 .PHONY: clean
 clean: image-remove ## Remove all generated files
-	rm -rf bin *.out $(ARTIFACTS_DIR)
+	rm -rf bin $(ARTIFACTS_DIR)
+	rm -f covmeta.* covcounters.* cover.* coverage*
+	find . -name '*.test' -delete
+	find . -name '*.report' -delete
+	find . -name '*.out' -delete
 
 .PHONY: verify
 verify: prereqs ## Run static code analysis

@@ -6,7 +6,7 @@ env:
   # sometimes we need to explicitly override the Go version, ex. CVEs,
   # when it is not possible to update the go.mod version yet, ex. the
   # internal builds do not yet support that version of Go.
-  GO_VERSION:
+  GO_VERSION: ""
 
 on:
   pull_request:
@@ -221,6 +221,62 @@ jobs:
     needs:
     - verify-go-modules
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - name: api
+          covered-pkgs: ./api/...
+          make-target: test-nocover
+          upload-coverage: false
+        - name: crd
+          covered-pkgs: ./pkg/crd
+          make-target: test
+          upload-coverage: true
+        - name: controllers
+          covered-pkgs: ./controllers
+          make-target: test
+          upload-coverage: true
+        - name: webhooks
+          covered-pkgs: ./webhooks
+          make-target: test
+          upload-coverage: true
+        - name: services
+          covered-pkgs: ./services
+          make-target: test
+          upload-coverage: true
+        - name: util-vsphere-vm
+          covered-pkgs: ./pkg/util/vsphere/vm
+          make-target: test
+          upload-coverage: true
+        - name: vmprovider
+          covered-pkgs: ./pkg/providers/vsphere
+          make-target: test
+          go-test-recursive: no
+          upload-coverage: true
+        - name: vmprovider-vmlifecycle
+          covered-pkgs: ./pkg/providers/vsphere/vmlifecycle
+          make-target: test
+          upload-coverage: true
+        - name: vmprovider-virtualmachine
+          covered-pkgs: ./pkg/providers/vsphere/virtualmachine
+          make-target: test
+          upload-coverage: true
+        - name: vmprovider-other
+          covered-pkgs: ./pkg/providers/vsphere
+          make-target: test
+          upload-coverage: true
+          go-test-skip-file: pkg/providers/vsphere/(([^/]+\.go)|((vmlifecycle|virtualmachine)/\.*))
+        - name: vmconfig
+          covered-pkgs: ./pkg/vmconfig
+          make-target: test
+          upload-coverage: true
+        - name: other
+          covered-pkgs: ./pkg
+          make-target: test
+          upload-coverage: true
+          go-test-skip-pkgs: ./pkg/providers,./pkg/crd,./pkg/util/vsphere/vm,./pkg/vmconfig
+    name: test-${{ matrix.name }}
     steps:
     - name: Check out code
       uses: actions/checkout@v4
@@ -231,11 +287,48 @@ jobs:
         go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
-    - name: Test
-      run: make test
-    - name: Convert coverage to XML report
+    - name: test
+      env:
+        COVERED_PKGS: ${{ matrix.covered-pkgs }}
+        GO_TEST_RECURSIVE: ${{ matrix.go-test-recursive }}
+        GO_TEST_SKIP_FILE: ${{ matrix.go-test-skip-file }}
+        GO_TEST_SKIP_PKGS: ${{ matrix.go-test-skip-pkgs }}
+      run: make ${{ matrix.make-target }}
+    - name: store-coverage
+      if: github.event_name == 'pull_request' && matrix.upload-coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-${{ matrix.name }}
+        path: |
+          covmeta.*
+          covcounters.*
+
+  coverage:
+    needs:
+    - test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: load-coverage
+      uses: actions/download-artifact@v4
+      with:
+        pattern: coverage-*
+        merge-multiple: true
+    - name: merge-coverage
+      run: |
+        go tool covdata merge -i "$(pwd)" -o /tmp/
+        go tool covdata textfmt -i /tmp/ -o "$(pwd)/cover.out"
+    - name: coverage-to-xml
       run: make coverage-xml
-    - name: Produce code coverage report
+    - name: coverage-report
       uses: irongut/CodeCoverageSummary@v1.3.0
       with:
         filename: cover.xml
@@ -247,13 +340,13 @@ jobs:
         indicators: true
         output: both
         thresholds: '79 89' # really '80 90', but the values are not inclusive
-    - name: Save pull request ID
+    - name: save-pull-request-id
       if: github.event_name == 'pull_request'
       env:
         PR_NUMBER: ${{ github.event.number }}
       run: |
         echo "${PR_NUMBER}" >pull_request_id
-    - name: Store code coverage results
+    - name: store-coverage
       if: github.event_name == 'pull_request'
       uses: actions/upload-artifact@v4
       with:

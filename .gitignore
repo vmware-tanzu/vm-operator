@@ -8,6 +8,9 @@ config/crd/external-crds/cns.vmware.com_*
 !config/crd/external-crds/cns.vmware.com_storagepolicyusages.yaml
 
 coverage*.html
+covcounters.*
+covmeta.*
+.coverage
 
 # Created by the VSCode ginkgo plug-in
 ginkgo.report

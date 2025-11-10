@@ -14,9 +14,22 @@ set -x
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 GO_TEST_FLAGS+=("-v")           # verbose
-GO_TEST_FLAGS+=("-r")           # recursive
 GO_TEST_FLAGS+=("--race")       # check for possible races
 GO_TEST_FLAGS+=("--keep-going") # do not fail on the first error
+
+if [ "${GO_TEST_RECURSIVE:-yes}" = "yes" ]; then
+  GO_TEST_FLAGS+=("-r")         # recursive
+fi
+
+# Skip the following packages.
+if [ -n "${GO_TEST_SKIP_PKGS:-}" ]; then
+  GO_TEST_FLAGS+=("--skip-package" "${GO_TEST_SKIP_PKGS}")
+fi
+
+# Skip the following files.
+if [ -n "${GO_TEST_SKIP_FILE:-}" ]; then
+  GO_TEST_FLAGS+=("--skip-file" "${GO_TEST_SKIP_FILE}")
+fi
 
 # Only run tests that match given labels if LABEL_FILTER is non-empty.
 if [ -n "${LABEL_FILTER:-}" ]; then
@@ -37,7 +50,8 @@ GO_TEST_FLAGS+=("--timeout=3h")
 
 # Run the tests.
 # shellcheck disable=SC2086
-ginkgo "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" "${@:-}" || TEST_CMD_EXIT_CODE="${?}"
+ginkgo "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" "${@:-}" \
+  -- -test.gocoverdir="$(pwd)" || TEST_CMD_EXIT_CODE="${?}"
 
 # TEST_CMD_EXIT_CODE may be set to 2 if there are any tests marked as
 # pending/skipped. This pattern is used by developers to leave test

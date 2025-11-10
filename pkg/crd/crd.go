@@ -94,6 +94,8 @@ func Install( //nolint:gocyclo
 	}
 
 	crds := slices.Concat(baseCRDs, externalCRDs)
+	logger := pkglog.FromContextOrDefault(ctx)
+	features := pkgcfg.FromContext(ctx).Features
 
 	for i := range crds {
 		c := &crds[i]
@@ -102,7 +104,6 @@ func Install( //nolint:gocyclo
 			return fmt.Errorf("failed to get crd name: %w", err)
 		}
 
-		logger := pkglog.FromContextOrDefault(ctx)
 		logger.Info("Processing CRD", "kind", k)
 
 		if mutateFn != nil {
@@ -125,7 +126,7 @@ func Install( //nolint:gocyclo
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.VSpherePolicies,
+				features.VSpherePolicies,
 				c,
 				k,
 				nil); err != nil {
@@ -136,7 +137,7 @@ func Install( //nolint:gocyclo
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey,
+				features.BringYourOwnEncryptionKey,
 				c,
 				k,
 				nil); err != nil {
@@ -153,7 +154,7 @@ func Install( //nolint:gocyclo
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.ImmutableClasses,
+				features.ImmutableClasses,
 				c,
 				k,
 				nil); err != nil {
@@ -165,7 +166,7 @@ func Install( //nolint:gocyclo
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.VMGroups,
+				features.VMGroups,
 				c,
 				k,
 				nil); err != nil {
@@ -176,7 +177,7 @@ func Install( //nolint:gocyclo
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.FastDeploy,
+				features.FastDeploy,
 				c,
 				k,
 				nil); err != nil {
@@ -198,7 +199,7 @@ func Install( //nolint:gocyclo
 					obj *unstructured.Unstructured,
 					shouldRemoveFields bool) error {
 
-					if !pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+					if !features.ImmutableClasses {
 						if err := removeFields(
 							ctx,
 							k,
@@ -210,7 +211,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.VMGroups {
+					if !features.VMGroups {
 						if err := removeFields(
 							ctx,
 							k,
@@ -223,7 +224,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.VMSnapshots {
+					if !features.VMSnapshots {
 						if err := removeFields(
 							ctx,
 							k,
@@ -237,7 +238,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+					if !features.VSpherePolicies {
 						if err := removeFields(
 							ctx,
 							k,
@@ -250,7 +251,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity {
+					if !features.GuestCustomizationVCDParity {
 						if err := removeFields(
 							ctx,
 							k,
@@ -267,7 +268,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+					if !features.VMSharedDisks {
 						if err := removeFields(
 							ctx,
 							k,
@@ -314,7 +315,7 @@ func Install( //nolint:gocyclo
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.VMSnapshots,
+				features.VMSnapshots,
 				c,
 				k,
 				nil); err != nil {

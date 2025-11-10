@@ -1387,6 +1387,7 @@ func vmTests() {
 							Specify("it should return an error creating VM", func() {
 								err := createOrUpdateVM(ctx, vmProvider, vm)
 								Expect(err).To(HaveOccurred())
+								Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
 								Expect(err.Error()).To(ContainSubstring("VM Group placement is not ready"))
 							})
 						})

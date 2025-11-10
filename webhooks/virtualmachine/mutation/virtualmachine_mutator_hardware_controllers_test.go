@@ -152,11 +152,31 @@ func controllerMutationTests() {
 		})
 	})
 
+	testNilHardware(func() *unitMutationWebhookContext { return ctx })
 	testNonPVCVolumes(func() *unitMutationWebhookContext { return ctx })
 	testControllerTypeAgnostic(func() *unitMutationWebhookContext { return ctx })
 	testSCSISharingMode(func() *unitMutationWebhookContext { return ctx })
 	testMultipleControllerTypes(func() *unitMutationWebhookContext { return ctx })
 	testSetPVCVolumesDefaults(func() *unitMutationWebhookContext { return ctx })
+}
+
+func testNilHardware(getCtx func() *unitMutationWebhookContext) {
+	Context("nil spec.hardware", func() {
+		var ctx *unitMutationWebhookContext
+
+		BeforeEach(func() {
+			ctx = getCtx()
+			ctx.vm.Status.UniqueID = dummyVMName
+			ctx.vm.Spec.Hardware = nil
+			ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+		})
+
+		It("should not panic", func() {
+			mutated, err := mutation.AddControllersForVolumes(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+		})
+	})
 }
 
 func testNonPVCVolumes(getCtx func() *unitMutationWebhookContext) {

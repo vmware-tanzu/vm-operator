@@ -44,7 +44,6 @@ type funcs struct {
 
 	GetItemFromLibraryByNameFn   func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	GetItemFromInventoryByNameFn func(ctx context.Context, contentLibrary, itemName string) (object.Reference, error)
-	GetCloneTasksForVMFn         func(ctx context.Context, vm *vmopv1.VirtualMachine, moID, descriptionID string) ([]vimtypes.TaskInfo, error)
 	ContainsExtraConfigEntryFn   func(ctx context.Context, objVM *object.VirtualMachine, key, value string) (bool, error)
 	UpdateContentLibraryItemFn   func(ctx context.Context, itemID, newName string, newDescription *string) error
 	SyncVirtualMachineImageFn    func(ctx context.Context, cli, vmi client.Object) error
@@ -56,7 +55,7 @@ type funcs struct {
 	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
 	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
 
-	GetTasksByActIDFn func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
+	GetTasksByActIDFn func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
 
 	DoesProfileSupportEncryptionFn func(ctx context.Context, profileID string) (bool, error)
 	VSphereClientFn                func(context.Context) (*vsclient.Client, error)
@@ -293,18 +292,6 @@ func (s *VMProvider) GetItemFromInventoryByName(ctx context.Context, contentLibr
 	return nil, nil
 }
 
-func (s *VMProvider) GetCloneTasksForVM(ctx context.Context, vm *vmopv1.VirtualMachine, moID, descriptionID string) ([]vimtypes.TaskInfo, error) {
-	_ = pkgcfg.FromContext(ctx)
-
-	s.Lock()
-	defer s.Unlock()
-	if s.GetCloneTasksForVMFn != nil {
-		return s.GetCloneTasksForVMFn(ctx, vm, moID, descriptionID)
-	}
-
-	return nil, nil
-}
-
 func (s *VMProvider) ContainsExtraConfigEntry(ctx context.Context, objVM *object.VirtualMachine, key, value string) (bool, error) {
 	_ = pkgcfg.FromContext(ctx)
 
@@ -328,13 +315,13 @@ func (s *VMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newNa
 	return nil
 }
 
-func (s *VMProvider) GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+func (s *VMProvider) GetTasksByActID(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 	_ = pkgcfg.FromContext(ctx)
 
 	s.Lock()
 	defer s.Unlock()
 	if s.GetTasksByActIDFn != nil {
-		return s.GetTasksByActIDFn(ctx, actID)
+		return s.GetTasksByActIDFn(ctx, nil, actID)
 	}
 
 	status := s.vmPubMap[actID]

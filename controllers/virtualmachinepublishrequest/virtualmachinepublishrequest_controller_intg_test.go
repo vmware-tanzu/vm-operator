@@ -136,7 +136,7 @@ func intgTestsReconcile() {
 
 				By("VM publish task is queued", func() {
 					intgFakeVMProvider.Lock()
-					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, vm *vmopv1.VirtualMachine, actID string) ([]vimtypes.TaskInfo, error) {
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateQueued,
@@ -166,7 +166,7 @@ func intgTestsReconcile() {
 
 				By("VM publish task is running", func() {
 					intgFakeVMProvider.Lock()
-					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, vm *vmopv1.VirtualMachine, actID string) ([]vimtypes.TaskInfo, error) {
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateRunning,
@@ -198,7 +198,7 @@ func intgTestsReconcile() {
 
 				By("VM publish task succeeded", func() {
 					intgFakeVMProvider.Lock()
-					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, vm *vmopv1.VirtualMachine, actID string) ([]vimtypes.TaskInfo, error) {
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateSuccess,

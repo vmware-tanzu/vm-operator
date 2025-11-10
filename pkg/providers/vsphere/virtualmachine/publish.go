@@ -136,6 +136,7 @@ func CloneVM(
 			Annotation:  vmPubReq.Status.TargetRef.Item.Description,
 			ExtraConfig: filteredExtraConfig,
 		},
+		TpmProvisionPolicy: string(vimtypes.VirtualMachineCloneSpecTpmProvisionPolicyCopy),
 	}
 
 	if storagePolicyID != "" {

@@ -233,6 +233,7 @@ jobs:
           covered-pkgs: ./pkg/crd
           make-target: test
           upload-coverage: true
+          go-test-parallel: yes
         - name: controllers
           covered-pkgs: ./controllers
           make-target: test
@@ -293,6 +294,7 @@ jobs:
         GO_TEST_RECURSIVE: ${{ matrix.go-test-recursive }}
         GO_TEST_SKIP_FILE: ${{ matrix.go-test-skip-file }}
         GO_TEST_SKIP_PKGS: ${{ matrix.go-test-skip-pkgs }}
+        GO_TEST_PARALLEL:  ${{ matrix.go-test-parallel }}
       run: make ${{ matrix.make-target }}
     - name: store-coverage
       if: github.event_name == 'pull_request' && matrix.upload-coverage

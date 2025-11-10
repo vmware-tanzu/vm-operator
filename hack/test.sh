@@ -22,6 +22,10 @@ if [ "${GO_TEST_RECURSIVE:-yes}" = "yes" ]; then
   GO_TEST_FLAGS+=("-r")         # recursive
 fi
 
+if [ "${GO_TEST_PARALLEL:-no}" = "yes" ]; then
+  GO_TEST_FLAGS+=("-p")         # run tests in parallel
+fi
+
 # Skip the following packages.
 if [ -n "${GO_TEST_SKIP_PKGS:-}" ]; then
   GO_TEST_FLAGS+=("--skip-package" "${GO_TEST_SKIP_PKGS}")

@@ -480,10 +480,9 @@ func (r *Reconciler) buildVolumeSpecs(
 	}
 
 	var (
-		buildErrMsg   = "failed to build volume specs:"
 		volumeSpecs   = make([]cnsv1alpha1.VolumeSpec, 0, len(volumes))
 		ctrlDevKeyMap = make(map[pkgutil.ControllerID]int32)
-		retErr        error
+		errs          []error
 	)
 
 	for _, ctrlStatus := range hardware.Controllers {
@@ -494,15 +493,14 @@ func (r *Reconciler) buildVolumeSpecs(
 	}
 
 	for _, vol := range volumes {
-
 		pvcSpec := vol.PersistentVolumeClaim
 
 		// The validating webhook should have verified it already.
 		// It returns NoRequeueError because we do not want to keep reconciling
 		// volume with incorrect spec unless the spec is fixed.
 		if pvcSpec.ControllerBusNumber == nil {
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
-				"%s volume %q is missing controller bus number", buildErrMsg, vol.Name)})
+			errs = append(errs, fmt.Errorf(
+				"volume %q is missing controller bus number", vol.Name))
 			continue
 		}
 
@@ -511,9 +509,9 @@ func (r *Reconciler) buildVolumeSpecs(
 			BusNumber:      *pvcSpec.ControllerBusNumber,
 		}]
 		if !ok {
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
-				"%s wating for the device controller %q %q to be created for volume %q",
-				buildErrMsg, pvcSpec.ControllerType, *pvcSpec.ControllerBusNumber, vol.Name)})
+			errs = append(errs, fmt.Errorf(
+				"for the device controller %q:%d to be created for volume %q",
+				pvcSpec.ControllerType, *pvcSpec.ControllerBusNumber, vol.Name))
 			continue
 		}
 
@@ -533,11 +531,9 @@ func (r *Reconciler) buildVolumeSpecs(
 		// Apply application type presets first
 		// Ideally, this would already have been mutated by the webhook, but just handle that here anyway.
 		if err := r.applyApplicationTypePresets(pvcSpec, &cnsVolumeSpec); err != nil {
-
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Errorf(
-				"%s failed to apply application type presets for volume %s: %w",
-				buildErrMsg, vol.Name, err).Error()})
-
+			errs = append(errs, fmt.Errorf(
+				"failed to apply application type presets for volume %s: %w",
+				vol.Name, err))
 			continue
 		}
 
@@ -548,9 +544,8 @@ func (r *Reconciler) buildVolumeSpecs(
 		case vmopv1.VolumeDiskModeIndependentPersistent:
 			cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.IndependentPersistent
 		default:
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("%s unsupported disk mode: %s for volume %s",
-					buildErrMsg, pvcSpec.DiskMode, vol.Name)})
+			errs = append(errs, fmt.Errorf("unsupported disk mode: %s for volume %s",
+				pvcSpec.DiskMode, vol.Name))
 			continue
 		}
 
@@ -561,16 +556,22 @@ func (r *Reconciler) buildVolumeSpecs(
 		case vmopv1.VolumeSharingModeMultiWriter:
 			cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingMultiWriter
 		default:
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("%s unsupported sharing mode: %s for volume %s",
-					buildErrMsg, pvcSpec.DiskMode, vol.Name)})
+			errs = append(errs, fmt.Errorf("unsupported sharing mode: %s for volume %s",
+				pvcSpec.DiskMode, vol.Name))
 			continue
 		}
 
 		volumeSpecs = append(volumeSpecs, cnsVolumeSpec)
 	}
 
-	return volumeSpecs, retErr
+	if len(errs) > 0 {
+		err := fmt.Errorf("%w, %w",
+			pkgerr.NoRequeueNoErr("failed to build volume specs"),
+			errors.Join(errs...))
+		return nil, err
+	}
+
+	return volumeSpecs, nil
 }
 
 func (r *Reconciler) applyApplicationTypePresets(

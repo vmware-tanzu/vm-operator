@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/davecgh/go-spew/spew"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +26,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -200,7 +202,7 @@ func unitTestsReconcile() {
 		vmVolumeWithPVC1 = nil
 	})
 
-	getCNSBatchAttachmentForVolumeName := func(ctx *builder.UnitTestContextForController, vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVMBatchAttachment {
+	getCNSBatchAttachmentForVM := func(ctx *builder.UnitTestContextForController, vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVMBatchAttachment {
 
 		GinkgoHelper()
 
@@ -233,7 +235,7 @@ func unitTestsReconcile() {
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Did not create CnsNodeVMBatchAttachment", func() {
-					Expect(getCNSBatchAttachmentForVolumeName(ctx, vm)).To(BeNil())
+					Expect(getCNSBatchAttachmentForVM(ctx, vm)).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
 			})
@@ -251,7 +253,7 @@ func unitTestsReconcile() {
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Did not create CnsNodeVMBatchAttachment", func() {
-					Expect(getCNSBatchAttachmentForVolumeName(ctx, vm)).To(BeNil())
+					Expect(getCNSBatchAttachmentForVM(ctx, vm)).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
 			})
@@ -285,7 +287,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
@@ -302,7 +304,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
@@ -326,7 +328,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
@@ -347,11 +349,11 @@ func unitTestsReconcile() {
 					vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone              // Override to None
 				})
 
-				It("sets volme variables correctly", func() {
+				It("sets volume variables correctly", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
@@ -363,6 +365,28 @@ func unitTestsReconcile() {
 				})
 			})
 
+			FWhen("controller type on bus number is not ready yet", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](3)
+					vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To[int32](2)
+				})
+
+				It("returns error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+
+					var noReqErr pkgerr.NoRequeueError
+					Expect(errors.As(err, &noReqErr)).To(BeTrue())
+					spew.Dump(noReqErr)
+					Expect(err).To(MatchError(`failed to build volume specs: waiting for the device controller SCSI:3 to be created for volume "cns-volume-1"`))
+
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
+				})
+			})
+
 			When("controller type and bus number are set", func() {
 				BeforeEach(func() {
 					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
@@ -370,11 +394,11 @@ func unitTestsReconcile() {
 					vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To[int32](5)
 				})
 
-				It("sets volme variables correctly", func() {
+				It("sets volume variables correctly", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
@@ -395,7 +419,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(0))
 
@@ -542,7 +566,7 @@ func unitTestsReconcile() {
 					Expect(apierrors.IsNotFound(err1)).To(BeTrue(), "Legacy attachment 1 should be deleted")
 					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Legacy attachment 2 should be deleted")
 
-					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					batchAttachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(0))
 
@@ -579,7 +603,7 @@ func unitTestsReconcile() {
 					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Orphaned legacy attachment should be deleted")
 
 					// batch attachment should would be created still.
-					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					batchAttachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(0))
 
@@ -602,7 +626,7 @@ func unitTestsReconcile() {
 					Expect(err).NotTo(HaveOccurred())
 
 					// No batch attachment should be created since all volumes are legacy-tracked
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(0))
 
@@ -666,7 +690,7 @@ func unitTestsReconcile() {
 					Expect(err2).ToNot(HaveOccurred(), "Legacy attachment with same PVC should not be deleted")
 
 					// Batch attachment should be created for the volume
-					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					batchAttachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
 					Expect(batchAttachment.Spec.Volumes[0].Name).To(Equal("legacy-volume-1"))
@@ -745,7 +769,7 @@ func unitTestsReconcile() {
 					Expect(err1).ToNot(HaveOccurred(), "Stale legacy attachment still exists in current implementation")
 
 					// Volume should be processed by batch controller regardless
-					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					batchAttachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
 					Expect(batchAttachment.Spec.Volumes[0].Name).To(Equal("legacy-volume-1"))
@@ -778,7 +802,7 @@ func unitTestsReconcile() {
 					Expect(err.Error()).To(ContainSubstring("simulated list error"))
 
 					// No batch attachment should be created due to error
-					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					batchAttachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(batchAttachment).To(BeNil())
 
 					By("VM Status.Volumes should not be updated either", func() {
@@ -823,7 +847,7 @@ func unitTestsReconcile() {
 					Expect(err).ToNot(HaveOccurred(), "Legacy attachment should still exist due to delete error")
 
 					// Batch processing should continue normally (no volumes to process in this case)
-					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					batchAttachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(0))
 
@@ -875,7 +899,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				By("Expected VM Status.Volumes with sanitized error", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 					assertBatchAttachmentSpec(vm, attachment)
 
@@ -906,7 +930,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 
 					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
@@ -951,7 +975,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 
 					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
@@ -1003,7 +1027,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 						err := reconciler.ReconcileNormal(volCtx)
 						Expect(err).ToNot(HaveOccurred())
 
-						attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+						attachment := getCNSBatchAttachmentForVM(ctx, vm)
 						Expect(attachment).ToNot(BeNil())
 
 						By("VM Status.Volumes are sorted by DiskUUID", func() {
@@ -1330,7 +1354,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				It("Should keep batchAttachment with empty spec.volumes", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(0))
 
@@ -1373,7 +1397,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 
 					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
@@ -1403,7 +1427,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVM(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(0))
 

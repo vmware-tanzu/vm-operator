@@ -178,7 +178,10 @@ func InPrivilegedUsersList(
 	return false
 }
 
-func verifyPeerCertificate(ctx context.Context, connState *tls.ConnectionState) error {
+func verifyPeerCertificate(
+	ctx context.Context,
+	connState *tls.ConnectionState) error {
+
 	certDir := pkgcfg.FromContext(ctx).WebhookSecretVolumeMountPath
 	if certDir == "" {
 		certDir = pkgcfg.Default().WebhookSecretVolumeMountPath
@@ -253,5 +256,6 @@ func VerifyWebhookRequest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	return verifyPeerCertificate(ctx, verifiedChains)
 }

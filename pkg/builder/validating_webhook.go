@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -112,6 +113,7 @@ type validatingWebhookHandler struct {
 
 func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
 	if h.EnableWebhookClientVerification {
+		ctx = pkgcfg.JoinContext(ctx, h.WebhookContext)
 		if err := VerifyWebhookRequest(ctx); err != nil {
 			return webhook.Errored(http.StatusBadRequest, err)
 		}

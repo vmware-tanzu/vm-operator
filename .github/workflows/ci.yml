@@ -297,7 +297,7 @@ jobs:
         GO_TEST_PARALLEL:  ${{ matrix.go-test-parallel }}
       run: make ${{ matrix.make-target }}
     - name: store-coverage
-      if: github.event_name == 'pull_request' && matrix.upload-coverage
+      if: matrix.upload-coverage
       uses: actions/upload-artifact@v4
       with:
         name: coverage-${{ matrix.name }}

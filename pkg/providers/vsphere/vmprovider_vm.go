@@ -65,7 +65,9 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	vmconfbootoptions "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
@@ -828,14 +830,15 @@ func errOrReconcileErr(reconcileErr, err error) error {
 //  1. Fetch properties
 //  2. Fetch recent tasks
 //  3. Fetch attached tags
-//  4. Reconcile status
-//  5. Reconcile backfill unmanaged disks
-//  6. Reconcile schema upgrade
-//  7. Reconcile backup state
-//  8. Reconcile snapshot revert
-//  9. Reconcile config
-//  10. Reconcile power state
-//  11. Reconcile snapshot create
+//  4. Fetch volume info
+//  5. Reconcile status
+//  6. Reconcile backfill unmanaged disks
+//  7. Reconcile schema upgrade
+//  8. Reconcile backup state
+//  9. Reconcile snapshot revert
+//  10. Reconcile config
+//  11. Reconcile power state
+//  12. Reconcile snapshot create
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -876,7 +879,16 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithAttachedTags
 
 	//
-	// 4. Reconcile status
+	// 4. Get the volume info.
+	//
+	ctxWithVolumeInfo, err := vs.getVolumeInfo(vmCtx, vcClient)
+	if err != nil {
+		return fmt.Errorf("failed to fetch volume info: %w", err)
+	}
+	vmCtx.Context = ctxWithVolumeInfo
+
+	//
+	// 5. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -886,7 +898,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 5. Reconcile unmanaged disks into spec.volumes.
+	// 6. Reconcile unmanaged disks into spec.volumes.
 	//
 	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
 		if err := vs.reconcileBackfillUnmanagedDisks(vmCtx); err != nil {
@@ -899,7 +911,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 6. Reconcile schema upgrade
+	// 7. Reconcile schema upgrade
 	//
 	//    It is important that this step occurs *after* the status is
 	//    reconciled. This is because reconciling the status builds information
@@ -913,7 +925,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 7. Reconcile backup state (VKS nodes excluded)
+	// 8. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -923,7 +935,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 8. Reconcile snapshot revert
+	// 9. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
@@ -935,7 +947,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 9. Reconcile config
+	// 10. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -952,7 +964,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 10. Reconcile power state
+	// 11. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -962,7 +974,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 11. Reconcile snapshot create
+	// 12. Reconcile snapshot create
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
@@ -1087,6 +1099,16 @@ func (vs *vSphereVMProvider) getTags(
 	}
 
 	return ctx.Context, nil
+}
+
+func (vs *vSphereVMProvider) getVolumeInfo(
+	ctx pkgctx.VirtualMachineContext,
+	_ *vcclient.Client) (context.Context, error) { //nolint:unparam
+
+	return pkgvol.WithContext(
+		ctx.Context,
+		pkgvol.GetVolumeInfoFromVM(ctx.VM, ctx.MoVM),
+	), nil
 }
 
 func (vs *vSphereVMProvider) reconcileBackfillUnmanagedDisks(
@@ -2389,8 +2411,11 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	if srcEC, err := virtualmachine.FilteredExtraConfig(
 		imgConfigSpec.ExtraConfig,
 		false); err != nil {
+
 		return err
+
 	} else if len(srcEC) > 0 {
+
 		// When deploying from an image with type "vm" we do not want to
 		// copy the encryption.bundle property if the vTPM mode specified
 		// in spec.crypto.vTPMMode is 'New'.
@@ -2439,35 +2464,19 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 		return nil
 	}
 
-	// lookup map to avoid iterating over the volumes for each disk
-	unmanagedVolumeClaimsFromImage := make(map[string]vmopv1.VirtualMachineVolume)
+	logger := pkglog.FromContextOrDefault(vmCtx).
+		WithName("vmCreateGenConfigSpecImagePVCDataSourceRefs")
+
+	diskName2UVC := map[string]vmopv1.VirtualMachineVolume{}
 	for _, vol := range vmCtx.VM.Spec.Volumes {
-		if vol.PersistentVolumeClaim == nil {
-			continue
+		if pvc := vol.PersistentVolumeClaim; pvc != nil {
+			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
+				if uvc.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
+					diskName2UVC[uvc.Name] = vol
+				}
+			}
 		}
-
-		unmanagedVolumeClaim := vol.PersistentVolumeClaim.UnmanagedVolumeClaim
-		if unmanagedVolumeClaim == nil {
-			continue
-		}
-
-		if unmanagedVolumeClaim.Type != vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
-			continue
-		}
-
-		unmanagedVolumeClaimsFromImage[unmanagedVolumeClaim.Name] = vol
 	}
-
-	// TODO: The logic below (device change iteration) need to be refactored.
-	//	     UUID will hence cease to be used for disk identification.
-	//
-	// Step 1: Iterate over the device changes to ensure the bus number,
-	//		   controllers, etc are populated.
-	// Step 2: Use GetUnmanagedVolumeInfoFromConfigSpec to get the required
-	// 		   info for each volume from the config spec and populate the
-	//		   spec.volumes accordingly.
-	// Step 3: Iterate over the device changes again to update the capacity
-	//		   and storage profile from the PVCs.
 
 	var errs []error
 
@@ -2476,16 +2485,16 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 			if disk, ok := deviceSpec.Device.(*vimtypes.VirtualDisk); ok {
 				if di := disk.DeviceInfo; di != nil {
 					if d := di.GetDescription(); d != nil {
-						volume, ok := unmanagedVolumeClaimsFromImage[d.Label]
-						if ok {
-							// update the storage profile and size based on the PVC
+						if vol, ok := diskName2UVC[d.Label]; ok {
+							// Update the storage profile and size based on the
+							// PVC.
 							if err := vs.updateDiskDeviceFromPVC(
 								vmCtx,
-								volume.PersistentVolumeClaim.ClaimName,
+								vol.PersistentVolumeClaim.ClaimName,
 								createArgs.Storage.StorageClassToPolicyID,
 								deviceSpec,
-								disk,
-							); err != nil {
+								disk); err != nil {
+
 								errs = append(errs, err)
 							}
 						}
@@ -2499,6 +2508,58 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 		return apierrorsutil.NewAggregate(errs)
 	}
 
+	if err := pkgutil.EnsureDisksHaveControllers(
+		&createArgs.ConfigSpec); err != nil {
+
+		return fmt.Errorf(
+			"failed to ensure disk/controller specs for hydrated pvcs: %w", err)
+	}
+
+	// Backfill the information into the UVCs.
+	info := pkgvol.GetVolumeInfoFromConfigSpec(
+		vmCtx.VM,
+		&createArgs.ConfigSpec)
+
+	logger.Info("Get unmanaged volume info", "info", info)
+
+	hasBackfill := false
+
+	n2d := map[string]pkgvol.VirtualDiskInfo{}
+	for _, di := range info.Disks {
+		n2d[di.Label] = di
+	}
+	for i := range vmCtx.VM.Spec.Volumes {
+		vol := &vmCtx.VM.Spec.Volumes[i]
+		if pvc := vol.PersistentVolumeClaim; pvc != nil {
+			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
+				if uvc.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
+					if di, ok := n2d[uvc.Name]; ok {
+						if pvc.ControllerType == "" ||
+							pvc.ControllerBusNumber == nil ||
+							pvc.UnitNumber == nil {
+
+							hasBackfill = true
+
+							pvc.ControllerType = info.Controllers[di.ControllerKey].Type
+							pvc.ControllerBusNumber = ptr.To(info.Controllers[di.ControllerKey].Bus)
+							pvc.UnitNumber = di.UnitNumber
+
+							logger.Info("Backfilled PVC from image",
+								"pvc", pvc,
+								"pvc.controllerType", pvc.ControllerType,
+								"pvc.controllerBusNumber", pvc.ControllerBusNumber,
+								"pvc.unitNumber", pvc.UnitNumber)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if hasBackfill {
+		return ErrUnmanagedVolsBackfill
+	}
+
 	return nil
 }
 
@@ -2509,6 +2570,7 @@ func (vs *vSphereVMProvider) updateDiskDeviceFromPVC(
 	deviceSpec *vimtypes.VirtualDeviceConfigSpec,
 	disk *vimtypes.VirtualDisk,
 ) error {
+
 	pvc := &corev1.PersistentVolumeClaim{}
 	key := ctrlclient.ObjectKey{
 		Namespace: vmCtx.VM.Namespace,
@@ -2516,51 +2578,33 @@ func (vs *vSphereVMProvider) updateDiskDeviceFromPVC(
 	}
 
 	if err := vs.k8sClient.Get(vmCtx, key, pvc); err != nil {
-		if apierrors.IsNotFound(err) {
-			// we will likely never hit this case since the PVCs are
-			// validated during the prerequisite checks
-			return fmt.Errorf(
-				"pvc %s not found for the specified claim", key,
-			)
-		}
-
 		return fmt.Errorf(
 			"failed to get pvc %s for the specified claim: %w", key, err,
 		)
 	}
 
-	// Update disk device with PVC information
-	// - Set the profile based on the PVC's storage class
-	// - Adjust disk size if PVC requests more than image disk size
-	storageClassName := pvc.Spec.StorageClassName
-
-	if storageClassName == nil {
-		return fmt.Errorf(
-			"pvc %s has no storage class", key,
-		)
+	scn := pvc.Spec.StorageClassName
+	if scn == nil {
+		return fmt.Errorf("pvc %s has no storage class", key)
 	}
 
-	profileID, ok := storageClassToPolicyID[*storageClassName]
-	if !ok || profileID == "" {
-		return fmt.Errorf(
-			"no Policy ID mapping exists or empty Policy ID for the storage class: %s",
-			*storageClassName,
-		)
+	pid, ok := storageClassToPolicyID[*scn]
+	if !ok || pid == "" {
+		return fmt.Errorf("failed to find policy for storage class %q", *scn)
 	}
 
 	deviceSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
 		&vimtypes.VirtualMachineDefinedProfileSpec{
-			ProfileId: profileID,
+			ProfileId: pid,
 		},
 	}
 
-	// NOTE: For Linked Clone mode, the disk size is determined by the base image.
-	if pvcCapacity, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok && !pvcCapacity.IsZero() {
-		pvcSizeBytes := pvcCapacity.Value()
-
-		diskSizeBytes := disk.CapacityInBytes
-		if pvcSizeBytes > diskSizeBytes {
-			disk.CapacityInBytes = pvcSizeBytes
+	if c, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+		if !c.IsZero() {
+			pb := c.Value()
+			if db := disk.CapacityInBytes; pb > db {
+				disk.CapacityInBytes = pb
+			}
 		}
 	}
 

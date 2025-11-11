@@ -40,6 +40,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 type ReconcileStatusData struct {
@@ -1264,112 +1265,103 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 		return
 	}
 
+	info, ok := pkgvol.FromContext(vmCtx)
+	if !ok {
+		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
+	}
+
+	// Filter out disks with invalid paths.
+	info.Disks = slices.DeleteFunc(info.Disks, func(
+		e pkgvol.VirtualDiskInfo) bool {
+		var diskPath object.DatastorePath
+		return !diskPath.FromString(e.FileName)
+	})
+
+	// Remove stale entries from the status.
 	existingDisksInStatus := map[string]int{}
 	for i := range vm.Status.Volumes {
 		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
 			existingDisksInStatus[vol.DiskUUID] = i
 		}
 	}
+	for _, di := range info.Disks {
+		if volSpec, ok := info.Volumes[di.Target.String()]; ok {
+			if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
+				if volSpec.Name != vm.Status.Volumes[diskIndex].Name {
+					vmCtx.VM.Status.Volumes = slices.Delete(
+						vmCtx.VM.Status.Volumes, diskIndex, diskIndex+1)
+					delete(existingDisksInStatus, di.UUID)
+				}
+			}
+		}
+	}
+	for i := range vm.Status.Volumes {
+		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
+			existingDisksInStatus[vol.DiskUUID] = i
+		}
+	}
 
+	// Update the status.
 	existingDisksInConfig := map[string]struct{}{}
+	for _, di := range info.Disks {
+		existingDisksInConfig[di.UUID] = struct{}{}
 
-	for i := range moVM.Config.Hardware.Device {
-		vd, ok := moVM.Config.Hardware.Device[i].(*vimtypes.VirtualDisk)
-		if !ok {
-			continue
-		}
-
-		var (
-			diskUUID string
-			fileName string
-			isFCD    = vd.VDiskId != nil && vd.VDiskId.Id != ""
-		)
-
-		switch tb := vd.Backing.(type) {
-		case *vimtypes.VirtualDiskSeSparseBackingInfo:
-			fileName = tb.FileName
-			diskUUID = tb.Uuid
-		case *vimtypes.VirtualDiskSparseVer1BackingInfo:
-			fileName = tb.FileName
-		case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-			fileName = tb.FileName
-			diskUUID = tb.Uuid
-		case *vimtypes.VirtualDiskFlatVer1BackingInfo:
-			fileName = tb.FileName
-		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-			fileName = tb.FileName
-			diskUUID = tb.Uuid
-		case *vimtypes.VirtualDiskLocalPMemBackingInfo:
-			fileName = tb.FileName
-			diskUUID = tb.Uuid
-		case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
-			fileName = tb.FileName
-			diskUUID = tb.Uuid
-		case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
-			fileName = tb.DescriptorFileName
-			diskUUID = tb.Uuid
-		case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo:
-			fileName = tb.DescriptorFileName
-			diskUUID = tb.Uuid
-		}
-
-		var diskPath object.DatastorePath
-		if !diskPath.FromString(fileName) {
-			continue
-		}
-
-		existingDisksInConfig[diskUUID] = struct{}{}
-
-		ctx := context.TODO()
-
-		if diskIndex, ok := existingDisksInStatus[diskUUID]; ok {
+		if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
 			// The disk is already in the list of volume statuses, so update the
 			// existing status with the usage information.
-			di, _ := vmdk.GetVirtualDiskInfoByUUID(
-				ctx,
-				nil,         /* the client is not needed since props aren't refetched */
+			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
+				vmCtx,
+				nil,         /* no client since props aren't re-fetched */
 				moVM,        /* use props from this object */
 				false,       /* do not refetch props */
 				snapEnabled, /* exclude disks related to snapshots */
-				diskUUID)
-			vm.Status.Volumes[diskIndex].Used = kubeutil.BytesToResource(di.UniqueSize)
-			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
+				di.UUID)
+			vm.Status.Volumes[diskIndex].Used = kubeutil.BytesToResource(ddi.UniqueSize)
+			if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
 				vm.Status.Volumes[diskIndex].Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
-					ProviderID: di.CryptoKey.ProviderID,
-					KeyID:      di.CryptoKey.KeyID,
+					ProviderID: ddi.CryptoKey.ProviderID,
+					KeyID:      ddi.CryptoKey.KeyID,
 				}
 			}
 			// This is for a rare case when VM is upgraded from v1alpha3 to
 			// v1alpha4+. Since vm.status.volume.requested was introduced in
 			// v1alpha4. So we need to patch it if it's missing from status for
 			// Classic disk. Managed disk is taken care of in volume controller.
-			if !isFCD && vm.Status.Volumes[diskIndex].Requested == nil {
+			if !di.FCD && vm.Status.Volumes[diskIndex].Requested == nil {
 				vm.Status.Volumes[diskIndex].Requested = kubeutil.BytesToResource(di.CapacityInBytes)
 			}
-		} else if !isFCD {
-			// The disk is a classic, non-FCD that must be added to the list of
-			// volume statuses.
-			di, _ := vmdk.GetVirtualDiskInfoByUUID(
-				ctx,
-				nil,         /* the client is not needed since props aren't refetched */
+		} else if !di.FCD {
+
+			var volName string
+			if volSpec, ok := info.Volumes[di.Target.String()]; ok {
+				volName = volSpec.Name
+			} else {
+				volName = pkgutil.GeneratePVCName("disk", di.UUID)
+			}
+
+			// The disk is a classic, non-FCD that must be added to the list
+			// of volume statuses.
+			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
+				vmCtx,
+				nil,         /* no client since props aren't re-fetched */
 				moVM,        /* use props from this object */
 				false,       /* do not refetch props */
 				snapEnabled, /* exclude disks related to snapshots */
-				diskUUID)
+				di.UUID)
 
 			volStatus := vmopv1.VirtualMachineVolumeStatus{
-				Name:      pkgutil.GeneratePVCName("disk", diskUUID),
+				Name:      volName,
 				Type:      vmopv1.VolumeTypeClassic,
 				Attached:  true,
-				DiskUUID:  diskUUID,
+				DiskUUID:  di.UUID,
 				Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
 				Requested: kubeutil.BytesToResource(di.CapacityInBytes),
-				Used:      kubeutil.BytesToResource(di.UniqueSize),
+				Used:      kubeutil.BytesToResource(ddi.UniqueSize),
 			}
-			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
+			if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
 				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
-					ProviderID: di.CryptoKey.ProviderID,
-					KeyID:      di.CryptoKey.KeyID,
+					ProviderID: ddi.CryptoKey.ProviderID,
+					KeyID:      ddi.CryptoKey.KeyID,
 				}
 			}
 			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)

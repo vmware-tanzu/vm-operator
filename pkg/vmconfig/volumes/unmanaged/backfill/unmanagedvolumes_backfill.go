@@ -19,8 +19,8 @@ import (
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
-	unmanagedvolsutil "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/util"
 )
 
 // Condition is the name of the condition that stores the result.
@@ -87,11 +87,20 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
+	info, ok := pkgvol.FromContext(ctx)
+	if !ok {
+		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
+	}
+
+	// Filter out any FCDs.
+	info.Disks = pkgvol.FilterOutFCDs(info.Disks...)
+	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
+
 	// Process each unmanaged disk.
 	updatedSpec := updateSpecWithUnmanagedDisks(
 		ctx,
 		vm,
-		unmanagedvolsutil.GetUnmanagedVolumeInfoFromVM(vm, moVM, false))
+		info)
 
 	if updatedSpec {
 		pkgcond.MarkFalse(
@@ -109,12 +118,15 @@ func (r reconciler) Reconcile(
 func updateSpecWithUnmanagedDisks(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	info unmanagedvolsutil.UnmanagedVolumeInfo) bool {
+	info pkgvol.VolumeInfo) bool {
 
 	var (
 		addedToSpec bool
 		logger      = pkglog.FromContextOrDefault(ctx)
 	)
+
+	logger.Info("Get unmanaged volume info",
+		"vm.spec.volumes", vm.Spec.Volumes, "info", info)
 
 	for _, di := range info.Disks {
 		// Step 1: Look for existing volume entry with the disk target ID.

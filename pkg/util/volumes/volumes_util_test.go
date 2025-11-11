@@ -2,9 +2,10 @@
 // The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package util_test
+package volumes_test
 
 import (
+	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -16,14 +17,91 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-	unmanagedvolsutil "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/util"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
-var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
+var _ = Context("Context", func() {
+	It("should not panic", func() {
+		_, ok := pkgvol.FromContext(context.Background())
+		Expect(ok).To(BeFalse())
+
+		ctx := pkgvol.WithContext(
+			context.Background(), pkgvol.VolumeInfo{})
+		v, ok := pkgvol.FromContext(ctx)
+		Expect(ok).To(BeTrue())
+		Expect(v).To(Equal(pkgvol.VolumeInfo{}))
+	})
+})
+
+var _ = Describe("GetVolumeInfoFrom", func() {
+	var (
+		vm      *vmopv1.VirtualMachine
+		devices []vimtypes.BaseVirtualDevice
+	)
+
+	BeforeEach(func() {
+		vm = &vmopv1.VirtualMachine{}
+		devices = nil
+	})
+
+	When("virtual disk as nil unit number", func() {
+		BeforeEach(func() {
+			devices = []vimtypes.BaseVirtualDevice{
+				&vimtypes.ParaVirtualSCSIController{
+					VirtualSCSIController: vimtypes.VirtualSCSIController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 100,
+							},
+							BusNumber: 0,
+						},
+					},
+				},
+				&vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           300,
+						ControllerKey: 100,
+						Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/disk1.vmdk",
+							},
+							Uuid: "disk-uuid-1",
+						},
+						UnitNumber: ptr.To[int32](0),
+					},
+					CapacityInBytes: 1024 * 1024 * 1024,
+				},
+				&vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           300,
+						ControllerKey: 101,
+						Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/disk2.vmdk",
+							},
+							Uuid: "disk-uuid-2",
+						},
+					},
+					CapacityInBytes: 1024 * 1024 * 1024,
+				},
+			}
+		})
+
+		It("should panic", func() {
+			fn := func() {
+				_ = pkgvol.GetVolumeInfo(vm, devices, nil)
+			}
+			Expect(fn).To(PanicWith(
+				"disk at device index 2 missing unit number"))
+		})
+	})
+})
+
+var _ = Describe("GetVolumeInfoFromVM", func() {
 	var (
 		vm   *vmopv1.VirtualMachine
 		moVM mo.VirtualMachine
-		info unmanagedvolsutil.UnmanagedVolumeInfo
+		info pkgvol.VolumeInfo
 	)
 
 	BeforeEach(func() {
@@ -50,14 +128,14 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 	})
 
 	JustBeforeEach(func() {
-		info = unmanagedvolsutil.GetUnmanagedVolumeInfoFromVM(vm, moVM, true)
+		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
 	})
 
 	When("vm is nil", func() {
 		BeforeEach(func() {
 			vm = nil
 		})
-		It("should return an empty UnmanagedVolumeInfo", func() {
+		It("should return an empty VolumeInfo", func() {
 			Expect(info.Disks).To(BeEmpty())
 			Expect(info.Controllers).To(BeEmpty())
 			Expect(info.Volumes).To(BeEmpty())
@@ -68,7 +146,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 		BeforeEach(func() {
 			moVM.Config = nil
 		})
-		It("should return an empty UnmanagedVolumeInfo", func() {
+		It("should return an empty VolumeInfo", func() {
 			Expect(info.Disks).To(BeEmpty())
 			Expect(info.Controllers).To(BeEmpty())
 			Expect(info.Volumes).To(BeEmpty())
@@ -79,7 +157,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 		BeforeEach(func() {
 			moVM.Config.Hardware.Device = nil
 		})
-		It("should return an empty UnmanagedVolumeInfo", func() {
+		It("should return an empty VolumeInfo", func() {
 			Expect(info).To(BeZero())
 			Expect(info.Disks).To(BeEmpty())
 			Expect(info.Controllers).To(BeEmpty())
@@ -91,7 +169,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 		BeforeEach(func() {
 			moVM.LayoutEx = nil
 		})
-		It("should return an empty UnmanagedVolumeInfo", func() {
+		It("should return an empty VolumeInfo", func() {
 			Expect(info.Disks).To(BeEmpty())
 			Expect(info.Controllers).To(BeEmpty())
 			Expect(info.Volumes).To(BeEmpty())
@@ -111,7 +189,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 				},
 			}
 		})
-		It("should return the expected UnmanagedVolumeInfo", func() {
+		It("should return the expected VolumeInfo", func() {
 			Expect(info.Volumes).To(BeEmpty())
 
 			Expect(info.Controllers).To(HaveLen(1))
@@ -138,7 +216,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 				},
 			}
 		})
-		It("should return the expected UnmanagedVolumeInfo", func() {
+		It("should return the expected VolumeInfo", func() {
 			Expect(info.Volumes).To(BeEmpty())
 
 			Expect(info.Controllers).To(HaveLen(1))
@@ -270,7 +348,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 						})
 				})
 
-				It("should return the expected UnmanagedVolumeInfo", func() {
+				It("should return the expected VolumeInfo", func() {
 					Expect(info.Volumes).To(BeEmpty())
 
 					Expect(info.Controllers).To(HaveLen(diskCount))
@@ -376,6 +454,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 						It("should include the disk", func() {
 							Expect(info.Disks).To(HaveLen(1))
 							Expect(info.Disks[0].UUID).To(Equal("disk-uuid-child"))
+							Expect(pkgvol.FilterOutSnapshots(info.Disks...)).To(BeEmpty())
 						})
 					})
 
@@ -404,7 +483,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 							moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device, disk)
 						})
 						It("should exclude the disk", func() {
-							Expect(info.Disks).To(BeEmpty())
+							Expect(pkgvol.FilterOutLinkedClones(info.Disks...)).To(BeEmpty())
 						})
 					})
 				})
@@ -429,7 +508,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device, disk)
 					})
 					It("should exclude FCD disks", func() {
-						Expect(info.Disks).To(BeEmpty())
+						Expect(pkgvol.FilterOutFCDs(info.Disks...)).To(BeEmpty())
 					})
 				})
 
@@ -477,7 +556,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device, disk)
 					})
 					It("should exclude disks without UUID", func() {
-						Expect(info.Disks).To(BeEmpty())
+						Expect(pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)).To(BeEmpty())
 					})
 				})
 
@@ -500,7 +579,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device, disk)
 					})
 					It("should exclude disks without filename", func() {
-						Expect(info.Disks).To(BeEmpty())
+						Expect(pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)).To(BeEmpty())
 					})
 				})
 
@@ -577,6 +656,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 												},
 												Uuid: "disk-uuid-1",
 											},
+											UnitNumber: ptr.To[int32](0),
 										},
 										CapacityInBytes: 1024 * 1024 * 1024,
 									},
@@ -585,7 +665,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 						}
 					})
 
-					It("should return the expected UnmanagedVolumeInfo", func() {
+					It("should return the expected VolumeInfo", func() {
 						Expect(info.Controllers).To(HaveLen(1))
 						Expect(info.Controllers[100].Type).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 						Expect(info.Controllers[100].ScsiType).To(Equal(vmopv1.SCSIControllerTypeParaVirtualSCSI))
@@ -676,7 +756,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 							}
 						})
 
-						It("should return the expected UnmanagedVolumeInfo", func() {
+						It("should return the expected VolumeInfo", func() {
 							Expect(info.Controllers).To(HaveLen(2))
 							Expect(info.Controllers[100].Type).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 							Expect(info.Controllers[200].Type).To(Equal(vmopv1.VirtualControllerTypeNVME))
@@ -794,7 +874,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 							}
 						})
 
-						It("should return the expected UnmanagedVolumeInfo", func() {
+						It("should return the expected VolumeInfo", func() {
 							Expect(info.Controllers).To(HaveLen(2))
 							Expect(info.Controllers[100].Type).To(Equal(vmopv1.VirtualControllerTypeSATA))
 							Expect(info.Controllers[200].Type).To(Equal(vmopv1.VirtualControllerTypeIDE))
@@ -867,9 +947,9 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 						}
 					})
 
-					It("should return the expected UnmanagedVolumeInfo", func() {
+					It("should return the expected VolumeInfo", func() {
 						Expect(info.Volumes).To(HaveLen(1))
-						Expect(info.Volumes[unmanagedvolsutil.VirtualDiskTarget{
+						Expect(info.Volumes[pkgvol.VirtualDiskTarget{
 							ControllerType: vmopv1.VirtualControllerTypeSCSI,
 							ControllerBus:  0,
 							UnitNumber:     0,
@@ -971,14 +1051,14 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 							}
 						})
 
-						It("should return the expected UnmanagedVolumeInfo", func() {
+						It("should return the expected VolumeInfo", func() {
 							Expect(info.Volumes).To(HaveLen(2))
-							Expect(info.Volumes[unmanagedvolsutil.VirtualDiskTarget{
+							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
 								ControllerType: vmopv1.VirtualControllerTypeSCSI,
 								ControllerBus:  0,
 								UnitNumber:     0,
 							}.String()].Name).To(Equal("vol1"))
-							Expect(info.Volumes[unmanagedvolsutil.VirtualDiskTarget{
+							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
 								ControllerType: vmopv1.VirtualControllerTypeNVME,
 								ControllerBus:  0,
 								UnitNumber:     0,
@@ -1110,19 +1190,19 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 							}
 						})
 
-						It("should return the expected UnmanagedVolumeInfo", func() {
+						It("should return the expected VolumeInfo", func() {
 							Expect(info.Volumes).To(HaveLen(3))
-							Expect(info.Volumes[unmanagedvolsutil.VirtualDiskTarget{
+							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
 								ControllerType: vmopv1.VirtualControllerTypeSATA,
 								ControllerBus:  0,
 								UnitNumber:     0,
 							}.String()].Name).To(Equal("vol1"))
-							Expect(info.Volumes[unmanagedvolsutil.VirtualDiskTarget{
+							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
 								ControllerType: vmopv1.VirtualControllerTypeSATA,
 								ControllerBus:  0,
 								UnitNumber:     1,
 							}.String()].Name).To(Equal("vol2"))
-							Expect(info.Volumes[unmanagedvolsutil.VirtualDiskTarget{
+							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
 								ControllerType: vmopv1.VirtualControllerTypeIDE,
 								ControllerBus:  0,
 								UnitNumber:     0,
@@ -1148,11 +1228,11 @@ var _ = Describe("GetUnmanagedVolumeInfoFromVM", func() {
 
 })
 
-var _ = Describe("GetUnmanagedVolumeInfoFromConfigSpec", func() {
+var _ = Describe("GetVolumeInfoFromConfigSpec", func() {
 	var (
 		vm         *vmopv1.VirtualMachine
 		configSpec *vimtypes.VirtualMachineConfigSpec
-		info       unmanagedvolsutil.UnmanagedVolumeInfo
+		info       pkgvol.VolumeInfo
 	)
 
 	BeforeEach(func() {
@@ -1173,14 +1253,14 @@ var _ = Describe("GetUnmanagedVolumeInfoFromConfigSpec", func() {
 	})
 
 	JustBeforeEach(func() {
-		info = unmanagedvolsutil.GetUnmanagedVolumeInfoFromConfigSpec(vm, configSpec)
+		info = pkgvol.GetVolumeInfoFromConfigSpec(vm, configSpec)
 	})
 
 	When("configSpec is nil", func() {
 		BeforeEach(func() {
 			configSpec = nil
 		})
-		It("should return an empty UnmanagedVolumeInfo", func() {
+		It("should return an empty VolumeInfo", func() {
 			Expect(info.Disks).To(BeEmpty())
 			Expect(info.Controllers).To(BeEmpty())
 			Expect(info.Volumes).To(BeEmpty())
@@ -1191,7 +1271,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromConfigSpec", func() {
 		BeforeEach(func() {
 			configSpec.DeviceChange = nil
 		})
-		It("should return an empty UnmanagedVolumeInfo", func() {
+		It("should return an empty VolumeInfo", func() {
 			Expect(info).To(BeZero())
 			Expect(info.Disks).To(BeEmpty())
 			Expect(info.Controllers).To(BeEmpty())
@@ -1327,7 +1407,7 @@ var _ = Describe("GetUnmanagedVolumeInfoFromConfigSpec", func() {
 					}})
 		})
 
-		It("should return the expected UnmanagedVolumeInfo", func() {
+		It("should return the expected VolumeInfo", func() {
 			Expect(info.Volumes).To(BeEmpty())
 
 			Expect(info.Controllers).To(HaveLen(diskCount))

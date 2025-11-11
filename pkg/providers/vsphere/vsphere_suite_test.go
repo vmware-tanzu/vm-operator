@@ -162,6 +162,11 @@ func createOrUpdateVMAsync(
 
 	chanErr, err := provider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
 	if err != nil {
+		if errors.Is(err, vsphere.ErrUnmanagedVolsBackfill) {
+			ExpectWithOffset(1, ctx.Client.Update(
+				ctx,
+				vm)).To(Succeed())
+		}
 		GinkgoLogr.Info("createOrUpdateVMAsync returned", "err", err)
 		return err
 	}

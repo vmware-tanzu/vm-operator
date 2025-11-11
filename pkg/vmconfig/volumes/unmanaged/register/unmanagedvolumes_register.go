@@ -31,10 +31,10 @@ import (
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	pkgdatastore "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/datastore"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
-	unmanagedvolsutil "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/util"
 )
 
 // Condition is the name of the condition that stores the result.
@@ -119,7 +119,15 @@ func (r reconciler) Reconcile(
 		}
 	}
 
-	info := unmanagedvolsutil.GetUnmanagedVolumeInfoFromVM(vm, moVM, true)
+	info, ok := pkgvol.FromContext(ctx)
+	if !ok {
+		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
+	}
+
+	// Filter any linked clones / FCDs from registration.
+	info.Disks = pkgvol.FilterOutFCDs(info.Disks...)
+	info.Disks = pkgvol.FilterOutLinkedClones(info.Disks...)
+	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
 
 	hasConfigSpecChanges, err := ensureUnmanagedDisksConfigsAreUpdated(
 		ctx,
@@ -195,7 +203,7 @@ func ensureUnmanagedDisksConfigsAreUpdated(
 	vimClient *vim25.Client,
 	vm *vmopv1.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec,
-	info *unmanagedvolsutil.UnmanagedVolumeInfo) (bool, error) {
+	info *pkgvol.VolumeInfo) (bool, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx).
 		WithName("ensureUnmanagedDisksConfigsAreUpdated")
@@ -292,7 +300,7 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 	k8sClient ctrlclient.Client,
 	vimClient *vim25.Client,
 	vm *vmopv1.VirtualMachine,
-	info *unmanagedvolsutil.UnmanagedVolumeInfo) (
+	info *pkgvol.VolumeInfo) (
 	map[string]string,
 	map[string]string,
 	error) {
@@ -416,7 +424,7 @@ func ensureUnmanagedDisksHaveUpdatedCapacity(
 	k8sClient ctrlclient.Client,
 	_ *vim25.Client,
 	vm *vmopv1.VirtualMachine,
-	info *unmanagedvolsutil.UnmanagedVolumeInfo) error {
+	info *pkgvol.VolumeInfo) error {
 
 	// Get the requested capacity used by the disks.
 	for i, di := range info.Disks {
@@ -463,7 +471,7 @@ func registerUnmanagedDisks(
 	k8sClient ctrlclient.Client,
 	vimClient *vim25.Client,
 	vm *vmopv1.VirtualMachine,
-	info unmanagedvolsutil.UnmanagedVolumeInfo) (bool, error) {
+	info pkgvol.VolumeInfo) (bool, error) {
 
 	var hasPendingVolumes bool
 
@@ -535,7 +543,7 @@ func ensurePVCForUnmanagedDisk(
 	k8sClient ctrlclient.Client,
 	vm *vmopv1.VirtualMachine,
 	pvcName string,
-	diskInfo unmanagedvolsutil.VirtualDiskInfo) (*corev1.PersistentVolumeClaim, error) {
+	diskInfo pkgvol.VirtualDiskInfo) (*corev1.PersistentVolumeClaim, error) {
 
 	const virtualMachine = "VirtualMachine"
 
@@ -668,7 +676,7 @@ func ensureCnsRegisterVolumeForDisk(
 	_ *vim25.Client,
 	vm *vmopv1.VirtualMachine,
 	pvcName string,
-	diskInfo unmanagedvolsutil.VirtualDiskInfo) (*cnsv1alpha1.CnsRegisterVolume, error) {
+	diskInfo pkgvol.VirtualDiskInfo) (*cnsv1alpha1.CnsRegisterVolume, error) {
 
 	var (
 		obj = &cnsv1alpha1.CnsRegisterVolume{}

@@ -55,6 +55,7 @@ func GetExtraConfigFromObject(
 func FilteredExtraConfig(
 	in pkgutil.OptionValues,
 	reset bool) (pkgutil.OptionValues, error) {
+
 	allowKeys := sets.New(extraConfigAllowKeys[:]...)
 	filtered := in.Map()
 

@@ -76,36 +76,6 @@ type VirtualMachineVolume struct {
 	// VirtualMachineVolumeSource represents the location and type of a volume
 	// to mount.
 	VirtualMachineVolumeSource `json:",inline"`
-}
-
-// VirtualMachineVolumeSource represents the source location of a volume to
-// mount. Only one of its members may be specified.
-type VirtualMachineVolumeSource struct {
-	// +optional
-
-	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
-	// in the same namespace.
-	//
-	// More information is available at
-	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
-	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
-}
-
-// PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
-// corev1.PersistentVolumeClaimVolumeSource and instance storage options.
-type PersistentVolumeClaimVolumeSource struct {
-	corev1.PersistentVolumeClaimVolumeSource `json:",inline" yaml:",inline"`
-
-	// +optional
-
-	// UnmanagedVolumeClaim is set if the PVC is backed by an existing,
-	// unmanaged volume.
-	UnmanagedVolumeClaim *UnmanagedVolumeClaimVolumeSource `json:"unmanagedVolumeClaim,omitempty"`
-
-	// +optional
-
-	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
-	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
 
 	// +optional
 
@@ -214,6 +184,36 @@ type PersistentVolumeClaimVolumeSource struct {
 	// Please note the value 7 is invalid if controllerType=SCSI as 7 is the
 	// unit number of the SCSI controller on its own bus.
 	UnitNumber *int32 `json:"unitNumber,omitempty"`
+}
+
+// VirtualMachineVolumeSource represents the source location of a volume to
+// mount. Only one of its members may be specified.
+type VirtualMachineVolumeSource struct {
+	// +optional
+
+	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
+	// in the same namespace.
+	//
+	// More information is available at
+	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
+	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+}
+
+// PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
+// corev1.PersistentVolumeClaimVolumeSource and instance storage options.
+type PersistentVolumeClaimVolumeSource struct {
+	corev1.PersistentVolumeClaimVolumeSource `json:",inline" yaml:",inline"`
+
+	// +optional
+
+	// UnmanagedVolumeClaim is set if the PVC is backed by an existing,
+	// unmanaged volume.
+	UnmanagedVolumeClaim *UnmanagedVolumeClaimVolumeSource `json:"unmanagedVolumeClaim,omitempty"`
+
+	// +optional
+
+	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
+	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=FromImage;FromVM

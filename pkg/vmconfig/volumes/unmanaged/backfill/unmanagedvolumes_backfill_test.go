@@ -274,18 +274,18 @@ var _ = Describe("Reconcile", func() {
 					Expect(vol1.PersistentVolumeClaim.ClaimName).To(Equal("my-vm-a515c82a")) // Generated from xxHash
 					Expect(vol1.PersistentVolumeClaim.UnmanagedVolumeClaim).ToNot(BeNil())
 					Expect(vol1.PersistentVolumeClaim.UnmanagedVolumeClaim.Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
-					Expect(vol1.PersistentVolumeClaim.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
-					Expect(*vol1.PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(0)))
-					Expect(*vol1.PersistentVolumeClaim.UnitNumber).To(Equal(int32(0)))
+					Expect(vol1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
+					Expect(*vol1.ControllerBusNumber).To(Equal(int32(0)))
+					Expect(*vol1.UnitNumber).To(Equal(int32(0)))
 
 					// Verify volume 2 properties
 					Expect(vol2.PersistentVolumeClaim).ToNot(BeNil())
 					Expect(vol2.PersistentVolumeClaim.ClaimName).To(Equal("my-vm-0627fe5c")) // Generated from xxHash
 					Expect(vol2.PersistentVolumeClaim.UnmanagedVolumeClaim).ToNot(BeNil())
 					Expect(vol2.PersistentVolumeClaim.UnmanagedVolumeClaim.Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
-					Expect(vol2.PersistentVolumeClaim.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
-					Expect(*vol2.PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(1)))
-					Expect(*vol2.PersistentVolumeClaim.UnitNumber).To(Equal(int32(0)))
+					Expect(vol2.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
+					Expect(*vol2.ControllerBusNumber).To(Equal(int32(1)))
+					Expect(*vol2.UnitNumber).To(Equal(int32(0)))
 				})
 			})
 
@@ -630,8 +630,8 @@ var _ = Describe("Reconcile", func() {
 
 					vol := findVolumeByName(vm.Spec.Volumes, "nvme-disk-uuid-123")
 					Expect(vol).ToNot(BeNil())
-					Expect(vol.PersistentVolumeClaim.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
-					Expect(*vol.PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(0)))
+					Expect(vol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
+					Expect(*vol.ControllerBusNumber).To(Equal(int32(0)))
 				})
 			})
 
@@ -677,8 +677,8 @@ var _ = Describe("Reconcile", func() {
 
 					vol := findVolumeByName(vm.Spec.Volumes, "sata-disk-uuid-123")
 					Expect(vol).ToNot(BeNil())
-					Expect(vol.PersistentVolumeClaim.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSATA))
-					Expect(*vol.PersistentVolumeClaim.ControllerBusNumber).To(Equal(int32(0)))
+					Expect(vol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSATA))
+					Expect(*vol.ControllerBusNumber).To(Equal(int32(0)))
 				})
 			})
 		})

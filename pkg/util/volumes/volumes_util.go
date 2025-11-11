@@ -170,9 +170,9 @@ func GetVolumeInfo(
 	for _, vol := range vm.Spec.Volumes {
 		if pvc := vol.PersistentVolumeClaim; pvc != nil {
 			var (
-				ctrlType = pvc.ControllerType
-				ctrlBus  = pvc.ControllerBusNumber
-				diskUnit = pvc.UnitNumber
+				ctrlType = vol.ControllerType
+				ctrlBus  = vol.ControllerBusNumber
+				diskUnit = vol.UnitNumber
 			)
 			if ctrlType != "" && ctrlBus != nil && diskUnit != nil {
 				t := VirtualDiskTarget{

@@ -16,6 +16,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+func Convert_v1alpha5_VirtualMachineVolume_To_v1alpha4_VirtualMachineVolume(
+	in *vmopv1.VirtualMachineVolume, out *VirtualMachineVolume, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha4_VirtualMachineVolume(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(
 	in *vmopv1.VirtualMachineImageDiskInfo, out *VirtualMachineImageDiskInfo, s apiconversion.Scope) error {
 

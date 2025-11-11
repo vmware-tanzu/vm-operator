@@ -1582,18 +1582,17 @@ var _ = Describe("UpdateStatus", func() {
 
 			When("vm.status.volumes has a stale (not in spec) classic disk", func() {
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-						{
-							Name: pkgutil.GeneratePVCName("disk", "100"),
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-									ControllerBusNumber: ptr.To[int32](0),
-									UnitNumber:          ptr.To[int32](3),
-								},
-							},
-						},
-					}
+			vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name: pkgutil.GeneratePVCName("disk", "100"),
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{},
+					},
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To[int32](0),
+					UnitNumber:          ptr.To[int32](3),
+				},
+			}
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
 							Name:      "my-old-name",

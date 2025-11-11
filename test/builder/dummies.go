@@ -333,11 +333,11 @@ func DummyPVCVirtualMachineVolume(
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: claimName,
 				},
-				ControllerType:      controllerType,
-				ControllerBusNumber: controllerBusNumber,
-				UnitNumber:          unitNumber,
 			},
 		},
+		ControllerType:      controllerType,
+		ControllerBusNumber: controllerBusNumber,
+		UnitNumber:          unitNumber,
 	}
 }
 
@@ -360,11 +360,11 @@ func DummyUnmanagedPVCVirtualMachineVolume(
 					Name: unmanagedName,
 					Type: unmanagedType,
 				},
-				ControllerType:      controllerType,
-				ControllerBusNumber: controllerBusNumber,
-				UnitNumber:          unitNumber,
 			},
 		},
+		ControllerType:      controllerType,
+		ControllerBusNumber: controllerBusNumber,
+		UnitNumber:          unitNumber,
 	}
 }
 

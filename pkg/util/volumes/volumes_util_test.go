@@ -907,11 +907,11 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										},
-										ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-										ControllerBusNumber: ptr.To[int32](0),
-										UnitNumber:          ptr.To[int32](0),
 									},
 								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To[int32](0),
+								UnitNumber:          ptr.To[int32](0),
 							},
 						}
 
@@ -976,11 +976,11 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 											},
-											ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-											ControllerBusNumber: ptr.To[int32](0),
-											UnitNumber:          ptr.To[int32](0),
 										},
 									},
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+									UnitNumber:          ptr.To[int32](0),
 								},
 								{
 									Name: "vol2",
@@ -989,11 +989,11 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 											},
-											ControllerType:      vmopv1.VirtualControllerTypeNVME,
-											ControllerBusNumber: ptr.To[int32](0),
-											UnitNumber:          ptr.To[int32](0),
 										},
 									},
+									ControllerType:      vmopv1.VirtualControllerTypeNVME,
+									ControllerBusNumber: ptr.To[int32](0),
+									UnitNumber:          ptr.To[int32](0),
 								},
 							}
 
@@ -1088,11 +1088,11 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 											},
-											ControllerType:      vmopv1.VirtualControllerTypeSATA,
-											ControllerBusNumber: ptr.To[int32](0),
-											UnitNumber:          ptr.To[int32](0),
 										},
 									},
+									ControllerType:      vmopv1.VirtualControllerTypeSATA,
+									ControllerBusNumber: ptr.To[int32](0),
+									UnitNumber:          ptr.To[int32](0),
 								},
 								{
 									Name: "vol2",
@@ -1101,11 +1101,11 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 											},
-											ControllerType:      vmopv1.VirtualControllerTypeSATA,
-											ControllerBusNumber: ptr.To[int32](0),
-											UnitNumber:          ptr.To[int32](1),
 										},
 									},
+									ControllerType:      vmopv1.VirtualControllerTypeSATA,
+									ControllerBusNumber: ptr.To[int32](0),
+									UnitNumber:          ptr.To[int32](1),
 								},
 								{
 									Name: "vol3",
@@ -1114,11 +1114,11 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
 												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 											},
-											ControllerType:      vmopv1.VirtualControllerTypeIDE,
-											ControllerBusNumber: ptr.To[int32](0),
-											UnitNumber:          ptr.To[int32](0),
 										},
 									},
+									ControllerType:      vmopv1.VirtualControllerTypeIDE,
+									ControllerBusNumber: ptr.To[int32](0),
+									UnitNumber:          ptr.To[int32](0),
 								},
 							}
 

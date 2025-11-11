@@ -2537,21 +2537,21 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
 				if uvc.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
 					if di, ok := n2d[uvc.Name]; ok {
-						if pvc.ControllerType == "" ||
-							pvc.ControllerBusNumber == nil ||
-							pvc.UnitNumber == nil {
+						if vol.ControllerType == "" ||
+							vol.ControllerBusNumber == nil ||
+							vol.UnitNumber == nil {
 
 							hasBackfill = true
 
-							pvc.ControllerType = info.Controllers[di.ControllerKey].Type
-							pvc.ControllerBusNumber = ptr.To(info.Controllers[di.ControllerKey].Bus)
-							pvc.UnitNumber = di.UnitNumber
+							vol.ControllerType = info.Controllers[di.ControllerKey].Type
+							vol.ControllerBusNumber = ptr.To(info.Controllers[di.ControllerKey].Bus)
+							vol.UnitNumber = di.UnitNumber
 
 							logger.Info("Backfilled PVC from image",
 								"pvc", pvc,
-								"pvc.controllerType", pvc.ControllerType,
-								"pvc.controllerBusNumber", pvc.ControllerBusNumber,
-								"pvc.unitNumber", pvc.UnitNumber)
+								"vol.controllerType", vol.ControllerType,
+								"vol.controllerBusNumber", vol.ControllerBusNumber,
+								"vol.unitNumber", vol.UnitNumber)
 						}
 					}
 				}

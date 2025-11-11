@@ -106,13 +106,13 @@ func unitTestsReconcile() {
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: claimName1,
 					},
-					ControllerType:      "SCSI",
-					ControllerBusNumber: ptr.To(int32(0)),
-					UnitNumber:          ptr.To(int32(0)),
-					DiskMode:            vmopv1.VolumeDiskModePersistent,
-					SharingMode:         vmopv1.VolumeSharingModeNone,
 				},
 			},
+			ControllerType:      "SCSI",
+			ControllerBusNumber: ptr.To(int32(0)),
+			UnitNumber:          ptr.To(int32(0)),
+			DiskMode:            vmopv1.VolumeDiskModePersistent,
+			SharingMode:         vmopv1.VolumeSharingModeNone,
 		}
 
 		boundPVC1 = &corev1.PersistentVolumeClaim{
@@ -132,13 +132,13 @@ func unitTestsReconcile() {
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: claimName2,
 					},
-					ControllerType:      "SCSI",
-					ControllerBusNumber: ptr.To(int32(0)),
-					UnitNumber:          ptr.To(int32(1)),
-					DiskMode:            vmopv1.VolumeDiskModePersistent,
-					SharingMode:         vmopv1.VolumeSharingModeNone,
 				},
 			},
+			ControllerType:      "SCSI",
+			ControllerBusNumber: ptr.To(int32(0)),
+			UnitNumber:          ptr.To(int32(1)),
+			DiskMode:            vmopv1.VolumeDiskModePersistent,
+			SharingMode:         vmopv1.VolumeSharingModeNone,
 		}
 
 		boundPVC2 = &corev1.PersistentVolumeClaim{
@@ -342,9 +342,9 @@ func unitTestsReconcile() {
 
 			When("there is a PVC with application type: Oracle RAC", func() {
 				BeforeEach(func() {
-					vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC // This sets IndependentPersistent + MultiWriter
-					vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModePersistent              // Override to Persistent
-					vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone              // Override to None
+					vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC // This sets IndependentPersistent + MultiWriter
+					vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModePersistent              // Override to Persistent
+					vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone              // Override to None
 				})
 
 				It("sets volme variables correctly", func() {
@@ -365,9 +365,9 @@ func unitTestsReconcile() {
 
 			When("controller type and bus number are set", func() {
 				BeforeEach(func() {
-					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
-					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
-					vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To[int32](5)
+					vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+					vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](0)
+					vm.Spec.Volumes[0].UnitNumber = ptr.To[int32](5)
 				})
 
 				It("sets volme variables correctly", func() {
@@ -472,13 +472,13 @@ func unitTestsReconcile() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: legacyPVCName1,
 							},
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							ControllerBusNumber: ptr.To(int32(0)),
-							UnitNumber:          ptr.To(int32(0)),
-							DiskMode:            vmopv1.VolumeDiskModePersistent,
-							SharingMode:         vmopv1.VolumeSharingModeNone,
 						},
 					},
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+					DiskMode:            vmopv1.VolumeDiskModePersistent,
+					SharingMode:         vmopv1.VolumeSharingModeNone,
 				}
 
 				legacyPVC1 = &corev1.PersistentVolumeClaim{
@@ -499,13 +499,13 @@ func unitTestsReconcile() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: legacyPVCName2,
 							},
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							ControllerBusNumber: ptr.To(int32(0)),
-							UnitNumber:          ptr.To(int32(0)),
-							DiskMode:            vmopv1.VolumeDiskModePersistent,
-							SharingMode:         vmopv1.VolumeSharingModeNone,
 						},
 					},
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+					DiskMode:            vmopv1.VolumeDiskModePersistent,
+					SharingMode:         vmopv1.VolumeSharingModeNone,
 				}
 
 				legacyPVC2 = &corev1.PersistentVolumeClaim{
@@ -633,13 +633,13 @@ func unitTestsReconcile() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "different-pvc", // Different from legacy-pvc-1
 								},
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
-								DiskMode:            vmopv1.VolumeDiskModePersistent,
-								SharingMode:         vmopv1.VolumeSharingModeNone,
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
+						DiskMode:            vmopv1.VolumeDiskModePersistent,
+						SharingMode:         vmopv1.VolumeSharingModeNone,
 					}
 
 					legacyPVC1.Name = "different-pvc"

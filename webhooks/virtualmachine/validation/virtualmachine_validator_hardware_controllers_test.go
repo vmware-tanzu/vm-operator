@@ -97,11 +97,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -114,11 +114,11 @@ func controllerValidationTests() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "pvc1",
 							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(unitNum),
 						},
 					},
+					ControllerBusNumber: ptr.To(int32(0)),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					UnitNumber:          ptr.To(unitNum),
 				})
 			})
 
@@ -153,11 +153,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -171,11 +171,11 @@ func controllerValidationTests() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "pvc-extra",
 							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(int32(42)),
 						},
 					},
+					ControllerBusNumber: ptr.To(int32(0)),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					UnitNumber:          ptr.To(int32(42)),
 				}
 			})
 
@@ -211,11 +211,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -229,11 +229,11 @@ func controllerValidationTests() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "pvc-extra",
 							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(int32(10)),
 						},
 					},
+					ControllerBusNumber: ptr.To(int32(0)),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					UnitNumber:          ptr.To(int32(10)),
 				}
 			})
 
@@ -385,11 +385,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -418,11 +418,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(2)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(2)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -452,11 +452,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(5)), // Out of range (max is 3)
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(5)), // Out of range (max is 3)
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -489,12 +489,12 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -524,12 +524,12 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -558,12 +558,12 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -603,11 +603,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(5)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(5)),
 					},
 				}
 			})
@@ -646,11 +646,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(6)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(6)),
 					},
 				}
 			})
@@ -695,11 +695,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 					{
 						Name: "vol2",
@@ -708,11 +708,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc2",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(3)), // Conflicts with cdrom1.
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(3)), // Conflicts with cdrom1.
 					},
 				}
 			})
@@ -756,11 +756,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(1)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(1)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -775,11 +775,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 					vmopv1.VirtualMachineVolume{
 						Name: "vol2",
@@ -788,11 +788,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc2",
 								},
-								ControllerBusNumber: ptr.To(int32(1)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(1)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(1)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(1)),
 					},
 				)
 			})

@@ -546,11 +546,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-789",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -680,11 +680,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-patch",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -803,11 +803,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-nil-apigroup",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -918,11 +918,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-wrong-apigroup",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1035,11 +1035,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-pending",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1138,11 +1138,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-cycle",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1280,11 +1280,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1354,11 +1354,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-create-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1428,11 +1428,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-crv-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1502,11 +1502,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-crv-get-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1576,11 +1576,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-patch-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1673,11 +1673,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-delete-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1807,11 +1807,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-delete-all-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1916,11 +1916,11 @@ var _ = Describe("Reconcile", func() {
 										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 										Name: "disk-uuid-status-update-error",
 									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -2073,11 +2073,11 @@ var _ = Describe("Reconcile", func() {
 									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 									Name: "disk-uuid-no-policy",
 								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 
@@ -2181,11 +2181,11 @@ var _ = Describe("Reconcile", func() {
 									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
 									Name: "disk-uuid-from-image",
 								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 
@@ -2286,11 +2286,11 @@ var _ = Describe("Reconcile", func() {
 									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 									Name: "disk-uuid-pbm-fail",
 								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 
@@ -2657,11 +2657,11 @@ var _ = Describe("Reconcile", func() {
 									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 									Name: "disk-uuid-patch-fail",
 								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 

@@ -148,11 +148,11 @@ func updateSpecWithUnmanagedDisks(
 							Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
 							Name: diskName,
 						},
-						ControllerBusNumber: ptr.To(info.Controllers[di.ControllerKey].Bus),
-						ControllerType:      info.Controllers[di.ControllerKey].Type,
-						UnitNumber:          di.UnitNumber,
 					},
 				},
+				ControllerBusNumber: ptr.To(info.Controllers[di.ControllerKey].Bus),
+				ControllerType:      info.Controllers[di.ControllerKey].Type,
+				UnitNumber:          di.UnitNumber,
 			}
 			logger.Info("Backfilled unmanaged volume to spec",
 				"unmanagedVolumeSpec", newVolSpec)

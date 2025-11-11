@@ -1203,35 +1203,30 @@ func (v validator) validateControllerFields(
 ) field.ErrorList {
 	var allErrs field.ErrorList
 
-	pvc := vol.PersistentVolumeClaim
-
 	unitNumberRequired := oldVM != nil
-	if unitNumberRequired && pvc.UnitNumber == nil {
+	if unitNumberRequired && vol.UnitNumber == nil {
 		allErrs = append(allErrs, field.Required(
-			volPath.Child("persistentVolumeClaim",
-				"unitNumber"),
+			volPath.Child("unitNumber"),
 			"",
 		))
 	}
 
 	controllerTypeRequired := oldVM != nil ||
-		pvc.UnitNumber != nil ||
-		pvc.ControllerBusNumber != nil
-	if controllerTypeRequired && pvc.ControllerType == "" {
+		vol.UnitNumber != nil ||
+		vol.ControllerBusNumber != nil
+	if controllerTypeRequired && vol.ControllerType == "" {
 		allErrs = append(allErrs, field.Required(
-			volPath.Child("persistentVolumeClaim",
-				"controllerType"),
+			volPath.Child("controllerType"),
 			"",
 		))
 	}
 
 	controllerBusNumberRequired := oldVM != nil ||
-		pvc.UnitNumber != nil ||
-		pvc.ControllerType != ""
-	if controllerBusNumberRequired && pvc.ControllerBusNumber == nil {
+		vol.UnitNumber != nil ||
+		vol.ControllerType != ""
+	if controllerBusNumberRequired && vol.ControllerBusNumber == nil {
 		allErrs = append(allErrs, field.Required(
-			volPath.Child("persistentVolumeClaim",
-				"controllerBusNumber"),
+			volPath.Child("controllerBusNumber"),
 			"",
 		))
 	}
@@ -1264,34 +1259,34 @@ func (v validator) validateVolumeWithPVC(
 			oldVol.PersistentVolumeClaim.ClaimName == vol.PersistentVolumeClaim.ClaimName {
 
 			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.ApplicationType,
-				oldVol.PersistentVolumeClaim.ApplicationType,
-				pvcPath.Child("applicationType"))...)
+				vol.ApplicationType,
+				oldVol.ApplicationType,
+				volPath.Child("applicationType"))...)
 
 			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.ControllerBusNumber,
-				oldVol.PersistentVolumeClaim.ControllerBusNumber,
-				pvcPath.Child("controllerBusNumber"))...)
+				vol.ControllerBusNumber,
+				oldVol.ControllerBusNumber,
+				volPath.Child("controllerBusNumber"))...)
 
 			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.ControllerType,
-				oldVol.PersistentVolumeClaim.ControllerType,
-				pvcPath.Child("controllerType"))...)
+				vol.ControllerType,
+				oldVol.ControllerType,
+				volPath.Child("controllerType"))...)
 
 			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.DiskMode,
-				oldVol.PersistentVolumeClaim.DiskMode,
-				pvcPath.Child("diskMode"))...)
+				vol.DiskMode,
+				oldVol.DiskMode,
+				volPath.Child("diskMode"))...)
 
 			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.SharingMode,
-				oldVol.PersistentVolumeClaim.SharingMode,
-				pvcPath.Child("sharingMode"))...)
+				vol.SharingMode,
+				oldVol.SharingMode,
+				volPath.Child("sharingMode"))...)
 
 			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.UnitNumber,
-				oldVol.PersistentVolumeClaim.UnitNumber,
-				pvcPath.Child("unitNumber"))...)
+				vol.UnitNumber,
+				oldVol.UnitNumber,
+				volPath.Child("unitNumber"))...)
 		}
 
 		// Validate PVC access mode, sharing mode, and controller combinations
@@ -1369,18 +1364,18 @@ func (v validator) validatePVCAccessModeAndSharingModeCombinations(
 	controllerSharingMode := v.getControllerSharingMode(
 		ctx,
 		vm,
-		vol.PersistentVolumeClaim.ControllerType,
-		vol.PersistentVolumeClaim.ControllerBusNumber,
+		vol.ControllerType,
+		vol.ControllerBusNumber,
 	)
 
 	// Rule 1: If volume is ReadWriteOnce, the disk's sharing mode cannot be
 	// MultiWriter and the controller's sharing mode cannot be Physical.
 	if slices.Contains(pvc.Spec.AccessModes, corev1.ReadWriteOnce) {
-		if vol.PersistentVolumeClaim.SharingMode == vmopv1.VolumeSharingModeMultiWriter {
+		if vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter {
 			allErrs = append(allErrs,
 				field.Invalid(
-					pvcPath.Child("sharingMode"),
-					vol.PersistentVolumeClaim.SharingMode,
+					volPath.Child("sharingMode"),
+					vol.SharingMode,
 					fmt.Sprintf("Disk MultiWriter sharing mode is not allowed "+
 						"for ReadWriteOnce volumes for PVC %s",
 						vol.PersistentVolumeClaim.ClaimName),
@@ -1391,8 +1386,8 @@ func (v validator) validatePVCAccessModeAndSharingModeCombinations(
 		if controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical {
 			allErrs = append(allErrs,
 				field.Invalid(
-					pvcPath.Child("controllerType"),
-					vol.PersistentVolumeClaim.ControllerType,
+					volPath.Child("controllerType"),
+					vol.ControllerType,
 					fmt.Sprintf("Physical controller sharing mode is not "+
 						"allowed for ReadWriteOnce volume for PVC %s",
 						vol.PersistentVolumeClaim.ClaimName),
@@ -1405,7 +1400,7 @@ func (v validator) validatePVCAccessModeAndSharingModeCombinations(
 	// is MultiWriter or the controller's sharing mode should be Physical
 	if slices.Contains(pvc.Spec.AccessModes, corev1.ReadWriteMany) {
 		// Check if neither condition is met
-		hasMultiWriterSharing := vol.PersistentVolumeClaim.SharingMode == vmopv1.VolumeSharingModeMultiWriter
+		hasMultiWriterSharing := vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter
 		hasPhysicalController := controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical
 
 		if !hasMultiWriterSharing && !hasPhysicalController {

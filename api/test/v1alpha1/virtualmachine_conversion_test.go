@@ -280,13 +280,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "my-claim",
 								},
-								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								ControllerBusNumber: ptrOf(int32(0)),
-								DiskMode:            vmopv1.VolumeDiskModePersistent,
-								UnitNumber:          ptrOf(int32(0)),
 							}),
 						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptrOf(int32(0)),
+						DiskMode:            vmopv1.VolumeDiskModePersistent,
+						UnitNumber:          ptrOf(int32(0)),
 					},
 					{
 						Name: "my-volume-2",

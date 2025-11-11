@@ -49,6 +49,7 @@ spec:
               fieldPath: spec.serviceAccountName
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
+      serviceAccountName: vmoperator-service-account
       terminationGracePeriodSeconds: 10
       tolerations:
       - key: node-role.kubernetes.io/master

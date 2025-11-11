@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder_test
@@ -130,20 +130,36 @@ var _ = DescribeTable("IsPrivilegedAccount",
 )
 
 var _ = Describe("VerifyWebhookRequest", func() {
+	var (
+		ctx     context.Context
+		certDir string
+	)
+
 	BeforeEach(func() {
-		dir := filepath.Dir(caFilePath)
-		Expect(os.MkdirAll(dir, 0755)).To(Succeed())
+		tmpDir, err := os.MkdirTemp(os.TempDir(), "")
+		Expect(err).NotTo(HaveOccurred())
+		certDir = tmpDir
+
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			WebhookSecretVolumeMountPath: certDir,
+		})
+
+		caFilePath := filepath.Join(certDir, "client-ca", "ca.crt")
+		caFileDir := filepath.Dir(caFilePath)
+		Expect(os.MkdirAll(caFileDir, 0755)).To(Succeed())
 		Expect(os.WriteFile(caFilePath, []byte(sampleCert), 0644)).To(Succeed())
 	})
 
 	AfterEach(func() {
-		Expect(os.Remove(caFilePath)).To(Succeed())
-		Expect(os.RemoveAll("/tmp/k8s-webhook-server")).To(Succeed())
+		if certDir != "" {
+			Expect(os.RemoveAll(certDir)).To(Succeed())
+		}
+		ctx = nil
 	})
 
 	When("request has no context key for peer certs", func() {
 		It("should return an error", func() {
-			err := builder.VerifyWebhookRequest(context.TODO())
+			err := builder.VerifyWebhookRequest(ctx)
 			Expect(err).To(HaveOccurred())
 		})
 	})
@@ -154,7 +170,7 @@ var _ = Describe("VerifyWebhookRequest", func() {
 			clientCert, err := x509.ParseCertificate(block.Bytes)
 			Expect(err).NotTo(HaveOccurred())
 
-			ctx := context.WithValue(context.TODO(), builder.RequestClientCertificateContextKey, &tls.ConnectionState{
+			ctx = context.WithValue(ctx, builder.RequestClientCertificateContextKey, &tls.ConnectionState{
 				PeerCertificates: []*x509.Certificate{clientCert},
 			})
 			err = builder.VerifyWebhookRequest(ctx)
@@ -168,7 +184,7 @@ var _ = Describe("VerifyWebhookRequest", func() {
 			clientCert, err := x509.ParseCertificate(block.Bytes)
 			Expect(err).NotTo(HaveOccurred())
 
-			ctx := context.WithValue(context.TODO(), builder.RequestClientCertificateContextKey, &tls.ConnectionState{
+			ctx = context.WithValue(ctx, builder.RequestClientCertificateContextKey, &tls.ConnectionState{
 				PeerCertificates: []*x509.Certificate{clientCert},
 			})
 			err = builder.VerifyWebhookRequest(ctx)

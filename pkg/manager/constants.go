@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package manager
@@ -57,7 +57,7 @@ const (
 	// DefaultWebhookSecretVolumeMountPath is the default value for the
 	// eponymous manager option.
 	//nolint:gosec
-	DefaultWebhookSecretVolumeMountPath = "/tmp/k8s-webhook-server/serving-certs"
+	DefaultWebhookSecretVolumeMountPath = "/etc/vmware/wcp/webhook-certs"
 
 	// DefaultContainerNode is the default value for the eponymous manager option.
 	DefaultContainerNode = false

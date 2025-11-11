@@ -1,3 +1,7 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package builder
 
 import (
@@ -24,9 +28,6 @@ const (
 	// RequestClientCertificateContextKey is the key used to store and extract
 	// client cert data from http requests.
 	RequestClientCertificateContextKey contextKey = iota
-
-	// The path to ca cert used to validate client certs.
-	caFilePath = "/tmp/k8s-webhook-server/serving-certs/client-ca/ca.crt"
 
 	// The apiserver client CN.
 	apiserverCN = "apiserver-webhook-client"
@@ -177,7 +178,16 @@ func InPrivilegedUsersList(
 	return false
 }
 
-func verifyPeerCertificate(connState *tls.ConnectionState) error {
+func verifyPeerCertificate(
+	ctx context.Context,
+	connState *tls.ConnectionState) error {
+
+	certDir := pkgcfg.FromContext(ctx).WebhookSecretVolumeMountPath
+	if certDir == "" {
+		certDir = pkgcfg.Default().WebhookSecretVolumeMountPath
+	}
+	caFilePath := filepath.Join(certDir, "client-ca", "ca.crt")
+
 	if err := loadCACert(caFilePath); err != nil {
 		return err
 	}
@@ -246,5 +256,6 @@ func VerifyWebhookRequest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return verifyPeerCertificate(verifiedChains)
+
+	return verifyPeerCertificate(ctx, verifiedChains)
 }

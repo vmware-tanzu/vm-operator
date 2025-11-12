@@ -39,20 +39,22 @@ func AddControllersForVolumes(
 	)
 
 	// Add CD-ROM controllers to the occupied slots to check for conflicts.
-	for _, cdrom := range vm.Spec.Hardware.Cdrom {
-		if cdrom.ControllerBusNumber != nil &&
-			cdrom.ControllerType != "" &&
-			cdrom.UnitNumber != nil && *cdrom.UnitNumber >= 0 {
+	if vm.Spec.Hardware != nil {
+		for _, cdrom := range vm.Spec.Hardware.Cdrom {
+			if cdrom.ControllerBusNumber != nil &&
+				cdrom.ControllerType != "" &&
+				cdrom.UnitNumber != nil && *cdrom.UnitNumber >= 0 {
 
-			controllerID := pkgutil.ControllerID{
-				ControllerType: cdrom.ControllerType,
-				BusNumber:      *cdrom.ControllerBusNumber,
-			}
+				controllerID := pkgutil.ControllerID{
+					ControllerType: cdrom.ControllerType,
+					BusNumber:      *cdrom.ControllerBusNumber,
+				}
 
-			if occupiedSlots[controllerID] == nil {
-				occupiedSlots[controllerID] = sets.New[int32]()
+				if occupiedSlots[controllerID] == nil {
+					occupiedSlots[controllerID] = sets.New[int32]()
+				}
+				occupiedSlots[controllerID].Insert(*cdrom.UnitNumber)
 			}
-			occupiedSlots[controllerID].Insert(*cdrom.UnitNumber)
 		}
 	}
 
@@ -90,6 +92,10 @@ func AddControllersForVolumes(
 						"pvc", pvc.ClaimName,
 					)
 					continue
+				}
+
+				if vm.Spec.Hardware == nil {
+					vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 				}
 
 				switch targetController := targetController.(type) {

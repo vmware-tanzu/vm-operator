@@ -233,10 +233,11 @@ func placeResultToGroupMemberPlacement(
 
 	for _, ds := range result.Datastores {
 		status := vmopv1.VirtualMachineGroupPlacementDatastoreStatus{
-			Name:                 ds.Name,
-			ID:                   ds.MoRef.Value,
-			URL:                  ds.URL,
-			SupportedDiskFormats: ds.DiskFormats,
+			Name:                             ds.Name,
+			ID:                               ds.MoRef.Value,
+			URL:                              ds.URL,
+			SupportedDiskFormats:             ds.DiskFormats,
+			TopLevelDirectoryCreateSupported: ds.TopLevelDirectoryCreateSupported,
 		}
 		if ds.ForDisk {
 			status.DiskKey = ptr.To(ds.DiskKey)

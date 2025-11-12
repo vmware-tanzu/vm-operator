@@ -1608,6 +1608,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		result.Datastores[i].Name = ds.Name
 		result.Datastores[i].URL = ds.URL
 		result.Datastores[i].DiskFormats = ds.SupportedDiskFormats
+		result.Datastores[i].TopLevelDirectoryCreateSupported = ds.TopLevelDirectoryCreateSupported
 	}
 
 	// InstanceStoragePlacement flag is needed to update the VM's annotations
@@ -1649,6 +1650,7 @@ func processPlacementResult(
 			createArgs.Datastores[i].Name = result.Datastores[i].Name
 			createArgs.Datastores[i].URL = result.Datastores[i].URL
 			createArgs.Datastores[i].DiskFormats = result.Datastores[i].DiskFormats
+			createArgs.Datastores[i].TopLevelDirectoryCreateSupported = result.Datastores[i].TopLevelDirectoryCreateSupported
 		}
 	}
 

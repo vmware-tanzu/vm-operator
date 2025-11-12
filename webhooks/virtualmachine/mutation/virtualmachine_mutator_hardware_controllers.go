@@ -35,7 +35,6 @@ func AddControllersForVolumes(
 	var (
 		controllerSpecs = vmopv1util.NewControllerSpecs(*vm)
 		occupiedSlots   = make(map[pkgutil.ControllerID]sets.Set[int32])
-		wasMutated      = false
 	)
 
 	// Add CD-ROM controllers to the occupied slots to check for conflicts.
@@ -57,6 +56,55 @@ func AddControllersForVolumes(
 			}
 		}
 	}
+
+	explicitPlacementVolumes := []vmopv1.VirtualMachineVolume{}
+	implicitPlacementVolumes := []vmopv1.VirtualMachineVolume{}
+
+	// Separate volumes into explicit and implicit placement.
+	for _, vol := range volumes {
+		pvc := vol.PersistentVolumeClaim
+		if pvc.ControllerBusNumber != nil &&
+			pvc.ControllerType != "" &&
+			pvc.UnitNumber != nil && *pvc.UnitNumber >= 0 {
+
+			explicitPlacementVolumes = append(explicitPlacementVolumes, vol)
+		} else {
+			implicitPlacementVolumes = append(implicitPlacementVolumes, vol)
+		}
+	}
+
+	// Add controllers for explicit placement volumes. This should happen first
+	// because it will reserve slots that may be available for implicit placement.
+	wasMutated := processVolumes(
+		ctx,
+		vm,
+		explicitPlacementVolumes,
+		controllerSpecs,
+		occupiedSlots,
+	)
+
+	// Add controllers for implicit placement volumes. This should happen last
+	// because it will not reserve slots that may be available for implicit placement.
+	wasMutated = processVolumes(
+		ctx,
+		vm,
+		implicitPlacementVolumes,
+		controllerSpecs,
+		occupiedSlots,
+	) || wasMutated
+
+	return wasMutated, nil
+}
+
+func processVolumes(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	volumes []vmopv1.VirtualMachineVolume,
+	controllerSpecs vmopv1util.ControllerSpecs,
+	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
+) bool {
+
+	var wasMutated bool
 
 	// Process each volume to determine controller requirements.
 	for i := range volumes {
@@ -176,7 +224,7 @@ func AddControllersForVolumes(
 		}
 	}
 
-	return wasMutated, nil
+	return wasMutated
 }
 
 // determineTargetController determines a controller for the passed PVC.
@@ -250,6 +298,7 @@ func determineTargetController(
 		}
 	}
 
+	// If no available controller is found, create a new one.
 	for busNum := startingBusNum; busNum < controllerType.MaxCount(); busNum++ {
 		if _, ok := controllerSpecs.Get(controllerType, busNum); !ok {
 			return vmopv1util.CreateNewController(controllerType, busNum, sharingMode)

@@ -7471,14 +7471,14 @@ spec:
                                       - IDE                -- 4 total (2 per controller)
                                       - NVME               -- 256 total (64 per controller)
                                       - SATA               -- 120 total (30 per controller)
-                                      - SCSI (ParaVirtual) -- 252 total (63 per controller)
+                                      - SCSI (ParaVirtual) -- 256 total (64 per controller)
                                       - SCSI (BusLogic)    -- 60 total (15 per controller)
                                       - SCSI (LsiLogic)    -- 60 total (15 per controller)
                                       - SCSI (LsiLogicSAS) -- 60 total (15 per controller)
 
                                     Please note, the number of supported volumes per SCSI controller may seem
                                     off, but remember that a SCSI controller occupies a slot on its own bus.
-                                    Thus even though a ParaVirtual SCSI controller supports 64 targets and
+                                    Thus even though a ParaVirtual SCSI controller supports 65 targets and
                                     the other types of SCSI controllers support 16 targets, one of the
                                     targets is occupied by the controller itself.
 

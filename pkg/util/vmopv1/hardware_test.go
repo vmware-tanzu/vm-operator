@@ -174,18 +174,17 @@ var _ = Describe("NextAvailableUnitNumber", func() {
 		})
 
 		It("should skip reserved slot 7 when slots 0-6 are occupied", func() {
-			for i := int32(0); i < 7; i++ {
+			for i := int32(0); i < controller.ReservedUnitNumber(); i++ {
 				occupiedSlots.Insert(i)
 			}
 
 			unitNumber := vmopv1util.NextAvailableUnitNumber(&controller, occupiedSlots)
-			Expect(unitNumber).To(Equal(int32(8)))
+			Expect(unitNumber).To(Equal(controller.ReservedUnitNumber() + 1))
 		})
 
 		It("should return -1 when all slots except 7 are occupied", func() {
-			// ParaVirtual SCSI has 64 slots (0-63), with slot 7 reserved.
-			for i := int32(0); i < 64; i++ {
-				if i != 7 {
+			for i := int32(0); i < controller.MaxSlots(); i++ {
+				if i != controller.ReservedUnitNumber() {
 					occupiedSlots.Insert(i)
 				}
 			}
@@ -200,9 +199,8 @@ var _ = Describe("NextAvailableUnitNumber", func() {
 			})
 
 			It("should respect the 16 slot limit", func() {
-				// Occupy all 16 slots except 7.
-				for i := int32(0); i < 16; i++ {
-					if i != 7 {
+				for i := int32(0); i < controller.MaxSlots(); i++ {
+					if i != controller.ReservedUnitNumber() {
 						occupiedSlots.Insert(i)
 					}
 				}

@@ -26,6 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
+//nolint:gocyclo
 func fastDeploy(
 	vmCtx pkgctx.VirtualMachineContext,
 	vimClient *vim25.Client,
@@ -40,6 +41,13 @@ func fastDeploy(
 	vmDir := path.Dir(createArgs.ConfigSpec.Files.VmPathName)
 	logger.Info("Got vm dir", "vmDir", vmDir)
 
+	var dp object.DatastorePath
+	if !dp.FromString(vmDir) {
+		return nil, fmt.Errorf("invalid datastore path: %s", vmDir)
+	}
+	vmDirName := dp.Path
+	logger.Info("Got vm dir name", "vmDirName", vmDirName)
+
 	srcFilePaths := createArgs.FilePaths
 	logger.Info("Got source file paths", "srcFilePaths", srcFilePaths)
 
@@ -50,9 +58,88 @@ func fastDeploy(
 		createArgs.Datastores[0].DiskFormats...)
 	logger.Info("Got destination disk format", "dstDiskFormat", dstDiskFormat)
 
+	datacenter := object.NewDatacenter(
+		vimClient,
+		vimtypes.ManagedObjectReference{
+			Type:  string(vimtypes.ManagedObjectTypeDatacenter),
+			Value: createArgs.DatacenterMoID,
+		})
+	logger.Info("Got datacenter", "datacenter", datacenter.Reference())
+
+	// Create the directory where the VM will be created.
+	var (
+		vmDirPath     string
+		vmDirUUIDPath string
+		nm            *object.DatastoreNamespaceManager
+		fm            = object.NewFileManager(vimClient)
+	)
+
+	if createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
+		//
+		// The datastore supports TLD creation, so just use file manager.
+		//
+		if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
+			return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
+		}
+		vmDirPath = vmDir
+	} else {
+		//
+		// The datastore does NOT support TLD creation, so use the datastore
+		// namespace manager to create the new directory.
+		//
+		nm = object.NewDatastoreNamespaceManager(vimClient)
+		vdp, err := nm.CreateDirectory(
+			vmCtx,
+			object.NewDatastore(vimClient, createArgs.Datastores[0].MoRef),
+			vmDirName,
+			"")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create vm dir: %w", err)
+		}
+
+		// The vmDirUUIDPath value will look something like the following:
+		//
+		//     /vmfs/volumes/vsan:a5982d36bd6d11f0-9fd50050569d3d0d/dfc05687-5880-431c-9924-a3a34837443e
+		vmDirUUIDPath = vdp
+		logger.Info("Got vm dir UUID path", "vmDirUUIDPath", vmDirUUIDPath)
+
+		// Get the name of the newly created directory. From the above example
+		// this would be dfc05687-5880-431c-9924-a3a34837443e.
+		vmDirUUIDName := path.Base(vmDirUUIDPath)
+
+		// Update the original VM directory path to use the newly created dir
+		// name. If the original path was:
+		//
+		//     [vsanDatastore-1] bdefaf58-234d-49c0-a152-55a592f37e34
+		//
+		// Then using the above example, the new path would be:
+		//
+		//     [vsanDatastore-1] dfc05687-5880-431c-9924-a3a34837443e
+		//
+		// The original path also exists, but as a symlink to the real one.
+		vmDirPath = strings.ReplaceAll(vmDir, vmDirName, vmDirUUIDName)
+
+		// Update the path to the VMX file with the newly created directory
+		// name.  If the original path was:
+		//
+		//     [vsanDatastore-1] bdefaf58-234d-49c0-a152-55a592f37e34/my-vm-1.vmx
+		//
+		// Then using the above example, the new path would be:
+		//
+		//     [vsanDatastore-1] dfc05687-5880-431c-9924-a3a34837443e/my-vm-1.vmx
+		//
+		// The original path also exists, but as a symlink to the real one.
+		createArgs.ConfigSpec.Files.VmPathName = strings.ReplaceAll(
+			createArgs.ConfigSpec.Files.VmPathName, vmDirName, vmDirUUIDName)
+	}
+
+	logger.Info("Updated vm dir paths",
+		"vmDirPath", vmDirPath,
+		"vmPathName", createArgs.ConfigSpec.Files.VmPathName)
+
 	dstDiskPaths := make([]string, len(srcDiskPaths))
 	for i := 0; i < len(dstDiskPaths); i++ {
-		dstDiskPaths[i] = fmt.Sprintf("%s/disk-%d.vmdk", vmDir, i)
+		dstDiskPaths[i] = fmt.Sprintf("%s/disk-%d.vmdk", vmDirPath, i)
 	}
 	logger.Info("Got destination disk paths", "dstDiskPaths", dstDiskPaths)
 
@@ -62,11 +149,10 @@ func fastDeploy(
 		ext := path.Ext(srcFilePaths[i])
 		name := createArgs.ConfigSpec.Name + ext
 
-		dstFilePaths[i] = path.Join(vmDir, name)
+		dstFilePaths[i] = path.Join(vmDirPath, name)
 	}
 	logger.Info("Got destination file paths", "dstFilePaths", dstFilePaths)
 
-	// Collect the disks and remove the storage profile from them.
 	var (
 		disks     []*vimtypes.VirtualDisk
 		diskSpecs []*vimtypes.VirtualDeviceConfigSpec
@@ -96,20 +182,6 @@ func fastDeploy(
 		}
 	}
 	logger.Info("Got disks", "disks", disks)
-
-	datacenter := object.NewDatacenter(
-		vimClient,
-		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypeDatacenter),
-			Value: createArgs.DatacenterMoID,
-		})
-	logger.Info("Got datacenter", "datacenter", datacenter.Reference())
-
-	// Create the directory where the VM will be created.
-	fm := object.NewFileManager(vimClient)
-	if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
-		return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
-	}
 
 	// Copy any non-disk files to the target directory.
 	for i := range dstFilePaths {
@@ -166,22 +238,40 @@ func fastDeploy(
 		ctx := context.Background()
 
 		// Delete the VM directory and its contents.
-		t, err := fm.DeleteDatastoreFile(ctx, vmDir, datacenter)
-		if err != nil {
-			err = fmt.Errorf(
-				"failed to call delete api for vm dir %q: %w", vmDir, err)
-			if retErr == nil {
-				retErr = err
-			} else {
-				retErr = fmt.Errorf("%w,%w", err, retErr)
+		if createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
+			t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
+			if err != nil {
+				err = fmt.Errorf(
+					"failed to call delete api for vm dir %q: %w",
+					vmDirPath, err)
+				if retErr == nil {
+					retErr = err
+				} else {
+					retErr = fmt.Errorf("%w,%w", err, retErr)
+				}
+				return
 			}
-			return
-		}
 
-		// Wait for the delete call to return.
-		if err := t.Wait(ctx); err != nil {
+			// Wait for the delete call to return.
+			if err := t.Wait(ctx); err != nil {
+				if !fault.Is(err, &vimtypes.FileNotFound{}) {
+					err = fmt.Errorf("failed to delete vm dir %q: %w",
+						vmDirPath, err)
+					if retErr == nil {
+						retErr = err
+					} else {
+						retErr = fmt.Errorf("%w,%w", err, retErr)
+					}
+				}
+			}
+		} else if err := nm.DeleteDirectory(
+			ctx,
+			datacenter,
+			vmDirUUIDPath); err != nil {
+
 			if !fault.Is(err, &vimtypes.FileNotFound{}) {
-				err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
+				err = fmt.Errorf("failed to delete vm dir %q: %w",
+					vmDirUUIDPath, err)
 				if retErr == nil {
 					retErr = err
 				} else {

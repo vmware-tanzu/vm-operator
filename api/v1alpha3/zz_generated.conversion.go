@@ -2480,6 +2480,7 @@ func autoConvert_v1alpha3_VirtualMachineGroupPlacementDatastoreStatus_To_v1alpha
 	out.URL = in.URL
 	out.SupportedDiskFormats = *(*[]string)(unsafe.Pointer(&in.SupportedDiskFormats))
 	out.DiskKey = (*int32)(unsafe.Pointer(in.DiskKey))
+	out.TopLevelDirectoryCreateSupported = in.TopLevelDirectoryCreateSupported
 	return nil
 }
 
@@ -2494,6 +2495,7 @@ func autoConvert_v1alpha5_VirtualMachineGroupPlacementDatastoreStatus_To_v1alpha
 	out.URL = in.URL
 	out.SupportedDiskFormats = *(*[]string)(unsafe.Pointer(&in.SupportedDiskFormats))
 	out.DiskKey = (*int32)(unsafe.Pointer(in.DiskKey))
+	out.TopLevelDirectoryCreateSupported = in.TopLevelDirectoryCreateSupported
 	return nil
 }
 

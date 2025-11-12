@@ -37,10 +37,11 @@ type CreateArgs struct {
 }
 
 type DatastoreRef struct {
-	Name        string
-	MoRef       vimtypes.ManagedObjectReference
-	URL         string
-	DiskFormats []string
+	Name                             string
+	MoRef                            vimtypes.ManagedObjectReference
+	URL                              string
+	DiskFormats                      []string
+	TopLevelDirectoryCreateSupported bool
 
 	// ForDisk is false if the recommendation is for the VM's home directory and
 	// true if for a disk. DiskKey is only valid if ForDisk is true.

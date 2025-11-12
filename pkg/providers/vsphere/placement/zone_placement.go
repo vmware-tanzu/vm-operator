@@ -56,10 +56,11 @@ type Result struct {
 }
 
 type DatastoreResult struct {
-	Name        string
-	MoRef       vimtypes.ManagedObjectReference
-	URL         string
-	DiskFormats []string
+	Name                             string
+	MoRef                            vimtypes.ManagedObjectReference
+	URL                              string
+	DiskFormats                      []string
+	TopLevelDirectoryCreateSupported bool
 
 	// ForDisk is false if the recommendation is for the VM's home directory and
 	// true if for a disk. DiskKey is only valid if ForDisk is true.
@@ -490,6 +491,7 @@ func getDatastoreProperties(
 		ctx,
 		dsRefs,
 		[]string{
+			"capability.topLevelDirectoryCreateSupported",
 			"info.supportedVDiskFormats",
 			"info.url",
 			"name",
@@ -508,6 +510,9 @@ func getDatastoreProperties(
 				dsInfo := moDS.Info.GetDatastoreInfo()
 				ds.DiskFormats = dsInfo.SupportedVDiskFormats
 				ds.URL = dsInfo.Url
+				if v := moDS.Capability.TopLevelDirectoryCreateSupported; v != nil {
+					ds.TopLevelDirectoryCreateSupported = *v
+				}
 			}
 		}
 	}

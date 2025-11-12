@@ -354,6 +354,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string
@@ -741,6 +747,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string
@@ -1128,6 +1140,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string
@@ -1515,6 +1533,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string

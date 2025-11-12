@@ -58,10 +58,9 @@ const (
 	isRestrictedNetworkKey               = "IsRestrictedNetwork"
 	allowedRestrictedNetworkTCPProbePort = 6443
 
-	vmiKind        = "VirtualMachineImage"
-	cvmiKind       = "ClusterVirtualMachineImage"
-	vmclassKind    = "VirtualMachineClass"
-	vmSnapshotKind = "VirtualMachineSnapshot"
+	vmiKind     = "VirtualMachineImage"
+	cvmiKind    = "ClusterVirtualMachineImage"
+	vmclassKind = "VirtualMachineClass"
 
 	readinessProbeOnlyOneAction                = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
@@ -2392,7 +2391,7 @@ func (v validator) validateChecksAnnotation(
 }
 
 func (v validator) validateNextPowerStateChangeTimeFormat(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -2412,7 +2411,7 @@ func (v validator) validateNextPowerStateChangeTimeFormat(
 }
 
 func (v validator) validateBootOptionsWhenPoweredOn(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -2575,7 +2574,7 @@ func (v validator) validateBootOrder(
 }
 
 func (v validator) validateSnapshot(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine,
 	oldVM *vmopv1.VirtualMachine) field.ErrorList {
 

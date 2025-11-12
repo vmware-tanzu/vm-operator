@@ -6,6 +6,7 @@ package validation
 
 import (
 	"fmt"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -28,9 +29,10 @@ const (
 	invalidControllersCountFmt             = "must have exactly %d controllers"
 )
 
-// validateControllers validates that all volumes are attached
-// to controllers and that the number of devices per controller does not
-// exceed the maximum number of devices per controller.
+// validateControllers validates controllers are valid and
+// all volumes are attached to controllers and that the number
+// of devices per controller does not exceed the maximum number of
+// devices per controller.
 // We are not trying to be extensive here. The idea is to only perform
 // basic validations to the extent we can, and fall through to the
 // controller. It is possible that the VM is changed between the
@@ -58,39 +60,46 @@ func (v validator) validateControllers(
 	var allErrs field.ErrorList
 	hwPath := field.NewPath("spec", "hardware")
 
-	// Validate that when creating a VM, the bus number is not 0 because
-	// it is reserved for the default controller.
-	if oldVM == nil {
-		for i, controller := range vm.Spec.Hardware.SCSIControllers {
-			if controller.BusNumber == 0 {
-				allErrs = append(allErrs, field.Invalid(
-					hwPath.Child("scsiControllers").Index(i).Child("busNumber"),
-					controller.BusNumber,
-					invalidControllerBusNumberZero,
-				))
-			}
-		}
+	// AllDisksArePVCs will backfill boot disk so we don't need to skip 0.
+	// But if not enabled, we need to make sure busNumber 0 is not used.
+	if !pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		// Validate that when creating a VM, the bus number is not 0 because
+		// it is reserved for the default controller.
 
-		for i, controller := range vm.Spec.Hardware.SATAControllers {
-			if controller.BusNumber == 0 {
-				allErrs = append(allErrs, field.Invalid(
-					hwPath.Child("sataControllers").Index(i).Child("busNumber"),
-					controller.BusNumber,
-					invalidControllerBusNumberZero,
-				))
+		if oldVM == nil {
+			for i, controller := range vm.Spec.Hardware.SCSIControllers {
+				if controller.BusNumber == 0 {
+					allErrs = append(allErrs, field.Invalid(
+						hwPath.Child("scsiControllers").Index(i).Child("busNumber"),
+						controller.BusNumber,
+						invalidControllerBusNumberZero,
+					))
+				}
 			}
-		}
 
-		for i, controller := range vm.Spec.Hardware.NVMEControllers {
-			if controller.BusNumber == 0 {
-				allErrs = append(allErrs, field.Invalid(
-					hwPath.Child("nvmeControllers").Index(i).Child("busNumber"),
-					controller.BusNumber,
-					invalidControllerBusNumberZero,
-				))
+			for i, controller := range vm.Spec.Hardware.SATAControllers {
+				if controller.BusNumber == 0 {
+					allErrs = append(allErrs, field.Invalid(
+						hwPath.Child("sataControllers").Index(i).Child("busNumber"),
+						controller.BusNumber,
+						invalidControllerBusNumberZero,
+					))
+				}
+			}
+
+			for i, controller := range vm.Spec.Hardware.NVMEControllers {
+				if controller.BusNumber == 0 {
+					allErrs = append(allErrs, field.Invalid(
+						hwPath.Child("nvmeControllers").Index(i).Child("busNumber"),
+						controller.BusNumber,
+						invalidControllerBusNumberZero,
+					))
+				}
 			}
 		}
 	}
+
+	allErrs = append(allErrs, v.validateControllerWhenPoweredOn(ctx, vm, oldVM, hwPath)...)
 
 	maxIDEControllers := int(vmopv1.VirtualControllerTypeIDE.MaxCount())
 	numIDEControllers := len(vm.Spec.Hardware.IDEControllers)
@@ -103,6 +112,104 @@ func (v validator) validateControllers(
 	}
 
 	allErrs = append(allErrs, v.validateControllerSlots(ctx, vm)...)
+
+	return allErrs
+}
+
+// validateControllerWhenPowernedOn validates that when VM is poweredOn, disallow
+// editting existing controllers, can only add/remove controllers.
+func (v validator) validateControllerWhenPoweredOn(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine,
+	hwPath *field.Path) field.ErrorList {
+
+	// Skip the check if it's create or oldVM's powerState is not poweredOn.
+	// Even when new VM has PoweredOff, we still don't allow updating
+	// controllers, since reoncilePowerState is called after reconcileConfig.
+	if oldVM == nil || oldVM.Spec.PowerState != vmopv1.VirtualMachinePowerStateOn {
+		return nil
+	}
+
+	var allErrs field.ErrorList
+
+	oldSCSIControllerSettings := make(map[int32]vmopv1.SCSIControllerSpec)
+	oldSATAControllerSettings := make(map[int32]vmopv1.SATAControllerSpec)
+	oldNVMEControllerSettings := make(map[int32]vmopv1.NVMEControllerSpec)
+	if oldVM.Spec.Hardware != nil {
+		for _, oldCtrl := range oldVM.Spec.Hardware.SCSIControllers {
+			oldSCSIControllerSettings[oldCtrl.BusNumber] = oldCtrl
+		}
+		for _, oldCtrl := range oldVM.Spec.Hardware.SATAControllers {
+			oldSATAControllerSettings[oldCtrl.BusNumber] = oldCtrl
+		}
+		for _, oldCtrl := range oldVM.Spec.Hardware.NVMEControllers {
+			oldNVMEControllerSettings[oldCtrl.BusNumber] = oldCtrl
+		}
+	}
+
+	if vm.Spec.Hardware != nil {
+		scsiPath := hwPath.Child("scsiControllers")
+		for i, newC := range vm.Spec.Hardware.SCSIControllers {
+			if oldC, ok := oldSCSIControllerSettings[newC.BusNumber]; ok {
+				if !reflect.DeepEqual(newC.PCISlotNumber, oldC.PCISlotNumber) {
+					allErrs = append(allErrs,
+						field.Forbidden(
+							scsiPath.Index(i).Child("pciSlotNumber"),
+							updatesNotAllowedWhenPowerOn),
+					)
+				}
+				if !reflect.DeepEqual(newC.SharingMode, oldC.SharingMode) {
+					allErrs = append(allErrs,
+						field.Forbidden(
+							scsiPath.Index(i).Child("sharingMode"),
+							updatesNotAllowedWhenPowerOn),
+					)
+				}
+				if !reflect.DeepEqual(newC.Type, oldC.Type) {
+					allErrs = append(allErrs,
+						field.Forbidden(
+							scsiPath.Index(i).Child("type"),
+							updatesNotAllowedWhenPowerOn),
+					)
+				}
+			}
+		}
+
+		for i, newC := range vm.Spec.Hardware.SATAControllers {
+			if oldC, ok := oldSATAControllerSettings[newC.BusNumber]; ok {
+				if !reflect.DeepEqual(newC.PCISlotNumber, oldC.PCISlotNumber) {
+					allErrs = append(allErrs,
+						field.Forbidden(
+							hwPath.
+								Child("sataControllers").
+								Index(i).
+								Child("pciSlotNumber"),
+							updatesNotAllowedWhenPowerOn),
+					)
+				}
+			}
+		}
+
+		nvmePath := hwPath.Child("nvmeControllers")
+		for i, newC := range vm.Spec.Hardware.NVMEControllers {
+			if oldC, ok := oldNVMEControllerSettings[newC.BusNumber]; ok {
+				if !reflect.DeepEqual(newC.PCISlotNumber, oldC.PCISlotNumber) {
+					allErrs = append(allErrs,
+						field.Forbidden(
+							nvmePath.Index(i).Child("pciSlotNumber"),
+							updatesNotAllowedWhenPowerOn),
+					)
+				}
+				if !reflect.DeepEqual(newC.SharingMode, oldC.SharingMode) {
+					allErrs = append(allErrs,
+						field.Forbidden(
+							nvmePath.Index(i).Child("sharingMode"),
+							updatesNotAllowedWhenPowerOn),
+					)
+				}
+			}
+		}
+	}
 
 	return allErrs
 }

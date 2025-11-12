@@ -7,13 +7,14 @@ package validation
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 const (
@@ -51,41 +52,39 @@ func (v validator) validateControllers(
 	}
 
 	var allErrs field.ErrorList
-	hardwarePath := field.NewPath("spec", "hardware")
+	hwPath := field.NewPath("spec", "hardware")
 
 	// Validate that when creating a VM, the bus number is not 0 because
 	// it is reserved for the default controller.
-
-	for _, controller := range vm.Spec.Hardware.SCSIControllers {
-		if oldVM == nil && controller.BusNumber == 0 {
-			allErrs = append(allErrs, field.Invalid(
-				hardwarePath.Child("scsiControllers", "busNumber"),
-				controller.BusNumber,
-				invalidControllerBusNumberZero,
-			))
-			continue
+	if oldVM == nil {
+		for i, controller := range vm.Spec.Hardware.SCSIControllers {
+			if controller.BusNumber == 0 {
+				allErrs = append(allErrs, field.Invalid(
+					hwPath.Child("scsiControllers").Index(i).Child("busNumber"),
+					controller.BusNumber,
+					invalidControllerBusNumberZero,
+				))
+			}
 		}
-	}
 
-	for _, controller := range vm.Spec.Hardware.SATAControllers {
-		if oldVM == nil && controller.BusNumber == 0 {
-			allErrs = append(allErrs, field.Invalid(
-				hardwarePath.Child("sataControllers", "busNumber"),
-				controller.BusNumber,
-				invalidControllerBusNumberZero,
-			))
-			continue
+		for i, controller := range vm.Spec.Hardware.SATAControllers {
+			if controller.BusNumber == 0 {
+				allErrs = append(allErrs, field.Invalid(
+					hwPath.Child("sataControllers").Index(i).Child("busNumber"),
+					controller.BusNumber,
+					invalidControllerBusNumberZero,
+				))
+			}
 		}
-	}
 
-	for _, controller := range vm.Spec.Hardware.NVMEControllers {
-		if oldVM == nil && controller.BusNumber == 0 {
-			allErrs = append(allErrs, field.Invalid(
-				hardwarePath.Child("nvmeControllers", "busNumber"),
-				controller.BusNumber,
-				invalidControllerBusNumberZero,
-			))
-			continue
+		for i, controller := range vm.Spec.Hardware.NVMEControllers {
+			if controller.BusNumber == 0 {
+				allErrs = append(allErrs, field.Invalid(
+					hwPath.Child("nvmeControllers").Index(i).Child("busNumber"),
+					controller.BusNumber,
+					invalidControllerBusNumberZero,
+				))
+			}
 		}
 	}
 
@@ -93,7 +92,7 @@ func (v validator) validateControllers(
 	numIDEControllers := len(vm.Spec.Hardware.IDEControllers)
 	if numIDEControllers != maxIDEControllers {
 		allErrs = append(allErrs, field.Invalid(
-			hardwarePath.Child("ideControllers"),
+			hwPath.Child("ideControllers"),
 			fmt.Sprintf("%d controllers", numIDEControllers),
 			fmt.Sprintf(invalidControllersCountFmt, maxIDEControllers),
 		))
@@ -114,8 +113,6 @@ func (v validator) validateControllerSlots(
 	if len(volumes) == 0 {
 		return allErrs
 	}
-
-	volumesPath := field.NewPath("spec", "volumes")
 
 	var (
 		// controllerSpecs is a collection of controller specifications from
@@ -145,13 +142,14 @@ func (v validator) validateControllerSlots(
 		}
 	}
 
+	volumesPath := field.NewPath("spec", "volumes")
 	for i, vol := range vm.Spec.Volumes {
 		if vol.PersistentVolumeClaim == nil {
 			continue
 		}
 
 		pvc := vol.PersistentVolumeClaim
-		volPath := volumesPath.Index(i)
+		pvcPath := volumesPath.Index(i).Child("persistentVolumeClaim")
 
 		if pvc.ControllerBusNumber == nil ||
 			pvc.ControllerType == "" ||
@@ -173,22 +171,17 @@ func (v validator) validateControllerSlots(
 			controllerKey.BusNumber >= maxBusNumber {
 
 			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("persistentVolumeClaim", "controllerBusNumber"),
+				pvcPath.Child("controllerBusNumber"),
 				controllerKey.BusNumber,
 				fmt.Sprintf(invalidControllerBusNumberRangeFmt,
 					maxBusNumber-1)))
 			continue
 		}
 
-		var (
-			targetController vmopv1util.ControllerSpec
-			exists           bool
-		)
-
-		if targetController, exists = controllerSpecs.Get(
-			controllerKey.ControllerType, controllerKey.BusNumber); !exists {
+		targetController, exists := controllerSpecs.Get(controllerKey.ControllerType, controllerKey.BusNumber)
+		if !exists {
 			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("persistentVolumeClaim", "controllerBusNumber"),
+				pvcPath.Child("controllerBusNumber"),
 				controllerKey.BusNumber,
 				fmt.Sprintf(invalidControllerBusNumberDoesNotExist,
 					controllerKey.ControllerType,
@@ -208,7 +201,7 @@ func (v validator) validateControllerSlots(
 		// Validate unit number is within range for controller type.
 		if unitNum < 0 || unitNum >= maxSlots {
 			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("persistentVolumeClaim", "unitNumber"),
+				pvcPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidUnitNumberRangeFmt,
 					maxSlots-1, controllerKey.ControllerType)))
@@ -217,7 +210,7 @@ func (v validator) validateControllerSlots(
 		} else if unitNum == reservedUnit {
 			// Validate unit number is not reserved for the controller itself.
 			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("persistentVolumeClaim", "unitNumber"),
+				pvcPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidUnitNumberReserved,
 					reservedUnit,
@@ -233,7 +226,7 @@ func (v validator) validateControllerSlots(
 		// Validate unit number is not already in use.
 		if occupiedSlots[controllerKey].Has(unitNum) {
 			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("persistentVolumeClaim", "unitNumber"),
+				pvcPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidUnitNumberInUse,
 					controllerKey.ControllerType,
@@ -247,7 +240,7 @@ func (v validator) validateControllerSlots(
 		// Validate controller is not at capacity after adding this volume.
 		if occupiedSlots[controllerKey].Len() >= int(targetController.MaxSlots()) {
 			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("persistentVolumeClaim", "unitNumber"),
+				pvcPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidControllerCapacityFmt,
 					controllerKey.ControllerType,

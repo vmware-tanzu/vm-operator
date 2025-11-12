@@ -5,9 +5,10 @@
 package vmopv1
 
 import (
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // ControllerSpec is an interface describing a controller specification.
@@ -131,7 +132,7 @@ func GetManagedVolumesWithPVC(
 	vm vmopv1.VirtualMachine,
 ) []vmopv1.VirtualMachineVolume {
 
-	volumes := []vmopv1.VirtualMachineVolume{}
+	var volumes []vmopv1.VirtualMachineVolume
 	for _, v := range vm.Spec.Volumes {
 		if v.PersistentVolumeClaim != nil &&
 			v.PersistentVolumeClaim.UnmanagedVolumeClaim == nil {

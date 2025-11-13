@@ -41,4 +41,5 @@ spec:
             memory: 75Mi
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
+      serviceAccountName: vmoperator-service-account
       terminationGracePeriodSeconds: 10

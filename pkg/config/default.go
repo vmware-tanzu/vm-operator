@@ -50,7 +50,7 @@ func Default() Config {
 		DeploymentName:               defaultPrefix + "controller-manager",
 		PodName:                      defaultPrefix + "controller-manager",
 		PodNamespace:                 defaultPrefix + "system",
-		PodServiceAccountName:        "default",
+		PodServiceAccountName:        defaultPrefix + "service-account",
 		ProfilerAddr:                 ":8073",
 		RateLimitBurst:               1000,
 		RateLimitQPS:                 500,

@@ -206,6 +206,69 @@ func testNonPVCVolumes(getCtx func() *unitMutationWebhookContext) {
 	})
 }
 
+func fillControllerToCapacity(
+	ctx *unitMutationWebhookContext,
+	controllerType vmopv1.VirtualControllerType,
+	busNumber int32,
+	maxSlots int32,
+	reservedUnit int32,
+) {
+	for i := int32(0); i < maxSlots; i++ {
+		if i == reservedUnit {
+			continue
+		}
+		ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+			Name: fmt.Sprintf("existing-vol-%d", i),
+			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: fmt.Sprintf("existing-pvc-%d", i),
+					},
+					ControllerType:      controllerType,
+					ControllerBusNumber: ptr.To(busNumber),
+					UnitNumber:          ptr.To(i),
+				},
+			},
+		})
+	}
+}
+
+func fillAllControllersToCapacity(
+	ctx *unitMutationWebhookContext,
+	controllerType vmopv1.VirtualControllerType,
+	maxPerVM int32,
+	maxSlots int32,
+	reservedUnit int32,
+) []vmopv1util.ControllerSpec {
+	controllers := make([]vmopv1util.ControllerSpec, 0, maxPerVM)
+	params := controllerTestParamsForType(controllerType)
+
+	for busNum := range maxPerVM {
+		controller := params.createController(busNum, vmopv1.VirtualControllerSharingModeNone)
+		controllers = append(controllers, controller)
+
+		for i := int32(0); i <= maxSlots; i++ {
+			if i == reservedUnit {
+				continue
+			}
+			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+				Name: fmt.Sprintf("existing-vol-%d-%d", busNum, i),
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: fmt.Sprintf("existing-pvc-%d-%d", busNum, i),
+						},
+						ControllerType:      controllerType,
+						ControllerBusNumber: ptr.To(busNum),
+						UnitNumber:          ptr.To(i),
+					},
+				},
+			})
+		}
+	}
+	return controllers
+}
+
 func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 	// Controller Type Agnostic Tests - these tests run for all controller types.
 	Context("Controller Type Agnostic Tests", func() {
@@ -216,6 +279,9 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 			ctx.vm.Status.UniqueID = dummyVMName
 			ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
 			ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.AllDisksArePVCs = true
+			})
 		})
 
 		DescribeTable("should create controller and assign placement when no controllers exist",
@@ -243,13 +309,13 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				// Should have created one controller.
 				Expect(params.getControllers(ctx.vm.Spec.Hardware)).To(Equal(1))
 				controller := params.getController(ctx.vm.Spec.Hardware, 0)
-				Expect(vmopv1util.GenerateControllerID(controller).BusNumber).To(Equal(int32(1)))
+				Expect(vmopv1util.GenerateControllerID(controller).BusNumber).To(Equal(int32(0)))
 
 				// Volume should have placement assigned.
 				pvc := ctx.vm.Spec.Volumes[0].PersistentVolumeClaim
 				Expect(pvc.ControllerType).To(Equal(controllerType))
 				Expect(pvc.ControllerBusNumber).ToNot(BeNil())
-				Expect(*pvc.ControllerBusNumber).To(Equal(int32(1)))
+				Expect(*pvc.ControllerBusNumber).To(Equal(int32(0)))
 				Expect(pvc.UnitNumber).ToNot(BeNil())
 				Expect(*pvc.UnitNumber).To(Equal(int32(0)))
 			},
@@ -355,7 +421,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				params := controllerTestParamsForType(controllerType)
 
 				// Create first controller.
-				firstController := params.createController(1, vmopv1.VirtualControllerSharingModeNone)
+				firstController := params.createController(0, vmopv1.VirtualControllerSharingModeNone)
 				maxSlots := firstController.MaxSlots()
 				reservedUnit := firstController.ReservedUnitNumber()
 
@@ -366,23 +432,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				params.setControllers(ctx.vm.Spec.Hardware, []vmopv1util.ControllerSpec{firstController})
 
 				// Fill first controller to capacity using volumes in spec.
-				for i := int32(0); i < maxSlots; i++ {
-					if i != reservedUnit {
-						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-							Name: fmt.Sprintf("existing-vol-%d", i),
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: fmt.Sprintf("existing-pvc-%d", i),
-									},
-									ControllerType:      controllerType,
-									ControllerBusNumber: ptr.To(int32(1)),
-									UnitNumber:          ptr.To(i),
-								},
-							},
-						})
-					}
-				}
+				fillControllerToCapacity(ctx, controllerType, 0, maxSlots, reservedUnit)
 
 				// Add new volume.
 				ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
@@ -400,22 +450,18 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				// IDE only have 2 buses
 				mutated, err := mutation.AddControllersForVolumes(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
 				Expect(err).ToNot(HaveOccurred())
-				if controllerType == vmopv1.VirtualControllerTypeIDE {
-					Expect(mutated).To(BeFalse())
-					return
-				}
 				Expect(mutated).To(BeTrue())
 
 				// Should have 2 controllers now.
 				Expect(params.getControllers(ctx.vm.Spec.Hardware)).To(Equal(2))
 
-				// Second controller should be at bus 2, index 1. Since bus Number 0 is skipped
+				// Second controller should be at bus 1.
 				secondController := params.getController(ctx.vm.Spec.Hardware, 1)
-				Expect(vmopv1util.GenerateControllerID(secondController).BusNumber).To(Equal(int32(2)))
+				Expect(vmopv1util.GenerateControllerID(secondController).BusNumber).To(Equal(int32(1)))
 
 				// New volume should be assigned to new controller.
 				pvc := ctx.vm.Spec.Volumes[len(ctx.vm.Spec.Volumes)-1].PersistentVolumeClaim
-				Expect(*pvc.ControllerBusNumber).To(Equal(int32(2)))
+				Expect(*pvc.ControllerBusNumber).To(Equal(int32(1)))
 				Expect(*pvc.UnitNumber).To(Equal(int32(0)))
 			},
 			Entry("SCSI controller at capacity", vmopv1.VirtualControllerTypeSCSI),
@@ -431,6 +477,8 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				// Create a controller to get MaxCount.
 				sampleController := params.createController(0, vmopv1.VirtualControllerSharingModeNone)
 				maxPerVM := sampleController.MaxCount()
+				maxSlots := sampleController.MaxSlots()
+				reservedUnit := sampleController.ReservedUnitNumber()
 
 				// Setup hardware with maximum controllers.
 				if ctx.vm.Spec.Hardware == nil {
@@ -438,32 +486,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				}
 
 				// Create max controllers and fill them all using volumes in spec.
-				controllers := make([]vmopv1util.ControllerSpec, 0, maxPerVM)
-				for busNum := range maxPerVM {
-					controller := params.createController(busNum, vmopv1.VirtualControllerSharingModeNone)
-					controllers = append(controllers, controller)
-
-					// Fill controller to capacity using volumes in spec.
-					maxSlots := controller.MaxSlots()
-					reservedUnit := controller.ReservedUnitNumber()
-					for i := int32(0); i < maxSlots; i++ {
-						if i != reservedUnit {
-							ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-								Name: fmt.Sprintf("existing-vol-%d-%d", busNum, i),
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: fmt.Sprintf("existing-pvc-%d-%d", busNum, i),
-										},
-										ControllerType:      controllerType,
-										ControllerBusNumber: ptr.To(busNum),
-										UnitNumber:          ptr.To(i),
-									},
-								},
-							})
-						}
-					}
-				}
+				controllers := fillAllControllersToCapacity(ctx, controllerType, maxPerVM, maxSlots, reservedUnit)
 				params.setControllers(ctx.vm.Spec.Hardware, controllers)
 
 				// Try to add a new volume.
@@ -787,6 +810,109 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 			Entry("SATA existing unit number", vmopv1.VirtualControllerTypeSATA),
 			Entry("NVME existing unit number", vmopv1.VirtualControllerTypeNVME),
 			Entry("IDE existing unit number", vmopv1.VirtualControllerTypeIDE),
+		)
+
+		DescribeTable("should not overlap unit numbers when mixing volumes with and without explicit placement",
+			func(controllerType vmopv1.VirtualControllerType) {
+				params := controllerTestParamsForType(controllerType)
+
+				// Create existing controller.
+				if ctx.vm.Spec.Hardware == nil {
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				controller := params.createController(1, vmopv1.VirtualControllerSharingModeNone)
+
+				maxSlots := controller.MaxSlots()
+				reservedUnit := controller.ReservedUnitNumber()
+
+				// First, add volumes without controller or unit number set.
+				for i := int32(0); i < maxSlots; i++ {
+					if i == reservedUnit {
+						continue
+					}
+
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name: fmt.Sprintf("auto-vol-%d", i),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: fmt.Sprintf("auto-pvc-%d", i),
+								},
+								ControllerType: controllerType,
+								// No ControllerBusNumber or UnitNumber set.
+							},
+						},
+					})
+				}
+
+				// Then, add a full bus number of volumes with explicit
+				// bus number one and unit numbers.
+				explicitVolBusNumber := int32(1)
+				for i := int32(0); i < maxSlots; i++ {
+					if i == reservedUnit {
+						continue
+					}
+
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name: fmt.Sprintf("explicit-vol-%d", i),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: fmt.Sprintf("explicit-pvc-%d", i),
+								},
+								ControllerType:      controllerType,
+								ControllerBusNumber: ptr.To(explicitVolBusNumber),
+								UnitNumber:          ptr.To(i),
+							},
+						},
+					})
+				}
+
+				mutated, err := mutation.AddControllersForVolumes(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mutated).To(BeTrue())
+
+				// first set of volumes should have been assigned placement automatically
+				// on bus number not equal to explicitBusNumber because that will be fully
+				// occupied by the explicit volumes.
+				volumeIndex := 0
+				for unit := int32(0); unit < maxSlots; unit++ {
+					if unit == reservedUnit {
+						continue
+					}
+
+					vol := ctx.vm.Spec.Volumes[volumeIndex]
+					pvc := vol.PersistentVolumeClaim
+
+					Expect(pvc.ControllerBusNumber).ToNot(BeNil(),
+						"Volume %s should have a bus number assigned", vol.Name)
+					Expect(*pvc.ControllerBusNumber).ToNot(Equal(explicitVolBusNumber),
+						"Volume %s should not have bus number %d", vol.Name, explicitVolBusNumber)
+					Expect(pvc.UnitNumber).ToNot(BeNil(), "Volume %s should have a unit number assigned", vol.Name)
+					Expect(*pvc.UnitNumber).To(Equal(unit), "Volume %s should have unit number %d", vol.Name, unit)
+					volumeIndex++
+				}
+
+				// the last set of volumes should have continued to be placed explicitly.
+				for unit := int32(0); unit < maxSlots; unit++ {
+					if unit == reservedUnit {
+						continue
+					}
+
+					vol := ctx.vm.Spec.Volumes[volumeIndex]
+					pvc := vol.PersistentVolumeClaim
+
+					Expect(pvc.ControllerBusNumber).ToNot(BeNil(), "Volume %s should have a bus number assigned", vol.Name)
+					Expect(*pvc.ControllerBusNumber).To(Equal(explicitVolBusNumber), "Volume %s should have bus number %d", vol.Name, explicitVolBusNumber)
+					Expect(pvc.UnitNumber).ToNot(BeNil(), "Volume %s should have a unit number assigned", vol.Name)
+					Expect(*pvc.UnitNumber).To(Equal(unit), "Volume %s should have unit number %d", vol.Name, unit)
+					volumeIndex++
+				}
+			},
+			Entry("SCSI controller with mixed placement", vmopv1.VirtualControllerTypeSCSI),
+			Entry("SATA controller with mixed placement", vmopv1.VirtualControllerTypeSATA),
+			Entry("NVME controller with mixed placement", vmopv1.VirtualControllerTypeNVME),
+			Entry("IDE controller with mixed placement", vmopv1.VirtualControllerTypeIDE),
 		)
 	})
 }

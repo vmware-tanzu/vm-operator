@@ -193,18 +193,16 @@ type SCSIControllerSpec struct {
 }
 
 // MaxSlots returns the maximum number of devices per SCSI controller type.
-// The controller itself occupies one slot (unit number seven).
-//
-// For all these sub-types, the max slots is one less than the capacity
-// since unit number seven is reserved for the SCSI controller itself.
+// The controller itself occupies one slot (unit number seven), which you should
+// not use when assigning unit numbers to devices.
 func (c SCSIControllerSpec) MaxSlots() int32 {
 	switch c.Type {
 	case SCSIControllerTypeParaVirtualSCSI:
-		return 63 // 64 targets - 1 for controller
+		return 65 // There are 64 available slots and 1 reserved.
 	case SCSIControllerTypeBusLogic,
 		SCSIControllerTypeLsiLogic,
 		SCSIControllerTypeLsiLogicSAS:
-		return 15 // 16 targets - 1 for controller
+		return 16 // There are 15 available slots and 1 reserved.
 	}
 	return 0
 }

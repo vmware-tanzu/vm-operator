@@ -261,6 +261,14 @@ func restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, src *vmopv1.VirtualMac
 	}
 }
 
+func restore_v1alpha5_VirtualMachineAffinity(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Affinity == nil {
+		dst.Spec.Affinity = nil
+	} else {
+		dst.Spec.Affinity = src.Spec.Affinity.DeepCopy()
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -283,6 +291,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
+	restore_v1alpha5_VirtualMachineAffinity(dst, restored)
 
 	// END RESTORE
 

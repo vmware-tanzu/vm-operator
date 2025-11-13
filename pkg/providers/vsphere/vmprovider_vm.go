@@ -65,6 +65,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
@@ -340,6 +341,65 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	} else if vcVM == nil {
 		// VM does not exist.
 		return nil
+	}
+
+	if err := vcVM.Properties(
+		vmCtx,
+		vcVM.Reference(),
+		virtualmachine.VMDeletePropertiesSelector,
+		&vmCtx.MoVM); err != nil {
+
+		return fmt.Errorf("failed to fetch props when deleting VM: %w", err)
+	}
+
+	// Only process connected VMs or if the connection state is empty.
+	if cs := vmCtx.MoVM.Summary.Runtime.ConnectionState; cs != "" && cs !=
+		vimtypes.VirtualMachineConnectionStateConnected {
+
+		// Return a NoRequeueError so the VM is not requeued for
+		// reconciliation.
+		//
+		// The watcher service ensures that VMs will be reconciled
+		// immediately upon their summary.runtime.connectionState value
+		// changing.
+		//
+		// TODO(akutz) Determine if we should surface some type of condition
+		//             that indicates this state.
+		return fmt.Errorf("failed to delete vm: %w", pkgerr.NoRequeueError{
+			Message: fmt.Sprintf("unsupported connection state: %s", cs),
+		})
+	}
+
+	if paused.ByAdmin(vmCtx.MoVM) {
+		if vmCtx.VM.Labels == nil {
+			vmCtx.VM.Labels = make(map[string]string)
+		}
+		vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "admin"
+
+		// Throw an error to distinguish from successful deletion.
+		return fmt.Errorf("failed to delete vm: %w", pkgerr.NoRequeueError{
+			Message: constants.VMPausedByAdminError,
+		})
+	}
+
+	// If the disk promotion task is still running, try to cancel since it has the
+	// VM locked and delete cannot happen while it is running.
+	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+		ctxWithRecentTaskInfo, err := vs.getRecentTaskInfo(vmCtx, client)
+		if err != nil {
+			return fmt.Errorf("failed to fetch recent tasks: %w", err)
+		}
+		vmCtx.Context = ctxWithRecentTaskInfo
+
+		for _, t := range pkgctx.GetVMRecentTasks(vmCtx) {
+			if t.State == vimtypes.TaskInfoStateRunning &&
+				t.DescriptionId == vmconfdiskpromo.PromoteDisksTaskKey {
+				task := object.NewTask(vcVM.Client(), t.Task)
+				if err := task.Cancel(vmCtx); err != nil {
+					return fmt.Errorf("failed to cancel disk promotion task: %w", err)
+				}
+			}
+		}
 	}
 
 	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
@@ -1041,6 +1101,12 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 			if t.Info.Description != nil {
 				descMsg = t.Info.Description.Message
 			}
+
+			var completedTime string
+			if t.Info.CompleteTime != nil {
+				completedTime = t.Info.CompleteTime.String()
+			}
+
 			logger.V(logLevel).Info("VM has task",
 				"activationId", t.Info.ActivationId,
 				"descriptionId", t.Info.DescriptionId,
@@ -1048,7 +1114,7 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				"cancelable", t.Info.Cancelable,
 				"cancelled", t.Info.Cancelled,
 				"changeTag", t.Info.ChangeTag,
-				"completeTime", t.Info.CompleteTime,
+				"completeTime", completedTime,
 				"entity", t.Info.Entity,
 				"entityName", t.Info.EntityName,
 				"error", t.Info.Error,

@@ -7547,6 +7547,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
 					// Change a field that is validated during schema upgrade
@@ -7561,6 +7564,27 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				validate: doValidateWithMsg(
 					`spec.hardware.ideControllers: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
+			},
+		),
+
+		Entry("allow update when both VMs have nil Hardware",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					// Remove volumes to avoid volume-controller validation
+					ctx.oldVM.Spec.Volumes = nil
+					ctx.vm.Spec.Volumes = nil
+
+					ctx.oldVM.Spec.Hardware = nil
+					ctx.vm.Spec.Hardware = nil
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
 			},
 		),
 

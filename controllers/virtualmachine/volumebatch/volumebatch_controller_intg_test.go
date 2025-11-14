@@ -427,13 +427,13 @@ func intgTestsReconcile() {
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
-			By("VM Status.Volumes should still only have entry for volume volume2", func() {
+			By("VM Status.Volumes should still have entries for volume1 and volume2", func() {
 				// I'm not sure if we have a better way to check for this.
 				Eventually(func(g Gomega) {
 					vm = getVirtualMachine(vmKey)
 					g.Expect(vm).ToNot(BeNil())
-					g.Expect(vm.Status.Volumes).To(HaveLen(1))
-				}).Should(Succeed())
+					g.Expect(vm.Status.Volumes).To(HaveLen(2))
+				}, "3s").Should(Succeed())
 			})
 		})
 	})

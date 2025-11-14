@@ -16,6 +16,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	storagehelpers "k8s.io/component-helpers/storage/volume"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,7 +46,10 @@ import (
 const (
 	controllerName = "volumebatch"
 	// In BatchAttachment status, CSI hardcode a volume name entry with :detaching
-	// suffix if it's being detached.
+	// suffix if it's being detached. CSI only adds that after they have finsihed
+	// a CNS detach call, which could take up to minutes. So we still want to add
+	// that suffix ourselves as soon as a volume is removed from vm.spec.volumes.
+	//
 	// Note: The reason why we have this suffix is because there is a case that
 	// a volume's PVC was changed, that means we need to detach current vol,
 	// and attach another one. But since volume name is unique, and there is a
@@ -655,6 +659,7 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 	volumeStatuses = append(volumeStatuses,
 		getVolumeStatusWithDetachingVolumeFromBatchAttachment(
 			existingAttachVolStatus,
+			volumeSpecs,
 		)...,
 	)
 
@@ -920,12 +925,23 @@ func getVolumeStatusesWithDetachingVolumeInLegacyAttachment(
 // These volumes that are being detached all has same suffix ':detaching'.
 func getVolumeStatusWithDetachingVolumeFromBatchAttachment(
 	existingAttachVolStatus map[string]cnsv1alpha1.VolumeStatus,
+	volumeSpecs []cnsv1alpha1.VolumeSpec,
 ) []vmopv1.VirtualMachineVolumeStatus {
+
 	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
+
+	attachVolSpecNames := sets.New[string]()
+	for _, volSpecs := range volumeSpecs {
+		attachVolSpecNames.Insert(volSpecs.Name)
+	}
 
 	for _, volStatus := range existingAttachVolStatus {
 		volName := volStatus.Name
-		if strings.HasSuffix(volName, volumeNameDetachSuffix) {
+		if !attachVolSpecNames.Has(volName) {
+			// Append suffix if it's not added by CSI yet.
+			if !strings.HasSuffix(volName, volumeNameDetachSuffix) {
+				volName += volumeNameDetachSuffix
+			}
 			volumeStatuses = append(volumeStatuses,
 				attachmentStatusToVolumeStatus(volName, volStatus),
 			)
@@ -972,7 +988,7 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 ) []vmopv1.VirtualMachineVolumeStatus {
 
 	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
-	// Maintain the mapping of AttachmentName -> Attachment.
+	// Maintain the mapping of LegacyAttachmentName -> Attachment.
 	orphanedAttachmentsMap := make(map[string]cnsv1alpha1.CnsNodeVmAttachment)
 	for _, o := range orphanedAttachments {
 		orphanedAttachmentsMap[o.Name] = o
@@ -1099,7 +1115,7 @@ func categorizeVolumeSpecs(
 		}
 
 		// Only include greenfield volumes that are not tracked by
-		// legacy CnsNodeVmAttachment
+		// legacy CnsNodeVmAttachment or those whose PVCs have been changed.
 		volumeSpecsForBatch = append(volumeSpecsForBatch, vol)
 	}
 	return volumeSpecsForBatch, volumeSpecsForLegacy

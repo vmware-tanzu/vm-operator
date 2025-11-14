@@ -1998,6 +1998,196 @@ var _ = Describe("UpdateStatus", func() {
 		})
 	})
 
+	Context("PowerState", func() {
+		Context("status.powerState", func() {
+			When("VM runtime power state is PoweredOn", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+				})
+
+				When("spec.powerState is PoweredOn (synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					It("should set status.powerState to PoweredOn", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal(string(vmopv1.VirtualMachinePowerStateOn)))
+						Expect(cond.Message).To(BeEmpty())
+					})
+				})
+
+				When("spec.powerState is PoweredOff (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					It("should set status.powerState to PoweredOn", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOff"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOn"))
+					})
+				})
+
+				When("spec.powerState is Suspended (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+
+					It("should set status.powerState to PoweredOn", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=Suspended"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOn"))
+					})
+				})
+			})
+
+			When("VM runtime power state is PoweredOff", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+				})
+
+				When("spec.powerState is PoweredOff (synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					It("should set status.powerState to PoweredOff", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal(string(vmopv1.VirtualMachinePowerStateOff)))
+						Expect(cond.Message).To(BeEmpty())
+					})
+				})
+
+				When("spec.powerState is PoweredOn (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					It("should set status.powerState to PoweredOff", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOn"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOff"))
+					})
+				})
+
+				When("spec.powerState is Suspended (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+
+					It("should set status.powerState to PoweredOff", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=Suspended"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOff"))
+					})
+				})
+			})
+
+			When("VM runtime power state is Suspended", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStateSuspended
+				})
+
+				When("spec.powerState is Suspended (synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+
+					It("should set status.powerState to Suspended", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal(string(vmopv1.VirtualMachinePowerStateSuspended)))
+						Expect(cond.Message).To(BeEmpty())
+					})
+				})
+
+				When("spec.powerState is PoweredOn (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					It("should set status.powerState to Suspended", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOn"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=Suspended"))
+					})
+				})
+
+				When("spec.powerState is PoweredOff (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					It("should set status.powerState to Suspended", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOff"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=Suspended"))
+					})
+				})
+			})
+		})
+	})
+
 	Context("Controllers", func() {
 		When("moVM.Config is nil", func() {
 			BeforeEach(func() {

@@ -201,8 +201,10 @@ func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
 }
 
-func restore_v1alpha5_VirtualMachineCryptoSpec(dst, src *vmopv1.VirtualMachine) {
-	dst.Spec.Crypto = src.Spec.Crypto
+func restore_v1alpha5_VirtualMachineCryptoVTPM(dst, src *vmopv1.VirtualMachine) {
+	if dst.Spec.Crypto != nil && src.Spec.Crypto != nil {
+		dst.Spec.Crypto.VTPMMode = src.Spec.Crypto.VTPMMode
+	}
 }
 
 func Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(
@@ -287,7 +289,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
-	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)
+	restore_v1alpha5_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)

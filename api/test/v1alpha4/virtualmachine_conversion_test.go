@@ -540,4 +540,113 @@ func TestVirtualMachineConversion(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("VirtualMachine and spec.crypto", func(t *testing.T) {
+
+		hubSpokeHub := func(g *WithT, hub, hubAfter ctrlconversion.Hub, spoke ctrlconversion.Convertible) {
+			hubBefore := hub.DeepCopyObject().(ctrlconversion.Hub)
+
+			// First convert hub to spoke
+			dstCopy := spoke.DeepCopyObject().(ctrlconversion.Convertible)
+			g.Expect(dstCopy.ConvertFrom(hubBefore)).To(Succeed())
+
+			// Convert spoke back to hub and check if the resulting hub is equal to the hub before the round trip
+			g.Expect(dstCopy.ConvertTo(hubAfter)).To(Succeed())
+
+			g.Expect(apiequality.Semantic.DeepEqual(hubBefore, hubAfter)).To(BeTrue(), cmp.Diff(hubBefore, hubAfter))
+		}
+
+		t.Run("hub-spoke-hub", func(t *testing.T) {
+
+			t.Run("spec.crypto is nil", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto is empty", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.className is non-empty", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: "fake",
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.useDefaultKeyProvider is true", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							UseDefaultKeyProvider: &[]bool{true}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.useDefaultKeyProvider is false", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							UseDefaultKeyProvider: &[]bool{false}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.vTPMMode is clone", func(t *testing.T) {
+				g := NewWithT(t)
+				hubBefore := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: "my-class-1",
+							VTPMMode:            vmopv1.VirtualMachineCryptoVTPMModeClone,
+						},
+					},
+				}
+
+				// First convert hub to spoke
+				var spoke vmopv1a4.VirtualMachine
+				g.Expect(spoke.ConvertFrom(&hubBefore)).To(Succeed())
+
+				spoke.Spec.Crypto.EncryptionClassName = "my-class-2"
+
+				var hubAfter vmopv1.VirtualMachine
+				g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+
+				g.Expect(hubAfter.Spec.Crypto).ToNot(BeNil())
+				g.Expect(hubAfter.Spec.Crypto.EncryptionClassName).To(Equal("my-class-2"))
+				g.Expect(hubAfter.Spec.Crypto.VTPMMode).To(Equal(vmopv1.VirtualMachineCryptoVTPMModeClone))
+			})
+
+			t.Run("spec.crypto is completely filled out", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName:   "fake",
+							UseDefaultKeyProvider: &[]bool{false}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+		})
+	})
 }

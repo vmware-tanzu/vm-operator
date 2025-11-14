@@ -890,14 +890,27 @@ func TestVirtualMachineConversion(t *testing.T) {
 
 			t.Run("spec.crypto.vTPMMode is clone", func(t *testing.T) {
 				g := NewWithT(t)
-				hub := vmopv1.VirtualMachine{
+				hubBefore := vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
 						Crypto: &vmopv1.VirtualMachineCryptoSpec{
-							VTPMMode: vmopv1.VirtualMachineCryptoVTPMModeClone,
+							EncryptionClassName: "my-class-1",
+							VTPMMode:            vmopv1.VirtualMachineCryptoVTPMModeClone,
 						},
 					},
 				}
-				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+
+				// First convert hub to spoke
+				var spoke vmopv1a2.VirtualMachine
+				g.Expect(spoke.ConvertFrom(&hubBefore)).To(Succeed())
+
+				spoke.Spec.Crypto.EncryptionClassName = "my-class-2"
+
+				var hubAfter vmopv1.VirtualMachine
+				g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+
+				g.Expect(hubAfter.Spec.Crypto).ToNot(BeNil())
+				g.Expect(hubAfter.Spec.Crypto.EncryptionClassName).To(Equal("my-class-2"))
+				g.Expect(hubAfter.Spec.Crypto.VTPMMode).To(Equal(vmopv1.VirtualMachineCryptoVTPMModeClone))
 			})
 
 			t.Run("spec.crypto is completely filled out", func(t *testing.T) {

@@ -73,6 +73,10 @@ const (
 	// VirtualMachineHardwareCDROMVerified indicates that the VM's hardware
 	// CD-ROM devices match the desired state specified in the spec.
 	VirtualMachineHardwareCDROMVerified = "VirtualMachineHardwareCDROMVerified"
+
+	// VirtualMachinePowerStateSynced indicates the VM's power state is synced
+	// to the desired state.
+	VirtualMachinePowerStateSynced = "VirtualMachinePowerStateSynced"
 )
 
 const (

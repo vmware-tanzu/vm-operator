@@ -310,6 +310,20 @@ func reconcileStatusPowerState(
 	vmCtx.VM.Status.PowerState = vmopv1util.ConvertPowerState(vmCtx.Logger,
 		vmCtx.MoVM.Runtime.PowerState)
 
+	if vmCtx.VM.Status.PowerState == vmCtx.VM.Spec.PowerState {
+		c := conditions.TrueCondition(vmopv1.VirtualMachinePowerStateSynced)
+		c.Reason = string(vmCtx.VM.Spec.PowerState)
+		c.Message = ""
+		conditions.Set(vmCtx.VM, c)
+	} else {
+		conditions.MarkFalse(
+			vmCtx.VM,
+			vmopv1.VirtualMachinePowerStateSynced,
+			"NotSynced",
+			"spec.powerState=%s != status.powerState=%s",
+			vmCtx.VM.Spec.PowerState, vmCtx.VM.Status.PowerState)
+	}
+
 	return nil
 }
 

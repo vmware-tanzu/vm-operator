@@ -1787,7 +1787,7 @@ func (v validator) validateSchemaUpgrade(
 		// that are backfilled by the schema upgrade and mutable,
 		// before the schema upgrade is completed.
 		allErrs = append(allErrs,
-			v.validateFieldsDuringSchemaUpgrade(newVM, oldVM)...)
+			v.validateFieldsDuringSchemaUpgrade(ctx, newVM, oldVM)...)
 	}
 
 	return allErrs
@@ -2560,7 +2560,7 @@ func (v validator) validateBootOrder(
 				}
 			case vmopv1.VirtualMachineBootOptionsBootableCDRomDevice:
 				// Validate that a CD-ROM device has been defined.
-				if len(vm.Spec.Hardware.Cdrom) == 0 {
+				if vm.Spec.Hardware == nil || len(vm.Spec.Hardware.Cdrom) == 0 {
 					allErrs = append(
 						allErrs,
 						field.Invalid(
@@ -2840,6 +2840,7 @@ func (v validator) validateImmutableVMAffinity(
 // - vm.Spec.Hardware.*Controllers
 // Fields that are immutable will not be validated.
 func (v validator) validateFieldsDuringSchemaUpgrade(
+	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
@@ -2853,23 +2854,50 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 			specPath.Child("biosUUID"), notUpgraded))
 	}
 
-	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.IDEControllers,
-		vm.Spec.Hardware.IDEControllers) {
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		return allErrs
+	}
+
+	var (
+		oldIDEControllers  []vmopv1.IDEControllerSpec
+		oldNVMEControllers []vmopv1.NVMEControllerSpec
+		oldSATAControllers []vmopv1.SATAControllerSpec
+		oldSCSIControllers []vmopv1.SCSIControllerSpec
+
+		newIDEControllers  []vmopv1.IDEControllerSpec
+		newNVMEControllers []vmopv1.NVMEControllerSpec
+		newSATAControllers []vmopv1.SATAControllerSpec
+		newSCSIControllers []vmopv1.SCSIControllerSpec
+	)
+
+	if oldVM.Spec.Hardware != nil {
+		oldIDEControllers = oldVM.Spec.Hardware.IDEControllers
+		oldNVMEControllers = oldVM.Spec.Hardware.NVMEControllers
+		oldSATAControllers = oldVM.Spec.Hardware.SATAControllers
+		oldSCSIControllers = oldVM.Spec.Hardware.SCSIControllers
+	}
+
+	if vm.Spec.Hardware != nil {
+		newIDEControllers = vm.Spec.Hardware.IDEControllers
+		newNVMEControllers = vm.Spec.Hardware.NVMEControllers
+		newSATAControllers = vm.Spec.Hardware.SATAControllers
+		newSCSIControllers = vm.Spec.Hardware.SCSIControllers
+	}
+
+	// Validate that controllers haven't changed (including nil -> non-nil)
+	if !equality.Semantic.DeepEqual(oldIDEControllers, newIDEControllers) {
 		allErrs = append(allErrs, field.Forbidden(
 			specHardwarePath.Child("ideControllers"), notUpgraded))
 	}
-	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.NVMEControllers,
-		vm.Spec.Hardware.NVMEControllers) {
+	if !equality.Semantic.DeepEqual(oldNVMEControllers, newNVMEControllers) {
 		allErrs = append(allErrs, field.Forbidden(
 			specHardwarePath.Child("nvmeControllers"), notUpgraded))
 	}
-	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.SATAControllers,
-		vm.Spec.Hardware.SATAControllers) {
+	if !equality.Semantic.DeepEqual(oldSATAControllers, newSATAControllers) {
 		allErrs = append(allErrs, field.Forbidden(
 			specHardwarePath.Child("sataControllers"), notUpgraded))
 	}
-	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.SCSIControllers,
-		vm.Spec.Hardware.SCSIControllers) {
+	if !equality.Semantic.DeepEqual(oldSCSIControllers, newSCSIControllers) {
 		allErrs = append(allErrs, field.Forbidden(
 			specHardwarePath.Child("scsiControllers"), notUpgraded))
 	}

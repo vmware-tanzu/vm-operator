@@ -51,6 +51,10 @@ func (v validator) validateControllers(
 		return nil
 	}
 
+	if vm.Spec.Hardware == nil {
+		return nil
+	}
+
 	var allErrs field.ErrorList
 	hwPath := field.NewPath("spec", "hardware")
 

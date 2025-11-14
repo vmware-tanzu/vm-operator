@@ -804,4 +804,26 @@ func controllerValidationTests() {
 			})
 		})
 	})
+
+	Context("Nil Hardware validation", func() {
+		When("VM has nil Hardware with VMSharedDisks enabled", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware = nil
+				ctx.vm.Spec.Volumes = nil
+			})
+
+			It("should allow creation without panic", func() {
+				ctx.oldVM = nil
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+
+			It("should allow update without panic", func() {
+				ctx.oldVM.Spec.Hardware = nil
+				ctx.oldVM.Spec.Volumes = nil
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+	})
 }

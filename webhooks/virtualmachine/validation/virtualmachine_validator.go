@@ -1134,8 +1134,10 @@ func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	if ctx.IsPrivilegedAccount {
-		// TODO(akutz) Dedupe this against Faisal's outstanding change.
+	if ctx.IsVMOperatorAccount {
+		// TODO(akutz): This can be removed after we merge the implementations
+		// of reconcileBackfillUnmanagedDisks and reconcileSchemaUpgrade
+		// in vmprovider_vm.go into a single patch of the VM CRD.
 		return nil
 	}
 
@@ -1236,6 +1238,42 @@ func (v validator) validateControllerFields(
 	return allErrs
 }
 
+func (v validator) validateApplicationFields(
+	vol vmopv1.VirtualMachineVolume,
+	volPath field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+
+	switch vol.ApplicationType {
+	case vmopv1.VolumeApplicationTypeOracleRAC:
+		if vol.SharingMode != vmopv1.VolumeSharingModeMultiWriter {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("sharingMode"),
+				vol.SharingMode,
+				"SharingMode must be MultiWriter for OracleRAC volumes",
+			))
+		}
+
+		if vol.DiskMode != vmopv1.VolumeDiskModeIndependentPersistent {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("diskMode"),
+				vol.DiskMode,
+				"DiskMode must be IndependentPersistent for OracleRAC volumes",
+			))
+		}
+	case vmopv1.VolumeApplicationTypeMicrosoftWSFC:
+		if vol.DiskMode != vmopv1.VolumeDiskModeIndependentPersistent {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("diskMode"),
+				vol.DiskMode,
+				"DiskMode must be IndependentPersistent for MicrosoftWSFC volumes",
+			))
+		}
+	}
+
+	return allErrs
+}
+
 func (v validator) validateVolume(
 	ctx *pkgctx.WebhookRequestContext,
 	oldVM, vm *vmopv1.VirtualMachine,
@@ -1297,6 +1335,10 @@ func (v validator) validateVolume(
 			volPath.Child("unitNumber"))...)
 	}
 
+	allErrs = append(allErrs,
+		v.validateApplicationFields(vol, *volPath)...,
+	)
+
 	// Validate access mode, sharing mode, and controller combinations if VM is
 	// being created or volume is being updated.
 	// Skip the validation if the volume is not being updated to avoid rejecting
@@ -1332,7 +1374,6 @@ func (v validator) validateVolume(
 			"volume", vol.Name,
 			"volumeChanged", volumeChanged,
 			"hardwareChanged", hardwareChanged,
-			"isPrivilegedAccount", ctx.IsPrivilegedAccount,
 		)
 	}
 
@@ -1363,12 +1404,18 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 		// Fetch the PVC to get its access modes
 		obj := &corev1.PersistentVolumeClaim{}
 		if err := v.client.Get(ctx, ctrlclient.ObjectKey{
-			Namespace: ctx.Namespace,
-			Name:      vol.PersistentVolumeClaim.ClaimName,
+			Namespace: vm.Namespace,
+			Name:      pvc.ClaimName,
 		}, obj); err != nil {
 			// If the PVC doesn't exist, skip validation
 			// The PVC existence will be validated elsewhere or at runtime
 			if apierrors.IsNotFound(err) {
+				ctx.Logger.V(4).Info("PVC not found, skipping validation",
+					"volume", vol.Name,
+					"claimName", vol.PersistentVolumeClaim.ClaimName,
+					"namespace", ctx.Namespace,
+					"error", err.Error(),
+				)
 				return allErrs
 			}
 			// For other errors, return the error

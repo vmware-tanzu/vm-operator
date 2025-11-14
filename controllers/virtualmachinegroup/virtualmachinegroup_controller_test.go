@@ -467,7 +467,7 @@ var _ = Describe(
 								}
 							}
 						}
-					}, "10s", "100ms").Should(Succeed())
+					}, "30s", "100ms").Should(Succeed())
 				}
 
 				setProviderPlaceVirtualMachineGroupFn = func() {

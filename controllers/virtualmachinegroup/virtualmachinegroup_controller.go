@@ -57,6 +57,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.VMProvider,
@@ -81,12 +82,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 func NewReconciler(
 	ctx context.Context,
 	client client.Client,
+	apiReader client.Reader,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
 		Context:    ctx,
+		APIReader:  apiReader,
 		Client:     client,
 		Logger:     logger,
 		Recorder:   recorder,
@@ -97,6 +100,7 @@ func NewReconciler(
 // Reconciler reconciles a VirtualMachineGroup object.
 type Reconciler struct {
 	client.Client
+	APIReader  client.Reader
 	Context    context.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
@@ -114,6 +118,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmGroup := &vmopv1.VirtualMachineGroup{}
 	if err := r.Get(ctx, req.NamespacedName, vmGroup); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	vmGroup, err := r.ensurePlacementStatusUpToDate(ctx, vmGroup)
+	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -697,6 +706,11 @@ func (r *Reconciler) getGroupsForPlacement(
 		return nil, fmt.Errorf("cycle detected in group hierarchy: %q", groupName)
 	}
 
+	vmGroup, err := r.ensurePlacementStatusUpToDate(ctx, vmGroup)
+	if err != nil {
+		return nil, err
+	}
+
 	// Initialize patch for this child group to update its member placement status if needed.
 	groupPatches[vmGroup] = client.MergeFrom(vmGroup.DeepCopy())
 
@@ -911,4 +925,67 @@ func aggregateOrNoRequeue(errs []error) error {
 	}
 
 	return agg
+}
+
+// ensurePlacementStatusUpToDate checks if all members defined in spec have the
+// PlacementReady condition true in status.members. If any member doesn't have
+// the PlacementReady condition true, it uses the API reader to get a fresh copy
+// of the group object to avoid stale placement status.
+// Returns the original group object if all VM-kind members are already placed.
+// Otherwise, returns a fresh group object from the API reader directly.
+func (r *Reconciler) ensurePlacementStatusUpToDate(
+	ctx context.Context,
+	vmGroup *vmopv1.VirtualMachineGroup) (*vmopv1.VirtualMachineGroup, error) {
+
+	// Return early if the group has no members defined in the spec.
+	if len(vmGroup.Spec.BootOrder) == 0 {
+		return vmGroup, nil
+	}
+
+	// Build a map of all VM-kind members from the group's spec.
+	specVMMembers := make(map[string]struct{})
+	for _, bootOrder := range vmGroup.Spec.BootOrder {
+		for _, member := range bootOrder.Members {
+			if member.Kind == vmKind {
+				specVMMembers[member.Name] = struct{}{}
+			}
+		}
+	}
+
+	// Build a map of all VM-kind members from the group's status.
+	// Record whether the member has the PlacementReady condition true.
+	statusVMMembers := make(map[string]bool, len(vmGroup.Status.Members))
+	for _, memberStatus := range vmGroup.Status.Members {
+		if memberStatus.Kind == vmKind {
+			statusVMMembers[memberStatus.Name] = conditions.IsTrue(
+				&memberStatus,
+				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+			)
+		}
+	}
+
+	// Check if all spec members have PlacementReady condition true in status.
+	allPlacementReady := true
+	for vmMemberName := range specVMMembers {
+		if !statusVMMembers[vmMemberName] {
+			allPlacementReady = false
+			break
+		}
+	}
+
+	// If all members have PlacementReady condition true, no need to refresh.
+	if allPlacementReady {
+		return vmGroup, nil
+	}
+
+	// Use api reader to get a fresh copy to avoid stale placement status.
+	freshGroup := &vmopv1.VirtualMachineGroup{}
+	if err := r.APIReader.Get(ctx, client.ObjectKey{
+		Namespace: vmGroup.Namespace,
+		Name:      vmGroup.Name,
+	}, freshGroup); err != nil {
+		return nil, fmt.Errorf("failed to get group from API reader: %w", err)
+	}
+
+	return freshGroup, nil
 }

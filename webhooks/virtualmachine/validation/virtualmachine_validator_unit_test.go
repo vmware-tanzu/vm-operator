@@ -313,6 +313,7 @@ func unitTestsValidateCreate() {
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		if args.isServiceUser {
 			ctx.IsPrivilegedAccount = true
+			ctx.IsVMOperatorAccount = false
 		}
 
 		if args.invalidVolumeName {
@@ -3923,13 +3924,14 @@ func unitTestsValidateCreate() {
 		DescribeTable("validate PVC access mode and sharing mode combinations",
 			func(testName string, setup func(*unitValidatingWebhookContext), expectAllowed bool) {
 				setup(ctx)
+				ctx.IsVMOperatorAccount = false
 
 				var err error
 				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(Equal(expectAllowed))
+				Expect(response.Allowed).To(Equal(expectAllowed), response.Result.Message)
 			},
 
 			Entry("should allow ReadWriteOnce volume with None sharing mode and None controller",
@@ -3939,7 +3941,7 @@ func unitTestsValidateCreate() {
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -3963,15 +3965,14 @@ func unitTestsValidateCreate() {
 				},
 				true),
 
-			Entry("should reject ReadWriteOnce volume with MultiWriter sharing mode "+
-				"and PVC with ReadWriteOnce access mode",
-				"readwriteonce-multiwriter-sharing-pvc-readwriteonce",
+			Entry("should reject ReadWriteOnce volume with MultiWriter sharing mode",
+				"readwriteonce-pvc-multiwriter-sharing",
 				func(ctx *unitValidatingWebhookContext) {
 					// Create a ReadWriteOnce PVC
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -3982,6 +3983,7 @@ func unitTestsValidateCreate() {
 					// Configure VM with ReadWriteOnce volume and MultiWriter sharing mode
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
 					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+					ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
 				},
 				false,
 			),
@@ -3993,7 +3995,7 @@ func unitTestsValidateCreate() {
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -4016,14 +4018,14 @@ func unitTestsValidateCreate() {
 				},
 				false),
 
-			Entry("should allow ReadWriteMany volume with MultiWriter sharing mode",
+			Entry("should allow ReadWriteMany volume with MultiWriter sharing mode and OracleRAC application type",
 				"readwritemany-multiwriter-sharing",
 				func(ctx *unitValidatingWebhookContext) {
 					// Create a ReadWriteMany PVC
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
@@ -4045,7 +4047,7 @@ func unitTestsValidateCreate() {
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
@@ -4070,14 +4072,14 @@ func unitTestsValidateCreate() {
 				true,
 			),
 
-			Entry("should reject ReadWriteMany volume with neither MultiWriter sharing mode nor Physical controller",
+			Entry("should reject RWX PVC with neither MultiWriter sharing mode nor Physical controller and OracleRAC application type",
 				"readwritemany-neither-multiwriter-nor-physical",
 				func(ctx *unitValidatingWebhookContext) {
 					// Create a ReadWriteMany PVC
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
@@ -4091,6 +4093,7 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
 					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
 					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](0)
+					ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
 
 					// Add SCSI controller with None sharing mode.
 					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
@@ -4109,7 +4112,7 @@ func unitTestsValidateCreate() {
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
@@ -4229,6 +4232,7 @@ func setupOldVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	if args.isServiceUser {
 		ctx.IsPrivilegedAccount = true
+		ctx.IsVMOperatorAccount = false
 	}
 
 	if args.changeImageRef {
@@ -4419,7 +4423,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		Expect(err).ToNot(HaveOccurred())
 
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-		Expect(response.Allowed).To(Equal(args.expectAllowed))
+		Expect(response.Allowed).To(Equal(args.expectAllowed), response.Result.Message)
 
 		if args.validate != nil {
 			args.validate(response)
@@ -7750,7 +7754,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.oldVM.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
-						ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.oldVM.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+						ctx.oldVM.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+						ctx.vm.Spec.Volumes[0] = *ctx.oldVM.Spec.Volumes[0].DeepCopy()
 					},
 					expectAllowed: true,
 				},
@@ -7812,10 +7818,14 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			Entry("should allow when volume is replaced",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Spec.Volumes[0].Name = "old-pvc"
-						ctx.vm.Spec.Volumes[0].Name = "new-pvc"
+						ctx.oldVM.Spec.Volumes[0].Name = "old-vol"
+						ctx.vm.Spec.Volumes[0].Name = "new-vol"
 						ctx.oldVM.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.oldVM.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+						ctx.oldVM.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
 						ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+						ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
 					},
 					expectAllowed: true,
 				},
@@ -8274,7 +8284,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -8334,7 +8344,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -8412,17 +8422,17 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				true,
 			),
 
-			Entry("should allow when privileged account updates with invalid combination",
+			Entry("should allow when vm operator account updates with invalid combination",
 				"privileged-account-invalid-combination",
 				func(ctx *unitValidatingWebhookContext) {
 					// Mark as privileged account
-					ctx.IsPrivilegedAccount = true
+					ctx.IsVMOperatorAccount = true
 
 					// Create a ReadWriteOnce PVC
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      dummyPVCName,
-							Namespace: ctx.Namespace,
+							Namespace: ctx.vm.Namespace,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{

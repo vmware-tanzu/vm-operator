@@ -1133,8 +1133,10 @@ func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	if ctx.IsPrivilegedAccount {
-		// TODO(akutz) Dedupe this against Faisal's outstanding change.
+	if ctx.IsVMOperatorAccount {
+		// TODO(akutz): This can be removed after we merge the implementations
+		// of reconcileBackfillUnmanagedDisks and reconcileSchemaUpgrade
+		// in vmprovider_vm.go into a single patch of the VM CRD.
 		return nil
 	}
 
@@ -1235,6 +1237,42 @@ func (v validator) validateControllerFields(
 	return allErrs
 }
 
+func (v validator) validateApplicationFields(
+	vol vmopv1.VirtualMachineVolume,
+	volPath field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+
+	switch vol.ApplicationType {
+	case vmopv1.VolumeApplicationTypeOracleRAC:
+		if vol.SharingMode != vmopv1.VolumeSharingModeMultiWriter {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("sharingMode"),
+				vol.SharingMode,
+				"SharingMode must be MultiWriter for OracleRAC volumes",
+			))
+		}
+
+		if vol.DiskMode != vmopv1.VolumeDiskModeIndependentPersistent {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("diskMode"),
+				vol.DiskMode,
+				"DiskMode must be IndependentPersistent for OracleRAC volumes",
+			))
+		}
+	case vmopv1.VolumeApplicationTypeMicrosoftWSFC:
+		if vol.DiskMode != vmopv1.VolumeDiskModeIndependentPersistent {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("diskMode"),
+				vol.DiskMode,
+				"DiskMode must be IndependentPersistent for MicrosoftWSFC volumes",
+			))
+		}
+	}
+
+	return allErrs
+}
+
 func (v validator) validateVolume(
 	ctx *pkgctx.WebhookRequestContext,
 	oldVM, vm *vmopv1.VirtualMachine,
@@ -1296,6 +1334,10 @@ func (v validator) validateVolume(
 			volPath.Child("unitNumber"))...)
 	}
 
+	allErrs = append(allErrs,
+		v.validateApplicationFields(vol, *volPath)...,
+	)
+
 	// Validate access mode, sharing mode, and controller combinations if VM is
 	// being created or volume is being updated.
 	// Skip the validation if the volume is not being updated to avoid rejecting
@@ -1331,7 +1373,6 @@ func (v validator) validateVolume(
 			"volume", vol.Name,
 			"volumeChanged", volumeChanged,
 			"hardwareChanged", hardwareChanged,
-			"isPrivilegedAccount", ctx.IsPrivilegedAccount,
 		)
 	}
 
@@ -1348,10 +1389,19 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 	volPath, pvcPath *field.Path) field.ErrorList {
 
 	var (
-		allErrs   field.ErrorList
-		volShared bool
-		pvcShared *bool
+		allErrs          field.ErrorList
+		volShared        bool
+		pvcShared        bool
+		controllerShared bool
 	)
+
+	// TODO(Faisal A): Remove this once we validate all the combinations that
+	// are allowed, but for now we will only perform validation for OracleRAC
+	// and MicrosoftWSFC volumes.
+	if vol.ApplicationType != vmopv1.VolumeApplicationTypeOracleRAC &&
+		vol.ApplicationType != vmopv1.VolumeApplicationTypeMicrosoftWSFC {
+		return allErrs
+	}
 
 	if vol.SharingMode != "" {
 		volShared = vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter
@@ -1362,12 +1412,18 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 		// Fetch the PVC to get its access modes
 		obj := &corev1.PersistentVolumeClaim{}
 		if err := v.client.Get(ctx, ctrlclient.ObjectKey{
-			Namespace: ctx.Namespace,
-			Name:      vol.PersistentVolumeClaim.ClaimName,
+			Namespace: vm.Namespace,
+			Name:      pvc.ClaimName,
 		}, obj); err != nil {
 			// If the PVC doesn't exist, skip validation
 			// The PVC existence will be validated elsewhere or at runtime
 			if apierrors.IsNotFound(err) {
+				ctx.Logger.V(4).Info("PVC not found, skipping validation",
+					"volume", vol.Name,
+					"claimName", vol.PersistentVolumeClaim.ClaimName,
+					"namespace", ctx.Namespace,
+					"error", err.Error(),
+				)
 				return allErrs
 			}
 			// For other errors, return the error
@@ -1375,8 +1431,7 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 				vol.PersistentVolumeClaim.ClaimName, err.Error()))
 			return allErrs
 		}
-		pvcShared = ptr.To(slices.Contains(
-			obj.Spec.AccessModes, corev1.ReadWriteMany))
+		pvcShared = slices.Contains(obj.Spec.AccessModes, corev1.ReadWriteMany)
 	}
 
 	// Get the controller sharing mode for the specified controller
@@ -1386,33 +1441,40 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 		vol.ControllerType,
 		vol.ControllerBusNumber,
 	)
+	controllerShared = controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical
 
-	// Rule 1 -- If the volume specifies multi-writer then a possible PVC must
-	//           specify it as well.
-	if volShared && (pvcShared == nil || !*pvcShared) {
+	// Rule 1 -- If the PVC is not shared, the volume and controller must not
+	//           be shared.
+	if !pvcShared {
+		if volShared {
+			allErrs = append(allErrs,
+				field.Invalid(
+					volPath.Child("sharingMode"),
+					vol.SharingMode,
+					"MultiWriter sharing mode is not allowed for ReadWriteOnce volume",
+				),
+			)
+		}
+
+		if controllerShared {
+			allErrs = append(allErrs,
+				field.Invalid(
+					volPath.Child("controllerType"),
+					vol.ControllerType,
+					"Physical controller sharing mode is not allowed for ReadWriteOnce volume",
+				),
+			)
+		}
+	}
+
+	// Rule 2 -- If the PVC is shared then the volume or controller must be
+	//           shared.
+	if pvcShared && !volShared && !controllerShared {
 		allErrs = append(allErrs,
 			field.Invalid(
 				volPath.Child("sharingMode"),
 				vol.SharingMode,
-				fmt.Sprintf("Disk MultiWriter sharing mode is not allowed "+
-					"for ReadWriteOnce volumes %s",
-					vol.Name),
-			),
-		)
-	}
-
-	// Rule 2 -- If the volume is not shared then the controller must not use
-	//           physical sharing mode.
-	if !volShared &&
-		controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical {
-
-		allErrs = append(allErrs,
-			field.Invalid(
-				volPath.Child("controllerType"),
-				vol.ControllerType,
-				fmt.Sprintf("Physical controller sharing mode is not "+
-					"allowed for ReadWriteOnce volume %s",
-					vol.Name),
+				"ReadWriteMany PVC must have a MultiWriter volume or Physical controller sharing mode",
 			),
 		)
 	}

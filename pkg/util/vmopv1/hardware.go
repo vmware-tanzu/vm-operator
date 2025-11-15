@@ -33,6 +33,11 @@ func NextAvailableUnitNumber(
 	controller ControllerSpec,
 	occupiedSlots sets.Set[int32],
 ) int32 {
+
+	if controller == nil {
+		return -1
+	}
+
 	for unitNumber := int32(0); unitNumber < controller.MaxSlots(); unitNumber++ {
 		if _, exists := occupiedSlots[unitNumber]; !exists &&
 			unitNumber != controller.ReservedUnitNumber() {

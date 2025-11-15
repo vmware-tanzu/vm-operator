@@ -15,19 +15,6 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 )
 
-const (
-	// IDEControllerMaxSlotCount is the maximum number of slots
-	// per IDE controller.
-	IDEControllerMaxSlotCount = int32(2)
-	// IDEControllerMaxCount is the maximum number of IDE controllers.
-	IDEControllerMaxCount = int32(2)
-	// SATAControllerMaxSlotCount is the maximum number of slots
-	// per SATA controller.
-	SATAControllerMaxSlotCount = int32(30)
-	// SATAControllerMaxCount is the maximum number of SATA controllers.
-	SATAControllerMaxCount = int32(4)
-)
-
 // CNSAttachmentNameForVolume returns the name of the CnsNodeVmAttachment based
 // on the VM and Volume name.
 // This matches the naming used in previous code but there are situations where

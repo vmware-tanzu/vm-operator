@@ -1566,7 +1566,8 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		return fmt.Errorf("VM Group placement is empty")
 	}
 
-	vmCtx.Logger.V(6).Info(
+	// This should be logged once and helpful to debug group placement issues.
+	vmCtx.Logger.Info(
 		"VM Group placement is ready",
 		"placement", placementStatus,
 	)

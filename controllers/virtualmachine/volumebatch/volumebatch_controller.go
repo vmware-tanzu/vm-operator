@@ -500,20 +500,20 @@ func (r *Reconciler) buildVolumeSpecs(
 		// The validating webhook should have verified it already.
 		// It returns NoRequeueError because we do not want to keep reconciling
 		// volume with incorrect spec unless the spec is fixed.
-		if pvcSpec.ControllerBusNumber == nil {
+		if vol.ControllerBusNumber == nil {
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
 				"%s volume %q is missing controller bus number", buildErrMsg, vol.Name)})
 			continue
 		}
 
 		ctrlDevKey, ok := ctrlDevKeyMap[pkgutil.ControllerID{
-			ControllerType: pvcSpec.ControllerType,
-			BusNumber:      *pvcSpec.ControllerBusNumber,
+			ControllerType: vol.ControllerType,
+			BusNumber:      *vol.ControllerBusNumber,
 		}]
 		if !ok {
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
 				"%s wating for the device controller %q %q to be created for volume %q",
-				buildErrMsg, pvcSpec.ControllerType, *pvcSpec.ControllerBusNumber, vol.Name)})
+				buildErrMsg, vol.ControllerType, *vol.ControllerBusNumber, vol.Name)})
 			continue
 		}
 
@@ -526,13 +526,13 @@ func (r *Reconciler) buildVolumeSpecs(
 			},
 		}
 
-		if pvcSpec.UnitNumber != nil {
-			cnsVolumeSpec.PersistentVolumeClaim.UnitNumber = pvcSpec.UnitNumber
+		if vol.UnitNumber != nil {
+			cnsVolumeSpec.PersistentVolumeClaim.UnitNumber = vol.UnitNumber
 		}
 
 		// Apply application type presets first
 		// Ideally, this would already have been mutated by the webhook, but just handle that here anyway.
-		if err := r.applyApplicationTypePresets(pvcSpec, &cnsVolumeSpec); err != nil {
+		if err := r.applyApplicationTypePresets(&vol, &cnsVolumeSpec); err != nil {
 
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Errorf(
 				"%s failed to apply application type presets for volume %s: %w",
@@ -542,7 +542,7 @@ func (r *Reconciler) buildVolumeSpecs(
 		}
 
 		// Map disk mode (can override application type presets)
-		switch pvcSpec.DiskMode {
+		switch vol.DiskMode {
 		case vmopv1.VolumeDiskModePersistent:
 			cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.Persistent
 		case vmopv1.VolumeDiskModeIndependentPersistent:
@@ -550,12 +550,12 @@ func (r *Reconciler) buildVolumeSpecs(
 		default:
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
 				Message: fmt.Sprintf("%s unsupported disk mode: %s for volume %s",
-					buildErrMsg, pvcSpec.DiskMode, vol.Name)})
+					buildErrMsg, vol.DiskMode, vol.Name)})
 			continue
 		}
 
 		// Map sharing mode (can override application type presets)
-		switch pvcSpec.SharingMode {
+		switch vol.SharingMode {
 		case vmopv1.VolumeSharingModeNone:
 			cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingNone
 		case vmopv1.VolumeSharingModeMultiWriter:
@@ -563,7 +563,7 @@ func (r *Reconciler) buildVolumeSpecs(
 		default:
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
 				Message: fmt.Sprintf("%s unsupported sharing mode: %s for volume %s",
-					buildErrMsg, pvcSpec.DiskMode, vol.Name)})
+					buildErrMsg, vol.DiskMode, vol.Name)})
 			continue
 		}
 
@@ -574,10 +574,10 @@ func (r *Reconciler) buildVolumeSpecs(
 }
 
 func (r *Reconciler) applyApplicationTypePresets(
-	pvcSpec *vmopv1.PersistentVolumeClaimVolumeSource,
+	vol *vmopv1.VirtualMachineVolume,
 	cnsSpec *cnsv1alpha1.VolumeSpec) error {
 
-	switch pvcSpec.ApplicationType {
+	switch vol.ApplicationType {
 	case vmopv1.VolumeApplicationTypeOracleRAC:
 		// OracleRAC preset: diskMode=IndependentPersistent, sharingMode=MultiWriter
 		cnsSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.IndependentPersistent
@@ -593,7 +593,7 @@ func (r *Reconciler) applyApplicationTypePresets(
 		break
 
 	default:
-		return fmt.Errorf("unsupported application type: %s", pvcSpec.ApplicationType)
+		return fmt.Errorf("unsupported application type: %s", vol.ApplicationType)
 	}
 
 	return nil
@@ -1069,10 +1069,6 @@ func categorizeVolumeSpecs(
 	volumeSpecsForLegacy := []vmopv1.VirtualMachineVolume{}
 	for _, vol := range ctx.VM.Spec.Volumes {
 		if vol.PersistentVolumeClaim == nil {
-			continue
-		}
-		if vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
-			// Skip unmanaged volumes.
 			continue
 		}
 		// Check if this volume is already managed by a legacy

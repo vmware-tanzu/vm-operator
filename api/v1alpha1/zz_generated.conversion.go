@@ -903,14 +903,7 @@ func Convert_v1alpha1_PersistentVolumeClaimVolumeSource_To_v1alpha5_PersistentVo
 
 func autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha1_PersistentVolumeClaimVolumeSource(in *v1alpha5.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s conversion.Scope) error {
 	out.PersistentVolumeClaimVolumeSource = in.PersistentVolumeClaimVolumeSource
-	// WARNING: in.UnmanagedVolumeClaim requires manual conversion: does not exist in peer-type
 	out.InstanceVolumeClaim = (*InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in.InstanceVolumeClaim))
-	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
-	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
-	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
-	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
-	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
-	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -2274,6 +2267,13 @@ func autoConvert_v1alpha1_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(
 func autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(in *v1alpha5.VirtualMachineVolume, out *VirtualMachineVolume, s conversion.Scope) error {
 	out.Name = in.Name
 	// WARNING: in.VirtualMachineVolumeSource requires manual conversion: does not exist in peer-type
+	// WARNING: in.ImageDiskName requires manual conversion: does not exist in peer-type
+	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
+	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	return nil
 }
 

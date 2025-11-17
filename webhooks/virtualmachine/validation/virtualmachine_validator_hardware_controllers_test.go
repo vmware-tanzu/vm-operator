@@ -97,11 +97,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -114,11 +114,11 @@ func controllerValidationTests() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "pvc1",
 							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(unitNum),
 						},
 					},
+					ControllerBusNumber: ptr.To(int32(0)),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					UnitNumber:          ptr.To(unitNum),
 				})
 			})
 
@@ -153,11 +153,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -171,18 +171,18 @@ func controllerValidationTests() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "pvc-extra",
 							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(int32(42)),
 						},
 					},
+					ControllerBusNumber: ptr.To(int32(0)),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					UnitNumber:          ptr.To(int32(42)),
 				}
 			})
 
 			It("should reject due to controller at capacity", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[62].persistentVolumeClaim.unitNumber: Invalid value: 42: controller unit number SCSI:0:42 is already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[62].unitNumber: Invalid value: 42: controller unit number SCSI:0:42 is already in use"))
 			})
 		})
 
@@ -211,11 +211,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -229,18 +229,18 @@ func controllerValidationTests() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "pvc-extra",
 							},
-							ControllerBusNumber: ptr.To(int32(0)),
-							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-							UnitNumber:          ptr.To(int32(10)),
 						},
 					},
+					ControllerBusNumber: ptr.To(int32(0)),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					UnitNumber:          ptr.To(int32(10)),
 				}
 			})
 
 			It("should reject due to unit number already in use", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[13].persistentVolumeClaim.unitNumber: Invalid value: 10: controller unit number SCSI:0:10 is already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[13].unitNumber: Invalid value: 10: controller unit number SCSI:0:10 is already in use"))
 			})
 		})
 	})
@@ -385,11 +385,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -418,11 +418,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(2)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(2)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -430,7 +430,7 @@ func controllerValidationTests() {
 			It("should reject the volume", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].persistentVolumeClaim.controllerBusNumber: Invalid value: 2: controller SCSI:2 does not exist"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].controllerBusNumber: Invalid value: 2: controller SCSI:2 does not exist"))
 			})
 		})
 
@@ -452,11 +452,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(5)), // Out of range (max is 3)
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(5)), // Out of range (max is 3)
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -464,7 +464,7 @@ func controllerValidationTests() {
 			It("should reject the volume", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].persistentVolumeClaim.controllerBusNumber: Invalid value: 5: must be between 0 and 3"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].controllerBusNumber: Invalid value: 5: must be between 0 and 3"))
 			})
 		})
 	})
@@ -489,12 +489,12 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -524,12 +524,12 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -558,12 +558,12 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 			})
@@ -603,11 +603,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(5)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(5)),
 					},
 				}
 			})
@@ -615,7 +615,7 @@ func controllerValidationTests() {
 			It("should reject due to unit number conflict with CD-ROM", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].persistentVolumeClaim.unitNumber: Invalid value: 5: controller unit number SCSI:0:5 is already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].unitNumber: Invalid value: 5: controller unit number SCSI:0:5 is already in use"))
 			})
 		})
 
@@ -646,11 +646,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(6)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(6)),
 					},
 				}
 			})
@@ -695,11 +695,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 					{
 						Name: "vol2",
@@ -708,11 +708,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc2",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(3)), // Conflicts with cdrom1.
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(3)), // Conflicts with cdrom1.
 					},
 				}
 			})
@@ -720,7 +720,7 @@ func controllerValidationTests() {
 			It("should reject volume that conflicts with CD-ROM", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[1].persistentVolumeClaim.unitNumber: Invalid value: 3: controller unit number SCSI:0:3 is already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[1].unitNumber: Invalid value: 3: controller unit number SCSI:0:3 is already in use"))
 			})
 		})
 	})
@@ -756,11 +756,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("existing-pvc-%d", i),
 								},
-								ControllerBusNumber: ptr.To(int32(1)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(unitNum),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(1)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(unitNum),
 					}
 					unitNum++
 				}
@@ -775,11 +775,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc1",
 								},
-								ControllerBusNumber: ptr.To(int32(0)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
 					},
 					vmopv1.VirtualMachineVolume{
 						Name: "vol2",
@@ -788,11 +788,11 @@ func controllerValidationTests() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc2",
 								},
-								ControllerBusNumber: ptr.To(int32(1)),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								UnitNumber:          ptr.To(int32(1)),
 							},
 						},
+						ControllerBusNumber: ptr.To(int32(1)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(1)),
 					},
 				)
 			})
@@ -800,7 +800,7 @@ func controllerValidationTests() {
 			It("should reject the volume", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[15].persistentVolumeClaim.unitNumber: Invalid value: 1: controller unit number SCSI:1:1 is already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[15].unitNumber: Invalid value: 1: controller unit number SCSI:1:1 is already in use"))
 			})
 		})
 	})

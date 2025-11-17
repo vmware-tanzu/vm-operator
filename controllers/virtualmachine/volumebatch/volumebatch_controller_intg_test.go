@@ -61,21 +61,21 @@ func intgTestsReconcile() {
 		dummyDiskUUID1 = uuid.New().String()
 		dummyDiskUUID2 = uuid.New().String()
 
-		vmVolume1 = vmopv1.VirtualMachineVolume{
-			Name: "cns-volume-1",
-			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: "pvc-volume-1",
-					},
-					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-					ControllerBusNumber: ptr.To(int32(0)),
-					UnitNumber:          ptr.To(int32(0)),
-					DiskMode:            vmopv1.VolumeDiskModePersistent,
-					SharingMode:         vmopv1.VolumeSharingModeNone,
+	vmVolume1 = vmopv1.VirtualMachineVolume{
+		Name: "cns-volume-1",
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "pvc-volume-1",
 				},
 			},
-		}
+		},
+		ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+		ControllerBusNumber: ptr.To(int32(0)),
+		UnitNumber:          ptr.To(int32(0)),
+		DiskMode:            vmopv1.VolumeDiskModePersistent,
+		SharingMode:         vmopv1.VolumeSharingModeNone,
+	}
 
 		pvc1 = &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
@@ -94,21 +94,21 @@ func intgTestsReconcile() {
 			},
 		}
 
-		vmVolume2 = vmopv1.VirtualMachineVolume{
-			Name: "cns-volume-2",
-			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: "pvc-volume-2",
-					},
-					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-					ControllerBusNumber: ptr.To(int32(0)),
-					UnitNumber:          ptr.To(int32(1)),
-					DiskMode:            vmopv1.VolumeDiskModePersistent,
-					SharingMode:         vmopv1.VolumeSharingModeNone,
+	vmVolume2 = vmopv1.VirtualMachineVolume{
+		Name: "cns-volume-2",
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "pvc-volume-2",
 				},
 			},
-		}
+		},
+		ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+		ControllerBusNumber: ptr.To(int32(0)),
+		UnitNumber:          ptr.To(int32(1)),
+		DiskMode:            vmopv1.VolumeDiskModePersistent,
+		SharingMode:         vmopv1.VolumeSharingModeNone,
+	}
 
 		pvc2 = &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{

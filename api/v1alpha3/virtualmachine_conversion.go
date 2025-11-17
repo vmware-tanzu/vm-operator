@@ -14,6 +14,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+func Convert_v1alpha5_VirtualMachineVolume_To_v1alpha3_VirtualMachineVolume(
+	in *vmopv1.VirtualMachineVolume, out *VirtualMachineVolume, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha3_VirtualMachineVolume(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha3_VirtualMachineImageDiskInfo(
 	in *vmopv1.VirtualMachineImageDiskInfo, out *VirtualMachineImageDiskInfo, s apiconversion.Scope) error {
 
@@ -234,16 +240,13 @@ func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 	for i := range dst.Spec.Volumes {
 		dstVol := &dst.Spec.Volumes[i]
 		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
-			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
-				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
-					dstPvc.ApplicationType = srcPvc.ApplicationType
-					dstPvc.ControllerBusNumber = srcPvc.ControllerBusNumber
-					dstPvc.ControllerType = srcPvc.ControllerType
-					dstPvc.DiskMode = srcPvc.DiskMode
-					dstPvc.SharingMode = srcPvc.SharingMode
-					dstPvc.UnitNumber = srcPvc.UnitNumber
-				}
-			}
+			dstVol.ApplicationType = srcVol.ApplicationType
+			dstVol.ControllerBusNumber = srcVol.ControllerBusNumber
+			dstVol.ControllerType = srcVol.ControllerType
+			dstVol.ImageDiskName = srcVol.ImageDiskName
+			dstVol.DiskMode = srcVol.DiskMode
+			dstVol.SharingMode = srcVol.SharingMode
+			dstVol.UnitNumber = srcVol.UnitNumber
 		}
 	}
 }

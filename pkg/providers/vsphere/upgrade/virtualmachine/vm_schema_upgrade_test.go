@@ -866,17 +866,17 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		// Test helper functions for this Context
 
 		// assertPVCPlacementPopulated verifies all placement fields are set correctly
-		assertPVCPlacementPopulated := func(pvc *vmopv1.PersistentVolumeClaimVolumeSource, unitNumber, busNumber int32, controllerType vmopv1.VirtualControllerType) {
-			Expect(pvc.UnitNumber).To(HaveValue(Equal(unitNumber)))
-			Expect(pvc.ControllerType).To(Equal(controllerType))
-			Expect(pvc.ControllerBusNumber).To(HaveValue(Equal(busNumber)))
+		assertPVCPlacementPopulated := func(vol vmopv1.VirtualMachineVolume, unitNumber, busNumber int32, controllerType vmopv1.VirtualControllerType) {
+			Expect(vol.UnitNumber).To(HaveValue(Equal(unitNumber)))
+			Expect(vol.ControllerType).To(Equal(controllerType))
+			Expect(vol.ControllerBusNumber).To(HaveValue(Equal(busNumber)))
 		}
 
 		// assertPVCPlacementEmpty verifies all placement fields are empty
-		assertPVCPlacementEmpty := func(pvc *vmopv1.PersistentVolumeClaimVolumeSource) {
-			Expect(pvc.UnitNumber).To(BeNil())
-			Expect(pvc.ControllerType).To(BeEmpty())
-			Expect(pvc.ControllerBusNumber).To(BeNil())
+		assertPVCPlacementEmpty := func(vol vmopv1.VirtualMachineVolume) {
+			Expect(vol.UnitNumber).To(BeNil())
+			Expect(vol.ControllerType).To(BeEmpty())
+			Expect(vol.ControllerBusNumber).To(BeNil())
 		}
 
 		// createControllerStatus creates a VirtualControllerStatus for tests
@@ -966,7 +966,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 			It("should not backfill PVC volumes", func() {
-				assertPVCPlacementEmpty(vm.Spec.Volumes[0].PersistentVolumeClaim)
+				assertPVCPlacementEmpty(vm.Spec.Volumes[0])
 			})
 		})
 
@@ -982,25 +982,25 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 		When("VM has volumes with all fields already populated", func() {
 			BeforeEach(func() {
-				vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(0))
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(0))
-				vm.Spec.Volumes[1].PersistentVolumeClaim.UnitNumber = ptr.To(int32(1))
-				vm.Spec.Volumes[1].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
-				vm.Spec.Volumes[1].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(0))
+				vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(0))
+				vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+				vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+				vm.Spec.Volumes[1].UnitNumber = ptr.To(int32(1))
+				vm.Spec.Volumes[1].ControllerType = vmopv1.VirtualControllerTypeSCSI
+				vm.Spec.Volumes[1].ControllerBusNumber = ptr.To(int32(0))
 			})
 
 			It("should not modify already populated fields", func() {
-				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber).To(HaveValue(Equal(int32(0))))
-				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
-				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber).To(HaveValue(Equal(int32(0))))
+				Expect(vm.Spec.Volumes[0].UnitNumber).To(HaveValue(Equal(int32(0))))
+				Expect(vm.Spec.Volumes[0].ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
+				Expect(vm.Spec.Volumes[0].ControllerBusNumber).To(HaveValue(Equal(int32(0))))
 			})
 		})
 
 		When("VM has PVC volumes needing backfill", func() {
 			It("should backfill all placement info", func() {
-				assertPVCPlacementPopulated(vm.Spec.Volumes[0].PersistentVolumeClaim, 0, 0, vmopv1.VirtualControllerTypeSCSI)
-				assertPVCPlacementPopulated(vm.Spec.Volumes[1].PersistentVolumeClaim, 1, 0, vmopv1.VirtualControllerTypeSCSI)
+				assertPVCPlacementPopulated(vm.Spec.Volumes[0], 0, 0, vmopv1.VirtualControllerTypeSCSI)
+				assertPVCPlacementPopulated(vm.Spec.Volumes[1], 1, 0, vmopv1.VirtualControllerTypeSCSI)
 			})
 		})
 
@@ -1010,8 +1010,8 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 			It("should only backfill volumes with attachments", func() {
-				assertPVCPlacementPopulated(vm.Spec.Volumes[0].PersistentVolumeClaim, 0, 0, vmopv1.VirtualControllerTypeSCSI)
-				assertPVCPlacementEmpty(vm.Spec.Volumes[1].PersistentVolumeClaim)
+				assertPVCPlacementPopulated(vm.Spec.Volumes[0], 0, 0, vmopv1.VirtualControllerTypeSCSI)
+				assertPVCPlacementEmpty(vm.Spec.Volumes[1])
 			})
 		})
 
@@ -1026,7 +1026,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			It("should backfill volumes even when not attached", func() {
 				// The implementation ignores Attached status since we are checking
 				// directly against the attached virtual devices.
-				assertPVCPlacementPopulated(vm.Spec.Volumes[0].PersistentVolumeClaim, 0, 0, vmopv1.VirtualControllerTypeSCSI)
+				assertPVCPlacementPopulated(vm.Spec.Volumes[0], 0, 0, vmopv1.VirtualControllerTypeSCSI)
 			})
 		})
 
@@ -1039,7 +1039,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 			It("should not backfill volumes without disk UUID", func() {
-				assertPVCPlacementEmpty(vm.Spec.Volumes[0].PersistentVolumeClaim)
+				assertPVCPlacementEmpty(vm.Spec.Volumes[0])
 			})
 		})
 
@@ -1049,7 +1049,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 			It("should not backfill volumes with non-matching disk UUID", func() {
-				assertPVCPlacementEmpty(vm.Spec.Volumes[0].PersistentVolumeClaim)
+				assertPVCPlacementEmpty(vm.Spec.Volumes[0])
 			})
 		})
 
@@ -1059,7 +1059,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 			It("should not backfill volumes without controller info", func() {
-				assertPVCPlacementEmpty(vm.Spec.Volumes[0].PersistentVolumeClaim)
+				assertPVCPlacementEmpty(vm.Spec.Volumes[0])
 			})
 		})
 
@@ -1068,40 +1068,40 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		// atomic backfilling - we don't partially update fields when conflicts exist.
 		When("PVC volume has mismatched unit number", func() {
 			BeforeEach(func() {
-				vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(testMismatchValue))
+				vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(testMismatchValue))
 			})
 
 			It("should not backfill due to mismatch", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
-				Expect(pvc1.UnitNumber).To(HaveValue(Equal(int32(testMismatchValue))))
-				Expect(pvc1.ControllerType).To(BeEmpty())
-				Expect(pvc1.ControllerBusNumber).To(BeNil())
+				vol1 := &vm.Spec.Volumes[0]
+				Expect(vol1.UnitNumber).To(HaveValue(Equal(int32(testMismatchValue))))
+				Expect(vol1.ControllerType).To(BeEmpty())
+				Expect(vol1.ControllerBusNumber).To(BeNil())
 			})
 		})
 
 		When("PVC volume has mismatched controller bus number", func() {
 			BeforeEach(func() {
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(testMismatchValue))
+				vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(testMismatchValue))
 			})
 
 			It("should not backfill due to mismatch", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
-				Expect(pvc1.ControllerBusNumber).To(HaveValue(Equal(int32(testMismatchValue))))
-				Expect(pvc1.UnitNumber).To(BeNil())
-				Expect(pvc1.ControllerType).To(BeEmpty())
+				vol1 := &vm.Spec.Volumes[0]
+				Expect(vol1.ControllerBusNumber).To(HaveValue(Equal(int32(testMismatchValue))))
+				Expect(vol1.UnitNumber).To(BeNil())
+				Expect(vol1.ControllerType).To(BeEmpty())
 			})
 		})
 
 		When("PVC volume has mismatched controller type", func() {
 			BeforeEach(func() {
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeIDE
+				vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeIDE
 			})
 
 			It("should not backfill due to mismatch", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
-				Expect(pvc1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
-				Expect(pvc1.UnitNumber).To(BeNil())
-				Expect(pvc1.ControllerBusNumber).To(BeNil())
+				vol1 := &vm.Spec.Volumes[0]
+				Expect(vol1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
+				Expect(vol1.UnitNumber).To(BeNil())
+				Expect(vol1.ControllerBusNumber).To(BeNil())
 			})
 		})
 
@@ -1110,12 +1110,12 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		// reject the backfill entirely when any field conflicts, even if others match.
 		When("PVC volume has mixed conflicts - UnitNumber matches but ControllerType is different", func() {
 			BeforeEach(func() {
-				vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(0))
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeNVME
+				vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(0))
+				vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeNVME
 			})
 
 			It("should not backfill due to controller type mismatch", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
+				pvc1 := vm.Spec.Volumes[0]
 				Expect(pvc1.UnitNumber).To(HaveValue(Equal(int32(0))))
 				Expect(pvc1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
 				Expect(pvc1.ControllerBusNumber).To(BeNil())
@@ -1124,12 +1124,12 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 		When("PVC volume has mixed conflicts - ControllerType matches but UnitNumber is different", func() {
 			BeforeEach(func() {
-				vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(testMismatchValue))
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+				vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(testMismatchValue))
+				vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
 			})
 
 			It("should not backfill due to unit number mismatch", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
+				pvc1 := vm.Spec.Volumes[0]
 				Expect(pvc1.UnitNumber).To(HaveValue(Equal(int32(testMismatchValue))))
 				Expect(pvc1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 				Expect(pvc1.ControllerBusNumber).To(BeNil())
@@ -1138,12 +1138,12 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 		When("PVC volume has mixed conflicts - ControllerBusNumber matches but ControllerType is different", func() {
 			BeforeEach(func() {
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(0))
-				vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeNVME
+				vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+				vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeNVME
 			})
 
 			It("should not backfill due to controller type mismatch", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
+				pvc1 := vm.Spec.Volumes[0]
 				Expect(pvc1.ControllerBusNumber).To(HaveValue(Equal(int32(0))))
 				Expect(pvc1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
 				Expect(pvc1.UnitNumber).To(BeNil())
@@ -1156,31 +1156,31 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		When("PVC volume has partial backfill with matching values", func() {
 			When("only UnitNumber is set", func() {
 				BeforeEach(func() {
-					vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(0))
+					vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(0))
 				})
 
 				It("should backfill remaining fields when unit number matches", func() {
-					assertPVCPlacementPopulated(vm.Spec.Volumes[0].PersistentVolumeClaim, 0, 0, vmopv1.VirtualControllerTypeSCSI)
+					assertPVCPlacementPopulated(vm.Spec.Volumes[0], 0, 0, vmopv1.VirtualControllerTypeSCSI)
 				})
 			})
 
 			When("only ControllerType is set", func() {
 				BeforeEach(func() {
-					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
 				})
 
 				It("should backfill remaining fields when controller type matches", func() {
-					assertPVCPlacementPopulated(vm.Spec.Volumes[0].PersistentVolumeClaim, 0, 0, vmopv1.VirtualControllerTypeSCSI)
+					assertPVCPlacementPopulated(vm.Spec.Volumes[0], 0, 0, vmopv1.VirtualControllerTypeSCSI)
 				})
 			})
 
 			When("only ControllerBusNumber is set", func() {
 				BeforeEach(func() {
-					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(0))
+					vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
 				})
 
 				It("should backfill remaining fields when bus number matches", func() {
-					assertPVCPlacementPopulated(vm.Spec.Volumes[0].PersistentVolumeClaim, 0, 0, vmopv1.VirtualControllerTypeSCSI)
+					assertPVCPlacementPopulated(vm.Spec.Volumes[0], 0, 0, vmopv1.VirtualControllerTypeSCSI)
 				})
 			})
 		})
@@ -1194,33 +1194,9 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 
 			It("should skip non-PVC volumes", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
+				pvc1 := vm.Spec.Volumes[0]
 				Expect(pvc1.UnitNumber).ToNot(BeNil())
 				Expect(vm.Spec.Volumes[2].PersistentVolumeClaim).To(BeNil())
-			})
-		})
-
-		When("VM has volumes with UnmanagedVolumeClaim", func() {
-			BeforeEach(func() {
-				vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-					Name: "unmanaged-volume",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{},
-						},
-					},
-				})
-			})
-
-			It("should skip volumes with UnmanagedVolumeClaim", func() {
-				pvc1 := vm.Spec.Volumes[0].PersistentVolumeClaim
-				Expect(pvc1.UnitNumber).ToNot(BeNil())
-
-				unmanagedVolume := vm.Spec.Volumes[2].PersistentVolumeClaim
-				Expect(unmanagedVolume.UnmanagedVolumeClaim).ToNot(BeNil())
-				Expect(unmanagedVolume.UnitNumber).To(BeNil())
-				Expect(unmanagedVolume.ControllerType).To(BeEmpty())
-				Expect(unmanagedVolume.ControllerBusNumber).To(BeNil())
 			})
 		})
 
@@ -1262,10 +1238,10 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			When("VM has disks on multiple SCSI controller buses", func() {
 				It("should backfill with correct bus numbers for each disk", func() {
 					By("Verifying first volume is on controller bus 0")
-					assertPVCPlacementPopulated(vm.Spec.Volumes[0].PersistentVolumeClaim, 0, 0, vmopv1.VirtualControllerTypeSCSI)
+					assertPVCPlacementPopulated(vm.Spec.Volumes[0], 0, 0, vmopv1.VirtualControllerTypeSCSI)
 
 					By("Verifying second volume is on controller bus 1")
-					assertPVCPlacementPopulated(vm.Spec.Volumes[1].PersistentVolumeClaim, 0, 1, vmopv1.VirtualControllerTypeSCSI)
+					assertPVCPlacementPopulated(vm.Spec.Volumes[1], 0, 1, vmopv1.VirtualControllerTypeSCSI)
 				})
 			})
 		})

@@ -268,18 +268,18 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !features.VMSharedDisks {
+					if !features.VMSharedDisks && !features.AllDisksArePVCs {
 						if err := removeFields(
 							ctx,
 							k,
 							obj,
 							shouldRemoveFields,
-							specFieldPath("volumes", "[]", "persistentVolumeClaim", "applicationType"),
-							specFieldPath("volumes", "[]", "persistentVolumeClaim", "controllerBusNumber"),
-							specFieldPath("volumes", "[]", "persistentVolumeClaim", "controllerType"),
-							specFieldPath("volumes", "[]", "persistentVolumeClaim", "diskMode"),
-							specFieldPath("volumes", "[]", "persistentVolumeClaim", "sharingMode"),
-							specFieldPath("volumes", "[]", "persistentVolumeClaim", "unitNumber"),
+							specFieldPath("volumes", "[]", "applicationType"),
+							specFieldPath("volumes", "[]", "controllerBusNumber"),
+							specFieldPath("volumes", "[]", "controllerType"),
+							specFieldPath("volumes", "[]", "diskMode"),
+							specFieldPath("volumes", "[]", "sharingMode"),
+							specFieldPath("volumes", "[]", "unitNumber"),
 
 							specFieldPath("hardware", "ideControllers"),
 							specFieldPath("hardware", "nvmeControllers"),

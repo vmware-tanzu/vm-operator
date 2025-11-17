@@ -1586,12 +1586,11 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name: pkgutil.GeneratePVCName("disk", "100"),
 							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-									ControllerBusNumber: ptr.To[int32](0),
-									UnitNumber:          ptr.To[int32](3),
-								},
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](3),
 						},
 					}
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
@@ -3143,44 +3142,6 @@ var _ = Describe("UpdateStatus", func() {
 								vmopv1.VirtualMachineHardwareCDROMVerified:       fmt.Sprintf("missing CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
 							})
 					})
-				})
-			})
-
-			Context("excluded volumes", func() {
-				BeforeEach(func() {
-					// Set up unmanaged PVC volume in spec (excluded from checks).
-					vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-						builder.DummyUnmanagedPVCVirtualMachineVolume(
-							"unmanaged-pvc-volume",
-							"test-pvc",
-							"unmanaged-volume",
-							vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-							vmopv1.VirtualControllerTypeSCSI,
-							ptr.To(int32(0)),
-							ptr.To(int32(0)),
-						),
-					}
-
-					setupSCSIControllerInSpec(0)
-
-					// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
-					vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
-						builder.DummySCSIController(1000, 0),
-						builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "classic-disk-uuid", ""),
-					)
-
-					// Classic volume in status should be excluded from PVC volume checks.
-					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
-						{
-							Name:     "classic-volume",
-							DiskUUID: "classic-disk-uuid",
-							Type:     vmopv1.VolumeTypeClassic,
-						},
-					}
-				})
-
-				It("should exclude unmanaged PVC and classic volumes from checks and mark condition as true", func() {
-					assertConditionTrue()
 				})
 			})
 		})

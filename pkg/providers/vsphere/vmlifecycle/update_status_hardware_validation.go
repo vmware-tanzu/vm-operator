@@ -297,24 +297,18 @@ func checkPVCVolumes(
 	)
 
 	for _, vol := range vm.Spec.Volumes {
-		if vol.PersistentVolumeClaim == nil ||
-			vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
-			continue
-		}
-
-		pvcSpec := vol.PersistentVolumeClaim
-		if pvcSpec.ControllerType == "" ||
-			pvcSpec.ControllerBusNumber == nil ||
-			pvcSpec.UnitNumber == nil {
+		if vol.ControllerType == "" ||
+			vol.ControllerBusNumber == nil ||
+			vol.UnitNumber == nil {
 			issues.IncompletePlacement = append(issues.IncompletePlacement, vol.Name)
 			continue
 		}
 
 		expected.Insert(pkgutil.DevicePlacement{
 			Key:                 vol.Name,
-			ControllerType:      pvcSpec.ControllerType,
-			ControllerBusNumber: *pvcSpec.ControllerBusNumber,
-			UnitNumber:          *pvcSpec.UnitNumber,
+			ControllerType:      vol.ControllerType,
+			ControllerBusNumber: *vol.ControllerBusNumber,
+			UnitNumber:          *vol.UnitNumber,
 		})
 	}
 

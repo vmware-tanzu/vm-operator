@@ -374,7 +374,15 @@ var _ = Describe("Reconcile", func() {
 					}
 				})
 
-				It("should add volumes to VM spec and return ErrPendingVolumes", func() {
+				It("should add volumes to VM spec and return ErrPendingBackfill then ErrPendingRegister", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
+
 					Expect(unmanagedvolsreg.Reconcile(
 						ctx,
 						k8sClient,
@@ -488,6 +496,14 @@ var _ = Describe("Reconcile", func() {
 						vimClient,
 						vm,
 						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
 						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 					claimName := pkgutil.GeneratePVCName(vm.Name, "disk-uuid-456")
@@ -542,15 +558,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-134e95b6",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-789",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -676,15 +688,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-f3069b5c",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-patch",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -799,15 +807,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-09e1c91f",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-nil-apigroup",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -914,15 +918,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-7e8b2d45",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-wrong-apigroup",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1031,15 +1031,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-0c2d85ea",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-pending",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1134,15 +1130,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-e926b968",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-cycle",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1188,7 +1180,7 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should handle complete reconciliation cycle", func() {
-					// First reconciliation: should create PVC and CnsRegisterVolume
+					// First reconciliation: should create PVC and CnsRegisterVolume.
 					Expect(unmanagedvolsreg.Reconcile(
 						ctx,
 						k8sClient,
@@ -1197,7 +1189,7 @@ var _ = Describe("Reconcile", func() {
 						moVM,
 						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
-					// Verify PVC was created
+					// Verify PVC was created.
 					pvc := &corev1.PersistentVolumeClaim{}
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
 						Namespace: vm.Namespace,
@@ -1276,15 +1268,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-87ce75a6",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1350,15 +1338,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-f60a60d0",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-create-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1424,15 +1408,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-3144bc43",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-crv-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1498,15 +1478,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-a89248a4",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-crv-get-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1572,15 +1548,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-cd73132d",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-patch-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1669,15 +1641,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-9eb41331",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-delete-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1803,15 +1771,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-1aeeec80",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-delete-all-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1912,15 +1876,11 @@ var _ = Describe("Reconcile", func() {
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 										ClaimName: "my-vm-ca8e6f4d",
 									},
-									UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-										Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										Name: "disk-uuid-status-update-error",
-									},
-									ControllerType:      vmopv1.VirtualControllerTypeIDE,
-									ControllerBusNumber: ptr.To(int32(0)),
-									UnitNumber:          ptr.To(int32(0)),
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
 					}
 
@@ -1969,12 +1929,18 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should handle status update error gracefully", func() {
-					// This test verifies that status update errors don't break the reconciliation
-					// The Reconcile function doesn't directly call Status().Update, but this
-					// test ensures the interceptor is working correctly
-					err := unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
-					// The function should still work even if status updates fail
-					Expect(err).To(Equal(unmanagedvolsreg.ErrPendingRegister))
+					// This test verifies that status update errors do not break
+					// the reconciliation.
+					// The Reconcile function does not directly call
+					// Status().Update, and this test ensures the interceptor is
+					// working correctly.
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 				})
 			})
 		})
@@ -2047,6 +2013,14 @@ var _ = Describe("Reconcile", func() {
 					vimClient,
 					vm,
 					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
+
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
 					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 				Expect(pkgcond.IsFalse(vm, unmanagedvolsreg.Condition)).To(BeTrue())
@@ -2069,15 +2043,11 @@ var _ = Describe("Reconcile", func() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "my-vm-no-policy",
 								},
-								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-									Name: "disk-uuid-no-policy",
-								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 
@@ -2177,15 +2147,12 @@ var _ = Describe("Reconcile", func() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "my-vm-from-image-pvc",
 								},
-								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-									Name: "disk-uuid-from-image",
-								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ImageDiskName:       "disk-uuid-from-image",
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 
@@ -2248,7 +2215,7 @@ var _ = Describe("Reconcile", func() {
 					moVM,
 					configSpec)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to get pvc for unmanaged volume from image"))
+				Expect(err.Error()).To(ContainSubstring("failed to get pvc for volume from image disk"))
 			})
 		})
 
@@ -2282,15 +2249,11 @@ var _ = Describe("Reconcile", func() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "my-vm-pbm-fail",
 								},
-								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-									Name: "disk-uuid-pbm-fail",
-								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 
@@ -2556,6 +2519,13 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			It("should return error", func() {
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
 				err := unmanagedvolsreg.Reconcile(
 					ctx,
 					k8sClient,
@@ -2630,6 +2600,13 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			It("should return error from PVC creation", func() {
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
 				err := unmanagedvolsreg.Reconcile(
 					ctx,
 					k8sClient,
@@ -2653,15 +2630,11 @@ var _ = Describe("Reconcile", func() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "my-vm-patch-fail",
 								},
-								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-									Name: "disk-uuid-patch-fail",
-								},
-								ControllerType:      vmopv1.VirtualControllerTypeIDE,
-								ControllerBusNumber: ptr.To(int32(0)),
-								UnitNumber:          ptr.To(int32(0)),
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 					},
 				}
 

@@ -113,8 +113,7 @@ func (v validator) validateControllerSlots(
 
 	var allErrs field.ErrorList
 
-	volumes := vmopv1util.GetManagedVolumesWithPVC(*vm)
-	if len(volumes) == 0 {
+	if len(vm.Spec.Volumes) == 0 {
 		return allErrs
 	}
 
@@ -148,34 +147,29 @@ func (v validator) validateControllerSlots(
 
 	volumesPath := field.NewPath("spec", "volumes")
 	for i, vol := range vm.Spec.Volumes {
-		if vol.PersistentVolumeClaim == nil {
-			continue
-		}
+		volPath := volumesPath.Index(i)
 
-		pvc := vol.PersistentVolumeClaim
-		pvcPath := volumesPath.Index(i).Child("persistentVolumeClaim")
-
-		if pvc.ControllerBusNumber == nil ||
-			pvc.ControllerType == "" ||
-			pvc.UnitNumber == nil {
+		if vol.ControllerBusNumber == nil ||
+			vol.ControllerType == "" ||
+			vol.UnitNumber == nil {
 			// These fields are validated by the virtualmachine validator's
 			// validateVolumes if they are required.
 			continue
 		}
 
 		controllerKey := pkgutil.ControllerID{
-			ControllerType: pvc.ControllerType,
-			BusNumber:      *pvc.ControllerBusNumber,
+			ControllerType: vol.ControllerType,
+			BusNumber:      *vol.ControllerBusNumber,
 		}
 
-		maxBusNumber := pvc.ControllerType.MaxCount()
+		maxBusNumber := vol.ControllerType.MaxCount()
 
 		// Validate bus number is within valid range for the controller type.
 		if controllerKey.BusNumber < 0 ||
 			controllerKey.BusNumber >= maxBusNumber {
 
 			allErrs = append(allErrs, field.Invalid(
-				pvcPath.Child("controllerBusNumber"),
+				volPath.Child("controllerBusNumber"),
 				controllerKey.BusNumber,
 				fmt.Sprintf(invalidControllerBusNumberRangeFmt,
 					maxBusNumber-1)))
@@ -185,7 +179,7 @@ func (v validator) validateControllerSlots(
 		targetController, exists := controllerSpecs.Get(controllerKey.ControllerType, controllerKey.BusNumber)
 		if !exists {
 			allErrs = append(allErrs, field.Invalid(
-				pvcPath.Child("controllerBusNumber"),
+				volPath.Child("controllerBusNumber"),
 				controllerKey.BusNumber,
 				fmt.Sprintf(invalidControllerBusNumberDoesNotExist,
 					controllerKey.ControllerType,
@@ -197,7 +191,7 @@ func (v validator) validateControllerSlots(
 
 		// Validate unit number is specified.
 		var (
-			unitNum      = *pvc.UnitNumber
+			unitNum      = *vol.UnitNumber
 			reservedUnit = targetController.ReservedUnitNumber()
 			maxSlots     = targetController.MaxSlots()
 		)
@@ -205,7 +199,7 @@ func (v validator) validateControllerSlots(
 		// Validate unit number is within range for controller type.
 		if unitNum < 0 || unitNum >= maxSlots {
 			allErrs = append(allErrs, field.Invalid(
-				pvcPath.Child("unitNumber"),
+				volPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidUnitNumberRangeFmt,
 					maxSlots-1, controllerKey.ControllerType)))
@@ -214,7 +208,7 @@ func (v validator) validateControllerSlots(
 		} else if unitNum == reservedUnit {
 			// Validate unit number is not reserved for the controller itself.
 			allErrs = append(allErrs, field.Invalid(
-				pvcPath.Child("unitNumber"),
+				volPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidUnitNumberReserved,
 					reservedUnit,
@@ -230,7 +224,7 @@ func (v validator) validateControllerSlots(
 		// Validate unit number is not already in use.
 		if occupiedSlots[controllerKey].Has(unitNum) {
 			allErrs = append(allErrs, field.Invalid(
-				pvcPath.Child("unitNumber"),
+				volPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidUnitNumberInUse,
 					controllerKey.ControllerType,
@@ -244,7 +238,7 @@ func (v validator) validateControllerSlots(
 		// Validate controller is not at capacity after adding this volume.
 		if occupiedSlots[controllerKey].Len() >= int(targetController.MaxSlots()) {
 			allErrs = append(allErrs, field.Invalid(
-				pvcPath.Child("unitNumber"),
+				volPath.Child("unitNumber"),
 				unitNum,
 				fmt.Sprintf(invalidControllerCapacityFmt,
 					controllerKey.ControllerType,

@@ -45,8 +45,8 @@ type VirtualDiskInfo struct {
 	ProfileIDs         []string
 	StorageClass       string
 	StoragePolicyID    string
-	Type               vmopv1.UnmanagedVolumeClaimVolumeType
 	Target             VirtualDiskTarget
+	ImageDiskName      string
 	NewCapacityInBytes int64
 	Snapshot           bool
 	LinkedClone        bool
@@ -63,7 +63,7 @@ type VolumeInfo struct {
 	Controllers map[int32]ControllerSpec
 
 	// Volumes maps a disk's target ID to the volume from the VM spec.
-	Volumes map[string]vmopv1.VirtualMachineVolume
+	Volumes map[string]*vmopv1.VirtualMachineVolume
 }
 
 // FilterOutEmptyUUIDOrFilename returns only the disks that have non-empty UUIDs
@@ -162,26 +162,24 @@ func GetVolumeInfo(
 		snapshotDiskKeys = map[int32]struct{}{}
 		info             = VolumeInfo{
 			Controllers: map[int32]ControllerSpec{},
-			Volumes:     map[string]vmopv1.VirtualMachineVolume{},
+			Volumes:     map[string]*vmopv1.VirtualMachineVolume{},
 		}
 	)
 
 	// Build a map of existing volumes by target for quick lookup.
-	for _, vol := range vm.Spec.Volumes {
-		if pvc := vol.PersistentVolumeClaim; pvc != nil {
-			var (
-				ctrlType = pvc.ControllerType
-				ctrlBus  = pvc.ControllerBusNumber
-				diskUnit = pvc.UnitNumber
-			)
-			if ctrlType != "" && ctrlBus != nil && diskUnit != nil {
-				t := VirtualDiskTarget{
-					ControllerType: ctrlType,
-					ControllerBus:  *ctrlBus,
-					UnitNumber:     *diskUnit,
-				}
-				info.Volumes[t.String()] = vol
+	for i, vol := range vm.Spec.Volumes {
+		var (
+			ctrlType = vol.ControllerType
+			ctrlBus  = vol.ControllerBusNumber
+			diskUnit = vol.UnitNumber
+		)
+		if ctrlType != "" && ctrlBus != nil && diskUnit != nil {
+			t := VirtualDiskTarget{
+				ControllerType: ctrlType,
+				ControllerBus:  *ctrlBus,
+				UnitNumber:     *diskUnit,
 			}
+			info.Volumes[t.String()] = &vm.Spec.Volumes[i]
 		}
 	}
 
@@ -282,13 +280,9 @@ func GetVolumeInfo(
 		}
 		info.Disks[i].Target = t
 
-		// Update the disk info with the volume type if it is known.
+		// Update the disk info with the image disk name if it is known.
 		if v, ok := info.Volumes[t.String()]; ok {
-			if pvc := v.PersistentVolumeClaim; pvc != nil {
-				if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-					info.Disks[i].Type = uvc.Type
-				}
-			}
+			info.Disks[i].ImageDiskName = v.ImageDiskName
 		}
 	}
 

@@ -27,8 +27,7 @@ func AddControllersForVolumes(
 	_ ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
-	volumes := vmopv1util.GetManagedVolumesWithPVC(*vm)
-	if len(volumes) == 0 {
+	if len(vm.Spec.Volumes) == 0 {
 		return false, nil
 	}
 
@@ -57,15 +56,15 @@ func AddControllersForVolumes(
 		}
 	}
 
-	explicitPlacementVolumes := []vmopv1.VirtualMachineVolume{}
-	implicitPlacementVolumes := []vmopv1.VirtualMachineVolume{}
+	explicitPlacementVolumes := []*vmopv1.VirtualMachineVolume{}
+	implicitPlacementVolumes := []*vmopv1.VirtualMachineVolume{}
 
 	// Separate volumes into explicit and implicit placement.
-	for _, vol := range volumes {
-		pvc := vol.PersistentVolumeClaim
-		if pvc.ControllerBusNumber != nil &&
-			pvc.ControllerType != "" &&
-			pvc.UnitNumber != nil && *pvc.UnitNumber >= 0 {
+	for i := range vm.Spec.Volumes {
+		vol := &vm.Spec.Volumes[i]
+		if vol.ControllerBusNumber != nil &&
+			vol.ControllerType != "" &&
+			vol.UnitNumber != nil && *vol.UnitNumber >= 0 {
 
 			explicitPlacementVolumes = append(explicitPlacementVolumes, vol)
 		} else {
@@ -99,7 +98,7 @@ func AddControllersForVolumes(
 func processVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine,
-	volumes []vmopv1.VirtualMachineVolume,
+	volumes []*vmopv1.VirtualMachineVolume,
 	controllerSpecs vmopv1util.ControllerSpecs,
 	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
 ) bool {
@@ -107,14 +106,12 @@ func processVolumes(
 	var wasMutated bool
 
 	// Process each volume to determine controller requirements.
-	for i := range volumes {
-		vol := &volumes[i]
-		pvc := vol.PersistentVolumeClaim
+	for _, vol := range volumes {
 
 		// Determine the target controller based on volume configuration.
 		targetController := determineTargetController(
 			*ctx,
-			pvc,
+			vol,
 			controllerSpecs,
 			occupiedSlots,
 		)
@@ -137,7 +134,6 @@ func processVolumes(
 						"controllerType", controllerID.ControllerType,
 						"maxCount", targetController.MaxCount(),
 						"volume", vol.Name,
-						"pvc", pvc.ClaimName,
 					)
 					continue
 				}
@@ -173,7 +169,6 @@ func processVolumes(
 						"busNumber", controllerID.BusNumber,
 						"controllerType", controllerID.ControllerType,
 						"volume", vol.Name,
-						"pvc", pvc.ClaimName,
 					)
 					continue
 				}
@@ -191,12 +186,12 @@ func processVolumes(
 			// existing controller. We just ended up adding a controller
 			// that does not have any devices attached to it. Let's try to
 			// avoid that.
-			if pvc.ControllerType == "" {
-				pvc.ControllerType = controllerID.ControllerType
+			if vol.ControllerType == "" {
+				vol.ControllerType = controllerID.ControllerType
 				wasMutated = true
 			}
-			if pvc.ControllerBusNumber == nil {
-				pvc.ControllerBusNumber = &controllerID.BusNumber
+			if vol.ControllerBusNumber == nil {
+				vol.ControllerBusNumber = &controllerID.BusNumber
 				wasMutated = true
 			}
 
@@ -206,8 +201,8 @@ func processVolumes(
 
 			// If this volume doesn't have a unit number assigned yet,
 			// we need to track that a slot will be occupied.
-			if pvc.UnitNumber != nil {
-				occupiedSlots[controllerID].Insert(*pvc.UnitNumber)
+			if vol.UnitNumber != nil {
+				occupiedSlots[controllerID].Insert(*vol.UnitNumber)
 			} else {
 				// Find and reserve the next available slot for this volume.
 				// The validation webhook will throw an error if a slot is
@@ -217,7 +212,7 @@ func processVolumes(
 					occupiedSlots[controllerID],
 				); nextUnit >= 0 {
 					occupiedSlots[controllerID].Insert(nextUnit)
-					pvc.UnitNumber = &nextUnit
+					vol.UnitNumber = &nextUnit
 					wasMutated = true
 				}
 			}
@@ -233,33 +228,33 @@ func processVolumes(
 // occupied, the methods returns nil.
 func determineTargetController(
 	ctx pkgctx.WebhookRequestContext,
-	pvc *vmopv1.PersistentVolumeClaimVolumeSource,
+	vol *vmopv1.VirtualMachineVolume,
 	controllerSpecs vmopv1util.ControllerSpecs,
 	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
 ) vmopv1util.ControllerSpec {
 
 	// Default to SCSI if controllerType is not set.
-	controllerType := pvc.ControllerType
+	controllerType := vol.ControllerType
 	if controllerType == "" {
 		controllerType = vmopv1.VirtualControllerTypeSCSI
 	}
 
 	sharingMode := vmopv1.VirtualControllerSharingModeNone
-	if pvc.ApplicationType == vmopv1.VolumeApplicationTypeMicrosoftWSFC {
+	if vol.ApplicationType == vmopv1.VolumeApplicationTypeMicrosoftWSFC {
 		sharingMode = vmopv1.VirtualControllerSharingModePhysical
 	}
 
 	// If a specific controller bus number is requested, return if one exists
 	// or create one.
-	if pvc.ControllerBusNumber != nil {
+	if vol.ControllerBusNumber != nil {
 
 		if controller, ok := controllerSpecs.
-			Get(controllerType, *pvc.ControllerBusNumber); ok {
+			Get(controllerType, *vol.ControllerBusNumber); ok {
 			return controller
 		}
 
 		return vmopv1util.CreateNewController(controllerType,
-			*pvc.ControllerBusNumber, sharingMode)
+			*vol.ControllerBusNumber, sharingMode)
 	}
 
 	// If an existing controller does not exist with an available slot,
@@ -317,22 +312,16 @@ func SetPVCVolumeDefaults(
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
 	var wasMutated bool
-	for i, v := range vm.Spec.Volumes {
-		if v.PersistentVolumeClaim == nil {
-			continue
-		}
+	for i := range vm.Spec.Volumes {
+		v := &vm.Spec.Volumes[i]
 
-		if v.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
-			continue
-		}
-
-		switch v.PersistentVolumeClaim.ApplicationType {
+		switch v.ApplicationType {
 		case vmopv1.VolumeApplicationTypeOracleRAC:
-			v.PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
-			v.PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+			v.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+			v.SharingMode = vmopv1.VolumeSharingModeMultiWriter
 			wasMutated = true
 		case vmopv1.VolumeApplicationTypeMicrosoftWSFC:
-			v.PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+			v.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
 			wasMutated = true
 		case "":
 			// Skip.
@@ -340,9 +329,8 @@ func SetPVCVolumeDefaults(
 			// This should already fail at the schema validation already.
 			return false, field.NotSupported(
 				field.NewPath("spec").Index(i).
-					Child("persistentVolumeClaim").
 					Child("applicationType"),
-				v.PersistentVolumeClaim.ApplicationType,
+				v.ApplicationType,
 				[]string{
 					string(vmopv1.VolumeApplicationTypeOracleRAC),
 					string(vmopv1.VolumeApplicationTypeMicrosoftWSFC),

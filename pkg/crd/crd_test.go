@@ -221,12 +221,12 @@ var _ = Describe("Install", func() {
 				Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
 				Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
 				Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
-				Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
-				Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
-				Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
-				Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
-				Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
-				Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
+				Entry("volumes pvc applicationType", "volumes.[].applicationType"),
+				Entry("volumes pvc controllerBusNumber", "volumes.[].controllerBusNumber"),
+				Entry("volumes pvc controllerType", "volumes.[].controllerType"),
+				Entry("volumes pvc diskMode", "volumes.[].diskMode"),
+				Entry("volumes pvc sharingMode", "volumes.[].sharingMode"),
+				Entry("volumes pvc unitNumber", "volumes.[].unitNumber"),
 			)
 
 			DescribeTable("vm api should not have status fields",
@@ -406,12 +406,55 @@ var _ = Describe("Install", func() {
 				Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
 				Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
 				Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
-				Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
-				Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
-				Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
-				Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
-				Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
-				Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
+				Entry("volumes applicationType", "volumes.[].applicationType"),
+				Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+				Entry("volumes controllerType", "volumes.[].controllerType"),
+				Entry("volumes diskMode", "volumes.[].diskMode"),
+				Entry("volumes sharingMode", "volumes.[].sharingMode"),
+				Entry("volumes unitNumber", "volumes.[].unitNumber"),
+			)
+			DescribeTable("vm api should have status fields",
+				func(field string) {
+					fields := statusFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("volumes diskMode", "volumes.[].diskMode"),
+				Entry("volumes sharingMode", "volumes.[].sharingMode"),
+				Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+				Entry("volumes controllerType", "volumes.[].controllerType"),
+				Entry("hardware controllers", "hardware.controllers"),
+			)
+		})
+
+		When("AllDisksArePVCs is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.AllDisksArePVCs = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
+			})
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("ideControllers", "hardware.ideControllers"),
+				Entry("nvmeControllers", "hardware.nvmeControllers"),
+				Entry("sataControllers", "hardware.sataControllers"),
+				Entry("scsiControllers", "hardware.scsiControllers"),
+				Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
+				Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
+				Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
+				Entry("volumes applicationType", "volumes.[].applicationType"),
+				Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+				Entry("volumes controllerType", "volumes.[].controllerType"),
+				Entry("volumes diskMode", "volumes.[].diskMode"),
+				Entry("volumes sharingMode", "volumes.[].sharingMode"),
+				Entry("volumes unitNumber", "volumes.[].unitNumber"),
 			)
 			DescribeTable("vm api should have status fields",
 				func(field string) {
@@ -591,12 +634,12 @@ var _ = Describe("Install", func() {
 					Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
 					Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
 					Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
-					Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
-					Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
-					Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
-					Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
-					Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
-					Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
+					Entry("volumes applicationType", "volumes.[].applicationType"),
+					Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+					Entry("volumes controllerType", "volumes.[].controllerType"),
+					Entry("volumes diskMode", "volumes.[].diskMode"),
+					Entry("volumes sharingMode", "volumes.[].sharingMode"),
+					Entry("volumes unitNumber", "volumes.[].unitNumber"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -655,12 +698,12 @@ var _ = Describe("Install", func() {
 					Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
 					Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
 					Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
-					Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
-					Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
-					Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
-					Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
-					Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
-					Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
+					Entry("volumes applicationType", "volumes.[].applicationType"),
+					Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+					Entry("volumes controllerType", "volumes.[].controllerType"),
+					Entry("volumes diskMode", "volumes.[].diskMode"),
+					Entry("volumes sharingMode", "volumes.[].sharingMode"),
+					Entry("volumes unitNumber", "volumes.[].unitNumber"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -720,12 +763,12 @@ var _ = Describe("Install", func() {
 						Entry("cdrom's controllerBusNumber", "hardware.cdrom.[].controllerBusNumber"),
 						Entry("cdrom's controllerType", "hardware.cdrom.[].controllerType"),
 						Entry("cdrom's unitNumber", "hardware.cdrom.[].unitNumber"),
-						Entry("volumes pvc applicationType", "volumes.[].persistentVolumeClaim.applicationType"),
-						Entry("volumes pvc controllerBusNumber", "volumes.[].persistentVolumeClaim.controllerBusNumber"),
-						Entry("volumes pvc controllerType", "volumes.[].persistentVolumeClaim.controllerType"),
-						Entry("volumes pvc diskMode", "volumes.[].persistentVolumeClaim.diskMode"),
-						Entry("volumes pvc sharingMode", "volumes.[].persistentVolumeClaim.sharingMode"),
-						Entry("volumes pvc unitNumber", "volumes.[].persistentVolumeClaim.unitNumber"),
+						Entry("volumes applicationType", "volumes.[].applicationType"),
+						Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
+						Entry("volumes controllerType", "volumes.[].controllerType"),
+						Entry("volumes diskMode", "volumes.[].diskMode"),
+						Entry("volumes sharingMode", "volumes.[].sharingMode"),
+						Entry("volumes unitNumber", "volumes.[].unitNumber"),
 					)
 
 					DescribeTable("vm api should have removed status fields",

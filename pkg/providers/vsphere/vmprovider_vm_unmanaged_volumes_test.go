@@ -170,27 +170,19 @@ func unmanagedVolumesTests() {
 
 		It("should backfill unmanaged disk into spec.volumes", func() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
-				To(MatchError(vsphere.ErrUnmanagedVolsRegister))
+				To(MatchError(vsphere.ErrRegisterVolumes))
 			Expect(conditions.IsTrue(
 				vm, "VirtualMachineUnmanagedVolumesBackfill")).To(BeTrue())
 			Expect(conditions.IsFalse(
 				vm, "VirtualMachineUnmanagedVolumesRegister")).To(BeTrue())
 
-			// Check that a volume was added for the unmanaged disk.
-			var vol *vmopv1.VirtualMachineVolume
-			for i, v := range vm.Spec.Volumes {
-				if v.PersistentVolumeClaim != nil &&
-					v.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
-					vol = &vm.Spec.Volumes[i]
-					break
-				}
-			}
+			Expect(vm.Spec.Volumes).To(HaveLen(1))
+			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim).ToNot(BeNil())
+			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName).ToNot(BeEmpty())
+			Expect(vm.Spec.Volumes[0].ImageDiskName).To(BeEmpty(),
+				"should not have added volume for image disk")
 
-			Expect(vol).ToNot(BeNil(), "should have added volume for unmanaged disk")
-			Expect(vol.PersistentVolumeClaim.UnmanagedVolumeClaim.Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
-			Expect(vol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty())
-
-			claimName := vol.PersistentVolumeClaim.ClaimName
+			claimName := vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName
 			Expect(claimName).ToNot(BeEmpty())
 
 			// Check that PVC was created.
@@ -276,12 +268,9 @@ func unmanagedVolumesTests() {
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "my-pvc-1",
 							},
-							UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-								Name: "disk0",
-								Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-							},
 						},
 					},
+					ImageDiskName: "disk0",
 				},
 			}
 
@@ -397,7 +386,7 @@ func unmanagedVolumesTests() {
 
 		It("should succeed in creating the VM", func() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
-				To(MatchError(vsphere.ErrUnmanagedVolsRegister))
+				To(MatchError(vsphere.ErrRegisterVolumes))
 			Expect(conditions.IsTrue(
 				vm, "VirtualMachineUnmanagedVolumesBackfill")).To(BeTrue())
 			Expect(conditions.IsFalse(
@@ -406,22 +395,12 @@ func unmanagedVolumesTests() {
 			// Check that a volume was added for the unmanaged disk.
 			Expect(vm.Spec.Volumes).To(HaveLen(1))
 
-			var vol *vmopv1.VirtualMachineVolume
-			for i, v := range vm.Spec.Volumes {
-				if v.PersistentVolumeClaim != nil &&
-					v.PersistentVolumeClaim.UnmanagedVolumeClaim != nil &&
-					v.PersistentVolumeClaim.UnmanagedVolumeClaim.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
+			Expect(vm.Spec.Volumes).To(HaveLen(1))
+			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim).ToNot(BeNil())
+			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName).ToNot(BeEmpty())
+			Expect(vm.Spec.Volumes[0].ImageDiskName).ToNot(BeEmpty())
 
-					vol = &vm.Spec.Volumes[i]
-					break
-				}
-			}
-
-			Expect(vol).ToNot(BeNil(), "should have a volume for unmanaged disk")
-			Expect(vol.PersistentVolumeClaim.UnmanagedVolumeClaim.Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage))
-			Expect(vol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty())
-
-			claimName := vol.PersistentVolumeClaim.ClaimName
+			claimName := vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName
 			Expect(claimName).ToNot(BeEmpty())
 
 			// Check that PVC was created.

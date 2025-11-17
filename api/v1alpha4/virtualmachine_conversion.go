@@ -16,6 +16,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+func Convert_v1alpha5_VirtualMachineVolume_To_v1alpha4_VirtualMachineVolume(
+	in *vmopv1.VirtualMachineVolume, out *VirtualMachineVolume, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha4_VirtualMachineVolume(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(
 	in *vmopv1.VirtualMachineImageDiskInfo, out *VirtualMachineImageDiskInfo, s apiconversion.Scope) error {
 
@@ -271,6 +277,26 @@ func restore_v1alpha5_VirtualMachineAffinity(dst, src *vmopv1.VirtualMachine) {
 	}
 }
 
+func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src.Spec.Volumes {
+		vol := &src.Spec.Volumes[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst.Spec.Volumes {
+		dstVol := &dst.Spec.Volumes[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			dstVol.ApplicationType = srcVol.ApplicationType
+			dstVol.ControllerBusNumber = srcVol.ControllerBusNumber
+			dstVol.ControllerType = srcVol.ControllerType
+			dstVol.ImageDiskName = srcVol.ImageDiskName
+			dstVol.DiskMode = srcVol.DiskMode
+			dstVol.SharingMode = srcVol.SharingMode
+			dstVol.UnitNumber = srcVol.UnitNumber
+		}
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -294,6 +320,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
 	restore_v1alpha5_VirtualMachineAffinity(dst, restored)
+	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
 
 	// END RESTORE
 

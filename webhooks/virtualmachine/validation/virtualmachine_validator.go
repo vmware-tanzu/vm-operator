@@ -1177,19 +1177,21 @@ func (v validator) validateVolumes(
 			}
 		}
 
-		if vol.PersistentVolumeClaim == nil {
-			allErrs = append(allErrs, field.Required(
-				volPath.Child("persistentVolumeClaim"), ""))
-		} else {
-			allErrs = append(allErrs,
-				v.validateVolumeWithPVC(ctx, oldVM, vm, oldVolumesMap[vol.Name],
-					vol, volPath)...)
+		allErrs = append(allErrs,
+			v.validateVolume(
+				ctx,
+				oldVM,
+				vm,
+				oldVolumesMap[vol.Name],
+				vol,
+				volPath)...)
 
-			if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-				allErrs = append(allErrs,
-					v.validateControllerFields(vol, oldVM, *volPath)...,
-				)
-			}
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
+			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+
+			allErrs = append(allErrs,
+				v.validateControllerFields(vol, oldVM, *volPath)...,
+			)
 		}
 	}
 
@@ -1203,35 +1205,30 @@ func (v validator) validateControllerFields(
 ) field.ErrorList {
 	var allErrs field.ErrorList
 
-	pvc := vol.PersistentVolumeClaim
-
 	unitNumberRequired := oldVM != nil
-	if unitNumberRequired && pvc.UnitNumber == nil {
+	if unitNumberRequired && vol.UnitNumber == nil {
 		allErrs = append(allErrs, field.Required(
-			volPath.Child("persistentVolumeClaim",
-				"unitNumber"),
+			volPath.Child("unitNumber"),
 			"",
 		))
 	}
 
 	controllerTypeRequired := oldVM != nil ||
-		pvc.UnitNumber != nil ||
-		pvc.ControllerBusNumber != nil
-	if controllerTypeRequired && pvc.ControllerType == "" {
+		vol.UnitNumber != nil ||
+		vol.ControllerBusNumber != nil
+	if controllerTypeRequired && vol.ControllerType == "" {
 		allErrs = append(allErrs, field.Required(
-			volPath.Child("persistentVolumeClaim",
-				"controllerType"),
+			volPath.Child("controllerType"),
 			"",
 		))
 	}
 
 	controllerBusNumberRequired := oldVM != nil ||
-		pvc.UnitNumber != nil ||
-		pvc.ControllerType != ""
-	if controllerBusNumberRequired && pvc.ControllerBusNumber == nil {
+		vol.UnitNumber != nil ||
+		vol.ControllerType != ""
+	if controllerBusNumberRequired && vol.ControllerBusNumber == nil {
 		allErrs = append(allErrs, field.Required(
-			volPath.Child("persistentVolumeClaim",
-				"controllerBusNumber"),
+			volPath.Child("controllerBusNumber"),
 			"",
 		))
 	}
@@ -1239,7 +1236,7 @@ func (v validator) validateControllerFields(
 	return allErrs
 }
 
-func (v validator) validateVolumeWithPVC(
+func (v validator) validateVolume(
 	ctx *pkgctx.WebhookRequestContext,
 	oldVM, vm *vmopv1.VirtualMachine,
 	oldVol *vmopv1.VirtualMachineVolume,
@@ -1251,177 +1248,179 @@ func (v validator) validateVolumeWithPVC(
 		pvcPath = volPath.Child("persistentVolumeClaim")
 	)
 
-	if vol.PersistentVolumeClaim.ReadOnly {
-		allErrs = append(allErrs, field.NotSupported(pvcPath.Child("readOnly"), true, []string{"false"}))
+	if pvc := vol.PersistentVolumeClaim; pvc != nil {
+		if pvc.ReadOnly {
+			allErrs = append(allErrs, field.NotSupported(
+				pvcPath.Child("readOnly"), true, []string{"false"}))
+		}
+		if pvc.ClaimName == "" {
+			allErrs = append(allErrs, field.Required(
+				pvcPath.Child("claimName"), ""))
+		}
 	}
 
-	if vol.PersistentVolumeClaim.ClaimName == "" {
-		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
+		!pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+
+		return allErrs
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-		if oldVol != nil && oldVol.PersistentVolumeClaim != nil &&
-			oldVol.PersistentVolumeClaim.ClaimName == vol.PersistentVolumeClaim.ClaimName {
+	if oldVol != nil && oldVol.Name == vol.Name {
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ApplicationType,
+			oldVol.ApplicationType,
+			volPath.Child("applicationType"))...)
 
-			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.ApplicationType,
-				oldVol.PersistentVolumeClaim.ApplicationType,
-				pvcPath.Child("applicationType"))...)
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ControllerBusNumber,
+			oldVol.ControllerBusNumber,
+			volPath.Child("controllerBusNumber"))...)
 
-			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.ControllerBusNumber,
-				oldVol.PersistentVolumeClaim.ControllerBusNumber,
-				pvcPath.Child("controllerBusNumber"))...)
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ControllerType,
+			oldVol.ControllerType,
+			volPath.Child("controllerType"))...)
 
-			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.ControllerType,
-				oldVol.PersistentVolumeClaim.ControllerType,
-				pvcPath.Child("controllerType"))...)
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.DiskMode,
+			oldVol.DiskMode,
+			volPath.Child("diskMode"))...)
 
-			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.DiskMode,
-				oldVol.PersistentVolumeClaim.DiskMode,
-				pvcPath.Child("diskMode"))...)
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.SharingMode,
+			oldVol.SharingMode,
+			volPath.Child("sharingMode"))...)
 
-			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.SharingMode,
-				oldVol.PersistentVolumeClaim.SharingMode,
-				pvcPath.Child("sharingMode"))...)
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.UnitNumber,
+			oldVol.UnitNumber,
+			volPath.Child("unitNumber"))...)
 
-			allErrs = append(allErrs, validation.ValidateImmutableField(
-				vol.PersistentVolumeClaim.UnitNumber,
-				oldVol.PersistentVolumeClaim.UnitNumber,
-				pvcPath.Child("unitNumber"))...)
-		}
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ImageDiskName,
+			oldVol.ImageDiskName,
+			volPath.Child("imageDiskName"))...)
+	}
 
-		// Validate PVC access mode, sharing mode, and controller combinations
-		// if VM is being created or the PVC is being updated.
-		// We skip the validation if the PVC is not being updated because
-		// we want to avoid rejecting an update because of an external state change.
-		volumeChanged := oldVol == nil || !equality.Semantic.DeepEqual(
-			*oldVol,
-			vol,
+	// Validate access mode, sharing mode, and controller combinations if VM is
+	// being created or volume is being updated.
+	// Skip the validation if the volume is not being updated to avoid rejecting
+	// an update caused by an external state change.
+	var (
+		volumeChanged   bool
+		hardwareChanged bool
+	)
+
+	if oldVol == nil || !equality.Semantic.DeepEqual(*oldVol, vol) {
+		volumeChanged = true
+	}
+
+	if oldVol == nil ||
+		vm == nil ||
+		!equality.Semantic.DeepEqual(oldVM.Spec.Hardware, vm.Spec.Hardware) {
+
+		hardwareChanged = true
+	}
+
+	if volumeChanged || hardwareChanged {
+		allErrs = append(allErrs,
+			v.validateVolumeAccessModeAndSharingModeCombinations(
+				ctx,
+				vm,
+				vol,
+				volPath, pvcPath,
+			)...,
 		)
-		hardwareChanged := oldVM == nil || vm == nil || !equality.Semantic.DeepEqual(
-			oldVM.Spec.Hardware,
-			vm.Spec.Hardware,
+	} else {
+		ctx.Logger.V(4).Info(
+			"Skipping volume access mode and sharing mode validation",
+			"volume", vol.Name,
+			"volumeChanged", volumeChanged,
+			"hardwareChanged", hardwareChanged,
+			"isPrivilegedAccount", ctx.IsPrivilegedAccount,
 		)
-
-		if !ctx.IsPrivilegedAccount && (volumeChanged || hardwareChanged) {
-			allErrs = append(allErrs,
-				v.validatePVCAccessModeAndSharingModeCombinations(
-					ctx,
-					vm,
-					vol,
-					volPath,
-				)...,
-			)
-
-		} else {
-			ctx.Logger.V(4).Info(
-				"Skipping PVC access mode and sharing mode combinations validation",
-				"volume", vol.Name,
-				"volumeChanged", volumeChanged,
-				"hardwareChanged", hardwareChanged,
-				"isPrivilegedAccount", ctx.IsPrivilegedAccount,
-			)
-		}
 	}
 
 	return allErrs
 }
 
-// validatePVCAccessModeAndSharingModeCombinations validates the combinations
+// validateVolumeAccessModeAndSharingModeCombinations validates the combinations
 // of PVC access mode, volume sharing mode, and controller sharing mode
 // according to the business rules.
-func (v validator) validatePVCAccessModeAndSharingModeCombinations(
+func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
-	volPath *field.Path) field.ErrorList {
+	volPath, pvcPath *field.Path) field.ErrorList {
 
-	var allErrs field.ErrorList
-	pvcPath := volPath.Child("persistentVolumeClaim")
+	var (
+		allErrs   field.ErrorList
+		volShared bool
+		pvcShared *bool
+	)
 
-	// Skip validation if claim name is empty (handled by required validation)
-	if vol.PersistentVolumeClaim.ClaimName == "" {
-		return allErrs
+	if vol.SharingMode != "" {
+		volShared = vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter
 	}
 
-	// Fetch the PVC to get its access modes
-	pvc := &corev1.PersistentVolumeClaim{}
-	if err := v.client.Get(ctx, ctrlclient.ObjectKey{
-		Namespace: ctx.Namespace,
-		Name:      vol.PersistentVolumeClaim.ClaimName,
-	}, pvc); err != nil {
-		// If the PVC doesn't exist, skip validation
-		// The PVC existence will be validated elsewhere or at runtime
-		if apierrors.IsNotFound(err) {
+	if pvc := vol.PersistentVolumeClaim; pvc != nil {
+
+		// Fetch the PVC to get its access modes
+		obj := &corev1.PersistentVolumeClaim{}
+		if err := v.client.Get(ctx, ctrlclient.ObjectKey{
+			Namespace: ctx.Namespace,
+			Name:      vol.PersistentVolumeClaim.ClaimName,
+		}, obj); err != nil {
+			// If the PVC doesn't exist, skip validation
+			// The PVC existence will be validated elsewhere or at runtime
+			if apierrors.IsNotFound(err) {
+				return allErrs
+			}
+			// For other errors, return the error
+			allErrs = append(allErrs, field.Invalid(pvcPath.Child("claimName"),
+				vol.PersistentVolumeClaim.ClaimName, err.Error()))
 			return allErrs
 		}
-		// For other errors, return the error
-		allErrs = append(allErrs, field.Invalid(pvcPath.Child("claimName"),
-			vol.PersistentVolumeClaim.ClaimName, err.Error()))
-		return allErrs
+		pvcShared = ptr.To(slices.Contains(
+			obj.Spec.AccessModes, corev1.ReadWriteMany))
 	}
 
 	// Get the controller sharing mode for the specified controller
 	controllerSharingMode := v.getControllerSharingMode(
 		ctx,
 		vm,
-		vol.PersistentVolumeClaim.ControllerType,
-		vol.PersistentVolumeClaim.ControllerBusNumber,
+		vol.ControllerType,
+		vol.ControllerBusNumber,
 	)
 
-	// Rule 1: If volume is ReadWriteOnce, the disk's sharing mode cannot be
-	// MultiWriter and the controller's sharing mode cannot be Physical.
-	if slices.Contains(pvc.Spec.AccessModes, corev1.ReadWriteOnce) {
-		if vol.PersistentVolumeClaim.SharingMode == vmopv1.VolumeSharingModeMultiWriter {
-			allErrs = append(allErrs,
-				field.Invalid(
-					pvcPath.Child("sharingMode"),
-					vol.PersistentVolumeClaim.SharingMode,
-					fmt.Sprintf("Disk MultiWriter sharing mode is not allowed "+
-						"for ReadWriteOnce volumes for PVC %s",
-						vol.PersistentVolumeClaim.ClaimName),
-				),
-			)
-		}
-
-		if controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical {
-			allErrs = append(allErrs,
-				field.Invalid(
-					pvcPath.Child("controllerType"),
-					vol.PersistentVolumeClaim.ControllerType,
-					fmt.Sprintf("Physical controller sharing mode is not "+
-						"allowed for ReadWriteOnce volume for PVC %s",
-						vol.PersistentVolumeClaim.ClaimName),
-				),
-			)
-		}
+	// Rule 1 -- If the volume specifies multi-writer then a possible PVC must
+	//           specify it as well.
+	if volShared && (pvcShared == nil || !*pvcShared) {
+		allErrs = append(allErrs,
+			field.Invalid(
+				volPath.Child("sharingMode"),
+				vol.SharingMode,
+				fmt.Sprintf("Disk MultiWriter sharing mode is not allowed "+
+					"for ReadWriteOnce volumes %s",
+					vol.Name),
+			),
+		)
 	}
 
-	// Rule 2: If volume is ReadWriteMany, either the disk's sharing mode
-	// is MultiWriter or the controller's sharing mode should be Physical
-	if slices.Contains(pvc.Spec.AccessModes, corev1.ReadWriteMany) {
-		// Check if neither condition is met
-		hasMultiWriterSharing := vol.PersistentVolumeClaim.SharingMode == vmopv1.VolumeSharingModeMultiWriter
-		hasPhysicalController := controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical
+	// Rule 2 -- If the volume is not shared then the controller must not use
+	//           physical sharing mode.
+	if !volShared &&
+		controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical {
 
-		if !hasMultiWriterSharing && !hasPhysicalController {
-			allErrs = append(allErrs,
-				field.Invalid(
-					pvcPath.Child("accessModes"),
-					pvc.Spec.AccessModes,
-					fmt.Sprintf(
-						"Either disk sharing mode must be MultiWriter or "+
-							"controller sharing mode must be Physical for "+
-							"ReadWriteMany volume for PVC %s",
-						vol.PersistentVolumeClaim.ClaimName,
-					),
-				),
-			)
-		}
+		allErrs = append(allErrs,
+			field.Invalid(
+				volPath.Child("controllerType"),
+				vol.ControllerType,
+				fmt.Sprintf("Physical controller sharing mode is not "+
+					"allowed for ReadWriteOnce volume %s",
+					vol.Name),
+			),
+		)
 	}
 
 	return allErrs
@@ -1840,7 +1839,7 @@ func (v validator) validateImmutableFields(
 	allErrs = append(allErrs, v.validateImmutableVMAffinity(ctx, vm, oldVM)...)
 
 	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-		allErrs = append(allErrs, v.validatePVCUnmanagedVolumeClaimImmutability(ctx, vm, oldVM)...)
+		allErrs = append(allErrs, v.validateImageDiskNameImmutability(ctx, vm, oldVM)...)
 	}
 
 	return allErrs
@@ -2905,50 +2904,29 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 	return allErrs
 }
 
-func (v validator) validatePVCUnmanagedVolumeClaimImmutability(
+func (v validator) validateImageDiskNameImmutability(
 	_ *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
-		allErrs          field.ErrorList
-		p                = field.NewPath("spec", "volumes")
-		oldUVCsByVolName = map[string]*vmopv1.UnmanagedVolumeClaimVolumeSource{}
+		allErrs       field.ErrorList
+		p             = field.NewPath("spec", "volumes")
+		oldVolsByName = map[string]vmopv1.VirtualMachineVolume{}
 	)
 
 	for _, v := range oldVM.Spec.Volumes {
-		if pvc := v.PersistentVolumeClaim; pvc != nil {
-			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-				oldUVCsByVolName[v.Name] = uvc
-			}
-		}
+		oldVolsByName[v.Name] = v
 	}
 
-	for i, v := range newVM.Spec.Volumes {
-
+	for i, newVol := range newVM.Spec.Volumes {
 		pp := p.Index(i)
-		if pvc := v.PersistentVolumeClaim; pvc != nil {
-
-			pp = pp.Child("persistentVolumeClaim", "unmanagedVolumeClaim")
-			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-
-				if oldUVC := oldUVCsByVolName[v.Name]; oldUVC != nil {
-					if err := validation.ValidateImmutableField(
-						uvc.Type, oldUVC.Type, pp.Child("type"),
-					); err != nil {
-						allErrs = append(allErrs, err...)
-					}
-					if err := validation.ValidateImmutableField(
-						uvc.Name, oldUVC.Name, pp.Child("name"),
-					); err != nil {
-						allErrs = append(allErrs, err...)
-					}
-				}
-			} else if oldUVC := oldUVCsByVolName[v.Name]; oldUVC != nil {
-				if err := validation.ValidateImmutableField(
-					uvc, oldUVC, pp,
-				); err != nil {
-					allErrs = append(allErrs, err...)
-				}
+		if oldVol, ok := oldVolsByName[newVol.Name]; ok {
+			if err := validation.ValidateImmutableField(
+				oldVol.ImageDiskName,
+				newVol.ImageDiskName,
+				pp.Child("imageDiskName"),
+			); err != nil {
+				allErrs = append(allErrs, err...)
 			}
 		}
 	}

@@ -481,8 +481,7 @@ func reconcileVirtualDisks(
 	for i := range vm.Spec.Volumes {
 		vol := &vm.Spec.Volumes[i]
 
-		if vol.PersistentVolumeClaim == nil ||
-			vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
+		if vol.PersistentVolumeClaim == nil {
 			continue
 		}
 
@@ -553,7 +552,7 @@ func reconcilePVCVolumePlacement(
 		"name", vol.Name,
 		"pvc", pvc.ClaimName)
 
-	if !needsPlacementBackfill(pvc) {
+	if !needsPlacementBackfill(vol) {
 		logger.V(4).Info("Skipping volume due to no placement fields to backfill")
 		return
 	}
@@ -577,7 +576,7 @@ func reconcilePVCVolumePlacement(
 		return
 	}
 
-	if hasPlacementMismatch(pvc, &info, &ctrl) {
+	if hasPlacementMismatch(vol, &info, &ctrl) {
 		logger.V(4).Info(
 			"Skipping volume due to spec/state mismatch",
 			"unitNumber", info.UnitNumber,
@@ -586,32 +585,32 @@ func reconcilePVCVolumePlacement(
 		return
 	}
 
-	pvc.UnitNumber = info.UnitNumber
-	pvc.ControllerType = ctrl.Type
-	pvc.ControllerBusNumber = &ctrl.BusNumber
+	vol.UnitNumber = info.UnitNumber
+	vol.ControllerType = ctrl.Type
+	vol.ControllerBusNumber = &ctrl.BusNumber
 }
 
 // needsPlacementBackfill checks if any placement fields are missing.
 func needsPlacementBackfill(
-	pvc *vmopv1.PersistentVolumeClaimVolumeSource) bool {
+	vol *vmopv1.VirtualMachineVolume) bool {
 
-	return pvc.UnitNumber == nil ||
-		pvc.ControllerBusNumber == nil ||
-		pvc.ControllerType == ""
+	return vol.UnitNumber == nil ||
+		vol.ControllerBusNumber == nil ||
+		vol.ControllerType == ""
 }
 
 // hasPlacementMismatch checks if any existing placement fields
 // conflict with the actual VM hardware configuration.
 func hasPlacementMismatch(
-	pvc *vmopv1.PersistentVolumeClaimVolumeSource,
+	vol *vmopv1.VirtualMachineVolume,
 	info *pkgutil.VirtualDiskInfo,
 	ctrl *vmopv1.VirtualControllerStatus) bool {
 
-	return (pvc.UnitNumber != nil &&
-		!ptr.Equal(pvc.UnitNumber, info.UnitNumber)) ||
-		(pvc.ControllerBusNumber != nil &&
-			!ptr.Equal(pvc.ControllerBusNumber, &ctrl.BusNumber)) ||
-		(pvc.ControllerType != "" && ctrl.Type != pvc.ControllerType)
+	return (vol.UnitNumber != nil &&
+		!ptr.Equal(vol.UnitNumber, info.UnitNumber)) ||
+		(vol.ControllerBusNumber != nil &&
+			!ptr.Equal(vol.ControllerBusNumber, &ctrl.BusNumber)) ||
+		(vol.ControllerType != "" && ctrl.Type != vol.ControllerType)
 }
 
 // reconcileVirtualCDROMs reconciles the VM's CD-ROM devices during

@@ -1200,30 +1200,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 		})
 
-		When("VM has volumes with UnmanagedVolumeClaim", func() {
-			BeforeEach(func() {
-				vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-					Name: "unmanaged-volume",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{},
-						},
-					},
-				})
-			})
-
-			It("should skip volumes with UnmanagedVolumeClaim", func() {
-				pvc1 := vm.Spec.Volumes[0]
-				Expect(pvc1.UnitNumber).ToNot(BeNil())
-
-				unmanagedVolume := vm.Spec.Volumes[2]
-				Expect(unmanagedVolume.PersistentVolumeClaim.UnmanagedVolumeClaim).ToNot(BeNil())
-				Expect(unmanagedVolume.UnitNumber).To(BeNil())
-				Expect(unmanagedVolume.ControllerType).To(BeEmpty())
-				Expect(unmanagedVolume.ControllerBusNumber).To(BeNil())
-			})
-		})
-
 		// This test verifies that volumes attached to different controllers of the
 		// same type are correctly backfilled with their respective bus numbers. This
 		// ensures the backfill logic can distinguish between multiple SCSI controllers.

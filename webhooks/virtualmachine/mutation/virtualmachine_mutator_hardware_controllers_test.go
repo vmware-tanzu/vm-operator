@@ -153,7 +153,6 @@ func controllerMutationTests() {
 	})
 
 	testNilHardware(func() *unitMutationWebhookContext { return ctx })
-	testNonPVCVolumes(func() *unitMutationWebhookContext { return ctx })
 	testControllerTypeAgnostic(func() *unitMutationWebhookContext { return ctx })
 	testSCSISharingMode(func() *unitMutationWebhookContext { return ctx })
 	testMultipleControllerTypes(func() *unitMutationWebhookContext { return ctx })
@@ -172,33 +171,6 @@ func testNilHardware(getCtx func() *unitMutationWebhookContext) {
 		})
 
 		It("should not panic", func() {
-			mutated, err := mutation.AddControllersForVolumes(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(mutated).To(BeFalse())
-		})
-	})
-}
-
-func testNonPVCVolumes(getCtx func() *unitMutationWebhookContext) {
-	Context("Non-PVC volumes", func() {
-		var ctx *unitMutationWebhookContext
-
-		BeforeEach(func() {
-			ctx = getCtx()
-			ctx.vm.Status.UniqueID = dummyVMName
-			ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-				{
-					Name: "unmanaged-vol",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{},
-						},
-					},
-				},
-			}
-		})
-
-		It("should not add controllers for unmanaged PVC volumes", func() {
 			mutated, err := mutation.AddControllersForVolumes(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutated).To(BeFalse())
@@ -315,7 +287,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				vol := ctx.vm.Spec.Volumes[0]
 				Expect(vol.ControllerType).To(Equal(controllerType))
 				Expect(vol.ControllerBusNumber).ToNot(BeNil())
-				Expect(*vol.ControllerBusNumber).To(Equal(int32(1)))
+				Expect(*vol.ControllerBusNumber).To(Equal(int32(0)))
 				Expect(vol.UnitNumber).ToNot(BeNil())
 				Expect(*vol.UnitNumber).To(Equal(int32(0)))
 			},
@@ -838,10 +810,10 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("auto-pvc-%d", i),
 								},
-								ControllerType: controllerType,
-								// No ControllerBusNumber or UnitNumber set.
 							},
 						},
+						ControllerType: controllerType,
+						// No ControllerBusNumber or UnitNumber set.
 					})
 				}
 
@@ -860,11 +832,11 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: fmt.Sprintf("explicit-pvc-%d", i),
 								},
-								ControllerType:      controllerType,
-								ControllerBusNumber: ptr.To(explicitVolBusNumber),
-								UnitNumber:          ptr.To(i),
 							},
 						},
+						ControllerType:      controllerType,
+						ControllerBusNumber: ptr.To(explicitVolBusNumber),
+						UnitNumber:          ptr.To(i),
 					})
 				}
 
@@ -882,14 +854,13 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 					}
 
 					vol := ctx.vm.Spec.Volumes[volumeIndex]
-					pvc := vol.PersistentVolumeClaim
 
-					Expect(pvc.ControllerBusNumber).ToNot(BeNil(),
+					Expect(vol.ControllerBusNumber).ToNot(BeNil(),
 						"Volume %s should have a bus number assigned", vol.Name)
-					Expect(*pvc.ControllerBusNumber).ToNot(Equal(explicitVolBusNumber),
+					Expect(*vol.ControllerBusNumber).ToNot(Equal(explicitVolBusNumber),
 						"Volume %s should not have bus number %d", vol.Name, explicitVolBusNumber)
-					Expect(pvc.UnitNumber).ToNot(BeNil(), "Volume %s should have a unit number assigned", vol.Name)
-					Expect(*pvc.UnitNumber).To(Equal(unit), "Volume %s should have unit number %d", vol.Name, unit)
+					Expect(vol.UnitNumber).ToNot(BeNil(), "Volume %s should have a unit number assigned", vol.Name)
+					Expect(*vol.UnitNumber).To(Equal(unit), "Volume %s should have unit number %d", vol.Name, unit)
 					volumeIndex++
 				}
 
@@ -900,12 +871,11 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 					}
 
 					vol := ctx.vm.Spec.Volumes[volumeIndex]
-					pvc := vol.PersistentVolumeClaim
 
-					Expect(pvc.ControllerBusNumber).ToNot(BeNil(), "Volume %s should have a bus number assigned", vol.Name)
-					Expect(*pvc.ControllerBusNumber).To(Equal(explicitVolBusNumber), "Volume %s should have bus number %d", vol.Name, explicitVolBusNumber)
-					Expect(pvc.UnitNumber).ToNot(BeNil(), "Volume %s should have a unit number assigned", vol.Name)
-					Expect(*pvc.UnitNumber).To(Equal(unit), "Volume %s should have unit number %d", vol.Name, unit)
+					Expect(vol.ControllerBusNumber).ToNot(BeNil(), "Volume %s should have a bus number assigned", vol.Name)
+					Expect(*vol.ControllerBusNumber).To(Equal(explicitVolBusNumber), "Volume %s should have bus number %d", vol.Name, explicitVolBusNumber)
+					Expect(vol.UnitNumber).ToNot(BeNil(), "Volume %s should have a unit number assigned", vol.Name)
+					Expect(*vol.UnitNumber).To(Equal(unit), "Volume %s should have unit number %d", vol.Name, unit)
 					volumeIndex++
 				}
 			},

@@ -29,6 +29,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
@@ -39,6 +40,11 @@ import (
 
 // Condition is the name of the condition that stores the result.
 const Condition = "VirtualMachineUnmanagedVolumesRegister"
+
+// ErrPendingBackfill is returned from Reconcile to indicate to exit the VM
+// reconcile workflow early.
+var ErrPendingBackfill = pkgerr.NoRequeueNoErr(
+	"has unmanaged volumes pending backfill")
 
 // ErrPendingRegister is returned from Reconcile to indicate to exit the VM
 // reconcile workflow early.
@@ -151,6 +157,20 @@ func (r reconciler) Reconcile(
 			"PendingConfigUpdates",
 			"")
 		return nil
+	}
+
+	if backfillPVCInfo(
+		ctx,
+		k8sClient,
+		vimClient,
+		vm,
+		info) {
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			"PendingBackfill",
+			"")
+		return ErrPendingBackfill
 	}
 
 	hasPendingVolumes, err := registerUnmanagedDisks(
@@ -329,11 +349,9 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 				Namespace: vm.Namespace,
 			}
 		)
-		if vol, ok := info.Volumes[info.Disks[i].Target.String()]; ok {
+		if vol, ok := info.Volumes[di.Target.String()]; ok {
 			if pvc := vol.PersistentVolumeClaim; pvc != nil {
-				if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-					key.Name = pvc.ClaimName
-				}
+				key.Name = pvc.ClaimName
 			}
 		}
 		if err := k8sClient.Get(ctx, key, obj); err != nil {
@@ -341,10 +359,10 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 				return nil, nil, fmt.Errorf(
 					"failed to get pvc for unmanaged volumes: %w", err)
 			}
-			if di.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
+			if di.ImageDiskName != "" {
 				return nil, nil, fmt.Errorf(
-					"failed to get pvc for unmanaged volume from image: %w",
-					err)
+					"failed to get pvc for volume from image disk %s: %w",
+					di.ImageDiskName, err)
 			}
 		}
 
@@ -435,11 +453,9 @@ func ensureUnmanagedDisksHaveUpdatedCapacity(
 				Namespace: vm.Namespace,
 			}
 		)
-		if vol, ok := info.Volumes[info.Disks[i].Target.String()]; ok {
+		if vol, ok := info.Volumes[di.Target.String()]; ok {
 			if pvc := vol.PersistentVolumeClaim; pvc != nil {
-				if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-					key.Name = pvc.ClaimName
-				}
+				key.Name = pvc.ClaimName
 			}
 		}
 		if err := k8sClient.Get(ctx, key, obj); err != nil {
@@ -447,10 +463,10 @@ func ensureUnmanagedDisksHaveUpdatedCapacity(
 				return fmt.Errorf(
 					"failed to get pvc for unmanaged volumes: %w", err)
 			}
-			if di.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
+			if di.ImageDiskName != "" {
 				return fmt.Errorf(
-					"failed to get pvc for unmanaged volume from image: %w",
-					err)
+					"failed to get pvc for volume from image disk %s: %w",
+					di.ImageDiskName, err)
 			}
 		}
 
@@ -466,6 +482,37 @@ func ensureUnmanagedDisksHaveUpdatedCapacity(
 	return nil
 }
 
+func backfillPVCInfo(
+	ctx context.Context,
+	_ ctrlclient.Client,
+	_ *vim25.Client,
+	vm *vmopv1.VirtualMachine,
+	info pkgvol.VolumeInfo) bool {
+
+	var hasPending bool
+
+	logger := pkglog.FromContextOrDefault(ctx).WithName("backfillPVCInfo")
+	logger.Info(
+		"Backfilling PVC info",
+		"disks", info.Disks,
+		"volumes", info.Volumes)
+
+	for _, di := range info.Disks {
+		if vol, ok := info.Volumes[di.Target.String()]; ok {
+			if vol.PersistentVolumeClaim == nil {
+				vol.PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: pkgutil.GeneratePVCName(vm.Name, di.UUID),
+					},
+				}
+				hasPending = true
+			}
+		}
+	}
+
+	return hasPending
+}
+
 func registerUnmanagedDisks(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -473,7 +520,7 @@ func registerUnmanagedDisks(
 	vm *vmopv1.VirtualMachine,
 	info pkgvol.VolumeInfo) (bool, error) {
 
-	var hasPendingVolumes bool
+	var hasPending bool
 
 	logger := pkglog.FromContextOrDefault(ctx).WithName("registerUnmanagedDisks")
 	logger.Info(
@@ -518,7 +565,7 @@ func registerUnmanagedDisks(
 						"failed to ensure CnsRegisterVolume %s: %w",
 						pvcName, err)
 				}
-				hasPendingVolumes = true
+				hasPending = true
 
 			case corev1.ClaimBound:
 				// Step 4: Clean up completed CnsRegisterVolume objects.
@@ -534,7 +581,7 @@ func registerUnmanagedDisks(
 		}
 	}
 
-	return hasPendingVolumes, nil
+	return hasPending, nil
 }
 
 // ensurePVCForUnmanagedDisk ensures a PVC exists for an unmanaged disk.

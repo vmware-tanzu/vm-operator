@@ -1071,10 +1071,6 @@ func categorizeVolumeSpecs(
 		if vol.PersistentVolumeClaim == nil {
 			continue
 		}
-		if vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
-			// Skip unmanaged volumes.
-			continue
-		}
 		// Check if this volume is already managed by a legacy
 		// CnsNodeVmAttachment.
 		// When we create legacyAttachment, we use volume name as its name.

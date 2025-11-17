@@ -623,13 +623,6 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
 								Name: "vol1",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										},
-									},
-								},
 							},
 						}
 
@@ -672,7 +665,6 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 						Expect(info.Disks).To(HaveLen(1))
 						Expect(info.Disks[0].UUID).To(Equal("disk-uuid-1"))
-						Expect(info.Disks[0].Type).To(BeEmpty())
 					})
 				})
 
@@ -682,23 +674,9 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 							vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 								{
 									Name: "vol1",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											},
-										},
-									},
 								},
 								{
 									Name: "vol2",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											},
-										},
-									},
 								},
 							}
 
@@ -763,9 +741,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 							Expect(info.Disks).To(HaveLen(2))
 							Expect(info.Disks[0].UUID).To(Equal("disk-uuid-1"))
-							Expect(info.Disks[0].Type).To(BeEmpty())
 							Expect(info.Disks[1].UUID).To(Equal("disk-uuid-2"))
-							Expect(info.Disks[1].Type).To(BeEmpty())
 						})
 					})
 				})
@@ -776,33 +752,12 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 							vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 								{
 									Name: "vol1",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											},
-										},
-									},
 								},
 								{
 									Name: "vol2",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											},
-										},
-									},
 								},
 								{
 									Name: "vol3",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											},
-										},
-									},
 								},
 							}
 
@@ -881,11 +836,8 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 							Expect(info.Disks).To(HaveLen(3))
 							Expect(info.Disks[0].UUID).To(Equal("disk-uuid-1"))
-							Expect(info.Disks[0].Type).To(BeEmpty())
 							Expect(info.Disks[1].UUID).To(Equal("disk-uuid-2"))
-							Expect(info.Disks[1].Type).To(BeEmpty())
 							Expect(info.Disks[2].UUID).To(Equal("disk-uuid-3"))
-							Expect(info.Disks[2].Type).To(BeEmpty())
 						})
 					})
 				})
@@ -901,14 +853,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 					BeforeEach(func() {
 						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
-								Name: "vol1",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-										},
-									},
-								},
+								Name:                "vol1",
 								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 								ControllerBusNumber: ptr.To[int32](0),
 								UnitNumber:          ptr.To[int32](0),
@@ -961,7 +906,6 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 						Expect(info.Disks).To(HaveLen(1))
 						Expect(info.Disks[0].UUID).To(Equal("disk-uuid-1"))
-						Expect(info.Disks[0].Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
 					})
 				})
 
@@ -970,27 +914,13 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 						BeforeEach(func() {
 							vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 								{
-									Name: "vol1",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											},
-										},
-									},
+									Name:                "vol1",
 									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 									ControllerBusNumber: ptr.To[int32](0),
 									UnitNumber:          ptr.To[int32](0),
 								},
 								{
-									Name: "vol2",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											},
-										},
-									},
+									Name:                "vol2",
 									ControllerType:      vmopv1.VirtualControllerTypeNVME,
 									ControllerBusNumber: ptr.To[int32](0),
 									UnitNumber:          ptr.To[int32](0),
@@ -1070,9 +1000,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 							Expect(info.Disks).To(HaveLen(2))
 							Expect(info.Disks[0].UUID).To(Equal("disk-uuid-1"))
-							Expect(info.Disks[0].Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
 							Expect(info.Disks[1].UUID).To(Equal("disk-uuid-2"))
-							Expect(info.Disks[1].Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage))
 						})
 					})
 				})
@@ -1082,40 +1010,20 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 						BeforeEach(func() {
 							vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 								{
-									Name: "vol1",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											},
-										},
-									},
+									Name:                "vol1",
 									ControllerType:      vmopv1.VirtualControllerTypeSATA,
 									ControllerBusNumber: ptr.To[int32](0),
 									UnitNumber:          ptr.To[int32](0),
 								},
 								{
-									Name: "vol2",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											},
-										},
-									},
+									Name:                "vol2",
 									ControllerType:      vmopv1.VirtualControllerTypeSATA,
 									ControllerBusNumber: ptr.To[int32](0),
 									UnitNumber:          ptr.To[int32](1),
+									ImageDiskName:       "my-image-disk",
 								},
 								{
-									Name: "vol3",
-									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-											UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-												Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											},
-										},
-									},
+									Name:                "vol3",
 									ControllerType:      vmopv1.VirtualControllerTypeIDE,
 									ControllerBusNumber: ptr.To[int32](0),
 									UnitNumber:          ptr.To[int32](0),
@@ -1214,11 +1122,9 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 							Expect(info.Disks).To(HaveLen(3))
 							Expect(info.Disks[0].UUID).To(Equal("disk-uuid-1"))
-							Expect(info.Disks[0].Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
 							Expect(info.Disks[1].UUID).To(Equal("disk-uuid-2"))
-							Expect(info.Disks[1].Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage))
+							Expect(info.Disks[1].ImageDiskName).ToNot(BeEmpty())
 							Expect(info.Disks[2].UUID).To(Equal("disk-uuid-3"))
-							Expect(info.Disks[2].Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
 						})
 					})
 				})

@@ -93,8 +93,9 @@ var (
 	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
 	ErrSnapshotRevert         = pkgerr.NoRequeueNoErr("reverted snapshot")
 	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
-	ErrUnmanagedVolsBackfill  = vmconfunmanagedvolsfill.ErrPendingBackfill
-	ErrUnmanagedVolsRegister  = vmconfunmanagedvolsreg.ErrPendingRegister
+	ErrBackfillVolInfo        = vmconfunmanagedvolsfill.ErrPendingBackfill
+	ErrBackfillPVCInfo        = vmconfunmanagedvolsreg.ErrPendingBackfill
+	ErrRegisterVolumes        = vmconfunmanagedvolsreg.ErrPendingRegister
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -2472,12 +2473,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 
 	diskName2UVC := map[string]vmopv1.VirtualMachineVolume{}
 	for _, vol := range vmCtx.VM.Spec.Volumes {
-		if pvc := vol.PersistentVolumeClaim; pvc != nil {
-			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-				if uvc.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
-					diskName2UVC[uvc.Name] = vol
-				}
-			}
+		if n := vol.ImageDiskName; n != "" {
+			diskName2UVC[n] = vol
 		}
 	}
 
@@ -2533,34 +2530,27 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 	}
 	for i := range vmCtx.VM.Spec.Volumes {
 		vol := &vmCtx.VM.Spec.Volumes[i]
-		if pvc := vol.PersistentVolumeClaim; pvc != nil {
-			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-				if uvc.Type == vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
-					if di, ok := n2d[uvc.Name]; ok {
-						if vol.ControllerType == "" ||
-							vol.ControllerBusNumber == nil ||
-							vol.UnitNumber == nil {
+		if n := vol.ImageDiskName; n != "" {
+			if di, ok := n2d[n]; ok {
+				if vol.ControllerType == "" ||
+					vol.ControllerBusNumber == nil ||
+					vol.UnitNumber == nil {
 
-							hasBackfill = true
+					hasBackfill = true
 
-							vol.ControllerType = info.Controllers[di.ControllerKey].Type
-							vol.ControllerBusNumber = ptr.To(info.Controllers[di.ControllerKey].Bus)
-							vol.UnitNumber = di.UnitNumber
+					vol.ControllerType = info.Controllers[di.ControllerKey].Type
+					vol.ControllerBusNumber = ptr.To(info.Controllers[di.ControllerKey].Bus)
+					vol.UnitNumber = di.UnitNumber
 
-							logger.Info("Backfilled PVC from image",
-								"pvc", pvc,
-								"vol.controllerType", vol.ControllerType,
-								"vol.controllerBusNumber", vol.ControllerBusNumber,
-								"vol.unitNumber", vol.UnitNumber)
-						}
-					}
+					logger.Info("Backfilled volume from image",
+						"volume", vol)
 				}
 			}
 		}
 	}
 
 	if hasBackfill {
-		return ErrUnmanagedVolsBackfill
+		return ErrBackfillVolInfo
 	}
 
 	return nil

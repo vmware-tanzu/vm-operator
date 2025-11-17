@@ -126,23 +126,6 @@ func CreateNewController(
 	}
 }
 
-// GetManagedVolumesWithPVC returns all volumes from the VM spec that have
-// a PersistentVolumeClaim and are managed (not instance storage).
-func GetManagedVolumesWithPVC(
-	vm vmopv1.VirtualMachine,
-) []vmopv1.VirtualMachineVolume {
-
-	var volumes []vmopv1.VirtualMachineVolume
-	for _, v := range vm.Spec.Volumes {
-		if v.PersistentVolumeClaim != nil &&
-			v.PersistentVolumeClaim.UnmanagedVolumeClaim == nil {
-			volumes = append(volumes, v)
-		}
-	}
-
-	return volumes
-}
-
 // ControllerSpecs is a collection of controller specifications.
 type ControllerSpecs struct {
 	// controllers is a map of controller type to a map of bus numbers to

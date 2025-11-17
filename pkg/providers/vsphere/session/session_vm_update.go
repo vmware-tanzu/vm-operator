@@ -714,17 +714,9 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 				if volumeStatus.Name == volume.Name {
 					found = true
 					if !volumeStatus.Attached {
-						attached := false
-						if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
-							if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
-								attached = true
-							}
-						}
-						if !attached {
-							unattachedNames = append(
-								unattachedNames,
-								volume.Name)
-						}
+						unattachedNames = append(
+							unattachedNames,
+							volume.Name)
 					}
 					break
 				}

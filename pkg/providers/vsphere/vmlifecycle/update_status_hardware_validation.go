@@ -297,11 +297,6 @@ func checkPVCVolumes(
 	)
 
 	for _, vol := range vm.Spec.Volumes {
-		if vol.PersistentVolumeClaim == nil ||
-			vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
-			continue
-		}
-
 		if vol.ControllerType == "" ||
 			vol.ControllerBusNumber == nil ||
 			vol.UnitNumber == nil {

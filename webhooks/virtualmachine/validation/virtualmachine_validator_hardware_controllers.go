@@ -147,10 +147,6 @@ func (v validator) validateControllerSlots(
 
 	volumesPath := field.NewPath("spec", "volumes")
 	for i, vol := range vm.Spec.Volumes {
-		if vol.PersistentVolumeClaim == nil {
-			continue
-		}
-
 		volPath := volumesPath.Index(i)
 
 		if vol.ControllerBusNumber == nil ||

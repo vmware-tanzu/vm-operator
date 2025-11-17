@@ -79,6 +79,13 @@ type VirtualMachineVolume struct {
 
 	// +optional
 
+	// ImageDiskName describes the name of the disk from the VM image to which
+	// this volume refers. This value is derived from the image field
+	// status.disks[].name.
+	ImageDiskName string `json:"imageDiskName,omitempty"`
+
+	// +optional
+
 	// ApplicationType describes the type of application for which this volume
 	// is intended to be used.
 	//
@@ -206,47 +213,8 @@ type PersistentVolumeClaimVolumeSource struct {
 
 	// +optional
 
-	// UnmanagedVolumeClaim is set if the PVC is backed by an existing,
-	// unmanaged volume.
-	UnmanagedVolumeClaim *UnmanagedVolumeClaimVolumeSource `json:"unmanagedVolumeClaim,omitempty"`
-
-	// +optional
-
 	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
 	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
-}
-
-// +kubebuilder:validation:Enum=FromImage;FromVM
-
-type UnmanagedVolumeClaimVolumeType string
-
-const (
-	UnmanagedVolumeClaimVolumeTypeFromImage UnmanagedVolumeClaimVolumeType = "FromImage"
-	UnmanagedVolumeClaimVolumeTypeFromVM    UnmanagedVolumeClaimVolumeType = "FromVM"
-)
-
-type UnmanagedVolumeClaimVolumeSource struct {
-	// +required
-
-	// Type describes the source of the unmanaged volume.
-	//
-	// - FromImage - The source is a disk from the VM image.
-	// - FromVM    - The source is an unmanaged volume on the current VM.
-	Type UnmanagedVolumeClaimVolumeType `json:"type"`
-
-	// +required
-
-	// Name describes the information used to identify the unmanaged volume.
-	//
-	// For volumes from an image, the value is from the image's
-	// status.disks[].name field.
-	//
-	// For volumes from the VM, the value is from the VM's
-	// status.volumes[].name field.
-	//
-	// Please note, specifying the name of an existing, managed volume is not
-	// supported and will be ignored.
-	Name string `json:"name"`
 }
 
 // InstanceVolumeClaimVolumeSource contains information about the instance

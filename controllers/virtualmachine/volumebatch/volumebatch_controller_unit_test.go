@@ -386,22 +386,6 @@ func unitTestsReconcile() {
 						To(Equal(ptr.To(int32(5))))
 				})
 			})
-
-			When("volumes are unmanaged volumes", func() {
-				BeforeEach(func() {
-					vm.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim = &vmopv1.UnmanagedVolumeClaimVolumeSource{}
-				})
-				It("should create batchAttachment with empty spec.volumes and not update VM's status.volumes", func() {
-					err := reconciler.ReconcileNormal(volCtx)
-					Expect(err).NotTo(HaveOccurred())
-
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-					Expect(attachment).ToNot(BeNil())
-					Expect(attachment.Spec.Volumes).To(HaveLen(0))
-
-					Expect(vm.Status.Volumes).To(BeEmpty())
-				})
-			})
 		})
 
 		When("VM Spec.Volumes is empty and there are legacy CnsNodeVmAttachment resources", func() {

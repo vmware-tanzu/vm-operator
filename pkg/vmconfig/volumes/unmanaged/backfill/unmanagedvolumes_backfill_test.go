@@ -270,19 +270,13 @@ var _ = Describe("Reconcile", func() {
 					Expect(vol2).ToNot(BeNil())
 
 					// Verify volume 1 properties
-					Expect(vol1.PersistentVolumeClaim).ToNot(BeNil())
-					Expect(vol1.PersistentVolumeClaim.ClaimName).To(Equal("my-vm-a515c82a")) // Generated from xxHash
-					Expect(vol1.PersistentVolumeClaim.UnmanagedVolumeClaim).ToNot(BeNil())
-					Expect(vol1.PersistentVolumeClaim.UnmanagedVolumeClaim.Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
+					Expect(vol1.PersistentVolumeClaim).To(BeNil())
 					Expect(vol1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
 					Expect(*vol1.ControllerBusNumber).To(Equal(int32(0)))
 					Expect(*vol1.UnitNumber).To(Equal(int32(0)))
 
 					// Verify volume 2 properties
-					Expect(vol2.PersistentVolumeClaim).ToNot(BeNil())
-					Expect(vol2.PersistentVolumeClaim.ClaimName).To(Equal("my-vm-0627fe5c")) // Generated from xxHash
-					Expect(vol2.PersistentVolumeClaim.UnmanagedVolumeClaim).ToNot(BeNil())
-					Expect(vol2.PersistentVolumeClaim.UnmanagedVolumeClaim.Type).To(Equal(vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM))
+					Expect(vol2.PersistentVolumeClaim).To(BeNil())
 					Expect(vol2.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 					Expect(*vol2.ControllerBusNumber).To(Equal(int32(1)))
 					Expect(*vol2.UnitNumber).To(Equal(int32(0)))

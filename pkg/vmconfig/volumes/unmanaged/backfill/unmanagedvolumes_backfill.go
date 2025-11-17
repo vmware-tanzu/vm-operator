@@ -10,7 +10,6 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -135,27 +134,13 @@ func updateSpecWithUnmanagedDisks(
 
 			// Step 2: If no such entry exists, add one.
 			newVolSpec := vmopv1.VirtualMachineVolume{
-				Name: diskName,
-				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pkgutil.GeneratePVCName(
-								vm.Name,
-								di.UUID,
-							),
-						},
-						UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-							Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-							Name: diskName,
-						},
-					},
-				},
+				Name:                diskName,
 				ControllerBusNumber: ptr.To(info.Controllers[di.ControllerKey].Bus),
 				ControllerType:      info.Controllers[di.ControllerKey].Type,
 				UnitNumber:          di.UnitNumber,
 			}
 			logger.Info("Backfilled unmanaged volume to spec",
-				"unmanagedVolumeSpec", newVolSpec)
+				"volume", newVolSpec)
 			vm.Spec.Volumes = append(vm.Spec.Volumes, newVolSpec)
 			addedToSpec = true
 		}

@@ -341,33 +341,6 @@ func DummyPVCVirtualMachineVolume(
 	}
 }
 
-func DummyUnmanagedPVCVirtualMachineVolume(
-	name string,
-	claimName string,
-	unmanagedName string,
-	unmanagedType vmopv1.UnmanagedVolumeClaimVolumeType,
-	controllerType vmopv1.VirtualControllerType,
-	controllerBusNumber *int32,
-	unitNumber *int32) vmopv1.VirtualMachineVolume {
-	return vmopv1.VirtualMachineVolume{
-		Name: name,
-		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: claimName,
-				},
-				UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-					Name: unmanagedName,
-					Type: unmanagedType,
-				},
-			},
-		},
-		ControllerType:      controllerType,
-		ControllerBusNumber: controllerBusNumber,
-		UnitNumber:          unitNumber,
-	}
-}
-
 func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{

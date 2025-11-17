@@ -383,8 +383,10 @@ func unitTestsValidateCreate() {
 			field.Invalid(volPath.Index(0).Child("name"), "underscore_not_valid", validation.IsDNS1123Subdomain("underscore_not_valid")[0]).Error(), nil),
 		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false,
 			field.Duplicate(volPath.Index(1).Child("name"), "duplicate-name").Error(), nil),
-		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false,
-			field.Required(volPath.Index(0).Child("persistentVolumeClaim"), "").Error(), nil),
+		// TODO(akutz) Why did we ever consider a spec.volumes entry sans a PVC
+		//             to be invalid?
+		// Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false,
+		// 	field.Required(volPath.Index(0).Child("persistentVolumeClaim"), "").Error(), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false,
 			field.Required(volPath.Index(0).Child("persistentVolumeClaim", "claimName"), "").Error(), nil),
 		Entry("should deny invalid PVC read only", createArgs{invalidPVCReadOnly: true}, false,
@@ -3917,81 +3919,6 @@ func unitTestsValidateCreate() {
 		)
 	})
 
-	Context("Volume PVC UnmanagedVolumeClaim", func() {
-		BeforeEach(func() {
-			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.AllDisksArePVCs = true
-			})
-		})
-		DescribeTable("Create", doTest,
-			Entry("should allow VM with valid FromImage UnmanagedVolumeClaim",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "test-uvc",
-										},
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("should allow VM with valid FromVM UnmanagedVolumeClaim",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
-											Name: "550e8400-e29b-41d4-a716-446655440001",
-										},
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("should allow VM with no UnmanagedVolumeClaim",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: true,
-				},
-			),
-		)
-	})
-
 	Context("PVC Access Mode and Sharing Mode Combinations", func() {
 		DescribeTable("validate PVC access mode and sharing mode combinations",
 			func(testName string, setup func(*unitValidatingWebhookContext), expectAllowed bool) {
@@ -4127,6 +4054,7 @@ func unitTestsValidateCreate() {
 					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
 
 					// Configure VM with ReadWriteMany volume and Physical controller
+					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
 					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
 					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](1)
@@ -7881,11 +7809,11 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					validate: doValidateWithMsg(`spec.volumes[0].unitNumber: Invalid value: 1: field is immutable`),
 				},
 			),
-			Entry("should allow when PVC is replaced",
+			Entry("should allow when volume is replaced",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "old-pvc"
-						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "new-pvc"
+						ctx.oldVM.Spec.Volumes[0].Name = "old-pvc"
+						ctx.vm.Spec.Volumes[0].Name = "new-pvc"
 						ctx.oldVM.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
 						ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
 					},
@@ -7986,7 +7914,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		)
 	})
 
-	Context("Volume PVC UnmanagedVolumeClaim", func() {
+	Context("Volume ImageDiskName", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.AllDisksArePVCs = true
@@ -7994,7 +7922,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		})
 
 		DescribeTable("Update", doTest,
-			Entry("should allow VM update with no UnmanagedVolumeClaim changes",
+			Entry("should allow VM update with no ImageDiskName changes",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
@@ -8005,12 +7933,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 											ClaimName: "test-pvc",
 										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "new-uvc",
-										},
 									},
 								},
+								ImageDiskName: "my-disk",
 							},
 						}
 						ctx.oldVM = ctx.vm.DeepCopy()
@@ -8018,7 +7943,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					expectAllowed: true,
 				},
 			),
-			Entry("should deny VM update with immutable Type change",
+			Entry("should deny VM update with immutable change",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
@@ -8029,101 +7954,17 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 											ClaimName: "test-pvc",
 										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "new-uvc",
-										},
 									},
 								},
+								ImageDiskName: "my-disk",
 							},
 						}
 						ctx.oldVM = ctx.vm.DeepCopy()
-						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.Type = vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM
+						ctx.oldVM.Spec.Volumes[0].ImageDiskName = "my-disk-1"
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("type"), vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage, apivalidation.FieldImmutableErrorMsg).Error(),
-					),
-				},
-			),
-			Entry("should deny VM update with immutable Name change",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "new-uvc",
-										},
-									},
-								},
-							},
-						}
-						ctx.oldVM = ctx.vm.DeepCopy()
-						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.Name = "old-uvc"
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim").Child("name"), "new-uvc", apivalidation.FieldImmutableErrorMsg).Error(),
-					),
-				},
-			),
-			Entry("should allow VM update adding UnmanagedVolumeClaim to existing volume",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
-											Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-											Name: "test-uvc",
-										},
-									},
-								},
-							},
-						}
-						ctx.oldVM = ctx.vm.DeepCopy()
-						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim = nil
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("should disallow VM update removing UnmanagedVolumeClaim from existing volume",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-										UnmanagedVolumeClaim: nil,
-									},
-								},
-							},
-						}
-						ctx.oldVM = ctx.vm.DeepCopy()
-						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim = &vmopv1.UnmanagedVolumeClaimVolumeSource{
-							Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
-							Name: "test-uvc",
-						}
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim"), nil, apivalidation.FieldImmutableErrorMsg).Error(),
+						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("imageDiskName"), "my-disk-1", apivalidation.FieldImmutableErrorMsg).Error(),
 					),
 				},
 			),

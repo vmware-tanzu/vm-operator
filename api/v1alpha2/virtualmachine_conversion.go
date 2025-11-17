@@ -368,16 +368,13 @@ func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 	for i := range dst.Spec.Volumes {
 		dstVol := &dst.Spec.Volumes[i]
 		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
-			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
-				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
-					dstVol.ApplicationType = srcVol.ApplicationType
-					dstVol.ControllerBusNumber = srcVol.ControllerBusNumber
-					dstVol.ControllerType = srcVol.ControllerType
-					dstVol.DiskMode = srcVol.DiskMode
-					dstVol.SharingMode = srcVol.SharingMode
-					dstVol.UnitNumber = srcVol.UnitNumber
-				}
-			}
+			dstVol.ApplicationType = srcVol.ApplicationType
+			dstVol.ControllerBusNumber = srcVol.ControllerBusNumber
+			dstVol.ControllerType = srcVol.ControllerType
+			dstVol.ImageDiskName = srcVol.ImageDiskName
+			dstVol.DiskMode = srcVol.DiskMode
+			dstVol.SharingMode = srcVol.SharingMode
+			dstVol.UnitNumber = srcVol.UnitNumber
 		}
 	}
 }

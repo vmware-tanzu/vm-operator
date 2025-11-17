@@ -134,7 +134,6 @@ func processVolumes(
 						"controllerType", controllerID.ControllerType,
 						"maxCount", targetController.MaxCount(),
 						"volume", vol.Name,
-						"pvc", vol.PersistentVolumeClaim.ClaimName,
 					)
 					continue
 				}
@@ -170,7 +169,6 @@ func processVolumes(
 						"busNumber", controllerID.BusNumber,
 						"controllerType", controllerID.ControllerType,
 						"volume", vol.Name,
-						"pvc", vol.PersistentVolumeClaim.ClaimName,
 					)
 					continue
 				}
@@ -316,13 +314,6 @@ func SetPVCVolumeDefaults(
 	var wasMutated bool
 	for i := range vm.Spec.Volumes {
 		v := &vm.Spec.Volumes[i]
-		if v.PersistentVolumeClaim == nil {
-			continue
-		}
-
-		if v.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
-			continue
-		}
 
 		switch v.ApplicationType {
 		case vmopv1.VolumeApplicationTypeOracleRAC:

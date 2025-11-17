@@ -1462,7 +1462,6 @@ func Convert_v1alpha2_PersistentVolumeClaimVolumeSource_To_v1alpha5_PersistentVo
 
 func autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVolumeClaimVolumeSource(in *v1alpha5.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s conversion.Scope) error {
 	out.PersistentVolumeClaimVolumeSource = in.PersistentVolumeClaimVolumeSource
-	// WARNING: in.UnmanagedVolumeClaim requires manual conversion: does not exist in peer-type
 	out.InstanceVolumeClaim = (*InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in.InstanceVolumeClaim))
 	return nil
 }
@@ -3952,6 +3951,7 @@ func autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume(
 	if err := Convert_v1alpha5_VirtualMachineVolumeSource_To_v1alpha2_VirtualMachineVolumeSource(&in.VirtualMachineVolumeSource, &out.VirtualMachineVolumeSource, s); err != nil {
 		return err
 	}
+	// WARNING: in.ImageDiskName requires manual conversion: does not exist in peer-type
 	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type

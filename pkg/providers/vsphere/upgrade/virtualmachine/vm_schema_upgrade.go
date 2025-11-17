@@ -481,8 +481,7 @@ func reconcileVirtualDisks(
 	for i := range vm.Spec.Volumes {
 		vol := &vm.Spec.Volumes[i]
 
-		if vol.PersistentVolumeClaim == nil ||
-			vol.PersistentVolumeClaim.UnmanagedVolumeClaim != nil {
+		if vol.PersistentVolumeClaim == nil {
 			continue
 		}
 

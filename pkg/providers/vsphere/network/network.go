@@ -92,6 +92,9 @@ const (
 	// VMInterfaceNameLabel is the label put on the network interface CR identifies its name
 	// in the VM network interface spec.
 	VMInterfaceNameLabel = pkg.VMOperatorKey + "/vm-interface-name"
+
+	// vpcIgnoreMacAddr is the empty MAC address that VPC returns that we will ignore.
+	vpcIgnoreMacAddr = "00:00:00:00:00:00"
 )
 
 var (
@@ -825,10 +828,14 @@ func vpcSubnetPortToResult(
 
 	result := &NetworkInterfaceResult{
 		ObjectName: subnetPort.Name,
-		MacAddress: subnetPort.Status.NetworkInterfaceConfig.MACAddress,
 		ExternalID: subnetPort.Status.Attachment.ID,
 		NetworkID:  networkID,
 		Backing:    backing,
+	}
+
+	macAddr := subnetPort.Status.NetworkInterfaceConfig.MACAddress
+	if macAddr != vpcIgnoreMacAddr {
+		result.MacAddress = macAddr
 	}
 
 	for _, ipAddr := range subnetPort.Status.NetworkInterfaceConfig.IPAddresses {

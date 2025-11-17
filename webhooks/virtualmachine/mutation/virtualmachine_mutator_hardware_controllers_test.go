@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -17,6 +18,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
 )
 
@@ -157,6 +159,7 @@ func controllerMutationTests() {
 	testSCSISharingMode(func() *unitMutationWebhookContext { return ctx })
 	testMultipleControllerTypes(func() *unitMutationWebhookContext { return ctx })
 	testSetPVCVolumesDefaults(func() *unitMutationWebhookContext { return ctx })
+	testSchemaUpgradeCheck(func() *unitMutationWebhookContext { return ctx })
 }
 
 func testNilHardware(getCtx func() *unitMutationWebhookContext) {
@@ -1423,6 +1426,72 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wasMutated).To(BeFalse())
 			})
+		})
+	})
+}
+
+func testSchemaUpgradeCheck(getCtx func() *unitMutationWebhookContext) {
+	Describe("Schema Upgrade Check", func() {
+		var (
+			ctx *unitMutationWebhookContext
+		)
+
+		BeforeEach(func() {
+			ctx = getCtx()
+			ctx.vm.Status.UniqueID = dummyVMName
+			ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+			ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name: "test-vol",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc",
+							},
+						},
+					},
+					ControllerType: vmopv1.VirtualControllerTypeSCSI,
+				},
+			}
+
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+				config.BuildVersion = "v1"
+			})
+		})
+
+		simulateUpdateWithoutSchemaUpgrade := func() {
+			oldVM := ctx.vm.DeepCopy()
+			oldVM.Annotations = nil
+
+			oldObj, err := builder.ToUnstructured(oldVM)
+			Expect(err).ToNot(HaveOccurred())
+			ctx.OldObj = oldObj
+			ctx.Op = admissionv1.Update
+		}
+
+		It("should not add controllers when VM schema is not upgraded", func() {
+			simulateUpdateWithoutSchemaUpgrade()
+
+			response := ctx.Mutator.Mutate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeTrue())
+
+			// Verify controller was NOT added (because IsVirtualMachineSchemaUpgraded returns false)
+			Expect(ctx.vm.Spec.Hardware.SCSIControllers).To(BeEmpty())
+		})
+
+		It("should not set PVC defaults when VM schema is not upgraded", func() {
+			// Set application type so SetPVCVolumeDefaults would mutate if called
+			ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+
+			simulateUpdateWithoutSchemaUpgrade()
+
+			response := ctx.Mutator.Mutate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeTrue())
+
+			// Verify PVC defaults were NOT set (because IsVirtualMachineSchemaUpgraded returns false)
+			Expect(ctx.vm.Spec.Volumes[0].DiskMode).To(BeEmpty())
+			Expect(ctx.vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
 		})
 	})
 }

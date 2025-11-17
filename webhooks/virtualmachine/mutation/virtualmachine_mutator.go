@@ -348,7 +348,8 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			}
 		}
 
-		if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
+			vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
 			if ok, err := SetPVCVolumeDefaults(ctx, m.client, modified); err != nil {
 				return admission.Denied(err.Error())
 			} else if ok {

@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	callOnUpdateOnlyMessage             = "MutateCdromControllerOnUpdate should only be called on update"
 	skippedNoControllerMessage          = "Skipping CD-ROM: no available controller slots"
 	skippedNoSlotMessage                = "Skipping CD-ROM: no available slot on controller"
 	skippedPartialPlacementMessage      = "Skipping CD-ROM: partial placement not supported"
@@ -32,9 +33,18 @@ const (
 func MutateCdromControllerOnUpdate(
 	ctx *pkgctx.WebhookRequestContext,
 	_ ctrlclient.Client,
-	vm, _ *vmopv1.VirtualMachine) (bool, error) {
+	vm, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
 	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		return false, nil
+	}
+
+	if oldVM == nil {
+		ctx.Logger.Info(callOnUpdateOnlyMessage)
+		return false, nil
+	}
+
+	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
 		return false, nil
 	}
 

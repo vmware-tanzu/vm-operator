@@ -318,6 +318,11 @@ func (r reconciler) Reconcile(
 	logger.Info("Disk promotion task created",
 		"taskRef", task.Reference().Value)
 
+	// Indicate that promotion has started.
+	pkgcond.MarkTrue(
+		vm,
+		vmopv1.VirtualMachineDiskPromotionStarted)
+
 	pkgcond.MarkFalse(
 		vm,
 		vmopv1.VirtualMachineDiskPromotionSynced,

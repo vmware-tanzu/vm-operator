@@ -46,6 +46,10 @@ const (
 	// encryption state is synced to the desired encryption state.
 	VirtualMachineEncryptionSynced = "VirtualMachineEncryptionSynced"
 
+	// VirtualMachineDiskPromotionStarted indicates that the VirtualMachine's
+	// disk promotion process has started.
+	VirtualMachineDiskPromotionStarted = "VirtualMachineDiskPromotionStarted"
+
 	// VirtualMachineDiskPromotionSynced indicates that the VirtualMachine's
 	// disk promotion state is synced to the desired promotion state.
 	VirtualMachineDiskPromotionSynced = "VirtualMachineDiskPromotionSynced"
@@ -77,6 +81,11 @@ const (
 	// VirtualMachinePowerStateSynced indicates the VM's power state is synced
 	// to the desired state.
 	VirtualMachinePowerStateSynced = "VirtualMachinePowerStateSynced"
+
+	// VirtualMachineGuestNetworkConfigSynced indicates the VM's guest network
+	// configuration is synced to the desired state, determined by whether or
+	// not the guest is reporting the expected IP address(es).
+	VirtualMachineGuestNetworkConfigSynced = "VirtualMachineGuestNetworkConfigSynced"
 )
 
 const (

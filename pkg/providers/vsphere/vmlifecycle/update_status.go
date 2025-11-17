@@ -312,8 +312,8 @@ func reconcileStatusPowerState(
 
 	if vmCtx.VM.Status.PowerState == vmCtx.VM.Spec.PowerState {
 		c := conditions.TrueCondition(vmopv1.VirtualMachinePowerStateSynced)
-		c.Reason = string(vmCtx.VM.Spec.PowerState)
-		c.Message = ""
+		c.Reason = "Synced"
+		c.Message = string(vmCtx.VM.Spec.PowerState)
 		conditions.Set(vmCtx.VM, c)
 	} else {
 		conditions.MarkFalse(
@@ -1120,6 +1120,24 @@ func updateGuestNetworkStatus(
 		vm.Status.Network.PrimaryIP6 = primaryIP6
 		vm.Status.Network.IPStacks = ipStackStatuses
 		vm.Status.Network.Interfaces = ifaceStatuses
+
+		// TODO(akutz) Handle additional situations:
+		//             - The VM has IPv4 but not IPv6 and vice versa
+		//             - The network may be disabled, not have interfaces, etc.
+		if primaryIP4 != "" || primaryIP6 != "" {
+			c := conditions.TrueCondition(
+				vmopv1.VirtualMachineGuestNetworkConfigSynced)
+			c.Reason = "Synced"
+			c.Message = fmt.Sprintf("IPv4=%q, IPv6=%q", primaryIP4, primaryIP6)
+			conditions.Set(vm, c)
+		} else {
+			conditions.MarkFalse(
+				vm,
+				vmopv1.VirtualMachineGuestNetworkConfigSynced,
+				"NotSynced",
+				"%s",
+				"Neither IPv4 nor IPv6 address reported by guest")
+		}
 	} else if vm.Status.Network != nil {
 		if cfg := vm.Status.Network.Config; cfg != nil {
 			// Config is the only field we need to preserve.
@@ -1130,6 +1148,7 @@ func updateGuestNetworkStatus(
 			vm.Status.Network = nil
 		}
 	}
+
 }
 
 func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {

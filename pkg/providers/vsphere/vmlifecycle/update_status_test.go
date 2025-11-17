@@ -748,6 +748,106 @@ var _ = Describe("UpdateStatus", func() {
 			})
 		})
 
+		Context("VirtualMachineGuestNetworkConfigSynced condition", func() {
+			const (
+				validIP4 = "192.168.0.2"
+				validIP6 = "FD00:F53B:82E4::54"
+			)
+
+			BeforeEach(func() {
+				vmCtx.MoVM.Guest = &vimtypes.GuestInfo{}
+			})
+
+			When("guest reports IPv4 address", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest.IpAddress = validIP4
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+					Expect(cond.Reason).To(Equal("Synced"))
+					Expect(cond.Message).To(ContainSubstring("IPv4=\"192.168.0.2\""))
+				})
+			})
+
+			When("guest reports IPv6 address", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest.IpAddress = validIP6
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+					Expect(cond.Reason).To(Equal("Synced"))
+					Expect(cond.Message).To(ContainSubstring("IPv6=\"FD00:F53B:82E4::54\""))
+				})
+			})
+
+			When("guest reports both IPv4 and IPv6 addresses", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+					}
+					vmCtx.MoVM.Guest.IpAddress = validIP4
+					vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						ExtraConfig: []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.local-ipv4",
+								Value: validIP4,
+							},
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.local-ipv6",
+								Value: validIP6,
+							},
+						},
+					}
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+					Expect(cond.Reason).To(Equal("Synced"))
+					Expect(cond.Message).To(ContainSubstring("IPv4=\"192.168.0.2\""))
+					Expect(cond.Message).To(ContainSubstring("IPv6=\"FD00:F53B:82E4::54\""))
+				})
+			})
+
+			When("guest has network interfaces but reports neither IPv4 nor IPv6 address", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest.IpAddress = ""
+					vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+						{
+							DeviceConfigId: 4000,
+							MacAddress:     "00:50:56:00:00:01",
+						},
+					}
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to False", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal("NotSynced"))
+					Expect(cond.Message).To(Equal("Neither IPv4 nor IPv6 address reported by guest"))
+				})
+			})
+
+			When("guest property is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest = nil
+				})
+
+				It("should not set VirtualMachineGuestNetworkConfigSynced condition", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).To(BeNil())
+				})
+			})
+		})
+
 	})
 
 	Context("Storage", func() {
@@ -2018,8 +2118,8 @@ var _ = Describe("UpdateStatus", func() {
 						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
 						Expect(cond).ToNot(BeNil())
 						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-						Expect(cond.Reason).To(Equal(string(vmopv1.VirtualMachinePowerStateOn)))
-						Expect(cond.Message).To(BeEmpty())
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(Equal(string(vmopv1.VirtualMachinePowerStateOn)))
 					})
 				})
 
@@ -2080,8 +2180,8 @@ var _ = Describe("UpdateStatus", func() {
 						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
 						Expect(cond).ToNot(BeNil())
 						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-						Expect(cond.Reason).To(Equal(string(vmopv1.VirtualMachinePowerStateOff)))
-						Expect(cond.Message).To(BeEmpty())
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(Equal(string(vmopv1.VirtualMachinePowerStateOff)))
 					})
 				})
 
@@ -2142,8 +2242,8 @@ var _ = Describe("UpdateStatus", func() {
 						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
 						Expect(cond).ToNot(BeNil())
 						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-						Expect(cond.Reason).To(Equal(string(vmopv1.VirtualMachinePowerStateSuspended)))
-						Expect(cond.Message).To(BeEmpty())
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(Equal(string(vmopv1.VirtualMachinePowerStateSuspended)))
 					})
 				})
 

@@ -409,6 +409,10 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 					It("should promote disks", func() {
 						Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
 
+						Expect(conditions.IsTrue(
+							vm,
+							vmopv1.VirtualMachineDiskPromotionStarted)).To(BeTrue())
+
 						promoRef := getPromoTaskRef()
 						Expect(promoRef).ToNot(BeNil())
 

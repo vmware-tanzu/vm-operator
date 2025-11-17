@@ -10,6 +10,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
@@ -23,7 +24,15 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 
 	// Helper function to call the mutator and return results.
 	callMutator := func() (bool, error) {
-		return mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
+		// Create oldVM with proper schema upgrade annotations at call time
+		oldVM := vm.DeepCopy()
+		if oldVM.Annotations == nil {
+			oldVM.Annotations = make(map[string]string)
+		}
+
+		oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
+		oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		return mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, oldVM)
 	}
 
 	// Helper function to assert CD-ROM controller assignment.
@@ -90,7 +99,7 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 
 	Context("When VMSharedDisks feature is disabled", func() {
 		BeforeEach(func() {
-			pkgcfg.SetContext(ctx.Context, func(config *pkgcfg.Config) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = false
 			})
 			setupCdromSpecs("cdrom1")
@@ -101,10 +110,30 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		})
 	})
 
+	Context("When VM schema has not been upgraded", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+			setupCdromSpecs("cdrom1")
+		})
+
+		It("should not mutate when oldVM does not have upgrade annotations", func() {
+			oldVM := vm.DeepCopy()
+			oldVM.Annotations = nil
+
+			wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, oldVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(wasMutated).To(BeFalse())
+		})
+
+	})
+
 	Context("When VMSharedDisks feature is enabled", func() {
 		BeforeEach(func() {
-			pkgcfg.SetContext(ctx.Context, func(config *pkgcfg.Config) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = true
+				config.BuildVersion = "v1"
 			})
 		})
 
@@ -241,9 +270,7 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 				})
 
 				It("should avoid occupied slot used by non-CD-ROM device", func() {
-					wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeTrue())
+					expectMutationSuccess()
 					// Should assign unit 1 since unit 0 is occupied by a disk.
 					assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 0, 1)
 				})
@@ -274,9 +301,7 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 				})
 
 				It("should avoid occupied slot used by non-CD-ROM device", func() {
-					wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeTrue())
+					expectMutationSuccess()
 					// Should assign unit 1 since unit 0 is occupied by a disk.
 					assertCdromController(0, vmopv1.VirtualControllerTypeSATA, 0, 1)
 				})
@@ -519,9 +544,7 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 			})
 
 			It("should only process CD-ROMs that need controller assignment", func() {
-				wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(wasMutated).To(BeTrue())
+				expectMutationSuccess()
 
 				// cdrom1 should remain unchanged since it has complete info.
 				Expect(vm.Spec.Hardware.Cdrom[0].ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))

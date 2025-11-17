@@ -349,7 +349,9 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			}
 		}
 
-		if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
+			vmopv1util.VMSchemaUpgraded(ctx, *oldVM) {
+
 			// Add controllers as needed for new volumes.
 			if ok, err := AddControllersForVolumes(ctx, m.client, modified); err != nil {
 				return admission.Denied(err.Error())

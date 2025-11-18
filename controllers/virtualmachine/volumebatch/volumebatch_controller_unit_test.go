@@ -866,7 +866,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					Expect(vm.Status.Volumes).To(HaveLen(1))
 					Expect(attachment.Status.VolumeStatus).To(HaveLen(1))
 					attachment.Status.VolumeStatus[0].PersistentVolumeClaim.Error = "failed to attach cns volume"
-					assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0)
+					assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0, false)
 				})
 			})
 		})
@@ -941,8 +941,8 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(2))
 						Expect(attachment.Status.VolumeStatus).To(HaveLen(2))
-						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 1, 0)
-						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 1)
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 1, 0, false)
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 1, false)
 					})
 				})
 
@@ -997,8 +997,8 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Expect(vm.Status.Volumes[0]).To(Equal(classicDisk1()))
 							Expect(vm.Status.Volumes[1]).To(Equal(classicDisk2()))
 
-							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 2, 1)
-							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 3, 0)
+							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 2, 1, false)
+							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 3, 0, false)
 						})
 					}
 
@@ -1393,10 +1393,45 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 					By("VM Status.Volumes should contain the volume with detaching suffix", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(1))
-						Expect(vm.Status.Volumes[0].Name).To(Equal(volumeName1 + detachingVolumeSuffix))
-						Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
-						Expect(vm.Status.Volumes[0].DiskUUID).To(Equal(dummyDiskUUID))
-						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0, false)
+					})
+				})
+			})
+
+			When("Volumes are just being detached and CnsNodeVMBatchAttachment's status has been cleared by CSI yet", func() {
+				BeforeEach(func() {
+					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
+						cnsv1alpha1.VolumeStatus{
+							Name: volumeName1 + detachingVolumeSuffix,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								ClaimName: claimName1,
+								Attached:  false,
+								DiskUUID:  dummyDiskUUID,
+							},
+						},
+						cnsv1alpha1.VolumeStatus{
+							Name: volumeName2,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								ClaimName: claimName2,
+								Attached:  true,
+								DiskUUID:  dummyDiskUUID,
+							},
+						},
+					)
+					initObjects = append(initObjects, attachment)
+				})
+				It("returns success and refresh the vm volume status", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.Spec.Volumes).To(HaveLen(0))
+
+					By("VM Status.Volumes should contain the volume with detaching suffix", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0, false)
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 1, 1, true)
 					})
 				})
 			})
@@ -1476,17 +1511,22 @@ func assertVMVolStatusFromBatchAttachmentStatus(
 	vm *vmopv1.VirtualMachine,
 	attachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	vmVolStatusIndex,
-	attachmentStatusIndex int) {
+	attachmentStatusIndex int,
+	detachingSuffix bool) {
 
 	GinkgoHelper()
 
-	Expect(len(vm.Status.Volumes) > vmVolStatusIndex).To(BeTrue(), fmt.Sprintf("vm volume status should have len larger than %d", vmVolStatusIndex))
+	Expect(len(vm.Status.Volumes)).To(BeNumerically(">", vmVolStatusIndex), fmt.Sprintf("vm volume status should have len larger than %d", vmVolStatusIndex))
 	vmVolStatus := vm.Status.Volumes[vmVolStatusIndex]
-	Expect(len(attachment.Status.VolumeStatus) > attachmentStatusIndex).To(BeTrue(), fmt.Sprintf("attachment volume status should have len larger than %d", attachmentStatusIndex))
+	Expect(len(attachment.Status.VolumeStatus)).To(BeNumerically(">", attachmentStatusIndex), fmt.Sprintf("attachment volume status should have len larger than %d", attachmentStatusIndex))
 	attachmentVolStatus := attachment.Status.VolumeStatus[attachmentStatusIndex]
 
+	volName := attachmentVolStatus.Name
+	if detachingSuffix {
+		volName = attachmentVolStatus.Name + ":detaching"
+	}
+	Expect(vmVolStatus.Name).To(Equal(volName), "volume name should match")
 	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")
-	Expect(vmVolStatus.Name).To(Equal(attachmentVolStatus.Name), "volume name should match")
 	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Attached), "attached should match")
 	Expect(vmVolStatus.DiskUUID).To(Equal(attachmentVolStatus.PersistentVolumeClaim.DiskUUID), "diskuuid should match")
 	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Error), "error shouuld match")
@@ -1500,9 +1540,9 @@ func assertVMVolStatusFromBatchAttachmentSpec(
 
 	GinkgoHelper()
 
-	Expect(len(vm.Status.Volumes) > vmVolStatusIndex).To(BeTrue(), fmt.Sprintf("vm volume status should have len larger than %d", vmVolStatusIndex))
+	Expect(len(vm.Status.Volumes)).To(BeNumerically(">", vmVolStatusIndex), fmt.Sprintf("vm volume status should have len larger than %d", vmVolStatusIndex))
 	vmVolStatus := vm.Status.Volumes[vmVolStatusIndex]
-	Expect(len(attachment.Spec.Volumes) > attachmentStatusIndex).To(BeTrue(), fmt.Sprintf("attachment volume spec should have len larger than %d", attachmentStatusIndex))
+	Expect(len(attachment.Spec.Volumes)).To(BeNumerically(">", attachmentStatusIndex), fmt.Sprintf("attachment volume spec should have len larger than %d", attachmentStatusIndex))
 	attachmentVolSpec := attachment.Spec.Volumes[attachmentStatusIndex]
 
 	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")

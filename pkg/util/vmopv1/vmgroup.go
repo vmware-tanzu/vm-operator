@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
@@ -45,7 +46,7 @@ type VirtualMachineOrGroup interface {
 // reconcile requests for all the currently linked group members with given kind
 // (VirtualMachine/VirtualMachineGroup) in response to VirtualMachineGroup watch.
 func GroupToMembersMapperFn(
-	ctx context.Context,
+	_ context.Context,
 	client ctrlclient.Client,
 	memberKind string) handler.MapFunc {
 
@@ -144,7 +145,7 @@ func GroupToMembersMapperFn(
 // when a linked member (VM or VMGroup) changes. This ensures the group's status
 // is updated in time to reflect the current member latest state (e.g. ready
 // condition for VMGroup kind members or power state for VM kind members).
-func MemberToGroupMapperFn(ctx context.Context) handler.MapFunc {
+func MemberToGroupMapperFn(_ context.Context) handler.MapFunc {
 
 	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
 		memberObj, ok := o.(VirtualMachineOrGroup)
@@ -178,6 +179,76 @@ func MemberToGroupMapperFn(ctx context.Context) handler.MapFunc {
 
 		return requests
 	}
+}
+
+// PolicyEvalToVMToVMGroupMapperFunc returns a MapFunc that reconciles a VirtualMachineGroup
+// when the PolicyEval for a VM that linked to the group but not yet placed changes. This is
+// needed so that during VM Group placement the policy is ready, group placement is done.
+func PolicyEvalToVMToVMGroupMapperFunc(
+	_ context.Context,
+	client ctrlclient.Client,
+) handler.MapFunc {
+
+	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
+		policyEval, ok := o.(*vspherepolv1.PolicyEvaluation)
+		if !ok {
+			panic(fmt.Sprintf("Expected PolicyEvaluation, but got %T", o))
+		}
+
+		if policyEval.Generation != policyEval.Status.ObservedGeneration {
+			return nil
+		}
+		if !conditions.IsTrue(policyEval, vspherepolv1.ReadyConditionType) {
+			return nil
+		}
+
+		ownerRef := metav1.GetControllerOfNoCopy(policyEval)
+		if ownerRef == nil || ownerRef.Kind != "VirtualMachine" {
+			return nil
+		}
+
+		vm := &vmopv1.VirtualMachine{}
+		key := ctrlclient.ObjectKey{Namespace: policyEval.Namespace, Name: ownerRef.Name}
+		if err := client.Get(ctx, key, vm); err != nil {
+			return nil
+		}
+
+		if vm.Spec.GroupName == "" {
+			return nil
+		}
+
+		var requests []reconcile.Request
+
+		if conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) &&
+			!conditions.IsTrue(vm, vmopv1.VirtualMachineConditionPlacementReady) {
+
+			// We could also go Get() the VMGroup here, find this VM's entry in the member
+			// status, and see if its PlacementReady condition is false (or missing for the
+			// situation where the VMGroup hasn't been updated before the PolicyEval is ready).
+			// But I don't think that is worth it: the PolicyEval objects shouldn't really
+			// change much, and its PlacementReady will be true once the group is placed.
+
+			requests = append(requests, reconcile.Request{
+				NamespacedName: ctrlclient.ObjectKey{
+					Namespace: policyEval.Namespace,
+					Name:      vm.Spec.GroupName,
+				},
+			})
+		}
+
+		if len(requests) > 0 {
+			pkglog.FromContextOrDefault(ctx).V(4).Info(
+				"Reconciling VirtualMachineGroup due to its VM member PolicyEval watch",
+				"policyEvalName", policyEval.Name,
+				"vmName", vm.Name,
+				"groupName", vm.Spec.GroupName,
+				"requests", requests,
+			)
+		}
+
+		return requests
+	}
+
 }
 
 // RetrieveVMGroupMembers retrieves all the group linked VMs under a VM group recursively.

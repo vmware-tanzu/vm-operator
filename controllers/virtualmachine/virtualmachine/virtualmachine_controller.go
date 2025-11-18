@@ -26,6 +26,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -170,6 +171,17 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 					ctx, r.Client, "VirtualMachine",
 				),
 			),
+		)
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+		builder = builder.Watches(
+			&vspherepolv1.PolicyEvaluation{},
+			handler.EnqueueRequestForOwner(
+				mgr.GetScheme(),
+				mgr.GetRESTMapper(),
+				&vmopv1.VirtualMachine{},
+				handler.OnlyControllerOwner()),
 		)
 	}
 

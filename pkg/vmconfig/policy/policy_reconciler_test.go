@@ -24,6 +24,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
@@ -410,6 +411,9 @@ var _ = Describe("Reconcile", func() {
 							Policies: []vspherepolv1.PolicyEvaluationResult{{
 								Tags: []string{policyTag1ID, policyTag2ID},
 							}},
+							Conditions: []metav1.Condition{
+								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+							},
 						},
 					}
 					withObjs = append(withObjs, policyEval)
@@ -458,6 +462,9 @@ var _ = Describe("Reconcile", func() {
 							Policies: []vspherepolv1.PolicyEvaluationResult{
 								{Tags: []string{policyTag1ID, policyTag2ID}}, // From policy 1
 								{Tags: []string{policyTag3ID}},               // From policy 2
+							},
+							Conditions: []metav1.Condition{
+								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
 							},
 						},
 					}
@@ -548,6 +555,9 @@ var _ = Describe("Reconcile", func() {
 								Status: vspherepolv1.PolicyEvaluationStatus{
 									ObservedGeneration: 1,
 									Policies:           []vspherepolv1.PolicyEvaluationResult{}, // No policies apply
+									Conditions: []metav1.Condition{
+										*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+									},
 								},
 							}
 							withObjs = append(withObjs, policyEval)
@@ -610,6 +620,9 @@ var _ = Describe("Reconcile", func() {
 										Policies: []vspherepolv1.PolicyEvaluationResult{{
 											Tags: []string{policyTag3ID},
 										}},
+										Conditions: []metav1.Condition{
+											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+										},
 									},
 								}
 								withObjs = append(withObjs, policyEval)
@@ -676,6 +689,9 @@ var _ = Describe("Reconcile", func() {
 										Policies: []vspherepolv1.PolicyEvaluationResult{{
 											Tags: []string{policyTag1ID, policyTag2ID},
 										}},
+										Conditions: []metav1.Condition{
+											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+										},
 									},
 								}
 								withObjs = append(withObjs, policyEval)
@@ -748,6 +764,9 @@ var _ = Describe("Reconcile", func() {
 											{Tags: []string{policyTag1ID, policyTag2ID}}, // From policy 1
 											{Tags: []string{policyTag3ID}},               // From policy 2
 										},
+										Conditions: []metav1.Condition{
+											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+										},
 									},
 								}
 								withObjs = append(withObjs, policyEval)
@@ -813,6 +832,9 @@ var _ = Describe("Reconcile", func() {
 										Policies: []vspherepolv1.PolicyEvaluationResult{
 											{Tags: []string{policyTag1ID, policyTag2ID}}, // From policy 1
 											{Tags: []string{policyTag3ID}},               // From policy 2
+										},
+										Conditions: []metav1.Condition{
+											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
 										},
 									},
 								}
@@ -881,6 +903,9 @@ var _ = Describe("Reconcile", func() {
 							Status: vspherepolv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
 								Policies:           []vspherepolv1.PolicyEvaluationResult{}, // No policies apply
+								Conditions: []metav1.Condition{
+									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								},
 							},
 						}
 						withObjs = append(withObjs, policyEval)
@@ -946,6 +971,9 @@ var _ = Describe("Reconcile", func() {
 										Tags:       []string{policyTag1ID},
 										Generation: 2,
 									},
+								},
+								Conditions: []metav1.Condition{
+									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1044,6 +1072,9 @@ var _ = Describe("Reconcile", func() {
 										Tags:       []string{policyTag3ID},
 										Generation: 1,
 									},
+								},
+								Conditions: []metav1.Condition{
+									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1167,6 +1198,9 @@ var _ = Describe("Reconcile", func() {
 							Status: vspherepolv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
 								Policies:           []vspherepolv1.PolicyEvaluationResult{},
+								Conditions: []metav1.Condition{
+									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								},
 							},
 						}
 						withObjs = append(withObjs, policyEval)
@@ -1232,6 +1266,9 @@ var _ = Describe("Reconcile", func() {
 							Status: vspherepolv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
 								Policies:           []vspherepolv1.PolicyEvaluationResult{},
+								Conditions: []metav1.Condition{
+									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								},
 							},
 						}
 						withObjs = append(withObjs, policyEval)
@@ -1292,6 +1329,9 @@ var _ = Describe("Reconcile", func() {
 							Status: vspherepolv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
 								Policies:           []vspherepolv1.PolicyEvaluationResult{},
+								Conditions: []metav1.Condition{
+									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								},
 							},
 						}
 						withObjs = append(withObjs, policyEval)
@@ -1358,6 +1398,9 @@ var _ = Describe("Reconcile", func() {
 						Status: vspherepolv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
 							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Conditions: []metav1.Condition{
+								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+							},
 						},
 					}
 					withObjs = append(withObjs, policyEval)
@@ -1407,6 +1450,9 @@ var _ = Describe("Reconcile", func() {
 						Status: vspherepolv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
 							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Conditions: []metav1.Condition{
+								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+							},
 						},
 					}
 					withObjs = append(withObjs, policyEval)
@@ -1452,6 +1498,9 @@ var _ = Describe("Reconcile", func() {
 						Status: vspherepolv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
 							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Conditions: []metav1.Condition{
+								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+							},
 						},
 					}
 					withObjs = append(withObjs, policyEval)
@@ -1493,6 +1542,9 @@ var _ = Describe("Reconcile", func() {
 						Status: vspherepolv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
 							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Conditions: []metav1.Condition{
+								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+							},
 						},
 					}
 					withObjs = append(withObjs, policyEval)

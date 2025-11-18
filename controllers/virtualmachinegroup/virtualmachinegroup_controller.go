@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -63,19 +64,26 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx.VMProvider,
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	c := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		Watches(&vmopv1.VirtualMachineGroup{},
 			handler.EnqueueRequestsFromMapFunc(vmopv1util.GroupToMembersMapperFn(ctx, r.Client, vmgKind))).
 		Watches(&vmopv1.VirtualMachineGroup{},
 			handler.EnqueueRequestsFromMapFunc(vmopv1util.MemberToGroupMapperFn(ctx))).
 		Watches(&vmopv1.VirtualMachine{},
-			handler.EnqueueRequestsFromMapFunc(vmopv1util.MemberToGroupMapperFn(ctx))).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
-			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
-		}).
-		Complete(r)
+			handler.EnqueueRequestsFromMapFunc(vmopv1util.MemberToGroupMapperFn(ctx)))
+
+	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+		c.Watches(&vspherepolv1.PolicyEvaluation{},
+			handler.EnqueueRequestsFromMapFunc(vmopv1util.PolicyEvalToVMToVMGroupMapperFunc(ctx, r.Client)))
+	}
+
+	c.WithOptions(controller.Options{
+		MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+		LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+	})
+
+	return c.Complete(r)
 }
 
 // NewReconciler returns a new reconciler for VirtualMachineGroup objects.

@@ -5653,6 +5653,9 @@ func vmTests() {
 												Tags: []string{policyTag1ID, policyTag2ID},
 											},
 										},
+										Conditions: []metav1.Condition{
+											*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+										},
 									},
 								}
 
@@ -5692,7 +5695,7 @@ func vmTests() {
 							})
 						})
 
-						It("should successfully create VM and call vmconfpolicy.Reconcile during placement", func() {
+						It("should successfully create VM and call vmconfig policy.Reconcile during placement", func() {
 							By("Setting up VM with policy evaluation objects", func() {
 								// Set VM UID for proper PolicyEvaluation naming
 								vm.UID = "test-vm-sync-policy-uid"
@@ -5731,6 +5734,9 @@ func vmTests() {
 												Tags: []string{policyTag1ID, policyTag2ID},
 											},
 										},
+										Conditions: []metav1.Condition{
+											*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+										},
 									},
 								}
 
@@ -5766,6 +5772,47 @@ func vmTests() {
 
 				When("updating a VM", func() {
 					It("should update VM with policy tags during reconfiguration", func() {
+						By("Setting up VM with policy evaluation objects", func() {
+							// Set VM UID for proper PolicyEvaluation naming
+							vm.UID = "test-vm-policy-uid"
+
+							// Create a PolicyEvaluation object that will be found during policy reconciliation
+							policyEval := &vspherepolv1.PolicyEvaluation{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace:  vm.Namespace,
+									Name:       "vm-" + vm.Name,
+									Generation: 1,
+									OwnerReferences: []metav1.OwnerReference{
+										{
+											APIVersion:         vmopv1.GroupVersion.String(),
+											Kind:               "VirtualMachine",
+											Name:               vm.Name,
+											UID:                vm.UID,
+											Controller:         ptr.To(true),
+											BlockOwnerDeletion: ptr.To(true),
+										},
+									},
+								},
+								Spec: vspherepolv1.PolicyEvaluationSpec{
+									Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
+										Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+											GuestID:     "ubuntu64Guest",
+											GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										},
+									},
+								},
+								Status: vspherepolv1.PolicyEvaluationStatus{
+									ObservedGeneration: 1,
+									Conditions: []metav1.Condition{
+										*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+									},
+								},
+							}
+
+							// Create the PolicyEvaluation in the fake Kubernetes client
+							Expect(ctx.Client.Create(ctx, policyEval)).To(Succeed())
+						})
+
 						// First create the VM
 						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
@@ -5797,13 +5844,16 @@ func vmTests() {
 
 							// Create a PolicyEvaluation object with updated tags
 							policyEval.Status = vspherepolv1.PolicyEvaluationStatus{
-								ObservedGeneration: 0,
+								ObservedGeneration: policyEval.Generation,
 								Policies: []vspherepolv1.PolicyEvaluationResult{
 									{
 										Name: "test-updated-active-policy",
 										Kind: "ComputePolicy",
 										Tags: []string{policyTag1ID, policyTag2ID, policyTag3ID},
 									},
+								},
+								Conditions: []metav1.Condition{
+									*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
 								},
 							}
 

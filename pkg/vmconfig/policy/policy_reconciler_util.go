@@ -19,6 +19,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -189,6 +190,7 @@ func getPolicyEvaluationResults(
 			"reason", reason,
 			"generation", obj.Generation,
 			"observedGeneration", obj.Status.ObservedGeneration,
+			"isReadyCondition", pkgcond.IsTrue(obj, vspherepolv1.ReadyConditionType),
 			"spec", obj.Spec)
 
 		// The object is still being processed.
@@ -198,7 +200,6 @@ func getPolicyEvaluationResults(
 			vm.Namespace,
 			vm.Name,
 			ErrPolicyNotReady)
-
 	}
 
 	switch result {
@@ -211,6 +212,10 @@ func getPolicyEvaluationResults(
 
 		if obj.Generation != obj.Status.ObservedGeneration {
 			return nil, waiting("generation")
+		}
+
+		if !pkgcond.IsTrue(obj, vspherepolv1.ReadyConditionType) {
+			return nil, waiting("ready")
 		}
 
 		return obj.Status.Policies, nil

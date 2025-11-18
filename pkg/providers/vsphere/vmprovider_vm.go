@@ -1604,7 +1604,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 
 	var memberStatus vmopv1.VirtualMachineGroupMemberStatus
 	for _, m := range vmg.Status.Members {
-		if m.Kind == vmCtx.VM.Kind && m.Name == vmCtx.VM.Name {
+		if m.Kind == vmCtx.VM.Kind && m.Name == vmCtx.VM.Name && m.UID == vmCtx.VM.UID {
 			memberStatus = m
 			break
 		}

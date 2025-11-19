@@ -6,6 +6,7 @@ package contentlibrary
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -27,7 +28,10 @@ import (
 )
 
 // UpdateVmiWithOvfEnvelope updates the given VMI object from an OVF envelope.
-func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
+func UpdateVmiWithOvfEnvelope(
+	obj client.Object,
+	ovfEnvelope ovf.Envelope) error {
+
 	var status *vmopv1.VirtualMachineImageStatus
 
 	switch vmi := obj.(type) {
@@ -36,7 +40,7 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 	case *vmopv1.ClusterVirtualMachineImage:
 		status = &vmi.Status
 	default:
-		return
+		return nil
 	}
 
 	if ovfEnvelope.VirtualSystem != nil {
@@ -55,15 +59,22 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 		ovfEnvelope.VirtualSystem != nil &&
 		len(ovfEnvelope.VirtualSystem.VirtualHardware) > 0 {
 
-		populateImageStatusFromOVFDiskSection(
+		if err := populateImageStatusFromOVFDiskSection(
 			status,
 			ovfEnvelope.VirtualSystem.VirtualHardware[0],
-			ovfEnvelope.Disk.Disks)
+			ovfEnvelope.Disk.Disks); err != nil {
+
+			return fmt.Errorf(
+				"failed to populate image status from ovf disk section: %w",
+				err)
+		}
 	} else {
 		status.Disks = nil
 	}
 
 	initVSpherePolicyLabelsFromOVFExtraConfig(obj, ovfEnvelope.VirtualSystem)
+
+	return nil
 }
 
 // UpdateVmiWithVirtualMachine updates the given VMI object from a
@@ -153,6 +164,8 @@ func UpdateVmiWithVirtualMachine(
 		}
 	}
 
+	controllers := getControllerMapFromVM(vm.Config.Hardware.Device...)
+
 	// Populate the disk information.
 	status.Disks = nil
 	for _, bd := range vm.Config.Hardware.Device {
@@ -167,13 +180,19 @@ func UpdateVmiWithVirtualMachine(
 					false, /* include disks related to snapshots */
 					info.UUID)
 
-				status.Disks = append(
-					status.Disks,
-					vmopv1.VirtualMachineImageDiskInfo{
-						Name:      info.UUID,
-						Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
-						Requested: kubeutil.BytesToResource(di.Size),
-					})
+				sdi := vmopv1.VirtualMachineImageDiskInfo{
+					Name:       info.UUID,
+					Limit:      kubeutil.BytesToResource(di.CapacityInBytes),
+					Requested:  kubeutil.BytesToResource(di.Size),
+					UnitNumber: info.UnitNumber,
+				}
+
+				if c, ok := controllers[info.ControllerKey]; ok {
+					sdi.ControllerType = c.typ3
+					sdi.ControllerBusNumber = c.bus
+				}
+
+				status.Disks = append(status.Disks, sdi)
 			}
 		}
 	}
@@ -187,6 +206,50 @@ func UpdateVmiWithVirtualMachine(
 			conditions.Delete(setter, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
 		}
 	}
+}
+
+type vmControllerSpec struct {
+	bus  *int32
+	typ3 vmopv1.VirtualControllerType
+}
+
+func getControllerMapFromVM(
+	devices ...vimtypes.BaseVirtualDevice) map[int32]vmControllerSpec {
+
+	controllers := map[int32]vmControllerSpec{}
+
+	for _, bd := range devices {
+		if bc, ok := bd.(vimtypes.BaseVirtualController); ok {
+			var c *vmControllerSpec
+
+			switch bd.(type) {
+			case *vimtypes.VirtualIDEController:
+				c = &vmControllerSpec{
+					typ3: vmopv1.VirtualControllerTypeIDE,
+				}
+			case vimtypes.BaseVirtualSCSIController:
+				c = &vmControllerSpec{
+					typ3: vmopv1.VirtualControllerTypeSCSI,
+				}
+			case vimtypes.BaseVirtualSATAController:
+				c = &vmControllerSpec{
+					typ3: vmopv1.VirtualControllerTypeSATA,
+				}
+			case *vimtypes.VirtualNVMEController:
+				c = &vmControllerSpec{
+					typ3: vmopv1.VirtualControllerTypeNVME,
+				}
+			}
+
+			if c != nil {
+				vc := bc.GetVirtualController()
+				c.bus = &vc.BusNumber
+				controllers[vc.Key] = *c
+			}
+		}
+	}
+
+	return controllers
 }
 
 func initImageStatusFromOVFVirtualSystem(
@@ -259,12 +322,72 @@ func initImageStatusFromOVFVirtualSystem(
 	}
 }
 
+type ovfControllerSpec struct {
+	bus  *int32
+	typ3 vmopv1.VirtualControllerType
+}
+
+func getControllerMapFromOVF(
+	hardware ovf.VirtualHardwareSection) (map[string]ovfControllerSpec, error) {
+
+	controllers := map[string]ovfControllerSpec{}
+
+	for _, i := range hardware.Item {
+		var c *ovfControllerSpec
+		if rt := i.ResourceType; rt != nil {
+			switch *rt {
+			case ovf.IdeController:
+				c = &ovfControllerSpec{
+					typ3: vmopv1.VirtualControllerTypeIDE,
+				}
+			case ovf.ParallelScsiHba:
+				c = &ovfControllerSpec{
+					typ3: vmopv1.VirtualControllerTypeSCSI,
+				}
+			case ovf.OtherStorage:
+				if rst := i.ResourceSubType; rst != nil {
+					switch *rst {
+					case ovf.ResourceSubTypeSATAAHCI,
+						ovf.ResourceSubTypeSATAAHCIAlter:
+						c = &ovfControllerSpec{
+							typ3: vmopv1.VirtualControllerTypeSATA,
+						}
+					case ovf.ResourceSubTypeNVMEController:
+						c = &ovfControllerSpec{
+							typ3: vmopv1.VirtualControllerTypeNVME,
+						}
+					}
+				}
+			}
+		}
+		if c != nil {
+			if a := i.Address; a != nil && *a != "" {
+				v, err := strconv.ParseInt(*a, 10, 32)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"failed to parse bus number: %s", *a)
+				}
+				c.bus = ptr.To(int32(v))
+			}
+			controllers[i.InstanceID] = *c
+		}
+	}
+
+	return controllers, nil
+}
+
 func populateImageStatusFromOVFDiskSection(
 	status *vmopv1.VirtualMachineImageStatus,
 	hardware ovf.VirtualHardwareSection,
-	disks []ovf.VirtualDiskDesc) {
+	disks []ovf.VirtualDiskDesc) error {
 
 	status.Disks = nil
+
+	controllers, err := getControllerMapFromOVF(hardware)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to build controller map from ovf hardware: %w", err)
+	}
 
 	diskIDToDisk := map[string]ovf.VirtualDiskDesc{}
 	for _, d := range disks {
@@ -291,6 +414,22 @@ func populateImageStatusFromOVFDiskSection(
 						Name: diskName,
 					}
 
+					if a := i.AddressOnParent; a != nil {
+						v, err := strconv.ParseInt(*a, 10, 32)
+						if err != nil {
+							return fmt.Errorf(
+								"failed to parse unit number: %s", *a)
+						}
+						di.UnitNumber = ptr.To(int32(v))
+					}
+
+					if p := i.Parent; p != nil {
+						if c, ok := controllers[*p]; ok {
+							di.ControllerType = c.typ3
+							di.ControllerBusNumber = c.bus
+						}
+					}
+
 					if d.PopulatedSize != nil {
 						populatedSize := int64(*d.PopulatedSize)
 						di.Requested = kubeutil.BytesToResource(populatedSize)
@@ -310,6 +449,8 @@ func populateImageStatusFromOVFDiskSection(
 			}
 		}
 	}
+
+	return nil
 }
 
 func getVmwareSystemPropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[string]string {

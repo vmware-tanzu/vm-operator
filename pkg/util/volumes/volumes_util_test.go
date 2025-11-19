@@ -17,6 +17,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
@@ -894,7 +895,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 					It("should return the expected VolumeInfo", func() {
 						Expect(info.Volumes).To(HaveLen(1))
-						Expect(info.Volumes[pkgvol.VirtualDiskTarget{
+						Expect(info.Volumes[vmopv1util.TargetID{
 							ControllerType: vmopv1.VirtualControllerTypeSCSI,
 							ControllerBus:  0,
 							UnitNumber:     0,
@@ -983,12 +984,12 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 						It("should return the expected VolumeInfo", func() {
 							Expect(info.Volumes).To(HaveLen(2))
-							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
+							Expect(info.Volumes[vmopv1util.TargetID{
 								ControllerType: vmopv1.VirtualControllerTypeSCSI,
 								ControllerBus:  0,
 								UnitNumber:     0,
 							}.String()].Name).To(Equal("vol1"))
-							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
+							Expect(info.Volumes[vmopv1util.TargetID{
 								ControllerType: vmopv1.VirtualControllerTypeNVME,
 								ControllerBus:  0,
 								UnitNumber:     0,
@@ -1020,7 +1021,6 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 									ControllerType:      vmopv1.VirtualControllerTypeSATA,
 									ControllerBusNumber: ptr.To[int32](0),
 									UnitNumber:          ptr.To[int32](1),
-									ImageDiskName:       "my-image-disk",
 								},
 								{
 									Name:                "vol3",
@@ -1100,17 +1100,17 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 						It("should return the expected VolumeInfo", func() {
 							Expect(info.Volumes).To(HaveLen(3))
-							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
+							Expect(info.Volumes[vmopv1util.TargetID{
 								ControllerType: vmopv1.VirtualControllerTypeSATA,
 								ControllerBus:  0,
 								UnitNumber:     0,
 							}.String()].Name).To(Equal("vol1"))
-							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
+							Expect(info.Volumes[vmopv1util.TargetID{
 								ControllerType: vmopv1.VirtualControllerTypeSATA,
 								ControllerBus:  0,
 								UnitNumber:     1,
 							}.String()].Name).To(Equal("vol2"))
-							Expect(info.Volumes[pkgvol.VirtualDiskTarget{
+							Expect(info.Volumes[vmopv1util.TargetID{
 								ControllerType: vmopv1.VirtualControllerTypeIDE,
 								ControllerBus:  0,
 								UnitNumber:     0,
@@ -1123,7 +1123,6 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 							Expect(info.Disks).To(HaveLen(3))
 							Expect(info.Disks[0].UUID).To(Equal("disk-uuid-1"))
 							Expect(info.Disks[1].UUID).To(Equal("disk-uuid-2"))
-							Expect(info.Disks[1].ImageDiskName).ToNot(BeEmpty())
 							Expect(info.Disks[2].UUID).To(Equal("disk-uuid-3"))
 						})
 					})

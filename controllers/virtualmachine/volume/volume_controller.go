@@ -663,8 +663,14 @@ func (r *Reconciler) processAttachments(
 			// attachment and create a new one.
 			if volume.PersistentVolumeClaim.ClaimName == attachment.Spec.VolumeName {
 				volumeStatus := attachmentToVolumeStatus(volume.Name, attachment)
-				volumeStatus.Used = existingManagedVols[volume.Name].Used
-				volumeStatus.Crypto = existingManagedVols[volume.Name].Crypto
+				existingVol := existingManagedVols[volume.Name]
+				volumeStatus.Used = existingVol.Used
+				volumeStatus.Crypto = existingVol.Crypto
+				volumeStatus.ControllerType = existingVol.ControllerType
+				volumeStatus.ControllerBusNumber = existingVol.ControllerBusNumber
+				volumeStatus.UnitNumber = existingVol.UnitNumber
+				volumeStatus.DiskMode = existingVol.DiskMode
+				volumeStatus.SharingMode = existingVol.SharingMode
 				if err := updateVolumeStatusWithLimitAndRequest(ctx, r.Client, *volume.PersistentVolumeClaim, &volumeStatus); err != nil {
 					ctx.Logger.Error(err, "failed to get volume status limit")
 				}

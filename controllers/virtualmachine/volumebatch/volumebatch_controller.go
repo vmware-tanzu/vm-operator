@@ -640,8 +640,14 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 			vol.PersistentVolumeClaim.ClaimName == volStatus.PersistentVolumeClaim.ClaimName {
 
 			vmVolStatus = attachmentStatusToVolumeStatus(volStatus.Name, volStatus)
-			vmVolStatus.Used = existingVMManagedVolStatus[vol.Name].Used
-			vmVolStatus.Crypto = existingVMManagedVolStatus[vol.Name].Crypto
+			existingVol := existingVMManagedVolStatus[vol.Name]
+			vmVolStatus.Used = existingVol.Used
+			vmVolStatus.Crypto = existingVol.Crypto
+			vmVolStatus.ControllerType = existingVol.ControllerType
+			vmVolStatus.ControllerBusNumber = existingVol.ControllerBusNumber
+			vmVolStatus.UnitNumber = existingVol.UnitNumber
+			vmVolStatus.DiskMode = existingVol.DiskMode
+			vmVolStatus.SharingMode = existingVol.SharingMode
 
 			// Add PVC capacity information
 			if err := r.updateVolumeStatusWithPVCInfo(
@@ -1004,8 +1010,14 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 			// vm.status.vol and legacyAttachment.
 			if vol.PersistentVolumeClaim.ClaimName == att.Spec.VolumeName {
 				vmVolStatus := legacyAttachmentToVolumeStatus(vol.Name, att)
-				vmVolStatus.Used = existingVMManagedVolStatus[vol.Name].Used
-				vmVolStatus.Crypto = existingVMManagedVolStatus[vol.Name].Crypto
+				existingVol := existingVMManagedVolStatus[vol.Name]
+				vmVolStatus.Used = existingVol.Used
+				vmVolStatus.Crypto = existingVol.Crypto
+				vmVolStatus.ControllerType = existingVol.ControllerType
+				vmVolStatus.ControllerBusNumber = existingVol.ControllerBusNumber
+				vmVolStatus.UnitNumber = existingVol.UnitNumber
+				vmVolStatus.DiskMode = existingVol.DiskMode
+				vmVolStatus.SharingMode = existingVol.SharingMode
 
 				// Add PVC capacity information
 				if err := r.updateVolumeStatusWithPVCInfo(

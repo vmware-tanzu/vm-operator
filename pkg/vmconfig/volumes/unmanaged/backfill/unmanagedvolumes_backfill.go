@@ -7,6 +7,7 @@ package backfill
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -130,7 +131,7 @@ func updateSpecWithUnmanagedDisks(
 	for _, di := range info.Disks {
 		// Step 1: Look for existing volume entry with the disk target ID.
 		if _, exists := info.Volumes[di.Target.String()]; !exists {
-			diskName := pkgutil.GeneratePVCName("disk", di.UUID)
+			diskName := pkgutil.GeneratePVCName(vm.Name, uuid.NewString())
 
 			// Step 2: If no such entry exists, add one.
 			newVolSpec := vmopv1.VirtualMachineVolume{

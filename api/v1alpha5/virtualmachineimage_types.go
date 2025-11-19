@@ -107,6 +107,40 @@ type VirtualMachineImageDiskInfo struct {
 
 	// Requested is the minimum storage requirements for the virtual disk.
 	Requested *resource.Quantity `json:"requested,omitempty"`
+
+	// +optional
+
+	// ControllerType describes the type of controller to which this disk is
+	// attached.
+	ControllerType VirtualControllerType `json:"controllerType,omitempty"`
+
+	// +optional
+
+	// ControllerBusNumber describes bus number of the controller to which this
+	// disk is attached.
+	ControllerBusNumber *int32 `json:"controllerBusNumber,omitempty"`
+
+	// +optional
+
+	// UnitNumber describes the unit number for this disk.
+	UnitNumber *int32 `json:"unitNumber,omitempty"`
+}
+
+// GetControllerType returns the type of controller to which the disk is
+// attached.
+func (v VirtualMachineImageDiskInfo) GetControllerType() VirtualControllerType {
+	return v.ControllerType
+}
+
+// GetControllerBusNumber returns the bus number of the controller to which the
+// disk is connected.
+func (v VirtualMachineImageDiskInfo) GetControllerBusNumber() *int32 {
+	return v.ControllerBusNumber
+}
+
+// GetUnitNumber returns the disk's unit number.
+func (v VirtualMachineImageDiskInfo) GetUnitNumber() *int32 {
+	return v.UnitNumber
 }
 
 // VirtualMachineImageOSInfo describes the image's guest operating system.

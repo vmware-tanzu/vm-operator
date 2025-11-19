@@ -350,7 +350,13 @@ func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeployOVF(
 			"failed to unmarshal ovf yaml into envelope: %w", err)
 	}
 
-	contentlibrary.UpdateVmiWithOvfEnvelope(vmi, ovfEnvelope)
+	if err := contentlibrary.UpdateVmiWithOvfEnvelope(
+		vmi,
+		ovfEnvelope); err != nil {
+
+		return fmt.Errorf("failed to update vmi from ovf: %w", err)
+	}
+
 	return nil
 }
 
@@ -400,7 +406,13 @@ func (vs *vSphereVMProvider) syncVirtualMachineImage(
 		return fmt.Errorf("OVF envelope is nil for library item %q", itemID)
 	}
 
-	contentlibrary.UpdateVmiWithOvfEnvelope(vmi, *ovfEnvelope)
+	if err := contentlibrary.UpdateVmiWithOvfEnvelope(
+		vmi,
+		*ovfEnvelope); err != nil {
+
+		return fmt.Errorf("failed to update vmi from ovf: %w", err)
+	}
+
 	return nil
 }
 

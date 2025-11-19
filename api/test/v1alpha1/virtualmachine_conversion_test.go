@@ -282,7 +282,6 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 							}),
 						},
-						ImageDiskName:       "my-disk",
 						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
 						ControllerBusNumber: &[]int32{1}[0],
 						ControllerType:      vmopv1.VirtualControllerTypeSCSI,

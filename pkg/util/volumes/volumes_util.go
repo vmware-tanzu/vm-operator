@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // ControllerSpec is information about a VirtualDeviceController to which an
@@ -26,27 +27,13 @@ type ControllerSpec struct {
 	SharingMode vmopv1.VirtualControllerSharingMode
 }
 
-// VirtualDiskTarget is the controller:bus:slot target ID at which a disk is
-// located.
-type VirtualDiskTarget struct {
-	ControllerType vmopv1.VirtualControllerType
-	ControllerBus  int32
-	UnitNumber     int32
-}
-
-func (t VirtualDiskTarget) String() string {
-	return fmt.Sprintf("%s:%d:%d",
-		t.ControllerType, t.ControllerBus, t.UnitNumber)
-}
-
 // VirtualDiskInfo is information about a volume.
 type VirtualDiskInfo struct {
 	pkgutil.VirtualDiskInfo
 	ProfileIDs         []string
 	StorageClass       string
 	StoragePolicyID    string
-	Target             VirtualDiskTarget
-	ImageDiskName      string
+	Target             vmopv1util.TargetID
 	NewCapacityInBytes int64
 	Snapshot           bool
 	LinkedClone        bool
@@ -168,18 +155,8 @@ func GetVolumeInfo(
 
 	// Build a map of existing volumes by target for quick lookup.
 	for i, vol := range vm.Spec.Volumes {
-		var (
-			ctrlType = vol.ControllerType
-			ctrlBus  = vol.ControllerBusNumber
-			diskUnit = vol.UnitNumber
-		)
-		if ctrlType != "" && ctrlBus != nil && diskUnit != nil {
-			t := VirtualDiskTarget{
-				ControllerType: ctrlType,
-				ControllerBus:  *ctrlBus,
-				UnitNumber:     *diskUnit,
-			}
-			info.Volumes[t.String()] = &vm.Spec.Volumes[i]
+		if tid := vmopv1util.GetTargetID(vol); tid != "" {
+			info.Volumes[tid] = &vm.Spec.Volumes[i]
 		}
 	}
 
@@ -273,17 +250,12 @@ func GetVolumeInfo(
 
 	// Update the list of disks with their target IDs.
 	for i, di := range info.Disks {
-		t := VirtualDiskTarget{
+		t := vmopv1util.TargetID{
 			ControllerType: info.Controllers[di.ControllerKey].Type,
 			ControllerBus:  info.Controllers[di.ControllerKey].Bus,
 			UnitNumber:     *di.UnitNumber,
 		}
 		info.Disks[i].Target = t
-
-		// Update the disk info with the image disk name if it is known.
-		if v, ok := info.Volumes[t.String()]; ok {
-			info.Disks[i].ImageDiskName = v.ImageDiskName
-		}
 	}
 
 	return info

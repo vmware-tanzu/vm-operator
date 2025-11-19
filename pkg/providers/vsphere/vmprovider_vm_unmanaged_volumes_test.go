@@ -179,8 +179,6 @@ func unmanagedVolumesTests() {
 			Expect(vm.Spec.Volumes).To(HaveLen(1))
 			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim).ToNot(BeNil())
 			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName).ToNot(BeEmpty())
-			Expect(vm.Spec.Volumes[0].ImageDiskName).To(BeEmpty(),
-				"should not have added volume for image disk")
 
 			claimName := vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName
 			Expect(claimName).ToNot(BeEmpty())
@@ -270,7 +268,9 @@ func unmanagedVolumesTests() {
 							},
 						},
 					},
-					ImageDiskName: "disk0",
+					ControllerType:      vmopv1.VirtualControllerTypeIDE,
+					ControllerBusNumber: ptr.To[int32](0),
+					UnitNumber:          ptr.To[int32](0),
 				},
 			}
 
@@ -398,7 +398,6 @@ func unmanagedVolumesTests() {
 			Expect(vm.Spec.Volumes).To(HaveLen(1))
 			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim).ToNot(BeNil())
 			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName).ToNot(BeEmpty())
-			Expect(vm.Spec.Volumes[0].ImageDiskName).ToNot(BeEmpty())
 
 			claimName := vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName
 			Expect(claimName).ToNot(BeEmpty())

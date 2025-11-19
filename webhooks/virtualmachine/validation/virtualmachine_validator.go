@@ -1295,11 +1295,6 @@ func (v validator) validateVolume(
 			vol.UnitNumber,
 			oldVol.UnitNumber,
 			volPath.Child("unitNumber"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ImageDiskName,
-			oldVol.ImageDiskName,
-			volPath.Child("imageDiskName"))...)
 	}
 
 	// Validate access mode, sharing mode, and controller combinations if VM is
@@ -1837,10 +1832,6 @@ func (v validator) validateImmutableFields(
 	allErrs = append(allErrs, v.validateImmutableReserved(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateImmutableNetwork(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateImmutableVMAffinity(ctx, vm, oldVM)...)
-
-	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-		allErrs = append(allErrs, v.validateImageDiskNameImmutability(ctx, vm, oldVM)...)
-	}
 
 	return allErrs
 }
@@ -2899,36 +2890,6 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 	if !equality.Semantic.DeepEqual(oldSCSIControllers, newSCSIControllers) {
 		allErrs = append(allErrs, field.Forbidden(
 			specHardwarePath.Child("scsiControllers"), notUpgraded))
-	}
-
-	return allErrs
-}
-
-func (v validator) validateImageDiskNameImmutability(
-	_ *pkgctx.WebhookRequestContext,
-	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
-
-	var (
-		allErrs       field.ErrorList
-		p             = field.NewPath("spec", "volumes")
-		oldVolsByName = map[string]vmopv1.VirtualMachineVolume{}
-	)
-
-	for _, v := range oldVM.Spec.Volumes {
-		oldVolsByName[v.Name] = v
-	}
-
-	for i, newVol := range newVM.Spec.Volumes {
-		pp := p.Index(i)
-		if oldVol, ok := oldVolsByName[newVol.Name]; ok {
-			if err := validation.ValidateImmutableField(
-				oldVol.ImageDiskName,
-				newVol.ImageDiskName,
-				pp.Child("imageDiskName"),
-			); err != nil {
-				allErrs = append(allErrs, err...)
-			}
-		}
 	}
 
 	return allErrs

@@ -56,6 +56,11 @@ func assertImage(image *vmopv1.VirtualMachineImage, diskName string) {
 	ExpectWithOffset(1, image.Status.Disks[0].Name).To(Equal(diskName))
 	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("18743296"))
 	ExpectWithOffset(1, image.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
+	ExpectWithOffset(1, image.Status.Disks[0].ControllerBusNumber).ToNot(BeNil(), "nil controller bus number")
+	ExpectWithOffset(1, *image.Status.Disks[0].ControllerBusNumber).To(Equal(int32(0)), "incorrect controller bus number")
+	ExpectWithOffset(1, image.Status.Disks[0].ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE), "incorrect controller type")
+	ExpectWithOffset(1, image.Status.Disks[0].UnitNumber).ToNot(BeNil(), "nil disk unit number")
+	ExpectWithOffset(1, *image.Status.Disks[0].UnitNumber).To(Equal(int32(0)), "incorrect disk unit number")
 
 	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("example.com/hello", "world"))
 	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("fu.bar", ""))
@@ -84,7 +89,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 	})
 
 	JustBeforeEach(func() {
-		contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)
+		Expect(contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)).To(Succeed())
 	})
 
 	It("Image should have expected properties", func() {
@@ -97,7 +102,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		Expect(image.Status.VMwareSystemProperties).ToNot(BeEmpty())
 
 		savedImage := image.DeepCopy()
-		contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)
+		Expect(contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)).To(Succeed())
 		Expect(image).To(Equal(savedImage))
 	})
 
@@ -141,8 +146,18 @@ var _ = Describe("UpdateVmiWithVirtualMachine", func() {
 								Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 									Uuid: diskUUID,
 								},
+								ControllerKey: 300,
+								UnitNumber:    ptr.To[int32](0),
 							},
 							CapacityInBytes: 30 * 1024 * 1024,
+						},
+						&vimtypes.VirtualIDEController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: 300,
+								},
+								BusNumber: 0,
+							},
 						},
 					},
 				},

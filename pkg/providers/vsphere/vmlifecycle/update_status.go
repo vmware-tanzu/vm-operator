@@ -1363,6 +1363,18 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			if !di.FCD && vm.Status.Volumes[diskIndex].Requested == nil {
 				vm.Status.Volumes[diskIndex].Requested = kubeutil.BytesToResource(di.CapacityInBytes)
 			}
+
+			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
+				pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+
+				// Update target ID info.
+				vm.Status.Volumes[diskIndex].UnitNumber = di.UnitNumber
+				if c, ok := info.Controllers[di.ControllerKey]; ok {
+					vm.Status.Volumes[diskIndex].ControllerBusNumber = &c.Bus
+					vm.Status.Volumes[diskIndex].ControllerType = c.Type
+				}
+			}
+
 		} else if !di.FCD {
 
 			var volName string
@@ -1391,6 +1403,17 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				Requested: kubeutil.BytesToResource(di.CapacityInBytes),
 				Used:      kubeutil.BytesToResource(ddi.UniqueSize),
 			}
+
+			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
+				pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+
+				volStatus.UnitNumber = di.UnitNumber
+				if c, ok := info.Controllers[di.ControllerKey]; ok {
+					volStatus.ControllerBusNumber = &c.Bus
+					volStatus.ControllerType = c.Type
+				}
+			}
+
 			if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
 				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
 					ProviderID: ddi.CryptoKey.ProviderID,

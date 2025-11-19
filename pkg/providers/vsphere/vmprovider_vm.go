@@ -65,7 +65,6 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
@@ -94,7 +93,6 @@ var (
 	ErrSnapshotRevert         = pkgerr.NoRequeueNoErr("reverted snapshot")
 	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
 	ErrBackfillVolInfo        = vmconfunmanagedvolsfill.ErrPendingBackfill
-	ErrBackfillPVCInfo        = vmconfunmanagedvolsreg.ErrPendingBackfill
 	ErrRegisterVolumes        = vmconfunmanagedvolsreg.ErrPendingRegister
 )
 
@@ -2471,31 +2469,62 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 	logger := pkglog.FromContextOrDefault(vmCtx).
 		WithName("vmCreateGenConfigSpecImagePVCDataSourceRefs")
 
-	diskName2UVC := map[string]vmopv1.VirtualMachineVolume{}
-	for _, vol := range vmCtx.VM.Spec.Volumes {
-		if n := vol.ImageDiskName; n != "" {
-			diskName2UVC[n] = vol
-		}
+	if err := pkgutil.EnsureDisksHaveControllers(
+		&createArgs.ConfigSpec); err != nil {
+
+		return fmt.Errorf(
+			"failed to ensure disk/controller specs for hydrated pvcs: %w", err)
 	}
+
+	// Get a controller map from the ConfigSpec.
+	info := pkgvol.GetVolumeInfoFromConfigSpec(
+		vmCtx.VM,
+		&createArgs.ConfigSpec)
 
 	var errs []error
 
-	for _, deviceChange := range createArgs.ConfigSpec.DeviceChange {
-		if deviceSpec := deviceChange.GetVirtualDeviceConfigSpec(); deviceSpec != nil {
-			if disk, ok := deviceSpec.Device.(*vimtypes.VirtualDisk); ok {
-				if di := disk.DeviceInfo; di != nil {
-					if d := di.GetDescription(); d != nil {
-						if vol, ok := diskName2UVC[d.Label]; ok {
-							// Update the storage profile and size based on the
-							// PVC.
-							if err := vs.updateDiskDeviceFromPVC(
-								vmCtx,
-								vol.PersistentVolumeClaim.ClaimName,
-								createArgs.Storage.StorageClassToPolicyID,
-								deviceSpec,
-								disk); err != nil {
+	// Update any disks' storage policies / sizes based on values from PVCs that
+	// refer back to a disk from spec.volumes. This mapping occurs by way of the
+	// target ID of a disk from the configSpec, where disk devices originate
+	// from the image. If the target ID from a configSpec appears in the VM's
+	// spec.volumes list, then check if that list member points to a PVC. If so,
+	// grab the PVC's storage policy and size and apply them to the disk device
+	// in the configSpec.
+	for _, dc := range createArgs.ConfigSpec.DeviceChange {
+		if ds := dc.GetVirtualDeviceConfigSpec(); ds != nil {
+			if disk, ok := ds.Device.(*vimtypes.VirtualDisk); ok {
+				if c, ok := info.Controllers[disk.ControllerKey]; ok {
+					var (
+						ct = c.Type
+						cb = c.Bus
+						un = disk.UnitNumber
+					)
+					if ct != "" && un != nil {
+						diskTID := vmopv1util.TargetID{
+							ControllerType: ct,
+							ControllerBus:  cb,
+							UnitNumber:     *un,
+						}.String()
 
-								errs = append(errs, err)
+						if vol, ok := info.Volumes[diskTID]; ok {
+
+							if pvc := vol.PersistentVolumeClaim; pvc != nil {
+								if claimName := pvc.ClaimName; claimName != "" {
+
+									logger.Info("Updating disk device from PVC",
+										"targetID", diskTID,
+										"volume", vol)
+
+									if err := vs.updateDiskDeviceFromPVC(
+										vmCtx,
+										claimName,
+										createArgs.Storage.StorageClassToPolicyID,
+										ds,
+										disk); err != nil {
+
+										errs = append(errs, err)
+									}
+								}
 							}
 						}
 					}
@@ -2506,51 +2535,6 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 
 	if len(errs) > 0 {
 		return apierrorsutil.NewAggregate(errs)
-	}
-
-	if err := pkgutil.EnsureDisksHaveControllers(
-		&createArgs.ConfigSpec); err != nil {
-
-		return fmt.Errorf(
-			"failed to ensure disk/controller specs for hydrated pvcs: %w", err)
-	}
-
-	// Backfill the information into the UVCs.
-	info := pkgvol.GetVolumeInfoFromConfigSpec(
-		vmCtx.VM,
-		&createArgs.ConfigSpec)
-
-	logger.Info("Get unmanaged volume info", "info", info)
-
-	hasBackfill := false
-
-	n2d := map[string]pkgvol.VirtualDiskInfo{}
-	for _, di := range info.Disks {
-		n2d[di.Label] = di
-	}
-	for i := range vmCtx.VM.Spec.Volumes {
-		vol := &vmCtx.VM.Spec.Volumes[i]
-		if n := vol.ImageDiskName; n != "" {
-			if di, ok := n2d[n]; ok {
-				if vol.ControllerType == "" ||
-					vol.ControllerBusNumber == nil ||
-					vol.UnitNumber == nil {
-
-					hasBackfill = true
-
-					vol.ControllerType = info.Controllers[di.ControllerKey].Type
-					vol.ControllerBusNumber = ptr.To(info.Controllers[di.ControllerKey].Bus)
-					vol.UnitNumber = di.UnitNumber
-
-					logger.Info("Backfilled volume from image",
-						"volume", vol)
-				}
-			}
-		}
-	}
-
-	if hasBackfill {
-		return ErrBackfillVolInfo
 	}
 
 	return nil

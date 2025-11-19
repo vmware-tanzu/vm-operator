@@ -7914,63 +7914,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		)
 	})
 
-	Context("Volume ImageDiskName", func() {
-		BeforeEach(func() {
-			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.AllDisksArePVCs = true
-			})
-		})
-
-		DescribeTable("Update", doTest,
-			Entry("should allow VM update with no ImageDiskName changes",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-									},
-								},
-								ImageDiskName: "my-disk",
-							},
-						}
-						ctx.oldVM = ctx.vm.DeepCopy()
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("should deny VM update with immutable change",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-							{
-								Name: "test-volume",
-								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-											ClaimName: "test-pvc",
-										},
-									},
-								},
-								ImageDiskName: "my-disk",
-							},
-						}
-						ctx.oldVM = ctx.vm.DeepCopy()
-						ctx.oldVM.Spec.Volumes[0].ImageDiskName = "my-disk-1"
-					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("imageDiskName"), "my-disk-1", apivalidation.FieldImmutableErrorMsg).Error(),
-					),
-				},
-			),
-		)
-	})
-
 	Context("Volume PVC UnitNumber conflicts with attached devices", func() {
 
 		BeforeEach(func() {

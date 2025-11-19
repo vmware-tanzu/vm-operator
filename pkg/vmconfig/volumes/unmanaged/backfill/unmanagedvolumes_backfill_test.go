@@ -22,8 +22,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	unmanagedvolsfill "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -263,8 +263,12 @@ var _ = Describe("Reconcile", func() {
 					Expect(vm.Spec.Volumes).To(HaveLen(2))
 
 					// Find the volumes by name (UUID)
-					vol1 := findVolumeByName(vm.Spec.Volumes, "disk1-uuid-123")
-					vol2 := findVolumeByName(vm.Spec.Volumes, "disk2-uuid-456")
+					vol1 := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE, 0, 0,
+						vm.Spec.Volumes...)
+					vol2 := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI, 1, 0,
+						vm.Spec.Volumes...)
 
 					Expect(vol1).ToNot(BeNil())
 					Expect(vol2).ToNot(BeNil())
@@ -511,7 +515,9 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).To(Equal(unmanagedvolsfill.ErrPendingBackfill))
 					Expect(vm.Spec.Volumes).To(HaveLen(1))
 
-					vol := findVolumeByName(vm.Spec.Volumes, "child-disk-uuid-123")
+					vol := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE, 0, 0,
+						vm.Spec.Volumes...)
 					Expect(vol).ToNot(BeNil())
 				})
 			})
@@ -575,7 +581,9 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).To(Equal(unmanagedvolsfill.ErrPendingBackfill))
 					Expect(vm.Spec.Volumes).To(HaveLen(1))
 
-					vol := findVolumeByName(vm.Spec.Volumes, "child-disk-uuid-123")
+					vol := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE, 0, 0,
+						vm.Spec.Volumes...)
 					Expect(vol).ToNot(BeNil())
 				})
 			})
@@ -622,7 +630,9 @@ var _ = Describe("Reconcile", func() {
 					err := r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(Equal(unmanagedvolsfill.ErrPendingBackfill))
 
-					vol := findVolumeByName(vm.Spec.Volumes, "nvme-disk-uuid-123")
+					vol := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeNVME, 0, 0,
+						vm.Spec.Volumes...)
 					Expect(vol).ToNot(BeNil())
 					Expect(vol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
 					Expect(*vol.ControllerBusNumber).To(Equal(int32(0)))
@@ -669,7 +679,9 @@ var _ = Describe("Reconcile", func() {
 					err := r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(Equal(unmanagedvolsfill.ErrPendingBackfill))
 
-					vol := findVolumeByName(vm.Spec.Volumes, "sata-disk-uuid-123")
+					vol := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSATA, 0, 0,
+						vm.Spec.Volumes...)
 					Expect(vol).ToNot(BeNil())
 					Expect(vol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSATA))
 					Expect(*vol.ControllerBusNumber).To(Equal(int32(0)))
@@ -678,16 +690,3 @@ var _ = Describe("Reconcile", func() {
 		})
 	})
 })
-
-// findVolumeByName finds a volume by name.
-func findVolumeByName(
-	volumes []vmopv1.VirtualMachineVolume,
-	uuid string) *vmopv1.VirtualMachineVolume {
-
-	for i := range volumes {
-		if volumes[i].Name == pkgutil.GeneratePVCName("disk", uuid) {
-			return &volumes[i]
-		}
-	}
-	return nil
-}

@@ -35,9 +35,9 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	unmanagedvolsfill "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
 	unmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
@@ -381,17 +381,11 @@ var _ = Describe("Reconcile", func() {
 						vimClient,
 						vm,
 						moVM,
-						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
-
-					Expect(unmanagedvolsreg.Reconcile(
-						ctx,
-						k8sClient,
-						vimClient,
-						vm,
-						moVM,
 						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
-					claimName := pkgutil.GeneratePVCName(vm.Name, "disk-uuid-456")
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI,
+						1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
 
 					var pvc corev1.PersistentVolumeClaim
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
@@ -496,17 +490,11 @@ var _ = Describe("Reconcile", func() {
 						vimClient,
 						vm,
 						moVM,
-						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
-
-					Expect(unmanagedvolsreg.Reconcile(
-						ctx,
-						k8sClient,
-						vimClient,
-						vm,
-						moVM,
 						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
-					claimName := pkgutil.GeneratePVCName(vm.Name, "disk-uuid-456")
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI,
+						1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
 
 					var pvc corev1.PersistentVolumeClaim
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
@@ -669,10 +657,14 @@ var _ = Describe("Reconcile", func() {
 						moVM,
 						configSpec)).To(Succeed())
 
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE,
+						0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
 					// Verify CnsRegisterVolume was deleted
 					Expect(apierrors.IsNotFound(k8sClient.Get(ctx, ctrlclient.ObjectKey{
 						Namespace: vm.Namespace,
-						Name:      "my-vm-134e95b6",
+						Name:      claimName,
 					}, &cnsv1alpha1.CnsRegisterVolume{}))).To(BeTrue())
 				})
 			})
@@ -1124,14 +1116,7 @@ var _ = Describe("Reconcile", func() {
 					// Set up VM with volumes already in spec
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
-							Name: "disk-uuid-cycle",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "my-vm-e926b968",
-									},
-								},
-							},
+							Name:                "disk-uuid-cycle",
 							ControllerType:      vmopv1.VirtualControllerTypeIDE,
 							ControllerBusNumber: ptr.To(int32(0)),
 							UnitNumber:          ptr.To(int32(0)),
@@ -1189,11 +1174,15 @@ var _ = Describe("Reconcile", func() {
 						moVM,
 						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE,
+						0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
 					// Verify PVC was created.
 					pvc := &corev1.PersistentVolumeClaim{}
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
 						Namespace: vm.Namespace,
-						Name:      "my-vm-e926b968",
+						Name:      claimName,
 					}, pvc)).To(Succeed())
 
 					// Set the PVC status to Pending for the test
@@ -1204,7 +1193,7 @@ var _ = Describe("Reconcile", func() {
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
 						Namespace: vm.Namespace,
-						Name:      "my-vm-e926b968",
+						Name:      claimName,
 					}, crv)).To(Succeed())
 
 					// Simulate PVC becoming bound
@@ -1233,7 +1222,7 @@ var _ = Describe("Reconcile", func() {
 					// Verify CnsRegisterVolume was deleted
 					Expect(apierrors.IsNotFound(k8sClient.Get(ctx, ctrlclient.ObjectKey{
 						Namespace: vm.Namespace,
-						Name:      "my-vm-e926b968",
+						Name:      claimName,
 					}, &cnsv1alpha1.CnsRegisterVolume{}))).To(BeTrue())
 
 					// Verify the status was pruned.
@@ -1332,14 +1321,7 @@ var _ = Describe("Reconcile", func() {
 					// Set up VM with unmanaged disk
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
-							Name: "disk-uuid-create-error",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "my-vm-f60a60d0",
-									},
-								},
-							},
+							Name:                "disk-uuid-create-error",
 							ControllerType:      vmopv1.VirtualControllerTypeIDE,
 							ControllerBusNumber: ptr.To(int32(0)),
 							UnitNumber:          ptr.To(int32(0)),
@@ -1402,14 +1384,7 @@ var _ = Describe("Reconcile", func() {
 					// Set up VM with unmanaged disk
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
-							Name: "disk-uuid-crv-error",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "my-vm-3144bc43",
-									},
-								},
-							},
+							Name:                "disk-uuid-crv-error",
 							ControllerType:      vmopv1.VirtualControllerTypeIDE,
 							ControllerBusNumber: ptr.To(int32(0)),
 							UnitNumber:          ptr.To(int32(0)),
@@ -1472,14 +1447,7 @@ var _ = Describe("Reconcile", func() {
 					// Set up VM with unmanaged disk
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
-							Name: "disk-uuid-crv-get-error",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "my-vm-a89248a4",
-									},
-								},
-							},
+							Name:                "disk-uuid-crv-get-error",
 							ControllerType:      vmopv1.VirtualControllerTypeIDE,
 							ControllerBusNumber: ptr.To(int32(0)),
 							UnitNumber:          ptr.To(int32(0)),
@@ -1870,14 +1838,7 @@ var _ = Describe("Reconcile", func() {
 					// Set up VM with unmanaged disk
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
-							Name: "disk-uuid-status-update-error",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "my-vm-ca8e6f4d",
-									},
-								},
-							},
+							Name:                "disk-uuid-status-update-error",
 							ControllerType:      vmopv1.VirtualControllerTypeIDE,
 							ControllerBusNumber: ptr.To(int32(0)),
 							UnitNumber:          ptr.To(int32(0)),
@@ -2013,14 +1974,6 @@ var _ = Describe("Reconcile", func() {
 					vimClient,
 					vm,
 					moVM,
-					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
-
-				Expect(unmanagedvolsreg.Reconcile(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					moVM,
 					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 				Expect(pkgcond.IsFalse(vm, unmanagedvolsreg.Condition)).To(BeTrue())
@@ -2037,14 +1990,7 @@ var _ = Describe("Reconcile", func() {
 
 				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 					{
-						Name: "disk-no-policy",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "my-vm-no-policy",
-								},
-							},
-						},
+						Name:                "disk-no-policy",
 						ControllerType:      vmopv1.VirtualControllerTypeIDE,
 						ControllerBusNumber: ptr.To(int32(0)),
 						UnitNumber:          ptr.To(int32(0)),
@@ -2133,89 +2079,6 @@ var _ = Describe("Reconcile", func() {
 					dp := dc.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
 					Expect(dp.ProfileId).To(Equal("profile-123"))
 				})
-			})
-		})
-
-		When("unmanaged disk references PVC with volume from image type", func() {
-			BeforeEach(func() {
-				// Override the volume info to have volume type from image
-				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-					{
-						Name: "disk-uuid-from-image",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "my-vm-from-image-pvc",
-								},
-							},
-						},
-						ImageDiskName:       "disk-uuid-from-image",
-						ControllerType:      vmopv1.VirtualControllerTypeIDE,
-						ControllerBusNumber: ptr.To(int32(0)),
-						UnitNumber:          ptr.To(int32(0)),
-					},
-				}
-
-				disk := &vimtypes.VirtualDisk{
-					VirtualDevice: vimtypes.VirtualDevice{
-						Key:           300,
-						ControllerKey: 100,
-						UnitNumber:    ptr.To(int32(0)),
-						Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
-							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-								FileName: "[LocalDS_0] vm1/disk.vmdk",
-							},
-							Uuid: "disk-uuid-from-image",
-						},
-					},
-					CapacityInBytes: 1024 * 1024 * 1024,
-				}
-
-				ideController := &vimtypes.VirtualIDEController{
-					VirtualController: vimtypes.VirtualController{
-						VirtualDevice: vimtypes.VirtualDevice{
-							Key: 100,
-						},
-						BusNumber: 0,
-					},
-				}
-
-				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
-					Hardware: vimtypes.VirtualHardware{
-						Device: []vimtypes.BaseVirtualDevice{
-							ideController,
-							disk,
-						},
-					},
-				}
-
-				mockProfileResults = []pbmtypes.PbmQueryProfileResult{
-					{
-						Object: pbmtypes.PbmServerObjectRef{
-							Key: "vm-1:300",
-						},
-						ProfileId: []pbmtypes.PbmProfileId{
-							{
-								UniqueId: "profile-123",
-							},
-						},
-					},
-				}
-
-				// Don't create PVC for FromImage type.
-				// This should cause error when trying to get it.
-			})
-
-			It("should return error for missing PVC for from-image type", func() {
-				err := unmanagedvolsreg.Reconcile(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					moVM,
-					configSpec)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to get pvc for volume from image disk"))
 			})
 		})
 
@@ -2519,13 +2382,6 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			It("should return error", func() {
-				Expect(unmanagedvolsreg.Reconcile(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					moVM,
-					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
 				err := unmanagedvolsreg.Reconcile(
 					ctx,
 					k8sClient,
@@ -2600,13 +2456,6 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			It("should return error from PVC creation", func() {
-				Expect(unmanagedvolsreg.Reconcile(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					moVM,
-					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingBackfill))
 				err := unmanagedvolsreg.Reconcile(
 					ctx,
 					k8sClient,
@@ -2714,24 +2563,23 @@ var _ = Describe("Reconcile", func() {
 		})
 
 		When("ensurePVCForUnmanagedDisk encounters general error", func() {
-			JustBeforeEach(func() {
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(Succeed())
-			})
-
 			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name:                "disk-0",
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "disk0",
+								},
+							},
+						},
+					},
+				}
+
 				disk := &vimtypes.VirtualDisk{
 					VirtualDevice: vimtypes.VirtualDevice{
 						Key:           300,
@@ -2765,14 +2613,10 @@ var _ = Describe("Reconcile", func() {
 					},
 				}
 
-				getCalls := 0
 				withFuncs = interceptor.Funcs{
 					Get: func(ctx context.Context, client ctrlclient.WithWatch, key ctrlclient.ObjectKey, obj ctrlclient.Object, opts ...ctrlclient.GetOption) error {
 						if _, ok := obj.(*corev1.PersistentVolumeClaim); ok {
-							getCalls++
-							if getCalls > 1 {
-								return fmt.Errorf("simulated general error")
-							}
+							return fmt.Errorf("simulated general error")
 						}
 						return client.Get(ctx, key, obj, opts...)
 					},

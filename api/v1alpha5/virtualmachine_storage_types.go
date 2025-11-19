@@ -79,13 +79,6 @@ type VirtualMachineVolume struct {
 
 	// +optional
 
-	// ImageDiskName describes the name of the disk from the VM image to which
-	// this volume refers. This value is derived from the image field
-	// status.disks[].name.
-	ImageDiskName string `json:"imageDiskName,omitempty"`
-
-	// +optional
-
 	// ApplicationType describes the type of application for which this volume
 	// is intended to be used.
 	//
@@ -193,6 +186,23 @@ type VirtualMachineVolume struct {
 	UnitNumber *int32 `json:"unitNumber,omitempty"`
 }
 
+// GetControllerType returns the type of controller to which the disk is
+// attached.
+func (v VirtualMachineVolume) GetControllerType() VirtualControllerType {
+	return v.ControllerType
+}
+
+// GetControllerBusNumber returns the bus number of the controller to which the
+// disk is connected.
+func (v VirtualMachineVolume) GetControllerBusNumber() *int32 {
+	return v.ControllerBusNumber
+}
+
+// GetUnitNumber returns the disk's unit number.
+func (v VirtualMachineVolume) GetUnitNumber() *int32 {
+	return v.UnitNumber
+}
+
 // VirtualMachineVolumeSource represents the source location of a volume to
 // mount. Only one of its members may be specified.
 type VirtualMachineVolumeSource struct {
@@ -249,18 +259,24 @@ type VirtualMachineVolumeCryptoStatus struct {
 type VirtualMachineVolumeStatus struct {
 	// +required
 
-	// Name is the name of the attached volume.
+	// Name describes the name of the volume.
 	Name string `json:"name"`
 
 	// +optional
 
-	// ControllerBusNumber describes volume's observed controller's bus number.
-	ControllerBusNumber int32 `json:"controllerBusNumber,omitempty"`
+	// ControllerBusNumber describes the volume's observed controller bus
+	// number.
+	ControllerBusNumber *int32 `json:"controllerBusNumber,omitempty"`
 
 	// +optional
 
-	// ControllerType describes volume's observed controller's type.
+	// ControllerType describes the volume's observed controller type.
 	ControllerType VirtualControllerType `json:"controllerType,omitempty"`
+
+	// +optional
+
+	// UnitNumber describes the volume's observed unit number.
+	UnitNumber *int32 `json:"unitNumber,omitempty"`
 
 	// +kubebuilder:default=Managed
 

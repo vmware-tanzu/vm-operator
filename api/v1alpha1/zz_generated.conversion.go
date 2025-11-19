@@ -2267,7 +2267,6 @@ func autoConvert_v1alpha1_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(
 func autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(in *v1alpha5.VirtualMachineVolume, out *VirtualMachineVolume, s conversion.Scope) error {
 	out.Name = in.Name
 	// WARNING: in.VirtualMachineVolumeSource requires manual conversion: does not exist in peer-type
-	// WARNING: in.ImageDiskName requires manual conversion: does not exist in peer-type
 	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
@@ -2289,6 +2288,7 @@ func autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha1_VirtualMachineV
 	out.Name = in.Name
 	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
+	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	// WARNING: in.Type requires manual conversion: does not exist in peer-type
 	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type

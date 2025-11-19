@@ -10,20 +10,19 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
-// GeneratePVCName generates a DNS-safe PVC name by concatenating the name of
-// the VM, a hyphen, and the first eight characters of an xxhash of the
-// diskUUID.
+// GeneratePVCName generates a DNS-safe PVC name by concatenating a prefix,
+// a hyphen, and the first eight characters of the xxhash of a suffix.
 //
 // Please see https://xxhash.com/ for more information on xxhash.
-func GeneratePVCName(vmName, diskUUID string) string {
-	// Get an xxHash of the disk's UUID.
+func GeneratePVCName(prefix, suffix string) string {
+	// Get an xxHash of the suffix.
 	hash := xxhash.New()
-	_, _ = hash.Write([]byte(diskUUID))
+	_, _ = hash.Write([]byte(suffix))
 	h := fmt.Sprintf("%x", hash.Sum(nil))
 
-	if len(vmName) > 54 { // DNS name is 63, less 8char for h, less 1char for -.
-		vmName = vmName[:54]
+	if len(prefix) > 54 { // DNS name is 63, less 8char for h, less 1char for -.
+		prefix = prefix[:54]
 	}
 
-	return fmt.Sprintf("%s-%s", vmName, h[:8])
+	return fmt.Sprintf("%s-%s", prefix, h[:8])
 }

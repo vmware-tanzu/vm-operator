@@ -371,7 +371,6 @@ func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 			dstVol.ApplicationType = srcVol.ApplicationType
 			dstVol.ControllerBusNumber = srcVol.ControllerBusNumber
 			dstVol.ControllerType = srcVol.ControllerType
-			dstVol.ImageDiskName = srcVol.ImageDiskName
 			dstVol.DiskMode = srcVol.DiskMode
 			dstVol.SharingMode = srcVol.SharingMode
 			dstVol.UnitNumber = srcVol.UnitNumber

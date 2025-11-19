@@ -7492,12 +7492,6 @@ spec:
                               - Persistent
                               - Dependent
                               type: string
-                            imageDiskName:
-                              description: |-
-                                ImageDiskName describes the name of the disk from the VM image to which
-                                this volume refers. This value is derived from the image field
-                                status.disks[].name.
-                              type: string
                             name:
                               description: |-
                                 Name represents the volume's name. Must be a DNS_LABEL and unique within

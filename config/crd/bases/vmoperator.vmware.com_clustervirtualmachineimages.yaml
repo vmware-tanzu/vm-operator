@@ -1372,6 +1372,22 @@ spec:
                     VirtualMachineImageDiskInfo describes information about any disks associated with
                     this image.
                   properties:
+                    controllerBusNumber:
+                      description: |-
+                        ControllerBusNumber describes bus number of the controller to which this
+                        disk is attached.
+                      format: int32
+                      type: integer
+                    controllerType:
+                      description: |-
+                        ControllerType describes the type of controller to which this disk is
+                        attached.
+                      enum:
+                      - IDE
+                      - NVME
+                      - SCSI
+                      - SATA
+                      type: string
                     limit:
                       anyOf:
                       - type: integer
@@ -1390,6 +1406,10 @@ spec:
                         the virtual disk.
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
+                    unitNumber:
+                      description: UnitNumber describes the unit number for this disk.
+                      format: int32
+                      type: integer
                   required:
                   - name
                   type: object

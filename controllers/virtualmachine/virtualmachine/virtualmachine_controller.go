@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -99,6 +100,11 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			GetPriority: kubeutil.GetVirtualMachineReconcilePriority,
 		})
 
+	// Filter UPDATE events that do not have updated metadata or spec.
+	// Please note, this does not apply to GENERIC events -- the async watcher
+	// and volume controller will still result in the VM being reconciled.
+	builder = builder.WithEventFilter(predicate.GenerationChangedPredicate{})
+
 	builder = builder.Watches(&vmopv1.VirtualMachineClass{},
 		handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 
@@ -114,10 +120,23 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		builder = builder.WatchesRawSource(source.Channel(
 			cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
 			&kubeutil.EnqueueRequestForObject{
-				Logger:      ctrl.Log.WithName("asyncvmqueue"),
+				Logger:      ctrl.Log.WithName("vmqueue.async"),
 				GetPriority: kubeutil.GetVirtualMachineReconcilePriority,
 			}))
 	}
+
+	builder = builder.WatchesRawSource(source.Channel(
+		cource.FromContextWithBuffer(ctx, "VirtualMachineVolumes", 100),
+		&kubeutil.EnqueueRequestForObject{
+			Logger: ctrl.Log.WithName("vmqueue.volumes"),
+			GetPriority: func(
+				_ context.Context,
+				_ kubeutil.EventType,
+				_, _ client.Object, _ int) int {
+
+				return 50
+			},
+		}))
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
 		builder = builder.Watches(

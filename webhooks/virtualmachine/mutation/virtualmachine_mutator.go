@@ -445,25 +445,7 @@ func setDefaultNetworkInterfaceNetwork(
 ) bool {
 	ifaceNetwork := vm.Spec.Network.Interfaces[ifaceIdx].Network
 
-	if networkRef.Kind != "" {
-		if ifaceNetwork == nil {
-			ifaceNetwork = &common.PartialObjectRef{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: networkRef.APIVersion,
-					Kind:       networkRef.Kind,
-				},
-			}
-			vm.Spec.Network.Interfaces[ifaceIdx].Network = ifaceNetwork
-			return true
-		}
-
-		if ifaceNetwork.Kind == "" && ifaceNetwork.APIVersion == "" {
-			ifaceNetwork.Kind = networkRef.Kind
-			ifaceNetwork.APIVersion = networkRef.APIVersion
-			return true
-		}
-
-	} else {
+	if networkRef.Kind == "" {
 		// Named network only.
 		if ifaceNetwork == nil {
 			ifaceNetwork = &common.PartialObjectRef{
@@ -479,7 +461,27 @@ func setDefaultNetworkInterfaceNetwork(
 		}
 	}
 
-	return false
+	if ifaceNetwork == nil {
+		ifaceNetwork = &common.PartialObjectRef{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: networkRef.APIVersion,
+				Kind:       networkRef.Kind,
+			},
+		}
+		vm.Spec.Network.Interfaces[ifaceIdx].Network = ifaceNetwork
+		return true
+	}
+
+	mutated := false
+	if ifaceNetwork.APIVersion == "" {
+		ifaceNetwork.APIVersion = networkRef.APIVersion
+		mutated = true
+	}
+	if ifaceNetwork.Kind == "" {
+		ifaceNetwork.Kind = networkRef.Kind
+		mutated = true
+	}
+	return mutated
 }
 
 func getDefaultNetworkRef(

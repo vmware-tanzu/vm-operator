@@ -10,11 +10,14 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,7 +46,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 const (
@@ -287,6 +291,7 @@ func (r *Reconciler) updateSourceAndTargetRef(ctx *pkgctx.VirtualMachinePublishR
 // publishVirtualMachine checks if source VM and target is valid. Publish a VM if all requirements are met.
 func (r *Reconciler) publishVirtualMachine(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
 	vmPublishReq := ctx.VMPublishRequest
+
 	// Check if the source and target is valid
 	if err := r.checkIsSourceValid(ctx); err != nil {
 		return fmt.Errorf("failed to check if source is valid: %w", err)
@@ -303,6 +308,18 @@ func (r *Reconciler) publishVirtualMachine(ctx *pkgctx.VirtualMachinePublishRequ
 
 	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionSourceValid) &&
 		conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionTargetValid) {
+
+		if vmPublishReq.Spec.BackoffLimit != 0 && vmPublishReq.Status.Attempts >= vmPublishReq.Spec.BackoffLimit {
+			err := pkgerr.NoRequeueError{
+				Message: fmt.Sprintf("publish attempts limit has been reached: %d", vmPublishReq.Status.Attempts),
+			}
+			conditions.MarkError(vmPublishReq,
+				vmopv1.VirtualMachinePublishRequestConditionComplete,
+				vmopv1.FatalReason,
+				err)
+
+			return err
+		}
 
 		vmPublishReq.Status.Attempts++
 		vmPublishReq.Status.LastAttemptTime = metav1.Now()
@@ -395,6 +412,27 @@ func (r *Reconciler) checkIsSourceValid(ctx *pkgctx.VirtualMachinePublishRequest
 		return err
 	}
 
+	// Ensure that the source VM does not have a mix of encrypted and unencrypted disks
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory && ctx.VM.Status.Crypto != nil {
+		if slices.Contains(ctx.VM.Status.Crypto.Encrypted, vmopv1.VirtualMachineEncryptionTypeDisks) {
+			for _, v := range ctx.VM.Status.Volumes {
+				// If we find a disk which is unencrypted, then we have a mix of encrypted
+				// and unencrypted disks, which is invalid for publishing to inventory.
+				if v.Crypto == nil {
+					err := pkgerr.NoRequeueError{
+						Message: "source VM contains both encrypted and unencrypted disks",
+					}
+					conditions.MarkError(vmPubReq,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+						vmopv1.SourceVirtualMachineUnsupportedEncryptionReason,
+						err)
+
+					return err
+				}
+			}
+		}
+	}
+
 	conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionSourceValid)
 	return nil
 }
@@ -440,6 +478,15 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 	}
 
 	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
+		// Is this an encrypted VM? If so, ensure we are not publishing to a
+		// content library whose storage policy does not support encryption, and
+		// ensure that the VM does not contain a mix of encrypted and unencrypted
+		// disks.
+		if ctx.VM.Status.Crypto != nil && slices.Contains(ctx.VM.Status.Crypto.Encrypted, vmopv1.VirtualMachineEncryptionTypeDisks) {
+			if err := r.checkIsTargetEncryptionValid(ctx); err != nil {
+				return err
+			}
+		}
 		// Check if quota validation is needed
 		if metav1.HasLabel(ctx.ContentLibraryV1A2.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
 			if err := r.checkContentLibraryQuota(ctx); err != nil {
@@ -454,7 +501,7 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 		return fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
 
-	if !pkgutil.IsNil(item) {
+	if !pkgnil.IsNil(item) {
 		objKey := client.ObjectKey{Name: vmPubReq.Spec.Target.Location.Name, Namespace: vmPubReq.Namespace}
 		ctx.Logger.Info("target item already exists in the content library",
 			"library", objKey, "itemName", targetItemName)
@@ -508,17 +555,29 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 	// validation. We need to apply this annotation along with the requested capacity annotation
 	// and await processing.
 	if !metav1.HasAnnotation(vmPubReq.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
-		vm := ctx.VM
-		if vm.Status.Storage != nil && vm.Status.Storage.Total != nil {
-			if vmPubReq.Annotations == nil {
-				vmPubReq.Annotations = make(map[string]string)
-			}
-			vmPubReq.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
-			vmPubReq.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] = vm.Status.Storage.Total.String()
+		if ctx.VM.Status.Storage != nil && ctx.VM.Status.Storage.Used != nil {
+			storageUsed := ctx.VM.Status.Storage.Used
 
-			return pkgerr.NoRequeueNoErr("quota validation is needed for this request")
+			used := resource.NewQuantity(0, resource.BinarySI)
+			if disksUsed := storageUsed.Disks; disksUsed != nil {
+				used.Add(*disksUsed)
+			}
+
+			if otherUsed := storageUsed.Other; otherUsed != nil {
+				used.Add(*otherUsed)
+			}
+
+			if !used.Equal(*resource.NewQuantity(0, resource.BinarySI)) {
+				if vmPubReq.Annotations == nil {
+					vmPubReq.Annotations = make(map[string]string)
+				}
+				vmPubReq.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
+				vmPubReq.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] = used.String()
+
+				return pkgerr.NoRequeueNoErr("quota validation is needed for this request")
+			}
 		}
-		return fmt.Errorf("unable get storage total for VM %q for quota validation", vm.Name)
+		return fmt.Errorf("unable get storage used for VM %q for quota validation", ctx.VM.NamespacedName())
 	}
 	// Check for the existence of the requested-quota annotation. If this annotation is present, then we are
 	// currently awaiting quota verification, and we should halt any further processing. Ideally we should
@@ -531,23 +590,73 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 	// requested-quota annotation is not present, then this signifies that the quota check is complete. We
 	// expect a value of 'Failed' with the presence of this annotation.
 	if status, ok := vmPubReq.Annotations[pkgconst.AsyncQuotaCheckStatusAnnotationKey]; ok {
+		err := pkgerr.NoRequeueError{}
 		if status == pkgconst.AsyncQuotaCheckStatusAnnotationValueFailed {
 			message := vmPubReq.Annotations[pkgconst.AsyncQuotaCheckMessageAnnotationKey]
-			err := pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("quota validation has failed with message %q", message),
-			}
-			conditions.MarkError(vmPubReq,
-				vmopv1.VirtualMachinePublishRequestConditionTargetValid,
-				vmopv1.TargetContentLibraryFailedQuotaCheckReason,
-				err)
+			err.Message = fmt.Sprintf("quota validation has failed with message %q", message)
+		} else {
+			err.Message = fmt.Sprintf("quota validation has completed with an unexpected status: %s", status)
+		}
 
-			return err
-		}
-		return pkgerr.NoRequeueError{
-			Message: fmt.Sprintf("quota validation has completed with an unexpected status: %s", status),
-		}
+		conditions.MarkError(vmPubReq,
+			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+			vmopv1.TargetContentLibraryFailedQuotaCheckReason,
+			err)
+
+		conditions.MarkError(vmPubReq,
+			vmopv1.VirtualMachinePublishRequestConditionComplete,
+			vmopv1.FatalReason,
+			err)
+
+		return err
 	}
 	// Quota check has completed successfully. Continue processing as normal.
+	return nil
+}
+
+// checkIsTargetEncryptionValid checks if the encryption status of the source VM's disks is compatible with
+// the target Content Library's storage profile. A source VM with encrypted disks cannot be published to
+// a Content Library whose storage profile does not support encryption. Additionally, ensure that the source VM
+// does not contain a mix of encrypted and unencrypted disks. This check is only performed if the target
+// ContentLibrary LibraryType is "Inventory".
+func (r *Reconciler) checkIsTargetEncryptionValid(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
+
+	storageClassName := ctx.ContentLibraryV1A2.Spec.StorageClass
+	// This is not an error condition. If the storage class is not specified on
+	// the Content Library, then we specify no storage profile when cloning the
+	// source VM, and the clone operation will cause the target template to have
+	// the same storage policy as the source VM.
+	if storageClassName == "" {
+		return nil
+	}
+
+	sc := storagev1.StorageClass{}
+	if err := r.Get(ctx, client.ObjectKey{Name: storageClassName}, &sc); err != nil {
+		return fmt.Errorf("failed to get storageClass %q: %w", storageClassName, err)
+	}
+
+	storagePolicyID, err := kubeutil.GetStoragePolicyID(sc)
+	if err != nil {
+		return err
+	}
+
+	isEncryptedProfile, err := r.VMProvider.DoesProfileSupportEncryption(ctx, storagePolicyID)
+	if err != nil {
+		return err
+	}
+
+	if !isEncryptedProfile {
+		err := pkgerr.NoRequeueError{
+			Message: "source VM is encrypted, but target storage class does not support encryption",
+		}
+		conditions.MarkError(ctx.VMPublishRequest,
+			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+			vmopv1.TargetContentLibraryIncompatibleStorageClassReason,
+			err)
+
+		return err
+	}
+
 	return nil
 }
 
@@ -629,86 +738,61 @@ func (r *Reconciler) checkIsComplete(ctx *pkgctx.VirtualMachinePublishRequestCon
 }
 
 func (r *Reconciler) getPublishRequestTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
-	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
-		return r.getCloneVMTask(ctx)
-	}
-
-	return r.getCreateOVFTask(ctx)
-}
-
-// getCreateOVFTask gets task with description id com.vmware.ovfs.LibraryItem.capture and specified actid in taskManager.
-func (r *Reconciler) getCreateOVFTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
 	actID := getPublishRequestActID(ctx.VMPublishRequest)
 	logger := ctx.Logger.WithValues("activationID", actID)
 
-	tasks, err := r.VMProvider.GetTasksByActID(ctx, actID)
+	var (
+		descriptionID string
+		err           error
+		tasks         []vimtypes.TaskInfo
+		clonedVM      *vmopv1.VirtualMachine
+	)
+
+	descriptionID = OVFCaptureTaskDescriptionID
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
+		descriptionID = CloneTaskDescriptionID
+
+		vmPubReq := ctx.VMPublishRequest
+		if ctx.VM == nil {
+			vm := &vmopv1.VirtualMachine{}
+			objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
+			err := r.Get(ctx, objKey, vm)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					conditions.MarkError(vmPubReq,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+						vmopv1.SourceVirtualMachineNotExistReason,
+						err)
+				}
+				return nil, fmt.Errorf("failed to get VirtualMachine %v: %w", objKey, err)
+			}
+			ctx.VM = vm
+		}
+
+		clonedVM = ctx.VM
+	}
+	tasks, err = r.VMProvider.GetTasksByActID(ctx, clonedVM, actID)
+
 	if err != nil {
-		logger.Error(err, "failed to get task")
-		return nil, err
+		return nil, fmt.Errorf("failed to get tasks: %w", err)
 	}
 
 	if len(tasks) == 0 {
-		logger.V(5).Info("task doesn't exist", "actID", actID, "descriptionID", OVFCaptureTaskDescriptionID)
+		logger.V(5).Info("task doesn't exist", "descriptionID", descriptionID)
 		return nil, nil
 	}
 
 	// Return the first task.
-	// We would never send multiple CreateOvf requests with the same actID,
+	// We would never send multiple CreateOvf/CloneVM requests with the same actID,
 	// so that we should never get multiple tasks.
 	publishTask := &tasks[0]
-	if publishTask.DescriptionId != OVFCaptureTaskDescriptionID {
+	if publishTask.DescriptionId != descriptionID {
 		return nil, fmt.Errorf("failed to find expected task %s, found %s instead",
-			OVFCaptureTaskDescriptionID,
+			descriptionID,
 			publishTask.DescriptionId)
 	}
 
 	return publishTask, nil
-}
-
-// getCloneVMTask gets task with description id VirtualMachine.clone and whose result.Value is the MOID of the target
-// template.
-func (r *Reconciler) getCloneVMTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
-	vmPubReq := ctx.VMPublishRequest
-	targetItemName := vmPubReq.Status.TargetRef.Item.Name
-
-	if ctx.VM == nil {
-		vm := &vmopv1.VirtualMachine{}
-		objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
-		err := r.Get(ctx, objKey, vm)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				conditions.MarkError(vmPubReq,
-					vmopv1.VirtualMachinePublishRequestConditionSourceValid,
-					vmopv1.SourceVirtualMachineNotExistReason,
-					err)
-			}
-			return nil, fmt.Errorf("failed to get VirtualMachine %v: %w", objKey, err)
-		}
-		ctx.VM = vm
-	}
-
-	targetObjRef, err := r.VMProvider.GetItemFromInventoryByName(ctx, ctx.ContentLibraryV1A2.Spec.ID, targetItemName)
-	if err != nil {
-		return nil, fmt.Errorf("error getting item %q from inventory: %w", targetItemName, err)
-	}
-
-	if targetObjRef == nil {
-		ctx.Logger.V(4).Info("could not locate item in inventory", "itemName", targetItemName)
-		return nil, nil
-	}
-	targetMOID := targetObjRef.Reference().Value
-
-	tasks, err := r.VMProvider.GetCloneTasksForVM(ctx, ctx.VM, targetMOID, CloneTaskDescriptionID)
-	if err != nil {
-		return nil, fmt.Errorf("error getting recent clone tasks for VM %q: %w", ctx.VM.NamespacedName(), err)
-	}
-
-	if len(tasks) == 0 {
-		ctx.Logger.V(4).Info("failed to find recent clone task for VM", "VM", ctx.VM.NamespacedName())
-		return nil, nil
-	}
-
-	return &tasks[0], nil
 }
 
 // checkPubReqStatusAndShouldRepublish checks the publish request task status, mark Uploaded condition
@@ -764,8 +848,10 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 			return true, nil
 		}
 
-		// CreateOvf request has been sent but the task com.vmware.ovfs.LibraryItem.capture hasn't been
-		// submitted to the task manager yet. retry taskManager query at later reconcile.
+		// CreateOVF/CloneVM request has been sent but the task
+		// com.vmware.ovfs.LibraryItem.capture/VirtualMachine.clone
+		// hasn't been submitted to the task manager yet. retry
+		// taskManager query at later reconcile.
 		conditions.MarkFalse(ctx.VMPublishRequest,
 			vmopv1.VirtualMachinePublishRequestConditionUploaded,
 			vmopv1.UploadTaskNotStartedReason,
@@ -801,7 +887,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 			errMsg = task.Error.LocalizedMessage
 		}
 
-		logger.Error(err, "VM Publish failed, will retry this operation",
+		logger.Info("VM Publish failed, will retry this operation",
 			"actID", task.ActivationId, "descriptionID", task.DescriptionId)
 		conditions.MarkFalse(ctx.VMPublishRequest,
 			vmopv1.VirtualMachinePublishRequestConditionUploaded,
@@ -870,6 +956,7 @@ func (r *Reconciler) isItemCorrelatedWithVMPub(
 			tItem,
 			vmopv1.VirtualMachinePublishRequestUUIDExtraConfigKey,
 			string(ctx.VMPublishRequest.UID)); err != nil || !exists {
+
 			return "", false, err
 		}
 		return tItem.Reference().Value, true, nil
@@ -896,7 +983,7 @@ func (r *Reconciler) findCorrelatedItemIDByName(ctx *pkgctx.VirtualMachinePublis
 		return "", fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
 
-	if !pkgutil.IsNil(item) {
+	if !pkgnil.IsNil(item) {
 		// Item already exists in the content library, check if it is created from
 		// this VirtualMachinePublishRequest from its description.
 		// If VC forgets the task, or the task hadn't proceeded far enough to be submitted to VC
@@ -1026,7 +1113,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 	}
 
 	// Register VM publish request metrics based on the reconcile result.
-	var isComplete, isDeleted bool
+	var isComplete, isDeleted, isFatal bool
 	defer func() {
 		if isDeleted {
 			// If the vmPub is deleted, return immediately.
@@ -1038,7 +1125,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		switch {
 		case isComplete:
 			res = metrics.PublishSucceeded
-		case reterr != nil:
+		case reterr != nil || isFatal:
 			res = metrics.PublishFailed
 		default:
 			res = metrics.PublishInProgress
@@ -1047,12 +1134,19 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		r.Metrics.RegisterVMPublishRequest(r.Logger, vmPublishReq.Name, vmPublishReq.Namespace, res)
 	}()
 
-	// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
-	isComplete = conditions.IsTrue(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete)
-	if isComplete {
-		requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
-		isDeleted = deleted
-		return ctrl.Result{RequeueAfter: requeueAfter}, err
+	if completeCond := conditions.Get(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete); completeCond != nil {
+		// If this request has a complete condition with fatal reason, then we do not process it any further. We
+		// return early with no need to do any reconcile.
+		if isFatal = completeCond.Reason == vmopv1.FatalReason; isFatal {
+			return ctrl.Result{}, reterr
+		}
+
+		// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
+		if isComplete = completeCond.Status == metav1.ConditionTrue; isComplete {
+			requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
+			isDeleted = deleted
+			return ctrl.Result{RequeueAfter: requeueAfter}, err
+		}
 	}
 
 	if vmPublishReq.Status.StartTime.IsZero() {

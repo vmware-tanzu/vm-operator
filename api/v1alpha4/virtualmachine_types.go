@@ -9,8 +9,6 @@ package v1alpha4
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
 const (
@@ -457,175 +455,6 @@ type VirtualMachineCryptoSpec struct {
 	UseDefaultKeyProvider *bool `json:"useDefaultKeyProvider,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Disk;Network;CDRom
-
-// VirtualMachineBootOptionsBootableDevice represents the type of bootable device
-// that a VM may be booted from.
-type VirtualMachineBootOptionsBootableDevice string
-
-const (
-	VirtualMachineBootOptionsBootableDiskDevice    VirtualMachineBootOptionsBootableDevice = "Disk"
-	VirtualMachineBootOptionsBootableNetworkDevice VirtualMachineBootOptionsBootableDevice = "Network"
-	VirtualMachineBootOptionsBootableCDRomDevice   VirtualMachineBootOptionsBootableDevice = "CDRom"
-)
-
-// +kubebuilder:validation:Enum=IP4;IP6
-
-// VirtualMachineBootOptionsNetworkBootProtocol represents the protocol to
-// use during PXE network boot or NetBoot.
-type VirtualMachineBootOptionsNetworkBootProtocol string
-
-const (
-	VirtualMachineBootOptionsNetworkBootProtocolIP4 VirtualMachineBootOptionsNetworkBootProtocol = "IP4"
-	VirtualMachineBootOptionsNetworkBootProtocolIP6 VirtualMachineBootOptionsNetworkBootProtocol = "IP6"
-)
-
-// +kubebuilder:validation:Enum=BIOS;EFI
-
-// VirtualMachineBootOptionsFirmwareType represents the firmware to use.
-type VirtualMachineBootOptionsFirmwareType string
-
-const (
-	VirtualMachineBootOptionsFirmwareTypeBIOS VirtualMachineBootOptionsFirmwareType = "BIOS"
-	VirtualMachineBootOptionsFirmwareTypeEFI  VirtualMachineBootOptionsFirmwareType = "EFI"
-)
-
-// +kubebuilder:validation:Enum=Enabled;Disabled
-
-// VirtualMachineBootOptionsForceBootEntry represents whether to force the virtual machine
-// to enter BIOS/EFI setup the next time the virtual machine boots.
-type VirtualMachineBootOptionsForceBootEntry string
-
-const (
-	VirtualMachineBootOptionsForceBootEntryEnabled  VirtualMachineBootOptionsForceBootEntry = "Enabled"
-	VirtualMachineBootOptionsForceBootEntryDisabled VirtualMachineBootOptionsForceBootEntry = "Disabled"
-)
-
-// +kubebuilder:validation:Enum=Enabled;Disabled
-
-// VirtualMachineBootOptionsEFISecureBoot represents whether the virtual machine will
-// perform EFI Secure Boot.
-type VirtualMachineBootOptionsEFISecureBoot string
-
-const (
-	VirtualMachineBootOptionsEFISecureBootEnabled  VirtualMachineBootOptionsEFISecureBoot = "Enabled"
-	VirtualMachineBootOptionsEFISecureBootDisabled VirtualMachineBootOptionsEFISecureBoot = "Disabled"
-)
-
-// VirtualMachineBootOptionsBootRetry represents whether a virtual machine that fails to boot
-// will automatically try again.
-type VirtualMachineBootOptionsBootRetry string
-
-const (
-	VirtualMachineBootOptionsBootRetryEnabled  VirtualMachineBootOptionsBootRetry = "Enabled"
-	VirtualMachineBootOptionsBootRetryDisabled VirtualMachineBootOptionsBootRetry = "Disabled"
-)
-
-// VirtualMachineBootOptions defines the boot-time behavior of a virtual machine.
-type VirtualMachineBootOptions struct {
-	// +optional
-
-	// Firmware represents the firmware for the virtual machine to use. Any update
-	// to this value after the virtual machine has already been created will be
-	// ignored. Setting will happen in the following manner:
-	//
-	// 1. If this value is specified, it will be used to set the VM firmware. If this
-	//    value is unset, then
-	// 2. the virtual machine image will be checked. If that value is set, then it will
-	//    be used to set the VM firmware. If that value is unset, then
-	// 3. the virtual machine class will be checked. If that value is set, then it will
-	//    be used to set the VM firmware. If that value is unset, then
-	// 4. the VM firmware will be set, by default, to BIOS.
-	//
-	// The available values of this field are:
-	//
-	// - BIOS
-	// - EFI
-	Firmware VirtualMachineBootOptionsFirmwareType `json:"firmware,omitempty"`
-
-	// +optional
-
-	// BootDelay is the delay before starting the boot sequence. The boot delay
-	// specifies a time interval between virtual machine power on or restart and
-	// the beginning of the boot sequence.
-	BootDelay *metav1.Duration `json:"bootDelay,omitempty"`
-
-	// +optional
-
-	// BootOrder represents the boot order of the virtual machine. After list is exhausted,
-	// default BIOS boot device algorithm is used for booting. Note that order of the entries
-	// in the list is important: device listed first is used for boot first, if that one
-	// fails second entry is used, and so on. Platform may have some internal limit on the
-	// number of devices it supports. If bootable device is not reached before platform's limit
-	// is hit, boot will fail. At least single entry is supported by all products supporting
-	// boot order settings.
-	//
-	// The available devices are:
-	//
-	// - Disk    -- If there are classic and managed disks, the first classic disk is selected.
-	//              If there are only managed disks, the first disk is selected.
-	// - Network -- The first interface listed in spec.network.interfaces.
-	// - CDRom   -- The first bootable CD-ROM device.
-	BootOrder []VirtualMachineBootOptionsBootableDevice `json:"bootOrder,omitempty"`
-
-	// +optional
-	// +kubebuilder:default=Disabled
-
-	// BootRetry specifies whether a virtual machine that fails to boot
-	// will try again. The available values are:
-	//
-	// - Enabled -- A virtual machine that fails to boot will try again
-	//              after BootRetryDelay time period has expired.
-	// - Disabled -- The virtual machine waits indefinitely for you to
-	//               initiate boot retry.
-	BootRetry VirtualMachineBootOptionsBootRetry `json:"bootRetry,omitempty"`
-
-	// +optional
-
-	// BootRetryDelay specifies a time interval between virtual machine boot failure
-	// and the subsequent attempt to boot again. The virtual machine uses this value
-	// only if BootRetry is Enabled.
-	BootRetryDelay *metav1.Duration `json:"bootRetryDelay,omitempty"`
-
-	// +optional
-	// +kubebuilder:default=Disabled
-
-	// EnterBootSetup specifies whether to automatically enter BIOS/EFI setup the next
-	// time the virtual machine boots. The virtual machine resets this flag to false
-	// so that subsequent boots proceed normally. The available values are:
-	//
-	// - Enabled -- The virtual machine will automatically enter BIOS/EFI setup the next
-	//              time the virtual machine boots.
-	// - Disabled -- The virtual machine will boot normaally.
-	EnterBootSetup VirtualMachineBootOptionsForceBootEntry `json:"enterBootSetup,omitempty"`
-
-	// +optional
-	// +kubebuilder:default=Disabled
-
-	// EFISecureBoot specifies whether the virtual machine's firmware will
-	// perform signature checks of any EFI images loaded during startup. If set to
-	// true, signature checks will be performed and the virtual machine's firmware
-	// will refuse to start any images which do not pass those signature checks.
-	//
-	// Please note, this field will not be honored unless the value of
-	// spec.bootOptions.firmware is "EFI". The available values are:
-	//
-	// - Enabled -- Signature checks will be performed and the virtual machine's firmware
-	//              will refuse to start any images which do not pass those signature checks.
-	// - Disabled -- No signature checks will be performed.
-	EFISecureBoot VirtualMachineBootOptionsEFISecureBoot `json:"efiSecureBoot,omitempty"`
-
-	// +optional
-	// +kubebuilder:default=IP4
-
-	// NetworkBootProtocol is the protocol to attempt during PXE network boot or NetBoot.
-	// The available protocols are:
-	//
-	// - IP4 -- PXE (or Apple NetBoot) over IPv4. The default.
-	// - IP6 -- PXE over IPv6. Only meaningful for EFI virtual machines.
-	NetworkBootProtocol VirtualMachineBootOptionsNetworkBootProtocol `json:"networkBootProtocol,omitempty"`
-}
-
 // +kubebuilder:validation:Enum=Direct;Linked
 
 // VirtualMachineDeployMode represents the available modes in which a VM may be
@@ -723,15 +552,6 @@ type VirtualMachineSpec struct {
 	// ClassName describes the name of the VirtualMachineClass resource used to
 	// deploy this VM.
 	//
-	// When creating a virtual machine, if this field is empty and a
-	// VirtualMachineClassInstance is specified in spec.class, then
-	// this field is populated with the VirtualMachineClass object's
-	// name.
-	//
-	// Please also note, when creating a new VirtualMachine, if this field and
-	// spec.class are both non-empty, then they must refer to the same
-	// VirtualMachineClass or an error is returned.
-	//
 	// Please note, this field *may* be empty if the VM was imported instead of
 	// deployed by VM Operator. An imported VirtualMachine resource references
 	// an existing VM on the underlying platform that was not deployed from a
@@ -743,30 +563,8 @@ type VirtualMachineSpec struct {
 
 	// +optional
 
-	// Class describes the VirtualMachineClassInsance resource that is
-	// referenced by this virtual machine. This can be the
-	// VirtualMachineClassInstance that the virtual machine was
-	// created, or later resized with.
-	//
-	// The value of spec.class.Name must be the Kubernetes object name
-	// of a valid VirtualMachineClassInstance resource.
-	//
-	// Please also note, if this field and spec.className are both
-	// non-empty, then they must refer to the same VirtualMachineClass
-	// or an error is returned.
-	//
-	// If a className is specified, but this field is omitted, VM operator
-	// picks the latest instance for the VM class to create the VM.
-	//
-	// If a VM class has been modified and thus, the newly available
-	// VirtualMachineClassInstance can be specified in spec.class to
-	// trigger a resize operation.
-	Class *vmopv1a4common.LocalObjectRef `json:"class,omitempty"`
-
-	// +optional
-
 	// Affinity describes the VM's scheduling constraints.
-	Affinity *VirtualMachineAffinitySpec `json:"affinity,omitempty"`
+	Affinity *AffinitySpec `json:"affinity,omitempty"`
 
 	// +optional
 
@@ -1009,40 +807,6 @@ type VirtualMachineSpec struct {
 
 	// +optional
 
-	// BootOptions describes the settings that control the boot behavior of the
-	// virtual machine. These settings take effect during the next power-on of the
-	// virtual machine.
-	BootOptions *VirtualMachineBootOptions `json:"bootOptions,omitempty"`
-
-	// +optional
-
-	// CurrentSnapshot represents the desired snapshot that the VM
-	// should point to. This field can be specified to revert the VM
-	// to a given snapshot. Once the virtual machine has been
-	// successfully reverted to the desired snapshot, the value of
-	// this field is cleared.
-	//
-	// The value of this field must be an existing object of
-	// VirtualMachineSnapshot kind that exists on the API server. All
-	// other values are invalid.
-	//
-	// Reverting a virtual machine to a snapshot rolls back the data
-	// and the configuration of the virtual machine to that of the
-	// specified snapshot. The VirtualMachineSpec of the
-	// VirtualMachine resource is replaced from the one stored with
-	// the snapshot.
-	//
-	// If the virtual machine is currently powered off, but you revert to
-	// a snapshot that was taken while the VM was powered on, then the
-	// VM will be automatically powered on during the revert.
-	// Additionally, the VirtualMachineSpec will be updated to match
-	// the power state from the snapshot (i.e., powered on). This can
-	// be overridden by specifying the PowerState to PoweredOff in the
-	// VirtualMachineSpec.
-	CurrentSnapshot *vmopv1a4common.LocalObjectRef `json:"currentSnapshot,omitempty"`
-
-	// +optional
-
 	// GroupName indicates the name of the VirtualMachineGroup to which this
 	// VM belongs.
 	//
@@ -1138,11 +902,6 @@ type VirtualMachineCryptoStatus struct {
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
-	// +optional
-
-	// Class is a reference to the VirtualMachineClass resource used to deploy
-	// this VM.
-	Class *vmopv1a4common.LocalObjectRef `json:"class,omitempty"`
 
 	// +optional
 
@@ -1233,20 +992,6 @@ type VirtualMachineStatus struct {
 
 	// Storage describes the observed state of the VirtualMachine's storage.
 	Storage *VirtualMachineStorageStatus `json:"storage,omitempty"`
-
-	// +optional
-
-	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
-	CurrentSnapshot *vmopv1a4common.LocalObjectRef `json:"currentSnapshot,omitempty"`
-
-	// +optional
-
-	// RootSnapshots represents the observed list of root snapshots of
-	// a VM. Since each snapshot includes the list of its child
-	// snapshots, these root snapshot references can effectively be
-	// used to construct the entire snapshot chain of a virtual
-	// machine.
-	RootSnapshots []vmopv1a4common.LocalObjectRef `json:"rootSnapshots,omitempty"`
 }
 
 // +kubebuilder:object:root=true

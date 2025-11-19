@@ -61,6 +61,11 @@ func GetPVCZoneConstraints(
 	var zones sets.Set[string]
 
 	for _, pvc := range pvcs {
+		if pvc.Spec.DataSourceRef != nil {
+			// Do not worry about PVCs with data source refs.
+			continue
+		}
+
 		var z sets.Set[string]
 
 		// We don't expect anything else but check since we check CSI specific annotations below.
@@ -146,8 +151,8 @@ func (e ErrMissingParameter) Error() string {
 // GetStoragePolicyID returns the storage policy ID for a given StorageClass.
 // If no ID is found, an error is returned.
 func GetStoragePolicyID(obj storagev1.StorageClass) (string, error) {
-	policyID, ok := obj.Parameters[internal.StoragePolicyIDParameter]
-	if !ok {
+	policyID := obj.Parameters[internal.StoragePolicyIDParameter]
+	if policyID == "" {
 		return "", ErrMissingParameter{
 			StorageClassName: obj.Name,
 			ParameterName:    internal.StoragePolicyIDParameter,

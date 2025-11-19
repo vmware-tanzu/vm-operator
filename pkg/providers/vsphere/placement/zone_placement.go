@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/exp/maps"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -55,10 +56,11 @@ type Result struct {
 }
 
 type DatastoreResult struct {
-	Name        string
-	MoRef       vimtypes.ManagedObjectReference
-	URL         string
-	DiskFormats []string
+	Name                             string
+	MoRef                            vimtypes.ManagedObjectReference
+	URL                              string
+	DiskFormats                      []string
+	TopLevelDirectoryCreateSupported bool
 
 	// ForDisk is false if the recommendation is for the VM's home directory and
 	// true if for a disk. DiskKey is only valid if ForDisk is true.
@@ -69,7 +71,7 @@ type DatastoreResult struct {
 func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
 	res.ZonePlacement = true
 
-	if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
+	if zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]; zoneName != "" {
 		// Zone has already been selected.
 		res.ZoneName = zoneName
 	} else {
@@ -385,7 +387,7 @@ func Placement(
 		vmCtx,
 		client,
 		vcClient,
-		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey],
+		vmCtx.VM.Labels[corev1.LabelTopologyZone],
 		vmCtx.VM.Namespace,
 		constraints.ChildRPName)
 	if err != nil {
@@ -489,6 +491,7 @@ func getDatastoreProperties(
 		ctx,
 		dsRefs,
 		[]string{
+			"capability.topLevelDirectoryCreateSupported",
 			"info.supportedVDiskFormats",
 			"info.url",
 			"name",
@@ -507,6 +510,9 @@ func getDatastoreProperties(
 				dsInfo := moDS.Info.GetDatastoreInfo()
 				ds.DiskFormats = dsInfo.SupportedVDiskFormats
 				ds.URL = dsInfo.Url
+				if v := moDS.Capability.TopLevelDirectoryCreateSupported; v != nil {
+					ds.TopLevelDirectoryCreateSupported = *v
+				}
 			}
 		}
 	}

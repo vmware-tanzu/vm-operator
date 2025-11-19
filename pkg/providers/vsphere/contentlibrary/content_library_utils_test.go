@@ -26,7 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
-func assertImage(image *vmopv1.VirtualMachineImage) {
+func assertImage(image *vmopv1.VirtualMachineImage, diskName string) {
 	ExpectWithOffset(1, image).ToNot(BeNil())
 	ExpectWithOffset(1, image.Name).Should(Equal("dummy-image"))
 
@@ -53,8 +53,9 @@ func assertImage(image *vmopv1.VirtualMachineImage) {
 	ExpectWithOffset(1, conditions.Has(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeFalse())
 
 	ExpectWithOffset(1, image.Status.Disks).To(HaveLen(1))
-	ExpectWithOffset(1, image.Status.Disks[0].Size.String()).To(Equal("18743296"))
-	ExpectWithOffset(1, image.Status.Disks[0].Capacity.String()).To(Equal("30Mi"))
+	ExpectWithOffset(1, image.Status.Disks[0].Name).To(Equal(diskName))
+	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("18743296"))
+	ExpectWithOffset(1, image.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
 
 	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("example.com/hello", "world"))
 	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("fu.bar", ""))
@@ -87,7 +88,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 	})
 
 	It("Image should have expected properties", func() {
-		assertImage(image)
+		assertImage(image, "disk0")
 	})
 
 	It("Repeated calls should not duplicate items", func() {
@@ -117,6 +118,9 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 })
 
 var _ = Describe("UpdateVmiWithVirtualMachine", func() {
+
+	const diskUUID = "552e3da8-c1c9-415c-af24-cb60d7c450fa"
+
 	var (
 		moVM  mo.VirtualMachine
 		image *vmopv1.VirtualMachineImage
@@ -135,7 +139,7 @@ var _ = Describe("UpdateVmiWithVirtualMachine", func() {
 							VirtualDevice: vimtypes.VirtualDevice{
 								Key: 500,
 								Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-									Uuid: "1234",
+									Uuid: diskUUID,
 								},
 							},
 							CapacityInBytes: 30 * 1024 * 1024,
@@ -214,7 +218,7 @@ var _ = Describe("UpdateVmiWithVirtualMachine", func() {
 	})
 
 	It("Image should have expected properties", func() {
-		assertImage(image)
+		assertImage(image, diskUUID)
 	})
 
 	It("Repeated calls should not duplicate items", func() {

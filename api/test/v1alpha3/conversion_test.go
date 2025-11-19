@@ -128,29 +128,6 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 		})
 	})
 
-	Context("VirtualMachineImageCache", func() {
-		BeforeEach(func() {
-			input = fuzztests.FuzzTestFuncInput{
-				Scheme: scheme,
-				Hub:    &vmopv1.VirtualMachineImageCache{},
-				Spoke:  &vmopv1a3.VirtualMachineImageCache{},
-				FuzzerFuncs: []fuzzer.FuzzerFuncs{
-					overrideVirtualMachineImageCacheFieldsFuncs,
-				},
-			}
-		})
-		Context("Spoke-Hub-Spoke", func() {
-			It("should get fuzzy with it", func() {
-				fuzztests.SpokeHubSpoke(input)
-			})
-		})
-		Context("Hub-Spoke-Hub", func() {
-			It("should get fuzzy with it", func() {
-				fuzztests.HubSpokeHub(input)
-			})
-		})
-	})
-
 	Context("VirtualMachinePublishRequest", func() {
 		BeforeEach(func() {
 			input = fuzztests.FuzzTestFuncInput{
@@ -263,6 +240,19 @@ var _ = Describe("Client-side conversion", func() {
 	})
 })
 
+func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
+	return []interface{}{
+		func(status *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
+			c.Fill(status)
+			status.Disks = nil
+		},
+		func(status *vmopv1a3.VirtualMachineImageStatus, c randfill.Continue) {
+			c.Fill(status)
+			status.Disks = nil
+		},
+	}
+}
+
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(vmSpec *vmopv1a3.VirtualMachineSpec, c randfill.Continue) {
@@ -299,32 +289,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 		},
 		func(msg *json.RawMessage, c randfill.Continue) {
 			*msg = []byte(`{"foo": "bar"}`)
-		},
-	}
-}
-
-func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
-	return []interface{}{
-		func(vmiStatus *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(vmiStatus)
-
-			// Since only VMOP updates the CVMI/VMI's we didn't bother with conversion
-			// when adding this field.
-			vmiStatus.Disks = nil
-		},
-	}
-}
-
-func overrideVirtualMachineImageCacheFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
-	return []interface{}{
-		func(status *vmopv1.VirtualMachineImageCacheStatus, c randfill.Continue) {
-			c.Fill(status)
-
-			for i := range status.Locations {
-				for j := range status.Locations[i].Files {
-					status.Locations[i].Files[j].Type = ""
-				}
-			}
 		},
 	}
 }

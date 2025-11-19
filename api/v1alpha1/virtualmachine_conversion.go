@@ -906,6 +906,9 @@ func restore_v1alpha5_VirtualMachineBootstrapSpec(
 		if srcLinuxPrep := srcBootstrap.LinuxPrep; srcLinuxPrep != nil {
 			dstLinuxPrep.HardwareClockIsUTC = srcLinuxPrep.HardwareClockIsUTC
 			dstLinuxPrep.TimeZone = srcLinuxPrep.TimeZone
+			dstLinuxPrep.ExpirePasswordAfterNextLogin = srcLinuxPrep.ExpirePasswordAfterNextLogin
+			dstLinuxPrep.Password = srcLinuxPrep.Password
+			dstLinuxPrep.ScriptText = srcLinuxPrep.ScriptText
 		}
 	}
 
@@ -913,6 +916,7 @@ func restore_v1alpha5_VirtualMachineBootstrapSpec(
 		if srcSysPrep := srcBootstrap.Sysprep; srcSysPrep != nil {
 			dstSysPrep.Sysprep = srcSysPrep.Sysprep
 			dstSysPrep.RawSysprep = mergeSecretKeySelector(dstSysPrep.RawSysprep, srcSysPrep.RawSysprep)
+			dstSysPrep.CustomizeAtNextPowerOn = srcSysPrep.CustomizeAtNextPowerOn
 
 			// In v1a1 we don't have way to denote Sysprep with vAppConfig. LinuxPrep with vAppConfig works
 			// because that translates to OvfEnvTransport. If we have a saved vAppConfig initialize the field
@@ -1018,7 +1022,7 @@ func restore_v1alpha5_VirtualMachineBootOptions(dst, src *vmopv1.VirtualMachine)
 	dst.Spec.BootOptions = src.Spec.BootOptions
 }
 
-func restore_v1alpha5_VirtualMachineAffinitySpec(dst, src *vmopv1.VirtualMachine) {
+func restore_v1alpha5_AffinitySpec(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Affinity = src.Spec.Affinity
 }
 
@@ -1031,16 +1035,13 @@ func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 	for i := range dst.Spec.Volumes {
 		dstVol := &dst.Spec.Volumes[i]
 		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
-			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
-				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
-					dstPvc.ApplicationType = srcPvc.ApplicationType
-					dstPvc.ControllerBusNumber = srcPvc.ControllerBusNumber
-					dstPvc.ControllerType = srcPvc.ControllerType
-					dstPvc.DiskMode = srcPvc.DiskMode
-					dstPvc.SharingMode = srcPvc.SharingMode
-					dstPvc.UnitNumber = srcPvc.UnitNumber
-				}
-			}
+			dstVol.ApplicationType = srcVol.ApplicationType
+			dstVol.ControllerBusNumber = srcVol.ControllerBusNumber
+			dstVol.ControllerType = srcVol.ControllerType
+			dstVol.ImageDiskName = srcVol.ImageDiskName
+			dstVol.DiskMode = srcVol.DiskMode
+			dstVol.SharingMode = srcVol.SharingMode
+			dstVol.UnitNumber = srcVol.UnitNumber
 		}
 	}
 }
@@ -1310,7 +1311,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
-	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)
+	restore_v1alpha5_AffinitySpec(dst, restored)
 	restore_v1alpha5_VirtualMachineGroupName(dst, restored)
 	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)

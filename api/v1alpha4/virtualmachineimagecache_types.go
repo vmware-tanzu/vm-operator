@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha4
@@ -223,9 +223,13 @@ func (i *VirtualMachineImageCache) SetConditions(conditions []metav1.Condition) 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmic;vmicache;vmimagecache
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="v1alpha4 VirtualMachineImageCache is deprecated; use v1alpha5 VirtualMachineImageCache"
 
 // VirtualMachineImageCache is the schema for the
 // virtualmachineimagecaches API.
+//
+// Deprecated: This type is deprecated and will be removed in a future release.
+// Please use v1alpha5.VirtualMachineImageCache instead.
 type VirtualMachineImageCache struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

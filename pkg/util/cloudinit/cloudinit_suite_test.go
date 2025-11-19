@@ -19,7 +19,7 @@ var _ = AfterSuite(suite.AfterSuite)
 
 func TestCloudInit(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "vSphere Provider Cloud-Init Suite")
+	RunSpecs(t, "Util Cloud-Init Suite")
 }
 
 func addrOf[T any](t T) *T {

@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -106,7 +105,7 @@ var _ = Describe("CalculateReservedForSnapshot", func() {
 
 	When("VM is not found", func() {
 		BeforeEach(func() {
-			vmSnapshot.Spec.VMRef.Name = "unknown-vm"
+			vmSnapshot.Spec.VMName = "unknown-vm"
 		})
 		It("should return an error", func() {
 			Expect(err).To(HaveOccurred())
@@ -297,7 +296,7 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 	Context("PatchSnapshotStatus", func() {
 		var (
 			vmSnapshot *vmopv1.VirtualMachineSnapshot
-			snapMoRef  *vimtypes.ManagedObjectReference
+			snapNode   *vimtypes.VirtualMachineSnapshotTree
 		)
 
 		BeforeEach(func() {
@@ -312,11 +311,7 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 					Namespace: vmCtx.VM.Namespace,
 				},
 				Spec: vmopv1.VirtualMachineSnapshotSpec{
-					VMRef: &vmopv1common.LocalObjectRef{
-						APIVersion: vmCtx.VM.APIVersion,
-						Kind:       vmCtx.VM.Kind,
-						Name:       vmCtx.VM.Name,
-					},
+					VMName: vmCtx.VM.Name,
 					Quiesce: &vmopv1.QuiesceSpec{
 						Timeout: &metav1.Duration{Duration: timeout},
 					},
@@ -330,8 +325,10 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 					UniqueID: "dummyID",
 				}
 
-				snapMoRef = &vimtypes.ManagedObjectReference{
-					Value: "snap-103",
+				snapNode = &vimtypes.VirtualMachineSnapshotTree{
+					Snapshot: vimtypes.ManagedObjectReference{
+						Value: "snap-103",
+					},
 				}
 
 				initObjects = append(initObjects, vmSnapshot)
@@ -340,15 +337,21 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 			It("succeeds", func() {
 				err := kubeutil.PatchSnapshotSuccessStatus(
 					vmCtx,
+					logr.Discard(),
 					k8sClient,
 					vmSnapshot,
-					snapMoRef,
+					snapNode,
 					vmCtx.VM.Spec.PowerState)
 				Expect(err).ToNot(HaveOccurred())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
-				Expect(k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, snapObj)).To(Succeed())
-				Expect(snapObj.Status.UniqueID).To(Equal(snapMoRef.Value))
+				Expect(k8sClient.Get(
+					vmCtx,
+					ctrlclient.ObjectKey{
+						Name:      vmSnapshot.Name,
+						Namespace: vmSnapshot.Namespace},
+					snapObj)).To(Succeed())
+				Expect(snapObj.Status.UniqueID).To(Equal(snapNode.Snapshot.Value))
 				Expect(snapObj.Status.Quiesced).To(BeTrue())
 				Expect(snapObj.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 				Expect(conditions.IsTrue(snapObj, vmopv1.VirtualMachineSnapshotCreatedCondition)).To(BeTrue())
@@ -361,11 +364,21 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 
 				if memory {
 					vmSnapshot.Spec.Memory = true
+					// When a VM is off, can't take snapshot with memory on VC UI.
+					if powerState == vmopv1.VirtualMachinePowerStateOn {
+						snapNode.State = vimtypes.VirtualMachinePowerStatePoweredOn
+					}
 				} else {
 					vmSnapshot.Spec.Memory = false
+					snapNode.State = vimtypes.VirtualMachinePowerStatePoweredOff
 				}
 
-				Expect(kubeutil.PatchSnapshotSuccessStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef, powerState)).To(Succeed())
+				Expect(kubeutil.PatchSnapshotSuccessStatus(vmCtx,
+					logr.Discard(),
+					k8sClient,
+					vmSnapshot,
+					snapNode,
+					powerState)).To(Succeed())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
 				Expect(k8sClient.Get(vmCtx,

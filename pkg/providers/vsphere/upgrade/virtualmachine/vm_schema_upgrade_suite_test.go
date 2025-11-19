@@ -13,7 +13,6 @@ import (
 )
 
 func init() {
-	klog.InitFlags(nil)
 	klog.SetOutput(GinkgoWriter)
 }
 

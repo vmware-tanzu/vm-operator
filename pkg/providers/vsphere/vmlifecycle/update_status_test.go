@@ -7,15 +7,20 @@ package vmlifecycle_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	apirecord "k8s.io/client-go/tools/record"
@@ -31,7 +36,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -102,6 +107,182 @@ var _ = Describe("UpdateStatus", func() {
 			Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
 			Expect(vmCtx.VM.Status.Network.HostName).To(Equal(moVM.Summary.Guest.HostName))
 			Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(moVM.Summary.Guest.IpAddress))
+		})
+	})
+
+	Context("Annotations to Conditions", func() {
+		const (
+			testAnnotationKey = "condition.vmoperator.vmware.com.protected/MyCondition"
+			testConditionType = "MyConditionType"
+			testReason        = "MyReason"
+			testMessage       = "My message"
+		)
+
+		Context("When annotation matches the protected condition pattern", func() {
+			When("annotation value has type and status=True", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";True",
+					}
+				})
+				It("should set condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				})
+			})
+
+			When("annotation value has type and status=False with reason and message", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";False;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should set condition to False with reason and message", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal(testReason))
+					Expect(cond.Message).To(Equal(testMessage))
+				})
+			})
+
+			When("annotation value has type and status=Unknown with reason and message", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";Unknown;UnknownReason;Unknown message",
+					}
+				})
+				It("should set condition to Unknown with reason and message", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+					Expect(cond.Reason).To(Equal("UnknownReason"))
+					Expect(cond.Message).To(Equal("Unknown message"))
+				})
+			})
+
+			When("annotation value has type and unrecognized status", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";InvalidStatus;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should set condition to Unknown", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+				})
+			})
+
+			When("annotation value has type but empty status", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType + ";;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should set condition to Unknown", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+				})
+			})
+
+			When("annotation value has only type", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: testConditionType,
+					}
+				})
+				It("should set condition to Unknown", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+				})
+			})
+
+			When("annotation value is empty", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: "",
+					}
+				})
+				It("should not set any condition", func() {
+					cond := conditions.Get(vmCtx.VM, "")
+					Expect(cond).To(BeNil())
+				})
+			})
+
+			When("annotation value has no type (empty type)", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						testAnnotationKey: ";True;" + testReason + ";" + testMessage,
+					}
+				})
+				It("should not set a condition for empty type", func() {
+					// Since type is empty, no condition with empty type should be set
+					// The function checks if t != "" before setting conditions
+					cond := conditions.Get(vmCtx.VM, "")
+					Expect(cond).To(BeNil())
+					// But Created condition should still exist
+					cond = conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
+					Expect(cond).ToNot(BeNil())
+				})
+			})
+
+			When("multiple protected condition annotations exist", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						"condition.vmoperator.vmware.com.protected/Condition1": "Type1;True",
+						"condition.vmoperator.vmware.com.protected/Condition2": "Type2;False;Reason2;Message2",
+						"condition.vmoperator.vmware.com.protected/Condition3": "Type3;Unknown;Reason3;Message3",
+					}
+				})
+				It("should set all conditions appropriately", func() {
+					cond1 := conditions.Get(vmCtx.VM, "Type1")
+					Expect(cond1).ToNot(BeNil())
+					Expect(cond1.Status).To(Equal(metav1.ConditionTrue))
+
+					cond2 := conditions.Get(vmCtx.VM, "Type2")
+					Expect(cond2).ToNot(BeNil())
+					Expect(cond2.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond2.Reason).To(Equal("Reason2"))
+					Expect(cond2.Message).To(Equal("Message2"))
+
+					cond3 := conditions.Get(vmCtx.VM, "Type3")
+					Expect(cond3).ToNot(BeNil())
+					Expect(cond3.Status).To(Equal(metav1.ConditionUnknown))
+					Expect(cond3.Reason).To(Equal("Reason3"))
+					Expect(cond3.Message).To(Equal("Message3"))
+				})
+			})
+		})
+
+		Context("When annotation does not match the protected condition pattern", func() {
+			When("annotation has different prefix", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = map[string]string{
+						"other.annotation/MyCondition": testConditionType + ";True",
+					}
+				})
+				It("should not set any condition from this annotation", func() {
+					cond := conditions.Get(vmCtx.VM, testConditionType)
+					Expect(cond).To(BeNil())
+				})
+			})
+
+			When("no annotations exist", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Annotations = nil
+				})
+				It("should have default conditions set by ReconcileStatus", func() {
+					// ReconcileStatus sets multiple conditions including Created and ReconcileReady
+					// Just verify the Created condition exists and no annotation-based conditions
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				})
+			})
 		})
 	})
 
@@ -567,6 +748,106 @@ var _ = Describe("UpdateStatus", func() {
 			})
 		})
 
+		Context("VirtualMachineGuestNetworkConfigSynced condition", func() {
+			const (
+				validIP4 = "192.168.0.2"
+				validIP6 = "FD00:F53B:82E4::54"
+			)
+
+			BeforeEach(func() {
+				vmCtx.MoVM.Guest = &vimtypes.GuestInfo{}
+			})
+
+			When("guest reports IPv4 address", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest.IpAddress = validIP4
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+					Expect(cond.Reason).To(Equal("Synced"))
+					Expect(cond.Message).To(ContainSubstring("IPv4=\"192.168.0.2\""))
+				})
+			})
+
+			When("guest reports IPv6 address", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest.IpAddress = validIP6
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+					Expect(cond.Reason).To(Equal("Synced"))
+					Expect(cond.Message).To(ContainSubstring("IPv6=\"FD00:F53B:82E4::54\""))
+				})
+			})
+
+			When("guest reports both IPv4 and IPv6 addresses", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+					}
+					vmCtx.MoVM.Guest.IpAddress = validIP4
+					vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						ExtraConfig: []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.local-ipv4",
+								Value: validIP4,
+							},
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.local-ipv6",
+								Value: validIP6,
+							},
+						},
+					}
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+					Expect(cond.Reason).To(Equal("Synced"))
+					Expect(cond.Message).To(ContainSubstring("IPv4=\"192.168.0.2\""))
+					Expect(cond.Message).To(ContainSubstring("IPv6=\"FD00:F53B:82E4::54\""))
+				})
+			})
+
+			When("guest has network interfaces but reports neither IPv4 nor IPv6 address", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest.IpAddress = ""
+					vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+						{
+							DeviceConfigId: 4000,
+							MacAddress:     "00:50:56:00:00:01",
+						},
+					}
+				})
+
+				It("should set VirtualMachineGuestNetworkConfigSynced condition to False", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal("NotSynced"))
+					Expect(cond.Message).To(Equal("Neither IPv4 nor IPv6 address reported by guest"))
+				})
+			})
+
+			When("guest property is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest = nil
+				})
+
+				It("should not set VirtualMachineGuestNetworkConfigSynced condition", func() {
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).To(BeNil())
+				})
+			})
+		})
+
 	})
 
 	Context("Storage", func() {
@@ -738,16 +1019,35 @@ var _ = Describe("UpdateStatus", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Status.Storage = nil
 					})
-					Specify("status.storage to be initialized, snapshot related files are not included", func() {
+					Specify("status.storage to be initialized", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+							Total: kubeutil.BytesToResource(71 * oneGiBInBytes),
 							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							},
 							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Other: kubeutil.BytesToResource(21 * oneGiBInBytes),
 							},
 						}))
+					})
+					When("VMSnapshot feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMSnapshots = true
+							})
+						})
+						Specify("status.storage to be initialized, snapshot related files are not included", func() {
+							Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+								Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+									Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								},
+								Used: &vmopv1.VirtualMachineStorageStatusUsed{
+									Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								},
+							}))
+						})
 					})
 				})
 				When("status.storage is not nil", func() {
@@ -762,16 +1062,36 @@ var _ = Describe("UpdateStatus", func() {
 							},
 						}
 					})
-					Specify("status.storage to be updated, snapshot related files are not included", func() {
+					Specify("status.storage to be updated", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+							Total: kubeutil.BytesToResource(71 * oneGiBInBytes),
 							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							},
 							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Other: kubeutil.BytesToResource(21 * oneGiBInBytes),
 							},
 						}))
+					})
+
+					When("VMSnapshot feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMSnapshots = true
+							})
+						})
+						Specify("status.storage to be updated, snapshot related files are not included", func() {
+							Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+								Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+									Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								},
+								Used: &vmopv1.VirtualMachineStorageStatusUsed{
+									Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								},
+							}))
+						})
 					})
 				})
 			})
@@ -782,6 +1102,17 @@ var _ = Describe("UpdateStatus", func() {
 				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
 					Hardware: vimtypes.VirtualHardware{
 						Device: []vimtypes.BaseVirtualDevice{
+							&vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										BusNumber: 0,
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 200,
+										},
+									},
+								},
+							},
+
 							// classic
 							&vimtypes.VirtualDisk{
 								VirtualDevice: vimtypes.VirtualDevice{
@@ -797,7 +1128,9 @@ var _ = Describe("UpdateStatus", func() {
 											},
 										},
 									},
-									Key: 100,
+									Key:           100,
+									ControllerKey: 200,
+									UnitNumber:    ptr.To[int32](3),
 								},
 								CapacityInBytes: 10 * oneGiBInBytes,
 							},
@@ -810,7 +1143,8 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "101",
 									},
-									Key: 101,
+									Key:        101,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 1 * oneGiBInBytes,
 							},
@@ -823,7 +1157,8 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "102",
 									},
-									Key: 102,
+									Key:        102,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 2 * oneGiBInBytes,
 							},
@@ -836,7 +1171,8 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "103",
 									},
-									Key: 103,
+									Key:        103,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 3 * oneGiBInBytes,
 							},
@@ -847,7 +1183,8 @@ var _ = Describe("UpdateStatus", func() {
 										DescriptorFileName: "[datastore] vm/my-disk-104.vmdk",
 										Uuid:               "104",
 									},
-									Key: 104,
+									Key:        104,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 4 * oneGiBInBytes,
 							},
@@ -866,7 +1203,8 @@ var _ = Describe("UpdateStatus", func() {
 											},
 										},
 									},
-									Key: 105,
+									Key:        105,
+									UnitNumber: ptr.To[int32](0),
 								},
 								CapacityInBytes: 5 * oneGiBInBytes,
 								VDiskId: &vimtypes.ID{
@@ -1041,7 +1379,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes includes the classic disks", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1054,7 +1392,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1063,7 +1401,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1072,7 +1410,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1081,7 +1419,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1109,7 +1447,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes includes the pvc and classic disks", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1122,7 +1460,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1131,7 +1469,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1140,7 +1478,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1149,7 +1487,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1174,11 +1512,11 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
-			When("vm.status.volumes has a stale classic disk", func() {
+			When("vm.status.volumes has a stale (no longer exists) classic disk", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:      "my-disk-106",
+							Name:      pkgutil.GeneratePVCName("disk", "106"),
 							DiskUUID:  "106",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1190,7 +1528,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes no longer includes the stale classic disk", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1203,7 +1541,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1212,7 +1550,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1221,7 +1559,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1230,7 +1568,86 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
+							DiskUUID:  "104",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+
+			When("vm.status.volumes has a stale (not in spec) classic disk", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: pkgutil.GeneratePVCName("disk", "100"),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{},
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](3),
+						},
+					}
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:      "my-old-name",
+							DiskUUID:  "100",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						},
+					}
+				})
+				Specify("status.volumes no longer includes the stale classic disk", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
+							DiskUUID: "100",
+							Type:     vmopv1.VolumeTypeClassic,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								ProviderID: "my-provider-id",
+								KeyID:      "my-key-id",
+							},
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
+							DiskUUID:  "101",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
+							DiskUUID:  "102",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
+							DiskUUID:  "103",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1245,14 +1662,14 @@ var _ = Describe("UpdateStatus", func() {
 			When("there is a classic disk w an invalid path", func() {
 				BeforeEach(func() {
 					vmCtx.MoVM.Config.Hardware.
-						Device[0].(*vimtypes.VirtualDisk).
+						Device[1].(*vimtypes.VirtualDisk).
 						Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).
 						FileName = "invalid"
 				})
 				Specify("status.volumes omits the classic disk w invalid path", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1261,7 +1678,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1270,7 +1687,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1279,7 +1696,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1288,6 +1705,69 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
 						},
 					}))
+				})
+			})
+
+			When("brownfield vm was upgraded from v1alpha3 VM, it has a classic volume which doesn't have 'requested'", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     pkgutil.GeneratePVCName("disk", "104"),
+							DiskUUID: "104",
+							Type:     vmopv1.VolumeTypeClassic, // requested type
+							Attached: true,
+							Limit:    kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Used:     kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+							// No requested.
+						},
+					}
+				})
+				Specify("status.volumes includes this volume and its requested is patched", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(HaveLen(5))
+					Expect(vmCtx.VM.Status.Volumes[4]).To(Equal(
+						vmopv1.VirtualMachineVolumeStatus{
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
+							DiskUUID:  "104",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes), // Patched.
+							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+						},
+					))
+				})
+			})
+
+			When("brownfield vm was upgraded from v1alpha3 VM, it has a managed volume which doesn't has 'requested'", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-105",
+							DiskUUID: "105",
+							Type:     vmopv1.VolumeTypeManaged,
+							Attached: false,
+							Limit:    kubeutil.BytesToResource(100 * oneGiBInBytes),
+							// No requested.
+						},
+					}
+				})
+				Specify("status.volumes includes this volume but skip patching its used since it should be patched by volume controller", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(HaveLen(6))
+					Expect(vmCtx.VM.Status.Volumes[5]).To(Equal(
+						vmopv1.VirtualMachineVolumeStatus{
+							Name:     "my-disk-105",
+							DiskUUID: "105",
+							Type:     vmopv1.VolumeTypeManaged,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								KeyID:      "my-key-id",
+								ProviderID: "my-provider-id",
+							},
+							Attached: false,
+							Limit:    kubeutil.BytesToResource(100 * oneGiBInBytes),
+							Used:     kubeutil.BytesToResource(500 + (50 * oneGiBInBytes)),
+							// No requested.
+						},
+					))
 				})
 			})
 
@@ -1362,10 +1842,10 @@ var _ = Describe("UpdateStatus", func() {
 						},
 					}
 				})
-				Specify("status.volumes is calculated, and value of 'used' only includes the files in the last chain", func() {
+				Specify("status.volumes is calculated", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1375,45 +1855,182 @@ var _ = Describe("UpdateStatus", func() {
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 1*oneGiBInBytes + 500 + 0.25*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 0.25*oneGiBInBytes + 500 + 1*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 0.5*oneGiBInBytes + 500 + 0.25*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 1*oneGiBInBytes + 500 + 0.5*oneGiBInBytes),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 2*oneGiBInBytes + 500 + 1*oneGiBInBytes),
 						},
 					}))
+				})
+				When("VMSnapshot feature is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.Features.VMSnapshots = true
+						})
+
+						vmCtx.MoVM.LayoutEx.Snapshot = []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+							{
+								Key: vimtypes.ManagedObjectReference{
+									Type:  "Snapshot",
+									Value: "Snapshot-1",
+								},
+								Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+									{
+										// classic disk
+										Key: 100,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{3, 4}, // 500 + 500
+											},
+										},
+									},
+									{
+										// managed disk
+										Key: 105,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{13, 14}, // 5 Gib
+											},
+										},
+									},
+								},
+								DataKey:   10, // 2 Gib
+								MemoryKey: -1,
+							},
+							{
+								Key: vimtypes.ManagedObjectReference{
+									Type:  "Snapshot",
+									Value: "Snapshot-2",
+								},
+								Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+									{
+										// classic disk
+										Key: 101,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{1, 2}, // 500 + 500
+											},
+										},
+									},
+									{
+										// managed disk
+										Key: 105,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{11, 12}, // 1.5 Gib
+											},
+										},
+									},
+								},
+								DataKey:   5, // 500
+								MemoryKey: 4, // 500
+							},
+						}
+					})
+					Specify("status.volumes is calculated, and value of 'used' only includes the files in the last chain", func() {
+						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     pkgutil.GeneratePVCName("disk", "100"),
+								DiskUUID: "100",
+								Type:     vmopv1.VolumeTypeClassic,
+								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+									KeyID:      "my-key-id",
+									ProviderID: "my-provider-id",
+								},
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							},
+							{
+								Name:      pkgutil.GeneratePVCName("disk", "101"),
+								DiskUUID:  "101",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+							},
+							{
+								Name:      pkgutil.GeneratePVCName("disk", "102"),
+								DiskUUID:  "102",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+							},
+							{
+								Name:      pkgutil.GeneratePVCName("disk", "103"),
+								DiskUUID:  "103",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							},
+							{
+								Name:      pkgutil.GeneratePVCName("disk", "104"),
+								DiskUUID:  "104",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+							},
+						}))
+					})
+					Specify("status.storage is calculated, it contains snapshot related usage in Snapshot field", func() {
+						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+							Total: kubeutil.BytesToResource(74.75*oneGiBInBytes + 3000),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+								Disks: kubeutil.BytesToResource(20 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
+								Disks: kubeutil.BytesToResource(4.75*oneGiBInBytes + 2500),
+								Snapshots: &vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{
+									// 1, 2, 3, 4, 4, 5, 10
+									VM: kubeutil.BytesToResource(3000 + 2*oneGiBInBytes),
+									// 11, 12, 13, 14
+									Volume: kubeutil.BytesToResource(6.5 * oneGiBInBytes),
+								},
+								Other: kubeutil.BytesToResource(54.75*oneGiBInBytes + 3000),
+							},
+						}))
+					})
 				})
 			})
 
@@ -1426,7 +2043,7 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes is calculated, and value of 'used' is 0", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-100",
+							Name:     pkgutil.GeneratePVCName("disk", "100"),
 							DiskUUID: "100",
 							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1439,7 +2056,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-101",
+							Name:      pkgutil.GeneratePVCName("disk", "101"),
 							DiskUUID:  "101",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1448,7 +2065,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-102",
+							Name:      pkgutil.GeneratePVCName("disk", "102"),
 							DiskUUID:  "102",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1457,7 +2074,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-103",
+							Name:      pkgutil.GeneratePVCName("disk", "103"),
 							DiskUUID:  "103",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1466,7 +2083,7 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 						{
-							Name:      "my-disk-104",
+							Name:      pkgutil.GeneratePVCName("disk", "104"),
 							DiskUUID:  "104",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
@@ -1475,6 +2092,196 @@ var _ = Describe("UpdateStatus", func() {
 							Used:      kubeutil.BytesToResource(0),
 						},
 					}))
+				})
+			})
+		})
+	})
+
+	Context("PowerState", func() {
+		Context("status.powerState", func() {
+			When("VM runtime power state is PoweredOn", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+				})
+
+				When("spec.powerState is PoweredOn (synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					It("should set status.powerState to PoweredOn", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(Equal(string(vmopv1.VirtualMachinePowerStateOn)))
+					})
+				})
+
+				When("spec.powerState is PoweredOff (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					It("should set status.powerState to PoweredOn", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOff"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOn"))
+					})
+				})
+
+				When("spec.powerState is Suspended (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+
+					It("should set status.powerState to PoweredOn", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=Suspended"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOn"))
+					})
+				})
+			})
+
+			When("VM runtime power state is PoweredOff", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+				})
+
+				When("spec.powerState is PoweredOff (synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					It("should set status.powerState to PoweredOff", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(Equal(string(vmopv1.VirtualMachinePowerStateOff)))
+					})
+				})
+
+				When("spec.powerState is PoweredOn (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					It("should set status.powerState to PoweredOff", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOn"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOff"))
+					})
+				})
+
+				When("spec.powerState is Suspended (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+
+					It("should set status.powerState to PoweredOff", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=Suspended"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=PoweredOff"))
+					})
+				})
+			})
+
+			When("VM runtime power state is Suspended", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStateSuspended
+				})
+
+				When("spec.powerState is Suspended (synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+
+					It("should set status.powerState to Suspended", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(Equal(string(vmopv1.VirtualMachinePowerStateSuspended)))
+					})
+				})
+
+				When("spec.powerState is PoweredOn (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					It("should set status.powerState to Suspended", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOn"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=Suspended"))
+					})
+				})
+
+				When("spec.powerState is PoweredOff (not synced)", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					It("should set status.powerState to Suspended", func() {
+						Expect(vmCtx.VM.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+					})
+
+					It("should set VirtualMachinePowerStateSynced condition to False", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("NotSynced"))
+						Expect(cond.Message).To(ContainSubstring("spec.powerState=PoweredOff"))
+						Expect(cond.Message).To(ContainSubstring("status.powerState=Suspended"))
+					})
 				})
 			})
 		})
@@ -1509,52 +2316,22 @@ var _ = Describe("UpdateStatus", func() {
 
 		When("VM has various controller types", func() {
 			BeforeEach(func() {
-				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
-					Hardware: vimtypes.VirtualHardware{
-						Device: []vimtypes.BaseVirtualDevice{
-							&vimtypes.VirtualIDEController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 200,
-									},
-									BusNumber: 0,
-								},
-							},
-							&vimtypes.VirtualSCSIController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 1000,
-									},
-									BusNumber: 0,
-								},
-							},
-							&vimtypes.VirtualSATAController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 15000,
-									},
-									BusNumber: 0,
-								},
-							},
-							&vimtypes.VirtualNVMEController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 20000,
-									},
-									BusNumber: 0,
-								},
-							},
-						},
-					},
-				}
+				vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+					builder.DummyIDEController(200, 0, nil),
+					builder.DummySCSIController(1000, 0),
+					builder.DummySATAController(15000, 0, nil),
+					builder.DummyNVMEController(20000, 0),
+				)
 			})
 			Specify("status.hardware.controllers should contain all controller types", func() {
 				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.Hardware.Controllers).To(HaveLen(4))
 
 				controllerTypes := make([]vmopv1.VirtualControllerType, 0, 4)
+				controllerKeys := make([]int32, 0, 4)
 				for _, controller := range vmCtx.VM.Status.Hardware.Controllers {
 					controllerTypes = append(controllerTypes, controller.Type)
+					controllerKeys = append(controllerKeys, controller.DeviceKey)
 					Expect(controller.BusNumber).To(Equal(int32(0)))
 				}
 
@@ -1563,6 +2340,13 @@ var _ = Describe("UpdateStatus", func() {
 					vmopv1.VirtualControllerTypeSCSI,
 					vmopv1.VirtualControllerTypeSATA,
 					vmopv1.VirtualControllerTypeNVME,
+				))
+
+				Expect(controllerKeys).To(ContainElements(
+					int32(200),
+					int32(1000),
+					int32(15000),
+					int32(20000),
 				))
 			})
 		})
@@ -1580,13 +2364,7 @@ var _ = Describe("UpdateStatus", func() {
 									BusNumber: 0,
 								},
 							},
-							&vimtypes.VirtualDisk{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Key:           2000,
-									ControllerKey: 1000,
-									UnitNumber:    ptr.To(int32(0)),
-								},
-							},
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "test-uuid-123", ""),
 							&vimtypes.VirtualIDEController{
 								VirtualController: vimtypes.VirtualController{
 									VirtualDevice: vimtypes.VirtualDevice{
@@ -1595,13 +2373,7 @@ var _ = Describe("UpdateStatus", func() {
 									BusNumber: 0,
 								},
 							},
-							&vimtypes.VirtualCdrom{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Key:           3000,
-									ControllerKey: 200,
-									UnitNumber:    ptr.To(int32(0)),
-								},
-							},
+							builder.DummyCdromDevice(3000, 200, 0, "/vmfs/volumes/datastore1/vm1/ubuntu.iso"),
 						},
 					},
 				}
@@ -1613,24 +2385,764 @@ var _ = Describe("UpdateStatus", func() {
 				var scsiController, ideController *vmopv1.VirtualControllerStatus
 				for i := range vmCtx.VM.Status.Hardware.Controllers {
 					controller := &vmCtx.VM.Status.Hardware.Controllers[i]
-					if controller.Type == vmopv1.VirtualControllerTypeSCSI {
+					switch controller.Type {
+					case vmopv1.VirtualControllerTypeSCSI:
 						scsiController = controller
-					} else if controller.Type == vmopv1.VirtualControllerTypeIDE {
+					case vmopv1.VirtualControllerTypeIDE:
 						ideController = controller
 					}
 				}
 
 				Expect(scsiController).ToNot(BeNil())
+				Expect(scsiController.DeviceKey).To(Equal(int32(1000)))
 				Expect(scsiController.BusNumber).To(Equal(int32(0)))
 				Expect(scsiController.Devices).To(HaveLen(1))
 				Expect(scsiController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(scsiController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeDisk))
 
 				Expect(ideController).ToNot(BeNil())
+				Expect(ideController.DeviceKey).To(Equal(int32(200)))
 				Expect(ideController.BusNumber).To(Equal(int32(0)))
 				Expect(ideController.Devices).To(HaveLen(1))
 				Expect(ideController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(ideController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeCDROM))
+			})
+		})
+
+		Context("HardwareCondition", func() {
+			// Constants for common condition messages
+			const (
+				aggregateMessagePrefix = "Hardware configuration issues detected. See"
+				aggregateMessageSuffix = "conditions for details."
+			)
+
+			// Child condition metadata for verification
+			childConditionInfo := map[string]struct {
+				conditionType string
+				falseReason   string
+			}{
+				vmopv1.VirtualMachineHardwareControllersVerified: {
+					conditionType: vmopv1.VirtualMachineHardwareControllersVerified,
+					falseReason:   vmopv1.VirtualMachineHardwareControllersMismatchReason,
+				},
+				vmopv1.VirtualMachineHardwareVolumesVerified: {
+					conditionType: vmopv1.VirtualMachineHardwareVolumesVerified,
+					falseReason:   vmopv1.VirtualMachineHardwareVolumesMismatchReason,
+				},
+				vmopv1.VirtualMachineHardwareCDROMVerified: {
+					conditionType: vmopv1.VirtualMachineHardwareCDROMVerified,
+					falseReason:   vmopv1.VirtualMachineHardwareCDROMMismatchReason,
+				},
+			}
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+				// Clear MoVM.Config so tests can set it up as needed.
+				// reconcileStatusController() will populate status from MoVM.Config.Hardware.Device.
+				vmCtx.MoVM.Config = nil
+				// Clear default volumes, CD-ROMs, and controllers from DummyVirtualMachine.
+				vmCtx.VM.Spec.Volumes = nil
+				vmCtx.VM.Spec.Hardware = nil
+			})
+
+			// Helper function to build aggregate condition message from condition types.
+			buildAggregateMessage := func(conditionTypes ...string) string {
+				if len(conditionTypes) == 0 {
+					return ""
+				}
+				return fmt.Sprintf("%s %s %s", aggregateMessagePrefix, strings.Join(conditionTypes, ", "), aggregateMessageSuffix)
+			}
+
+			// Helper function to verify a child condition with expected message or True status.
+			verifyChildCondition := func(
+				conditionType string,
+				expectedFalseReason string,
+				expectedMessage string,
+				shouldHaveIssues bool) {
+				childCond := conditions.Get(vmCtx.VM, conditionType)
+				if shouldHaveIssues {
+					Expect(childCond).ToNot(BeNil())
+					Expect(childCond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(childCond.Reason).To(Equal(expectedFalseReason))
+					Expect(childCond.Message).To(Equal(expectedMessage))
+				} else {
+					// Verify that condition without issues is True.
+					if childCond != nil {
+						Expect(childCond.Status).To(Equal(metav1.ConditionTrue))
+					}
+				}
+			}
+
+			// Helper function to assert condition is false with expected message.
+			// Also verifies that child conditions are set correctly with exact detailed messages.
+			// expectedChildMessages is a map from condition type to expected message string.
+			assertConditionFalse := func(expectedMessage string, expectedChildMessages map[string]string) {
+				cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineHardwareDeviceConfigVerified)
+				Expect(cond).ToNot(BeNil())
+				Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineHardwareDeviceConfigMismatchReason))
+				Expect(cond.Message).To(Equal(expectedMessage))
+
+				// Verify all child conditions using table-driven approach.
+				for conditionType, info := range childConditionInfo {
+					if expectedMsg, ok := expectedChildMessages[conditionType]; ok {
+						verifyChildCondition(info.conditionType, info.falseReason, expectedMsg, true)
+					} else {
+						verifyChildCondition(info.conditionType, "", "", false)
+					}
+				}
+			}
+
+			// Helper function to assert condition is true and all child conditions are true.
+			assertConditionTrue := func() {
+				cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineHardwareDeviceConfigVerified)
+				Expect(cond).To(HaveValue(HaveField("Status", Equal(metav1.ConditionTrue))))
+
+				// Verify all child conditions are True using table-driven approach.
+				for _, info := range childConditionInfo {
+					childCond := conditions.Get(vmCtx.VM, info.conditionType)
+					if childCond != nil {
+						Expect(childCond.Status).To(Equal(metav1.ConditionTrue))
+					}
+				}
+			}
+
+			// Helper function to set up SCSI controller in spec.
+			setupSCSIControllerInSpec := func(busNumber int32) {
+				if vmCtx.VM.Spec.Hardware == nil {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				vmCtx.VM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{BusNumber: busNumber},
+				}
+			}
+
+			// Helper function to set up IDE controller in spec.
+			setupIDEControllerInSpec := func(busNumber int32) {
+				if vmCtx.VM.Spec.Hardware == nil {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				vmCtx.VM.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{BusNumber: busNumber},
+				}
+			}
+
+			// Helper function to create a basic PVC volume setup.
+			setupPVCVolume := func(volumeName, pvcName string, controllerType vmopv1.VirtualControllerType, busNumber, unitNumber int32) {
+				vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					builder.DummyPVCVirtualMachineVolume(
+						volumeName,
+						pvcName,
+						controllerType,
+						ptr.To(busNumber),
+						ptr.To(unitNumber),
+					),
+				}
+			}
+
+			// Helper function to set up CD-ROM image objects.
+			setupCDROMImage := func(vmiName, vmiFileName string) {
+				vmCtx.VM.Namespace = ctx.PodNamespace
+				k8sObjs := builder.DummyImageAndItemObjectsForCdromBacking(
+					vmiName, ctx.PodNamespace, "VirtualMachineImage", vmiFileName,
+					"lib-item-uuid", true, true,
+					resource.MustParse("100Mi"),
+					true, true, imgregv1a1.ContentLibraryItemTypeIso)
+				for _, obj := range k8sObjs {
+					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+				}
+			}
+
+			Context("when all checks pass", func() {
+				When("SCSI and IDE controllers match", func() {
+					BeforeEach(func() {
+						// Set up matching controllers in spec and MoVM so status is populated correctly.
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{{BusNumber: 0}},
+							IDEControllers:  []vmopv1.IDEControllerSpec{{BusNumber: 0}},
+						}
+
+						// Set up MoVM.Config.Hardware.Device to match the spec.
+						// reconcileStatusController() will populate status from this.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyIDEController(200, 0, nil),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("SATA controller matches", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SATAControllers: []vmopv1.SATAControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+
+						// Set up MoVM.Config.Hardware.Device to have a SATA controller.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySATAController(15000, 0, nil),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("NVME controller matches", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							NVMEControllers: []vmopv1.NVMEControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+
+						// Set up MoVM.Config.Hardware.Device to have an NVME controller.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyNVMEController(20000, 0),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("when there are no controllers in spec or status", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("when hardware is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = nil
+						// MoVM.Config.Hardware.Device is already cleared in parent BeforeEach.
+						// reconcileStatusController() will return early without setting status.
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+			})
+
+			Context("controller mismatches", func() {
+				When("spec has controllers but moVM.Config is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						vmCtx.MoVM.Config = nil
+					})
+
+					It("should mark condition as false with concise summary", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0",
+							})
+					})
+				})
+
+				When("status has controllers but spec hardware is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = nil
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+					})
+
+					It("should mark the condition as false with concise summary", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "unexpected controllers: SCSI:0",
+							})
+					})
+				})
+
+				When("controller type mismatch", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller instead of SCSI.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+					})
+
+					It("should mark the condition as false", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
+							})
+					})
+				})
+
+				When("controller bus number mismatch", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with bus number 1.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 1),
+						)
+					})
+
+					It("should mark the condition as false", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: SCSI:1",
+							})
+					})
+				})
+
+				When("NVME controller mismatch", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							NVMEControllers: []vmopv1.NVMEControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller instead of NVME.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+					})
+
+					It("should mark the condition as false", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: NVME:0\nunexpected controllers: SCSI:0",
+							})
+					})
+				})
+			})
+
+			Context("PVC volume mismatches", func() {
+				When("spec has PVC volume but it's not attached", func() {
+					BeforeEach(func() {
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller but no disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should mark the condition as false with concise summary", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+							})
+					})
+				})
+
+				When("PVC volume has incomplete placement information", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "pvc-volume-incomplete",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc",
+										},
+										// Missing ControllerType, ControllerBusNumber, or UnitNumber.
+									},
+								},
+							},
+						}
+					})
+
+					It("should mark the condition as false with incomplete placement error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "PVC volumes with incomplete placement: pvc-volume-incomplete",
+							})
+					})
+				})
+
+				When("PVC volume is correctly attached", func() {
+					BeforeEach(func() {
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-123", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-123",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+						}
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("unexpected PVC volume is attached", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-123", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-123",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+						}
+					})
+
+					It("should mark the condition as false with unexpected PVC volumes error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "unexpected PVC volumes: pvc-volume-1 (SCSI:0:0)",
+							})
+					})
+				})
+			})
+
+			Context("CD-ROM device mismatches", func() {
+				const (
+					testVMIName     = "test-vmi"
+					testVMIFileName = "/vmfs/volumes/datastore1/test.iso"
+				)
+
+				BeforeEach(func() {
+					setupCDROMImage(testVMIName, testVMIFileName)
+
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(
+								"cdrom1",
+								testVMIName,
+								"VirtualMachineImage",
+								vmopv1.VirtualControllerTypeIDE,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+								nil,
+								nil,
+							),
+						},
+					}
+				})
+
+				When("spec has CD-ROM but it's not attached", func() {
+					BeforeEach(func() {
+						setupIDEControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller but no CD-ROM.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+					})
+
+					It("should mark the condition as false with missing CD-ROM devices error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: fmt.Sprintf("missing CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
+							})
+					})
+				})
+
+				When("CD-ROM device has incomplete placement information", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware.Cdrom[0].ControllerType = ""
+						vmCtx.VM.Spec.Hardware.Cdrom[0].ControllerBusNumber = nil
+						vmCtx.VM.Spec.Hardware.Cdrom[0].UnitNumber = nil
+					})
+
+					It("should mark the condition as false with incomplete placement error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: "CD-ROM devices with incomplete placement: cdrom1",
+							})
+					})
+				})
+
+				When("CD-ROM image reference cannot be resolved", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware.Cdrom[0].Image.Name = "non-existent-image"
+					})
+
+					It("should mark the condition as false with resolution error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: "CD-ROM devices with failed resolution: cdrom1",
+							})
+					})
+				})
+
+				When("CD-ROM device is correctly attached", func() {
+					BeforeEach(func() {
+						setupIDEControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller with a CD-ROM.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+							builder.DummyCdromDevice(3000, 200, 0, testVMIFileName),
+						)
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("unexpected CD-ROM device is attached", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						setupIDEControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller with a CD-ROM.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+							builder.DummyCdromDevice(3000, 200, 0, testVMIFileName),
+						)
+					})
+
+					It("should mark the condition as false with unexpected CD-ROM devices error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareCDROMVerified: fmt.Sprintf("unexpected CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
+							})
+					})
+				})
+			})
+
+			Context("multiple items in same category", func() {
+				When("multiple missing controllers", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
+								{BusNumber: 0},
+								{BusNumber: 1},
+							},
+							IDEControllers: []vmopv1.IDEControllerSpec{
+								{BusNumber: 0},
+							},
+						}
+					})
+
+					It("should format multiple controllers as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: IDE:0, SCSI:0, SCSI:1",
+							})
+					})
+				})
+
+				When("multiple unexpected controllers", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyIDEController(200, 0, nil),
+							builder.DummyNVMEController(20000, 0),
+						)
+					})
+
+					It("should format multiple controllers as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareControllersVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "unexpected controllers: IDE:0, NVME:0, SCSI:0",
+							})
+					})
+				})
+
+				When("multiple missing PVC volumes", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyPVCVirtualMachineVolume(
+								"pvc-volume-1",
+								"test-pvc-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+							builder.DummyPVCVirtualMachineVolume(
+								"pvc-volume-2",
+								"test-pvc-2",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(1)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller but no disks.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should format multiple PVC volumes as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing PVC volumes: pvc-volume-1 (SCSI:0:0), pvc-volume-2 (SCSI:0:1)",
+							})
+					})
+				})
+
+				When("multiple incomplete placement PVC volumes", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "pvc-volume-incomplete-1",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc-1",
+										},
+									},
+								},
+							},
+							{
+								Name: "pvc-volume-incomplete-2",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc-2",
+										},
+									},
+								},
+							},
+						}
+					})
+
+					It("should format multiple incomplete placement errors as comma-separated list", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "PVC volumes with incomplete placement: pvc-volume-incomplete-1, pvc-volume-incomplete-2",
+							})
+					})
+				})
+			})
+
+			Context("multiple error scenarios", func() {
+				When("controllers and volumes have issues", func() {
+					BeforeEach(func() {
+						// Set up mismatches in controllers and PVC volumes.
+						setupSCSIControllerInSpec(0)
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller but no disk.
+						// This simulates the mismatch: spec wants SCSI but status has IDE.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should provide a concise summary of device types with issues", func() {
+						assertConditionFalse(
+							buildAggregateMessage(
+								vmopv1.VirtualMachineHardwareControllersVerified,
+								vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
+								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+							})
+					})
+				})
+
+				When("controllers, volumes, and CD-ROM all have issues", func() {
+					const (
+						testVMIName     = "test-vmi"
+						testVMIFileName = "/vmfs/volumes/datastore1/test.iso"
+					)
+
+					BeforeEach(func() {
+						setupCDROMImage(testVMIName, testVMIFileName)
+
+						// Set up mismatches in controllers, PVC volumes, and CD-ROM devices.
+						setupSCSIControllerInSpec(0)
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+
+						vmCtx.VM.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(
+								"cdrom1",
+								testVMIName,
+								"VirtualMachineImage",
+								vmopv1.VirtualControllerTypeIDE,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+								nil,
+								nil,
+							),
+						}
+
+						// Set up MoVM.Config.Hardware.Device to have an IDE controller but no disk or CD-ROM.
+						// This simulates mismatches: spec wants SCSI controller, PVC volume, and CD-ROM but status has IDE controller only.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummyIDEController(200, 0, nil),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should provide a concise summary of all device types with issues", func() {
+						assertConditionFalse(
+							buildAggregateMessage(
+								vmopv1.VirtualMachineHardwareControllersVerified,
+								vmopv1.VirtualMachineHardwareVolumesVerified,
+								vmopv1.VirtualMachineHardwareCDROMVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
+								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+								vmopv1.VirtualMachineHardwareCDROMVerified:       fmt.Sprintf("missing CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
+							})
+					})
+				})
 			})
 		})
 	})
@@ -2164,8 +3676,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is 1", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "1",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "1",
 					}
 				})
 				It("sets condition true", func() {
@@ -2178,8 +3690,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is true and there is a reason", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "true,my-reason",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "true,my-reason",
 					}
 				})
 				It("sets condition true", func() {
@@ -2193,8 +3705,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is true and there is a reason and message", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "true,my-reason,my,comma,delimited,message",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "true,my-reason,my,comma,delimited,message",
 					}
 				})
 				It("sets condition true", func() {
@@ -2211,8 +3723,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is 0", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "0",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "0",
 					}
 				})
 				It("sets condition false", func() {
@@ -2226,8 +3738,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is non-truthy", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "not a boolean value",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "not a boolean value",
 					}
 				})
 				It("sets condition false", func() {
@@ -2241,8 +3753,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is false and there is a reason", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "false,my-reason",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "false,my-reason",
 					}
 				})
 				It("sets condition false", func() {
@@ -2256,8 +3768,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			When("status is false and there is a reason and message", func() {
 				BeforeEach(func() {
 					extraConfig = map[string]string{
-						"key1":                           "val1",
-						util.GuestInfoBootstrapCondition: "false,my-reason,my,comma,delimited,message",
+						"key1":                              "val1",
+						pkgutil.GuestInfoBootstrapCondition: "false,my-reason,my,comma,delimited,message",
 					}
 				})
 				It("sets condition false", func() {
@@ -2961,6 +4473,18 @@ var _ = Describe("Hardware status", func() {
 					Expect(vmCtx.VM.Status.Hardware.Memory.Total).To(BeNil())
 				})
 			})
+
+			When("memory is larger than math.MaxInt32 bytes", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.MemoryMB = math.MaxInt32/(1000*1000) + 1
+				})
+
+				It("should set the memory status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2148M"))
+				})
+			})
 		})
 
 		Context("nVidia vGPU devices", func() {
@@ -3416,10 +4940,7 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.APIVersion).To(Equal(vmSnapshot.APIVersion))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Kind).To(Equal(vmSnapshot.Kind))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 				})
 			})
 
@@ -3490,8 +5011,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("child-snapshot"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("child-snapshot"))
 			})
 		})
 
@@ -3545,8 +5065,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("deep-snapshot"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("deep-snapshot"))
 			})
 		})
 
@@ -3585,8 +5104,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("snapshot-2"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("snapshot-2"))
 			})
 
 			It("should find and update the correct root snapshots in the status", func() {
@@ -3596,12 +5114,11 @@ var _ = Describe("Snapshot status", func() {
 
 				Expect(vmCtx.VM.Status.RootSnapshots[0]).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged))
-				Expect(vmCtx.VM.Status.RootSnapshots[0].Reference).To(BeNil())
+				// RootSnapshots[0] is unmanaged, so it doesn't have a corresponding snapshot name.
 
 				Expect(vmCtx.VM.Status.RootSnapshots[1]).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.RootSnapshots[1].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.RootSnapshots[1].Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.RootSnapshots[1].Reference.Name).To(Equal("snapshot-2"))
+				Expect(vmCtx.VM.Status.RootSnapshots[1].Name).To(Equal("snapshot-2"))
 			})
 		})
 
@@ -3614,11 +5131,7 @@ var _ = Describe("Snapshot status", func() {
 
 				vmCtx.VM.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
 					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
-					},
+					Name: vmSnapshot.Name,
 				}
 
 				vmCtx.MoVM.Snapshot = &vimtypes.VirtualMachineSnapshotInfo{
@@ -3858,29 +5371,20 @@ var _ = Describe("Snapshot status", func() {
 					Name:      "snapshot-1",
 				}, vmSnapshot1)).To(Succeed())
 				Expect(vmSnapshot1.Status.Children).To(HaveLen(3))
-				Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
-					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot2.APIVersion,
-						Kind:       vmSnapshot2.Kind,
-						Name:       vmSnapshot2.Name,
-					}},
+				Expect(vmSnapshot1.Status.Children).To(ContainElements(
 					vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot3.APIVersion,
-							Kind:       vmSnapshot3.Kind,
-							Name:       vmSnapshot3.Name,
-						},
+						Name: vmSnapshot2.Name,
 					},
 					vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot4.APIVersion,
-							Kind:       vmSnapshot4.Kind,
-							Name:       vmSnapshot4.Name,
-						},
-					}))
+						Name: vmSnapshot3.Name,
+					},
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Name: vmSnapshot4.Name,
+					},
+				))
 
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3899,11 +5403,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmSnapshot4.Status.Children).To(HaveLen(1))
 				Expect(vmSnapshot4.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot5.APIVersion,
-						Kind:       vmSnapshot5.Kind,
-						Name:       vmSnapshot5.Name,
-					},
+					Name: vmSnapshot5.Name,
 				}))
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3917,11 +5417,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmSnapshot6.Status.Children).To(HaveLen(1))
 				Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot7.APIVersion,
-						Kind:       vmSnapshot7.Kind,
-						Name:       vmSnapshot7.Name,
-					},
+					Name: vmSnapshot7.Name,
 				}))
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3949,24 +5445,16 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmSnapshot1.Status.Children).To(HaveLen(3))
 					Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot2.APIVersion,
-							Kind:       vmSnapshot2.Kind,
-							Name:       vmSnapshot2.Name,
-						},
+						Name: vmSnapshot2.Name,
 					},
 						vmopv1.VirtualMachineSnapshotReference{
 							Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-							Reference: &vmopv1common.LocalObjectRef{
-								APIVersion: vmSnapshot3.APIVersion,
-								Kind:       vmSnapshot3.Kind,
-								Name:       vmSnapshot3.Name,
-							},
+							Name: vmSnapshot3.Name,
 						},
 						vmopv1.VirtualMachineSnapshotReference{
 							Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
 							// snapshot-4 is deleted, so it should be marked as Unmanaged
-							Reference: nil,
+							Name: "",
 						},
 					))
 
@@ -3992,11 +5480,7 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmSnapshot6.Status.Children).To(HaveLen(1))
 					Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot7.APIVersion,
-							Kind:       vmSnapshot7.Kind,
-							Name:       vmSnapshot7.Name,
-						},
+						Name: vmSnapshot7.Name,
 					}))
 					Expect(ctx.Client.Get(ctx, types.NamespacedName{
 						Namespace: vmCtx.VM.Namespace,
@@ -4143,13 +5627,12 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(vmopv1.VirtualMachineSnapshotReference{
-						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}}))
+					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(
+						vmopv1.VirtualMachineSnapshotReference{
+							Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+							Name: vmSnapshot.Name,
+						},
+					))
 				})
 			})
 
@@ -4181,10 +5664,12 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(vmopv1.VirtualMachineSnapshotReference{
-						Type:      vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: snapshotLocalRef("test-snapshot"),
-					}))
+					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(
+						vmopv1.VirtualMachineSnapshotReference{
+							Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+							Name: "test-snapshot",
+						},
+					))
 				})
 			})
 		})
@@ -4226,22 +5711,18 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(2))
-				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1.VirtualMachineSnapshotReference{
-					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot1.APIVersion,
-						Kind:       vmSnapshot1.Kind,
-						Name:       vmSnapshot1.Name,
+				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Name: vmSnapshot1.Name,
 					},
-				}))
-				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1.VirtualMachineSnapshotReference{
-					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot2.APIVersion,
-						Kind:       vmSnapshot2.Kind,
-						Name:       vmSnapshot2.Name,
+				))
+				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Name: vmSnapshot2.Name,
 					},
-				}))
+				))
 			})
 		})
 
@@ -4255,11 +5736,7 @@ var _ = Describe("Snapshot status", func() {
 				vmCtx.VM.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{
 					{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						},
+						Name: vmSnapshot.Name,
 					},
 				}
 
@@ -4335,15 +5812,7 @@ func (m *mockClient) Get(ctx context.Context, key ctrlclient.ObjectKey, obj ctrl
 //nolint:unparam
 func snapshotRefManaged(snapshotName string) *vmopv1.VirtualMachineSnapshotReference {
 	return &vmopv1.VirtualMachineSnapshotReference{
-		Type:      vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: snapshotLocalRef(snapshotName),
-	}
-}
-
-func snapshotLocalRef(snapshotName string) *vmopv1common.LocalObjectRef {
-	return &vmopv1common.LocalObjectRef{
-		APIVersion: "vmoperator.vmware.com/v1alpha5",
-		Kind:       "VirtualMachineSnapshot",
-		Name:       snapshotName,
+		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+		Name: snapshotName,
 	}
 }

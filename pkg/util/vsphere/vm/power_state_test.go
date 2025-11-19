@@ -121,6 +121,7 @@ func powerStateTests() {
 			expectedErr = nil                                              // default
 			fetchProperties = true                                         // default
 			initialPowerState = vimtypes.VirtualMachinePowerStatePoweredOn // default
+			skipPostSetPowerStateVerification = false                      // default
 		})
 
 		JustBeforeEach(func() {
@@ -483,6 +484,7 @@ func powerStateTests() {
 							BeforeEach(func() {
 								fetchProperties = false
 								expectedResult = vmutil.PowerOpResultNone
+								skipPostSetPowerStateVerification = true
 							})
 							It("should not power off the VM because it thinks it already is", func() {})
 						})

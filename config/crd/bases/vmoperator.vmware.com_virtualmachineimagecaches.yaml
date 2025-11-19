@@ -18,12 +18,18 @@ spec:
     singular: virtualmachineimagecache
   scope: Namespaced
   versions:
-  - name: v1alpha3
+  - deprecated: true
+    deprecationWarning: v1alpha3 VirtualMachineImageCache is deprecated; use v1alpha5
+      VirtualMachineImageCache
+    name: v1alpha3
     schema:
       openAPIV3Schema:
         description: |-
           VirtualMachineImageCache is the schema for the
           virtualmachineimagecaches API.
+
+          Deprecated: This type is deprecated and will be removed in a future release.
+          Please use v1alpha5.VirtualMachineImageCache instead.
         properties:
           apiVersion:
             description: |-
@@ -95,7 +101,6 @@ spec:
                 type: string
             required:
             - providerID
-            - providerVersion
             type: object
           status:
             description: |-
@@ -244,19 +249,31 @@ spec:
                         datastore.
                       items:
                         properties:
-                          id:
+                          diskType:
                             description: |-
-                              ID describes the value used to locate the file.
-                              The value of this field depends on the type of file.
-                              For Type=Classic, the ID value describes a datastore path, ex.
-                              "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
-                              For Type=Managed, the ID value describes a First Class Disk (FCD).
-                            type: string
-                          type:
-                            description: Type describes the type of disk.
+                              DiskType describes the type of disk.
+                              This field is only non-empty when Type=Disk.
                             enum:
                             - Classic
                             - Managed
+                            type: string
+                          id:
+                            description: |-
+                              ID describes the value used to locate the file.
+                              The value of this field depends on the type of file:
+
+                              - Type=Other                  -- The ID value describes a datastore path,
+                                                               ex. "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk"
+                              - Type=Disk, DiskType=Classic -- The ID value describes a datastore
+                                                               path.
+                              - Type=Disk, DiskType=Managed -- The ID value describes a First Class
+                                                               Disk (FCD).
+                            type: string
+                          type:
+                            description: Type describes the type of file.
+                            enum:
+                            - Disk
+                            - Other
                             type: string
                         required:
                         - id
@@ -305,12 +322,18 @@ spec:
     storage: false
     subresources:
       status: {}
-  - name: v1alpha4
+  - deprecated: true
+    deprecationWarning: v1alpha4 VirtualMachineImageCache is deprecated; use v1alpha5
+      VirtualMachineImageCache
+    name: v1alpha4
     schema:
       openAPIV3Schema:
         description: |-
           VirtualMachineImageCache is the schema for the
           virtualmachineimagecaches API.
+
+          Deprecated: This type is deprecated and will be removed in a future release.
+          Please use v1alpha5.VirtualMachineImageCache instead.
         properties:
           apiVersion:
             description: |-
@@ -641,11 +664,13 @@ spec:
                       description: |-
                         DatacenterID describes the ID of the datacenter to which the image should
                         be cached.
+                      minLength: 1
                       type: string
                     datastoreID:
                       description: |-
                         DatastoreID describes the ID of the datastore to which the image should
                         be cached.
+                      minLength: 1
                       type: string
                     profileID:
                       description: |-
@@ -653,6 +678,7 @@ spec:
                         image.
                         Please note, this profile *must* include the datastore specified by the
                         datastoreID field.
+                      minLength: 1
                       type: string
                   required:
                   - datacenterID

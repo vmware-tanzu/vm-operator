@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -152,7 +151,7 @@ func unitTestsReconcile() {
 				objKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
 				vmObj := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, objKey, vmObj)).To(Succeed())
-				Expect(vmObj.Spec.CurrentSnapshot).To(BeNil())
+				Expect(vmObj.Spec.CurrentSnapshotName).To(BeEmpty())
 			})
 		})
 
@@ -494,15 +493,15 @@ func unitTestsReconcile() {
 				})
 			})
 
-			When("VirtualMachineSnapshot VMRef is nil", func() {
+			When("VirtualMachineSnapshot VMName is empty", func() {
 				BeforeEach(func() {
-					vmSnapshot.Spec.VMRef = nil
+					vmSnapshot.Spec.VMName = ""
 					initObjects = nil
 					initObjects = append(initObjects, vmSnapshot, vm)
 				})
 				It("returns error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("VirtualMachineSnapshot VMRef is nil"))
+					Expect(err.Error()).To(ContainSubstring("VirtualMachineSnapshot VMName is empty"))
 				})
 			})
 		})
@@ -708,11 +707,7 @@ func unitTestsReconcile() {
 func vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshot *vmopv1.VirtualMachineSnapshot) *vmopv1.VirtualMachineSnapshotReference {
 	return &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &vmopv1common.LocalObjectRef{
-			APIVersion: vmSnapshot.APIVersion,
-			Kind:       vmSnapshot.Kind,
-			Name:       vmSnapshot.Name,
-		},
+		Name: vmSnapshot.Name,
 	}
 }
 

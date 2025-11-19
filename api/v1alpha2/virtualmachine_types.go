@@ -202,6 +202,70 @@ const (
 	VirtualMachinePowerOpModeTrySoft VirtualMachinePowerOpMode = "TrySoft"
 )
 
+// VirtualMachineCryptoSpec defines the desired state of a VirtualMachine's
+// encryption state.
+type VirtualMachineCryptoSpec struct {
+	// +optional
+
+	// EncryptionClassName describes the name of the EncryptionClass resource
+	// used to encrypt this VM.
+	//
+	// Please note, this field is not required to encrypt the VM. If the
+	// underlying platform has a default key provider, the VM may still be fully
+	// or partially encrypted depending on the specified storage and VM classes.
+	//
+	// If there is a default key provider and an encryption storage class is
+	// selected, the files in the VM's home directory and non-PVC virtual disks
+	// will be encrypted
+	//
+	// If there is a default key provider and a VM Class with a virtual, trusted
+	// platform module (vTPM) is selected, the files in the VM's home directory,
+	// minus any virtual disks, will be encrypted.
+	//
+	// If the underlying vSphere platform does not have a default key provider,
+	// then this field is required when specifying an encryption storage class
+	// and/or a VM Class with a vTPM.
+	//
+	// If this field is set, spec.storageClass must use an encryption-enabled
+	// storage class.
+	EncryptionClassName string `json:"encryptionClassName,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=true
+
+	// UseDefaultKeyProvider describes the desired behavior for when an explicit
+	// EncryptionClass is not provided.
+	//
+	// When an explicit EncryptionClass is not provided and this value is true:
+	//
+	// - Deploying a VirtualMachine with an encryption storage policy or vTPM
+	//   will be encrypted using the default key provider.
+	//
+	// - If a VirtualMachine is not encrypted, uses an encryption storage
+	//   policy or has a virtual, trusted platform module (vTPM), there is a
+	//   default key provider, the VM will be encrypted using the default key
+	//   provider.
+	//
+	// - If a VirtualMachine is encrypted with a provider other than the default
+	//   key provider, the VM will be rekeyed using the default key provider.
+	//
+	// When an explicit EncryptionClass is not provided and this value is false:
+	//
+	// - Deploying a VirtualMachine with an encryption storage policy or vTPM
+	//   will fail.
+	//
+	// - If a VirtualMachine is encrypted with a provider other than the default
+	//   key provider, the VM will be not be rekeyed.
+	//
+	//   Please note, this could result in a VirtualMachine that cannot be
+	//   powered on since it is encrypted using a provider or key that may have
+	//   been removed. Without the key, the VM cannot be decrypted and thus
+	//   cannot be powered on.
+	//
+	// Defaults to true if omitted.
+	UseDefaultKeyProvider *bool `json:"useDefaultKeyProvider,omitempty"`
+}
+
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
 	// ImageName describes the name of the image resource used to deploy this
@@ -235,7 +299,12 @@ type VirtualMachineSpec struct {
 	// +optional
 
 	// Affinity describes the VM's scheduling constraints.
-	Affinity *VirtualMachineAffinitySpec `json:"affinity,omitempty"`
+	Affinity *AffinitySpec `json:"affinity,omitempty"`
+
+	// +optional
+
+	// Crypto describes the desired encryption state of the VirtualMachine.
+	Crypto *VirtualMachineCryptoSpec `json:"crypto,omitempty"`
 
 	// StorageClass describes the name of a Kubernetes StorageClass resource
 	// used to configure this VM's storage-related attributes.

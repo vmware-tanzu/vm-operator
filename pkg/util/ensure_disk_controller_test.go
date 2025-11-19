@@ -1950,6 +1950,68 @@ var _ = DescribeTable(
 	),
 
 	//
+	// IDE (in ConfigSpec)
+	//
+	Entry(
+		"attach disk to IDE controller in ConfigSpec when adding disk and existing devices includes only PCI controller",
+		&vimtypes.VirtualMachineConfigSpec{
+			Version: vmx20,
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								ControllerKey: 100,
+								Key:           -10,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device:    &vimtypes.VirtualDisk{},
+				},
+			},
+		},
+		[]vimtypes.BaseVirtualDevice{
+			&vimtypes.VirtualPCIController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key: 100,
+					},
+				},
+			},
+		},
+		nil,
+		&vimtypes.VirtualMachineConfigSpec{
+			Version: vmx20,
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								ControllerKey: 100,
+								Key:           -10,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -10,
+							UnitNumber:    ptr.To[int32](0),
+						},
+					},
+				},
+			},
+		},
+	),
+
+	//
 	// First SCSI HBA is full
 	//
 	Entry(

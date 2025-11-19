@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package sysprep_test
@@ -17,8 +17,10 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 )
 
 var _ = Describe("GetSysprepSecretData", func() {
@@ -119,7 +121,6 @@ var _ = Describe("GetSysprepSecretData", func() {
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
 				GUIUnattended: &vmopv1sysprep.GUIUnattended{
-					AutoLogon: true,
 					Password: &vmopv1sysprep.PasswordSecretKeySelector{
 						Name: pwdSecretName,
 						Key:  "password",
@@ -154,6 +155,17 @@ var _ = Describe("GetSysprepSecretData", func() {
 				It("returns an error", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(Equal(fmt.Sprintf(`no data found for key "%s" for secret default/%s`, anotherKey, pwdSecretName)))
+				})
+			})
+
+			Context("GUIUnattended without Password", func() {
+				BeforeEach(func() {
+					inlineSysprep.GUIUnattended.Password = nil
+				})
+
+				It("returns success", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(sysprepSecretData.Password).To(BeEmpty())
 				})
 			})
 		})
@@ -214,6 +226,73 @@ var _ = Describe("GetSysprepSecretData", func() {
 			It("returns an error", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal(fmt.Sprintf(`secrets "%s" not found`, pwdSecretName)))
+			})
+		})
+	})
+
+	Context("for ScriptText", func() {
+		scriptSecretName := "script-text-secret"
+
+		BeforeEach(func() {
+			inlineSysprep = vmopv1sysprep.Sysprep{
+				ScriptText: &vmopv1common.ValueOrSecretKeySelector{},
+			}
+		})
+
+		Context("ScriptText is from Secret", func() {
+			BeforeEach(func() {
+				inlineSysprep.ScriptText.From = &vmopv1common.SecretKeySelector{
+					Name: scriptSecretName,
+					Key:  "script_text",
+				}
+			})
+
+			When("secret is present", func() {
+				BeforeEach(func() {
+					initialObjects = append(initialObjects, &corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      scriptSecretName,
+							Namespace: secretNamespace,
+						},
+						Data: map[string][]byte{
+							"script_text": []byte("echo Hello, World!"),
+						},
+					})
+				})
+
+				It("returns success", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(sysprepSecretData.ScriptText).To(Equal("echo Hello, World!"))
+				})
+
+				When("key from selector is not present", func() {
+					BeforeEach(func() {
+						inlineSysprep.ScriptText.From.Key = anotherKey
+					})
+
+					It("returns an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(Equal(fmt.Sprintf(`no data found for key "%s" for secret default/%s`, anotherKey, scriptSecretName)))
+					})
+				})
+			})
+
+			When("secret is not present", func() {
+				It("returns an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(Equal(fmt.Sprintf(`secrets "%s" not found`, scriptSecretName)))
+				})
+			})
+		})
+
+		Context("ScriptText is inline", func() {
+			BeforeEach(func() {
+				inlineSysprep.ScriptText.Value = ptr.To("echo Hello, Inlined World!")
+			})
+
+			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sysprepSecretData.ScriptText).To(Equal("echo Hello, Inlined World!"))
 			})
 		})
 	})
@@ -293,7 +372,6 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
 				GUIUnattended: &vmopv1sysprep.GUIUnattended{
-					AutoLogon: true,
 					Password: &vmopv1sysprep.PasswordSecretKeySelector{
 						Name: pwdSecretName,
 						Key:  "password",
@@ -372,8 +450,54 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 		})
 	})
 
+	Context("for ScriptText", func() {
+		scriptSecretName := "script-text-secret"
+
+		BeforeEach(func() {
+			inlineSysprep = vmopv1sysprep.Sysprep{
+				ScriptText: &vmopv1common.ValueOrSecretKeySelector{},
+			}
+		})
+
+		Context("ScriptText is from Secret", func() {
+			BeforeEach(func() {
+				inlineSysprep.ScriptText.From = &vmopv1common.SecretKeySelector{
+					Name: scriptSecretName,
+					Key:  "script_text",
+				}
+			})
+
+			When("secret is present", func() {
+				BeforeEach(func() {
+					initialObjects = append(initialObjects, &corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      scriptSecretName,
+							Namespace: secretNamespace,
+						},
+						Data: map[string][]byte{
+							"script_text": []byte("echo Hello, World!"),
+						},
+					})
+				})
+
+				It("returns success", func() {
+					Expect(secrets).To(HaveLen(1))
+					Expect(secrets[0].GetName()).To(Equal(scriptSecretName))
+				})
+			})
+
+			When("secret is not present", func() {
+				It("returns an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(secrets).To(BeNil())
+				})
+			})
+		})
+	})
+
 	Context("when same secret name is used for all selectors", func() {
 		secretName := "same-secret"
+
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
 				UserData: vmopv1sysprep.UserData{
@@ -395,6 +519,12 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 						Key:  "domain_password",
 					},
 				},
+				ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+					From: &vmopv1common.SecretKeySelector{
+						Name: secretName,
+						Key:  "script_text",
+					},
+				},
 			}
 
 			initialObjects = append(initialObjects, &corev1.Secret{
@@ -406,6 +536,7 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 					"product_id":      []byte("foo_product_id"),
 					"password":        []byte("foo_bar123"),
 					"domain_password": []byte("foo_bar_fizz123"),
+					"script_text":     []byte("echo Hello, World!"),
 				},
 			})
 		})

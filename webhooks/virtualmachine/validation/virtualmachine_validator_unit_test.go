@@ -7,12 +7,14 @@ package validation_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -20,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,7 +38,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -58,6 +61,7 @@ const (
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
 	dummyClusterModuleAnnVal       = "dummy-cluster-module"
 	dummyGroupName                 = "dummy-group"
+	dummyPVCName                   = "dummy-pvc"
 	vmiKind                        = "VirtualMachineImage"
 	cvmiKind                       = "Cluster" + vmiKind
 	invalidKind                    = "InvalidKind"
@@ -71,10 +75,57 @@ const (
 )
 
 type testParams struct {
-	setup                  func(ctx *unitValidatingWebhookContext)
-	validate               func(response admission.Response)
-	expectAllowed          bool
-	skipBypassUpgradeCheck bool
+	setup                   func(ctx *unitValidatingWebhookContext)
+	validate                func(response admission.Response)
+	expectAllowed           bool
+	skipBypassUpgradeCheck  bool
+	skipSetControllerForPVC bool
+}
+
+type protectedAnnotationTestCase struct {
+	annotationKey string
+	oldValue      string
+	newValue      string
+}
+
+// When defining any new protected annotations, be sure to add them to this
+// list so they are covered via test cases. A protected condition is one whose
+// key matches the regex `^.+\.protected(/.+)?$`.
+//
+// Examples that match:
+//   - fu.bar.protected
+//   - hello.world.protected/sub-key
+//   - vmoperator.vmware.com.protected/reconcile-priority
+//
+// Examples that do NOT match:
+//   - protected.fu.bar
+//   - hello.world.protected.against/sub-key
+var protectedAnnotationTestCases = []protectedAnnotationTestCase{
+	{
+		annotationKey: pkgconst.ReconcilePriorityAnnotationKey,
+		oldValue:      "100",
+		newValue:      "200",
+	},
+	{
+		annotationKey: pkgconst.SkipDeletePlatformResourceKey,
+		oldValue:      "true",
+		newValue:      "false",
+	},
+	{
+		annotationKey: pkgconst.ApplyPowerStateTimeAnnotation,
+		oldValue:      time.Now().Format(time.RFC3339Nano),
+		newValue:      time.Now().Add(time.Hour).Format(time.RFC3339Nano),
+	},
+	{
+		annotationKey: "hello.world.protected/condition-status",
+		oldValue:      "red",
+		newValue:      "green",
+	},
+	{
+		annotationKey: "condition.vmware.vmoperator.com.protected/hello-world",
+		oldValue:      "True",
+		newValue:      "False",
+	},
 }
 
 func bypassUpgradeCheck(ctx *context.Context, objects ...metav1.Object) {
@@ -123,6 +174,7 @@ func unitTests() {
 		),
 		unitTestsValidateUpdate,
 	)
+	controllerTests()
 	Describe(
 		"Delete",
 		Label(
@@ -144,17 +196,22 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm"
 	vm.Namespace = dummyNamespaceName
-	obj, err := builder.ToUnstructured(vm)
-	Expect(err).ToNot(HaveOccurred())
 
-	var oldVM *vmopv1.VirtualMachine
-	var oldObj *unstructured.Unstructured
+	var (
+		oldVM  *vmopv1.VirtualMachine
+		oldObj *unstructured.Unstructured
+		err    error
+	)
 
 	if isUpdate {
+		setControllerForPVC(vm)
 		oldVM = vm.DeepCopy()
 		oldObj, err = builder.ToUnstructured(oldVM)
 		Expect(err).ToNot(HaveOccurred())
 	}
+
+	obj, err := builder.ToUnstructured(vm)
+	Expect(err).ToNot(HaveOccurred())
 
 	az := builder.DummyAvailabilityZone()
 	zone := builder.DummyZone(dummyNamespaceName)
@@ -164,6 +221,72 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
 		vm:                                  vm,
 		oldVM:                               oldVM,
+	}
+}
+
+// setControllerForPVC sets controllerBusNumber and controllerType
+// on all PVC volumes to simulate the mutation webhook having run. This is
+// needed because this is required by the validation.
+func setControllerForPVC(vm *vmopv1.VirtualMachine) {
+	setControllerForPVCWithBusNumber(vm, 0)
+}
+
+func setControllerForPVCWithBusNumber(vm *vmopv1.VirtualMachine, defaultBusNum int32) {
+	hasPVCVolumes := false
+	busNumbersUsed := make(map[int32]bool)
+
+	for i := range vm.Spec.Volumes {
+		if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
+			hasPVCVolumes = true
+			if vm.Spec.Volumes[i].ControllerType == "" {
+				vm.Spec.Volumes[i].ControllerType = vmopv1.VirtualControllerTypeSCSI
+			}
+			if vm.Spec.Volumes[i].ControllerBusNumber == nil {
+				// Use the specified default bus number to avoid creating multiple controllers.
+				vm.Spec.Volumes[i].ControllerBusNumber = ptr.To(defaultBusNum)
+			}
+			if vm.Spec.Volumes[i].UnitNumber == nil {
+				vm.Spec.Volumes[i].UnitNumber = ptr.To(int32(i))
+			}
+
+			busNumbersUsed[*vm.Spec.Volumes[i].ControllerBusNumber] = true
+		}
+	}
+
+	// If we have PVC volumes and no SCSI controllers, add controllers for all bus numbers used
+	// to simulate what the mutation webhook would do.
+	if hasPVCVolumes {
+		if vm.Spec.Hardware == nil {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+		}
+		if len(vm.Spec.Hardware.SCSIControllers) == 0 {
+			// Create a controller for each bus number that's referenced by volumes.
+			for busNum := range busNumbersUsed {
+				vm.Spec.Hardware.SCSIControllers = append(
+					vm.Spec.Hardware.SCSIControllers,
+					vmopv1.SCSIControllerSpec{
+						BusNumber:   busNum,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				)
+			}
+		}
+
+		// Set controllerBusNumber on volumes that don't have it set.
+		// Use the first available SCSI controller's bus number.
+		var defaultBusNumber *int32
+		if len(vm.Spec.Hardware.SCSIControllers) > 0 {
+			defaultBusNumber = ptr.To(vm.Spec.Hardware.SCSIControllers[0].BusNumber)
+		}
+
+		for i := range vm.Spec.Volumes {
+			if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
+				if vm.Spec.Volumes[i].ControllerBusNumber == nil && defaultBusNumber != nil {
+					vm.Spec.Volumes[i].ControllerBusNumber = defaultBusNumber
+				}
+			}
+		}
 	}
 }
 
@@ -184,7 +307,6 @@ func unitTestsValidateCreate() {
 		powerState                 vmopv1.VirtualMachinePowerState
 		nextRestartTime            string
 		instanceUUID               string
-		biosUUID                   string
 		applyPowerStateChangeTime  string
 	}
 
@@ -222,7 +344,6 @@ func unitTestsValidateCreate() {
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 		ctx.vm.Spec.InstanceUUID = args.instanceUUID
-		ctx.vm.Spec.BiosUUID = args.biosUUID
 
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -242,6 +363,7 @@ func unitTestsValidateCreate() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.WorkloadDomainIsolation = true
+			config.Features.VMSharedDisks = true
 		})
 	})
 
@@ -261,8 +383,10 @@ func unitTestsValidateCreate() {
 			field.Invalid(volPath.Index(0).Child("name"), "underscore_not_valid", validation.IsDNS1123Subdomain("underscore_not_valid")[0]).Error(), nil),
 		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false,
 			field.Duplicate(volPath.Index(1).Child("name"), "duplicate-name").Error(), nil),
-		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false,
-			field.Required(volPath.Index(0).Child("persistentVolumeClaim"), "").Error(), nil),
+		// TODO(akutz) Why did we ever consider a spec.volumes entry sans a PVC
+		//             to be invalid?
+		// Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false,
+		// 	field.Required(volPath.Index(0).Child("persistentVolumeClaim"), "").Error(), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false,
 			field.Required(volPath.Index(0).Child("persistentVolumeClaim", "claimName"), "").Error(), nil),
 		Entry("should deny invalid PVC read only", createArgs{invalidPVCReadOnly: true}, false,
@@ -285,7 +409,6 @@ func unitTestsValidateCreate() {
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
 		Entry("should allow creating VM with instanceUUID set by admin user", createArgs{instanceUUID: "uuid", isServiceUser: true}, true, nil, nil),
-		Entry("should allow creating VM with biosUUID set by admin user", createArgs{biosUUID: "uuid", isServiceUser: true}, true, nil, nil),
 		Entry("should allow creating VM with valid apply power state change time annotation by admin user",
 			createArgs{applyPowerStateChangeTime: time.Now().Format(time.RFC3339Nano), isServiceUser: true}, true, nil, nil),
 		Entry("should disallow creating VM with non-empty, invalid apply power state change time annotation",
@@ -308,12 +431,83 @@ func unitTestsValidateCreate() {
 		}
 	}
 
+	Context("PVC Volume Controller Fields", func() {
+		DescribeTable("create", doTest,
+			Entry("should deny PVC volume with only controllerType set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = nil
+						ctx.vm.Spec.Volumes[0].UnitNumber = nil
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with only controllerBusNumber set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = ""
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].UnitNumber = nil
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("controllerType"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with only unitNumber set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = ""
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = nil
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(0))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("controllerType"), "").Error(),
+						field.Required(volPath.Index(0).Child("controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with controllerType and unitNumber but no controllerBusNumber",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = nil
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(0))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny PVC volume with controllerBusNumber and unitNumber but no controllerType",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = ""
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(0))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("controllerType"), "").Error(),
+					),
+				},
+			),
+		)
+	})
+
 	Context("availability zone and zone", func() {
 		DescribeTable("create", doTest,
 			Entry("should allow when VM specifies no availability zone, there are availability zones and zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+						delete(ctx.vm.Labels, corev1.LabelTopologyZone)
 					},
 					expectAllowed: true,
 				},
@@ -321,7 +515,7 @@ func unitTestsValidateCreate() {
 			Entry("should allow when VM specifies no availability zone, there are no availability zones or zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+						delete(ctx.vm.Labels, corev1.LabelTopologyZone)
 						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
@@ -332,7 +526,7 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 					},
 					expectAllowed: true,
 				},
@@ -345,7 +539,7 @@ func unitTestsValidateCreate() {
 						})
 						zoneName := builder.DummyZoneName
 						ctx.vm.Labels[vmopv1util.KubernetesNodeLabelKey] = ""
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: true,
@@ -356,7 +550,7 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
 						ctx.vm.Labels[vmopv1util.KubernetesNodeLabelKey] = ""
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: false,
@@ -366,7 +560,7 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: false,
@@ -379,7 +573,7 @@ func unitTestsValidateCreate() {
 							config.Features.WorkloadDomainIsolation = true
 						})
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						zone := &topologyv1.Zone{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
@@ -397,7 +591,7 @@ func unitTestsValidateCreate() {
 							ctx.IsPrivilegedAccount = true
 						})
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						zone := &topologyv1.Zone{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
@@ -415,7 +609,7 @@ func unitTestsValidateCreate() {
 							ctx.UserInfo.Username = "system:serviceaccount:svc-tkg-domain-c52:default"
 						})
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						zone := &topologyv1.Zone{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
@@ -429,7 +623,7 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
@@ -439,7 +633,7 @@ func unitTestsValidateCreate() {
 			Entry("should deny when VM specifies invalid availability zone, there are availability zones and zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
+						ctx.vm.Labels[corev1.LabelTopologyZone] = "invalid"
 					},
 					expectAllowed: false,
 				},
@@ -447,7 +641,7 @@ func unitTestsValidateCreate() {
 			Entry("should deny when VM specifies invalid availability zone, there are no availability zones or zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
+						ctx.vm.Labels[corev1.LabelTopologyZone] = "invalid"
 						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
@@ -1192,8 +1386,6 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -1203,8 +1395,6 @@ func unitTestsValidateCreate() {
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
@@ -1220,8 +1410,6 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -1244,8 +1432,6 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -1272,6 +1458,57 @@ func unitTestsValidateCreate() {
 						`metadata.annotations[vsphere-cluster-module-group]: Forbidden: cluster module assignment requires spec.reserved.resourcePolicyName to specify a VirtualMachineSetResourcePolicy`),
 				},
 			),
+		)
+
+		getProtectedAnnotationTableAllowCreate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.IsPrivilegedAccount = true
+							ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+						},
+						expectAllowed: true,
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should allow create with "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableDisallowCreate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+						},
+						validate: doValidateWithMsg(
+							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						),
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should disallow create with "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		DescribeTable("disallow create with protected annotations by non-privileged user",
+			getProtectedAnnotationTableDisallowCreate()...,
+		)
+
+		DescribeTable("allow create with protected annotations by non-privileged user",
+			getProtectedAnnotationTableAllowCreate()...,
 		)
 	})
 
@@ -1710,6 +1947,50 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+			Entry("disallow LinuxPrep mixing ScriptText Value From Secret and direct String pointer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = true
+						})
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+								ScriptText: &common.ValueOrSecretKeySelector{
+									From:  &common.SecretKeySelector{},
+									Value: ptr.To("foo"),
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.linuxPrep.scriptText.value: Invalid value: "value": from and value are mutually exclusive`,
+					),
+				},
+			),
+			Entry("disallow LinuxPrep VCD parity fields when capability is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = false
+						})
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+								ExpirePasswordAfterNextLogin: true,
+								Password:                     &common.PasswordSecretKeySelector{},
+								ScriptText:                   &common.ValueOrSecretKeySelector{},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.linuxPrep.expirePasswordAfterNextLogin: Forbidden: VC guest customization VCD parity capability is not enabled`,
+						`spec.bootstrap.linuxPrep.password: Forbidden: VC guest customization VCD parity capability is not enabled`,
+						`spec.bootstrap.linuxPrep.scriptText: Forbidden: VC guest customization VCD parity capability is not enabled`,
+					),
+				},
+			),
+
 			Entry("disallow Sysprep mixing inline Sysprep identification",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -1792,7 +2073,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.bootstrap.vAppConfig.properties.value: Invalid value: "value": from and value is mutually exclusive`,
+						`spec.bootstrap.vAppConfig.properties.value: Invalid value: "value": from and value are mutually exclusive`,
 					),
 				},
 			),
@@ -1835,6 +2116,51 @@ func unitTestsValidateCreate() {
 						`spec.bootstrap.sysprep.sysprep: Invalid value: "guiUnattended": autoLogon requires autoLogonCount to be specified`,
 						`spec.bootstrap.sysprep.sysprep: Invalid value: "guiUnattended": autoLogon requires password selector to be set`,
 					),
+				},
+			),
+
+			Entry("disallow inline sysPrep ScriptText Value From Secret and direct String pointer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									ScriptText: &common.ValueOrSecretKeySelector{
+										From:  &common.SecretKeySelector{},
+										Value: ptr.To("foo"),
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.sysprep.scriptText.value: Invalid value: "value": from and value are mutually exclusive`,
+					),
+				},
+			),
+
+			Entry("disallow Sysprep VCD parity fields when capability is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = false
+						})
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									ExpirePasswordAfterNextLogin: true,
+									ScriptText:                   &common.ValueOrSecretKeySelector{},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.expirePasswordAfterNextLogin: Forbidden: VC guest customization VCD parity capability is not enabled`,
+						`spec.bootstrap.sysprep.scriptText: Forbidden: VC guest customization VCD parity capability is not enabled`),
 				},
 			),
 		)
@@ -2480,7 +2806,6 @@ func unitTestsValidateCreate() {
 				},
 			),
 		)
-
 		DescribeTable("network create - host and domain names", doTest,
 
 			Entry("allow simple host name",
@@ -2800,9 +3125,10 @@ func unitTestsValidateCreate() {
 			Entry("allow creating a VM with empty CD-ROM",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-							Cdrom: []vmopv1.VirtualMachineCdromSpec{},
+						if ctx.vm.Spec.Hardware == nil {
+							ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 						}
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
 					},
 					expectAllowed: true,
 				},
@@ -2928,6 +3254,32 @@ func unitTestsValidateCreate() {
 					expectAllowed: false,
 				},
 			),
+
+			Entry("disallow creating a VM with CD-ROM that has only controllerType set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeIDE
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = nil
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom[0].controllerBusNumber: Required value: must be set when controllerType is specified`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow creating a VM with CD-ROM that has only controllerBusNumber set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = ""
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(0))
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom[0].controllerType: Required value: must be set when controllerBusNumber is specified`,
+					),
+					expectAllowed: false,
+				},
+			),
 		)
 	})
 
@@ -2952,7 +3304,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -2967,7 +3319,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -2993,7 +3345,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -3008,7 +3360,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -3023,6 +3375,27 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootOrder on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.bootOrder: Forbidden: when creating a VM",
+					),
 				},
 			),
 		)
@@ -3089,7 +3462,7 @@ func unitTestsValidateCreate() {
 	})
 
 	Context("Snapshots", func() {
-		snapshotPath := field.NewPath("spec", "currentSnapshot")
+		snapshotPath := field.NewPath("spec", "currentSnapshotName")
 
 		DescribeTable("currentSnapshot", doTest,
 			Entry("when a VM is created with a currentSnapshot",
@@ -3101,11 +3474,7 @@ func unitTestsValidateCreate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
@@ -3154,7 +3523,7 @@ func unitTestsValidateCreate() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMGroups = true
 				ctx.vm.Spec.GroupName = dummyGroupName
-				ctx.vm.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{}
+				ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{}
 			})
 		})
 
@@ -3175,141 +3544,12 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow Zone Affinity/Anti-Affinity",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Affinity.ZoneAffinity = &vmopv1.VirtualMachineAffinityZoneAffinitySpec{}
-						ctx.vm.Spec.Affinity.ZoneAntiAffinity = &vmopv1.VirtualMachineAntiAffinityZoneAffinitySpec{}
-					},
-					validate: doValidateWithMsg(
-						`spec.affinity.zoneAffinity: Forbidden: zone affinity is not allowed`,
-						`spec.affinity.zoneAntiAffinity: Forbidden: zone anti-affinity is not allowed`),
-				},
-			),
-
-			Entry("disallow VM Affinity with RequiredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingIgnoredDuringExecution with not supported fields",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									TopologyKey: "",
-								},
-								{
-									TopologyKey: "kubernetes.io/hostname",
-								},
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Operator: metav1.LabelSelectorOpNotIn,
-											},
-										},
-									},
-									TopologyKey: "topology.kubernetes.io/zone",
-								},
-							},
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									TopologyKey: "",
-								},
-								{
-									TopologyKey: "kubernetes.io/hostname",
-								},
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Operator: metav1.LabelSelectorOpNotIn,
-											},
-										},
-									},
-									TopologyKey: "topology.kubernetes.io/zone",
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In`,
-						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
-				},
-			),
-
-			Entry("disallow VM Affinity with RequiredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingIgnoredDuringExecution that does not match itself",
+			Entry("allow VM Affinity with RequiredDuringSchedulingPreferredDuringExecution and PreferredDuringSchedulingPreferredDuringExecution with supported fields",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Labels = map[string]string{"foo": "bar"}
-						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									TopologyKey: "",
-								},
-								{
-									TopologyKey: "kubernetes.io/hostname",
-								},
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"foo": "bar1",
-										},
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Key:      "foo",
-												Operator: metav1.LabelSelectorOpNotIn,
-												Values:   []string{"bar1"},
-											},
-										},
-									},
-									TopologyKey: "topology.kubernetes.io/zone",
-								},
-							},
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									TopologyKey: "",
-								},
-								{
-									TopologyKey: "kubernetes.io/hostname",
-								},
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"foo": "bar1",
-										},
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Key:      "foo",
-												Operator: metav1.LabelSelectorOpNotIn,
-												Values:   []string{"bar1"},
-											},
-										},
-									},
-									TopologyKey: "topology.kubernetes.io/zone",
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[2].labelSelector: Forbidden: label selector must match VM`,
-						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In`,
-						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[2].labelSelector: Forbidden: label selector must match VM`,
-						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
-				},
-			),
-
-			Entry("allow VM Affinity with RequiredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingIgnoredDuringExecution with supported fields",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Labels = map[string]string{"foo": "bar"}
-						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -3323,10 +3563,10 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -3340,7 +3580,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						}
@@ -3349,25 +3589,224 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution",
+			Entry("disallow VM Affinity RequiredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchLabels",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							RequiredDuringSchedulingIgnoredDuringExecution:   make([]vmopv1.VMAffinityTerm, 1),
-							RequiredDuringSchedulingPreferredDuringExecution: make([]vmopv1.VMAffinityTerm, 1),
+						ctx.vm.Labels = map[string]string{
+							"foo":                          "bar",
+							"vmoperator.vmware.com/paused": "true",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo":                          "bar",
+											"vmoperator.vmware.com/paused": "true",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution: Forbidden: VM anti-affinity with RequiredDuringSchedulingIgnoredDuringExecution is not allowed`,
-						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingPreferredDuringExecution: Forbidden: VM anti-affinity with RequiredDuringSchedulingPreferredDuringExecution is not allowed`),
+						`spec.affinity.vmAffinity.requiredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchLabels: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
 				},
 			),
 
-			Entry("allow VM Anti Affinity with PreferredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingPreferredDuringExecution with supported fields",
+			Entry("disallow VM Affinity RequiredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchExpressions",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+						ctx.vm.Labels = map[string]string{
+							"foo":                          "bar",
+							"vmoperator.vmware.com/paused": "true",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "vmoperator.vmware.com/paused",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"true"},
+											},
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].key: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Affinity PreferredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchLabels",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{
+							"foo":                            "bar",
+							"vmicache.vmoperator.vmware.com": "ready",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo":                            "bar",
+											"vmicache.vmoperator.vmware.com": "ready",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchLabels: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Affinity PreferredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchExpressions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{
+							"foo":                            "bar",
+							"vmicache.vmoperator.vmware.com": "ready",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "vmicache.vmoperator.vmware.com",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"ready"},
+											},
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].key: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("allow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Zone topology key for non-privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Zone topology key for privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Host topology key for non-privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`),
+				},
+			),
+
+			Entry("allow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Host topology key for privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity with PreferredDuringSchedulingPreferredDuringExecution and Host topology key for non-privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity with PreferredDuringSchedulingPreferredDuringExecution and Host topology key for privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity with PreferredDuringSchedulingPreferredDuringExecution with supported fields",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -3379,10 +3818,8 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
-							},
-							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -3391,195 +3828,489 @@ func unitTestsValidateCreate() {
 										MatchExpressions: []metav1.LabelSelectorRequirement{
 											{
 												Operator: metav1.LabelSelectorOpIn,
+											},
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Anti Affinity with PreferredDuringSchedulingPreferredDuringExecution with unsupported fields",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpNotIn,
 											},
 										},
 									},
 									TopologyKey: "",
 								},
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"foo": "bar",
-										},
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Operator: metav1.LabelSelectorOpIn,
-											},
-										},
-									},
-									TopologyKey: "kubernetes.io/hostname",
-								},
-							},
-						}
-					},
-					expectAllowed: true,
-				},
-			),
-
-			Entry("disallow VM Anti Affinity with PreferredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingPreferredDuringExecution with unsupported fields",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"foo": "bar",
-										},
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Operator: metav1.LabelSelectorOpNotIn,
-											},
-										},
-									},
-									TopologyKey: "kubernetes.io/hostname",
-								},
-							},
-							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"foo": "bar",
-										},
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Operator: metav1.LabelSelectorOpNotIn,
-											},
-										},
-									},
-									TopologyKey: "topology.kubernetes.io/zone",
-								},
 							},
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`,
-						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
-						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "topology.kubernetes.io/zone": supported values: "", "kubernetes.io/hostname"`,
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone", "kubernetes.io/hostname"`,
 						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity PreferredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchLabels",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo":                            "bar",
+											"vmicache.vmoperator.vmware.com": "ready",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchLabels: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity PreferredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchExpressions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "vmicache.vmoperator.vmware.com",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"ready"},
+											},
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].key: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+		)
+	})
+
+	Context("PVC Access Mode and Sharing Mode Combinations", func() {
+		DescribeTable("validate PVC access mode and sharing mode combinations",
+			func(testName string, setup func(*unitValidatingWebhookContext), expectAllowed bool) {
+				setup(ctx)
+
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(expectAllowed))
+			},
+
+			Entry("should allow ReadWriteOnce volume with None sharing mode and None controller",
+				"readwriteonce-none-sharing-none-controller",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteOnce volume and None sharing mode
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
+					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](1)
+
+					// Add SCSI controller with None sharing mode
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+					}
+				},
+				true),
+
+			Entry("should reject ReadWriteOnce volume with MultiWriter sharing mode "+
+				"and PVC with ReadWriteOnce access mode",
+				"readwriteonce-multiwriter-sharing-pvc-readwriteonce",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteOnce volume and MultiWriter sharing mode
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+				},
+				false,
+			),
+
+			Entry("should reject ReadWriteOnce volume with Physical controller sharing mode",
+				"readwriteonce-physical-controller",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteOnce volume and Physical controller
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](0)
+
+					// Add SCSI controller with Physical sharing mode
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+						},
+					}
+				},
+				false),
+
+			Entry("should allow ReadWriteMany volume with MultiWriter sharing mode",
+				"readwritemany-multiwriter-sharing",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume and MultiWriter sharing mode
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+				},
+				true,
+			),
+
+			Entry("should allow ReadWriteMany volume with Physical controller",
+				"readwritemany-physical-controller",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume and Physical controller
+					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](1)
+
+					// Add SCSI controller with Physical sharing mode
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+						},
+					}
+				},
+				true,
+			),
+
+			Entry("should reject ReadWriteMany volume with neither MultiWriter sharing mode nor Physical controller",
+				"readwritemany-neither-multiwriter-nor-physical",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume but neither
+					// MultiWriter nor Physical controller.
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
+					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](0)
+
+					// Add SCSI controller with None sharing mode.
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+					}
+				},
+				false),
+
+			Entry("should allow ReadWriteMany volume with both MultiWriter sharing mode and Physical controller",
+				"readwritemany-both-multiwriter-and-physical",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume with both MultiWriter and Physical controller
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](1)
+
+					// Add SCSI controller with Physical sharing mode
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+						},
+					}
+				},
+				true,
+			),
+
+			Entry("should handle missing PVC gracefully",
+				"missing-pvc",
+				func(ctx *unitValidatingWebhookContext) {
+					// Configure VM with non-existent PVC
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "non-existent-pvc"
+				},
+				true),
+		)
+	})
+
+	Context("spec.biosUUID", func() {
+		DescribeTable("create", doTest,
+			Entry("should allow when VM specifies valid UUID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BiosUUID = uuid.NewString()
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should not allow when VM specifies invalid UUID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BiosUUID = "invalid UUID"
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "biosUUID"), "invalid UUID", "must provide a valid UUID").Error(),
+					),
+				},
+			),
+			Entry("should allow when VM specifies no UUID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BiosUUID = ""
+					},
+					expectAllowed: true,
 				},
 			),
 		)
 	})
 }
 
-func unitTestsValidateUpdate() {
+type updateArgs struct {
+	isServiceUser               bool
+	changeInstanceUUID          bool
+	changeBiosUUID              bool
+	changeImageRef              bool
+	changeImageName             bool
+	changeStorageClass          bool
+	changeResourcePolicy        bool
+	assignZoneName              bool
+	changeZoneName              bool
+	unsetZone                   bool
+	isSysprepTransportUsed      bool
+	withInstanceStorageVolumes  bool
+	changeInstanceStorageVolume bool
+	oldInstanceUUID             string
+	oldBiosUUID                 string
+	oldPowerState               vmopv1.VirtualMachinePowerState
+	newPowerState               vmopv1.VirtualMachinePowerState
+	newPowerStateEmptyAllowed   bool
+	nextRestartTime             string
+	lastRestartTime             string
+	applyPowerStateChangeTime   string
+}
+
+func setupOldVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
+	// Init immutable fields that aren't set in the dummy VM.
+	if ctx.oldVM.Spec.Reserved == nil {
+		ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+	}
+	ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
+	ctx.oldVM.Spec.InstanceUUID = args.oldInstanceUUID
+	ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
+
+	if args.oldPowerState != "" {
+		ctx.oldVM.Spec.PowerState = args.oldPowerState
+	}
+	ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
+
+	if args.changeZoneName {
+		ctx.oldVM.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
+	}
+	if args.changeInstanceStorageVolume {
+		instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+		ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, instanceStorageVolumes...)
+	}
+
+	setControllerForPVC(ctx.oldVM)
+}
+
+func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
+	if args.isServiceUser {
+		ctx.IsPrivilegedAccount = true
+	}
+
+	if args.changeImageRef {
+		if ctx.vm.Spec.Image == nil {
+			ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+		}
+		ctx.vm.Spec.Image.Name += updateSuffix
+	}
+	if args.changeImageName {
+		ctx.vm.Spec.ImageName += updateSuffix
+	}
+	if args.changeInstanceUUID {
+		ctx.vm.Spec.InstanceUUID += updateSuffix
+	}
+	if args.changeBiosUUID {
+		ctx.vm.Spec.BiosUUID += updateSuffix
+	}
+	if args.changeStorageClass {
+		ctx.vm.Spec.StorageClass += updateSuffix
+	}
+
+	if ctx.vm.Spec.Reserved == nil {
+		ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+	}
+	ctx.vm.Spec.Reserved.ResourcePolicyName = "policy"
+	if args.changeResourcePolicy {
+		ctx.vm.Spec.Reserved.ResourcePolicyName = "policy" + updateSuffix
+	}
+
+	if args.assignZoneName {
+		ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
+	}
+	if args.changeZoneName {
+		if args.unsetZone {
+			delete(ctx.vm.Labels, corev1.LabelTopologyZone)
+		} else {
+			ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName + updateSuffix
+		}
+	}
+
+	if args.newPowerState != "" || args.newPowerStateEmptyAllowed {
+		ctx.vm.Spec.PowerState = args.newPowerState
+	}
+	if args.applyPowerStateChangeTime != "" {
+		ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
+	}
+	ctx.vm.Spec.NextRestartTime = args.nextRestartTime
+
+	if args.isSysprepTransportUsed {
+		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+		if ctx.vm.Spec.Bootstrap == nil {
+			ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+		}
+		ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{
+			RawSysprep: &common.SecretKeySelector{},
+		}
+	}
+
+	if args.withInstanceStorageVolumes {
+		instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+		ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+	}
+	if args.changeInstanceStorageVolume {
+		instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+		instanceStorageVolumes[0].Name += updateSuffix
+		ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+	}
+
+	// Set controllerBusNumber on volumes to simulate mutation webhook
+	setControllerForPVC(ctx.vm)
+}
+
+func unitTestsValidateUpdate() { //nolint:gocyclo
 	var (
 		ctx *unitValidatingWebhookContext
 	)
 
-	type updateArgs struct {
-		isServiceUser               bool
-		changeInstanceUUID          bool
-		changeBiosUUID              bool
-		changeImageRef              bool
-		changeImageName             bool
-		changeStorageClass          bool
-		changeResourcePolicy        bool
-		assignZoneName              bool
-		changeZoneName              bool
-		unsetZone                   bool
-		isSysprepTransportUsed      bool
-		withInstanceStorageVolumes  bool
-		changeInstanceStorageVolume bool
-		oldInstanceUUID             string
-		oldBiosUUID                 string
-		oldPowerState               vmopv1.VirtualMachinePowerState
-		newPowerState               vmopv1.VirtualMachinePowerState
-		newPowerStateEmptyAllowed   bool
-		nextRestartTime             string
-		lastRestartTime             string
-		applyPowerStateChangeTime   string
-	}
-
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
-
 		bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
 
-		// Init immutable fields that aren't set in the dummy VM.
-		if ctx.oldVM.Spec.Reserved == nil {
-			ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
-		}
-		ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
-		ctx.oldVM.Spec.InstanceUUID = args.oldInstanceUUID
-		ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
-
-		if args.isServiceUser {
-			ctx.IsPrivilegedAccount = true
-		}
-
-		if args.changeImageRef {
-			if ctx.vm.Spec.Image == nil {
-				ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
-			}
-			ctx.vm.Spec.Image.Name += updateSuffix
-		}
-		if args.changeImageName {
-			ctx.vm.Spec.ImageName += updateSuffix
-		}
-		if args.changeInstanceUUID {
-			ctx.vm.Spec.InstanceUUID += updateSuffix
-		}
-		if args.changeBiosUUID {
-			ctx.vm.Spec.BiosUUID += updateSuffix
-		}
-		if args.changeStorageClass {
-			ctx.vm.Spec.StorageClass += updateSuffix
-		}
-		if ctx.vm.Spec.Reserved == nil {
-			ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
-		}
-		ctx.vm.Spec.Reserved.ResourcePolicyName = "policy"
-		if args.changeResourcePolicy {
-			ctx.vm.Spec.Reserved.ResourcePolicyName = "policy" + updateSuffix
-		}
-		if args.assignZoneName {
-			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName
-		}
-		if args.changeZoneName {
-			ctx.oldVM.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName
-			if args.unsetZone {
-				// Remove the zone label to test unsetting zone
-				delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
-			} else {
-				ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName + updateSuffix
-			}
-		}
-
-		if args.withInstanceStorageVolumes {
-			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
-			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
-		}
-		if args.changeInstanceStorageVolume {
-			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
-			ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, instanceStorageVolumes...)
-			instanceStorageVolumes[0].Name += updateSuffix
-			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
-		}
-
-		if args.isSysprepTransportUsed {
-			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-			if ctx.vm.Spec.Bootstrap == nil {
-				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
-			}
-			ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{
-				RawSysprep: &common.SecretKeySelector{},
-			}
-		}
-
-		if args.oldPowerState != "" {
-			ctx.oldVM.Spec.PowerState = args.oldPowerState
-		}
-		if args.newPowerState != "" || args.newPowerStateEmptyAllowed {
-			ctx.vm.Spec.PowerState = args.newPowerState
-		}
-
-		if args.applyPowerStateChangeTime != "" {
-			ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
-		}
-
-		ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
-		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
+		setupOldVMForUpdate(ctx, args)
+		setupNewVMForUpdate(ctx, args)
 
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -3607,6 +4338,7 @@ func unitTestsValidateUpdate() {
 
 	msg := "field is immutable"
 	volumesPath := field.NewPath("spec", "volumes")
+	volPath := field.NewPath("spec", "volumes")
 	powerStatePath := field.NewPath("spec", "powerState")
 	nextRestartTimePath := field.NewPath("spec", "nextRestartTime")
 
@@ -3624,7 +4356,7 @@ func unitTestsValidateUpdate() {
 		Entry("should allow empty bios uuid change", updateArgs{changeBiosUUID: true}, true, nil, nil),
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
 		Entry("should deny zone change for non-privileged user", updateArgs{changeZoneName: true}, false,
-			field.Invalid(field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey), builder.DummyZoneName+updateSuffix, "field is immutable").Error(), nil),
+			field.Invalid(field.NewPath("metadata", "labels").Key(corev1.LabelTopologyZone), builder.DummyZoneName+updateSuffix, "field is immutable").Error(), nil),
 		Entry("should allow zone change for privileged user", updateArgs{changeZoneName: true, isServiceUser: true}, true, nil, nil),
 		Entry("should allow zone unset for privileged user", updateArgs{changeZoneName: true, isServiceUser: true, unsetZone: true}, true, nil, nil),
 
@@ -3667,6 +4399,14 @@ func unitTestsValidateUpdate() {
 	doTest := func(args testParams) {
 
 		args.setup(ctx)
+
+		// Set controllerBusNumber on volumes after setup to simulate mutation webhook
+		if !args.skipSetControllerForPVC {
+			setControllerForPVC(ctx.vm)
+			if ctx.oldVM != nil {
+				setControllerForPVC(ctx.oldVM)
+			}
+		}
 
 		if !args.skipBypassUpgradeCheck {
 			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
@@ -3937,7 +4677,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
@@ -3948,7 +4687,6 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 
@@ -3961,7 +4699,6 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
@@ -3977,7 +4714,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -3989,7 +4725,6 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
@@ -4007,7 +4742,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
@@ -4018,7 +4752,6 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
@@ -4038,7 +4771,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -4065,7 +4797,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
@@ -4076,7 +4807,6 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
 						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
@@ -4103,7 +4833,6 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
 						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
@@ -4123,31 +4852,222 @@ func unitTestsValidateUpdate() {
 				},
 			),
 		)
+
+		getProtectedAnnotationTableAllowUpdate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.IsPrivilegedAccount = true
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							if tc.newValue != "" {
+								ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+							}
+						},
+						expectAllowed: true,
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should allow update of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableAllowRemoval := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.IsPrivilegedAccount = true
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							delete(ctx.vm.Annotations, tc.annotationKey)
+						},
+						expectAllowed: true,
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should allow removal of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableDisallowUpdate := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							if tc.newValue != "" {
+								ctx.vm.Annotations[tc.annotationKey] = tc.newValue
+							}
+						},
+						validate: doValidateWithMsg(
+							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						),
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should disallow update of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		getProtectedAnnotationTableDisallowRemoval := func() []any {
+			table := []any{
+				func(tc protectedAnnotationTestCase) {
+					doTest(testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
+							delete(ctx.vm.Annotations, tc.annotationKey)
+						},
+						validate: doValidateWithMsg(
+							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						),
+					})
+				},
+			}
+
+			for i := range protectedAnnotationTestCases {
+				tc := protectedAnnotationTestCases[i]
+				table = append(table, Entry("should disallow removal of "+tc.annotationKey, tc))
+			}
+
+			return table
+		}
+
+		DescribeTable("disallow update of protected annotations by non-privileged user",
+			getProtectedAnnotationTableDisallowUpdate()...,
+		)
+
+		DescribeTable("disallow removal of protected annotations by non-privileged user",
+			getProtectedAnnotationTableDisallowRemoval()...,
+		)
+
+		DescribeTable("allow update of protected annotations by privileged user",
+			getProtectedAnnotationTableAllowUpdate()...,
+		)
+
+		DescribeTable("allow removal of protected annotations by privileged user",
+			getProtectedAnnotationTableAllowRemoval()...,
+		)
 	})
 
 	Context("Bootstrap", func() {
 		DescribeTable("update", doTest,
-			Entry("disallow bootstrap update if VM is desired powered on",
+
+			Entry("allow no bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = nil
+						ctx.vm.Spec.Bootstrap = nil
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow setting bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = nil
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow setting specific bootstrap provider",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
-						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								Sysprep: &sysprep.Sysprep{
-									UserData: sysprep.UserData{},
-								},
-							},
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
 						}
-						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						`spec.bootstrap: Forbidden: updates to this field is not allowed when VM power is on`,
-					),
+					expectAllowed: true,
 				},
 			),
+			Entry("disallow clearing all bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+						ctx.vm.Spec.Bootstrap = nil
+					},
+					validate: doValidateWithMsg(`spec.bootstrap: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow unsetting CloudInit",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.cloudInit: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow unsetting LinuxPrep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.linuxPrep: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow unsetting Sysprep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.sysprep: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow changing bootstrap providers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.linuxPrep: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("allow changing bootstrap providers if privileged",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
 			Entry("allow bootstrap update if VM is desired powered on with halt annotation",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -4985,14 +5905,27 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("disallow changing CD-ROM name when VM is powered on",
+			Entry("disallow adding CD-ROM when VM is powered on",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Hardware.Cdrom[0].Name = "new3"
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom[0].name: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].name: Forbidden: adding new CD-ROMs is not allowed when VM is powered on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow removing CD-ROMs when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},
@@ -5035,6 +5968,21 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Spec.Hardware.Cdrom[0].Connected = ptr.To(!oldConnected)
 						ctx.vm.Spec.Hardware.Cdrom[0].AllowGuestControl = ptr.To(!oldAllowGuestControl)
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow changing CD-ROM controller spec when status.PowerState is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
 					},
 					expectAllowed: true,
 				},
@@ -5084,7 +6032,7 @@ func unitTestsValidateUpdate() {
 	})
 
 	Context("BootOptions", func() {
-		DescribeTable("BootOptions create", doTest,
+		DescribeTable("BootOptions update", doTest,
 
 			Entry("allow empty bootOptions",
 				testParams{
@@ -5095,16 +6043,33 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
+			Entry("disallow setting bootRetryDelay VM is PoweredOn",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryEnabled,
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+					),
+				},
+			),
+
 			Entry("disallow setting bootRetryDelay when bootRetry is unset",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
 						}
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -5112,6 +6077,7 @@ func unitTestsValidateUpdate() {
 			Entry("disallow setting bootRetryDelay when bootRetry is disabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
 							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
@@ -5119,7 +6085,7 @@ func unitTestsValidateUpdate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -5127,6 +6093,7 @@ func unitTestsValidateUpdate() {
 			Entry("allow setting bootRetryDelay when bootRetry is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryEnabled,
 							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
@@ -5136,16 +6103,33 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
+			Entry("disallow setting efiSecureBoot when VM is PoweredOn",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+					),
+				},
+			),
+
 			Entry("disallow setting efiSecureBoot when firmware is unset",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
 						}
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -5153,14 +6137,15 @@ func unitTestsValidateUpdate() {
 			Entry("disallow setting efiSecureBoot when firmware is BIOS",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
-							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS,
 							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS,
 						}
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -5168,10 +6153,428 @@ func unitTestsValidateUpdate() {
 			Entry("allow setting efiSecureBoot when firmware is EFI",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootOrder when VM is PoweredOn",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+					),
+				},
+			),
+
+			Entry("allow setting bootOrder when VM is PoweredOff",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootOrder when disk or network device is missing name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								},
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting bootOrder when duplicate disk device is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting bootOrder when duplicate network device is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when specified network interface is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth1",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when vm.spec.network is nil",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth1",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+
+						ctx.vm.Spec.Network = nil
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when specified disk is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-1",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when CD-ROM is specified, but not configured",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when type is unsupported",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: "usb",
+									Name: "usb0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow when all specified devices are present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
 						}
 					},
 					expectAllowed: true,
@@ -6048,7 +7451,7 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		XEntry("disallow change when upgradedToBuildVersion is missing",
+		Entry("disallow BiosUUID change when upgradedToBuildVersion annotation is missing",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
@@ -6057,25 +7460,76 @@ func unitTestsValidateUpdate() {
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
+					// Change a field that is validated during schema upgrade
+					ctx.vm.Spec.BiosUUID = "new-bios-uuid"
 				},
 				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`metadata.annotations[vmoperator.vmware.com/upgraded-to-build-version]: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.biosUUID: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
 			},
 		),
 
-		XEntry("disallow change when upgradedToSchemaVersion is missing",
+		Entry("disallow IDEControllers change when upgradedToSchemaVersion annotation is missing",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
+					// Change a field that is validated during schema upgrade
+					if ctx.vm.Spec.Hardware == nil {
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+					}
+					// we have two IDE controllers by default.
+					ctx.vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{}
 				},
 				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`metadata.annotations[vmoperator.vmware.com/upgraded-to-schema-version]: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.hardware.ideControllers: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
+			},
+		),
+
+		Entry("allow update when both VMs have nil Hardware",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					// Remove volumes to avoid volume-controller validation
+					ctx.oldVM.Spec.Volumes = nil
+					ctx.vm.Spec.Volumes = nil
+
+					ctx.oldVM.Spec.Hardware = nil
+					ctx.vm.Spec.Hardware = nil
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow change to unrestricted field when upgradedToBuildVersion annotation is missing",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.BuildVersion = fake
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					// Change a field that is NOT validated during schema upgrade
+					ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
 			},
 		),
 
@@ -6142,7 +7596,7 @@ func unitTestsValidateUpdate() {
 	)
 
 	Context("Snapshots", func() {
-		snapshotPath := field.NewPath("spec", "currentSnapshot")
+		snapshotPath := field.NewPath("spec", "currentSnapshotName")
 
 		DescribeTable("currentSnapshot", doTest,
 			Entry("when the VirtualSnapshot exists",
@@ -6154,97 +7608,18 @@ func unitTestsValidateUpdate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.ObjectMeta.Name
 					},
 					expectAllowed: true,
-				},
-			),
-			Entry("when the currentSnapshot APIVersion is non-empty and is invalid",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: "foobar.com/v1/v2",
-							Kind:       vmSnapshot.Kind,
-						}
-					},
-					validate: doValidateWithMsg(
-						field.Invalid(snapshotPath.Child("apiVersion"), "foobar.com/v1/v2", "must be valid group version").Error(),
-					),
-					expectAllowed: false,
-				},
-			),
-			Entry("when the currentSnapshot APIVersion is non-empty and group is invalid",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: "foobar.com/v99",
-							Kind:       vmSnapshot.Kind,
-						}
-					},
-					validate: doValidateWithMsg(
-						field.Invalid(snapshotPath.Child("apiVersion"), "foobar.com/v99", fmt.Sprintf("group must be %q", vmopv1.GroupName)).Error(),
-					),
-					expectAllowed: false,
-				},
-			),
-			Entry("when the currentSnapshot Kind is invalid",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       "VMSnapshot",
-						}
-					},
-					validate: doValidateWithMsg(
-						field.NotSupported(snapshotPath.Child("kind"), "VMSnapshot", []string{"VirtualMachineSnapshot"}).Error(),
-					),
-					expectAllowed: false,
 				},
 			),
 			Entry("when the currentSnapshot Name is empty",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       "",
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = ""
 					},
-					validate: doValidateWithMsg(
-						field.Required(snapshotPath.Child("name"), "").Error(),
-					),
-					expectAllowed: false,
+					validate:      nil, // Empty string is valid for CurrentSnapshot (means no revert)
+					expectAllowed: true,
 				},
 			),
 			Entry("when the VM is a VKS node attempting snapshot revert",
@@ -6262,11 +7637,7 @@ func unitTestsValidateUpdate() {
 						}
 						ctx.vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(snapshotPath, "snapshot revert is not allowed for VKS nodes").Error(),
@@ -6277,12 +7648,8 @@ func unitTestsValidateUpdate() {
 			Entry("when a VM is being reverted to a snapshot, revert should be rejected",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name: "new-snap",
-						}
-						ctx.oldVM.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name: "old-snap",
-						}
+						ctx.vm.Spec.CurrentSnapshotName = "new-snap"
+						ctx.oldVM.Spec.CurrentSnapshotName = "old-snap"
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(snapshotPath, "a snapshot revert is already in progress").Error(),
@@ -6331,9 +7698,9 @@ func unitTestsValidateUpdate() {
 			Entry("Immutable",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-							VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+						ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{
@@ -6345,9 +7712,9 @@ func unitTestsValidateUpdate() {
 							},
 						}
 
-						ctx.oldVM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-							VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+						ctx.oldVM.Spec.Affinity = &vmopv1.AffinitySpec{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{
@@ -6361,6 +7728,818 @@ func unitTestsValidateUpdate() {
 					},
 					validate: doValidateWithMsg(`spec.affinity: Forbidden: updating Affinity is not allowed`),
 				},
+			),
+		)
+	})
+
+	Context("Volume PVC immutable fields", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
+		DescribeTable("Updates", doTest,
+			Entry("should allow identical ApplicationType",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny ApplicationType change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].applicationType: Invalid value: "MicrosoftWSFC": field is immutable`),
+				},
+			),
+			Entry("should deny ControllerBusNumber change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(1))
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].controllerBusNumber: Invalid value: 1: field is immutable`),
+				},
+			),
+			Entry("should deny ControllerType change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+						ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].controllerType: Invalid value: "SATA": field is immutable`),
+				},
+			),
+			Entry("should deny DiskMode change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModePersistent
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].diskMode: Invalid value: "IndependentPersistent": field is immutable`),
+				},
+			),
+			Entry("should deny SharingMode change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
+						ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].sharingMode: Invalid value: "MultiWriter": field is immutable`),
+				},
+			),
+			Entry("should deny UnitNumber change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].UnitNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(1))
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].unitNumber: Invalid value: 1: field is immutable`),
+				},
+			),
+			Entry("should allow when volume is replaced",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].Name = "old-pvc"
+						ctx.vm.Spec.Volumes[0].Name = "new-pvc"
+						ctx.oldVM.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("PVC Volume Controller Fields", func() {
+		const (
+			newVolName = "new-vol"
+			newPVCName = "new-pvc"
+		)
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
+		DescribeTable("update", doTest,
+			Entry("should deny UPDATE with missing unitNumber",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Add a new volume without unitNumber
+						newVol := ctx.vm.Spec.Volumes[0].DeepCopy()
+						newVol.Name = newVolName
+						newVol.PersistentVolumeClaim.ClaimName = newPVCName
+						newVol.UnitNumber = nil
+						newVol.ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *newVol)
+						// Add the controller to hardware spec for both oldVM and vm
+						newController := vmopv1.SCSIControllerSpec{
+							BusNumber: 1,
+							Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						}
+						ctx.vm.Spec.Hardware.SCSIControllers = append(ctx.vm.Spec.Hardware.SCSIControllers, newController)
+						ctx.oldVM.Spec.Hardware.SCSIControllers = append(ctx.oldVM.Spec.Hardware.SCSIControllers, newController)
+					},
+					expectAllowed:           false,
+					skipSetControllerForPVC: true,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(1).Child("unitNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny UPDATE with missing controllerType",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Add a new volume without controllerType
+						newVol := ctx.vm.Spec.Volumes[0].DeepCopy()
+						newVol.Name = newVolName
+						newVol.PersistentVolumeClaim.ClaimName = newPVCName
+						newVol.ControllerType = ""
+						newVol.UnitNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *newVol)
+					},
+					expectAllowed:           false,
+					skipSetControllerForPVC: true,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(1).Child("controllerType"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny UPDATE with missing controllerBusNumber",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Add a new volume without controllerBusNumber
+						newVol := ctx.vm.Spec.Volumes[0].DeepCopy()
+						newVol.Name = newVolName
+						newVol.PersistentVolumeClaim.ClaimName = newPVCName
+						newVol.ControllerBusNumber = nil
+						newVol.UnitNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *newVol)
+					},
+					expectAllowed:           false,
+					skipSetControllerForPVC: true,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(1).Child("controllerBusNumber"), "").Error(),
+					),
+				},
+			),
+			Entry("should allow UPDATE with all controller fields set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// All fields are already set by setControllerForPVC
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("Volume ImageDiskName", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.AllDisksArePVCs = true
+			})
+		})
+
+		DescribeTable("Update", doTest,
+			Entry("should allow VM update with no ImageDiskName changes",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc",
+										},
+									},
+								},
+								ImageDiskName: "my-disk",
+							},
+						}
+						ctx.oldVM = ctx.vm.DeepCopy()
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny VM update with immutable change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc",
+										},
+									},
+								},
+								ImageDiskName: "my-disk",
+							},
+						}
+						ctx.oldVM = ctx.vm.DeepCopy()
+						ctx.oldVM.Spec.Volumes[0].ImageDiskName = "my-disk-1"
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("imageDiskName"), "my-disk-1", apivalidation.FieldImmutableErrorMsg).Error(),
+					),
+				},
+			),
+		)
+	})
+
+	Context("Volume PVC UnitNumber conflicts with attached devices", func() {
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
+		DescribeTable("Updates", doTest,
+			Entry("should allow new volume with unit number not in status",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+									},
+								},
+								UnitNumber:          ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+							},
+						}
+
+						// New VM adds a second volume with different unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+								},
+							},
+							UnitNumber:          ptr.To(int32(1)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+						})
+
+						// Setup status with existing device
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 0,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny new volume with unit number already used by CD-ROM",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+									},
+								},
+								UnitNumber:          ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+							},
+						}
+
+						// New VM adds a second volume with conflicting unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+								},
+							},
+							UnitNumber:          ptr.To(int32(5)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+						})
+
+						// Add CD-ROM at unit five in spec.
+						ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						}
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name:                "cdrom1",
+								Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(5)),
+							},
+						}
+						ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
+					},
+					validate: doValidateWithMsg(
+						"controller unit number SCSI:0:5 is already in use",
+					),
+				},
+			),
+			Entry("should allow new volume on different controller even if same unit number exists",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+									},
+								},
+								UnitNumber:          ptr.To(int32(0)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+							},
+						}
+						ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						}
+
+						// New VM adds volume on SATA controller with same unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+								},
+							},
+							UnitNumber:          ptr.To(int32(0)),
+							ControllerType:      vmopv1.VirtualControllerTypeSATA,
+							ControllerBusNumber: ptr.To(int32(0)),
+						})
+
+						ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()
+						ctx.vm.Spec.Hardware.SATAControllers = append(
+							ctx.vm.Spec.Hardware.SATAControllers,
+							vmopv1.SATAControllerSpec{
+								BusNumber: 0,
+							},
+						)
+
+						// Setup status with SCSI device at unit 0
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 0,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow new volume on different bus even if same unit number exists",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+									},
+								},
+								UnitNumber:          ptr.To(int32(3)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+							},
+						}
+
+						// Add SCSI controllers for both buses
+						ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+							{
+								BusNumber:   1,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						}
+
+						// New VM adds volume on different SCSI bus with same unit number
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc",
+									},
+								},
+							},
+							UnitNumber:          ptr.To(int32(3)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(1)),
+						})
+
+						// Setup status with device on bus 0
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 3,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should not check existing volumes against status",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with volume at unit 5
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc",
+										},
+									},
+								},
+								UnitNumber:          ptr.To(int32(5)),
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+							},
+						}
+
+						// New VM keeps the same volume (no changes)
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+
+						// Setup status with device at unit 5 (the existing volume's device)
+						// This should be allowed because we don't validate old volumes against status
+						ctx.vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{
+									Type:      vmopv1.VirtualControllerTypeSCSI,
+									BusNumber: 0,
+									Devices: []vmopv1.VirtualDeviceStatus{
+										{
+											Type:       vmopv1.VirtualDeviceTypeDisk,
+											UnitNumber: 5,
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	unitTestsValidateVolumeUnitNumber(doTest)
+
+	Context("PVC Access Mode and Sharing Mode Combinations", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+		})
+
+		AfterEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = false
+			})
+		})
+
+		DescribeTable("validate PVC access mode and sharing mode combinations",
+			func(testName string,
+				setup func(*unitValidatingWebhookContext),
+				expectAllowed bool) {
+
+				setup(ctx)
+
+				// Set controllerBusNumber on volumes to simulate mutation webhook
+				setControllerForPVC(ctx.vm)
+				if ctx.oldVM != nil {
+					setControllerForPVC(ctx.oldVM)
+				}
+
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(expectAllowed))
+			},
+			Entry("should reject when only volume is updated with invalid combination",
+				"only-volume-updated-invalid",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{
+								corev1.ReadWriteOnce,
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Ensure oldVM and vm have the same hardware
+					scsiController := vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					}
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						scsiController,
+					}
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						scsiController,
+					}
+
+					// Configure oldVM with a valid volume
+					oldVol := vmopv1.VirtualMachineVolume{
+						Name: "old-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+							},
+						},
+						SharingMode: vmopv1.VolumeSharingModeNone,
+					}
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{oldVol}
+
+					// Configure vm with an invalid volume (ReadWriteOnce with MultiWriter)
+					newVol := vmopv1.VirtualMachineVolume{
+						Name: "new-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+							},
+						},
+						SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+					}
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{newVol}
+				},
+				false,
+			),
+
+			Entry("should reject when only hardware is updated with invalid combination",
+				"only-hardware-updated-invalid",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Ensure oldVM and vm have the same volume
+					vol := vmopv1.VirtualMachineVolume{
+						Name: "test-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+							},
+						},
+						SharingMode:         vmopv1.VolumeSharingModeNone,
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To[int32](0),
+					}
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{vol}
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{vol}
+
+					// Configure oldVM with a valid controller (None sharing)
+					oldScsiController := vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					}
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						oldScsiController,
+					}
+
+					// Configure vm with an invalid controller (Physical sharing)
+					newScsiController := vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					}
+					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						newScsiController,
+					}
+				},
+				false,
+			),
+
+			Entry("should allow when neither volume nor hardware has changed",
+				"neither-volume-nor-hardware-changed",
+				func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "non-existent-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "non-existent-pvc",
+									},
+								},
+							},
+							SharingMode:         vmopv1.VolumeSharingModeNone,
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(1)),
+						},
+					}
+
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+					}
+
+					ctx.vm = ctx.oldVM.DeepCopy()
+				},
+				true,
+			),
+
+			Entry("should allow when privileged account updates with invalid combination",
+				"privileged-account-invalid-combination",
+				func(ctx *unitValidatingWebhookContext) {
+					// Mark as privileged account
+					ctx.IsPrivilegedAccount = true
+
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{
+								corev1.ReadWriteOnce,
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Ensure oldVM and vm have the same hardware.
+					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+						{
+							BusNumber:   1,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+					}
+					ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()
+
+					// Configure oldVM with a valid volume.
+					oldVol := vmopv1.VirtualMachineVolume{
+						Name: "old-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+							},
+						},
+						SharingMode:         vmopv1.VolumeSharingModeNone,
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(1)),
+						UnitNumber:          ptr.To(int32(0)),
+					}
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{oldVol}
+
+					// Configure vm with an invalid volume (ReadWriteOnce with MultiWriter)
+					// but should be allowed for privileged account.
+					newVol := vmopv1.VirtualMachineVolume{
+						Name: "new-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+							},
+						},
+						SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(1)),
+						UnitNumber:          ptr.To(int32(1)),
+					}
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{newVol}
+				},
+				true,
 			),
 		)
 	})
@@ -6389,5 +8568,212 @@ func unitTestsValidateDelete() {
 			Expect(response.Allowed).To(BeTrue())
 			Expect(response.Result).ToNot(BeNil())
 		})
+	})
+}
+
+func unitTestsValidateVolumeUnitNumber(
+	doTest func(testParams),
+) {
+	Context("Volume PVC UnitNumber", func() {
+		type volumeConfig struct {
+			unitNumber          *int32
+			controllerType      vmopv1.VirtualControllerType
+			controllerBusNumber *int32
+		}
+
+		setupFnForVolumeUnitNumberUpdates := func(
+			volConfigs ...volumeConfig,
+		) func(ctx *unitValidatingWebhookContext) {
+			return func(ctx *unitValidatingWebhookContext) {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+				controllersToCreate := sets.New[pkgutil.ControllerID]()
+
+				for i, cfg := range volConfigs {
+					vol := vmopv1.VirtualMachineVolume{
+						Name: fmt.Sprintf("volume-%d", i),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: fmt.Sprintf("pvc-%d", i),
+								},
+							},
+						},
+						UnitNumber:          cfg.unitNumber,
+						ControllerType:      cfg.controllerType,
+						ControllerBusNumber: cfg.controllerBusNumber,
+					}
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vol)
+
+					if cfg.controllerBusNumber != nil {
+						controllersToCreate.Insert(pkgutil.ControllerID{
+							ControllerType: cfg.controllerType,
+							BusNumber:      *cfg.controllerBusNumber,
+						})
+					}
+				}
+
+				// Create controllers for all controllers referenced by volumes
+				for controllerID := range controllersToCreate {
+					switch controllerID.ControllerType {
+					case vmopv1.VirtualControllerTypeSCSI:
+						ctx.vm.Spec.Hardware.SCSIControllers = append(
+							ctx.vm.Spec.Hardware.SCSIControllers,
+							vmopv1.SCSIControllerSpec{
+								BusNumber:   controllerID.BusNumber,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						)
+					case vmopv1.VirtualControllerTypeSATA:
+						ctx.vm.Spec.Hardware.SATAControllers = append(
+							ctx.vm.Spec.Hardware.SATAControllers,
+							vmopv1.SATAControllerSpec{
+								BusNumber: controllerID.BusNumber,
+							},
+						)
+					case vmopv1.VirtualControllerTypeNVME:
+						ctx.vm.Spec.Hardware.NVMEControllers = append(
+							ctx.vm.Spec.Hardware.NVMEControllers,
+							vmopv1.NVMEControllerSpec{
+								BusNumber: controllerID.BusNumber,
+							},
+						)
+					case vmopv1.VirtualControllerTypeIDE:
+						ctx.vm.Spec.Hardware.IDEControllers = append(
+							ctx.vm.Spec.Hardware.IDEControllers,
+							vmopv1.IDEControllerSpec{
+								BusNumber: controllerID.BusNumber,
+							},
+						)
+					}
+				}
+			}
+		}
+
+		DescribeTable("UnitNumber uniqueness per controller", doTest,
+			Entry("should allow VM with no controller specified",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{},
+						volumeConfig{},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with no unit numbers specified",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with unique unit numbers on same controller",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(1)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with same unit number on different controllers",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSATA,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow VM with same unit number on different bus numbers",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(1)),
+						},
+					),
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny VM with duplicate unit numbers on same controller",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(3)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(3)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					validate: doValidateWithMsg(
+						"controller unit number SCSI:0:3 is already in use",
+					),
+				},
+			),
+			Entry("should deny VM with duplicate unit numbers across three volumes on same controller",
+				testParams{
+					setup: setupFnForVolumeUnitNumberUpdates(
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(1)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+						volumeConfig{
+							unitNumber:          ptr.To(int32(0)),
+							controllerType:      vmopv1.VirtualControllerTypeSCSI,
+							controllerBusNumber: ptr.To(int32(0)),
+						},
+					),
+					validate: doValidateWithMsg(
+						"controller unit number SCSI:0:0 is already in use",
+					),
+				},
+			),
+		)
 	})
 }

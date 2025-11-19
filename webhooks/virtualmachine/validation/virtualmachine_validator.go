@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -23,9 +24,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
@@ -65,6 +66,8 @@ const (
 	readinessProbeOnlyOneAction                = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
 	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
+	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
+	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
 	storageClassNotFoundFmt                    = "Storage policy %s does not exist"
 	storageClassNotAssignedFmt                 = "Storage policy is not associated with the namespace %s"
 	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
@@ -84,6 +87,8 @@ const (
 	invalidImageKind                           = "supported: " + vmiKind + "; " + cvmiKind
 	invalidZone                                = "cannot use zone that is being deleted"
 	restrictedToPrivUsers                      = "restricted to privileged users"
+	controllerBusNumberRangeFmt                = "%s controllerBusNumber must be in the range of 0 to %d"
+	unitNumberRangeFmt                         = "%s unitNumber must be in the range of 0 to %d"
 	addRestrictedAnnotation                    = "adding this annotation is restricted to privileged users"
 	delRestrictedAnnotation                    = "removing this annotation is restricted to privileged users"
 	modRestrictedAnnotation                    = "modifying this annotation is restricted to privileged users"
@@ -91,6 +96,9 @@ const (
 	invalidClassInstanceReference              = "must specify a valid reference to a VirtualMachineClassInstance object"
 	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
 	invalidClassInstanceReferenceOwnerMismatch = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
+	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
+	guestCustomizationVCDParityNotEnabled      = "VC guest customization VCD parity capability is not enabled"
+	bootstrapProviderTypeCannotBeChanged       = "bootstrap provider type cannot be changed"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -155,7 +163,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, nil)...)
-	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
@@ -168,10 +176,11 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateHardware(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBiosUUID(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -222,7 +231,6 @@ func (v validator) validateImageOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 //   - Minimum VM Hardware Version
 //
 // Following fields can only be changed when the VM is powered off.
-//   - Bootstrap
 //   - GuestID
 //   - CD-ROM (updating connection state is allowed regardless of power state)
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
@@ -257,9 +265,10 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	// of whether the update is allowed or not.
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateBootstrapProviderImmutable(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, oldVM)...)
-	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
@@ -271,7 +280,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateHardware(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 
@@ -283,8 +292,44 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
+func (v validator) validateBootstrapProviderImmutable(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if ctx.IsPrivilegedAccount {
+		return nil
+	}
+
+	var fieldErrs field.ErrorList
+	p := field.NewPath("spec", "bootstrap")
+
+	oldBS := oldVM.Spec.Bootstrap
+	if oldBS == nil {
+		return fieldErrs
+	}
+
+	bs := vm.Spec.Bootstrap
+	if bs == nil {
+		return append(fieldErrs, field.Forbidden(p, bootstrapProviderTypeCannotBeChanged))
+	}
+
+	// vApp can be combined with LinuxPrep and Sysprep, or used standalone, so don't
+	// worry about that here.
+	switch {
+	case oldBS.CloudInit != nil && bs.CloudInit == nil:
+		return append(fieldErrs, field.Forbidden(p.Child("cloudInit"), bootstrapProviderTypeCannotBeChanged))
+	case oldBS.LinuxPrep != nil && bs.LinuxPrep == nil:
+		return append(fieldErrs, field.Forbidden(p.Child("linuxPrep"), bootstrapProviderTypeCannotBeChanged))
+	case oldBS.Sysprep != nil && bs.Sysprep == nil:
+		return append(fieldErrs, field.Forbidden(p.Child("sysprep"), bootstrapProviderTypeCannotBeChanged))
+	}
+
+	return nil
+}
+
+//nolint:gocyclo
 func (v validator) validateBootstrap(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -329,6 +374,30 @@ func (v validator) validateBootstrap(
 			allErrs = append(allErrs, field.Forbidden(p,
 				"LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"))
 		}
+
+		if pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity {
+			if linuxPrep.ScriptText != nil {
+				if sc := linuxPrep.ScriptText; sc.From != nil && sc.Value != nil {
+					allErrs = append(allErrs, field.Invalid(p.Child("scriptText").Child("value"), "value",
+						"from and value are mutually exclusive"))
+				}
+			}
+		} else {
+			if linuxPrep.ExpirePasswordAfterNextLogin {
+				allErrs = append(allErrs, field.Forbidden(p.Child("expirePasswordAfterNextLogin"),
+					guestCustomizationVCDParityNotEnabled))
+			}
+
+			if linuxPrep.Password != nil {
+				allErrs = append(allErrs, field.Forbidden(p.Child("password"),
+					guestCustomizationVCDParityNotEnabled))
+			}
+
+			if linuxPrep.ScriptText != nil {
+				allErrs = append(allErrs, field.Forbidden(p.Child("scriptText"),
+					guestCustomizationVCDParityNotEnabled))
+			}
+		}
 	}
 
 	if sysPrep != nil {
@@ -348,7 +417,7 @@ func (v validator) validateBootstrap(
 		}
 
 		if sysPrep.Sysprep != nil {
-			allErrs = append(allErrs, v.validateInlineSysprep(p, vm, sysPrep.Sysprep)...)
+			allErrs = append(allErrs, v.validateInlineSysprep(ctx, p, vm, sysPrep.Sysprep)...)
 		}
 	}
 
@@ -372,7 +441,7 @@ func (v validator) validateBootstrap(
 			}
 			if value := property.Value; value.From != nil && value.Value != nil {
 				allErrs = append(allErrs, field.Invalid(p.Child("properties").Child("value"), "value",
-					"from and value is mutually exclusive"))
+					"from and value are mutually exclusive"))
 			}
 		}
 
@@ -382,6 +451,7 @@ func (v validator) validateBootstrap(
 }
 
 func (v validator) validateInlineSysprep(
+	ctx *pkgctx.WebhookRequestContext,
 	p *field.Path,
 	vm *vmopv1.VirtualMachine,
 	sysprep *sysprep.Sysprep) field.ErrorList {
@@ -425,6 +495,25 @@ func (v validator) validateInlineSysprep(
 				allErrs = append(allErrs, field.Invalid(s, "identification",
 					"joinWorkgroup and domainAdmin/domainAdminPassword/domainOU are mutually exclusive"))
 			}
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity {
+		if scriptText := sysprep.ScriptText; scriptText != nil {
+			if scriptText.From != nil && scriptText.Value != nil {
+				allErrs = append(allErrs, field.Invalid(s.Child("scriptText").Child("value"), "value",
+					"from and value are mutually exclusive"))
+			}
+		}
+	} else {
+		if sysprep.ExpirePasswordAfterNextLogin {
+			allErrs = append(allErrs, field.Forbidden(p.Child("expirePasswordAfterNextLogin"),
+				guestCustomizationVCDParityNotEnabled))
+		}
+
+		if sysprep.ScriptText != nil {
+			allErrs = append(allErrs, field.Forbidden(p.Child("scriptText"),
+				guestCustomizationVCDParityNotEnabled))
 		}
 	}
 
@@ -1043,45 +1132,114 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 
 func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	var allErrs field.ErrorList
-	volumesPath := field.NewPath("spec", "volumes")
-	volumeNames := map[string]bool{}
+	if ctx.IsPrivilegedAccount {
+		// TODO(akutz) Dedupe this against Faisal's outstanding change.
+		return nil
+	}
+
+	var (
+		allErrs       field.ErrorList
+		volumesPath   = field.NewPath("spec", "volumes")
+		volumeSpecMap = sets.New[string]()
+		oldVolumesMap = map[string]*vmopv1.VirtualMachineVolume{}
+	)
+
+	if oldVM != nil {
+		for _, oldVol := range oldVM.Spec.Volumes {
+			if oldVol.Name != "" {
+				oldVolumesMap[oldVol.Name] = &oldVol
+			}
+		}
+	}
 
 	for i, vol := range vm.Spec.Volumes {
 		volPath := volumesPath.Index(i)
 
 		if vol.Name != "" {
-			if volumeNames[vol.Name] {
-				allErrs = append(allErrs, field.Duplicate(volPath.Child("name"), vol.Name))
+			if _, found := volumeSpecMap[vol.Name]; found {
+				allErrs = append(allErrs, field.Duplicate(
+					volPath.Child("name"), vol.Name))
 			} else {
-				volumeNames[vol.Name] = true
+				volumeSpecMap.Insert(vol.Name)
 			}
 		} else {
 			allErrs = append(allErrs, field.Required(volPath.Child("name"), ""))
 		}
 
 		if vol.Name != "" {
-			errs := validation.NameIsDNSSubdomain(pkgutil.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
+			errs := validation.NameIsDNSSubdomain(
+				pkgutil.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
 			for _, msg := range errs {
-				allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
+				allErrs = append(allErrs, field.Invalid(volPath.Child("name"),
+					vol.Name, msg))
 			}
 		}
 
-		if vol.PersistentVolumeClaim == nil {
-			allErrs = append(allErrs, field.Required(volPath.Child("persistentVolumeClaim"), ""))
-		} else {
-			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, volPath)...)
+		allErrs = append(allErrs,
+			v.validateVolume(
+				ctx,
+				oldVM,
+				vm,
+				oldVolumesMap[vol.Name],
+				vol,
+				volPath)...)
+
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
+			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+
+			allErrs = append(allErrs,
+				v.validateControllerFields(vol, oldVM, *volPath)...,
+			)
 		}
 	}
 
 	return allErrs
 }
 
-func (v validator) validateVolumeWithPVC(
-	_ *pkgctx.WebhookRequestContext,
-	_ *vmopv1.VirtualMachine,
+func (v validator) validateControllerFields(
+	vol vmopv1.VirtualMachineVolume,
+	oldVM *vmopv1.VirtualMachine,
+	volPath field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+
+	unitNumberRequired := oldVM != nil
+	if unitNumberRequired && vol.UnitNumber == nil {
+		allErrs = append(allErrs, field.Required(
+			volPath.Child("unitNumber"),
+			"",
+		))
+	}
+
+	controllerTypeRequired := oldVM != nil ||
+		vol.UnitNumber != nil ||
+		vol.ControllerBusNumber != nil
+	if controllerTypeRequired && vol.ControllerType == "" {
+		allErrs = append(allErrs, field.Required(
+			volPath.Child("controllerType"),
+			"",
+		))
+	}
+
+	controllerBusNumberRequired := oldVM != nil ||
+		vol.UnitNumber != nil ||
+		vol.ControllerType != ""
+	if controllerBusNumberRequired && vol.ControllerBusNumber == nil {
+		allErrs = append(allErrs, field.Required(
+			volPath.Child("controllerBusNumber"),
+			"",
+		))
+	}
+
+	return allErrs
+}
+
+func (v validator) validateVolume(
+	ctx *pkgctx.WebhookRequestContext,
+	oldVM, vm *vmopv1.VirtualMachine,
+	oldVol *vmopv1.VirtualMachineVolume,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
 
@@ -1090,15 +1248,217 @@ func (v validator) validateVolumeWithPVC(
 		pvcPath = volPath.Child("persistentVolumeClaim")
 	)
 
-	if vol.PersistentVolumeClaim.ReadOnly {
-		allErrs = append(allErrs, field.NotSupported(pvcPath.Child("readOnly"), true, []string{"false"}))
+	if pvc := vol.PersistentVolumeClaim; pvc != nil {
+		if pvc.ReadOnly {
+			allErrs = append(allErrs, field.NotSupported(
+				pvcPath.Child("readOnly"), true, []string{"false"}))
+		}
+		if pvc.ClaimName == "" {
+			allErrs = append(allErrs, field.Required(
+				pvcPath.Child("claimName"), ""))
+		}
 	}
 
-	if vol.PersistentVolumeClaim.ClaimName == "" {
-		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
+		!pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+
+		return allErrs
+	}
+
+	if oldVol != nil && oldVol.Name == vol.Name {
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ApplicationType,
+			oldVol.ApplicationType,
+			volPath.Child("applicationType"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ControllerBusNumber,
+			oldVol.ControllerBusNumber,
+			volPath.Child("controllerBusNumber"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ControllerType,
+			oldVol.ControllerType,
+			volPath.Child("controllerType"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.DiskMode,
+			oldVol.DiskMode,
+			volPath.Child("diskMode"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.SharingMode,
+			oldVol.SharingMode,
+			volPath.Child("sharingMode"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.UnitNumber,
+			oldVol.UnitNumber,
+			volPath.Child("unitNumber"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.ImageDiskName,
+			oldVol.ImageDiskName,
+			volPath.Child("imageDiskName"))...)
+	}
+
+	// Validate access mode, sharing mode, and controller combinations if VM is
+	// being created or volume is being updated.
+	// Skip the validation if the volume is not being updated to avoid rejecting
+	// an update caused by an external state change.
+	var (
+		volumeChanged   bool
+		hardwareChanged bool
+	)
+
+	if oldVol == nil || !equality.Semantic.DeepEqual(*oldVol, vol) {
+		volumeChanged = true
+	}
+
+	if oldVol == nil ||
+		vm == nil ||
+		!equality.Semantic.DeepEqual(oldVM.Spec.Hardware, vm.Spec.Hardware) {
+
+		hardwareChanged = true
+	}
+
+	if volumeChanged || hardwareChanged {
+		allErrs = append(allErrs,
+			v.validateVolumeAccessModeAndSharingModeCombinations(
+				ctx,
+				vm,
+				vol,
+				volPath, pvcPath,
+			)...,
+		)
+	} else {
+		ctx.Logger.V(4).Info(
+			"Skipping volume access mode and sharing mode validation",
+			"volume", vol.Name,
+			"volumeChanged", volumeChanged,
+			"hardwareChanged", hardwareChanged,
+			"isPrivilegedAccount", ctx.IsPrivilegedAccount,
+		)
 	}
 
 	return allErrs
+}
+
+// validateVolumeAccessModeAndSharingModeCombinations validates the combinations
+// of PVC access mode, volume sharing mode, and controller sharing mode
+// according to the business rules.
+func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+	volPath, pvcPath *field.Path) field.ErrorList {
+
+	var (
+		allErrs   field.ErrorList
+		volShared bool
+		pvcShared *bool
+	)
+
+	if vol.SharingMode != "" {
+		volShared = vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter
+	}
+
+	if pvc := vol.PersistentVolumeClaim; pvc != nil {
+
+		// Fetch the PVC to get its access modes
+		obj := &corev1.PersistentVolumeClaim{}
+		if err := v.client.Get(ctx, ctrlclient.ObjectKey{
+			Namespace: ctx.Namespace,
+			Name:      vol.PersistentVolumeClaim.ClaimName,
+		}, obj); err != nil {
+			// If the PVC doesn't exist, skip validation
+			// The PVC existence will be validated elsewhere or at runtime
+			if apierrors.IsNotFound(err) {
+				return allErrs
+			}
+			// For other errors, return the error
+			allErrs = append(allErrs, field.Invalid(pvcPath.Child("claimName"),
+				vol.PersistentVolumeClaim.ClaimName, err.Error()))
+			return allErrs
+		}
+		pvcShared = ptr.To(slices.Contains(
+			obj.Spec.AccessModes, corev1.ReadWriteMany))
+	}
+
+	// Get the controller sharing mode for the specified controller
+	controllerSharingMode := v.getControllerSharingMode(
+		ctx,
+		vm,
+		vol.ControllerType,
+		vol.ControllerBusNumber,
+	)
+
+	// Rule 1 -- If the volume specifies multi-writer then a possible PVC must
+	//           specify it as well.
+	if volShared && (pvcShared == nil || !*pvcShared) {
+		allErrs = append(allErrs,
+			field.Invalid(
+				volPath.Child("sharingMode"),
+				vol.SharingMode,
+				fmt.Sprintf("Disk MultiWriter sharing mode is not allowed "+
+					"for ReadWriteOnce volumes %s",
+					vol.Name),
+			),
+		)
+	}
+
+	// Rule 2 -- If the volume is not shared then the controller must not use
+	//           physical sharing mode.
+	if !volShared &&
+		controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical {
+
+		allErrs = append(allErrs,
+			field.Invalid(
+				volPath.Child("controllerType"),
+				vol.ControllerType,
+				fmt.Sprintf("Physical controller sharing mode is not "+
+					"allowed for ReadWriteOnce volume %s",
+					vol.Name),
+			),
+		)
+	}
+
+	return allErrs
+}
+
+// getControllerSharingMode gets the sharing mode of the specified controller
+// from the VM hardware spec.
+// Returns the sharing mode if the controller was found and it supports
+// sharing mode, otherwise returns None.
+func (v validator) getControllerSharingMode(
+	_ *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32) vmopv1.VirtualControllerSharingMode {
+
+	if vm.Spec.Hardware == nil ||
+		controllerType == "" ||
+		controllerBusNumber == nil {
+		return vmopv1.VirtualControllerSharingModeNone
+	}
+
+	// Find the controller with the specified type and bus number
+	switch controllerType {
+	case vmopv1.VirtualControllerTypeSCSI:
+		for _, controller := range vm.Spec.Hardware.SCSIControllers {
+			if controller.BusNumber == *controllerBusNumber {
+				return controller.SharingMode
+			}
+		}
+	case vmopv1.VirtualControllerTypeNVME:
+		for _, controller := range vm.Spec.Hardware.NVMEControllers {
+			if controller.BusNumber == *controllerBusNumber {
+				return controller.SharingMode
+			}
+		}
+	}
+
+	return vmopv1.VirtualControllerSharingModeNone
 }
 
 // validateInstanceStorageVolumes validates if instance storage volumes are added/modified.
@@ -1353,30 +1713,12 @@ func (v validator) validatePowerStateOnUpdate(
 	return allErrs
 }
 
-func isBootstrapCloudInit(vm *vmopv1.VirtualMachine) bool {
-	if vm.Spec.Bootstrap == nil {
-		return false
-	}
-	return vm.Spec.Bootstrap.CloudInit != nil
-}
-
 func (v validator) validateUpdatesWhenPoweredOn(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
-
-	// Permit upgrade of existing VM's instanceID, regardless of powerState
-	if isBootstrapCloudInit(oldVM) && isBootstrapCloudInit(vm) {
-		if oldVM.Spec.Bootstrap.CloudInit.InstanceID == "" {
-			oldVM.Spec.Bootstrap.CloudInit.InstanceID = vm.Spec.Bootstrap.CloudInit.InstanceID
-		}
-	}
-
-	if !equality.Semantic.DeepEqual(vm.Spec.Bootstrap, oldVM.Spec.Bootstrap) {
-		allErrs = append(allErrs, field.Forbidden(specPath.Child("bootstrap"), updatesNotAllowedWhenPowerOn))
-	}
 
 	if vm.Spec.GuestID != oldVM.Spec.GuestID {
 		allErrs = append(allErrs, field.Forbidden(specPath.Child("guestID"), updatesNotAllowedWhenPowerOn))
@@ -1422,15 +1764,6 @@ func (v validator) validateSchemaUpgrade(
 	case oldUpBuildVer != "" && newUpBuildVer == "":
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToBuildVersionAnnotationKey)
-
-		/*
-			case oldUpBuildVer == "" || oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion:
-				// If the annotations' values do not match the expected values, then the
-				// VM may not be modified.
-				allErrs = append(allErrs, field.Forbidden(
-					fieldPath.Key(pkgconst.UpgradedToBuildVersionAnnotationKey),
-					notUpgraded))
-		*/
 	}
 
 	switch {
@@ -1444,16 +1777,16 @@ func (v validator) validateSchemaUpgrade(
 		// Allow anyone to delete the annotation.
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
+	}
 
-		/*
-			case oldUpSchemVer == "" || oldUpSchemVer != vmopv1.GroupVersion.Version:
-				// If the annotations' values do not match the expected values, then the
-				// VM may not be modified.
-				allErrs = append(allErrs, field.Forbidden(
-					fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
-					notUpgraded))
-
-		*/
+	if oldUpBuildVer == "" || oldUpSchemVer == "" ||
+		oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion ||
+		oldUpSchemVer != vmopv1.GroupVersion.Version {
+		// Prevent most users from modifying the VM spec fields,
+		// that are backfilled by the schema upgrade and mutable,
+		// before the schema upgrade is completed.
+		allErrs = append(allErrs,
+			v.validateFieldsDuringSchemaUpgrade(ctx, newVM, oldVM)...)
 	}
 
 	return allErrs
@@ -1466,6 +1799,7 @@ func (v validator) validateHardware(
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, v.validateCdrom(ctx, newVM, oldVM)...)
+	allErrs = append(allErrs, v.validateControllers(ctx, newVM, oldVM)...)
 
 	return allErrs
 }
@@ -1477,6 +1811,7 @@ func (v validator) validateHardwareWhenPoweredOn(
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, v.validateCdromWhenPoweredOn(ctx, newVM, oldVM)...)
+	allErrs = append(allErrs, v.validateBootOptionsWhenPoweredOn(ctx, newVM, oldVM)...)
 
 	return allErrs
 }
@@ -1502,6 +1837,10 @@ func (v validator) validateImmutableFields(
 	allErrs = append(allErrs, v.validateImmutableReserved(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateImmutableNetwork(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateImmutableVMAffinity(ctx, vm, oldVM)...)
+
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		allErrs = append(allErrs, v.validateImageDiskNameImmutability(ctx, vm, oldVM)...)
+	}
 
 	return allErrs
 }
@@ -1586,12 +1925,12 @@ func (v validator) validateAvailabilityZone(
 
 	var allErrs field.ErrorList
 
-	zoneLabelPath := field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey)
+	zoneLabelPath := field.NewPath("metadata", "labels").Key(corev1.LabelTopologyZone)
 
 	if oldVM != nil {
 		// Once the zone has been set then make sure the field is immutable.
-		if oldVal := oldVM.Labels[topology.KubernetesTopologyZoneLabelKey]; oldVal != "" {
-			newVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+		if oldVal := oldVM.Labels[corev1.LabelTopologyZone]; oldVal != "" {
+			newVal := vm.Labels[corev1.LabelTopologyZone]
 
 			// Privileged accounts are allowed to update the
 			// availability zone label on the VM. This is used during
@@ -1608,7 +1947,7 @@ func (v validator) validateAvailabilityZone(
 	}
 
 	// Validate the name of the provided availability zone.
-	if zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
+	if zoneName := vm.Labels[corev1.LabelTopologyZone]; zoneName != "" {
 		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
 			// Validate the name of the provided zone. It is the same name as az.
 			zone, err := topology.GetZone(ctx.Context, v.client, zoneName, vm.Namespace)
@@ -1625,6 +1964,52 @@ func (v validator) validateAvailabilityZone(
 			if _, err := topology.GetAvailabilityZone(ctx.Context, v.client, zoneName); err != nil {
 				return append(allErrs, field.Invalid(zoneLabelPath, zoneName, err.Error()))
 			}
+		}
+	}
+
+	return allErrs
+}
+
+// protectedAnnotationRegex matches annotations with keys matching the pattern:
+// ^.+\.protected(/.+)?$
+//
+// Examples that match:
+//   - fu.bar.protected
+//   - hello.world.protected/sub-key
+//   - vmoperator.vmware.com.protected/reconcile-priority
+//
+// Examples that do NOT match:
+//   - protected.fu.bar
+//   - hello.world.protected.against/sub-key
+var protectedAnnotationRegex = regexp.MustCompile(`^.+\.protected(/.*)?$`)
+
+// validateProtectedAnnotations validates that annotations matching the
+// protected annotation pattern can only be modified by privileged users.
+func (v validator) validateProtectedAnnotations(vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+	annotationPath := field.NewPath("metadata", "annotations")
+
+	// Collect all protected annotation keys from both old and new VMs
+	protectedKeys := make(map[string]struct{})
+
+	for k := range vm.Annotations {
+		if protectedAnnotationRegex.MatchString(k) {
+			protectedKeys[k] = struct{}{}
+		}
+	}
+
+	for k := range oldVM.Annotations {
+		if protectedAnnotationRegex.MatchString(k) {
+			protectedKeys[k] = struct{}{}
+		}
+	}
+
+	// Check if any protected annotations have been modified
+	for k := range protectedKeys {
+		if vm.Annotations[k] != oldVM.Annotations[k] {
+			allErrs = append(allErrs, field.Forbidden(
+				annotationPath.Key(k),
+				modifyAnnotationNotAllowedForNonAdmin))
 		}
 	}
 
@@ -1655,6 +2040,8 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		oldVM = &vmopv1.VirtualMachine{}
 	}
 
+	allErrs = append(allErrs, v.validateProtectedAnnotations(vm, oldVM)...)
+
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
@@ -1673,14 +2060,6 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 
 	if vm.Annotations[vmopv1.ImportedVMAnnotation] != oldVM.Annotations[vmopv1.ImportedVMAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
-	}
-
-	if vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] != oldVM.Annotations[pkgconst.SkipDeletePlatformResourceKey] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), modifyAnnotationNotAllowedForNonAdmin))
-	}
-
-	if vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] != oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
 	for k := range anno2extraconfig.AnnotationsToExtraConfigKeys {
@@ -1807,8 +2186,8 @@ func (v validator) validateNetworkHostAndDomainName(
 }
 
 func (v validator) validateCdrom(
-	_ *pkgctx.WebhookRequestContext,
-	newVM, _ *vmopv1.VirtualMachine) field.ErrorList {
+	ctx *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
 		allErrs field.ErrorList
@@ -1853,11 +2232,21 @@ func (v validator) validateCdrom(
 		}
 	}
 
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if oldVM == nil {
+			if newVM.Spec.Hardware != nil {
+				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
+			}
+		} else {
+			allErrs = append(allErrs, v.validateCdromControllerSpecsOnUpdate(newCD, f)...)
+		}
+	}
+
 	return allErrs
 }
 
 func (v validator) validateCdromWhenPoweredOn(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
@@ -1887,13 +2276,33 @@ func (v validator) validateCdromWhenPoweredOn(
 		oldCdromNameToImage[c.Name] = c.Image
 	}
 
+	newCdromNames := make(map[string]bool, len(newCD))
+	for _, c := range newCD {
+		newCdromNames[c.Name] = true
+	}
+	for _, oldCdrom := range oldCD {
+		if !newCdromNames[oldCdrom.Name] {
+			// Removing CD-ROMs is not allowed when VM is powered on.
+			allErrs = append(allErrs, field.Forbidden(f.Child("name"), removingCdromNotAllowedWhenPowerOn))
+		}
+	}
+
 	for i, c := range newCD {
 		if oldImage, ok := oldCdromNameToImage[c.Name]; !ok {
-			// CD-ROM name is changed.
-			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("name"), updatesNotAllowedWhenPowerOn))
+			// Adding new CD-ROMs is not allowed when VM is powered on.
+			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("name"), addingNewCdromNotAllowedWhenPowerOn))
 		} else if !reflect.DeepEqual(c.Image, oldImage) {
 			// CD-ROM image is changed.
 			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("image"), updatesNotAllowedWhenPowerOn))
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		// Only validate when the VM power state is known which indicates that
+		// the VM exists on the vSphere and we have gone through at least
+		// one loop of reconciling the VM.
+		if oldVM.Status.PowerState != "" {
+			allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
 		}
 	}
 
@@ -2011,23 +2420,163 @@ func (v validator) validateNextPowerStateChangeTimeFormat(
 	return allErrs
 }
 
-func (v validator) validateBootOptions(
+func (v validator) validateBootOptionsWhenPoweredOn(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
+	fieldPath := field.NewPath("spec", "bootOptions")
 
-	if vm.Spec.BootOptions != nil {
-		fieldPath := field.NewPath("spec", "bootOptions")
+	if !reflect.DeepEqual(oldVM.Spec.BootOptions, vm.Spec.BootOptions) {
+		allErrs = append(allErrs, field.Forbidden(fieldPath, updatesNotAllowedWhenPowerOn))
+	}
 
-		if vm.Spec.BootOptions.BootRetryDelay != nil && vm.Spec.BootOptions.BootRetry != vmopv1.VirtualMachineBootOptionsBootRetryEnabled {
-			allErrs = append(allErrs, field.Required(fieldPath.Child("bootRetry"), "when setting bootRetryDelay"))
+	return allErrs
+}
+
+func (v validator) validateBootOptions(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+	fieldPath := field.NewPath("spec", "bootOptions")
+
+	bootOptions := vm.Spec.BootOptions
+	if bootOptions != nil {
+		if bootOptions.BootOrder != nil {
+			create := oldVM == nil
+			allErrs = append(allErrs, v.validateBootOrder(ctx, vm, create)...)
 		}
 
-		if vm.Spec.BootOptions.EFISecureBoot == vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled &&
-			vm.Spec.BootOptions.Firmware != vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI {
+		// Both fields are required.
+		if bootOptions.BootRetryDelay != nil && bootOptions.BootRetry != vmopv1.VirtualMachineBootOptionsBootRetryEnabled {
+			allErrs = append(
+				allErrs,
+				field.Required(
+					fieldPath.Child("bootRetry"),
+					"bootRetry must be set when setting bootRetryDelay",
+				))
+		}
 
-			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("efiSecureBoot"), "when image firmware is not EFI"))
+		// EFISecureBoot can only be used in conjunction with EFI firmware
+		if bootOptions.EFISecureBoot == vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled &&
+			bootOptions.Firmware != vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI {
+
+			allErrs = append(
+				allErrs,
+				field.Forbidden(
+					fieldPath.Child("efiSecureBoot"),
+					"cannot set efiSecureBoot when image firmware is not 'efi'",
+				))
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateBootOrder(
+	_ *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	create bool) field.ErrorList {
+
+	var allErrs field.ErrorList
+	fieldPath := field.NewPath("spec", "bootOptions", "bootOrder")
+
+	if create {
+		// We do not allow for specifying bootOrder on create.
+		allErrs = append(allErrs, field.Forbidden(fieldPath, "when creating a VM"))
+	} else {
+		// Validate that the devices listed in bootOrder are valid. That is,
+		// validate that the device type is one of the valid options, that
+		// the device exists, and that there are not duplicate devices listed.
+		bootableDeviceNames := make(map[string]string)
+		for i, bd := range vm.Spec.BootOptions.BootOrder {
+			// Name is required for BootableNetworkDevices and BootableDiskDevices
+			if bd.Type == vmopv1.VirtualMachineBootOptionsBootableNetworkDevice ||
+				bd.Type == vmopv1.VirtualMachineBootOptionsBootableDiskDevice && bd.Name == "" {
+
+				if bd.Name == "" {
+					allErrs = append(
+						allErrs,
+						field.Required(
+							fieldPath.Index(i).Child("name"),
+							fmt.Sprintf("name must not be empty when specifying a bootable device of type %q", bd.Type),
+						))
+
+					continue
+				}
+			}
+
+			// Ensure duplicate devices are not specified
+			if _, ok := bootableDeviceNames[bd.Name]; ok {
+				allErrs = append(allErrs, field.Duplicate(fieldPath.Index(i), bd.Name))
+
+				continue
+			}
+			bootableDeviceNames[bd.Name] = ""
+
+			switch bd.Type {
+			case vmopv1.VirtualMachineBootOptionsBootableNetworkDevice:
+				if vm.Spec.Network == nil {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							fmt.Sprintf("cannot specify network device %q when vm.spec.network is empty", bd.Name),
+						))
+
+					continue
+				}
+				// Validate that the named network interface is present.
+				found := slices.ContainsFunc(vm.Spec.Network.Interfaces, func(iface vmopv1.VirtualMachineNetworkInterfaceSpec) bool {
+					return iface.Name == bd.Name
+				})
+
+				if !found {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							fmt.Sprintf("bootable network device %q was not found in vm.Spec.Network.Interfaces", bd.Name),
+						))
+				}
+			case vmopv1.VirtualMachineBootOptionsBootableDiskDevice:
+				// Validate that the named disk is present.
+				found := slices.ContainsFunc(vm.Status.Volumes, func(disk vmopv1.VirtualMachineVolumeStatus) bool {
+					return disk.Name == bd.Name
+				})
+
+				if !found {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							fmt.Sprintf("bootable disk device %q was not found in vm.Status.Volumes", bd.Name),
+						))
+				}
+			case vmopv1.VirtualMachineBootOptionsBootableCDRomDevice:
+				// Validate that a CD-ROM device has been defined.
+				if vm.Spec.Hardware == nil || len(vm.Spec.Hardware.Cdrom) == 0 {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							"no CD-ROM device(s) defined for this VM",
+						))
+				}
+			default:
+				allErrs = append(
+					allErrs,
+					field.Invalid(
+						fieldPath.Index(i).Child("type"),
+						bd,
+						fmt.Sprintf("unsupported bootable device type: %q", bd.Type),
+					))
+			}
 		}
 	}
 
@@ -2041,46 +2590,31 @@ func (v validator) validateSnapshot(
 
 	var allErrs field.ErrorList
 
-	snapshotPath := field.NewPath("spec", "currentSnapshot")
+	snapshotPath := field.NewPath("spec", "currentSnapshotName")
 
 	// validate a create request
-	if oldVM == nil && vm.Spec.CurrentSnapshot != nil {
+	if oldVM == nil && vm.Spec.CurrentSnapshotName != "" {
 		allErrs = append(allErrs, field.Forbidden(snapshotPath, "creating VM with current snapshot is not allowed"))
 
 		return allErrs
 	}
 
-	// the Update request has no currentSnapshot. nothing to validate here
-	if vm.Spec.CurrentSnapshot == nil {
+	// the Update request has no currentSnapshotName. nothing to validate here
+	if vm.Spec.CurrentSnapshotName == "" {
+		return allErrs
+	}
+
+	// Validate that currentSnapshotName is not empty string if provided
+	if strings.TrimSpace(vm.Spec.CurrentSnapshotName) == "" {
+		allErrs = append(allErrs, field.Invalid(snapshotPath, vm.Spec.CurrentSnapshotName, "currentSnapshotName cannot be empty"))
 		return allErrs
 	}
 
 	// If a revert is in progress, we don't allow a new revert.
-	if oldVM != nil && oldVM.Spec.CurrentSnapshot != nil {
-		if oldVM.Spec.CurrentSnapshot.Name != vm.Spec.CurrentSnapshot.Name {
+	if oldVM != nil && oldVM.Spec.CurrentSnapshotName != "" {
+		if oldVM.Spec.CurrentSnapshotName != vm.Spec.CurrentSnapshotName {
 			allErrs = append(allErrs, field.Forbidden(snapshotPath, "a snapshot revert is already in progress"))
 		}
-	}
-
-	if vm.Spec.CurrentSnapshot.APIVersion != "" {
-		gv, err := schema.ParseGroupVersion(vm.Spec.CurrentSnapshot.APIVersion)
-		if err != nil {
-			allErrs = append(allErrs, field.Invalid(snapshotPath.Child("apiVersion"),
-				vm.Spec.CurrentSnapshot.APIVersion, "must be valid group version"))
-		} else if gv.Group != vmopv1.GroupName {
-			allErrs = append(allErrs, field.Invalid(snapshotPath.Child("apiVersion"),
-				vm.Spec.CurrentSnapshot.APIVersion, fmt.Sprintf("group must be %q", vmopv1.GroupName)))
-		}
-	}
-
-	if vm.Spec.CurrentSnapshot.Kind != vmSnapshotKind {
-		allErrs = append(allErrs, field.NotSupported(
-			snapshotPath.Child("kind"), vm.Spec.CurrentSnapshot.Kind, []string{vmSnapshotKind},
-		))
-	}
-
-	if vm.Spec.CurrentSnapshot.Name == "" {
-		allErrs = append(allErrs, field.Required(snapshotPath.Child("name"), ""))
 	}
 
 	// Check if the VM is a VKS node and prevent snapshot revert
@@ -2110,7 +2644,7 @@ func (v validator) validateGroupName(
 
 //nolint:gocyclo
 func (v validator) validateVMAffinity(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	affinity := vm.Spec.Affinity
@@ -2127,128 +2661,41 @@ func (v validator) validateVMAffinity(
 
 	path := field.NewPath("spec", "affinity")
 
-	if affinity.ZoneAffinity != nil {
-		allErrs = append(allErrs, field.Forbidden(path.Child("zoneAffinity"), "zone affinity is not allowed"))
-	}
-
-	if affinity.ZoneAntiAffinity != nil {
-		allErrs = append(allErrs, field.Forbidden(path.Child("zoneAntiAffinity"), "zone anti-affinity is not allowed"))
-	}
-
 	if a := affinity.VMAffinity; a != nil {
 		p := path.Child("vmAffinity")
-		vmLabelSet := labels.Set(vm.Labels)
-
-		if len(a.RequiredDuringSchedulingIgnoredDuringExecution) > 0 {
-			p := p.Child("requiredDuringSchedulingIgnoredDuringExecution")
-
-			for idx, rs := range a.RequiredDuringSchedulingIgnoredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					selector, err := metav1.LabelSelectorAsSelector(rs.LabelSelector)
-					if err != nil {
-						allErrs = append(allErrs, field.Invalid(p, rs.LabelSelector, err.Error()))
-					} else if !selector.Matches(vmLabelSet) {
-						allErrs = append(allErrs, field.Forbidden(p, "label selector must match VM"))
-					}
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						}
-					}
-				}
-
-				if rs.TopologyKey != topology.KubernetesTopologyZoneLabelKey {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{topology.KubernetesTopologyZoneLabelKey}))
-				}
-			}
-		}
-
-		if len(a.PreferredDuringSchedulingIgnoredDuringExecution) > 0 {
-			p := p.Child("preferredDuringSchedulingIgnoredDuringExecution")
-
-			for idx, rs := range a.PreferredDuringSchedulingIgnoredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					selector, err := metav1.LabelSelectorAsSelector(rs.LabelSelector)
-					if err != nil {
-						allErrs = append(allErrs, field.Invalid(p, rs.LabelSelector, err.Error()))
-					} else if !selector.Matches(vmLabelSet) {
-						allErrs = append(allErrs, field.Forbidden(p, "label selector must match VM"))
-					}
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						}
-					}
-				}
-
-				if rs.TopologyKey != topology.KubernetesTopologyZoneLabelKey {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{topology.KubernetesTopologyZoneLabelKey}))
-				}
-			}
-		}
-	}
-
-	if a := affinity.VMAntiAffinity; a != nil {
-		p := path.Child("vmAntiAffinity")
-
-		if len(a.RequiredDuringSchedulingIgnoredDuringExecution) > 0 {
-			allErrs = append(allErrs, field.Forbidden(p.Child("requiredDuringSchedulingIgnoredDuringExecution"),
-				"VM anti-affinity with RequiredDuringSchedulingIgnoredDuringExecution is not allowed"))
-		}
-
-		if len(a.PreferredDuringSchedulingIgnoredDuringExecution) > 0 {
-			p := p.Child("preferredDuringSchedulingIgnoredDuringExecution")
-
-			for idx, rs := range a.PreferredDuringSchedulingIgnoredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						}
-					}
-				}
-
-				if rs.TopologyKey != topology.KubernetesTopologyZoneLabelKey {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{topology.KubernetesTopologyZoneLabelKey}))
-				}
-			}
-		}
 
 		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
-			allErrs = append(allErrs, field.Forbidden(p.Child("requiredDuringSchedulingPreferredDuringExecution"),
-				"VM anti-affinity with RequiredDuringSchedulingPreferredDuringExecution is not allowed"))
+			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
+
+			for idx, rs := range a.RequiredDuringSchedulingPreferredDuringExecution {
+				p := p.Index(idx)
+
+				if rs.LabelSelector != nil {
+					p := p.Child("labelSelector")
+
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
+					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
+						p := p.Child("matchExpressions").Index(exprIdx)
+
+						if expr.Operator != metav1.LabelSelectorOpIn {
+							allErrs = append(allErrs, field.NotSupported(
+								p.Child("operator"),
+								expr.Operator,
+								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
+						}
+					}
+				}
+
+				if rs.TopologyKey != corev1.LabelTopologyZone {
+					allErrs = append(allErrs, field.NotSupported(
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
+				}
+			}
 		}
 
 		if len(a.PreferredDuringSchedulingPreferredDuringExecution) > 0 {
@@ -2260,6 +2707,10 @@ func (v validator) validateVMAffinity(
 				if rs.LabelSelector != nil {
 					p := p.Child("labelSelector")
 
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
 					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
 						p := p.Child("matchExpressions").Index(exprIdx)
 
@@ -2268,13 +2719,95 @@ func (v validator) validateVMAffinity(
 								p.Child("operator"),
 								expr.Operator,
 								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
 						}
 					}
 				}
 
-				if rs.TopologyKey != "" && rs.TopologyKey != topology.KubernetesTopologyHostLabelKey {
+				if rs.TopologyKey != corev1.LabelTopologyZone {
 					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{"", topology.KubernetesTopologyHostLabelKey}))
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
+				}
+			}
+		}
+	}
+
+	if a := affinity.VMAntiAffinity; a != nil {
+		p := path.Child("vmAntiAffinity")
+
+		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
+			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
+
+			for idx, rs := range a.RequiredDuringSchedulingPreferredDuringExecution {
+				p := p.Index(idx)
+
+				if rs.LabelSelector != nil {
+					p := p.Child("labelSelector")
+
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
+					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
+						p := p.Child("matchExpressions").Index(exprIdx)
+
+						if expr.Operator != metav1.LabelSelectorOpIn {
+							allErrs = append(allErrs, field.NotSupported(
+								p.Child("operator"),
+								expr.Operator,
+								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
+						}
+					}
+				}
+
+				// For non-privileged users, only zone topology key is allowed for anti-affinity required terms.
+				if !ctx.IsPrivilegedAccount && rs.TopologyKey != corev1.LabelTopologyZone {
+					allErrs = append(allErrs, field.NotSupported(
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
+				}
+
+				// For privileged users (mobility operator), either zone or host topology key is allowed for anti-affinity required terms.
+				if ctx.IsPrivilegedAccount && rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
+					allErrs = append(allErrs, field.NotSupported(
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
+				}
+			}
+		}
+
+		if len(a.PreferredDuringSchedulingPreferredDuringExecution) > 0 {
+			p := p.Child("preferredDuringSchedulingPreferredDuringExecution")
+
+			for idx, rs := range a.PreferredDuringSchedulingPreferredDuringExecution {
+				p := p.Index(idx)
+
+				if rs.LabelSelector != nil {
+					p := p.Child("labelSelector")
+
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
+					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
+						p := p.Child("matchExpressions").Index(exprIdx)
+
+						if expr.Operator != metav1.LabelSelectorOpIn {
+							allErrs = append(allErrs, field.NotSupported(
+								p.Child("operator"),
+								expr.Operator,
+								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
+						}
+					}
+				}
+
+				// Either zone or host topology key is allowed for anti-affinity preferred terms.
+				if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
+					allErrs = append(allErrs, field.NotSupported(
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
 				}
 			}
 		}
@@ -2292,6 +2825,122 @@ func (v validator) validateImmutableVMAffinity(
 	if !equality.Semantic.DeepEqual(vm.Spec.Affinity, oldVM.Spec.Affinity) {
 		p := field.NewPath("spec", "affinity")
 		allErrs = append(allErrs, field.Forbidden(p, "updating Affinity is not allowed"))
+	}
+
+	return allErrs
+}
+
+// validateImmutableFieldsDuringSchemaUpgrade checks the fields tht are
+// backfilled by the schema upgrade are not been modified before the schema
+// upgrade has completed. Currently, the schema upgrade backfills fields below:
+// - vm.Spec.BiosUUID
+// - vm.Spec.InstanceUUID (immutable if set)
+// - vm.Spec.Bootstrap.CloudInit.InstanceID (immutable if set)
+// - vm.Spec.Hardware.*Controllers
+// Fields that are immutable will not be validated.
+func (v validator) validateFieldsDuringSchemaUpgrade(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		allErrs          field.ErrorList
+		specPath         = field.NewPath("spec")
+		specHardwarePath = specPath.Child("hardware")
+	)
+
+	if !equality.Semantic.DeepEqual(vm.Spec.BiosUUID, oldVM.Spec.BiosUUID) {
+		allErrs = append(allErrs, field.Forbidden(
+			specPath.Child("biosUUID"), notUpgraded))
+	}
+
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		return allErrs
+	}
+
+	var (
+		oldIDEControllers  []vmopv1.IDEControllerSpec
+		oldNVMEControllers []vmopv1.NVMEControllerSpec
+		oldSATAControllers []vmopv1.SATAControllerSpec
+		oldSCSIControllers []vmopv1.SCSIControllerSpec
+
+		newIDEControllers  []vmopv1.IDEControllerSpec
+		newNVMEControllers []vmopv1.NVMEControllerSpec
+		newSATAControllers []vmopv1.SATAControllerSpec
+		newSCSIControllers []vmopv1.SCSIControllerSpec
+	)
+
+	if oldVM.Spec.Hardware != nil {
+		oldIDEControllers = oldVM.Spec.Hardware.IDEControllers
+		oldNVMEControllers = oldVM.Spec.Hardware.NVMEControllers
+		oldSATAControllers = oldVM.Spec.Hardware.SATAControllers
+		oldSCSIControllers = oldVM.Spec.Hardware.SCSIControllers
+	}
+
+	if vm.Spec.Hardware != nil {
+		newIDEControllers = vm.Spec.Hardware.IDEControllers
+		newNVMEControllers = vm.Spec.Hardware.NVMEControllers
+		newSATAControllers = vm.Spec.Hardware.SATAControllers
+		newSCSIControllers = vm.Spec.Hardware.SCSIControllers
+	}
+
+	// Validate that controllers haven't changed (including nil -> non-nil)
+	if !equality.Semantic.DeepEqual(oldIDEControllers, newIDEControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("ideControllers"), notUpgraded))
+	}
+	if !equality.Semantic.DeepEqual(oldNVMEControllers, newNVMEControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("nvmeControllers"), notUpgraded))
+	}
+	if !equality.Semantic.DeepEqual(oldSATAControllers, newSATAControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("sataControllers"), notUpgraded))
+	}
+	if !equality.Semantic.DeepEqual(oldSCSIControllers, newSCSIControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("scsiControllers"), notUpgraded))
+	}
+
+	return allErrs
+}
+
+func (v validator) validateImageDiskNameImmutability(
+	_ *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		allErrs       field.ErrorList
+		p             = field.NewPath("spec", "volumes")
+		oldVolsByName = map[string]vmopv1.VirtualMachineVolume{}
+	)
+
+	for _, v := range oldVM.Spec.Volumes {
+		oldVolsByName[v.Name] = v
+	}
+
+	for i, newVol := range newVM.Spec.Volumes {
+		pp := p.Index(i)
+		if oldVol, ok := oldVolsByName[newVol.Name]; ok {
+			if err := validation.ValidateImmutableField(
+				oldVol.ImageDiskName,
+				newVol.ImageDiskName,
+				pp.Child("imageDiskName"),
+			); err != nil {
+				allErrs = append(allErrs, err...)
+			}
+		}
+	}
+
+	return allErrs
+}
+
+// validateBiosUUID validates that a non-empty spec.biosUUID is a valid UUID.
+func (v validator) validateBiosUUID(_ *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	fieldPath := field.NewPath("spec", "biosUUID")
+	if vm.Spec.BiosUUID != "" && uuid.Validate(vm.Spec.BiosUUID) != nil {
+		allErrs = append(allErrs, field.Invalid(fieldPath, vm.Spec.BiosUUID, "must provide a valid UUID"))
 	}
 
 	return allErrs

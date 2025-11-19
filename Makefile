@@ -107,7 +107,7 @@ IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
 # Code coverage files
-COVERAGE_FILE := cover.out
+COVERAGE_FILE ?= cover.out
 
 # Gather a set of root packages that have at least one file that matches
 # the pattern *_test.go as a child or descendent in that directory.
@@ -222,7 +222,6 @@ test-api: ## Run API tests
 
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)
-test-nocover: | test-api
 test-nocover: ## Run tests sans coverage
 	hack/test.sh $(COVERED_PKGS)
 
@@ -495,6 +494,10 @@ endif
 
 EXTRA_PEER_DIRS := ./v1alpha2/sysprep/conversion/v1alpha2
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha2/sysprep/conversion/v1alpha5
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/sysprep/conversion/v1alpha3
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/sysprep/conversion/v1alpha5
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/sysprep/conversion/v1alpha4
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/sysprep/conversion/v1alpha5
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/common/conversion/v1alpha3
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/common/conversion/v1alpha5
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/common/conversion/v1alpha4
@@ -880,7 +883,11 @@ vulncheck-go: $(GOVULNCHECK)
 
 .PHONY: clean
 clean: image-remove ## Remove all generated files
-	rm -rf bin *.out $(ARTIFACTS_DIR)
+	rm -rf bin $(ARTIFACTS_DIR)
+	rm -f covmeta.* covcounters.* cover.* coverage*
+	find . -name '*.test' -delete
+	find . -name '*.report' -delete
+	find . -name '*.out' -delete
 
 .PHONY: verify
 verify: prereqs ## Run static code analysis
@@ -893,6 +900,10 @@ verify-codegen: ## Verify generated code
 .PHONY: verify-unfocus
 verify-unfocus: ## Verify no tests have focus
 	hack/verify-unfocus.sh
+
+.PHONY: verify-filenames
+verify-filenames: ## Verify webhook files follow naming convention
+	hack/verify-filenames.sh
 
 .PHONY: verify-local-manifests
 verify-local-manifests: ## Verify the local manifests

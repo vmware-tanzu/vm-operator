@@ -22,13 +22,18 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+)
+
+const (
+	errInvalidvTPMConfig = "VM must specify a class configured with a vTPM when deploying from a VMI configured with a vTPM"
 )
 
 // TODO: This mostly just a placeholder until we spend time on something better. Individual types
@@ -374,6 +379,7 @@ func GetVirtualMachineBootstrap(
 	var vAppExData map[string]map[string]string
 	var cloudConfigSecretData *cloudinit.CloudConfigSecretData
 	var sysprepSecretData *sysprep.SecretData
+	var linuxPrepSecretData *linuxprep.SecretData
 
 	if v := bootstrapSpec.CloudInit; v != nil {
 		if cooked := v.CloudConfig; cooked != nil {
@@ -419,6 +425,18 @@ func GetVirtualMachineBootstrap(
 				return vmlifecycle.BootstrapData{}, err
 			}
 		}
+	} else if v := bootstrapSpec.LinuxPrep; v != nil {
+		out, err := linuxprep.GetLinuxPrepSecretData(
+			vmCtx,
+			k8sClient,
+			vmCtx.VM.Namespace,
+			v)
+		if err != nil {
+			reason, msg := errToConditionReasonAndMessage(err)
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
+			return vmlifecycle.BootstrapData{}, err
+		}
+		linuxPrepSecretData = &out
 	}
 
 	// vApp bootstrap can be used alongside LinuxPrep/Sysprep.
@@ -473,6 +491,7 @@ func GetVirtualMachineBootstrap(
 		VAppExData:  vAppExData,
 		CloudConfig: cloudConfigSecretData,
 		Sysprep:     sysprepSecretData,
+		LinuxPrep:   linuxPrepSecretData,
 	}, nil
 }
 
@@ -594,6 +613,14 @@ func GetAttachedDiskUUIDToPVC(
 			continue
 		}
 
+		if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+			if vol.Type == vmopv1.VolumeTypeClassic {
+				// Do not worry about classic volumes that are not fully converted
+				// to PVCs yet.
+				continue
+			}
+		}
+
 		pvcName := vmVolNameToPVCName[vol.Name]
 		// This could happen if the volume was just removed from VM spec but not reconciled yet.
 		if pvcName == "" {
@@ -632,7 +659,7 @@ func GetAdditionalResourcesForBackup(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) ([]ctrlclient.Object, error) {
 	var objects []ctrlclient.Object
-	// Get bootstrap related objects from CloudInit or Sysprep (mutually exclusive).
+
 	if bootstrapSpec := vmCtx.VM.Spec.Bootstrap; bootstrapSpec != nil {
 		if v := bootstrapSpec.CloudInit; v != nil {
 			if cooked := v.CloudConfig; cooked != nil {
@@ -672,6 +699,17 @@ func GetAdditionalResourcesForBackup(
 				}
 				objects = append(objects, obj)
 			}
+		} else if v := bootstrapSpec.LinuxPrep; v != nil {
+			out, err := linuxprep.GetSecretResources(vmCtx, k8sClient, vmCtx.VM.Namespace, v)
+			if err != nil {
+				return nil, err
+			}
+			// GVK is dropped when getting a core K8s resource from client.
+			// Add it in backup so that the resource can be applied successfully during restore.
+			for i := range out {
+				out[i].GetObjectKind().SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
+			}
+			objects = append(objects, out...)
 		}
 
 		// Get bootstrap related objects from vAppConfig (can be used alongside LinuxPrep/Sysprep).
@@ -758,4 +796,33 @@ func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 	}
 	delete(vmCtx.VM.Labels, vmopv1.PausedVMLabelKey)
 	return false
+}
+
+func ensureValidvTPMConfig(
+	vmCtx pkgctx.VirtualMachineContext,
+	vmClass vmopv1.VirtualMachineClass,
+	devices []vimtypes.BaseVirtualDevice) error {
+
+	for _, device := range devices {
+		if _, ok := device.(*vimtypes.VirtualTPM); ok {
+			// Source is configured with a vTPM. Ensure
+			// the VM being created specifies a class which is
+			// configured with a vTPM. If the specified class is
+			// not configured with a vTPM, then return an error.
+			classConfigSpec, err := GetVMClassConfigSpec(vmCtx, vmClass.Spec.ConfigSpec)
+			if err != nil {
+				return fmt.Errorf("failed to get configSpec from vm class: %w", err)
+			}
+
+			for _, devChanges := range classConfigSpec.DeviceChange {
+				if _, ok = devChanges.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualTPM); ok {
+					return nil
+				}
+			}
+
+			return errors.New(errInvalidvTPMConfig)
+		}
+	}
+
+	return nil
 }

@@ -291,6 +291,12 @@ func initFlags() {
 		false,
 		"Enable webhook client verification on the webhook server.",
 	)
+	flag.BoolVar(
+		&managerOpts.UsePriorityQueue,
+		"use-priority-queue",
+		true,
+		"Enable the priority queue feature.",
+	)
 
 	logsv1.AddGoFlags(logOptions, flag.CommandLine)
 

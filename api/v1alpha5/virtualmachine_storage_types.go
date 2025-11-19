@@ -76,30 +76,13 @@ type VirtualMachineVolume struct {
 	// VirtualMachineVolumeSource represents the location and type of a volume
 	// to mount.
 	VirtualMachineVolumeSource `json:",inline"`
-}
-
-// VirtualMachineVolumeSource represents the source location of a volume to
-// mount. Only one of its members may be specified.
-type VirtualMachineVolumeSource struct {
-	// +optional
-
-	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
-	// in the same namespace.
-	//
-	// More information is available at
-	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
-	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
-}
-
-// PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
-// corev1.PersistentVolumeClaimVolumeSource and instance storage options.
-type PersistentVolumeClaimVolumeSource struct {
-	corev1.PersistentVolumeClaimVolumeSource `json:",inline" yaml:",inline"`
 
 	// +optional
 
-	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
-	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
+	// ImageDiskName describes the name of the disk from the VM image to which
+	// this volume refers. This value is derived from the image field
+	// status.disks[].name.
+	ImageDiskName string `json:"imageDiskName,omitempty"`
 
 	// +optional
 
@@ -146,7 +129,6 @@ type PersistentVolumeClaimVolumeSource struct {
 	ControllerBusNumber *int32 `json:"controllerBusNumber,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=SCSI
 
 	// ControllerType describes the type of the controller to which this volume
 	// should be attached.
@@ -157,14 +139,14 @@ type PersistentVolumeClaimVolumeSource struct {
 	//   - IDE                -- 4 total (2 per controller)
 	//   - NVME               -- 256 total (64 per controller)
 	//   - SATA               -- 120 total (30 per controller)
-	//   - SCSI (ParaVirtual) -- 252 total (63 per controller)
+	//   - SCSI (ParaVirtual) -- 256 total (64 per controller)
 	//   - SCSI (BusLogic)    -- 60 total (15 per controller)
 	//   - SCSI (LsiLogic)    -- 60 total (15 per controller)
 	//   - SCSI (LsiLogicSAS) -- 60 total (15 per controller)
 	//
 	// Please note, the number of supported volumes per SCSI controller may seem
 	// off, but remember that a SCSI controller occupies a slot on its own bus.
-	// Thus even though a ParaVirtual SCSI controller supports 64 targets and
+	// Thus even though a ParaVirtual SCSI controller supports 65 targets and
 	// the other types of SCSI controllers support 16 targets, one of the
 	// targets is occupied by the controller itself.
 	//
@@ -188,6 +170,7 @@ type PersistentVolumeClaimVolumeSource struct {
 	DiskMode VolumeDiskMode `json:"diskMode,omitempty"`
 
 	// +optional
+	// +kubebuilder:default=None
 
 	// SharingMode describes the volume's desired sharing mode.
 	//
@@ -208,6 +191,30 @@ type PersistentVolumeClaimVolumeSource struct {
 	// Please note the value 7 is invalid if controllerType=SCSI as 7 is the
 	// unit number of the SCSI controller on its own bus.
 	UnitNumber *int32 `json:"unitNumber,omitempty"`
+}
+
+// VirtualMachineVolumeSource represents the source location of a volume to
+// mount. Only one of its members may be specified.
+type VirtualMachineVolumeSource struct {
+	// +optional
+
+	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
+	// in the same namespace.
+	//
+	// More information is available at
+	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
+	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+}
+
+// PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
+// corev1.PersistentVolumeClaimVolumeSource and instance storage options.
+type PersistentVolumeClaimVolumeSource struct {
+	corev1.PersistentVolumeClaimVolumeSource `json:",inline" yaml:",inline"`
+
+	// +optional
+
+	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
+	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
 }
 
 // InstanceVolumeClaimVolumeSource contains information about the instance
@@ -240,6 +247,8 @@ type VirtualMachineVolumeCryptoStatus struct {
 // VirtualMachineVolumeStatus defines the observed state of a
 // VirtualMachineVolume instance.
 type VirtualMachineVolumeStatus struct {
+	// +required
+
 	// Name is the name of the attached volume.
 	Name string `json:"name"`
 
@@ -354,18 +363,39 @@ type VirtualMachineStorageStatus struct {
 	Used *VirtualMachineStorageStatusUsed `json:"usage,omitempty"`
 }
 
+type VirtualMachineStorageStatusUsedSnapshotDetails struct {
+	// +optional
+
+	// VM describes the total storage space used by the VirtualMachine's
+	// VirtualMachineSnapshot, including the space for snapshot's metadata,
+	// memory file, delta disks, etc.
+	VM *resource.Quantity `json:"vm,omitempty"`
+
+	// +optional
+
+	// Volume describes the total storage space used by the VirtualMachine's
+	// VolumeSnapshot, including the space for first class disk(FCD)'s
+	// delta disks.
+	Volume *resource.Quantity `json:"volume,omitempty"`
+}
+
 type VirtualMachineStorageStatusUsed struct {
 	// +optional
 
 	// Disks describes the total storage space used by a VirtualMachine's
-	// non-PVC disks.
+	// disks.
 	Disks *resource.Quantity `json:"disks,omitempty"`
 
 	// +optional
 
+	// Snapshots describes the total storage space used by a VirtualMachine's
+	// snapshots.
+	Snapshots *VirtualMachineStorageStatusUsedSnapshotDetails `json:"snapshots,omitempty"`
+
+	// +optional
+
 	// Other describes the total storage space used by the VirtualMachine's
-	// non disk files, ex. the configuration file, swap space, logs, snapshots,
-	// etc.
+	// non disk files, ex. the configuration file, swap space, logs, etc.
 	Other *resource.Quantity `json:"other,omitempty"`
 }
 
@@ -373,6 +403,6 @@ type VirtualMachineStorageStatusRequested struct {
 	// +optional
 
 	// Disks describes the total storage space requested by a VirtualMachine's
-	// non-PVC disks.
+	// disks.
 	Disks *resource.Quantity `json:"disks,omitempty"`
 }

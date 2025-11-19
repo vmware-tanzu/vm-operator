@@ -1,11 +1,12 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package volume
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	storagehelpers "k8s.io/component-helpers/storage/volume"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,17 +43,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
-)
-
-const (
-	AttributeFirstClassDiskUUID = "diskUUID"
-
-	// CNSSelectedNodeIsZoneAnnotationKey is used to indicate to CNS that the selected-node annotation
-	// is the name of the VM's Zone instead of a Node in the zone.
-	CNSSelectedNodeIsZoneAnnotationKey = "cns.vmware.com/selected-node-is-zone"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -397,7 +390,7 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *pkgctx.VolumeContext) (bo
 
 		existingVolumesMap[pvc.Name] = struct{}{}
 
-		pvcNode, exists := pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey]
+		pvcNode, exists := pvc.Annotations[storagehelpers.AnnSelectedNode]
 		if !exists || pvcNode != selectedNode {
 			// This PVC is ours but NOT on our selected node. Likely, placement previously failed
 			// and we're trying again on a different node.
@@ -513,7 +506,7 @@ func (r *Reconciler) createInstanceStoragePVC(
 			Namespace: ctx.VM.Namespace,
 			Labels:    map[string]string{constants.InstanceStorageLabelKey: "true"},
 			Annotations: map[string]string{
-				constants.KubernetesSelectedNodeAnnotationKey: selectedNode,
+				storagehelpers.AnnSelectedNode: selectedNode,
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
@@ -831,7 +824,7 @@ func (r *Reconciler) handlePVCWithWFFC(
 		return nil
 	}
 
-	if pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] != "" {
+	if pvc.Annotations[storagehelpers.AnnSelectedNode] != "" {
 		// Once set, this annotation cannot really be changed so just keep going.
 		// TBD: Make check if the Node still exists, and is in the VM's Zone, but
 		// CSI doesn't support changing this yet.
@@ -855,23 +848,23 @@ func (r *Reconciler) handlePVCWithWFFC(
 	}
 
 	if !pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC {
-		return fmt.Errorf("PVC with WFFC storage class support is not enabled")
+		return errors.New("PVC with WFFC storage class support is not enabled")
 	}
 
 	zoneName := ctx.VM.Status.Zone
 	if zoneName == "" {
 		// Fallback to the label value if Status hasn't been updated yet.
-		zoneName = ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
+		zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
 		if zoneName == "" {
-			return fmt.Errorf("VM does not have Zone set")
+			return errors.New("VM does not have Zone set")
 		}
 	}
 
 	if pvc.Annotations == nil {
 		pvc.Annotations = map[string]string{}
 	}
-	pvc.Annotations[CNSSelectedNodeIsZoneAnnotationKey] = "true"
-	pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] = zoneName
+	pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "true"
+	pvc.Annotations[storagehelpers.AnnSelectedNode] = zoneName
 
 	if err := r.Client.Update(ctx, &pvc); err != nil {
 		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)
@@ -941,7 +934,7 @@ func (r *Reconciler) preserveOrphanedAttachmentStatus(
 
 	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachments))
 	for _, attachment := range orphanedAttachments {
-		if uuid := attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID]; uuid != "" {
+		if uuid := attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID]; uuid != "" {
 			uuidAttachments[uuid] = attachment
 		}
 	}
@@ -1010,19 +1003,6 @@ func (r *Reconciler) deleteOrphanedAttachments(ctx *pkgctx.VolumeContext, attach
 	return apierrorsutil.NewAggregate(errs)
 }
 
-// The CSI controller sometimes puts the serialized SOAP error into the CnsNodeVmAttachment
-// error field, which contains things like OpIds and pointers that change on every failed
-// reconcile attempt. Using this error as-is causes VM object churn, so try to avoid that
-// here. The full error message is always available in the CnsNodeVmAttachment.
-func sanitizeCNSErrorMessage(msg string) string {
-	if strings.Contains(msg, "opId:") {
-		idx := strings.Index(msg, ":")
-		return msg[:idx]
-	}
-
-	return msg
-}
-
 func attachmentToVolumeStatus(
 	volumeName string,
 	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1.VirtualMachineVolumeStatus {
@@ -1030,8 +1010,8 @@ func attachmentToVolumeStatus(
 	return vmopv1.VirtualMachineVolumeStatus{
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,
-		DiskUUID: attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
-		Error:    sanitizeCNSErrorMessage(attachment.Status.Error),
+		DiskUUID: attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID],
+		Error:    pkgutil.SanitizeCNSErrorMessage(attachment.Status.Error),
 		Type:     vmopv1.VolumeTypeManaged,
 	}
 }

@@ -11,10 +11,13 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 func BootstrapSysPrep(
@@ -22,38 +25,39 @@ func BootstrapSysPrep(
 	config *vimtypes.VirtualMachineConfigInfo,
 	sysPrepSpec *vmopv1.VirtualMachineBootstrapSysprepSpec,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
-	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, *bool, error) {
 
 	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling Sysprep bootstrap state")
 
 	if !vmCtx.IsOffToOn() {
 		vmCtx.Logger.V(4).Info("Skipping Sysprep since VM is not powering on")
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
-	var (
-		data     string
-		identity vimtypes.BaseCustomizationIdentitySettings
-	)
-	key := "unattend"
+	customizeAtNextPowerOn := sysPrepSpec.CustomizeAtNextPowerOn
+	if customizeAtNextPowerOn != nil && !*customizeAtNextPowerOn {
+		vmCtx.Logger.V(4).Info("Skipping Sysprep since customization at next power on is false")
+		return nil, nil, customizeAtNextPowerOn, nil
+	}
+
+	var identity vimtypes.BaseCustomizationIdentitySettings
 
 	if sysPrepSpec.RawSysprep != nil {
-		var err error
-
-		if sysPrepSpec.RawSysprep.Key != "" {
-			key = sysPrepSpec.RawSysprep.Key
+		key := sysPrepSpec.RawSysprep.Key
+		if key == "" {
+			key = "unattend"
 		}
 
-		data = bsArgs.BootstrapData.Data[key]
+		data := bsArgs.BootstrapData.Data[key]
 		if data == "" {
-			return nil, nil, fmt.Errorf("no Sysprep XML data with key %q", key)
+			return nil, nil, nil, fmt.Errorf("no Sysprep XML data with key %q", key)
 		}
 
 		// Ensure the data is normalized first to plain-text.
-		data, err = pkgutil.TryToDecodeBase64Gzip([]byte(data))
+		data, err := pkgutil.TryToDecodeBase64Gzip([]byte(data))
 		if err != nil {
-			return nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
+			return nil, nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
 		}
 
 		if bsArgs.TemplateRenderFn != nil {
@@ -64,14 +68,14 @@ func BootstrapSysPrep(
 			Value: data,
 		}
 	} else if sysPrep := sysPrepSpec.Sysprep; sysPrep != nil {
-		identity = convertTo(sysPrep, bsArgs)
+		identity = convertTo(vmCtx, sysPrep, bsArgs)
 	} else {
-		return nil, nil, fmt.Errorf("no Sysprep data")
+		return nil, nil, nil, fmt.Errorf("no Sysprep data")
 	}
 
 	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create GSOC adapter mappings: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create GOSC adapter mappings: %w", err)
 	}
 
 	customSpec := &vimtypes.CustomizationSpec{
@@ -94,14 +98,17 @@ func BootstrapSysPrep(
 			bsArgs.TemplateRenderFn)
 	}
 
-	return configSpec, customSpec, err
+	return configSpec, customSpec, customizeAtNextPowerOn, err
 }
 
-func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.CustomizationSysprep {
-	bootstrapData := bsArgs.BootstrapData
-	sysprepCustomization := &vimtypes.CustomizationSysprep{}
+func convertTo(
+	vmCtx pkgctx.VirtualMachineContext,
+	from *vmopv1sysprep.Sysprep,
+	bsArgs *BootstrapArgs) *vimtypes.CustomizationSysprep {
 
-	sysprepCustomization.GuiUnattended = vimtypes.CustomizationGuiUnattended{}
+	bootstrapData := bsArgs.BootstrapData
+
+	sysprepCustomization := &vimtypes.CustomizationSysprep{}
 
 	if from.GUIUnattended == nil {
 		// If spec.bootstrap.sysprep.guiUnattended is not set, then default
@@ -158,6 +165,25 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 
 	if from.LicenseFilePrintData != nil {
 		sysprepCustomization.LicenseFilePrintData = convertLicenseFilePrintDataTo(from.LicenseFilePrintData)
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.GuestCustomizationVCDParity {
+		if bootstrapData.Sysprep != nil {
+			sysprepCustomization.ScriptText = bootstrapData.Sysprep.ScriptText
+		}
+
+		if from.ExpirePasswordAfterNextLogin {
+			sysprepCustomization.ResetPassword = ptr.To(true)
+		}
+
+		if id := vmCtx.VM.Annotations[pkgconst.VCFAIDAnnotationKey]; id != "" {
+			sysprepCustomization.ExtraConfig = pkgutil.OptionValues(sysprepCustomization.ExtraConfig).Merge(
+				&vimtypes.OptionValue{
+					Key:   GOSCVCFAHashID,
+					Value: id,
+				},
+			)
+		}
 	}
 
 	return sysprepCustomization

@@ -65,11 +65,16 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
+	vmconfbootoptions "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
+	vmconfunmanagedvolsfill "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
+	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
 var (
@@ -86,8 +91,11 @@ var (
 	ErrPromoteDisks           = vmconfdiskpromo.ErrPromoteDisks
 	ErrCreate                 = pkgerr.NoRequeueNoErr("created vm")
 	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
-	ErrSnapshotRevert         = pkgerr.RequeueError{Message: "reverted snapshot"}
+	ErrSnapshotRevert         = pkgerr.NoRequeueNoErr("reverted snapshot")
 	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
+	ErrBackfillVolInfo        = vmconfunmanagedvolsfill.ErrPendingBackfill
+	ErrBackfillPVCInfo        = vmconfunmanagedvolsreg.ErrPendingBackfill
+	ErrRegisterVolumes        = vmconfunmanagedvolsreg.ErrPendingRegister
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -150,6 +158,23 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Entering createOrUpdateVirtualMachine")
+
+	if vm.APIVersion == "" || vm.Kind == "" {
+		// Updating to controller-runtime v0.22.3 also updates the k8s.io/yaml
+		// dependency, which now returns an error when marshalling objects from
+		// JSON to YAML if the object's GVK is missing. Since client-go does not
+		// set the API Version or Kind when unmarshaling an object from the API
+		// server (see https://github.com/kubernetes/client-go/issues/541), this
+		// seems like a bug/issue with their interop. Since backup does need to
+		// marshal from JSON-to-YAML, ensure the VM's GVK is set correctly early
+		// in case others encounter this as well.
+		if err := kubeutil.SyncGVKToObject(
+			vm,
+			vs.k8sClient.Scheme()); err != nil {
+
+			return nil, fmt.Errorf("failed to sync vm gvk: %w", err)
+		}
+	}
 
 	vmNamespacedName := vm.NamespacedName()
 
@@ -334,7 +359,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "publishVM")),
+		Context: context.WithValue(ctx, vimtypes.ID{}, fmt.Sprintf("%s-%s", vs.getOpID(ctx, vm, "publishVM"), actID)),
 		Logger:  logger,
 		VM:      vm,
 	}
@@ -373,12 +398,12 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 					return "", err
 				}
 			}
-			logger.V(4).Info("Publishing VM as cloned template")
+			logger.V(4).Info("Publishing VM as cloned template", "activationID", actID)
 
-			return virtualmachine.CloneVM(vmCtx, client.VimClient(), vmPub, v1a2contentLibrary, storagePolicyID, actID)
+			return virtualmachine.CloneVM(vmCtx, client.VimClient(), vmPub, v1a2contentLibrary, storagePolicyID)
 		}
 	}
-	logger.V(4).Info("Publishing VM as OVF")
+	logger.V(4).Info("Publishing VM as OVF", "activationID", actID)
 
 	return virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl, actID)
 }
@@ -656,7 +681,7 @@ func (vs *vSphereVMProvider) getCreateArgs(
 		}
 	}
 
-	if err := vs.vmCreateIsReady(vmCtx, vcClient, createArgs); err != nil {
+	if err := vs.vmCreateIsReady(vmCtx, createArgs); err != nil {
 		return nil, err
 	}
 
@@ -703,7 +728,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 			if ctx.VM.Labels == nil {
 				ctx.VM.Labels = map[string]string{}
 			}
-			ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+			ctx.VM.Labels[corev1.LabelTopologyZone] = zoneName
 		}
 	}
 
@@ -759,7 +784,7 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 				if ctx.VM.Labels == nil {
 					ctx.VM.Labels = map[string]string{}
 				}
-				ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				ctx.VM.Labels[corev1.LabelTopologyZone] = zoneName
 			}
 		}
 
@@ -806,13 +831,15 @@ func errOrReconcileErr(reconcileErr, err error) error {
 //  1. Fetch properties
 //  2. Fetch recent tasks
 //  3. Fetch attached tags
-//  4. Reconcile status
-//  5. Reconcile schema upgrade
-//  6. Reconcile backup state
-//  7. Reconcile snapshot revert
-//  8. Reconcile config
-//  9. Reconcile power state
-//  10. Reconcile snapshot create
+//  4. Fetch volume info
+//  5. Reconcile status
+//  6. Reconcile backfill unmanaged disks
+//  7. Reconcile schema upgrade
+//  8. Reconcile backup state
+//  9. Reconcile snapshot revert
+//  10. Reconcile config
+//  11. Reconcile power state
+//  12. Reconcile snapshot create
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -853,7 +880,16 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithAttachedTags
 
 	//
-	// 4. Reconcile status
+	// 4. Get the volume info.
+	//
+	ctxWithVolumeInfo, err := vs.getVolumeInfo(vmCtx, vcClient)
+	if err != nil {
+		return fmt.Errorf("failed to fetch volume info: %w", err)
+	}
+	vmCtx.Context = ctxWithVolumeInfo
+
+	//
+	// 5. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -863,7 +899,20 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 5. Reconcile schema upgrade
+	// 6. Reconcile unmanaged disks into spec.volumes.
+	//
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+		if err := vs.reconcileBackfillUnmanagedDisks(vmCtx); err != nil {
+			if pkgerr.IsNoRequeueError(err) {
+				return errOrReconcileErr(reconcileErr, err)
+			}
+			reconcileErr = getReconcileErr(
+				"unmanaged to managed disks", reconcileErr, err)
+		}
+	}
+
+	//
+	// 7. Reconcile schema upgrade
 	//
 	//    It is important that this step occurs *after* the status is
 	//    reconciled. This is because reconciling the status builds information
@@ -877,7 +926,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 6. Reconcile backup state (VKS nodes excluded)
+	// 8. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -887,7 +936,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 7. Reconcile snapshot revert
+	// 9. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
@@ -899,7 +948,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 8. Reconcile config
+	// 10. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -916,7 +965,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 9. Reconcile power state
+	// 11. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -926,7 +975,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 10. Reconcile snapshot create
+	// 12. Reconcile snapshot create
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
@@ -1051,6 +1100,28 @@ func (vs *vSphereVMProvider) getTags(
 	}
 
 	return ctx.Context, nil
+}
+
+func (vs *vSphereVMProvider) getVolumeInfo(
+	ctx pkgctx.VirtualMachineContext,
+	_ *vcclient.Client) (context.Context, error) { //nolint:unparam
+
+	return pkgvol.WithContext(
+		ctx.Context,
+		pkgvol.GetVolumeInfoFromVM(ctx.VM, ctx.MoVM),
+	), nil
+}
+
+func (vs *vSphereVMProvider) reconcileBackfillUnmanagedDisks(
+	vmCtx pkgctx.VirtualMachineContext) error {
+
+	return vmconfunmanagedvolsfill.Reconcile(
+		vmCtx,
+		nil,
+		nil,
+		vmCtx.VM,
+		vmCtx.MoVM,
+		nil)
 }
 
 func (vs *vSphereVMProvider) reconcileSchemaUpgrade(
@@ -1215,14 +1286,8 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 
 	// Translate the VM's current power state into the VM Op power state
 	// value.
-	switch vmCtx.MoVM.Summary.Runtime.PowerState {
-	case vimtypes.VirtualMachinePowerStatePoweredOn:
-		currentPowerState = vmopv1.VirtualMachinePowerStateOn
-	case vimtypes.VirtualMachinePowerStatePoweredOff:
-		currentPowerState = vmopv1.VirtualMachinePowerStateOff
-	case vimtypes.VirtualMachinePowerStateSuspended:
-		currentPowerState = vmopv1.VirtualMachinePowerStateSuspended
-	}
+	currentPowerState = vmopv1util.ConvertPowerState(vmCtx.Logger,
+		vmCtx.MoVM.Summary.Runtime.PowerState)
 
 	switch desiredPowerState {
 
@@ -1396,12 +1461,33 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
 		vmCtx.VM.Spec.GroupName != "" {
-		vmCtx.Logger.Info(
-			"Getting VM placement result from its group",
-			"groupName", vmCtx.VM.Spec.GroupName,
-		)
 
-		return vs.vmCreateDoPlacementByGroup(vmCtx, vcClient, createArgs)
+		// First update and check if the VM is linked to its group.
+		if err := vmopv1util.UpdateGroupLinkedCondition(
+			vmCtx,
+			vmCtx.VM,
+			vs.k8sClient,
+		); err != nil {
+			return fmt.Errorf("failed to update VM group linked condition: %w", err)
+		}
+
+		if !pkgcnd.IsTrue(
+			vmCtx.VM,
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+		) {
+			return fmt.Errorf("VM is not linked to its group")
+		}
+
+		// If the VM has an explicit zone label, skip group placement
+		// and use the regular placement flow to respect the zone override.
+		if zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]; zoneName == "" {
+			vmCtx.Logger.Info(
+				"Getting VM placement result from its group",
+				"groupName", vmCtx.VM.Spec.GroupName,
+			)
+
+			return vs.vmCreateDoPlacementByGroup(vmCtx, vcClient, createArgs)
+		}
 	}
 
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
@@ -1449,22 +1535,6 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		return fmt.Errorf("VM.Spec.GroupName is empty")
 	}
 
-	// First update and check if the VM is linked to its group.
-	if err := vmopv1util.UpdateGroupLinkedCondition(
-		vmCtx,
-		vmCtx.VM,
-		vs.k8sClient,
-	); err != nil {
-		return fmt.Errorf("failed to update VM group linked condition: %w", err)
-	}
-
-	if !pkgcnd.IsTrue(
-		vmCtx.VM,
-		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-	) {
-		return fmt.Errorf("VM is not linked to its group")
-	}
-
 	var vmg vmopv1.VirtualMachineGroup
 	if err := vs.k8sClient.Get(
 		vmCtx,
@@ -1497,7 +1567,8 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		return fmt.Errorf("VM Group placement is empty")
 	}
 
-	vmCtx.Logger.V(6).Info(
+	// This should be logged once and helpful to debug group placement issues.
+	vmCtx.Logger.Info(
 		"VM Group placement is ready",
 		"placement", placementStatus,
 	)
@@ -1539,6 +1610,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		result.Datastores[i].Name = ds.Name
 		result.Datastores[i].URL = ds.URL
 		result.Datastores[i].DiskFormats = ds.SupportedDiskFormats
+		result.Datastores[i].TopLevelDirectoryCreateSupported = ds.TopLevelDirectoryCreateSupported
 	}
 
 	// InstanceStoragePlacement flag is needed to update the VM's annotations
@@ -1580,6 +1652,7 @@ func processPlacementResult(
 			createArgs.Datastores[i].Name = result.Datastores[i].Name
 			createArgs.Datastores[i].URL = result.Datastores[i].URL
 			createArgs.Datastores[i].DiskFormats = result.Datastores[i].DiskFormats
+			createArgs.Datastores[i].TopLevelDirectoryCreateSupported = result.Datastores[i].TopLevelDirectoryCreateSupported
 		}
 	}
 
@@ -1611,7 +1684,7 @@ func processPlacementResult(
 			}
 			// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
 			// then this is the pre-assigned zone on later create attempts.
-			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = result.ZoneName
+			vmCtx.VM.Labels[corev1.LabelTopologyZone] = result.ZoneName
 		}
 	}
 
@@ -1628,7 +1701,7 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 		// We did not do placement so find this namespace/zone ResourcePool and Folder.
 
 		nsFolderMoID, rpMoID, err := topology.GetNamespaceFolderAndRPMoID(vmCtx, vs.k8sClient,
-			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], vmCtx.VM.Namespace)
+			vmCtx.VM.Labels[corev1.LabelTopologyZone], vmCtx.VM.Namespace)
 		if err != nil {
 			return err
 		}
@@ -1814,17 +1887,18 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 
 func (vs *vSphereVMProvider) vmCreateIsReady(
 	vmCtx pkgctx.VirtualMachineContext,
-	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
 	if policy := createArgs.ResourcePolicy; policy != nil {
-		// TODO: May want to do this as to filter the placement candidates.
-		clusterModuleProvider := clustermodules.NewProvider(vcClient.RestClient())
-		exists, err := vs.doClusterModulesExist(vmCtx, clusterModuleProvider, createArgs.ClusterMoRef, policy)
-		if err != nil {
-			return err
-		} else if !exists {
-			return fmt.Errorf("VirtualMachineSetResourcePolicy cluster module is not ready")
+		if name := vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey]; name != "" {
+			_, moduleUUID := clustermodules.FindClusterModuleUUID(
+				vmCtx,
+				name,
+				createArgs.ClusterMoRef,
+				policy)
+			if moduleUUID == "" {
+				return fmt.Errorf("VirtualMachineSetResourcePolicy cluster module is not ready")
+			}
 		}
 	}
 
@@ -2173,16 +2247,35 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	// Get the encryption class details for the VM.
 	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
-		if err := vmconfcrypto.Reconcile(
-			vmCtx,
-			vs.k8sClient,
-			vs.vcClient.VimClient(),
-			vmCtx.VM,
-			vmCtx.MoVM,
-			&createArgs.ConfigSpec); err != nil {
-
-			return err
+		doCryptoReconcile := true
+		if vmCtx.VM.Spec.Crypto != nil {
+			// If vTPM mode is 'Clone', then we skip the below reconcile.
+			doCryptoReconcile = vmCtx.VM.Spec.Crypto.VTPMMode != vmopv1.VirtualMachineCryptoVTPMModeClone
 		}
+
+		if doCryptoReconcile {
+			if err := vmconfcrypto.Reconcile(
+				vmCtx,
+				vs.k8sClient,
+				vs.vcClient.VimClient(),
+				vmCtx.VM,
+				vmCtx.MoVM,
+				&createArgs.ConfigSpec); err != nil {
+
+				return err
+			}
+		}
+	}
+
+	if err := vmconfbootoptions.Reconcile(
+		vmCtx,
+		vs.k8sClient,
+		vs.vcClient.VimClient(),
+		vmCtx.VM,
+		vmCtx.MoVM,
+		&createArgs.ConfigSpec); err != nil {
+
+		return err
 	}
 
 	if err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs); err != nil {
@@ -2196,6 +2289,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	if err := vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs); err != nil {
 		return err
 	}
+
+	vmCtx.Logger.V(4).Info("Completed generating config spec for VM create", "ConfigSpec", createArgs.ConfigSpec)
 
 	return nil
 }
@@ -2296,7 +2391,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		}
 		imgConfigSpec = cs
 	} else {
-		cs, err := vs.getConfigSpecFromVM(vmCtx, vmiCache)
+		cs, err := vs.getConfigSpecFromVM(vmCtx, vmiCache, createArgs.VMClass)
 		if err != nil {
 			return err
 		}
@@ -2309,13 +2404,30 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 
 	// Inherit the image's vAppConfig.
 	createArgs.ConfigSpec.VAppConfig = imgConfigSpec.VAppConfig
-	
+
+	if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
+		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {
+		// Inherit the image's CryptoSpec
+		createArgs.ConfigSpec.Crypto = imgConfigSpec.Crypto
+	}
+
 	// Merge the image's extra config.
 	if srcEC, err := virtualmachine.FilteredExtraConfig(
 		imgConfigSpec.ExtraConfig,
 		false); err != nil {
+
 		return err
+
 	} else if len(srcEC) > 0 {
+
+		// When deploying from an image with type "vm" we do not want to
+		// copy the encryption.bundle property if the vTPM mode specified
+		// in spec.crypto.vTPMMode is 'New'.
+		if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
+			vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeNew {
+
+			srcEC = srcEC.Delete("encryption.bundle")
+		}
 		if dstEC := createArgs.ConfigSpec.ExtraConfig; len(dstEC) == 0 {
 			// The current config spec doesn't have any extra config, so just
 			// set it to use the extra config from the image.
@@ -2334,6 +2446,160 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		&createArgs.ConfigSpec,
 		imgConfigSpec,
 		createArgs.StorageProfileID)
+
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+		if err := vs.vmCreateGenConfigSpecImagePVCDataSourceRefs(
+			vmCtx,
+			createArgs); err != nil {
+
+			return fmt.Errorf(
+				"failed to get storage info from pvc data source refs: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
+	vmCtx pkgctx.VirtualMachineContext,
+	createArgs *VMCreateArgs) error {
+
+	if createArgs.ConfigSpec.DeviceChange == nil {
+		return nil
+	}
+
+	logger := pkglog.FromContextOrDefault(vmCtx).
+		WithName("vmCreateGenConfigSpecImagePVCDataSourceRefs")
+
+	diskName2UVC := map[string]vmopv1.VirtualMachineVolume{}
+	for _, vol := range vmCtx.VM.Spec.Volumes {
+		if n := vol.ImageDiskName; n != "" {
+			diskName2UVC[n] = vol
+		}
+	}
+
+	var errs []error
+
+	for _, deviceChange := range createArgs.ConfigSpec.DeviceChange {
+		if deviceSpec := deviceChange.GetVirtualDeviceConfigSpec(); deviceSpec != nil {
+			if disk, ok := deviceSpec.Device.(*vimtypes.VirtualDisk); ok {
+				if di := disk.DeviceInfo; di != nil {
+					if d := di.GetDescription(); d != nil {
+						if vol, ok := diskName2UVC[d.Label]; ok {
+							// Update the storage profile and size based on the
+							// PVC.
+							if err := vs.updateDiskDeviceFromPVC(
+								vmCtx,
+								vol.PersistentVolumeClaim.ClaimName,
+								createArgs.Storage.StorageClassToPolicyID,
+								deviceSpec,
+								disk); err != nil {
+
+								errs = append(errs, err)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return apierrorsutil.NewAggregate(errs)
+	}
+
+	if err := pkgutil.EnsureDisksHaveControllers(
+		&createArgs.ConfigSpec); err != nil {
+
+		return fmt.Errorf(
+			"failed to ensure disk/controller specs for hydrated pvcs: %w", err)
+	}
+
+	// Backfill the information into the UVCs.
+	info := pkgvol.GetVolumeInfoFromConfigSpec(
+		vmCtx.VM,
+		&createArgs.ConfigSpec)
+
+	logger.Info("Get unmanaged volume info", "info", info)
+
+	hasBackfill := false
+
+	n2d := map[string]pkgvol.VirtualDiskInfo{}
+	for _, di := range info.Disks {
+		n2d[di.Label] = di
+	}
+	for i := range vmCtx.VM.Spec.Volumes {
+		vol := &vmCtx.VM.Spec.Volumes[i]
+		if n := vol.ImageDiskName; n != "" {
+			if di, ok := n2d[n]; ok {
+				if vol.ControllerType == "" ||
+					vol.ControllerBusNumber == nil ||
+					vol.UnitNumber == nil {
+
+					hasBackfill = true
+
+					vol.ControllerType = info.Controllers[di.ControllerKey].Type
+					vol.ControllerBusNumber = ptr.To(info.Controllers[di.ControllerKey].Bus)
+					vol.UnitNumber = di.UnitNumber
+
+					logger.Info("Backfilled volume from image",
+						"volume", vol)
+				}
+			}
+		}
+	}
+
+	if hasBackfill {
+		return ErrBackfillVolInfo
+	}
+
+	return nil
+}
+
+func (vs *vSphereVMProvider) updateDiskDeviceFromPVC(
+	vmCtx pkgctx.VirtualMachineContext,
+	claimName string,
+	storageClassToPolicyID map[string]string,
+	deviceSpec *vimtypes.VirtualDeviceConfigSpec,
+	disk *vimtypes.VirtualDisk,
+) error {
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := ctrlclient.ObjectKey{
+		Namespace: vmCtx.VM.Namespace,
+		Name:      claimName,
+	}
+
+	if err := vs.k8sClient.Get(vmCtx, key, pvc); err != nil {
+		return fmt.Errorf(
+			"failed to get pvc %s for the specified claim: %w", key, err,
+		)
+	}
+
+	scn := pvc.Spec.StorageClassName
+	if scn == nil {
+		return fmt.Errorf("pvc %s has no storage class", key)
+	}
+
+	pid, ok := storageClassToPolicyID[*scn]
+	if !ok || pid == "" {
+		return fmt.Errorf("failed to find policy for storage class %q", *scn)
+	}
+
+	deviceSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+		&vimtypes.VirtualMachineDefinedProfileSpec{
+			ProfileId: pid,
+		},
+	}
+
+	if c, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+		if !c.IsZero() {
+			pb := c.Value()
+			if db := disk.CapacityInBytes; pb > db {
+				disk.CapacityInBytes = pb
+			}
+		}
+	}
 
 	return nil
 }
@@ -2376,7 +2642,8 @@ func (vs *vSphereVMProvider) getConfigSpecFromOVF(
 
 func (vs *vSphereVMProvider) getConfigSpecFromVM(
 	vmCtx pkgctx.VirtualMachineContext,
-	vmiCache vmopv1.VirtualMachineImageCache) (vimtypes.VirtualMachineConfigSpec, error) {
+	vmiCache vmopv1.VirtualMachineImageCache,
+	vmClass vmopv1.VirtualMachineClass) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	vcClient, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -2407,7 +2674,28 @@ func (vs *vSphereVMProvider) getConfigSpecFromVM(
 			fmt.Errorf("failed to get configInfo for image vm")
 	}
 
-	return moVM.Config.ToConfigSpec(), nil
+	if err := ensureValidvTPMConfig(vmCtx, vmClass, moVM.Config.Hardware.Device); err != nil {
+		return vimtypes.VirtualMachineConfigSpec{}, err
+	}
+
+	configSpec := moVM.Config.ToConfigSpec()
+
+	if cryptoKeyID := moVM.Config.KeyId; cryptoKeyID != nil && vmCtx.VM.Spec.Crypto != nil &&
+		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {
+
+		cryptoSpec := &vimtypes.CryptoSpecEncrypt{
+			CryptoKeyId: vimtypes.CryptoKeyId{
+				KeyId:      cryptoKeyID.KeyId,
+				ProviderId: cryptoKeyID.ProviderId,
+			},
+		}
+
+		configSpec.Crypto = cryptoSpec
+
+		vmCtx.Logger.V(4).Info("Copied keyID into image's ConfigSpec.CryptoSpec", "CryptoSpec", cryptoSpec)
+	}
+
+	return configSpec, nil
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(

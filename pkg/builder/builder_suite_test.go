@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder_test
@@ -119,8 +119,6 @@ func getAdmissionResponseOkay() admission.Response {
 		},
 	}
 }
-
-var caFilePath = "/tmp/k8s-webhook-server/serving-certs/client-ca/ca.crt"
 
 const sampleCert = `
 -----BEGIN CERTIFICATE-----

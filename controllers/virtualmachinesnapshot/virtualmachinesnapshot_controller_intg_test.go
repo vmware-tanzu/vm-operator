@@ -19,7 +19,6 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -101,6 +100,7 @@ func intgTestsReconcile() {
 
 	AfterEach(func() {
 		vcSimCtx.AfterEach()
+		vcSimCtx = nil
 	})
 
 	Context("ReconcileNormal", func() {
@@ -338,7 +338,7 @@ func intgTestsReconcile() {
 						vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
 						vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
 						By("set snapshot's vmref to nil")
-						vmSnapshot.Spec.VMRef = nil
+						vmSnapshot.Spec.VMName = ""
 						Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
 						Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
 						vm.Status.UniqueID = uniqueVMID
@@ -351,8 +351,7 @@ func intgTestsReconcile() {
 							g.Expect(vmObj).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+							g.Expect(vmObj.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 						}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
 					}
 				})
@@ -445,8 +444,7 @@ func intgTestsReconcile() {
 					g.Expect(vmObj).ToNot(BeNil())
 					g.Expect(vmObj.Status.CurrentSnapshot).ToNot(BeNil())
 					g.Expect(vmObj.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-					g.Expect(vmObj.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-					g.Expect(vmObj.Status.CurrentSnapshot.Reference.Name).To(Equal(currentSnapshotName))
+					g.Expect(vmObj.Status.CurrentSnapshot.Name).To(Equal(currentSnapshotName))
 				}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
 			})
 
@@ -508,8 +506,7 @@ func intgTestsReconcile() {
 							g.Expect(vmObj).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshotL1Name))
+							g.Expect(vmObj.Status.CurrentSnapshot.Name).To(Equal(vmSnapshotL1Name))
 						}).Should(Succeed(), "waiting for current snapshot to be updated to root")
 
 						By("check vmSnapshotL1's children should be updated")
@@ -622,8 +619,7 @@ func intgTestsReconcile() {
 							g.Expect(vmObj).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshotL2Name))
+							g.Expect(vmObj.Status.CurrentSnapshot.Name).To(Equal(vmSnapshotL2Name))
 						}).Should(Succeed())
 
 						By("check vmSnapshotL2's children should be updated")
@@ -657,17 +653,7 @@ func getVirtualMachineSnapshot(ctx *builder.IntegrationTestContextForVCSim, objK
 
 func newManagedSnapshotRefWithSnapshotName(name string) *vmopv1.VirtualMachineSnapshotReference {
 	return &vmopv1.VirtualMachineSnapshotReference{
-		Type:      vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: newLocalObjectRefWithSnapshotName(name),
-	}
-}
-
-// This is a workaround when controller-runtime doesn't set the version and kind if the
-// object is created by ctrlClient.Get().
-func newLocalObjectRefWithSnapshotName(name string) *vmopv1common.LocalObjectRef {
-	return &vmopv1common.LocalObjectRef{
-		APIVersion: "vmoperator.vmware.com/v1alpha5",
-		Kind:       "VirtualMachineSnapshot",
-		Name:       name,
+		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+		Name: name,
 	}
 }

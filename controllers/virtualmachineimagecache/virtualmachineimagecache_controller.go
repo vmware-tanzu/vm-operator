@@ -1,5 +1,5 @@
 // // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineimagecache
@@ -138,8 +138,16 @@ func (r *reconciler) ReconcileNormal(
 	ctx context.Context,
 	obj *vmopv1.VirtualMachineImageCache) (retErr error) {
 
+	// TODO(akutz) It is not possible to reset the entire image status each
+	//             time as it causes images with cached disks to be constantly
+	//             re-reconciled since their condition's LastTransitionTime is
+	//             always a new value. We need to come up with a smarter way to
+	//             rebuild the status from scratch, but also maintain the
+	//             transition times for existing conditions if they still exist
+	//             in the rebuilt status.
+	//
 	// Reset the version status so it is constructed from scratch each time.
-	obj.Status = vmopv1.VirtualMachineImageCacheStatus{}
+	// obj.Status = vmopv1.VirtualMachineImageCacheStatus{}
 
 	// If the reconcile failed with an error, then make sure it is reflected in
 	// the object's Ready condition.
@@ -296,21 +304,34 @@ func (r *reconciler) reconcileLocations(
 	obj *vmopv1.VirtualMachineImageCache,
 	srcFiles []clsutil.SourceFile) {
 
-	obj.Status.Locations = make(
-		[]vmopv1.VirtualMachineImageCacheLocationStatus,
-		len(obj.Spec.Locations))
-
 	for i := range obj.Spec.Locations {
 
 		var (
-			spec       = obj.Spec.Locations[i]
-			status     = &obj.Status.Locations[i]
-			conditions = pkgcond.Conditions(status.Conditions)
+			spec   = obj.Spec.Locations[i]
+			status *vmopv1.VirtualMachineImageCacheLocationStatus
 		)
 
-		status.DatacenterID = spec.DatacenterID
-		status.DatastoreID = spec.DatastoreID
-		status.ProfileID = spec.ProfileID
+		for j, s := range obj.Status.Locations {
+			if s.DatacenterID == spec.DatacenterID &&
+				s.DatastoreID == spec.DatastoreID &&
+				s.ProfileID == spec.ProfileID {
+
+				status = &obj.Status.Locations[j]
+				break
+			}
+		}
+
+		if status == nil {
+			obj.Status.Locations = append(obj.Status.Locations,
+				vmopv1.VirtualMachineImageCacheLocationStatus{
+					DatacenterID: spec.DatacenterID,
+					DatastoreID:  spec.DatastoreID,
+					ProfileID:    spec.ProfileID,
+				})
+			status = &obj.Status.Locations[len(obj.Status.Locations)-1]
+		}
+
+		conditions := pkgcond.Conditions(status.Conditions)
 
 		// Get the preferred disk format for the datastore.
 		dstDiskFormat := pkgutil.GetPreferredDiskFormat(

@@ -57,6 +57,11 @@ const (
 	// the VirtualMachinePublishRequest hasn't been created.
 	SourceVirtualMachineNotCreatedReason = "SourceVirtualMachineNotCreated"
 
+	// SourceVirtualMachineUnsupportedEncryptionReason documents that the
+	// source VM of the VirtualMachinePublishRequest has a mix of encrypted
+	// and unencrypted disks.
+	SourceVirtualMachineUnsupportedEncryptionReason = "SourceVirtualMachineUnsupportedEncryption"
+
 	// TargetContentLibraryNotExistReason documents that the target content
 	// library of the VirtualMachinePublishRequest doesn't exist.
 	TargetContentLibraryNotExistReason = "TargetContentLibraryNotExist"
@@ -73,6 +78,11 @@ const (
 	// content library of the VirtualMachinePublishRequest failed quota
 	// validation.
 	TargetContentLibraryFailedQuotaCheckReason = "TargetContentLibraryFailedQuotaCheck"
+
+	// TargetContentLibraryIncompatibleStorageClassReason documents that the
+	// target content library of the VirtualMachinePublishRequest has a storage
+	// class which is incompatible with the encryption status of the source VM.
+	TargetContentLibraryIncompatibleStorageClassReason = "TargetContentLibraryIncompatibleStorageClass"
 
 	// TargetItemAlreadyExistsReason documents that an item with the same name
 	// as the VirtualMachinePublishRequest's target item name exists in
@@ -111,6 +121,10 @@ const (
 	// hasn't been completed because the expected VirtualMachineImage resource
 	// isn't available yet.
 	ImageUnavailableReason = "ImageUnavailable"
+
+	// FatalReason documents that the outcome of the VirtualMachinePublishRequest
+	// will not be retried.
+	FatalReason = "Fatal"
 )
 
 const (
@@ -268,6 +282,14 @@ type VirtualMachinePublishRequestSpec struct {
 	// automatically deleted. If this field is set to zero then the request
 	// resource is eligible for deletion immediately after it finishes.
 	TTLSecondsAfterFinished *int64 `json:"ttlSecondsAfterFinished,omitempty"`
+
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=0
+
+	// BackoffLimit is the number of status.attempts that should be allowed
+	// before failing the VirtualMachinePublishRequest and halting any
+	// future processing.
+	BackoffLimit int64 `json:"backoffLimit,omitempty"`
 }
 
 // VirtualMachinePublishRequestStatus defines the observed state of a

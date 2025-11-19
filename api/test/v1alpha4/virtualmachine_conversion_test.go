@@ -40,8 +40,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 						Image: &vmopv1.VirtualMachineImageRef{
 							Name: "my-name",
 						},
-						ImageName:    "my-name",
-						ClassName:    "my-class",
+						ImageName: "my-name",
+						ClassName: "my-class",
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							VTPMMode: vmopv1.VirtualMachineCryptoVTPMModeClone,
+						},
 						StorageClass: "my-storage-class",
 						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
@@ -64,8 +67,21 @@ func TestVirtualMachineConversion(t *testing.T) {
 								WaitOnNetwork6:                  ptrOf(false),
 							},
 							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-								HardwareClockIsUTC: ptrOf(true),
-								TimeZone:           "my-tz",
+								HardwareClockIsUTC:           ptrOf(true),
+								TimeZone:                     "my-tz",
+								ExpirePasswordAfterNextLogin: true,
+								Password: &vmopv1common.PasswordSecretKeySelector{
+									Name: "my-password-secret",
+									Key:  "my-password-key",
+								},
+								ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+									From: &vmopv1common.SecretKeySelector{
+										Name: "my-text-secret",
+										Key:  "my-text-key",
+									},
+									Value: ptrOf("my-inline-script"),
+								},
+								CustomizeAtNextPowerOn: ptrOf(true),
 							},
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &vmopv1sysprep.Sysprep{
@@ -82,7 +98,16 @@ func TestVirtualMachineConversion(t *testing.T) {
 									UserData: vmopv1sysprep.UserData{
 										FullName: "vmware",
 									},
+									ExpirePasswordAfterNextLogin: true,
+									ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+										From: &vmopv1common.SecretKeySelector{
+											Name: "my-text-secret",
+											Key:  "my-text-key",
+										},
+										Value: ptrOf("my-inline-script"),
+									},
 								},
+								CustomizeAtNextPowerOn: ptrOf(true),
 							},
 							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
 								Properties: []vmopv1common.KeyValueOrSecretKeySelectorPair{
@@ -194,6 +219,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 										},
 									}),
 								},
+								ImageDiskName:       "my-disk",
+								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+								ControllerBusNumber: &[]int32{1}[0],
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
+								SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
+								UnitNumber:          &[]int32{2}[0],
 							},
 							{
 								Name: "my-volume-2",
@@ -244,13 +276,20 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 							BootDelay: &metav1.Duration{Duration: time.Second * 10},
 							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
-								vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
-								vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
-								vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
 							},
 							BootRetry:           vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
 							BootRetryDelay:      &metav1.Duration{Duration: time.Second * 10},
-							EnterBootSetup:      vmopv1.VirtualMachineBootOptionsForceBootEntryDisabled,
 							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
 							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
 						},
@@ -278,144 +317,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.bootstrap.cloudInit.waitOnNetwork4",
+				name: "spec.affinity",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
-						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
-							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-								WaitOnNetwork4: ptrOf(true),
-							},
-						},
-					},
-				},
-			},
-			{
-				name: "spec.bootstrap.cloudInit.waitOnNetwork4",
-				hub: &vmopv1.VirtualMachine{
-					Spec: vmopv1.VirtualMachineSpec{
-						GroupName: "my-group",
-					},
-				},
-			},
-			{
-				name: "spec.bootstrap.cloudInit.waitOnNetwork6",
-				hub: &vmopv1.VirtualMachine{
-					Spec: vmopv1.VirtualMachineSpec{
-						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
-							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-								WaitOnNetwork6: ptrOf(true),
-							},
-						},
 						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
-						BootOptions: &vmopv1.VirtualMachineBootOptions{
-							Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
-							BootDelay: &metav1.Duration{Duration: time.Second * 10},
-							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
-								vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
-								vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
-								vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
-							},
-							BootRetry:           vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
-							BootRetryDelay:      &metav1.Duration{Duration: time.Second * 10},
-							EnterBootSetup:      vmopv1.VirtualMachineBootOptionsForceBootEntryDisabled,
-							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
-							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
-						},
-						Affinity: &vmopv1.VirtualMachineAffinitySpec{
-							ZoneAffinity: &vmopv1.VirtualMachineAffinityZoneAffinitySpec{
-								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
-									{
-										MatchExpressions: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "foo",
-												Operator: vmopv1.ZoneSelectorOpExists,
-												Values: []string{
-													"bar",
-												},
-											},
-										},
-										MatchFields: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "zone-code",
-												Operator: vmopv1.ZoneSelectorOpGt,
-												Values: []string{
-													"1000",
-												},
-											},
-										},
-									},
-								},
-								PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
-									{
-										MatchExpressions: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "foo",
-												Operator: vmopv1.ZoneSelectorOpExists,
-												Values: []string{
-													"bar",
-												},
-											},
-										},
-										MatchFields: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "zone-code",
-												Operator: vmopv1.ZoneSelectorOpGt,
-												Values: []string{
-													"1001",
-												},
-											},
-										},
-									},
-								},
-							},
-							ZoneAntiAffinity: &vmopv1.VirtualMachineAntiAffinityZoneAffinitySpec{
-								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
-									{
-										MatchExpressions: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "foo",
-												Operator: vmopv1.ZoneSelectorOpExists,
-												Values: []string{
-													"bar",
-												},
-											},
-										},
-										MatchFields: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "zone-code",
-												Operator: vmopv1.ZoneSelectorOpGt,
-												Values: []string{
-													"1000",
-												},
-											},
-										},
-									},
-								},
-								PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
-									{
-										MatchExpressions: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "foo",
-												Operator: vmopv1.ZoneSelectorOpExists,
-												Values: []string{
-													"bar",
-												},
-											},
-										},
-										MatchFields: []vmopv1.ZoneSelectorRequirement{
-											{
-												Key:      "zone-code",
-												Operator: vmopv1.ZoneSelectorOpGt,
-												Values: []string{
-													"1001",
-												},
-											},
-										},
-									},
-								},
-							},
-							VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+						Affinity: &vmopv1.AffinitySpec{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{
@@ -425,7 +333,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 										TopologyKey: "topology.kubernetes.io/abc",
 									},
 								},
-								PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{
@@ -436,8 +344,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 								},
 							},
-							VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+							VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{
@@ -447,7 +355,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 										TopologyKey: "topology.kubernetes.io/def",
 									},
 								},
-								PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{
@@ -567,6 +475,28 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
+				name: "status.storage.used.snapshot",
+				hub: &vmopv1.VirtualMachine{
+					Status: vmopv1.VirtualMachineStatus{
+						Storage: &vmopv1.VirtualMachineStorageStatus{
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
+								Snapshots: &vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{
+									VM:     ptrOf(resource.MustParse("5.5Gi")),
+									Volume: ptrOf(resource.MustParse("5.5Gi")),
+								},
+							},
+						},
+					},
+				},
+				exp: &vmopv1a4.VirtualMachine{
+					Status: vmopv1a4.VirtualMachineStatus{
+						Storage: &vmopv1a4.VirtualMachineStorageStatus{
+							Used: &vmopv1a4.VirtualMachineStorageStatusUsed{},
+						},
+					},
+				},
+			},
+			{
 				name: "status.storage",
 				hub: &vmopv1.VirtualMachine{
 					Status: vmopv1.VirtualMachineStatus{
@@ -616,5 +546,114 @@ func TestVirtualMachineConversion(t *testing.T) {
 				g.Expect(apiequality.Semantic.DeepEqual(tc.exp, spoke)).To(BeTrue(), cmp.Diff(tc.exp, spoke))
 			})
 		}
+	})
+
+	t.Run("VirtualMachine and spec.crypto", func(t *testing.T) {
+
+		hubSpokeHub := func(g *WithT, hub, hubAfter ctrlconversion.Hub, spoke ctrlconversion.Convertible) {
+			hubBefore := hub.DeepCopyObject().(ctrlconversion.Hub)
+
+			// First convert hub to spoke
+			dstCopy := spoke.DeepCopyObject().(ctrlconversion.Convertible)
+			g.Expect(dstCopy.ConvertFrom(hubBefore)).To(Succeed())
+
+			// Convert spoke back to hub and check if the resulting hub is equal to the hub before the round trip
+			g.Expect(dstCopy.ConvertTo(hubAfter)).To(Succeed())
+
+			g.Expect(apiequality.Semantic.DeepEqual(hubBefore, hubAfter)).To(BeTrue(), cmp.Diff(hubBefore, hubAfter))
+		}
+
+		t.Run("hub-spoke-hub", func(t *testing.T) {
+
+			t.Run("spec.crypto is nil", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto is empty", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.className is non-empty", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: "fake",
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.useDefaultKeyProvider is true", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							UseDefaultKeyProvider: &[]bool{true}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.useDefaultKeyProvider is false", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							UseDefaultKeyProvider: &[]bool{false}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.vTPMMode is clone", func(t *testing.T) {
+				g := NewWithT(t)
+				hubBefore := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: "my-class-1",
+							VTPMMode:            vmopv1.VirtualMachineCryptoVTPMModeClone,
+						},
+					},
+				}
+
+				// First convert hub to spoke
+				var spoke vmopv1a4.VirtualMachine
+				g.Expect(spoke.ConvertFrom(&hubBefore)).To(Succeed())
+
+				spoke.Spec.Crypto.EncryptionClassName = "my-class-2"
+
+				var hubAfter vmopv1.VirtualMachine
+				g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+
+				g.Expect(hubAfter.Spec.Crypto).ToNot(BeNil())
+				g.Expect(hubAfter.Spec.Crypto.EncryptionClassName).To(Equal("my-class-2"))
+				g.Expect(hubAfter.Spec.Crypto.VTPMMode).To(Equal(vmopv1.VirtualMachineCryptoVTPMModeClone))
+			})
+
+			t.Run("spec.crypto is completely filled out", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName:   "fake",
+							UseDefaultKeyProvider: &[]bool{false}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a4.VirtualMachine{})
+			})
+		})
 	})
 }

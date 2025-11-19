@@ -155,7 +155,6 @@ func vmGroupTests() {
 		ExpectWithOffset(1, ms.Kind).To(Equal("VirtualMachine"), "Unexpected Kind")
 		ExpectWithOffset(1, ms.Placement).ToNot(BeNil(), "Missing Placement")
 		ExpectWithOffset(1, pkgcond.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue(), "No placement ready condition")
-		ExpectWithOffset(1, ms.Placement.Name).ToNot(BeEmpty(), "Missing Placement Name")
 		ExpectWithOffset(1, ms.Placement.Zone).ToNot(BeEmpty(), "Missing Placement Zone")
 		ExpectWithOffset(1, ms.Placement.Pool).ToNot(BeEmpty(), "Missing Placement Pool")
 		ExpectWithOffset(1, ms.Placement.Node).To(BeEmpty(), "Has Placement Node")
@@ -170,9 +169,9 @@ func vmGroupTests() {
 	Context("Group placement with VMs specifying affinity policies", func() {
 		It("should process preferred VM affinity policies during group placement", func() {
 			// Add preferred affinity policy to vm1
-			vm1.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-				VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-					PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+			vm1.Spec.Affinity = &vmopv1.AffinitySpec{
+				VMAffinity: &vmopv1.VMAffinitySpec{
+					PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 						{
 							LabelSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
@@ -202,9 +201,9 @@ func vmGroupTests() {
 
 		It("should process required VM affinity policies during group placement", func() {
 			// Add required affinity policy to vm1
-			vm1.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-				VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-					RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+			vm1.Spec.Affinity = &vmopv1.AffinitySpec{
+				VMAffinity: &vmopv1.VMAffinitySpec{
+					RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 						{
 							LabelSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{

@@ -1,5 +1,5 @@
 // // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineimagecache_test
@@ -9,6 +9,7 @@ import (
 	"errors"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -102,12 +103,14 @@ var _ = Describe(
 			g.ExpectWithOffset(1, pkgcond.Get(o, t)).To(BeNil())
 		}
 
-		assertCondTrue := func(g Gomega, o pkgcond.Getter, t string) {
+		assertCondTrue := func(g Gomega, o pkgcond.Getter, t string) *metav1.Condition {
 			c := pkgcond.Get(o, t)
 			g.ExpectWithOffset(1, c).ToNot(BeNil())
 			g.ExpectWithOffset(1, c.Message).To(BeEmpty())
 			g.ExpectWithOffset(1, c.Reason).To(Equal(string(metav1.ConditionTrue)))
 			g.ExpectWithOffset(1, c.Status).To(Equal(metav1.ConditionTrue))
+			g.ExpectWithOffset(1, c.LastTransitionTime.IsZero()).To(BeFalse())
+			return c
 		}
 
 		assertCondFalse := func(g Gomega, o pkgcond.Getter, t, reason, message string) {
@@ -116,6 +119,7 @@ var _ = Describe(
 			g.ExpectWithOffset(1, c.Message).To(HavePrefix(message))
 			g.ExpectWithOffset(1, c.Reason).To(Equal(reason))
 			g.ExpectWithOffset(1, c.Status).To(Equal(metav1.ConditionFalse))
+			g.ExpectWithOffset(1, c.LastTransitionTime.IsZero()).To(BeFalse())
 		}
 
 		assertConfigMapOVF := func(g Gomega, key ctrlclient.ObjectKey) {
@@ -356,7 +360,34 @@ var _ = Describe(
 
 								// Verify the files are cached and ready.
 								g.Expect(obj.Status.Locations).To(HaveLen(1))
-								assertCondTrue(g, obj.Status.Locations[0], cndRdyReady)
+								var ltt metav1.Time
+								if c := assertCondTrue(
+									g,
+									obj.Status.Locations[0],
+									cndRdyReady); c != nil {
+
+									ltt = c.LastTransitionTime
+								}
+
+								if !ltt.IsZero() {
+									// Verify that adding an annotation to the obj
+									// does not cause the ready condition to have a
+									// different LastTransitionTime.
+									if obj.Annotations == nil {
+										obj.Annotations = map[string]string{}
+									}
+									obj.Annotations["hello"] = "world"
+									g.Expect(vcSimCtx.Client.Update(ctx, &obj)).To(Succeed())
+
+									Consistently(func(g Gomega) {
+										var obj vmopv1.VirtualMachineImageCache
+										g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+										g.Expect(obj.Status.Locations).To(HaveLen(1))
+										c := pkgcond.Get(obj.Status.Locations[0], cndRdyReady)
+										g.Expect(c.LastTransitionTime).To(Equal(ltt))
+									}, 3*time.Second, 1*time.Second).Should(Succeed())
+
+								}
 
 								if isOVF {
 									assertLocationOVF(g, obj, 0)
@@ -659,6 +690,8 @@ var _ = Describe(
 	})
 
 type fakeClient struct {
+	sync.RWMutex
+
 	fakeCLSProvdr bool
 	fakeSRIClient bool
 
@@ -741,6 +774,9 @@ type fakeClient struct {
 }
 
 func (m *fakeClient) reset() {
+	m.Lock()
+	defer m.Unlock()
+
 	m.fakeCLSProvdr = false
 	m.fakeSRIClient = false
 
@@ -766,6 +802,9 @@ func (m *fakeClient) newContentLibraryProviderFn(
 	context.Context,
 	*rest.Client) clprov.Provider {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if m.fakeCLSProvdr {
 		return m
 	}
@@ -774,6 +813,9 @@ func (m *fakeClient) newContentLibraryProviderFn(
 
 func (m *fakeClient) newCacheStorageURIsClientFn(
 	c *vim25.Client) clsutil.CacheStorageURIsClient {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if m.fakeSRIClient {
 		return m
@@ -785,6 +827,9 @@ func (m *fakeClient) DatastoreFileExists(
 	ctx context.Context,
 	name string,
 	datacenter *object.Datacenter) error {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.datastoreFileExistsFn; fn != nil {
 		return fn(ctx, name, datacenter)
@@ -798,6 +843,9 @@ func (m *fakeClient) CopyVirtualDisk(
 	dstName string, dstDatacenter *object.Datacenter,
 	dstSpec vimtypes.BaseVirtualDiskSpec, force bool) (*object.Task, error) {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.copyVirtualDiskFn; fn != nil {
 		return fn(ctx, srcName, srcDatacenter, dstName, dstDatacenter, dstSpec, force)
 	}
@@ -809,6 +857,9 @@ func (m *fakeClient) CopyDatastoreFile(
 	srcName string, srcDatacenter *object.Datacenter,
 	dstName string, dstDatacenter *object.Datacenter,
 	force bool) (*object.Task, error) {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.copyDatastoreFileFn; fn != nil {
 		return fn(ctx, srcName, srcDatacenter, dstName, dstDatacenter, force)
@@ -822,6 +873,9 @@ func (m *fakeClient) MakeDirectory(
 	datacenter *object.Datacenter,
 	createParentDirectories bool) error {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.makeDirectoryFn; fn != nil {
 		return fn(ctx, name, datacenter, createParentDirectories)
 	}
@@ -830,6 +884,9 @@ func (m *fakeClient) MakeDirectory(
 
 func (m *fakeClient) WaitForTask(
 	ctx context.Context, task *object.Task) error {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.waitForTaskFn; fn != nil {
 		return fn(ctx, task)
@@ -840,6 +897,9 @@ func (m *fakeClient) WaitForTask(
 func (m *fakeClient) GetLibraryItems(
 	ctx context.Context,
 	libraryID string) ([]library.Item, error) {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.getLibraryItemsFn; fn != nil {
 		return fn(ctx, libraryID)
@@ -853,6 +913,9 @@ func (m *fakeClient) GetLibraryItem(
 	itemName string,
 	notFoundReturnErr bool) (*library.Item, error) {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.getLibraryItemFn; fn != nil {
 		return fn(ctx, libraryID, itemName, notFoundReturnErr)
 	}
@@ -863,6 +926,9 @@ func (m *fakeClient) GetLibraryItemID(
 	ctx context.Context,
 	itemID string) (*library.Item, error) {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.getLibraryItemIDFn; fn != nil {
 		return fn(ctx, itemID)
 	}
@@ -872,6 +938,9 @@ func (m *fakeClient) GetLibraryItemID(
 func (m *fakeClient) ListLibraryItems(
 	ctx context.Context,
 	libraryID string) ([]string, error) {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.listLibraryItemsFn; fn != nil {
 		return fn(ctx, libraryID)
@@ -885,6 +954,9 @@ func (m *fakeClient) UpdateLibraryItem(
 	newName string,
 	newDescription *string) error {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.updateLibraryItemFn; fn != nil {
 		return fn(ctx, itemID, newName, newDescription)
 	}
@@ -895,6 +967,9 @@ func (m *fakeClient) RetrieveOvfEnvelopeFromLibraryItem(
 	ctx context.Context,
 	item *library.Item) (*ovf.Envelope, error) {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.retrieveOvfEnvelopeFromLibraryItemFn; fn != nil {
 		return fn(ctx, item)
 	}
@@ -904,6 +979,9 @@ func (m *fakeClient) RetrieveOvfEnvelopeFromLibraryItem(
 func (m *fakeClient) RetrieveOvfEnvelopeByLibraryItemID(
 	ctx context.Context,
 	itemID string) (*ovf.Envelope, error) {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.retrieveOvfEnvelopeByLibraryItemIDFn; fn != nil {
 		return fn(ctx, itemID)
@@ -916,6 +994,9 @@ func (m *fakeClient) SyncLibraryItem(
 	item *library.Item,
 	force bool) error {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.syncLibraryItemFn; fn != nil {
 		return fn(ctx, item, force)
 	}
@@ -925,6 +1006,9 @@ func (m *fakeClient) SyncLibraryItem(
 func (m *fakeClient) ListLibraryItemStorage(
 	ctx context.Context,
 	itemID string) ([]library.Storage, error) {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.listLibraryItemStorageFn; fn != nil {
 		return fn(ctx, itemID)
@@ -937,6 +1021,9 @@ func (m *fakeClient) ResolveLibraryItemStorage(
 	datacenter *object.Datacenter,
 	storage []library.Storage) error {
 
+	m.RLock()
+	defer m.RUnlock()
+
 	if fn := m.resolveLibraryItemStorageFn; fn != nil {
 		return fn(ctx, datacenter, storage)
 	}
@@ -947,6 +1034,9 @@ func (m *fakeClient) CreateLibraryItem(
 	ctx context.Context,
 	item library.Item,
 	path string) error {
+
+	m.RLock()
+	defer m.RUnlock()
 
 	if fn := m.createLibraryItemFn; fn != nil {
 		return fn(ctx, item, path)

@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -289,21 +290,23 @@ func intgTestsMutating() {
 		)
 
 		shouldMutateImageButNotImageName := func() {
-			ExpectWithOffset(1, ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			GinkgoHelper()
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 			modified := &vmopv1.VirtualMachine{}
-			ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
-			ExpectWithOffset(1, modified.Spec.Image).ToNot(BeNil())
-			ExpectWithOffset(1, modified.Spec.Image.Kind).To(Equal(vmiKind))
-			ExpectWithOffset(1, modified.Spec.Image.Name).To(Equal(builder.DummyVMIName))
-			ExpectWithOffset(1, modified.Spec.ImageName).To(Equal(ctx.vm.Spec.ImageName))
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+			Expect(modified.Spec.Image).ToNot(BeNil())
+			Expect(modified.Spec.Image.Kind).To(Equal(vmiKind))
+			Expect(modified.Spec.Image.Name).To(Equal(builder.DummyVMIName))
+			Expect(modified.Spec.ImageName).To(Equal(ctx.vm.Spec.ImageName))
 		}
 
 		shouldNotMutateImageOrImageName := func() {
-			ExpectWithOffset(1, ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			GinkgoHelper()
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 			modified := &vmopv1.VirtualMachine{}
-			ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
-			ExpectWithOffset(1, modified.Spec.Image).To(Equal(ctx.vm.Spec.Image))
-			ExpectWithOffset(1, modified.Spec.ImageName).To(Equal(ctx.vm.Spec.ImageName))
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+			Expect(modified.Spec.Image).To(Equal(ctx.vm.Spec.Image))
+			Expect(modified.Spec.ImageName).To(Equal(ctx.vm.Spec.ImageName))
 		}
 
 		When("Creating VirtualMachine", func() {
@@ -783,6 +786,72 @@ func intgTestsMutating() {
 				updated := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), updated)).To(Succeed())
 				Expect(updated.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+			})
+		})
+	})
+
+	Context("SetPVCVolumeDefaults", func() {
+		JustBeforeEach(func() {
+			err := ctx.Client.Create(ctx, ctx.vm)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		When("Feature gate is not enabled by default", func() {
+			When("vm has multiple pvcs with different application types", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "test-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "test-pvc",
+									},
+								},
+							},
+							ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+						},
+						{
+							Name: "test-volume-2",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "test-pvc-2",
+									},
+								},
+							},
+							ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+						},
+						{
+							Name: "test-volume-3",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "test-pvc-3",
+									},
+								},
+							},
+						},
+					}
+
+				})
+
+				It("should only set the disk mode to persistent, sharing mode to none, and leave the rest empty", func() {
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					Expect(vm.Spec.Volumes[0].DiskMode).
+						To(Equal(vmopv1.VolumeDiskModePersistent))
+					Expect(vm.Spec.Volumes[0].SharingMode).
+						To(Equal(vmopv1.VolumeSharingModeNone))
+					Expect(vm.Spec.Volumes[1].DiskMode).
+						To(Equal(vmopv1.VolumeDiskModePersistent))
+					Expect(vm.Spec.Volumes[1].SharingMode).
+						To(Equal(vmopv1.VolumeSharingModeNone))
+					Expect(vm.Spec.Volumes[2].DiskMode).
+						To(Equal(vmopv1.VolumeDiskModePersistent))
+					Expect(vm.Spec.Volumes[2].SharingMode).
+						To(Equal(vmopv1.VolumeSharingModeNone))
+				})
 			})
 		})
 	})

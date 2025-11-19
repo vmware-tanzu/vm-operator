@@ -63,6 +63,11 @@ var _ = XDescribe("AddToManagerV1A2",
 				nil)
 		})
 
+		AfterEach(func() {
+			vcSimCtx.AfterEach()
+			vcSimCtx = nil
+		})
+
 		It("should not return an error", func() {
 			Expect(vcSimCtx).ToNot(BeNil())
 			vcSimCtx.BeforeEach()

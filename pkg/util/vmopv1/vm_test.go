@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -25,6 +26,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -911,196 +913,6 @@ var _ = Describe("EncryptionClassToVirtualMachineMapper", func() {
 	})
 })
 
-var _ = Describe("GroupToVMsMapperFn", func() {
-	const (
-		namespaceName  = "fake-namespace"
-		groupName      = "group-name"
-		childGroupName = "child-group-name"
-		vmName         = "vm-name"
-		vmKind         = "VirtualMachine"
-		groupKind      = "VirtualMachineGroup"
-	)
-	var (
-		ctx                 context.Context
-		k8sClient           ctrlclient.Client
-		groupObj            *vmopv1.VirtualMachineGroup
-		withObjs            []ctrlclient.Object
-		reqs                []reconcile.Request
-		linkedTrueCondition = metav1.Condition{
-			Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-			Status: metav1.ConditionTrue,
-		}
-	)
-	BeforeEach(func() {
-		ctx = context.Background()
-		withObjs = nil
-		groupObj = &vmopv1.VirtualMachineGroup{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespaceName,
-				Name:      groupName,
-			},
-		}
-	})
-	JustBeforeEach(func() {
-		k8sClient = builder.NewFakeClient(withObjs...)
-		reqs = vmopv1util.GroupToVMsMapperFn(ctx, k8sClient)(ctx, groupObj)
-	})
-
-	When("the group has no linked VM kind members", func() {
-		Specify("no reconcile requests should be returned", func() {
-			Expect(reqs).To(BeEmpty())
-		})
-	})
-	When("the group has linked VMGroup kind members", func() {
-		BeforeEach(func() {
-			groupObj.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
-				{
-					Members: []vmopv1.GroupMember{
-						{
-							Kind: groupKind,
-							Name: childGroupName,
-						},
-					},
-				},
-			}
-			groupObj.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
-				{
-					Kind:       groupKind,
-					Name:       childGroupName,
-					Conditions: []metav1.Condition{linkedTrueCondition},
-				},
-			}
-		})
-		Specify("no reconcile requests should be returned", func() {
-			Expect(reqs).To(BeEmpty())
-		})
-	})
-	When("the group has linked VM kind members", func() {
-		BeforeEach(func() {
-			groupObj.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
-				{
-					Members: []vmopv1.GroupMember{
-						{
-							Kind: vmKind,
-							Name: vmName,
-						},
-					},
-				},
-			}
-			groupObj.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
-				{
-					Kind:       vmKind,
-					Name:       vmName,
-					Conditions: []metav1.Condition{linkedTrueCondition},
-				},
-			}
-		})
-		When("the VM has a different group name", func() {
-			BeforeEach(func() {
-				vmObj := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: namespaceName,
-						Name:      vmName,
-					},
-					Spec: vmopv1.VirtualMachineSpec{
-						GroupName: "different-group",
-					},
-				}
-				withObjs = append(withObjs, vmObj)
-			})
-			Specify("no reconcile requests should be returned", func() {
-				Expect(reqs).To(BeEmpty())
-			})
-		})
-		When("the VM has neither linked nor placement ready conditions", func() {
-			BeforeEach(func() {
-				vmObj := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: namespaceName,
-						Name:      vmName,
-					},
-					Spec: vmopv1.VirtualMachineSpec{
-						GroupName: groupName,
-					},
-					Status: vmopv1.VirtualMachineStatus{
-						Conditions: []metav1.Condition{},
-					},
-				}
-				withObjs = append(withObjs, vmObj)
-			})
-			Specify("one reconcile request should be returned", func() {
-				Expect(reqs).To(ConsistOf(
-					reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Namespace: namespaceName,
-							Name:      vmName,
-						},
-					},
-				))
-			})
-		})
-		When("the VM has linked condition true and placement ready condition false", func() {
-			BeforeEach(func() {
-				vmObj := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: namespaceName,
-						Name:      vmName,
-					},
-					Spec: vmopv1.VirtualMachineSpec{
-						GroupName: groupName,
-					},
-					Status: vmopv1.VirtualMachineStatus{
-						Conditions: []metav1.Condition{
-							linkedTrueCondition,
-							metav1.Condition{
-								Type:   vmopv1.VirtualMachineConditionPlacementReady,
-								Status: metav1.ConditionFalse,
-							},
-						},
-					},
-				}
-				withObjs = append(withObjs, vmObj)
-			})
-			Specify("one reconcile request should be returned", func() {
-				Expect(reqs).To(ConsistOf(
-					reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Namespace: namespaceName,
-							Name:      vmName,
-						},
-					},
-				))
-			})
-		})
-		When("the VM status has both linked and placement ready conditions true", func() {
-			BeforeEach(func() {
-				vmObj := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: namespaceName,
-						Name:      vmName,
-					},
-					Spec: vmopv1.VirtualMachineSpec{
-						GroupName: groupName,
-					},
-					Status: vmopv1.VirtualMachineStatus{
-						Conditions: []metav1.Condition{
-							linkedTrueCondition,
-							metav1.Condition{
-								Type:   vmopv1.VirtualMachineConditionPlacementReady,
-								Status: metav1.ConditionTrue,
-							},
-						},
-					},
-				}
-				withObjs = append(withObjs, vmObj)
-			})
-			Specify("no reconcile requests should be returned", func() {
-				Expect(reqs).To(BeEmpty())
-			})
-		})
-	})
-})
-
 var _ = DescribeTable("IsKubernetesNode",
 	func(
 		vm vmopv1.VirtualMachine,
@@ -1170,3 +982,137 @@ var _ = DescribeTable("GetContextWithWorkloadDomainIsolation",
 		true,
 	),
 )
+
+var _ = DescribeTable("ConvertPowerState",
+	func(
+		powerState vimtypes.VirtualMachinePowerState,
+		expected vmopv1.VirtualMachinePowerState,
+	) {
+		Ω(vmopv1util.ConvertPowerState(logr.Discard(), powerState)).Should(Equal(expected))
+	},
+	Entry(
+		"powered on",
+		vimtypes.VirtualMachinePowerStatePoweredOn,
+		vmopv1.VirtualMachinePowerStateOn,
+	),
+	Entry(
+		"powered off",
+		vimtypes.VirtualMachinePowerStatePoweredOff,
+		vmopv1.VirtualMachinePowerStateOff,
+	),
+	Entry(
+		"suspended",
+		vimtypes.VirtualMachinePowerStateSuspended,
+		vmopv1.VirtualMachinePowerStateSuspended,
+	),
+	Entry(
+		"unknown",
+		vimtypes.VirtualMachinePowerState("unknown"),
+		vmopv1.VirtualMachinePowerStateOff,
+	),
+)
+
+var _ = Describe("CnsRegisterVolumeToVirtualMachineMapper", func() {
+	var (
+		ctx        context.Context
+		k8sClient  ctrlclient.Client
+		vm         *vmopv1.VirtualMachine
+		mapperFunc func(context.Context, ctrlclient.Object) []reconcile.Request
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		k8sClient = builder.NewFakeClient()
+		vm = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-vm",
+				Namespace: "test-namespace",
+				UID:       types.UID("test-uid"),
+			},
+			Spec: vmopv1.VirtualMachineSpec{},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		mapperFunc = vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, k8sClient)
+	})
+
+	It("should panic with nil context", func() {
+		Expect(func() {
+			ctx = nil
+			vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, k8sClient)
+		}).To(Panic())
+	})
+
+	It("should panic with nil client", func() {
+		Expect(func() {
+			vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, nil)
+		}).To(Panic())
+	})
+
+	Context("when CnsRegisterVolume has owner reference to VM", func() {
+		var crv *cnsv1alpha1.CnsRegisterVolume
+
+		BeforeEach(func() {
+			crv = &cnsv1alpha1.CnsRegisterVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-crv",
+					Namespace: vm.Namespace,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: vmopv1.GroupVersion.String(),
+							Kind:       "VirtualMachine",
+							Name:       vm.Name,
+							UID:        vm.UID,
+						},
+					},
+				},
+				Spec: cnsv1alpha1.CnsRegisterVolumeSpec{
+					PvcName: "test-pvc",
+				},
+			}
+		})
+
+		It("should return reconcile request for the owner VM", func() {
+			requests := mapperFunc(ctx, crv)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].NamespacedName.Name).To(Equal(vm.Name))
+			Expect(requests[0].NamespacedName.Namespace).To(Equal(vm.Namespace))
+		})
+	})
+
+	Context("when CnsRegisterVolume has no VM association", func() {
+		var crv *cnsv1alpha1.CnsRegisterVolume
+
+		BeforeEach(func() {
+			crv = &cnsv1alpha1.CnsRegisterVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-crv",
+					Namespace: vm.Namespace,
+				},
+				Spec: cnsv1alpha1.CnsRegisterVolumeSpec{
+					PvcName: "test-pvc",
+				},
+			}
+		})
+
+		It("should return no reconcile requests", func() {
+			requests := mapperFunc(ctx, crv)
+			Expect(requests).To(HaveLen(0))
+		})
+	})
+
+	Context("when mapper function is called with nil context", func() {
+		It("should panic", func() {
+			Expect(func() {
+				mapperFunc(nil, &cnsv1alpha1.CnsRegisterVolume{})
+			}).To(Panic())
+		})
+	})
+
+	Context("when mapper function is called with nil object", func() {
+		It("should panic", func() {
+			Expect(func() {
+				mapperFunc(ctx, nil)
+			}).To(Panic())
+		})
+	})
+})

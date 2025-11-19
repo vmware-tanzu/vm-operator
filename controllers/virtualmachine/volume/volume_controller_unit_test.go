@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package volume_test
@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	storagehelpers "k8s.io/component-helpers/storage/volume"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -202,6 +203,9 @@ func unitTestsReconcile() {
 	})
 
 	getCNSAttachmentForVolumeName := func(vm *vmopv1.VirtualMachine, volumeName string) *cnsv1alpha1.CnsNodeVmAttachment {
+
+		GinkgoHelper()
+
 		objectKey := client.ObjectKey{Name: util.CNSAttachmentNameForVolume(vm.Name, volumeName), Namespace: vm.Namespace}
 		attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 
@@ -214,7 +218,7 @@ func unitTestsReconcile() {
 			return nil
 		}
 
-		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred())
 		return nil
 	}
 
@@ -389,7 +393,7 @@ func unitTestsReconcile() {
 				otherAttachment.Spec.NodeUUID = "some-other-uuid"
 				otherAttachment.Status.Attached = true
 				otherAttachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
 				}
 				initObjects = append(initObjects, attachment, otherAttachment)
 			})
@@ -785,8 +789,8 @@ func unitTestsReconcile() {
 				By("Adds node-is-zone and selected-node annotation to PVC", func() {
 					pvc := &corev1.PersistentVolumeClaim{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
-					Expect(pvc.Annotations).To(HaveKeyWithValue(volume.CNSSelectedNodeIsZoneAnnotationKey, "true"))
-					Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, zoneName))
+					Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "true"))
+					Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, zoneName))
 				})
 
 				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
@@ -813,7 +817,7 @@ func unitTestsReconcile() {
 				attachment := cnsAttachmentForVMVolume(vm, vmVol)
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
 				}
 				attachment.Status.Error = dummyErrMsg
 				initObjects = append(initObjects, attachment)
@@ -847,7 +851,7 @@ func unitTestsReconcile() {
 					attachment.Spec.NodeUUID = "some-other-bios-uuid"
 					attachment.Status.Attached = true
 					attachment.Status.AttachmentMetadata = map[string]string{
-						volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+						cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
 					}
 					initObjects = append(initObjects, attachment)
 				})
@@ -878,7 +882,7 @@ func unitTestsReconcile() {
 					attachment.Spec.NodeUUID = "some-old-bios-uuid"
 					attachment.Status.Attached = true
 					attachment.Status.AttachmentMetadata = map[string]string{
-						volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+						cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
 					}
 					initObjects = append(initObjects, attachment)
 				})
@@ -922,7 +926,7 @@ func unitTestsReconcile() {
 				attachment.UID = "1d2b1552-8294-4a72-91c7-7cf52b2e0990"
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
 				}
 				initObjects = append(initObjects, attachment)
 			})
@@ -992,7 +996,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				attachment := cnsAttachmentForVMVolume(vm, vmVol)
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
 				}
 				attachment.Status.Error = awfulErrMsg
 				initObjects = append(initObjects, attachment)
@@ -1029,7 +1033,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				attachment.Status.Attached = true
 				attachment.Status.Error = "slowness"
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
 				}
 				initObjects = append(initObjects, attachment)
 			})
@@ -1109,13 +1113,13 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					attachment1 := cnsAttachmentForVMVolume(vm, vmVol1)
 					attachment1.Status.Attached = true
 					attachment1.Status.AttachmentMetadata = map[string]string{
-						volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
+						cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 					}
 
 					attachment2 := cnsAttachmentForVMVolume(vm, vmVol2)
 					attachment2.Status.Attached = true
 					attachment2.Status.AttachmentMetadata = map[string]string{
-						volume.AttributeFirstClassDiskUUID: dummyDiskUUID2,
+						cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID2,
 					}
 
 					initObjects = append(initObjects, attachment1, attachment2)
@@ -1175,22 +1179,25 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					})
 
 					assertBaselineVolStatus := func() {
-						err := reconciler.ReconcileNormal(volCtx)
-						ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
-						ExpectWithOffset(1, vm.Status.Volumes).To(HaveLen(4))
+						GinkgoHelper()
+
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(vm.Status.Volumes).To(HaveLen(4))
 
 						attachment1 := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
-						ExpectWithOffset(1, attachment1).ToNot(BeNil())
+						Expect(attachment1).ToNot(BeNil())
 						assertAttachmentSpecFromVMVol(vm, vmVol1, attachment1)
 
 						attachment2 := getCNSAttachmentForVolumeName(vm, vmVol2.Name)
-						ExpectWithOffset(1, attachment2).ToNot(BeNil())
+						Expect(attachment2).ToNot(BeNil())
 						assertAttachmentSpecFromVMVol(vm, vmVol2, attachment2)
 
 						By("VM Status.Volumes are sorted by DiskUUID", func() {
-							ExpectWithOffset(1, vm.Status.Volumes[0]).To(Equal(classicDisk1()))
-							ExpectWithOffset(1, vm.Status.Volumes[1]).To(Equal(classicDisk2()))
+							Expect(vm.Status.Volumes[0]).To(Equal(classicDisk1()))
+							Expect(vm.Status.Volumes[1]).To(Equal(classicDisk2()))
 							assertVMVolStatusFromAttachment(vmVol2, attachment2, vm.Status.Volumes[2])
 							assertVMVolStatusFromAttachment(vmVol1, attachment1, vm.Status.Volumes[3])
 						})
@@ -1203,7 +1210,10 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					When("Existing status has usage info for a PVC", func() {
 
 						assertPVCHasUsage := func() {
-							ExpectWithOffset(1, vm.Status.Volumes[3].Used).To(Equal(ptr.To(resource.MustParse("1Gi"))))
+
+							GinkgoHelper()
+
+							Expect(vm.Status.Volumes[3].Used).To(Equal(ptr.To(resource.MustParse("1Gi"))))
 						}
 
 						BeforeEach(func() {
@@ -1237,8 +1247,11 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 							When("The first PVC is an instance storage volume", func() {
 								assertIPVCHasLimit := func() {
-									ExpectWithOffset(1, vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("15Gi"))))
-									ExpectWithOffset(1, vm.Status.Volumes[3].Requested).To(Equal(ptr.To(resource.MustParse("15Gi"))))
+
+									GinkgoHelper()
+
+									Expect(vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("15Gi"))))
+									Expect(vm.Status.Volumes[3].Requested).To(Equal(ptr.To(resource.MustParse("15Gi"))))
 								}
 
 								BeforeEach(func() {
@@ -1257,7 +1270,10 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 						When("PVC resource exists with limit or request", func() {
 
 							assertPVCHasLimit := func() {
-								ExpectWithOffset(1, vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("20Gi"))))
+
+								GinkgoHelper()
+
+								Expect(vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("20Gi"))))
 							}
 
 							When("PVC has limit", func() {
@@ -1314,7 +1330,10 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 						}
 
 						assertPVCHasCrypto := func() {
-							ExpectWithOffset(1, vm.Status.Volumes[3].Crypto).To(Equal(newCryptoStatus()))
+
+							GinkgoHelper()
+
+							Expect(vm.Status.Volumes[3].Crypto).To(Equal(newCryptoStatus()))
 						}
 
 						BeforeEach(func() {
@@ -1459,37 +1478,45 @@ func assertAttachmentSpecFromVMVol(
 	vmVol vmopv1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment) {
 
-	ExpectWithOffset(1, attachment.Spec.NodeUUID).To(Equal(vm.Status.BiosUUID))
-	ExpectWithOffset(1, attachment.Spec.VolumeName).To(Equal(vmVol.PersistentVolumeClaim.ClaimName))
+	GinkgoHelper()
+
+	Expect(attachment.Spec.NodeUUID).To(Equal(vm.Status.BiosUUID))
+	Expect(attachment.Spec.VolumeName).To(Equal(vmVol.PersistentVolumeClaim.ClaimName))
 
 	ownerRefs := attachment.GetOwnerReferences()
-	ExpectWithOffset(1, ownerRefs).To(HaveLen(1))
+	Expect(ownerRefs).To(HaveLen(1))
 	ownerRef := ownerRefs[0]
-	ExpectWithOffset(1, ownerRef.Name).To(Equal(vm.Name))
-	ExpectWithOffset(1, ownerRef.Controller).ToNot(BeNil())
-	ExpectWithOffset(1, *ownerRef.Controller).To(BeTrue())
+	Expect(ownerRef.Name).To(Equal(vm.Name))
+	Expect(ownerRef.Controller).ToNot(BeNil())
+	Expect(*ownerRef.Controller).To(BeTrue())
 }
 
 func assertVMVolStatusFromAttachment(
 	vmVol vmopv1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment,
 	vmVolStatus vmopv1.VirtualMachineVolumeStatus) {
-	diskUUID := attachment.Status.AttachmentMetadata[volume.AttributeFirstClassDiskUUID]
 
-	ExpectWithOffset(1, vmVolStatus.Name).To(Equal(vmVol.Name))
-	ExpectWithOffset(1, vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
-	ExpectWithOffset(1, vmVolStatus.DiskUUID).To(Equal(diskUUID))
-	ExpectWithOffset(1, vmVolStatus.Error).To(Equal(attachment.Status.Error))
+	GinkgoHelper()
+
+	diskUUID := attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID]
+
+	Expect(vmVolStatus.Name).To(Equal(vmVol.Name))
+	Expect(vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
+	Expect(vmVolStatus.DiskUUID).To(Equal(diskUUID))
+	Expect(vmVolStatus.Error).To(Equal(attachment.Status.Error))
 }
 
 func assertVMVolStatusFromAttachmentDetaching(
 	vmVol vmopv1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment,
 	vmVolStatus vmopv1.VirtualMachineVolumeStatus) {
-	diskUUID := attachment.Status.AttachmentMetadata[volume.AttributeFirstClassDiskUUID]
 
-	ExpectWithOffset(1, vmVolStatus.Name).To(Equal(vmVol.Name + ":detaching"))
-	ExpectWithOffset(1, vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
-	ExpectWithOffset(1, vmVolStatus.DiskUUID).To(Equal(diskUUID))
-	ExpectWithOffset(1, vmVolStatus.Error).To(Equal(attachment.Status.Error))
+	GinkgoHelper()
+
+	diskUUID := attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID]
+
+	Expect(vmVolStatus.Name).To(Equal(vmVol.Name + ":detaching"))
+	Expect(vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
+	Expect(vmVolStatus.DiskUUID).To(Equal(diskUUID))
+	Expect(vmVolStatus.Error).To(Equal(attachment.Status.Error))
 }

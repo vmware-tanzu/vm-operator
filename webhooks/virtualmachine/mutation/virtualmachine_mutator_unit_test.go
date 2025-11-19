@@ -44,6 +44,8 @@ func uniTests() {
 		),
 		unitTestsMutating,
 	)
+
+	controllerTests()
 }
 
 type unitMutationWebhookContext struct {
@@ -591,12 +593,9 @@ func unitTestsMutating() {
 	Describe("SetDefaultBiosUUID", func() {
 
 		var (
-			err         error
-			wasMutated  bool
-			inUUID      = uuid.NewString()
-			expectedErr = field.Forbidden(
-				field.NewPath("spec", "biosUUID"),
-				"only privileged users may set this field")
+			err        error
+			wasMutated bool
+			inUUID     = uuid.NewString()
 		)
 
 		JustBeforeEach(func() {
@@ -612,28 +611,10 @@ func unitTestsMutating() {
 				ctx.vm.Spec.BiosUUID = ""
 			})
 
-			Context("privileged user", func() {
-				BeforeEach(func() {
-					ctx.IsPrivilegedAccount = true
-				})
-
-				It("Should set BiosUUID", func() {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeTrue())
-					Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
-				})
-			})
-
-			Context("unprivileged user", func() {
-				BeforeEach(func() {
-					ctx.IsPrivilegedAccount = false
-				})
-
-				It("Should set BiosUUID", func() {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeTrue())
-					Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
-				})
+			It("Should set BiosUUID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
 			})
 
 			When("spec.bootstrap.cloudInit.instanceID is empty", func() {
@@ -643,30 +624,11 @@ func unitTestsMutating() {
 					}
 				})
 
-				Context("privileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = true
-					})
-
-					It("Should set BiosUUID and set CloudInit InstanceID", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(wasMutated).To(BeTrue())
-						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(ctx.vm.Spec.BiosUUID))
-					})
-				})
-
-				Context("unprivileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = false
-					})
-
-					It("Should set BiosUUID and set CloudInit InstanceID", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(wasMutated).To(BeTrue())
-						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(ctx.vm.Spec.BiosUUID))
-					})
+				It("Should set BiosUUID and set CloudInit InstanceID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+					Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(ctx.vm.Spec.BiosUUID))
 				})
 			})
 
@@ -683,30 +645,11 @@ func unitTestsMutating() {
 					}
 				})
 
-				Context("privileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = true
-					})
-
-					It("Should set BiosUUID and ignore CloudInit InstanceID", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(wasMutated).To(BeTrue())
-						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
-					})
-				})
-
-				Context("unprivileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = false
-					})
-
-					It("Should set BiosUUID and ignore CloudInit InstanceID", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(wasMutated).To(BeTrue())
-						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
-					})
+				It("Should set BiosUUID and ignore CloudInit InstanceID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+					Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
 				})
 			})
 		})
@@ -716,29 +659,10 @@ func unitTestsMutating() {
 				ctx.vm.Spec.BiosUUID = inUUID
 			})
 
-			Context("privileged user", func() {
-				BeforeEach(func() {
-					ctx.IsPrivilegedAccount = true
-				})
-
-				It("Should allow BiosUUID", func() {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeFalse())
-					Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
-				})
-			})
-
-			Context("unprivileged user", func() {
-				BeforeEach(func() {
-					ctx.IsPrivilegedAccount = false
-				})
-
-				It("Should return an error", func() {
-					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(expectedErr))
-					Expect(wasMutated).To(BeFalse())
-					Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
-				})
+			It("Should allow BiosUUID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+				Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
 			})
 
 			When("spec.bootstrap.cloudInit.instanceID is empty", func() {
@@ -748,31 +672,11 @@ func unitTestsMutating() {
 					}
 				})
 
-				Context("privileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = true
-					})
-
-					It("Should allow BiosUUID and set CloudInit InstanceID", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(wasMutated).To(BeTrue())
-						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inUUID))
-					})
-				})
-
-				Context("unprivileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = false
-					})
-
-					It("Should return an error", func() {
-						Expect(err).To(HaveOccurred())
-						Expect(err).To(MatchError(expectedErr))
-						Expect(wasMutated).To(BeFalse())
-						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(BeEmpty())
-					})
+				It("Should allow BiosUUID and set CloudInit InstanceID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+					Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inUUID))
 				})
 			})
 
@@ -789,31 +693,11 @@ func unitTestsMutating() {
 					}
 				})
 
-				Context("privileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = true
-					})
-
-					It("Should allow BiosUUID and ignore CloudInit InstanceID", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(wasMutated).To(BeFalse())
-						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
-					})
-				})
-
-				Context("unprivileged user", func() {
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = false
-					})
-
-					It("Should return an error", func() {
-						Expect(err).To(HaveOccurred())
-						Expect(err).To(MatchError(expectedErr))
-						Expect(wasMutated).To(BeFalse())
-						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
-						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
-					})
+				It("Should allow BiosUUID and ignore CloudInit InstanceID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+					Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
 				})
 			})
 		})
@@ -1298,10 +1182,10 @@ func unitTestsMutating() {
 			It("should add the created-at annotations", func() {
 				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtBuildVersionAnnotationKey))
 				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtSchemaVersionAnnotationKey))
-				mutation.SetCreatedAtAnnotations(
-					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-						config.BuildVersion = "v1"
-					}), vm)
+				pkgcfg.UpdateContext(ctx.Context, func(config *pkgcfg.Config) {
+					config.BuildVersion = "v1"
+				})
+				_, _ = mutation.SetCreatedAtAnnotations(&ctx.WebhookRequestContext, nil, vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
@@ -1310,10 +1194,10 @@ func unitTestsMutating() {
 		When("vm does have some existing annotations", func() {
 			It("should add the created-at annotations", func() {
 				vm.Annotations = map[string]string{"k1": "v1", "k2": "v2"}
-				mutation.SetCreatedAtAnnotations(
-					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-						config.BuildVersion = "v1"
-					}), vm)
+				pkgcfg.UpdateContext(ctx.Context, func(config *pkgcfg.Config) {
+					config.BuildVersion = "v1"
+				})
+				_, _ = mutation.SetCreatedAtAnnotations(&ctx.WebhookRequestContext, nil, vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
@@ -1325,10 +1209,10 @@ func unitTestsMutating() {
 					constants.CreatedAtBuildVersionAnnotationKey:  "fake-build-version",
 					constants.CreatedAtSchemaVersionAnnotationKey: "fake-schema-version",
 				}
-				mutation.SetCreatedAtAnnotations(
-					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-						config.BuildVersion = "v1"
-					}), vm)
+				pkgcfg.UpdateContext(ctx.Context, func(config *pkgcfg.Config) {
+					config.BuildVersion = "v1"
+				})
+				_, _ = mutation.SetCreatedAtAnnotations(&ctx.WebhookRequestContext, nil, vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
@@ -1475,7 +1359,7 @@ func unitTestsMutating() {
 		})
 
 		It("should set the default image kind if previously set to default", func() {
-			mutation.SetDefaultCdromImgKindOnUpdate(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+			_, _ = mutation.SetDefaultCdromImgKindOnUpdate(&ctx.WebhookRequestContext, nil, ctx.vm, oldVM)
 			Expect(ctx.vm.Spec.Hardware.Cdrom[0].Image.Kind).To(Equal("VirtualMachineImage"))
 			Expect(ctx.vm.Spec.Hardware.Cdrom[1].Image.Kind).To(BeEmpty())
 		})
@@ -1843,4 +1727,25 @@ func unitTestsMutating() {
 			})
 		})
 	})
+
+	Describe("SetDefaultControllers", func() {
+
+		Context("When vm.Spec.Hardware is nil", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware = nil
+			})
+
+			It("should initialize Hardware and set default IDE controllers", func() {
+				wasMutated, err := mutation.SetDefaultControllers(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(ctx.vm.Spec.Hardware).ToNot(BeNil())
+				Expect(ctx.vm.Spec.Hardware.IDEControllers).To(HaveLen(2))
+				Expect(ctx.vm.Spec.Hardware.IDEControllers[0].BusNumber).To(Equal(int32(0)))
+				Expect(ctx.vm.Spec.Hardware.IDEControllers[1].BusNumber).To(Equal(int32(1)))
+			})
+		})
+	})
+
 }

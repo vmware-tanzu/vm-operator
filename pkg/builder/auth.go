@@ -1,3 +1,7 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package builder
 
 import (
@@ -9,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	authv1 "k8s.io/api/authentication/v1"
@@ -24,9 +29,6 @@ const (
 	// client cert data from http requests.
 	RequestClientCertificateContextKey contextKey = iota
 
-	// The path to ca cert used to validate client certs.
-	caFilePath = "/tmp/k8s-webhook-server/serving-certs/client-ca/ca.crt"
-
 	// The apiserver client CN.
 	apiserverCN = "apiserver-webhook-client"
 )
@@ -36,6 +38,15 @@ var caCertPool *x509.CertPool
 func IsPrivilegedAccount(
 	ctx *pkgctx.WebhookContext,
 	userInfo authv1.UserInfo) bool {
+
+	if ctx != nil {
+		ctx.Logger.V(6).Info("Checking if account is privileged",
+			"Webhook Name", ctx.Name,
+			"Username", userInfo.Username,
+			"UID", userInfo.UID,
+			"Groups", userInfo.Groups,
+			"Extra", userInfo.Extra)
+	}
 
 	return IsVMOperatorServiceAccount(ctx, userInfo) ||
 		IsSystemMasters(ctx, userInfo) ||
@@ -83,6 +94,12 @@ func IsVMOperatorServiceAccount(
 	return strings.EqualFold(userInfo.Username, serviceAccount)
 }
 
+// serviceAccountRx matches a user name that is a service account.
+//
+// The first grouped match is the domain name.
+// The second grouped match is the user name.
+var serviceAccountRx = regexp.MustCompile(`^system:serviceaccount:([^:]+):([^:]+)$`)
+
 func InPrivilegedUsersList(
 	ctx *pkgctx.WebhookContext,
 	userInfo authv1.UserInfo) bool {
@@ -93,12 +110,84 @@ func InPrivilegedUsersList(
 
 	// Users specified by Pod's environment variable "PRIVILEGED_USERS" are
 	// considered privileged.
-	c := pkgcfg.FromContext(ctx)
-	_, ok := pkgcfg.StringToSet(c.PrivilegedUsers)[userInfo.Username]
-	return ok
+	privUsers := pkgcfg.StringToSlice(pkgcfg.FromContext(ctx).PrivilegedUsers)
+
+	// Check if the authenticating user is a service account.
+	authUserParts := serviceAccountRx.FindStringSubmatch(userInfo.Username)
+
+	for _, privUser := range privUsers {
+
+		// Determine if the current privileged user is a service account.
+		privUserParts := serviceAccountRx.FindStringSubmatch(privUser)
+
+		switch {
+
+		case len(authUserParts) == 0 && len(privUserParts) == 0:
+			//
+			// Neither the authenticating user nor the current privileged user
+			// is a service account, so compare the user names directly.
+			//
+			if userInfo.Username == privUser {
+				return true
+			}
+
+		case len(authUserParts) > 0 && len(privUserParts) > 0:
+			//
+			// Both the authenticating user and the current privileged user are
+			// service accounts, so compare the names more carefully.
+			//
+			var (
+				authUserNamespace = authUserParts[1]
+				authUserName      = authUserParts[2]
+				privUserNamespace = privUserParts[1]
+				privUserName      = privUserParts[2]
+			)
+
+			if strings.HasSuffix(privUserNamespace, "-HASH") {
+				//
+				// The privileged user namespace ends with -HASH, indicating it
+				// should match any namespace that begins with the string's
+				// prefix and ends with five alpha-numeric characters.
+				//
+
+				p := privUserNamespace[:len(privUserNamespace)-5]
+				p = regexp.QuoteMeta(p)
+				p = `^` + p + `\-[a-zA-Z0-9]{5}$`
+				if ok, _ := regexp.MatchString(p, authUserNamespace); ok {
+					if authUserName == privUserName {
+						return true
+					}
+				}
+			} else { //nolint:gocritic
+				//
+				// The privileged user namespace does *not* end with -HASH,
+				// which means the authenticating user's namespace and name
+				// should be compared literally to the privileged user's
+				// namespace and name.
+				//
+
+				if authUserNamespace == privUserNamespace &&
+					authUserName == privUserName {
+
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
-func verifyPeerCertificate(connState *tls.ConnectionState) error {
+func verifyPeerCertificate(
+	ctx context.Context,
+	connState *tls.ConnectionState) error {
+
+	certDir := pkgcfg.FromContext(ctx).WebhookSecretVolumeMountPath
+	if certDir == "" {
+		certDir = pkgcfg.Default().WebhookSecretVolumeMountPath
+	}
+	caFilePath := filepath.Join(certDir, "client-ca", "ca.crt")
+
 	if err := loadCACert(caFilePath); err != nil {
 		return err
 	}
@@ -167,5 +256,6 @@ func VerifyWebhookRequest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return verifyPeerCertificate(verifiedChains)
+
+	return verifyPeerCertificate(ctx, verifiedChains)
 }

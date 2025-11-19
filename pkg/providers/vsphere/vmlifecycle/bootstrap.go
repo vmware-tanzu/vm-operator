@@ -6,6 +6,7 @@ package vmlifecycle
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -27,16 +28,20 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 )
 
 const (
 	// OvfEnvironmentTransportGuestInfo is the OVF transport type that uses
 	// GuestInfo. The other valid type is "iso".
 	OvfEnvironmentTransportGuestInfo = "com.vmware.guestInfo"
+
+	// GOSCVCFAHashID is the VCFA ID key name in the GOSC customization extra config.
+	GOSCVCFAHashID = "vcfaVmHashKey"
 
 	redacted = "***"
 )
@@ -48,6 +53,7 @@ type BootstrapData struct {
 
 	CloudConfig *cloudinit.CloudConfigSecretData
 	Sysprep     *sysprep.SecretData
+	LinuxPrep   *linuxprep.SecretData
 }
 
 type TemplateRenderFunc func(string, string) string
@@ -66,7 +72,6 @@ type BootstrapArgs struct {
 var (
 	ErrBootstrapReconfigure = pkgerr.NoRequeueNoErr("bootstrap reconfigured vm")
 	ErrBootstrapCustomize   = pkgerr.NoRequeueNoErr("bootstrap customized vm")
-	ErrSkipPoweredOn        = pkgerr.NoRequeueNoErr("skip powered on vm")
 )
 
 func DoBootstrap(
@@ -112,18 +117,21 @@ func DoBootstrap(
 	}
 
 	var (
-		err        error
-		configSpec *vimtypes.VirtualMachineConfigSpec
-		customSpec *vimtypes.CustomizationSpec
+		configSpec     *vimtypes.VirtualMachineConfigSpec
+		customSpec     *vimtypes.CustomizationSpec
+		customizeLatch *bool
+		err            error
 	)
 
 	switch {
 	case cloudInit != nil:
 		configSpec, customSpec, err = BootStrapCloudInit(vmCtx, config, cloudInit, &bootstrapArgs)
 	case linuxPrep != nil:
-		configSpec, customSpec, err = BootStrapLinuxPrep(vmCtx, config, linuxPrep, vAppConfig, &bootstrapArgs)
+		configSpec, customSpec, customizeLatch, err = BootStrapLinuxPrep(
+			vmCtx, config, linuxPrep, vAppConfig, &bootstrapArgs)
 	case sysPrep != nil:
-		configSpec, customSpec, err = BootstrapSysPrep(vmCtx, config, sysPrep, vAppConfig, &bootstrapArgs)
+		configSpec, customSpec, customizeLatch, err = BootstrapSysPrep(
+			vmCtx, config, sysPrep, vAppConfig, &bootstrapArgs)
 	case vAppConfig != nil:
 		configSpec, customSpec, err = BootstrapVAppConfig(vmCtx, config, vAppConfig, &bootstrapArgs)
 	}
@@ -132,57 +140,93 @@ func DoBootstrap(
 		return fmt.Errorf("failed to create bootstrap data: %w", err)
 	}
 
+	var retErr error
+
 	if configSpec != nil {
+		const hashKey = pkgconst.BootstrapHashConfigSpecAnnotationKey
+
 		newHash, err := getVimTypeHash(configSpec)
 		if err != nil {
 			return err
 		}
-		hashKey := pkgconst.BootstrapHashConfigSpecAnnotationKey
-		curHash := vmCtx.VM.Annotations[hashKey]
-		if newHash == curHash {
-			vmCtx.Logger.V(4).Info(
-				"Skipping bootstrap reconfigure as nothing has changed")
+
+		var reconfigureNeeded bool
+		if customizeLatch != nil {
+			reconfigureNeeded = *customizeLatch
 		} else {
+			reconfigureNeeded = newHash != vmCtx.VM.Annotations[hashKey]
+			if !reconfigureNeeded {
+				vmCtx.Logger.V(4).Info(
+					"Skipping bootstrap reconfigure as nothing has changed")
+			}
+		}
+
+		if reconfigureNeeded {
 			vmCtx.Logger.V(4).Info("Doing bootstrap reconfigure")
 			if err := doReconfigure(vmCtx, vcVM, configSpec); err != nil {
 				return fmt.Errorf("bootstrap reconfigure failed: %w", err)
 			}
-			if vmCtx.VM.Annotations == nil {
-				vmCtx.VM.Annotations = map[string]string{}
+
+			if newHash != vmCtx.VM.Annotations[hashKey] {
+				vmCtx.Logger.V(4).Info(
+					"Updating bootstrap reconfigure hash", hashKey, newHash)
+				if vmCtx.VM.Annotations == nil {
+					vmCtx.VM.Annotations = map[string]string{}
+				}
+				vmCtx.VM.Annotations[hashKey] = newHash
 			}
-			vmCtx.Logger.V(4).Info(
-				"Updating bootstrap reconfigure hash", hashKey, newHash)
-			vmCtx.VM.Annotations[pkgconst.BootstrapHashConfigSpecAnnotationKey] = newHash
-			return ErrBootstrapReconfigure
+
+			retErr = errors.Join(retErr, ErrBootstrapReconfigure)
 		}
 	}
 
 	if customSpec != nil {
+		const hashKey = pkgconst.BootstrapHashCustomSpecAnnotationKey
+
 		newHash, err := getVimTypeHash(customSpec)
 		if err != nil {
 			return err
 		}
-		hashKey := pkgconst.BootstrapHashCustomSpecAnnotationKey
-		curHash := vmCtx.VM.Annotations[hashKey]
-		if newHash == curHash {
-			vmCtx.Logger.V(4).Info(
-				"Skipping bootstrap customize as nothing has changed")
+
+		var customizeNeeded bool
+		if customizeLatch != nil {
+			customizeNeeded = *customizeLatch
 		} else {
-			vmCtx.Logger.V(4).Info("Doing bootstrap customize")
+			customizeNeeded = newHash != vmCtx.VM.Annotations[hashKey]
+			if !customizeNeeded {
+				vmCtx.Logger.V(4).Info(
+					"Skipping bootstrap customize as nothing has changed")
+			}
+		}
+
+		if customizeNeeded {
+			vmCtx.Logger.V(0).Info("Doing bootstrap customize")
 			if err := doCustomize(vmCtx, vcVM, config, customSpec); err != nil {
 				return fmt.Errorf("bootstrap customize failed: %w", err)
 			}
-			if vmCtx.VM.Annotations == nil {
-				vmCtx.VM.Annotations = map[string]string{}
+
+			if newHash != vmCtx.VM.Annotations[hashKey] {
+				vmCtx.Logger.V(4).Info(
+					"Updating bootstrap customize hash", hashKey, newHash)
+				if vmCtx.VM.Annotations == nil {
+					vmCtx.VM.Annotations = map[string]string{}
+				}
+				vmCtx.VM.Annotations[hashKey] = newHash
 			}
-			vmCtx.Logger.V(4).Info(
-				"Updating bootstrap customize hash", hashKey, newHash)
-			vmCtx.VM.Annotations[pkgconst.BootstrapHashCustomSpecAnnotationKey] = newHash
-			return ErrBootstrapCustomize
+
+			retErr = errors.Join(retErr, ErrBootstrapCustomize)
 		}
 	}
 
-	return nil
+	if customizeLatch != nil && *customizeLatch {
+		// Set latch to false so that a later customization on has to be
+		// explicitly requested.
+		vmCtx.Logger.V(4).Info(
+			"Setting customization latch to false after successful customization")
+		*customizeLatch = false
+	}
+
+	return retErr
 }
 
 // GetBootstrapArgs returns the information used to bootstrap the VM via
@@ -452,6 +496,17 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 		cloudInitPrep := *identity
 		cloudInitPrep.Userdata = redacted
 		cs.Identity = &cloudInitPrep
+	case *vimtypes.CustomizationLinuxPrep:
+		linuxPrep := *identity
+		if linuxPrep.Password != nil {
+			password := *linuxPrep.Password
+			password.Value = redacted
+			linuxPrep.Password = &password
+		}
+		if linuxPrep.ScriptText != "" {
+			linuxPrep.ScriptText = redacted
+		}
+		cs.Identity = &linuxPrep
 	case *vimtypes.CustomizationSysprepText:
 		sysPrepText := *identity
 		sysPrepText.Value = redacted
@@ -471,6 +526,9 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 				password.Value = redacted
 			}
 			sysPrep.Identification.DomainAdminPassword = &password
+		}
+		if sysPrep.ScriptText != "" {
+			sysPrep.ScriptText = redacted
 		}
 		cs.Identity = &sysPrep
 	}

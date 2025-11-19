@@ -52,8 +52,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -284,12 +282,19 @@ func vmTests() {
 						})
 					})
 
-					assertClassNotFound := func(className string) {
-						var err error
-						vcVM, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					assertClassNotFound := func(
+						ctx *builder.TestContextForVCSim,
+						vmProvider providers.VirtualMachineProviderInterface,
+						vm *vmopv1.VirtualMachine,
+						className string) {
+
+						vcVM, err := createOrUpdateAndGetVcVM(
+							ctx, vmProvider, vm)
 						ExpectWithOffset(1, err).ToNot(BeNil())
 						ExpectWithOffset(1, err.Error()).To(ContainSubstring(
-							fmt.Sprintf("virtualmachineclasses.vmoperator.vmware.com %q not found", className)))
+							fmt.Sprintf(
+								"virtualmachineclasses.vmoperator.vmware.com %q not found",
+								className)))
 						ExpectWithOffset(1, vcVM).To(BeNil())
 					}
 
@@ -302,7 +307,11 @@ func vmTests() {
 								vm.Spec.InstanceUUID = instanceUUID
 							})
 							It("should error when getting class", func() {
-								assertClassNotFound("")
+								assertClassNotFound(
+									ctx,
+									vmProvider,
+									vm,
+									"")
 							})
 						})
 						When("spec.instanceUUID does not match existing VM", func() {
@@ -310,7 +319,11 @@ func vmTests() {
 								vm.Spec.InstanceUUID = uuid.NewString()
 							})
 							It("should error when getting class", func() {
-								assertClassNotFound("")
+								assertClassNotFound(
+									ctx,
+									vmProvider,
+									vm,
+									"")
 							})
 						})
 					})
@@ -1288,7 +1301,7 @@ func vmTests() {
 			JustBeforeEach(func() {
 				zoneName = ctx.GetFirstZoneName()
 				// Explicitly place the VM into one of the zones that the test context will create.
-				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				vm.Labels[corev1.LabelTopologyZone] = zoneName
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
@@ -1301,6 +1314,12 @@ func vmTests() {
 
 				var vmg vmopv1.VirtualMachineGroup
 				JustBeforeEach(func() {
+					// Remove explicit zone label so group placement can work
+					if vm.Labels != nil {
+						delete(vm.Labels, corev1.LabelTopologyZone)
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+					}
+
 					vmg = vmopv1.VirtualMachineGroup{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "vmg",
@@ -1382,7 +1401,7 @@ func vmTests() {
 								// Ensure the group zone is different to verify the placement actually from group.
 								Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
 								groupZone = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
-								for groupZone == vm.Labels[topology.KubernetesTopologyZoneLabelKey] {
+								for groupZone == vm.Labels[corev1.LabelTopologyZone] {
 									groupZone = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
 								}
 
@@ -1495,6 +1514,89 @@ func vmTests() {
 								c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
 								Expect(c).To(BeNil())
 							})
+						})
+					})
+				})
+
+				Context("Zone Label Override for VM Groups", func() {
+					var (
+						vm       *vmopv1.VirtualMachine
+						vmGroup  *vmopv1.VirtualMachineGroup
+						vmClass  *vmopv1.VirtualMachineClass
+						zoneName string
+					)
+
+					BeforeEach(func() {
+						vmClass = builder.DummyVirtualMachineClassGenName()
+						vm = builder.DummyBasicVirtualMachine("test-vm-zone-override", "")
+						vmGroup = &vmopv1.VirtualMachineGroup{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-group-zone-override",
+							},
+							Spec: vmopv1.VirtualMachineGroupSpec{
+								BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
+									{
+										Members: []vmopv1.GroupMember{
+											{Kind: "VirtualMachine", Name: vm.ObjectMeta.Name},
+										},
+									},
+								},
+							},
+						}
+					})
+
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMGroups = true
+						})
+
+						vmClass.Namespace = nsInfo.Namespace
+						Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+
+						vmGroup.Namespace = nsInfo.Namespace
+						Expect(ctx.Client.Create(ctx, vmGroup)).To(Succeed())
+
+						clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, clusterVMImage)).To(Succeed())
+
+						vm.Namespace = nsInfo.Namespace
+						vm.Spec.ClassName = vmClass.Name
+						vm.Spec.ImageName = clusterVMImage.Name
+						vm.Spec.Image.Kind = cvmiKind
+						vm.Spec.Image.Name = clusterVMImage.Name
+						vm.Spec.StorageClass = ctx.StorageClassName
+
+						vm.Spec.GroupName = vmGroup.Name
+
+						zoneName = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+						vm.Labels = map[string]string{
+							corev1.LabelTopologyZone: zoneName,
+						}
+
+						Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+					})
+
+					Context("when VM has explicit zone label and is part of group", func() {
+						It("should create VM in specified zone, not using group placement", func() {
+							err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+							Expect(err).To(HaveOccurred())
+							Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+							Expect(err).To(MatchError(vsphere.ErrCreate))
+
+							// Verify VM was created
+							Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+						})
+					})
+
+					Context("when VM has explicit zone label but is not linked to group", func() {
+						BeforeEach(func() {
+							vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{}
+						})
+
+						It("should fail to create VM", func() {
+							err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
 						})
 					})
 				})
@@ -1793,6 +1895,7 @@ func vmTests() {
 							v3, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
 							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
 						})
+
 					})
 				})
 
@@ -1856,76 +1959,6 @@ func vmTests() {
 							g.Expect(c.Reason).To(Equal("Error"))
 							g.Expect(c.Message).To(Equal("deploy error: ServerFaultCode: InvalidRequest"))
 						}).Should(Succeed())
-					})
-				})
-
-				// Please note this test uses FlakeAttempts(5) due to the
-				// validation of some predictable-over-time behavior.
-				When("there is a reconcile in progress", FlakeAttempts(5), func() {
-					When("there is a duplicate create", func() {
-						It("should return ErrReconcileInProgress", func() {
-							var (
-								errs   []error
-								errsMu sync.Mutex
-								done   sync.WaitGroup
-								start  = make(chan struct{})
-							)
-
-							// Set up five goroutines that race to
-							// create the VM first.
-							for i := 0; i < 5; i++ {
-								done.Add(1)
-								go func(copyOfVM *vmopv1.VirtualMachine) {
-									defer done.Done()
-									defer GinkgoRecover()
-									<-start
-									err := createOrUpdateVM(ctx, vmProvider, copyOfVM)
-									if err != nil {
-										errsMu.Lock()
-										errs = append(errs, err)
-										errsMu.Unlock()
-									} else {
-										vm = copyOfVM
-									}
-								}(vm.DeepCopy())
-							}
-
-							close(start)
-
-							done.Wait()
-
-							Expect(errs).To(HaveLen(4))
-
-							Expect(errs).Should(ConsistOf(
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-								providers.ErrReconcileInProgress,
-							))
-
-							Expect(vm.Status.UniqueID).ToNot(BeEmpty())
-						})
-					})
-
-					When("there is a delete during async create", func() {
-						It("should return ErrReconcileInProgress", func() {
-							chanCreateErrs, createErr := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
-							deleteErr := vmProvider.DeleteVirtualMachine(ctx, vm)
-
-							Expect(createErr).ToNot(HaveOccurred())
-							Expect(errors.Is(deleteErr, providers.ErrReconcileInProgress))
-
-							var createErrs []error
-							for e := range chanCreateErrs {
-								if e != nil {
-									createErrs = append(createErrs, e)
-								}
-							}
-							Expect(createErrs).Should(HaveLen(1))
-							Expect(createErrs[0]).To(MatchError(vsphere.ErrCreate))
-
-							Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-						})
 					})
 				})
 			})
@@ -2561,15 +2594,15 @@ func vmTests() {
 
 			When("vm has explicit zone", func() {
 				JustBeforeEach(func() {
-					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+					delete(vm.Labels, corev1.LabelTopologyZone)
 				})
 
 				It("creates VM in placement selected zone", func() {
-					Expect(vm.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
+					Expect(vm.Labels).ToNot(HaveKey(corev1.LabelTopologyZone))
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
-					azName, ok := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+					azName, ok := vm.Labels[corev1.LabelTopologyZone]
 					Expect(ok).To(BeTrue())
 					Expect(azName).To(BeElementOf(ctx.ZoneNames))
 
@@ -2586,7 +2619,7 @@ func vmTests() {
 			It("creates VM in assigned zone", func() {
 				Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
 				azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
-				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = azName
+				vm.Labels[corev1.LabelTopologyZone] = azName
 
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
@@ -2625,7 +2658,7 @@ func vmTests() {
 					azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
 
 					// Make sure we do placement.
-					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+					delete(vm.Labels, corev1.LabelTopologyZone)
 
 					pvc1 := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
@@ -2726,7 +2759,8 @@ func vmTests() {
 
 						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("status update pending for persistent volume: %s on VM", isVol0.Name)))
+						Expect(err.Error()).To(ContainSubstring("one or more persistent volumes is pending"))
+						Expect(err.Error()).To(ContainSubstring(isVol0.Name))
 
 						// Simulate what would be set by the volume controller.
 						for _, vol := range vm.Spec.Volumes {
@@ -3047,11 +3081,7 @@ func vmTests() {
 						Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
 						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
 
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 
 						// This should return an error because findDesiredSnapshot should return an error
 						// when there are multiple snapshots with the same name
@@ -3066,11 +3096,7 @@ func vmTests() {
 
 				Context("when VM has no snapshots", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					})
 
 					It("should not trigger a revert (new snapshot workflow)", func() {
@@ -3092,11 +3118,7 @@ func vmTests() {
 
 				Context("when desired snapshot CR doesn't exist", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					})
 
 					It("should fail with snapshot CR not found error", func() {
@@ -3115,11 +3137,7 @@ func vmTests() {
 
 				Context("when desired snapshot CR is not ready", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					})
 
 					JustBeforeEach(func() {
@@ -3178,26 +3196,20 @@ func vmTests() {
 						Expect(ctx.Client.Status().Update(ctx, vmSnapshot)).To(Succeed())
 
 						// Set desired snapshot to point to the above snapshot.
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 
 						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
 						// Verify VM status reflects current snapshot.
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.CurrentSnapshot.Reference).To(Not(BeNil()))
-						Expect(vm.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the status has root snapshots.
 						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
 						Expect(vm.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.RootSnapshots[0].Reference).To(Not(BeNil()))
-						Expect(vm.Status.RootSnapshots[0].Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
 					})
 				})
 
@@ -3245,11 +3257,14 @@ func vmTests() {
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (revert from second to first)
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
+
+						By("First reconcile should return ErrSnapshotRevert", func() {
+							_, createErr := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+							Expect(createErr).To(HaveOccurred())
+							Expect(errors.Is(createErr, vsphere.ErrSnapshotRevert))
+							Expect(pkgerr.IsNoRequeueError(createErr)).To(BeTrue(), "Should return NoRequeueError")
+						})
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
@@ -3257,18 +3272,16 @@ func vmTests() {
 						// Verify VM status reflects the reverted snapshot
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.CurrentSnapshot.Reference).To(Not(BeNil()))
-						Expect(vm.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the spec.currentSnapshot is cleared.
-						Expect(vm.Spec.CurrentSnapshot).To(BeNil())
+						Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
 
 						// Verify the status has root snapshots.
 						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
 						Expect(vm.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.RootSnapshots[0].Reference).To(Not(BeNil()))
-						Expect(vm.Status.RootSnapshots[0].Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the snapshot is actually current in vCenter
 						var moVM mo.VirtualMachine
@@ -3277,7 +3290,8 @@ func vmTests() {
 						Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
 
 						// Find the snapshot name in the tree to verify it matches
-						currentSnap := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+						currentSnap, err := virtualmachine.FindSnapshot(moVM, moVM.Snapshot.CurrentSnapshot.Value)
+						Expect(err).ToNot(HaveOccurred())
 						Expect(currentSnap).ToNot(BeNil())
 						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
 					})
@@ -3306,9 +3320,10 @@ func vmTests() {
 							Expect(moVM.Snapshot).ToNot(BeNil())
 
 							// verify that the snapshot's power state is powered off
-							snapshot := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
-							Expect(snapshot).ToNot(BeNil())
-							Expect(snapshot.State).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+							currentSnapshot, err := virtualmachine.FindSnapshot(moVM, moVM.Snapshot.CurrentSnapshot.Value)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(currentSnapshot).ToNot(BeNil())
+							Expect(currentSnapshot.State).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 
 							// Snapshot should be owned by the VM resource.
 							Expect(controllerutil.SetOwnerReference(vm, vmSnapshot, ctx.Scheme)).To(Succeed())
@@ -3338,11 +3353,7 @@ func vmTests() {
 							Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 
 							// Set desired snapshot to first snapshot (revert from second to first)
-							vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-								APIVersion: vmSnapshot.APIVersion,
-								Kind:       vmSnapshot.Kind,
-								Name:       vmSnapshot.Name,
-							}
+							vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 
 							// Revert to the first snapshot
 							err = createOrUpdateVM(ctx, vmProvider, vm)
@@ -3351,11 +3362,10 @@ func vmTests() {
 							// Verify VM status reflects the reverted snapshot
 							Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 							Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-							Expect(vm.Status.CurrentSnapshot.Reference).To(Not(BeNil()))
-							Expect(vm.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+							Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
 							// Verify the spec.currentSnapshot is cleared.
-							Expect(vm.Spec.CurrentSnapshot).To(BeNil())
+							Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
 
 							// Verify the VM is powered off
 							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
@@ -3456,11 +3466,7 @@ func vmTests() {
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (perform a revert from second to first)
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
@@ -3545,11 +3551,7 @@ func vmTests() {
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (perform a revert from second to first)
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
@@ -3557,8 +3559,7 @@ func vmTests() {
 						// Verify VM status reflects the reverted snapshot
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.CurrentSnapshot.Reference).To(Not(BeNil()))
-						Expect(vm.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the revert operation reverted to the expected values
 						Expect(vm.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
@@ -3587,7 +3588,7 @@ func vmTests() {
 						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
 
 						// Explicitly set CurrentSnapshot to nil
-						vm.Spec.CurrentSnapshot = nil
+						vm.Spec.CurrentSnapshotName = ""
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
@@ -3595,15 +3596,13 @@ func vmTests() {
 						// Status should reflect the actual current snapshot
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.CurrentSnapshot.Reference).To(Not(BeNil()))
-						Expect(vm.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the status has root snapshots.
 						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
 						Expect(vm.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.RootSnapshots[0].Reference).To(Not(BeNil()))
-						Expect(vm.Status.RootSnapshots[0].Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
 					})
 				})
 
@@ -3654,11 +3653,7 @@ func vmTests() {
 						Expect(ctx.Client.Update(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to trigger a revert to the first snapshot.
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
@@ -3668,8 +3663,7 @@ func vmTests() {
 						Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineSnapshotRevertSucceeded)).To(BeTrue())
 						Expect(conditions.GetReason(vm, vmopv1.VirtualMachineSnapshotRevertSucceeded)).To(Equal(vmopv1.VirtualMachineSnapshotRevertSkippedReason))
 						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-						Expect(vm.Status.CurrentSnapshot.Reference).To(Not(BeNil()))
-						Expect(vm.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the snapshot in vCenter is still the original one (no revert happened)
 						var moVM mo.VirtualMachine
@@ -3678,7 +3672,9 @@ func vmTests() {
 						Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
 
 						// The current snapshot name should still be the original
-						currentSnap := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+						currentSnap, err := virtualmachine.FindSnapshot(moVM, moVM.Snapshot.CurrentSnapshot.Value)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(currentSnap).ToNot(BeNil())
 						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
 					})
 				})
@@ -3708,6 +3704,32 @@ func vmTests() {
 						Expect(err.Error()).To(ContainSubstring("snapshot revert in progress"))
 					})
 				})
+
+				Context("when snapshot revert fails and revert is aborted", func() {
+					It("should clear the revert succeeded condition", func() {
+						vm.Spec.CurrentSnapshotName = vmSnapshot.Name
+
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(
+							ContainSubstring("virtualmachinesnapshots.vmoperator.vmware.com " +
+								"\"test-revert-snap\" not found"))
+
+						Expect(conditions.IsFalse(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(BeTrue())
+						Expect(conditions.GetReason(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(Equal(vmopv1.VirtualMachineSnapshotRevertFailedReason))
+
+						vm.Spec.CurrentSnapshotName = ""
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
+						Expect(conditions.Get(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded),
+						).To(BeNil())
+					})
+				})
 			})
 
 			Context("CNS Volumes", func() {
@@ -3735,7 +3757,8 @@ func vmTests() {
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("status update pending for persistent volume: %s on VM", cnsVolumeName)))
+						Expect(err.Error()).To(ContainSubstring("one or more persistent volumes is pending"))
+						Expect(err.Error()).To(ContainSubstring(cnsVolumeName))
 						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 					})
 
@@ -3752,7 +3775,9 @@ func vmTests() {
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("persistent volume: %s not attached to VM", cnsVolumeName)))
+						Expect(err.Error()).To(ContainSubstring("one or more persistent volumes is pending"))
+						Expect(err.Error()).To(ContainSubstring(cnsVolumeName))
+
 						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 					})
 
@@ -3773,12 +3798,12 @@ func vmTests() {
 				_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+				Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
 				Expect(vm.Status.Zone).To(Equal(zoneName))
-				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				delete(vm.Labels, corev1.LabelTopologyZone)
 
 				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+				Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
 				Expect(vm.Status.Zone).To(Equal(zoneName))
 			})
 		})
@@ -3833,7 +3858,7 @@ func vmTests() {
 					Expect(err).ToNot(HaveOccurred())
 					childRP := ctx.GetResourcePoolForNamespace(
 						nsInfo.Namespace,
-						vm.Labels[topology.KubernetesTopologyZoneLabelKey],
+						vm.Labels[corev1.LabelTopologyZone],
 						resourcePolicy.Spec.ResourcePool.Name)
 					Expect(childRP).ToNot(BeNil())
 					Expect(rp.Reference().Value).To(Equal(childRP.Reference().Value))
@@ -3858,8 +3883,7 @@ func vmTests() {
 				clusterModName := "bogusClusterMod"
 				vm.Annotations["vsphere-cluster-module-group"] = clusterModName
 				err := createOrUpdateVM(ctx, vmProvider, vm)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("ClusterModule %q not found", clusterModName)))
+				Expect(err).To(MatchError("VirtualMachineSetResourcePolicy cluster module is not ready"))
 			})
 		})
 
@@ -3868,7 +3892,7 @@ func vmTests() {
 
 			BeforeEach(func() {
 				// Explicitly place the VM into one of the zones that the test context will create.
-				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				vm.Labels[corev1.LabelTopologyZone] = zoneName
 			})
 
 			JustBeforeEach(func() {
@@ -3912,7 +3936,7 @@ func vmTests() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				delete(vm.Labels, corev1.LabelTopologyZone)
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 			})
 
@@ -3923,8 +3947,8 @@ func vmTests() {
 				uniqueID := vm.Status.UniqueID
 				Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
 
-				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
-				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
+				delete(vm.Labels, corev1.LabelTopologyZone)
 
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 				Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
@@ -5031,8 +5055,7 @@ func vmTests() {
 					}, updatedSnapshot1)).To(Succeed())
 					Expect(updatedSnapshot1.Status.Children).To(HaveLen(1))
 					Expect(updatedSnapshot1.Status.Children[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-					Expect(updatedSnapshot1.Status.Children[0].Reference).To(Not(BeNil()))
-					Expect(updatedSnapshot1.Status.Children[0].Reference.Name).To(Equal(snapshot2.Name))
+					Expect(updatedSnapshot1.Status.Children[0].Name).To(Equal(snapshot2.Name))
 				})
 			})
 
@@ -5174,13 +5197,13 @@ func vmTests() {
 				})
 			})
 
-			Context("when snapshot has nil VMRef", func() {
-				It("should skip snapshot with nil VMRef and process the next one", func() {
+			Context("when snapshot has empty VMName", func() {
+				It("should skip snapshot with empty VMName and process the next one", func() {
 					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
 					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
 
-					// Set snapshot1 VMRef to nil
-					snapshot1.Spec.VMRef = nil
+					// Set snapshot1 VMName to empty
+					snapshot1.Spec.VMName = ""
 					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
 
 					// Snapshot should be owned by the VM resource.
@@ -5198,7 +5221,7 @@ func vmTests() {
 					err := createOrUpdateVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
-					// snapshot1 should not be processed (nil VMRef)
+					// snapshot1 should not be processed (empty VMName)
 					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
 					err = ctx.Client.Get(ctx, client.ObjectKey{
 						Name:      snapshot1.Name,
@@ -5224,7 +5247,7 @@ func vmTests() {
 					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
 
 					// Set snapshot1 to reference a different VM
-					snapshot1.Spec.VMRef.Name = "different-vm"
+					snapshot1.Spec.VMName = "different-vm"
 					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
 
 					// Snapshot should be owned by the VM resource.

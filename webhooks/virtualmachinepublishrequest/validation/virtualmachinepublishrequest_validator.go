@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,12 +29,16 @@ import (
 	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
 const (
-	webHookName = "default"
+	webHookName                  = "default"
+	supervisorProviderAdminGroup = "sso:SupervisorProviderAdministrators@vsphere.local"
+
+	modifyAnnotationNotAllowedForNonAdmin = "modifying this annotation is not allowed for non-admin users"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachinepublishrequest,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinepublishrequests,versions=v1alpha5,name=default.validating.virtualmachinepublishrequest.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -82,6 +87,8 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	fieldErrs = append(fieldErrs, v.validateSource(ctx, vmpub)...)
 	fieldErrs = append(fieldErrs, v.validateTargetLocation(ctx, vmpub)...)
+	// Validate that users are not adding any quota related annotations.
+	fieldErrs = append(fieldErrs, v.validateAsyncQuotaAnnotations(ctx, vmpub, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -114,6 +121,8 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	// Check if an immutable field has been modified.
 	fieldErrs = append(fieldErrs, v.validateImmutableFields(vmpub, oldVMpub)...)
+	// Validate that users are not modifying any quota related annotations.
+	fieldErrs = append(fieldErrs, v.validateAsyncQuotaAnnotations(ctx, vmpub, oldVMpub)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -204,6 +213,10 @@ func (v validator) validateUpdateVMGroupPublishRequestOwnership(oldVMPub, vmPub 
 		return nil
 	}
 
+	if slices.Contains(ctx.UserInfo.Groups, supervisorProviderAdminGroup) {
+		return nil
+	}
+
 	if metav1.HasLabel(oldVMPub.ObjectMeta, vmopv1.VirtualMachinePublishRequestManagedByLabelKey) {
 		return fmt.Errorf("cannot update VirtualMachineGroupPublishRequest owned VirtualMachinePublishRequest")
 	}
@@ -224,6 +237,42 @@ func (v validator) validateImmutableFields(vmpub, oldvmpub *vmopv1.VirtualMachin
 	// Otherwise, we may end up in a situation where multiple OVFs are published for a single VMPub.
 	allErrs = append(allErrs, validation.ValidateImmutableField(vmpub.Spec.Source, oldvmpub.Spec.Source, specPath.Child("source"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vmpub.Spec.Target, oldvmpub.Spec.Target, specPath.Child("target"))...)
+
+	return allErrs
+}
+
+func (v validator) validateAsyncQuotaAnnotations(ctx *pkgctx.WebhookRequestContext, vmPub, oldVMPub *vmopv1.VirtualMachinePublishRequest) field.ErrorList {
+	var allErrs field.ErrorList
+	annotationPath := field.NewPath("metadata", "annotations")
+
+	if ctx.IsPrivilegedAccount {
+		return allErrs
+	}
+
+	if slices.Contains(ctx.UserInfo.Groups, supervisorProviderAdminGroup) {
+		return allErrs
+	}
+
+	create := oldVMPub == nil
+	if create {
+		oldVMPub = &vmopv1.VirtualMachinePublishRequest{}
+	}
+
+	if vmPub.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] != oldVMPub.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaPerformCheckAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vmPub.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] != oldVMPub.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vmPub.Annotations[pkgconst.AsyncQuotaCheckStatusAnnotationKey] != oldVMPub.Annotations[pkgconst.AsyncQuotaCheckStatusAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckStatusAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vmPub.Annotations[pkgconst.AsyncQuotaCheckMessageAnnotationKey] != oldVMPub.Annotations[pkgconst.AsyncQuotaCheckMessageAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckMessageAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
 
 	return allErrs
 }

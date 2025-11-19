@@ -7,8 +7,6 @@ package v1alpha5
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 const (
@@ -59,9 +57,9 @@ type VirtualMachineSnapshotSpec struct {
 
 	// +optional
 
-	// VMRef represents the name of the virtual machine for which the
+	// VMName represents the name of the virtual machine for which the
 	// snapshot is requested.
-	VMRef *vmopv1common.LocalObjectRef `json:"vmRef,omitempty"`
+	VMName string `json:"vmName,omitempty"`
 }
 
 // QuiesceSpec represents specifications that will be used to quiesce
@@ -201,11 +199,9 @@ type VirtualMachineSnapshotReference struct {
 	// Possible values are: Managed, Unmanaged
 	Type VirtualMachineSnapshotReferenceType `json:"type"`
 
-	// +optional
-
-	// Reference is the reference to the snapshot in the Supervisor.
-	// This should be set only for Managed snapshots.
-	Reference *vmopv1common.LocalObjectRef `json:"reference,omitempty"`
+	// Name is the name of the snapshot resource.  This field is only set
+	// for managed snapshots.
+	Name string `json:"name"`
 }
 
 // VirtualMachineSnapshotStorageStatusRequested describes the observed amount of

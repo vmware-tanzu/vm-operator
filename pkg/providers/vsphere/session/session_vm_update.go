@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
@@ -40,9 +41,12 @@ import (
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	vmconfanno2extraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/anno2extraconfig"
+	vmconfbootoptions "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
+	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
+	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
 var (
@@ -84,6 +88,10 @@ func (s *Session) UpdateVirtualMachine(
 	)
 
 	vmCtx.Context = pkgctx.WithRestClient(vmCtx.Context, s.Client.RestClient())
+
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+		vmCtx.Context = pkgctx.WithFinder(vmCtx.Context, s.Client.Finder())
+	}
 
 	switch {
 	case powerState == vimtypes.VirtualMachinePowerStateSuspended:
@@ -274,10 +282,6 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		return err
 	}
 
-	if err := s.reconcileVolumes(vmCtx); err != nil {
-		return err
-	}
-
 	if vmCtx.VM.Spec.GuestID == "" {
 		// Assume the guest ID is valid until we know otherwise.
 		conditions.Delete(vmCtx.VM, vmopv1.GuestIDReconfiguredCondition)
@@ -325,6 +329,14 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 				return err
 			}
 		}
+	}
+
+	// Moved down below doReconfigure because this function returns error
+	// when volume is not ready. But sometimes this could due to corresponding
+	// virtualcontrollers are not ready, while configuring virtualcontrollers
+	// happens in doReconfigure.
+	if err := s.reconcileVolumes(vmCtx); err != nil {
+		return err
 	}
 
 	return s.reconcileNetworkAndGuestCustomizationState(
@@ -689,28 +701,38 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 		return nil
 	}
 
-	// If VM spec has a PVC, check if the volume is attached before powering on
-	for _, volume := range vmCtx.VM.Spec.Volumes {
-		if volume.PersistentVolumeClaim == nil {
-			// Only handle PVC volumes here. In v1a1 we had non-PVC ("vsphereVolumes") but those are gone.
-			continue
-		}
+	// If VM spec has a PVC, check if the volume is attached before powering on.
+	var (
+		notFoundNames   []string
+		unattachedNames []string
+	)
 
-		// BMV: We should not use the Status as the SoT here. What a mess.
-		found := false
-		for _, volumeStatus := range vmCtx.VM.Status.Volumes {
-			if volumeStatus.Name == volume.Name {
-				found = true
-				if !volumeStatus.Attached {
-					return fmt.Errorf("persistent volume: %s not attached to VM", volume.Name)
+	for _, volume := range vmCtx.VM.Spec.Volumes {
+		if pvc := volume.PersistentVolumeClaim; pvc != nil {
+			found := false
+			for _, volumeStatus := range vmCtx.VM.Status.Volumes {
+				if volumeStatus.Name == volume.Name {
+					found = true
+					if !volumeStatus.Attached {
+						unattachedNames = append(
+							unattachedNames,
+							volume.Name)
+					}
+					break
 				}
-				break
+			}
+			if !found {
+				notFoundNames = append(notFoundNames, volume.Name)
 			}
 		}
+	}
 
-		if !found {
-			return fmt.Errorf("status update pending for persistent volume: %s on VM", volume.Name)
-		}
+	if len(notFoundNames) > 0 || len(unattachedNames) > 0 {
+		return fmt.Errorf(
+			"one or more persistent volumes is pending: "+
+				"notFound=%q, notAttached=%q",
+			strings.Join(notFoundNames, ","),
+			strings.Join(unattachedNames, ","))
 	}
 
 	return nil
@@ -1076,6 +1098,25 @@ func reconcileCrypto(
 		configSpec)
 }
 
+func reconcileBootOptions(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling boot options")
+
+	return vmconfbootoptions.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func reconcileDiskPromo(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1087,6 +1128,25 @@ func reconcileDiskPromo(
 	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling disk promotion")
 
 	return vmconfdiskpromo.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
+func reconcileRegisterUnmanagedDisks(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling unmanaged disks")
+
+	return vmconfunmanagedvolsreg.Reconcile(
 		ctx,
 		k8sClient,
 		vcVM.Client(),
@@ -1168,6 +1228,32 @@ func reconcileVSpherePolicies(
 	return nil
 }
 
+// reconcileVirtualControllers check if VM need virtual controller changes,
+// If yes, update configSpec.DeviceChange.
+func reconcileVirtualControllers(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling virtual controllers")
+
+	if err := vmconfvirtualcontroller.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec); err != nil {
+
+		return err
+	}
+
+	return nil
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1202,6 +1288,30 @@ func doReconfigure(
 		}
 	}
 
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		if err := reconcileRegisterUnmanagedDisks(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
+	if err := reconcileBootOptions(
+		ctx,
+		k8sClient,
+		vm,
+		vcVM,
+		moVM,
+		&configSpec); err != nil {
+
+		return err
+	}
+
 	if err := reconcileAnnotationsToExtraConfig(
 		ctx,
 		k8sClient,
@@ -1215,6 +1325,19 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
 		if err := reconcileVSpherePolicies(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if err := reconcileVirtualControllers(
 			ctx,
 			k8sClient,
 			vm,

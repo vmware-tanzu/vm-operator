@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/property"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -24,12 +26,26 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vsphereclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 )
+
+func init() {
+	sync.OnceFunc(func() {
+		// Every 30m print the cache statistics.
+		ticker := time.NewTicker(30 * time.Minute)
+		logger := ctrl.Log.WithName("vm-watcher-cache-stats")
+		go func() {
+			for range ticker.C {
+				kvp := watcher.CacheGetStats()
+				logger.Info("VM watcher cache stats", kvp...)
+			}
+		}()
+	})
+}
 
 // AddToManager adds this package's runnable to the provided manager.
 func AddToManager(
@@ -88,6 +104,7 @@ func (s Service) Start(ctx context.Context) error {
 
 	for ctx.Err() == nil {
 		if err := s.waitForChanges(ctx); err != nil {
+
 			// If waitForChanges failed because of an invalid login or auth
 			// error, then do not treat the error as fatal. This allows the
 			// loop to run again, kicking off another watcher with what should
@@ -216,6 +233,7 @@ func (s Service) vmFolderMoRefWithIDs(
 var emptyResult watcher.Result
 
 func (s Service) waitForChanges(ctx context.Context) error {
+
 	var (
 		logger     = pkglog.FromContextOrDefault(ctx)
 		chanSource = cource.FromContextWithBuffer(ctx, "VirtualMachine", 100)
@@ -231,7 +249,8 @@ func (s Service) waitForChanges(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("Got vm service folders", "refs", slices.Collect(maps.Keys(moRefWithIDs)))
+	logger.Info("Got vm service folders",
+		"refs", slices.Collect(maps.Keys(moRefWithIDs)))
 
 	// Start the watcher.
 	w, err := watcher.Start(
@@ -253,15 +272,33 @@ func (s Service) waitForChanges(ctx context.Context) error {
 				return w.Err()
 			}
 
+			// Validate the vm exists on this cluster.
+			var verifiedObj ctrlclient.Object
+
+			if result.Verified {
+				if obj, ok := result.VerifiedObj.(ctrlclient.Object); ok {
+					verifiedObj = obj
+				} else {
+					logger.V(4).Info(
+						"Received result but verified object is invalid",
+						"result", result)
+					result.Verified = false
+				}
+			}
+
 			if !result.Verified {
-				// Validate the vm exists on this cluster.
-				result.Verified = s.Get(
+				var vm vmopv1.VirtualMachine
+				if s.Get(
 					ctx,
 					ctrlclient.ObjectKey{
 						Namespace: result.Namespace,
 						Name:      result.Name,
 					},
-					&vmopv1.VirtualMachine{}) == nil
+					&vm) == nil {
+
+					result.Verified = true
+					verifiedObj = &vm
+				}
 			}
 
 			if !result.Verified {
@@ -274,15 +311,11 @@ func (s Service) waitForChanges(ctx context.Context) error {
 			// Enqueue a reconcile request for the VM.
 			logger.V(4).Info("Received result", "result", result)
 			chanSource <- event.GenericEvent{
-				Object: &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: result.Namespace,
-						Name:      result.Name,
-					},
-				},
+				Object: verifiedObj,
 			}
 
 		case <-w.Done():
+			logger.Info("Received done signal, watcher is closed")
 			return w.Err()
 		}
 	}
@@ -304,10 +337,11 @@ func (s Service) lookupNamespacedName(
 			&obj); err == nil {
 
 			return watcher.LookupNamespacedNameResult{
-				Namespace: obj.Namespace,
-				Name:      obj.Name,
-				Verified:  obj.Status.UniqueID != "",
-				Deleted:   !obj.DeletionTimestamp.IsZero(),
+				Namespace:   obj.Namespace,
+				Name:        obj.Name,
+				Verified:    obj.Status.UniqueID != "",
+				VerifiedObj: &obj,
+				Deleted:     !obj.DeletionTimestamp.IsZero(),
 			}
 		}
 	}
@@ -320,10 +354,11 @@ func (s Service) lookupNamespacedName(
 
 		if len(list.Items) == 1 {
 			return watcher.LookupNamespacedNameResult{
-				Namespace: list.Items[0].Namespace,
-				Name:      list.Items[0].Name,
-				Verified:  true,
-				Deleted:   !list.Items[0].DeletionTimestamp.IsZero(),
+				Namespace:   list.Items[0].Namespace,
+				Name:        list.Items[0].Name,
+				Verified:    true,
+				VerifiedObj: &list.Items[0],
+				Deleted:     !list.Items[0].DeletionTimestamp.IsZero(),
 			}
 		}
 	}

@@ -7,6 +7,7 @@ package util
 import (
 	"net"
 	"regexp"
+	"strings"
 )
 
 // hostNameFormat matches strings that:
@@ -108,4 +109,14 @@ func Dedupe[T comparable](slice []T) []T {
 	}
 
 	return result
+}
+
+// ParseIP returns the parsed IP address and optional network. Please note, this
+// function supports parsing IP addresses with or without the network length.
+func ParseIP(s string) (net.IP, *net.IPNet, error) {
+	if strings.Contains(s, "/") {
+		return net.ParseCIDR(s)
+	}
+	ip := net.ParseIP(s)
+	return ip, nil, nil
 }

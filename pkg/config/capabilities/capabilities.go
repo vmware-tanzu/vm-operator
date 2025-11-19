@@ -73,6 +73,24 @@ const (
 	// defined in the Supervisor capabilities CRD for the VM WFFC PVC
 	// capability.
 	CapabilityKeyVMWaitForFirstConsumerPVC = "supports_VM_service_WFFC_PVC"
+
+	// CapabilityKeySharedDisks is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VM Service's support
+	// for shared disks. This capability is introduced as a part of Oracle RAC
+	// and Microsoft WSFC workloads support.
+	CapabilityKeySharedDisks = "supports_shared_disks_with_VM_service_VMs"
+
+	// CapabilityKeyGuestCustomizationVCDParity is the name of the capability key
+	// defined in the Supervisor capabilities CRD for guest customization VCD parity.
+	CapabilityKeyGuestCustomizationVCDParity = "supports_guest_customization_vcd_parity"
+
+	// CapabilityKeyVSpherePolicies is the name of the capability key
+	// defined in the Supervisor capabilities CRD for IaaS Policies and Placement.
+	CapabilityKeyVSpherePolicies = "supports_iaas_compute_policies"
+
+	// CapabilityKeyAllDisksArePVCs is the name of the capability key defined in
+	// the Supervisor capabilities CRD for enabling all disks as PVCs in VM Op.
+	CapabilityKeyAllDisksArePVCs = "supports_vm_service_all_disks_are_pvcs"
 )
 
 var (
@@ -225,6 +243,14 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMPlacementPolicies = capStatus.Activated
 		case CapabilityKeyVMWaitForFirstConsumerPVC:
 			fs.VMWaitForFirstConsumerPVC = capStatus.Activated
+		case CapabilityKeySharedDisks:
+			fs.VMSharedDisks = capStatus.Activated
+		case CapabilityKeyGuestCustomizationVCDParity:
+			fs.GuestCustomizationVCDParity = capStatus.Activated
+		case CapabilityKeyVSpherePolicies:
+			fs.VSpherePolicies = capStatus.Activated
+		case CapabilityKeyAllDisksArePVCs:
+			fs.AllDisksArePVCs = capStatus.Activated
 		}
 
 	}

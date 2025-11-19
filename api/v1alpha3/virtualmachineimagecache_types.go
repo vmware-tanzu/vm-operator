@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha3
@@ -10,16 +10,15 @@ import (
 
 const (
 	// VirtualMachineImageCacheConditionProviderReady indicates the underlying
-	// provider is fully synced, including its disks being available locally on
+	// provider is fully synced, including its files being available locally on
 	// some datastore.
 	VirtualMachineImageCacheConditionProviderReady = "VirtualMachineImageCacheProviderReady"
 
-	// VirtualMachineImageCacheConditionDisksReady indicates the disks are
+	// VirtualMachineImageCacheConditionFilesReady indicates the files are
 	// cached in a given location.
-	VirtualMachineImageCacheConditionDisksReady = "VirtualMachineImageCacheDisksReady"
+	VirtualMachineImageCacheConditionFilesReady = "VirtualMachineImageCacheFilesReady"
 
-	// VirtualMachineImageCacheConditionHardwareReady indicates the hardware is
-	// cached.
+	// VirtualMachineImageCacheConditionHardwareReady indicates the hardware is cached.
 	VirtualMachineImageCacheConditionHardwareReady = "VirtualMachineImageCacheHardwareReady"
 )
 
@@ -48,10 +47,12 @@ type VirtualMachineImageCacheSpec struct {
 	// item.
 	ProviderID string `json:"providerID"`
 
+	// +optional
+
 	// ProviderVersion describes the version of the provider item to which the
 	// image corresponds.
 	// The provider is Content Library, the version is the content version.
-	ProviderVersion string `json:"providerVersion"`
+	ProviderVersion string `json:"providerVersion,omitempty"`
 
 	// +optional
 	// +listType=map
@@ -91,17 +92,38 @@ func (i *VirtualMachineImageCache) AddLocation(
 		})
 }
 
+// +kubebuilder:validation:Enum=Disk;Other
+
+// VirtualMachineImageCacheFileType describes the types of files that may be
+// cached.
+type VirtualMachineImageCacheFileType string
+
+const (
+	VirtualMachineImageCacheFileTypeDisk  VirtualMachineImageCacheFileType = "Disk"
+	VirtualMachineImageCacheFileTypeOther VirtualMachineImageCacheFileType = "Other"
+)
+
 type VirtualMachineImageCacheFileStatus struct {
 
 	// ID describes the value used to locate the file.
-	// The value of this field depends on the type of file.
-	// For Type=Classic, the ID value describes a datastore path, ex.
-	// "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
-	// For Type=Managed, the ID value describes a First Class Disk (FCD).
+	// The value of this field depends on the type of file:
+	//
+	// - Type=Other                  -- The ID value describes a datastore path,
+	//                                  ex. "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk"
+	// - Type=Disk, DiskType=Classic -- The ID value describes a datastore
+	//                                  path.
+	// - Type=Disk, DiskType=Managed -- The ID value describes a First Class
+	//                                  Disk (FCD).
 	ID string `json:"id"`
 
-	// Type describes the type of disk.
-	Type VirtualMachineVolumeType `json:"type"`
+	// Type describes the type of file.
+	Type VirtualMachineImageCacheFileType `json:"type"`
+
+	// +optional
+
+	// DiskType describes the type of disk.
+	// This field is only non-empty when Type=Disk.
+	DiskType VirtualMachineVolumeType `json:"diskType,omitempty"`
 
 	// TODO(akutz) In the future there may be additional information about the
 	//             disk, such as its sector format (512 vs 4k), is encrypted,
@@ -201,9 +223,13 @@ func (i *VirtualMachineImageCache) SetConditions(conditions []metav1.Condition) 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmic;vmicache;vmimagecache
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="v1alpha3 VirtualMachineImageCache is deprecated; use v1alpha5 VirtualMachineImageCache"
 
 // VirtualMachineImageCache is the schema for the
 // virtualmachineimagecaches API.
+//
+// Deprecated: This type is deprecated and will be removed in a future release.
+// Please use v1alpha5.VirtualMachineImageCache instead.
 type VirtualMachineImageCache struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

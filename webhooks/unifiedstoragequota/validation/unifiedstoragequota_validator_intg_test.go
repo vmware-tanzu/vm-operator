@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -154,7 +153,7 @@ func intgTestsValidateCreateVM() {
 			imageStatus = vmopv1.VirtualMachineImageStatus{
 				Disks: []vmopv1.VirtualMachineImageDiskInfo{
 					{
-						Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+						Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 					},
 				},
 			}
@@ -193,7 +192,7 @@ func intgTestsValidateCreateVM() {
 			})
 
 			It("should return the correct capacity from the VMI", func() {
-				Expect(r.Capacity.String()).To(Equal(vmi.Status.Disks[0].Capacity.String()))
+				Expect(r.Capacity.String()).To(Equal(vmi.Status.Disks[0].Limit.String()))
 			})
 		})
 
@@ -212,7 +211,7 @@ func intgTestsValidateCreateVM() {
 			})
 
 			It("should return the correct capacity from the CVMI", func() {
-				Expect(r.Capacity.String()).To(Equal(cvmi.Status.Disks[0].Capacity.String()))
+				Expect(r.Capacity.String()).To(Equal(cvmi.Status.Disks[0].Limit.String()))
 			})
 		})
 	})
@@ -360,9 +359,7 @@ func intgTestsValidateCreateVMSnapshot() {
 		vm.Name = dummyVMName
 		vm.Namespace = ctx.Namespace
 		vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.Namespace, dummyVMSnapshotName, dummyVMName)
-		vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
-			Name: vm.Name,
-		}
+		vmSnapshot.Spec.VMName = vm.Name
 		ar = &admissionv1.AdmissionReview{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "AdmissionReview",

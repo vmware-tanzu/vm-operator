@@ -28,6 +28,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -319,6 +320,27 @@ func DummyInstanceStorageVirtualMachineVolumes() []vmopv1.VirtualMachineVolume {
 	}
 }
 
+func DummyPVCVirtualMachineVolume(
+	name string,
+	claimName string,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32,
+	unitNumber *int32) vmopv1.VirtualMachineVolume {
+	return vmopv1.VirtualMachineVolume{
+		Name: name,
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		},
+		ControllerType:      controllerType,
+		ControllerBusNumber: controllerBusNumber,
+		UnitNumber:          unitNumber,
+	}
+}
+
 func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{
@@ -389,7 +411,10 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 			Hardware: &vmopv1.VirtualMachineHardwareSpec{
 				Cdrom: []vmopv1.VirtualMachineCdromSpec{
 					{
-						Name: "cdrom1",
+						Name:                "cdrom1",
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
 						Image: vmopv1.VirtualMachineImageRef{
 							Kind: vmiKind,
 							Name: DummyVMIName,
@@ -398,13 +423,24 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 						AllowGuestControl: ptr.To(true),
 					},
 					{
-						Name: "cdrom2",
+						Name:                "cdrom2",
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(1)),
 						Image: vmopv1.VirtualMachineImageRef{
 							Kind: cvmiKind,
 							Name: DummyCVMIName,
 						},
 						Connected:         ptr.To(true),
 						AllowGuestControl: ptr.To(true),
+					},
+				},
+				IDEControllers: []vmopv1.IDEControllerSpec{
+					{
+						BusNumber: 0,
+					},
+					{
+						BusNumber: 1,
 					},
 				},
 			},
@@ -527,6 +563,7 @@ func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, cl
 			Finalizers: []string{"vmoperator.vmware.com/virtualmachinepublishrequest"},
 		},
 		Spec: vmopv1.VirtualMachinePublishRequestSpec{
+			BackoffLimit: 3,
 			Source: vmopv1.VirtualMachinePublishRequestSource{
 				Name:       sourceName,
 				APIVersion: "vmoperator.vmware.com/v1alpha2",
@@ -622,11 +659,7 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
-			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: vmopv1.GroupVersion.String(),
-				Kind:       "VirtualMachine",
-				Name:       vmName,
-			},
+			VMName: vmName,
 			Quiesce: &vmopv1.QuiesceSpec{
 				Timeout: &metav1.Duration{
 					Duration: 10 * time.Minute,
@@ -651,11 +684,7 @@ func DummyVirtualMachineSnapshotWithMemory(namespace, name, vmName string) *vmop
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
-			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: "vmoperator.vmware.com/v1alpha5",
-				Kind:       "VirtualMachine",
-				Name:       vmName,
-			},
+			VMName: vmName,
 			Memory: true,
 			Quiesce: &vmopv1.QuiesceSpec{
 				Timeout: &metav1.Duration{
@@ -761,4 +790,184 @@ func DummyImageAndItemObjectsForCdromBacking(
 	}
 
 	return []ctrlclient.Object{imageObj}
+}
+
+func DummyCdromDevice(key, controllerKey, unitNumber int32, fileName string) *vimtypes.VirtualCdrom {
+	return &vimtypes.VirtualCdrom{
+		VirtualDevice: vimtypes.VirtualDevice{
+			Key:           key,
+			ControllerKey: controllerKey,
+			UnitNumber:    &unitNumber,
+			Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					FileName: fileName,
+				},
+			},
+		},
+	}
+}
+
+func DummyIDEController(key, busNumber int32, devices []int32) *vimtypes.VirtualIDEController {
+	return &vimtypes.VirtualIDEController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+			Device:    devices,
+		},
+	}
+}
+
+func DummySATAController(key, busNumber int32, devices []int32) *vimtypes.VirtualAHCIController {
+	return &vimtypes.VirtualAHCIController{
+		VirtualSATAController: vimtypes.VirtualSATAController{
+			VirtualController: vimtypes.VirtualController{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key: key,
+				},
+				BusNumber: busNumber,
+				Device:    devices,
+			},
+		},
+	}
+}
+
+func DummySCSIController(key, busNumber int32) *vimtypes.VirtualSCSIController {
+	return &vimtypes.VirtualSCSIController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+		},
+	}
+}
+
+func DummyNVMEController(key, busNumber int32) *vimtypes.VirtualNVMEController {
+	return &vimtypes.VirtualNVMEController{
+		VirtualController: vimtypes.VirtualController{
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: key,
+			},
+			BusNumber: busNumber,
+		},
+	}
+}
+
+func DummyVirtualMachineConfigInfo(devices ...vimtypes.BaseVirtualDevice) *vimtypes.VirtualMachineConfigInfo {
+	return &vimtypes.VirtualMachineConfigInfo{
+		Hardware: vimtypes.VirtualHardware{
+			Device: devices,
+		},
+	}
+}
+
+func DummyVirtualDisk(key, controllerKey int32, unitNumber *int32, uuid, fileName string) *vimtypes.VirtualDisk {
+	if fileName == "" {
+		fileName = "/vmfs/volumes/datastore1/vm/disk.vmdk"
+	}
+	return &vimtypes.VirtualDisk{
+		VirtualDevice: vimtypes.VirtualDevice{
+			Key:           key,
+			ControllerKey: controllerKey,
+			UnitNumber:    unitNumber,
+			Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					FileName: fileName,
+				},
+				Uuid: uuid,
+			},
+		},
+	}
+}
+
+func DummyCdromSpec(
+	name string,
+	imageName string,
+	imageKind string,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32,
+	unitNumber *int32,
+	allowGuestControl *bool,
+	connected *bool) vmopv1.VirtualMachineCdromSpec {
+
+	return vmopv1.VirtualMachineCdromSpec{
+		Name: name,
+		Image: vmopv1.VirtualMachineImageRef{
+			Name: imageName,
+			Kind: imageKind,
+		},
+		ControllerType:      controllerType,
+		ControllerBusNumber: controllerBusNumber,
+		UnitNumber:          unitNumber,
+		AllowGuestControl:   allowGuestControl,
+		Connected:           connected,
+	}
+}
+
+func DummyParaVirtualSCSIController(key, busNumber int32) *vimtypes.ParaVirtualSCSIController {
+	return &vimtypes.ParaVirtualSCSIController{
+		VirtualSCSIController: vimtypes.VirtualSCSIController{
+			VirtualController: vimtypes.VirtualController{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key: key,
+				},
+				BusNumber: busNumber,
+			},
+			SharedBus: vimtypes.VirtualSCSISharingNoSharing,
+		},
+	}
+}
+
+func DummyVirtualDiskWithCapacity(key, controllerKey, unitNumber int32, fileName, diskUUID string, capacityInBytes int64) *vimtypes.VirtualDisk {
+	disk := &vimtypes.VirtualDisk{
+		VirtualDevice: vimtypes.VirtualDevice{
+			Key:           key,
+			ControllerKey: controllerKey,
+			UnitNumber:    &unitNumber,
+			Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					FileName: fileName,
+				},
+			},
+		},
+		CapacityInBytes: capacityInBytes,
+	}
+	if diskUUID != "" {
+		disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).Uuid = diskUUID
+	}
+	return disk
+}
+
+func DummyPVCVolume(name, claimName string) vmopv1.VirtualMachineVolume {
+	return vmopv1.VirtualMachineVolume{
+		Name: name,
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		},
+	}
+}
+
+func DummyCnsNodeVMAttachment(name, namespace, nodeUUID, volumeName, diskUUID string, attached bool) *cnsv1alpha1.CnsNodeVmAttachment {
+	return &cnsv1alpha1.CnsNodeVmAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
+			NodeUUID:   nodeUUID,
+			VolumeName: volumeName,
+		},
+		Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
+			Attached: attached,
+			AttachmentMetadata: map[string]string{
+				cnsv1alpha1.AttributeFirstClassDiskUUID: diskUUID,
+			},
+		},
+	}
 }

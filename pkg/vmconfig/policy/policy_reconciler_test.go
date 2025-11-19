@@ -55,7 +55,7 @@ var _ = Describe("OnResult", func() {
 var _ = Describe("Reconcile", func() {
 	var (
 		ctx        context.Context
-		vcsimCtx   *builder.TestContextForVCSim
+		vcSimCtx   *builder.TestContextForVCSim
 		k8sClient  ctrlclient.Client
 		vimClient  *vim25.Client
 		moVM       mo.VirtualMachine
@@ -67,15 +67,15 @@ var _ = Describe("Reconcile", func() {
 	)
 
 	BeforeEach(func() {
-		vcsimCtx = builder.NewTestContextForVCSim(
+		vcSimCtx = builder.NewTestContextForVCSim(
 			ctxop.WithContext(pkgcfg.NewContextWithDefaultConfig()),
 			builder.VCSimTestConfig{})
-		ctx = vcsimCtx
+		ctx = vcSimCtx
 		ctx = vmconfig.WithContext(ctx)
-		ctx = pkgctx.WithRestClient(ctx, vcsimCtx.RestClient)
+		ctx = pkgctx.WithRestClient(ctx, vcSimCtx.RestClient)
 
-		vimClient = vcsimCtx.VCClient.Client
-		tagMgr = tags.NewManager(vcsimCtx.RestClient)
+		vimClient = vcSimCtx.VCClient.Client
+		tagMgr = tags.NewManager(vcSimCtx.RestClient)
 
 		moVM = mo.VirtualMachine{
 			Config: &vimtypes.VirtualMachineConfigInfo{},
@@ -106,6 +106,11 @@ var _ = Describe("Reconcile", func() {
 
 	JustBeforeEach(func() {
 		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
+	})
+
+	AfterEach(func() {
+		vcSimCtx.AfterEach()
+		vcSimCtx = nil
 	})
 
 	Context("a panic is expected", func() {
@@ -476,7 +481,7 @@ var _ = Describe("Reconcile", func() {
 				simVM *simulator.VirtualMachine
 			)
 			BeforeEach(func() {
-				simVM = vcsimCtx.SimulatorContext().Map.
+				simVM = vcSimCtx.SimulatorContext().Map.
 					Any("VirtualMachine").(*simulator.VirtualMachine)
 
 				moVM = mo.VirtualMachine{
@@ -508,7 +513,7 @@ var _ = Describe("Reconcile", func() {
 					BeforeEach(func() {
 						Expect(tagMgr.AttachMultipleTagsToObject(
 							ctx,
-							[]string{vcsimCtx.TagID, policyTag3ID},
+							[]string{vcSimCtx.TagID, policyTag3ID},
 							moVM.Self,
 						)).To(Succeed())
 					})
@@ -569,7 +574,7 @@ var _ = Describe("Reconcile", func() {
 								tagIDs[i] = tag.ID
 							}
 							// Should only have the non-policy tag
-							Expect(tagIDs).To(ContainElement(vcsimCtx.TagID))
+							Expect(tagIDs).To(ContainElement(vcSimCtx.TagID))
 							Expect(tagIDs).ToNot(ContainElement(policyTag3ID))
 						})
 					})
@@ -636,7 +641,7 @@ var _ = Describe("Reconcile", func() {
 								for i, tag := range finalTags {
 									finalTagIDs[i] = tag.ID
 								}
-								Expect(finalTagIDs).To(ContainElement(vcsimCtx.TagID))
+								Expect(finalTagIDs).To(ContainElement(vcSimCtx.TagID))
 								Expect(finalTagIDs).To(ContainElement(policyTag3ID))
 							})
 						})
@@ -749,7 +754,7 @@ var _ = Describe("Reconcile", func() {
 							})
 
 							It("should associate the policies' tags with the vm", func() {
-								// VM currently has policyTag3ID and vcsimCtx.TagID
+								// VM currently has policyTag3ID and vcSimCtx.TagID
 								// But policies require policyTag1ID and policyTag2ID (from computePolicy1)
 								// So it should add the required tags
 
@@ -770,7 +775,7 @@ var _ = Describe("Reconcile", func() {
 								// Should have more tags than initially (new policy tags added)
 								Expect(len(finalTags)).To(BeNumerically(">=", initialCount))
 								// Should contain non-policy tag
-								Expect(finalTagIDs).To(ContainElement(vcsimCtx.TagID))
+								Expect(finalTagIDs).To(ContainElement(vcSimCtx.TagID))
 								// Should contain all required policy tags
 								Expect(finalTagIDs).To(ContainElement(policyTag1ID))
 								Expect(finalTagIDs).To(ContainElement(policyTag2ID))

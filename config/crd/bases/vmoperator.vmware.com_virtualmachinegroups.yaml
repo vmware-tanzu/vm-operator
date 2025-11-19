@@ -354,6 +354,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string
@@ -361,10 +367,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -377,8 +379,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -389,6 +389,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind
@@ -743,6 +747,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string
@@ -750,10 +760,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -766,8 +772,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -778,6 +782,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind
@@ -1132,6 +1140,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string
@@ -1139,10 +1153,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -1155,8 +1165,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -1167,6 +1175,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind
@@ -1521,6 +1533,12 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  supports creating a top-level directory or requires the use of the
+                                  namespace manager (i.e. vSAN).
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string
@@ -1528,10 +1546,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -1544,8 +1558,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -1556,6 +1568,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind

@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha4
@@ -147,8 +147,12 @@ func (rs *VirtualMachineReplicaSet) SetConditions(conditions []metav1.Condition)
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".status.replicas",description="Total number of non-terminated virtual machines targeted by this VirtualMachineReplicaSet"
 // +kubebuilder:printcolumn:name="Ready",type="integer",JSONPath=".status.readyReplicas",description="Total number of ready virtual machines targeted by this VirtualMachineReplicaSet"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of VirtualMachineReplicaSet"
+// +kubebuilder:deprecatedversion:warning="v1alpha4 VirtualMachineReplicaSet is deprecated; use v1alpha5 VirtualMachineReplicaSet"
 
 // VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API.
+//
+// Deprecated: This type is deprecated and will be removed in a future release.
+// Please use v1alpha5.VirtualMachineReplicaSet instead.
 type VirtualMachineReplicaSet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

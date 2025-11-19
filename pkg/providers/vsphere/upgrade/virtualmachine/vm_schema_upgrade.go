@@ -13,11 +13,14 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -74,7 +77,7 @@ func ReconcileSchemaUpgrade(
 	reconcileInstanceUUID(ctx, vm, moVM)
 	reconcileCloudInitInstanceUUID(ctx, vm, moVM)
 	reconcileControllers(ctx, vm, moVM)
-	reconcileDevices(ctx, vm, moVM)
+	reconcileDevices(ctx, vm, moVM, k8sClient)
 
 	// Indicate the VM has been upgraded.
 	if vm.Annotations == nil {
@@ -183,6 +186,12 @@ func reconcileControllers(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM controllers")
+
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		logger.V(4).Info("Skipping controllers reconciliation due to" +
+			"disabled VMSharedDisks capability")
+		return
+	}
 
 	for i := range moVM.Config.Hardware.Device {
 		switch d := moVM.Config.Hardware.Device[i].(type) {
@@ -397,39 +406,343 @@ func reconcileSCSIController(
 func reconcileDevices(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine) {
+	moVM mo.VirtualMachine,
+	k8sClient ctrlclient.Client) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM devices")
+
+	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		logger.V(4).Info("Skipping devices reconciliation due to" +
+			"disabled VMSharedDisks capability")
+		return
+	}
+
+	// Build a map of controller key to controller info from VM status.
+	// Note: vm.status is always reconciled before calling this function,
+	// and DeviceKey is a required field.
+	ctrlKeyToCtrlStatus := make(map[int32]vmopv1.VirtualControllerStatus)
+	if vm.Status.Hardware != nil {
+		for _, ctrl := range vm.Status.Hardware.Controllers {
+			ctrlKeyToCtrlStatus[ctrl.DeviceKey] = ctrl
+		}
+	}
+
+	var (
+		cdromDevices []*vimtypes.VirtualCdrom
+		diskDevices  []*vimtypes.VirtualDisk
+	)
 
 	for i := range moVM.Config.Hardware.Device {
 		switch d := moVM.Config.Hardware.Device[i].(type) {
 
 		case *vimtypes.VirtualDisk:
-			reconcileVirtualDisk(ctx, vm, d)
+			diskDevices = append(diskDevices, d)
 
 		case *vimtypes.VirtualCdrom:
-			reconcileVirtualCDROM(ctx, vm, d)
+			cdromDevices = append(cdromDevices, d)
 		}
+	}
+
+	reconcileVirtualCDROMs(ctx, k8sClient, vm, ctrlKeyToCtrlStatus, cdromDevices)
+	reconcileVirtualDisks(ctx, k8sClient, vm, ctrlKeyToCtrlStatus, diskDevices)
+}
+
+// reconcileVirtualDisks reconciles the VM's disk devices during
+// schema upgrade. It maps disk devices from the vSphere VM
+// configuration to the VirtualMachine spec volumes, updating the
+// unit number, controller type, and controller bus number for each
+// PVC volume based on the disk UUID and controller information.
+// Once VMSharedDisks is enabled, a new VM's PVC is never needed to be
+// backfilled because it is expected that the PVCs to already have all the
+// placement info. The backfilling is only needed for existing VMs.
+func reconcileVirtualDisks(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	ctrlKeyToCtrlStatus map[int32]vmopv1.VirtualControllerStatus,
+	diskDevices []*vimtypes.VirtualDisk) {
+
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM disks")
+
+	diskUUIDToDiskInfo := buildDiskUUIDToDiskInfoMap(diskDevices)
+	if len(diskUUIDToDiskInfo) == 0 {
+		logger.V(4).Info("Skipping disks reconciliation due to no virtual disks attached")
+		return
+	}
+
+	pvcNameToDiskUUID := buildPVCNameToDiskUUIDMap(ctx, k8sClient, vm)
+	if len(pvcNameToDiskUUID) == 0 {
+		logger.V(4).Info("Skipping disks reconciliation due to no node attachments found")
+		return
+	}
+
+	for i := range vm.Spec.Volumes {
+		vol := &vm.Spec.Volumes[i]
+
+		if vol.PersistentVolumeClaim == nil {
+			continue
+		}
+
+		reconcilePVCVolumePlacement(
+			ctx,
+			vol,
+			pvcNameToDiskUUID,
+			diskUUIDToDiskInfo,
+			ctrlKeyToCtrlStatus)
 	}
 }
 
-func reconcileVirtualDisk(
-	ctx context.Context,
-	_ *vmopv1.VirtualMachine,
-	_ *vimtypes.VirtualDisk) {
+// buildDiskUUIDToDiskInfoMap builds a map of disk UUID to disk
+// device info by extracting from vSphere VM hardware.
+func buildDiskUUIDToDiskInfoMap(
+	diskDevices []*vimtypes.VirtualDisk) map[string]pkgutil.VirtualDiskInfo {
 
-	logger := pkglog.FromContextOrDefault(ctx)
-	logger.V(4).Info("Reconciling schema upgrade for VM disk")
-
+	diskUUIDToDiskInfo := make(map[string]pkgutil.VirtualDiskInfo)
+	for _, disk := range diskDevices {
+		vdi := pkgutil.GetVirtualDiskInfo(disk)
+		if vdi.UUID != "" {
+			diskUUIDToDiskInfo[vdi.UUID] = vdi
+		}
+	}
+	return diskUUIDToDiskInfo
 }
 
-func reconcileVirtualCDROM(
+// buildPVCNameToDiskUUIDMap builds a map of PVC claim name to
+// disk UUID by querying CnsNodeVmAttachment objects.
+func buildPVCNameToDiskUUIDMap(
 	ctx context.Context,
-	_ *vmopv1.VirtualMachine,
-	_ *vimtypes.VirtualCdrom) {
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) map[string]string {
+
+	attachments, err := pkgutil.GetCnsNodeVMAttachmentsForVM(ctx, k8sClient, vm)
+	if err != nil {
+		pkglog.FromContextOrDefault(ctx).V(4).Error(
+			err,
+			"Error getting CnsNodeVmAttachments")
+		return nil
+	}
+
+	pvcNameToDiskUUID := make(map[string]string)
+	for _, attm := range attachments {
+		diskUUID := attm.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID]
+		pvcName := attm.Spec.VolumeName
+		// Ignore Attached status since we are checking directly against
+		// the attached virtual devices.
+		if diskUUID != "" && pvcName != "" {
+			pvcNameToDiskUUID[pvcName] = diskUUID
+		}
+	}
+	return pvcNameToDiskUUID
+}
+
+// reconcilePVCVolumePlacement reconciles the placement info for
+// a single PVC volume. It performs an atomic backfill of all placement
+// info fields if needed.
+func reconcilePVCVolumePlacement(
+	ctx context.Context,
+	vol *vmopv1.VirtualMachineVolume,
+	pvcNameToDiskUUID map[string]string,
+	diskUUIDToDiskInfo map[string]pkgutil.VirtualDiskInfo,
+	ctrlKeyToCtrlStatus map[int32]vmopv1.VirtualControllerStatus) {
+
+	pvc := vol.PersistentVolumeClaim
+	logger := pkglog.FromContextOrDefault(ctx).WithValues(
+		"name", vol.Name,
+		"pvc", pvc.ClaimName)
+
+	if !needsPlacementBackfill(vol) {
+		logger.V(4).Info("Skipping volume due to no placement fields to backfill")
+		return
+	}
+
+	diskUUID, ok := pvcNameToDiskUUID[pvc.ClaimName]
+	if !ok {
+		logger.V(4).Info("Skipping volume due to no matching disk UUID for PVC",
+			"diskUUID", diskUUID)
+		return
+	}
+	info, ok := diskUUIDToDiskInfo[diskUUID]
+	if !ok {
+		logger.V(4).Info("Skipping volume due file backing not found",
+			"diskUUID", diskUUID)
+		return
+	}
+	ctrl, ok := ctrlKeyToCtrlStatus[info.ControllerKey]
+	if !ok {
+		logger.V(4).Info("Skipping volume due to no controller key found",
+			"controllerKey", info.ControllerKey)
+		return
+	}
+
+	if hasPlacementMismatch(vol, &info, &ctrl) {
+		logger.V(4).Info(
+			"Skipping volume due to spec/state mismatch",
+			"unitNumber", info.UnitNumber,
+			"controllerBusNumber", ctrl.BusNumber,
+			"controllerType", ctrl.Type)
+		return
+	}
+
+	vol.UnitNumber = info.UnitNumber
+	vol.ControllerType = ctrl.Type
+	vol.ControllerBusNumber = &ctrl.BusNumber
+}
+
+// needsPlacementBackfill checks if any placement fields are missing.
+func needsPlacementBackfill(
+	vol *vmopv1.VirtualMachineVolume) bool {
+
+	return vol.UnitNumber == nil ||
+		vol.ControllerBusNumber == nil ||
+		vol.ControllerType == ""
+}
+
+// hasPlacementMismatch checks if any existing placement fields
+// conflict with the actual VM hardware configuration.
+func hasPlacementMismatch(
+	vol *vmopv1.VirtualMachineVolume,
+	info *pkgutil.VirtualDiskInfo,
+	ctrl *vmopv1.VirtualControllerStatus) bool {
+
+	return (vol.UnitNumber != nil &&
+		!ptr.Equal(vol.UnitNumber, info.UnitNumber)) ||
+		(vol.ControllerBusNumber != nil &&
+			!ptr.Equal(vol.ControllerBusNumber, &ctrl.BusNumber)) ||
+		(vol.ControllerType != "" && ctrl.Type != vol.ControllerType)
+}
+
+// reconcileVirtualCDROMs reconciles the VM's CD-ROM devices during
+// schema upgrade. It maps CD-ROM devices from the vSphere VM
+// configuration to the VirtualMachine spec, updating the unit
+// number, controller type, and controller bus number for each
+// CD-ROM device based on the backing file name and controller
+// information.
+func reconcileVirtualCDROMs(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	ctrlKeyToCtrlStatus map[int32]vmopv1.VirtualControllerStatus,
+	cdromDevices []*vimtypes.VirtualCdrom) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM CD-ROM")
 
+	if vm.Spec.Hardware == nil {
+		return
+	}
+
+	bFileNameToCdromInfo := buildBackingFileNameToCdromInfoMap(cdromDevices)
+	if len(bFileNameToCdromInfo) == 0 {
+		logger.V(4).Info("Skipping CD-ROM reconciliation due to no virtual " +
+			"CD-ROM devices with backing files attached")
+		return
+	}
+
+	for i := range vm.Spec.Hardware.Cdrom {
+		spec := &vm.Spec.Hardware.Cdrom[i]
+		reconcileCdromSpec(
+			ctx,
+			k8sClient,
+			vm,
+			spec,
+			bFileNameToCdromInfo,
+			ctrlKeyToCtrlStatus)
+	}
+}
+
+// buildBackingFileNameToCdromInfoMap builds a map of backing file
+// name to CD-ROM device info. Devices pointing to the same ISO
+// image are blocked by the VM validating webhook and CD-ROM
+// reconciler.
+func buildBackingFileNameToCdromInfoMap(
+	cdromDevices []*vimtypes.VirtualCdrom) map[string]pkgutil.VirtualCdromInfo {
+
+	bFileNameToCdromInfo := make(map[string]pkgutil.VirtualCdromInfo)
+	for _, cdrom := range cdromDevices {
+		cdi := pkgutil.GetVirtualCdromInfo(cdrom)
+		if cdi.FileName != "" {
+			bFileNameToCdromInfo[cdi.FileName] = cdi
+		}
+	}
+	return bFileNameToCdromInfo
+}
+
+// reconcileCdromSpec reconciles the placement info for a single
+// CD-ROM spec. It performs an atomic backfill of all placement
+// info fields if needed.
+func reconcileCdromSpec(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	spec *vmopv1.VirtualMachineCdromSpec,
+	bFileNameToCdromInfo map[string]pkgutil.VirtualCdromInfo,
+	ctrlKeyToCtrlStatus map[int32]vmopv1.VirtualControllerStatus) {
+
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("name", spec.Name)
+
+	if !needsCdromBackfill(spec) {
+		logger.V(4).Info("Skipping CD-ROM due to no placement fields to backfill")
+		return
+	}
+
+	bFileName, err := virtualmachine.GetBackingFileNameByImageRef(
+		ctx, k8sClient, spec.Image, vm.Namespace, false, nil)
+	if err != nil {
+		logger.Error(err, "Error getting CD-ROM backing file name")
+		return
+	}
+
+	info, ok := bFileNameToCdromInfo[bFileName]
+	if !ok {
+		logger.V(4).Info("Skipping CD-ROM due to no matching backing file name",
+			"backingFileName", bFileName)
+		return
+	}
+
+	ctrl, ok := ctrlKeyToCtrlStatus[info.ControllerKey]
+	if !ok {
+		logger.V(4).Info("Skipping CD-ROM due to no matching controller key",
+			"controllerKey", info.ControllerKey)
+		return
+	}
+
+	if hasCdromPlacementMismatch(spec, &info, &ctrl) {
+		logger.V(4).Info(
+			"Skipping CD-ROM due to spec/state mismatch",
+			"unitNumber", info.UnitNumber,
+			"controllerBusNumber", ctrl.BusNumber,
+			"controllerType", ctrl.Type)
+		return
+	}
+
+	spec.UnitNumber = info.UnitNumber
+	spec.ControllerType = ctrl.Type
+	spec.ControllerBusNumber = &ctrl.BusNumber
+}
+
+// needsCdromBackfill checks if any CD-ROM placement fields are
+// missing.
+func needsCdromBackfill(
+	spec *vmopv1.VirtualMachineCdromSpec) bool {
+
+	return spec.UnitNumber == nil ||
+		spec.ControllerBusNumber == nil ||
+		spec.ControllerType == ""
+}
+
+// hasCdromPlacementMismatch checks if any existing CD-ROM
+// placement fields conflict with the actual VM hardware
+// configuration.
+func hasCdromPlacementMismatch(
+	spec *vmopv1.VirtualMachineCdromSpec,
+	info *pkgutil.VirtualCdromInfo,
+	ctrl *vmopv1.VirtualControllerStatus) bool {
+
+	return (spec.UnitNumber != nil &&
+		!ptr.Equal(spec.UnitNumber, info.UnitNumber)) ||
+		(spec.ControllerBusNumber != nil &&
+			!ptr.Equal(spec.ControllerBusNumber, &ctrl.BusNumber)) ||
+		(spec.ControllerType != "" && ctrl.Type != spec.ControllerType)
 }

@@ -5,8 +5,6 @@
 package vmlifecycle_test
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -16,9 +14,12 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -44,9 +45,10 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 	Context("BootStrapLinuxPrep", func() {
 
 		var (
-			configSpec *vimtypes.VirtualMachineConfigSpec
-			custSpec   *vimtypes.CustomizationSpec
-			err        error
+			configSpec         *vimtypes.VirtualMachineConfigSpec
+			custSpec           *vimtypes.CustomizationSpec
+			customizationLatch *bool
+			err                error
 
 			vmCtx          pkgctx.VirtualMachineContext
 			vm             *vmopv1.VirtualMachine
@@ -84,7 +86,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			}
 
 			vmCtx = pkgctx.VirtualMachineContext{
-				Context: context.Background(),
+				Context: pkgcfg.NewContext(),
 				Logger:  suite.GetLogger(),
 				VM:      vm,
 				MoVM: mo.VirtualMachine{
@@ -96,7 +98,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 		})
 
 		JustBeforeEach(func() {
-			configSpec, custSpec, err = vmlifecycle.BootStrapLinuxPrep(
+			configSpec, custSpec, customizationLatch, err = vmlifecycle.BootStrapLinuxPrep(
 				vmCtx,
 				configInfo,
 				linuxPrepSpec,
@@ -108,6 +110,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 		It("should return expected customization spec", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(configSpec).To(BeNil())
+			Expect(customizationLatch).To(BeNil())
 
 			Expect(custSpec).ToNot(BeNil())
 			Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(bsArgs.DNSServers))
@@ -118,9 +121,121 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			Expect(hostName).To(Equal(bsArgs.HostName))
 			Expect(linuxSpec.TimeZone).To(Equal(linuxPrepSpec.TimeZone))
 			Expect(linuxSpec.HwClockUTC).To(Equal(linuxPrepSpec.HardwareClockIsUTC))
+			Expect(linuxSpec.Password).To(BeNil())
+			Expect(linuxSpec.ResetPassword).To(BeNil())
+			Expect(linuxSpec.ScriptText).To(BeEmpty())
 
 			Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
 			Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
+		})
+
+		When("GuestCustomizationVCDParity is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.GuestCustomizationVCDParity = true
+				})
+			})
+
+			When("Reset password is specified", func() {
+				BeforeEach(func() {
+					linuxPrepSpec.ExpirePasswordAfterNextLogin = true
+				})
+
+				It("should return expected customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(custSpec).ToNot(BeNil())
+
+					linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+					Expect(linuxSpec.ResetPassword).To(HaveValue(BeTrue()))
+				})
+			})
+
+			When("Password is specified", func() {
+				BeforeEach(func() {
+					linuxPrepSpec.Password = &common.PasswordSecretKeySelector{}
+					bsArgs.LinuxPrep = &linuxprep.SecretData{
+						Password: "my-new-password",
+					}
+				})
+
+				It("should return expected customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(custSpec).ToNot(BeNil())
+
+					linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+					Expect(linuxSpec.Password).ToNot(BeNil())
+					Expect(linuxSpec.Password.Value).To(Equal("my-new-password"))
+					Expect(linuxSpec.Password.PlainText).To(BeTrue())
+				})
+			})
+
+			When("ScriptText is specified", func() {
+				const text = "#/bin/sh\necho hello"
+
+				BeforeEach(func() {
+					linuxPrepSpec.ScriptText = &common.ValueOrSecretKeySelector{}
+					bsArgs.LinuxPrep = &linuxprep.SecretData{
+						ScriptText: text,
+					}
+				})
+
+				It("should return expected customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(custSpec).ToNot(BeNil())
+
+					linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+					Expect(linuxSpec.ScriptText).To(Equal(text))
+				})
+			})
+
+			When("VCFA ID annotation is specified", func() {
+				BeforeEach(func() {
+					if vm.Annotations == nil {
+						vm.Annotations = make(map[string]string)
+					}
+					vm.Annotations[constants.VCFAIDAnnotationKey] = "foobar"
+				})
+
+				It("should return expected customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(custSpec).ToNot(BeNil())
+
+					linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+					Expect(linuxSpec.ExtraConfig).To(HaveLen(1))
+					optVal := linuxSpec.ExtraConfig[0].GetOptionValue()
+					Expect(optVal).ToNot(BeNil())
+					Expect(optVal.Key).To(Equal(vmlifecycle.GOSCVCFAHashID))
+					Expect(optVal.Value).To(Equal("foobar"))
+				})
+			})
+		})
+
+		Context("when has power on customization latch", func() {
+			Context("latch is false", func() {
+				BeforeEach(func() {
+					linuxPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(false)
+				})
+
+				It("should return no specs", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(configSpec).To(BeNil())
+					Expect(custSpec).To(BeNil())
+					Expect(customizationLatch).To(Equal(linuxPrepSpec.CustomizeAtNextPowerOn))
+				})
+			})
+
+			Context("latch is true", func() {
+				BeforeEach(func() {
+					linuxPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(true)
+				})
+
+				It("should return customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(configSpec).To(BeNil())
+					Expect(custSpec).ToNot(BeNil())
+					Expect(customizationLatch).To(Equal(linuxPrepSpec.CustomizeAtNextPowerOn))
+				})
+			})
 		})
 
 		Context("when has vAppConfig", func() {

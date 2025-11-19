@@ -1435,6 +1435,15 @@ spec:
               applying a VirtualMachinePublishRequest resource that has the same name
               as said VM in the same namespace as said VM.
             properties:
+              backoffLimit:
+                default: 3
+                description: |-
+                  BackoffLimit is the number of status.attempts that should be allowed
+                  before failing the VirtualMachinePublishRequest and halting any
+                  future processing.
+                format: int64
+                minimum: 0
+                type: integer
               source:
                 description: |-
                   Source is the source of the publication request, ex. a VirtualMachine

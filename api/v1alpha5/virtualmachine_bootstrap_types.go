@@ -177,6 +177,43 @@ type VirtualMachineBootstrapLinuxPrepSpec struct {
 	// Please see https://kb.vmware.com/s/article/2145518 for a list of valid
 	// time zones for Linux systems.
 	TimeZone string `json:"timeZone,omitempty"`
+
+	// +optional
+
+	// ExpirePasswordAfterNextLogin indicates whether or not the root account is required to
+	// change their password after the next login.
+	ExpirePasswordAfterNextLogin bool `json:"expirePasswordAfterNextLogin,omitempty"`
+
+	// +optional
+
+	// Password is the new root password for the machine.
+	//
+	// When not explicitly specified, the Key field for the selector defaults to
+	// `password`.
+	Password *vmopv1common.PasswordSecretKeySelector `json:"password,omitempty"`
+
+	// +optional
+
+	// ScriptText is the script to run before and after customization.
+	//
+	// Please see https://knowledge.broadcom.com/external/article?legacyId=1026614
+	// for script examples.
+	ScriptText *vmopv1common.ValueOrSecretKeySelector `json:"scriptText,omitempty"`
+
+	// +optional
+
+	// CustomizeAtNextPowerOn describes when customization is performed on the VM.
+	//
+	// When set to false, the VM will not be customized at the next power on. When
+	// set to true, the VM will be customized at the next power on, and after the
+	// customization this field will be set to false. This allows for when
+	// customization is done explicitly requested, i.e. so that changes made in the
+	// VM are not overridden by a later customization.
+	//
+	// When not set, the VM will only be customized at every power on when the hash
+	// of the previous customization specification is different from the current
+	// specification.
+	CustomizeAtNextPowerOn *bool `json:"customizeAtNextPowerOn,omitempty"`
 }
 
 // VirtualMachineBootstrapSysprepSpec describes the Sysprep configuration used
@@ -204,6 +241,21 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	//
 	// Please note this field and Sysprep are mutually exclusive.
 	RawSysprep *vmopv1common.SecretKeySelector `json:"rawSysprep,omitempty"`
+
+	// +optional
+
+	// CustomizeAtNextPowerOn describes when customization is performed on the VM.
+	//
+	// When set to false, the VM will not be customized at the next power on. When
+	// set to true, the VM will be customized at the next power on, and after the
+	// customization this field will be set to false. This allows for when
+	// customization is done explicitly requested, i.e. so that changes made in the
+	// VM are not overridden by a later customization.
+	//
+	// When not set, the VM will only be customized at every power on when the hash
+	// of the previous customization specification is different from the current
+	// specification.
+	CustomizeAtNextPowerOn *bool `json:"customizeAtNextPowerOn,omitempty"`
 }
 
 // VirtualMachineBootstrapVAppConfigSpec describes the vApp configuration

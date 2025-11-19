@@ -12,11 +12,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // CalculateReservedForSnapshotPerStorageClass calculates the reserved capacity for a snapshot.
@@ -30,13 +31,13 @@ func CalculateReservedForSnapshotPerStorageClass(
 	logger logr.Logger,
 	vmSnapshot vmopv1.VirtualMachineSnapshot) ([]vmopv1.VirtualMachineSnapshotStorageStatusRequested, error) {
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return nil, fmt.Errorf("vmRef is not set")
+	if vmSnapshot.Spec.VMName == "" {
+		return nil, fmt.Errorf("vmName is not set")
 	}
 
 	vm := &vmopv1.VirtualMachine{}
-	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Spec.VMRef.Name}, vm); err != nil {
-		return nil, fmt.Errorf("failed to get VM %s: %w", vmSnapshot.Spec.VMRef.Name, err)
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Spec.VMName}, vm); err != nil {
+		return nil, fmt.Errorf("failed to get VM %s: %w", vmSnapshot.Spec.VMName, err)
 	}
 
 	requestedMap := make(map[string]*resource.Quantity)
@@ -147,18 +148,17 @@ func CalculateReservedForSnapshotPerStorageClass(
 // of the snapshot operation.
 func PatchSnapshotSuccessStatus(
 	ctx context.Context,
+	logger logr.Logger,
 	k8sClient ctrlclient.Client,
 	snap *vmopv1.VirtualMachineSnapshot,
-	snapRef *vimtypes.ManagedObjectReference,
+	snapNode *vimtypes.VirtualMachineSnapshotTree,
 	vmPowerState vmopv1.VirtualMachinePowerState) error {
 
 	snapPatch := ctrlclient.MergeFrom(snap.DeepCopy())
-	snap.Status.UniqueID = snapRef.Reference().Value
+	snap.Status.UniqueID = snapNode.Snapshot.Reference().Value
 	snap.Status.Quiesced = snap.Spec.Quiesce != nil
 	snap.Status.PowerState = vmPowerState
-	if !snap.Spec.Memory {
-		snap.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
-	}
+	snap.Status.PowerState = vmopv1util.ConvertPowerState(logger, snapNode.State)
 
 	pkgcnd.MarkTrue(snap, vmopv1.VirtualMachineSnapshotCreatedCondition)
 

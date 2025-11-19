@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -50,18 +50,18 @@ func Default() Config {
 		DeploymentName:               defaultPrefix + "controller-manager",
 		PodName:                      defaultPrefix + "controller-manager",
 		PodNamespace:                 defaultPrefix + "system",
-		PodServiceAccountName:        "default",
+		PodServiceAccountName:        defaultPrefix + "service-account",
 		ProfilerAddr:                 ":8073",
 		RateLimitBurst:               1000,
 		RateLimitQPS:                 500,
-		SyncPeriod:                   10 * time.Minute,
+		SyncPeriod:                   30 * time.Minute,
 		WatchNamespace:               "",
 		WebhookServiceContainerPort:  9878,
 		WebhookServiceName:           defaultPrefix + "webhook-service",
 		WebhookServiceNamespace:      defaultPrefix + "system",
 		WebhookSecretName:            defaultPrefix + "webhook-server-cert",
 		WebhookSecretNamespace:       defaultPrefix + "system",
-		WebhookSecretVolumeMountPath: "/tmp/k8s-webhook-server/serving-certs",
+		WebhookSecretVolumeMountPath: "/etc/vmware/wcp/webhook-certs",
 		CRDCleanupEnabled:            false,
 	}
 }

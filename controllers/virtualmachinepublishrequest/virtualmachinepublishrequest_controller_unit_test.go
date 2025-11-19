@@ -6,6 +6,7 @@ package virtualmachinepublishrequest_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
@@ -32,7 +34,9 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -293,6 +297,8 @@ func unitTestsReconcile() {
 		})
 
 		When("target is subject to quota validation", func() {
+			expectedCapacityValue := resource.NewQuantity(5*1024*1024*1024, resource.BinarySI)
+
 			BeforeEach(func() {
 				clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
 				clv1a2.Labels = map[string]string{
@@ -301,7 +307,18 @@ func unitTestsReconcile() {
 				initObjects = append(initObjects, clv1a2)
 
 				vm.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
-					Total: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+						Disks: resource.NewQuantity(16*1024*1024*1024, resource.BinarySI),
+					},
+					Total: resource.NewQuantity(21*1024*1024*1024, resource.BinarySI),
+					Used: &vmopv1.VirtualMachineStorageStatusUsed{
+						Disks: resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+						Snapshots: &vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{
+							VM:     resource.NewQuantity(64*1024*1024, resource.BinarySI),
+							Volume: resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+						},
+						Other: resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+					},
 				}
 			})
 			JustBeforeEach(func() {
@@ -322,15 +339,39 @@ func unitTestsReconcile() {
 				})
 
 				When("vm status.storage is not empty", func() {
-					It("should apply the correct annotations and not return an error", func() {
-						_, err := reconciler.ReconcileNormal(vmpubCtx)
-						Expect(err).NotTo(HaveOccurred())
-						Expect(vmpub.Annotations).NotTo(BeEmpty())
+					When("vm status.storage.used is empty", func() {
+						BeforeEach(func() {
+							vm.Status.Storage.Used = nil
+						})
+						It("should leave the request untouched and return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).To(HaveOccurred())
+							Expect(vmpub.Annotations).To(BeEmpty())
+						})
+					})
 
-						Expect(vmpub.Annotations).To(HaveKeyWithValue(
-							pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
-						Expect(vmpub.Annotations).To(HaveKeyWithValue(
-							pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, vm.Status.Storage.Total.String()))
+					When("vm status.storage.used contains only empty values", func() {
+						BeforeEach(func() {
+							vm.Status.Storage.Used = &vmopv1.VirtualMachineStorageStatusUsed{}
+						})
+						It("should leave the request untouched and return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).To(HaveOccurred())
+							Expect(vmpub.Annotations).To(BeEmpty())
+						})
+					})
+
+					When("vm status.storage.used is not empty", func() {
+						It("should apply the correct annotations and not return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).NotTo(HaveOccurred())
+							Expect(vmpub.Annotations).NotTo(BeEmpty())
+
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
+						})
 					})
 				})
 			})
@@ -339,7 +380,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmpub.Annotations = map[string]string{
 						pkgconst.AsyncQuotaPerformCheckAnnotationKey:           "true",
-						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey: vm.Status.Storage.Total.String(),
+						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey: expectedCapacityValue.String(),
 					}
 				})
 
@@ -351,7 +392,7 @@ func unitTestsReconcile() {
 					Expect(vmpub.Annotations).To(HaveKeyWithValue(
 						pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
 					Expect(vmpub.Annotations).To(HaveKeyWithValue(
-						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, vm.Status.Storage.Total.String()))
+						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
 				})
 			})
 
@@ -364,11 +405,36 @@ func unitTestsReconcile() {
 					}
 				})
 
-				It("should mark the target as invalid", func() {
+				It("should mark the target as invalid and complete with a fatal reason", func() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).To(HaveOccurred())
 					Expect(conditions.IsFalse(vmpub,
 						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(Equal(vmopv1.FatalReason))
+				})
+			})
+
+			When("validation has completed with a unexpected status", func() {
+				BeforeEach(func() {
+					vmpub.Annotations = map[string]string{
+						pkgconst.AsyncQuotaPerformCheckAnnotationKey: "true",
+						pkgconst.AsyncQuotaCheckStatusAnnotationKey:  "Unknown",
+						pkgconst.AsyncQuotaCheckMessageAnnotationKey: "yada yada yada",
+					}
+				})
+
+				It("should mark the target as invalid and complete with a fatal reason", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(Equal(vmopv1.FatalReason))
 				})
 			})
 
@@ -382,6 +448,125 @@ func unitTestsReconcile() {
 				It("should not return an error to allow continued processing", func() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+		})
+
+		When("source VM is encrypted", func() {
+			const oneGiBInBytes = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
+
+			var clv1a2 *imgregv1.ContentLibrary
+			BeforeEach(func() {
+				clv1a2 = builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+				initObjects = append(initObjects, clv1a2)
+
+				vm.Status.Crypto = &vmopv1.VirtualMachineCryptoStatus{
+					Encrypted: []vmopv1.VirtualMachineEncryptionType{vmopv1.VirtualMachineEncryptionTypeDisks},
+				}
+				vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+					{
+						Name:     "my-disk-100",
+						DiskUUID: "100",
+						Type:     vmopv1.VolumeTypeClassic,
+						Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+							ProviderID: "my-provider-id",
+							KeyID:      "my-key-id",
+						},
+						Attached:  true,
+						Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+					},
+					{
+						Name:     "my-disk-101",
+						DiskUUID: "100",
+						Type:     vmopv1.VolumeTypeClassic,
+						Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+							ProviderID: "my-provider-id",
+							KeyID:      "my-key-id",
+						},
+						Attached:  true,
+						Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+					},
+				}
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.InventoryContentLibrary = true
+				})
+			})
+
+			When("source VM has only encrypted disks", func() {
+				It("should not return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("source VM has encrypted and unencrypted disks", func() {
+				BeforeEach(func() {
+					vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
+						Name:      "my-disk-102",
+						DiskUUID:  "100",
+						Type:      vmopv1.VolumeTypeClassic,
+						Attached:  true,
+						Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+					})
+				})
+
+				It("should return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid)).To(Equal(
+						vmopv1.SourceVirtualMachineUnsupportedEncryptionReason))
+				})
+			})
+
+			When("target content library's storage class is empty", func() {
+				It("should not return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("target content library's storage class doesn't exist", func() {
+				BeforeEach(func() {
+					clv1a2.Spec.StorageClass = builder.DummyStorageClassName
+				})
+
+				It("should return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(ContainSubstring("failed to get storageClass")))
+				})
+			})
+
+			When("target content library's storage class does not support encryption", func() {
+				BeforeEach(func() {
+					sc := builder.DummyStorageClass()
+					clv1a2.Spec.StorageClass = builder.DummyStorageClassName
+
+					initObjects = append(initObjects, sc)
+				})
+
+				It("should return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(Equal(
+						vmopv1.TargetContentLibraryIncompatibleStorageClassReason))
 				})
 			})
 		})
@@ -523,7 +708,7 @@ func unitTestsReconcile() {
 			When("Previous task doesn't exist", func() {
 				JustBeforeEach(func() {
 					fakeVMProvider.Lock()
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						return nil, nil
 					}
 					fakeVMProvider.Unlock()
@@ -562,7 +747,7 @@ func unitTestsReconcile() {
 							State:         vimtypes.TaskInfoStateSuccess,
 							QueueTime:     time.Now().Add(time.Minute),
 						}
-						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 							return []vimtypes.TaskInfo{*task}, nil
 						}
 					})
@@ -609,7 +794,7 @@ func unitTestsReconcile() {
 				When("Uploaded item id is valid", func() {
 					JustBeforeEach(func() {
 						fakeVMProvider.Lock()
-						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 							task := vimtypes.TaskInfo{
 								DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 								State:         vimtypes.TaskInfoStateSuccess,
@@ -625,7 +810,7 @@ func unitTestsReconcile() {
 					When("task succeeded but failed to parse item ID", func() {
 						JustBeforeEach(func() {
 							fakeVMProvider.Lock()
-							fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+							fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 								task := vimtypes.TaskInfo{
 									DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 									State:         vimtypes.TaskInfoStateSuccess,
@@ -798,12 +983,9 @@ func unitTestsReconcile() {
 								config.Features.InventoryContentLibrary = true
 							})
 
-							fakeVMProvider.GetCloneTasksForVMFn = func(
-								ctx context.Context,
-								vm *vmopv1.VirtualMachine,
-								moID, descriptionID string) ([]vimtypes.TaskInfo, error) {
-
+							fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) ([]vimtypes.TaskInfo, error) {
 								task := vimtypes.TaskInfo{
+									ActivationId:  actID,
 									DescriptionId: virtualmachinepublishrequest.CloneTaskDescriptionID,
 									State:         vimtypes.TaskInfoStateSuccess,
 									QueueTime:     time.Now().Add(time.Minute),
@@ -811,12 +993,6 @@ func unitTestsReconcile() {
 										Value: itemID},
 								}
 								return []vimtypes.TaskInfo{task}, nil
-							}
-							fakeVMProvider.GetItemFromInventoryByNameFn = func(
-								ctx context.Context,
-								contentLibrary, itemName string) (object.Reference, error) {
-
-								return object.VirtualMachine{}, nil
 							}
 						})
 
@@ -866,7 +1042,7 @@ func unitTestsReconcile() {
 
 			When("Previous request failed", func() {
 				JustBeforeEach(func() {
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						currentTime := time.Now()
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
@@ -893,11 +1069,49 @@ func unitTestsReconcile() {
 						return fakeVMProvider.GetVMPublishRequestResult(vmpub)
 					}).Should(Equal(vimtypes.TaskInfoStateSuccess))
 				})
+
+				When("backoffLimit is exhausted", func() {
+					BeforeEach(func() {
+						vmpub.Status.Attempts = 3
+					})
+
+					It("should mark complete with a fatal reason and not requeue", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).To(HaveOccurred())
+						Expect(errors.As(err, &pkgerr.NoRequeueError{})).To(BeTrue())
+
+						Expect(conditions.IsFalse(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+						Expect(conditions.GetReason(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionComplete)).To(Equal(vmopv1.FatalReason))
+					})
+				})
+
+				When("backoffLimit is set to 0 and status.attempts exceeds backoffLimit", func() {
+					initialAttempts := int64(2)
+					BeforeEach(func() {
+						vmpub.Status.Attempts = initialAttempts
+						vmpub.Spec.BackoffLimit = 0
+					})
+
+					It("should not return an error attempt to publish again", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						Eventually(func() bool {
+							return fakeVMProvider.IsPublishVMCalled()
+						}).Should(BeTrue())
+
+						Expect(vmpub.Status.Attempts).To(Equal(initialAttempts + 1))
+						Expect(conditions.IsFalse(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
+					})
+				})
 			})
 
 			When("Previous request is queued", func() {
 				JustBeforeEach(func() {
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateQueued,
@@ -922,7 +1136,7 @@ func unitTestsReconcile() {
 
 			When("Previous request is in progress", func() {
 				JustBeforeEach(func() {
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateRunning,
@@ -948,7 +1162,7 @@ func unitTestsReconcile() {
 			When("Prior task succeeded but lost track of this task", func() {
 				JustBeforeEach(func() {
 					fakeVMProvider.Lock()
-					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						return nil, nil
 					}
 					vmpub.UID = "123"

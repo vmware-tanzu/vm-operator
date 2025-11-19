@@ -233,4 +233,15 @@ const (
 	// user-facing message detailing the nature of a failed quota check for a given
 	// VirtualMachinePublishRequest.
 	AsyncQuotaCheckMessageAnnotationKey = "vcfa.storage.quota.check.vmware.com/message"
+
+	// VCFAIDAnnotationKey is the annotation key for the VCFA ID for GOSC customization.
+	VCFAIDAnnotationKey = "vmoperator.vmware.com/vcfa-id"
+
+	// ReconcilePriorityAnnotationKey is the annotation key that specifies the
+	// reconcile priority for an object.
+	ReconcilePriorityAnnotationKey = "vmoperator.vmware.com.protected/reconcile-priority"
+
+	// CreatedByLabel is the label key that indicates an object was
+	// created on behalf of a VM Operator VM. The value is the name of a VM.
+	CreatedByLabel = "vmoperator.vmware.com/created-by"
 )

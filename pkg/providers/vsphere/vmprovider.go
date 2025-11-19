@@ -14,10 +14,8 @@ import (
 	"sync/atomic"
 
 	"github.com/go-logr/logr"
-	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
-	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -461,62 +459,6 @@ func (vs *vSphereVMProvider) GetItemFromInventoryByName(
 	return vm, nil
 }
 
-func (vs *vSphereVMProvider) GetCloneTasksForVM(
-	ctx context.Context,
-	vm *vmopv1.VirtualMachine,
-	moID, descriptionID string) ([]vimtypes.TaskInfo, error) {
-
-	logger := pkglog.FromContextOrDefault(ctx)
-
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(
-			ctx,
-			vimtypes.ID{},
-			vs.getOpID(ctx, vm, "GetCloneTasksForVM"),
-		),
-		Logger: logger,
-		VM:     vm,
-	}
-
-	client, err := vs.getVcClient(vmCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	vcVM, err := vs.getVM(vmCtx, client, true)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching VM from VC: %w", err)
-	}
-
-	var moVM mo.VirtualMachine
-	if err := vcVM.Properties(ctx, vcVM.Reference(), []string{"recentTask"}, &moVM); err != nil {
-		return nil, fmt.Errorf("error fetching VM properties from VC: %w", err)
-	}
-
-	taskList := make([]vimtypes.TaskInfo, 0)
-	pc := property.DefaultCollector(client.VimClient())
-
-	for _, taskRef := range moVM.RecentTask {
-		var t mo.Task
-		if err := pc.RetrieveOne(ctx, taskRef, []string{"info"}, &t); err != nil {
-			// Tasks go away after 10m of completion.
-			if !fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
-				return nil, fmt.Errorf("failed to retrieve task info: %w", err)
-			}
-		} else {
-			if t.Info.DescriptionId == descriptionID {
-				if result, ok := t.Info.Result.(vimtypes.ManagedObjectReference); ok {
-					if result.Reference().String() == moID {
-						taskList = append(taskList, t.Info)
-					}
-				}
-			}
-		}
-	}
-
-	return taskList, nil
-}
-
 func (vs *vSphereVMProvider) ContainsExtraConfigEntry(
 	ctx context.Context,
 	objVM *object.VirtualMachine,
@@ -525,6 +467,10 @@ func (vs *vSphereVMProvider) ContainsExtraConfigEntry(
 	var moVM mo.VirtualMachine
 	if err := objVM.Properties(ctx, objVM.Reference(), []string{"config.extraConfig"}, &moVM); err != nil {
 		return false, err
+	}
+
+	if moVM.Config == nil {
+		return false, fmt.Errorf("configInfo is nil for VM %q", objVM.Reference())
 	}
 
 	extraConfig := object.OptionValueList(moVM.Config.ExtraConfig).StringMap()
@@ -656,15 +602,38 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx context.Context) (uint64
 	return minFreq, apierrorsutil.NewAggregate(errs)
 }
 
-func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) (_ []vimtypes.TaskInfo, retErr error) {
+func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (_ []vimtypes.TaskInfo, retErr error) {
+	logger := pkglog.FromContextOrDefault(ctx)
+
 	vcClient, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	taskManager := task.NewManager(vcClient.VimClient())
-	filterSpec := vimtypes.TaskFilterSpec{
-		ActivationId: []string{actID},
+	filterSpec := vimtypes.TaskFilterSpec{}
+	if vm != nil {
+		vmCtx := pkgctx.VirtualMachineContext{
+			Context: context.WithValue(
+				ctx,
+				vimtypes.ID{},
+				vs.getOpID(ctx, vm, "GetCloneTasksForVM"),
+			),
+			Logger: logger,
+			VM:     vm,
+		}
+
+		vcVM, err := vs.getVM(vmCtx, vcClient, true)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching VM from VC: %w", err)
+		}
+
+		filterSpec.Entity = &vimtypes.TaskFilterSpecByEntity{
+			Entity:    vcVM.Reference(),
+			Recursion: vimtypes.TaskFilterSpecRecursionOptionSelf,
+		}
+	} else {
+		filterSpec.ActivationId = []string{actID}
 	}
 
 	collector, err := taskManager.CreateCollectorForTasks(ctx, filterSpec)
@@ -672,7 +641,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 		return nil, fmt.Errorf("failed to create collector for tasks: %w", err)
 	}
 	defer func() {
-		err = collector.Destroy(ctx)
+		err := collector.Destroy(ctx)
 		if retErr == nil {
 			retErr = err
 		}
@@ -682,16 +651,24 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 	for {
 		nextTasks, err := collector.ReadNextTasks(ctx, taskHistoryCollectorPageSize)
 		if err != nil {
-			pkglog.FromContextOrDefault(ctx).Error(err, "failed to read next tasks")
-			return nil, err
+			return nil, fmt.Errorf("failed to read next tasks: %w", err)
 		}
 		if len(nextTasks) == 0 {
 			break
 		}
-		taskList = append(taskList, nextTasks...)
+
+		if vm != nil {
+			for _, taskInfo := range nextTasks {
+				if strings.Contains(taskInfo.ActivationId, actID) {
+					taskList = append(taskList, taskInfo)
+				}
+			}
+		} else {
+			taskList = append(taskList, nextTasks...)
+		}
 	}
 
-	pkglog.FromContextOrDefault(ctx).V(5).Info("found tasks", "actID", actID, "tasks", taskList)
+	logger.V(5).Info("found tasks", "actID", actID, "tasks", taskList)
 	return taskList, nil
 }
 

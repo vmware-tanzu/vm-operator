@@ -86,6 +86,7 @@ rules:
   - cns.vmware.com
   resources:
   - cnsnodevmattachments
+  - cnsnodevmbatchattachments
   - storagepolicyusages
   verbs:
   - create
@@ -99,9 +100,23 @@ rules:
   - cns.vmware.com
   resources:
   - cnsnodevmattachments/status
+  - cnsnodevmbatchattachments/status
   verbs:
   - get
   - list
+- apiGroups:
+  - cns.vmware.com
+  resources:
+  - cnsregistervolumes
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - cns.vmware.com
   resources:
@@ -199,33 +214,6 @@ rules:
   verbs:
   - create
   - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - placement.vmware.com
-  resources:
-  - computepolicies
-  - tagpolicies
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - placement.vmware.com
-  resources:
-  - computepolicies/status
-  - policyevaluations/status
-  - tagpolicies/status
-  verbs:
-  - get
-- apiGroups:
-  - placement.vmware.com
-  resources:
-  - policyevaluations
-  verbs:
   - get
   - list
   - patch
@@ -339,3 +327,38 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - computepolicies
+  - tagpolicies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - computepolicies/status
+  - tagpolicies/status
+  verbs:
+  - get
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - policyevaluations
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - policyevaluations/status
+  verbs:
+  - get
+  - patch
+  - update

@@ -6,6 +6,7 @@ package v1alpha5
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -20,11 +21,6 @@ const (
 	// VirtualMachineGroupMemberConditionPlacementReady indicates that the
 	// member has a placement decision ready.
 	VirtualMachineGroupMemberConditionPlacementReady = "PlacementReady"
-
-	// VirtualMachineGroupMemberAlreadyPlacedReason indicates that the
-	// group member already exists on the back-end infrastructure
-	// (e.g., vSphere) and therefore does not require placement.
-	VirtualMachineGroupMemberAlreadyPlacedReason = "AlreadyPlaced"
 )
 
 // GroupMember describes a member of a VirtualMachineGroup.
@@ -161,12 +157,16 @@ type VirtualMachineGroupPlacementDatastoreStatus struct {
 	// DiskKey describes the device key to which this recommendation applies.
 	// When omitted, this recommendation is for the VM's home directory.
 	DiskKey *int32 `json:"diskKey,omitempty"`
+
+	// +optional
+
+	// TopLevelDirectoryCreateSupported indicates whether or not the datastore
+	// supports creating a top-level directory or requires the use of the
+	// namespace manager (i.e. vSAN).
+	TopLevelDirectoryCreateSupported bool `json:"topLevelDirectoryCreateSupported,omitempty"`
 }
 
 type VirtualMachinePlacementStatus struct {
-	// Name is the name of VirtualMachine member of this group.
-	Name string `json:"name"`
-
 	// +optional
 
 	// Zone describes the recommended zone for this VM.
@@ -201,6 +201,11 @@ type VirtualMachineGroupMemberStatus struct {
 	// Kind is the kind of this member, which can be either VirtualMachine or
 	// VirtualMachineGroup.
 	Kind string `json:"kind"`
+
+	// +optional
+
+	// UID is the K8s metadata UID of this current member object.
+	UID types.UID `json:"uid,omitempty"`
 
 	// +optional
 

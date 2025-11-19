@@ -10,8 +10,11 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/fault"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -26,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -47,6 +51,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 	var (
 		r          vmconfig.Reconciler
 		ctx        context.Context
+		reg        *simulator.Registry
 		k8sClient  ctrlclient.Client
 		vimClient  *vim25.Client
 		moVM       mo.VirtualMachine
@@ -80,51 +85,159 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 				textlogger.Output(GinkgoWriter),
 			)))
 		vimClient = vcsimCtx.VCClient.Client
+		reg = vcsimCtx.SimulatorContext().Map
+
+		finder := find.NewFinder(vimClient)
+		localds0, _ := finder.Datastore(ctx, "LocalDS_0")
 
 		var err error
 		vcVM, err = vcsimCtx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).NotTo(HaveOccurred())
 
-		dskName := "[LocalDS_0] base-" + vcVM.Name() + ".vmdk"
+		var (
+			disk1Name = "[LocalDS_0] base-" + vcVM.Name() + "-1.vmdk"
+			disk2Name = "[LocalDS_0] base-" + vcVM.Name() + "-2.vmdk"
+			disk3Name = "[LocalDS_0] base-" + vcVM.Name() + "-3.vmdk"
+		)
+
 		dskMgr := object.NewVirtualDiskManager(vimClient)
-		task, err := dskMgr.CreateVirtualDisk(ctx, dskName, vcsimCtx.Datacenter, &vimtypes.FileBackedVirtualDiskSpec{
-			CapacityKb: 10 * 1024,
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(task.Wait(ctx)).NotTo(HaveOccurred())
 
-		device, err := vcVM.Device(ctx)
-		Expect(err).NotTo(HaveOccurred())
+		for i := 0; i < 3; i++ {
+			var diskName string
+			switch i {
+			case 0:
+				diskName = disk1Name
+			case 1:
+				diskName = disk2Name
+			case 2:
+				diskName = disk3Name
+			}
+			task, err := dskMgr.CreateVirtualDisk(
+				ctx,
+				diskName,
+				vcsimCtx.Datacenter,
+				&vimtypes.FileBackedVirtualDiskSpec{
+					CapacityKb: 10 * 1024,
+				})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(task.Wait(ctx)).NotTo(HaveOccurred())
+		}
 
-		controller, err := device.FindDiskController("")
-		Expect(err).NotTo(HaveOccurred())
+		// Add the disks to the VM.
+		reconfigTask, reconfigErr := vcVM.Reconfigure(
+			ctx,
+			vimtypes.VirtualMachineConfigSpec{
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
 
-		disk := device.CreateDisk(controller, vimtypes.ManagedObjectReference{}, dskName)
-		disk = device.ChildDisk(disk)
-		err = vcVM.AddDevice(ctx, disk)
-		Expect(err).NotTo(HaveOccurred())
+					// Disk controller
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.ParaVirtualSCSIController{
+							VirtualSCSIController: vimtypes.VirtualSCSIController{
+								SharedBus:          vimtypes.VirtualSCSISharingNoSharing,
+								ScsiCtlrUnitNumber: 7,
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 0,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key:           -1000,
+										ControllerKey: 100,
+										UnitNumber:    ptr.To[int32](3),
+									},
+								},
+							},
+						},
+					},
+
+					// VirtualDiskFlatVer2BackingInfo
+					&vimtypes.VirtualDeviceConfigSpec{
+						FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+						Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualDisk{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key:           int32(-100),
+								ControllerKey: int32(-1000),
+								UnitNumber:    ptr.To[int32](0),
+								Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+										FileName:  "disk1.vmdk",
+										Datastore: ptr.To(localds0.Reference()),
+									},
+									Parent: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName:  disk1Name,
+											Datastore: ptr.To(localds0.Reference()),
+										},
+									},
+									DiskMode: string(vimtypes.VirtualDiskModePersistent),
+								},
+							},
+							CapacityInBytes: 10 * 1024 * 1024,
+						},
+					},
+
+					// VirtualDiskSeSparseBackingInfo
+					&vimtypes.VirtualDeviceConfigSpec{
+						FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+						Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualDisk{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key:           int32(-101),
+								ControllerKey: int32(-1000),
+								UnitNumber:    ptr.To[int32](1),
+								Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+										FileName:  "disk2.vmdk",
+										Datastore: ptr.To(localds0.Reference()),
+									},
+									Parent: &vimtypes.VirtualDiskSeSparseBackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName:  disk2Name,
+											Datastore: ptr.To(localds0.Reference()),
+										},
+									},
+								},
+							},
+							CapacityInBytes: 10 * 1024 * 1024,
+						},
+					},
+
+					// TODO(akutz) It does not appear SparseVer2 is supported on
+					//             ESX any longer. Verify this before removing
+					//             this commented block.
+					//
+					// VirtualDiskSparseVer2BackingInfo
+					// &vimtypes.VirtualDeviceConfigSpec{
+					// 	FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					// 	Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					// 	Device: &vimtypes.VirtualDisk{
+					// 		VirtualDevice: vimtypes.VirtualDevice{
+					// 			Key:           int32(-102),
+					// 			ControllerKey: int32(-1000),
+					// 			UnitNumber:    ptr.To[int32](2),
+					// 			Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+					// 				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					// 					FileName:  "disk3.vmdk",
+					// 					Datastore: ptr.To(localds0.Reference()),
+					// 				},
+					// 				Parent: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+					// 					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					// 						FileName:  disk3Name,
+					// 						Datastore: ptr.To(localds0.Reference()),
+					// 					},
+					// 				},
+					// 			},
+					// 		},
+					// 		CapacityInBytes: 10 * 1024 * 1024,
+					// 	},
+					// },
+				},
+			})
+		Expect(reconfigErr).ToNot(HaveOccurred())
+		Expect(reconfigTask.Wait(ctx)).To(Succeed())
 
 		Expect(vcVM.Properties(ctx, vcVM.Reference(), moVMProps, &moVM)).To(Succeed())
 		moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 		moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
-
-		// moVM = mo.VirtualMachine{
-		// 	Config: &vimtypes.VirtualMachineConfigInfo{
-		// 		Hardware: vimtypes.VirtualHardware{
-		// 			Device: device,
-		// 		},
-		// 	},
-		// 	Runtime: vimtypes.VirtualMachineRuntimeInfo{
-		// 		PowerState: vimtypes.VirtualMachinePowerStatePoweredOn,
-		// 	},
-		// 	Summary: vimtypes.VirtualMachineSummary{
-		// 		Runtime: vimtypes.VirtualMachineRuntimeInfo{
-		// 			PowerState: vimtypes.VirtualMachinePowerStatePoweredOn,
-		// 		},
-		// 	},
-		// }
-
-		// moVM.Self = vcVM.Reference()
 
 		configSpec = &vimtypes.VirtualMachineConfigSpec{}
 
@@ -153,6 +266,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 			})
 			It("should panic", func() {
 				fn := func() {
+					_ = r.OnResult(ctx, vm, moVM, nil)
 					_ = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 				}
 				Expect(fn).To(PanicWith("context is nil"))
@@ -207,12 +321,11 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 	}
 
 	When("it should not panic", func() {
-		var (
-			err error
-		)
+		var err error
 
 		JustBeforeEach(func() {
-			err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+			err = diskpromo.Reconcile(
+				ctx, k8sClient, vimClient, vm, moVM, configSpec)
 		})
 
 		When("creating a new vm", func() {
@@ -234,14 +347,32 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 
 						for _, d := range device.SelectByType(&vimtypes.VirtualDisk{}) {
 							disk := d.(*vimtypes.VirtualDisk)
-							b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
-							Expect(ok).To(BeTrue())
-							if b.Parent != nil {
-								childDisks++
+							switch tb := disk.Backing.(type) {
+							case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+								if tb.Parent != nil {
+									childDisks++
+								}
+							case *vimtypes.VirtualDiskSeSparseBackingInfo:
+								if tb.Parent != nil {
+									childDisks++
+								}
 							}
 						}
 
-						Expect(childDisks).To(Equal(1))
+						Expect(childDisks).To(Equal(2))
+					})
+
+					When("VM has no child disks and no existing condition", func() {
+						BeforeEach(func() {
+							// Remove all child disks
+							moVM.Config.Hardware.Device = nil
+						})
+
+						It("should skip disk promotion without setting condition", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).To(BeNil())
+						})
 					})
 				})
 
@@ -256,6 +387,18 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						Expect(c.Status).To(Equal(metav1.ConditionFalse))
 						Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
 					})
+					When("VM has no child disks and no existing condition", func() {
+						BeforeEach(func() {
+							// Remove all child disks
+							moVM.Config.Hardware.Device = nil
+						})
+
+						It("should skip disk promotion without setting condition", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).To(BeNil())
+						})
+					})
 				})
 
 				When("promoteDiskMode is Online", func() {
@@ -264,8 +407,11 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 					})
 
 					It("should promote disks", func() {
-						Expect(err).To(HaveOccurred())
-						Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
+						Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+
+						Expect(conditions.IsTrue(
+							vm,
+							vmopv1.VirtualMachineDiskPromotionStarted)).To(BeTrue())
 
 						promoRef := getPromoTaskRef()
 						Expect(promoRef).ToNot(BeNil())
@@ -293,9 +439,14 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						Expect(err).NotTo(HaveOccurred())
 						for _, d := range device.SelectByType(&vimtypes.VirtualDisk{}) {
 							disk := d.(*vimtypes.VirtualDisk)
-							b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
-							Expect(ok).To(BeTrue())
-							Expect(b.Parent).To(BeNil())
+							switch tb := disk.Backing.(type) {
+							case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+								Expect(tb.Parent).To(BeNil())
+							case *vimtypes.VirtualDiskSeSparseBackingInfo:
+								Expect(tb.Parent).To(BeNil())
+							default:
+								Fail("Unexpected disk backing")
+							}
 						}
 
 						// Expect no promote when no child disks.
@@ -305,10 +456,128 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 					})
 
+					When("there is an error calling promote disks", func() {
+						BeforeEach(func() {
+							reg.Handler = func(
+								ctx *simulator.Context,
+								m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
+
+								if m.Name == "PromoteDisks_Task" {
+									return nil, &vimtypes.SystemError{}
+								}
+
+								return nil, nil
+							}
+						})
+						It("should return the fault", func() {
+							Expect(err).To(HaveOccurred())
+							Expect(fault.Is(err, &vimtypes.SystemError{})).To(BeTrue())
+						})
+					})
+
+					When("there promote disks is called while already running", func() {
+						BeforeEach(func() {
+							ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+								{
+									State:         vimtypes.TaskInfoStateRunning,
+									DescriptionId: diskpromo.PromoteDisksTaskKey,
+								},
+							})
+						})
+						It("should mark the condition as running", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+							Expect(c.Message).To(Equal("Promotion is running"))
+						})
+					})
+
+					When("VM has no child disks and no existing condition", func() {
+						BeforeEach(func() {
+							// Remove all child disks
+							moVM.Config.Hardware.Device = nil
+						})
+
+						It("should skip disk promotion without setting condition", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).To(BeNil())
+						})
+					})
+
+					When("disk promotion task expires and VM has no child disks", func() {
+						It("should mark the condition as complete", func() {
+							// First reconcile starts the promotion task
+							Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+
+							// Verify the condition is now False with Reason=Running
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+							Expect(c.Message).To(Equal("Promotion is running"))
+
+							// Update the moVM to reflect no child disks
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), moVMProps, &moVM)).To(Succeed())
+							moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+							moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+
+							// Simulate task expiration by reconciling without
+							// task info (no recent tasks in context)
+							Expect(r.Reconcile(
+								ctx,
+								k8sClient,
+								vimClient,
+								vm,
+								moVM,
+								configSpec),
+							).To(Succeed())
+
+							// Verify the condition is now marked as True
+							c = conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+						})
+					})
+
+					When("disk promotion condition has Reason=Running but VM still has child disks", func() {
+						It("should not mark the condition as complete", func() {
+							// First reconcile starts the promotion task
+							Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+
+							// Verify the condition is now False with
+							// Reason=Running
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+
+							// Reconcile again without task info (simulating
+							// task expiration) but moVM has not been updated,
+							// so it still thinks there are child disks.
+							Expect(r.Reconcile(
+								ctx,
+								k8sClient,
+								vimClient,
+								vm,
+								moVM,
+								configSpec),
+							).To(MatchError(diskpromo.ErrPromoteDisks))
+
+							// Condition should still be False with
+							// Reason=Running
+							c = conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+						})
+					})
+
 					When("VM has a snapshot after disks were promoted", func() {
 						It("should not mark the disk promotion synced as false since disks with snapshots are ignored", func() {
-							Expect(err).To(HaveOccurred())
-							Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
+							Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
 
 							promoRef := getPromoTaskRef()
 							Expect(promoRef).ToNot(BeNil())
@@ -337,9 +606,14 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 							Expect(err).NotTo(HaveOccurred())
 							for _, d := range device.SelectByType(&vimtypes.VirtualDisk{}) {
 								disk := d.(*vimtypes.VirtualDisk)
-								b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
-								Expect(ok).To(BeTrue())
-								Expect(b.Parent).To(BeNil())
+								switch tb := disk.Backing.(type) {
+								case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+									Expect(tb.Parent).To(BeNil())
+								case *vimtypes.VirtualDiskSeSparseBackingInfo:
+									Expect(tb.Parent).To(BeNil())
+								default:
+									Fail("Unexpected disk backing")
+								}
 							}
 
 							// Take a VM snapshot.
@@ -355,11 +629,15 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 							// disks post-snapshot, so do that manually.
 							for i := range moVM.Config.Hardware.Device {
 								if d, ok := moVM.Config.Hardware.Device[i].(*vimtypes.VirtualDisk); ok {
-									if b, ok := d.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
-										b.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{}
+									switch tb := d.Backing.(type) {
+									case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+										tb.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{}
+									case *vimtypes.VirtualDiskSeSparseBackingInfo:
+										tb.Parent = &vimtypes.VirtualDiskSeSparseBackingInfo{}
+									default:
+										Fail("Unexpected disk backing")
 									}
 								}
-
 							}
 
 							// Expect no task when no child disks that are not
@@ -417,8 +695,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 								moVM.Guest.CustomizationInfo.CustomizationStatus = "fake"
 							})
 							It("should promote the disks", func() {
-								Expect(err).To(HaveOccurred())
-								Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
+								Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
 
 								promoRef := getPromoTaskRef()
 								Expect(promoRef).ToNot(BeNil())
@@ -496,17 +773,23 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						device := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 						for _, d := range device.SelectByType(&vimtypes.VirtualDisk{}) {
 							disk := d.(*vimtypes.VirtualDisk)
-							if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
-								if b.Parent != nil {
+							switch tb := disk.Backing.(type) {
+							case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+								if tb.Parent != nil {
 									d.GetVirtualDevice().Key = -d.GetVirtualDevice().Key
 								}
+							case *vimtypes.VirtualDiskSeSparseBackingInfo:
+								if tb.Parent != nil {
+									d.GetVirtualDevice().Key = -d.GetVirtualDevice().Key
+								}
+							default:
+								Fail("Unexpected disk backing")
 							}
 						}
 					})
 
 					It("should fail the task", func() {
-						Expect(err).To(HaveOccurred())
-						Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
+						Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
 
 						promoRef := getPromoTaskRef()
 						Expect(promoRef).ToNot(BeNil())
@@ -547,6 +830,19 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 					Expect(c).ToNot(BeNil())
 					Expect(c.Status).To(Equal(metav1.ConditionFalse))
 					Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+				})
+
+				When("VM has no child disks and no existing condition", func() {
+					BeforeEach(func() {
+						// Remove all child disks
+						moVM.Config.Hardware.Device = nil
+					})
+
+					It("should skip disk promotion without setting condition", func() {
+						Expect(err).ToNot(HaveOccurred())
+						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+						Expect(c).To(BeNil())
+					})
 				})
 			})
 		})

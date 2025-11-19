@@ -95,8 +95,9 @@ const (
 	InstanceStorageSelectedNodeMOIDAnnotationKey = "vmoperator.vmware.com/instance-storage-selected-node-moid"
 	// InstanceStorageSelectedNodeAnnotationKey value corresponds to FQDN of ESXi node that is elected to place instance storage volumes.
 	InstanceStorageSelectedNodeAnnotationKey = "vmoperator.vmware.com/instance-storage-selected-node"
-	// KubernetesSelectedNodeAnnotationKey annotation key to set selected node on PVC.
-	KubernetesSelectedNodeAnnotationKey = "volume.kubernetes.io/selected-node"
+	// CNSSelectedNodeIsZoneAnnotationKey is used to indicate to CNS that the selected-node annotation
+	// is the name of the VM's Zone instead of a Node in the zone.
+	CNSSelectedNodeIsZoneAnnotationKey = "cns.vmware.com/selected-node-is-zone"
 	// InstanceStoragePVPlacementErrorPrefix indicates prefix of error value.
 	InstanceStoragePVPlacementErrorPrefix = "FAILED_"
 	// InstanceStorageNotEnoughResErr is an error constant to indicate not enough resources.

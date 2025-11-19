@@ -8,11 +8,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var _ = Describe("Customization utils", func() {
@@ -143,6 +150,31 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 		})
 	})
 
+	When("CustomizationLinuxPrep", func() {
+		BeforeEach(func() {
+			inCustSpec.Identity = &vimtypes.CustomizationLinuxPrep{
+				Password: &vimtypes.CustomizationPassword{
+					Value: "value",
+				},
+				ScriptText: "value",
+			}
+		})
+
+		It("redacts fields", func() {
+			Expect(inCustSpec.Identity).ToNot(BeNil())
+			s := inCustSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+			Expect(s.Password).ToNot(BeNil())
+			Expect(s.Password.Value).To(Equal("value"))
+			Expect(s.ScriptText).To(Equal("value"))
+
+			Expect(outCustSpec.Identity).ToNot(BeNil())
+			s = outCustSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+			Expect(s.Password).ToNot(BeNil())
+			Expect(s.Password.Value).To(Equal("***"))
+			Expect(s.ScriptText).To(Equal("***"))
+		})
+	})
+
 	When("CustomizationSysprepText", func() {
 		BeforeEach(func() {
 			inCustSpec.Identity = &vimtypes.CustomizationSysprepText{
@@ -177,6 +209,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 						Value: "value",
 					},
 				},
+				ScriptText: "value",
 			}
 		})
 
@@ -189,6 +222,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
 			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
 			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("value"))
+			Expect(s.ScriptText).To(Equal("value"))
 
 			Expect(outCustSpec.Identity).ToNot(BeNil())
 			s = outCustSpec.Identity.(*vimtypes.CustomizationSysprep)
@@ -198,9 +232,150 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
 			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
 			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("***"))
+			Expect(s.ScriptText).To(Equal("***"))
 		})
 	})
 })
 
-// TODO: We should at least a few basic DoBootstrap() tests so we test the overall
-// Reconfigure/Customize flow but the old code didn't.
+var _ = Describe("DoBootstrap", func() {
+	// Use a VM that vcsim creates for us.
+	const vcVMName = "DC0_C0_RP0_VM0"
+
+	var (
+		ctx        *builder.TestContextForVCSim
+		nsInfo     builder.WorkloadNamespaceInfo
+		testConfig builder.VCSimTestConfig
+
+		bsArgs     vmlifecycle.BootstrapArgs
+		bsErr      error
+		vcVM       *object.VirtualMachine
+		vmCtx      pkgctx.VirtualMachineContext
+		configInfo *vimtypes.VirtualMachineConfigInfo
+	)
+
+	BeforeEach(func() {
+		var err error
+
+		testConfig = builder.VCSimTestConfig{}
+		ctx = suite.NewTestContextForVCSim(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace()
+
+		vm := builder.DummyVirtualMachine()
+		vm.Name = "bootstrap-test"
+		vm.Namespace = nsInfo.Namespace
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+
+		vcVM, err = ctx.Finder.VirtualMachine(ctx, vcVMName)
+		Expect(err).ToNot(HaveOccurred())
+		vmCtx.VM.Status.UniqueID = vcVM.Reference().Value
+		task, err := vcVM.PowerOff(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(task.Wait(ctx)).To(Succeed())
+
+		{
+			// Just remove all EthernetCards to make GOSC happy, instead of having
+			// to fake more data.
+			devices, err := vcVM.Device(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			var cs vimtypes.VirtualMachineConfigSpec
+			cs.DeviceChange, err = devices.SelectByType(&vimtypes.VirtualEthernetCard{}).
+				ConfigSpec(vimtypes.VirtualDeviceConfigSpecOperationRemove)
+			Expect(err).ToNot(HaveOccurred())
+			task, err := vcVM.Reconfigure(vmCtx, cs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+		}
+
+		moVM := &mo.VirtualMachine{}
+		Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, moVM)).To(Succeed())
+		configInfo = moVM.Config
+	})
+
+	JustBeforeEach(func() {
+		bsErr = vmlifecycle.DoBootstrap(vmCtx, vcVM, configInfo, bsArgs)
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+		vcVM = nil
+		configInfo = nil
+		bsArgs = vmlifecycle.BootstrapArgs{}
+	})
+
+	Context("LinuxPrep", func() {
+		BeforeEach(func() {
+			vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+			}
+		})
+
+		It("Customizes", func() {
+			Expect(bsErr).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+		})
+
+		When("CustomizedAtNextPowerOn is false", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.LinuxPrep.CustomizeAtNextPowerOn = ptr.To(false)
+			})
+
+			It("Does not customize", func() {
+				Expect(bsErr).ToNot(HaveOccurred())
+				Expect(vmCtx.VM.Spec.Bootstrap.LinuxPrep.CustomizeAtNextPowerOn).To(HaveValue(BeFalse()))
+			})
+		})
+
+		When("CustomizedAtNextPowerOn is true", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.LinuxPrep.CustomizeAtNextPowerOn = ptr.To(true)
+			})
+
+			It("Customizes and toggles", func() {
+				Expect(bsErr).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+				Expect(vmCtx.VM.Spec.Bootstrap.LinuxPrep.CustomizeAtNextPowerOn).To(HaveValue(BeFalse()))
+			})
+		})
+	})
+
+	Context("Sysprep", func() {
+		BeforeEach(func() {
+			vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+					Sysprep: &vmopv1sysprep.Sysprep{},
+				},
+			}
+		})
+
+		It("Customizes", func() {
+			Expect(bsErr).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+		})
+
+		When("CustomizedAtNextPowerOn is false", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.Sysprep.CustomizeAtNextPowerOn = ptr.To(false)
+			})
+
+			It("Does not customize", func() {
+				Expect(bsErr).ToNot(HaveOccurred())
+				Expect(vmCtx.VM.Spec.Bootstrap.Sysprep.CustomizeAtNextPowerOn).To(HaveValue(BeFalse()))
+			})
+		})
+
+		When("CustomizedAtNextPowerOn is true", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.Sysprep.CustomizeAtNextPowerOn = ptr.To(true)
+			})
+
+			It("Customizes and toggles", func() {
+				Expect(bsErr).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+				Expect(vmCtx.VM.Spec.Bootstrap.Sysprep.CustomizeAtNextPowerOn).To(HaveValue(BeFalse()))
+			})
+		})
+	})
+})

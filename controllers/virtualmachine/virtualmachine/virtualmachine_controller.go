@@ -25,19 +25,20 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
@@ -83,11 +84,19 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		proberManager)
 
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(controlledType).
+		Named(strings.ToLower(controlledTypeName)).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
 			SkipNameValidation:      SkipNameValidation,
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		})
+
+	// Watch VirtualMachines.
+	builder = builder.Watches(
+		controlledType,
+		&kubeutil.EnqueueRequestForObject{
+			Logger:      ctrl.Log.WithName("vmqueue"),
+			GetPriority: kubeutil.GetVirtualMachineReconcilePriority,
 		})
 
 	builder = builder.Watches(&vmopv1.VirtualMachineClass{},
@@ -104,7 +113,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	if pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 		builder = builder.WatchesRawSource(source.Channel(
 			cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
-			&handler.EnqueueRequestForObject{}))
+			&kubeutil.EnqueueRequestForObject{
+				Logger:      ctrl.Log.WithName("asyncvmqueue"),
+				GetPriority: kubeutil.GetVirtualMachineReconcilePriority,
+			}))
 	}
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
@@ -120,6 +132,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				),
 			),
 		)
+	}
+
+	// Watch CnsRegisterVolume resources to trigger VM reconciliation
+	// when all unmanaged disks are being converted to PVCs.
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		builder = builder.Watches(
+			&cnsv1alpha1.CnsRegisterVolume{},
+			handler.EnqueueRequestsFromMapFunc(
+				vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, r.Client),
+			))
 	}
 
 	// Watch VirtualMachineSnapshot resources to trigger VM reconciliation
@@ -144,7 +166,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		builder = builder.Watches(
 			&vmopv1.VirtualMachineGroup{},
 			handler.EnqueueRequestsFromMapFunc(
-				vmopv1util.GroupToVMsMapperFn(ctx, r.Client),
+				vmopv1util.GroupToMembersMapperFn(
+					ctx, r.Client, "VirtualMachine",
+				),
 			),
 		)
 	}
@@ -344,7 +368,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
 
-	if err := r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
+	err = r.ReconcileNormal(vmCtx)
+	if err != nil && !ignoredCreateErr(err) {
 		return pkgerr.ResultFromError(err)
 	}
 
@@ -379,7 +404,7 @@ func requeueDelay(
 	// Create VMs on the provider. Do not queue immediately to avoid exponential
 	// backoff.
 	if ignoredCreateErr(err) ||
-		!conditions.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
+		!pkgcond.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
 
 		return pkgcfg.FromContext(ctx).CreateVMRequeueDelay
 	}
@@ -648,7 +673,7 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 	}
 
 	// Assert the image hardware is ready.
-	if !conditions.IsTrue(
+	if !pkgcond.IsTrue(
 		vmic,
 		vmopv1.VirtualMachineImageCacheConditionHardwareReady) {
 
@@ -682,7 +707,7 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 	}
 
 	// Assert the cached disks are ready.
-	if locStatus == nil || !conditions.IsTrue(
+	if locStatus == nil || !pkgcond.IsTrue(
 		locStatus,
 		vmopv1.ReadyConditionType) {
 

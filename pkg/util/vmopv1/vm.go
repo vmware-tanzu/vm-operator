@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-logr/logr"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,14 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/go-logr/logr"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -194,12 +193,12 @@ func DetermineHardwareVersion(
 	var minVerFromDevs vimtypes.HardwareVersion
 	switch {
 	case pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange):
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
+		minVerFromDevs = max(imageVersion, pkgconst.MinSupportedHWVersionForPCIPassthruDevices)
 	case HasPVC(vm):
 		// This only catches volumes set at VM create time.
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPVC)
+		minVerFromDevs = max(imageVersion, pkgconst.MinSupportedHWVersionForPVC)
 	case hasvTPM(configSpec.DeviceChange):
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForVTPM)
+		minVerFromDevs = max(imageVersion, pkgconst.MinSupportedHWVersionForVTPM)
 	}
 
 	// Return the larger of the two versions. If both versions are zero, then
@@ -288,25 +287,25 @@ func SnapshotToVMMapperFn(
 		logger := logger.WithValues("snapshotName", snapshot.Name, "namespace", snapshot.Namespace)
 
 		// Only process snapshots that reference a VM
-		if snapshot.Spec.VMRef == nil {
+		if snapshot.Spec.VMName == "" {
 			logger.V(4).Info("Skipping snapshot with no VM reference")
 			return nil
 		}
 
 		// Only process snapshots that are not ready.
-		if conditions.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+		if pkgcond.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
 			logger.V(4).Info("Skipping snapshot that is already ready")
 			return nil
 		}
 
-		logger.V(4).Info("Queuing VM reconciliation due to snapshot event", "vmName", snapshot.Spec.VMRef.Name)
+		logger.V(4).Info("Queuing VM reconciliation due to snapshot event", "vmName", snapshot.Spec.VMName)
 
 		// Queue reconciliation for the referenced VM
 		return []reconcile.Request{
 			{
 				NamespacedName: client.ObjectKey{
 					Namespace: snapshot.Namespace,
-					Name:      snapshot.Spec.VMRef.Name,
+					Name:      snapshot.Spec.VMName,
 				},
 			},
 		}
@@ -391,58 +390,52 @@ func EncryptionClassToVirtualMachineMapper(
 	}
 }
 
-// GroupToVMsMapperFn returns a mapper function that can be used to queue
-// reconcile requests for all the currently linked VirtualMachine kind members
-// in response to an event on the VirtualMachineGroup resource.
-func GroupToVMsMapperFn(
+// CnsRegisterVolumeToVirtualMachineMapper returns a mapper function used to
+// enqueue reconcile requests for VMs in response to an event on the
+// CnsRegisterVolume resource.
+func CnsRegisterVolumeToVirtualMachineMapper(
 	ctx context.Context,
 	k8sClient client.Client) handler.MapFunc {
 
+	if ctx == nil {
+		panic("context is nil")
+	}
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
+
+	// For a given CnsRegisterVolume, return reconcile requests for the VM
+	// that owns it.
 	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		if ctx == nil {
+			panic("context is nil")
+		}
+		if o == nil {
+			panic("object is nil")
+		}
 
-		var (
-			group     = o.(*vmopv1.VirtualMachineGroup)
-			namespace = group.Namespace
-			requests  = make([]reconcile.Request, 0, len(group.Status.Members))
-		)
+		logger := pkglog.FromContextOrDefault(ctx).
+			WithValues("name", o.GetName(), "namespace", o.GetNamespace())
+		logger.V(4).Info("Reconciling VMs due to CnsRegisterVolume event")
 
-		for _, m := range group.Status.Members {
-			if m.Kind == "VirtualMachine" &&
-				conditions.IsTrue(&m, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) {
-				vmName := m.Name
-				vm := &vmopv1.VirtualMachine{}
-				key := client.ObjectKey{Namespace: namespace, Name: vmName}
-				if err := k8sClient.Get(ctx, key, vm); err != nil {
-					continue
-				}
+		var requests []reconcile.Request
 
-				// Check VM.Spec.GroupName still points to current group in case
-				// it changed while the current group hasn't been reconciled.
-				if vm.Spec.GroupName != group.Name {
-					continue
-				}
-
-				// Only trigger a reconcile if the VM condition doesn't have
-				// the group linked condition true, or if the VM is not placed.
-				if !conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) ||
-					!conditions.IsTrue(vm, vmopv1.VirtualMachineConditionPlacementReady) {
-					requests = append(requests, reconcile.Request{
-						NamespacedName: client.ObjectKey{
-							Namespace: namespace,
-							Name:      vmName,
-						},
-					})
-				}
+		for _, ownerRef := range o.GetOwnerReferences() {
+			if ownerRef.Kind == "VirtualMachine" {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Namespace: o.GetNamespace(),
+						Name:      ownerRef.Name,
+					},
+				})
+				logger.V(4).Info("Found VM owner reference", "vm", ownerRef.Name)
 			}
 		}
 
 		if len(requests) > 0 {
-			pkglog.FromContextOrDefault(ctx).WithValues(
-				"groupName", group.Name, "groupNamespace", namespace,
-			).V(4).Info(
-				"Reconciling VMs due to their VirtualMachineGroup watch",
-				"requests", requests,
-			)
+			logger.V(4).Info(
+				"Reconciling VMs due to CnsRegisterVolume watch",
+				"requests", requests)
 		}
 
 		return requests
@@ -486,4 +479,22 @@ func GetContextWithWorkloadDomainIsolation(
 	// Layer the updated Config into the context so all logic beneath this
 	// line in the call stack will use the updated value.
 	return pkgcfg.WithContext(ctx, cfg)
+}
+
+// ConvertPowerState converts a govomomi type power state to a
+// VM Operator type power state.
+func ConvertPowerState(logger logr.Logger,
+	powerState vimtypes.VirtualMachinePowerState) vmopv1.VirtualMachinePowerState {
+	switch powerState {
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
+		return vmopv1.VirtualMachinePowerStateOn
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
+		return vmopv1.VirtualMachinePowerStateOff
+	case vimtypes.VirtualMachinePowerStateSuspended:
+		return vmopv1.VirtualMachinePowerStateSuspended
+	default:
+		logger.Info("Unknown snapshot power state, defaulting to Off",
+			"powerState", powerState)
+		return vmopv1.VirtualMachinePowerStateOff
+	}
 }

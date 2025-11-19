@@ -1,8 +1,13 @@
 module github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver
 
-go 1.17
+go 1.24.0
 
-require k8s.io/apimachinery v0.19.16
+toolchain go1.24.4
+
+require (
+	k8s.io/api v0.19.16
+	k8s.io/apimachinery v0.19.16
+)
 
 require (
 	github.com/go-logr/logr v0.2.0 // indirect

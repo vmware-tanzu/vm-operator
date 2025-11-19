@@ -36,6 +36,14 @@ import (
 //   - controllers                                    4
 //   - disks (hardware version <20)                  15
 //   - disks (hardware version >=21)                255
+//
+// IDE
+//   - controllers                                    2
+//   - disks                                          4
+//
+// Please note, while this function supports matching IDE controllers in
+// the ConfigSpec, this function will not create *new* IDE controllers if a
+// new controller is required.
 func EnsureDisksHaveControllers(
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	existingDevices ...vimtypes.BaseVirtualDevice) error {
@@ -101,7 +109,10 @@ func EnsureDisksHaveControllers(
 			*vimtypes.VirtualAHCIController,
 
 			// NVME
-			*vimtypes.VirtualNVMEController:
+			*vimtypes.VirtualNVMEController,
+
+			// IDE
+			*vimtypes.VirtualIDEController:
 
 			diskControllers.add(bvd)
 
@@ -260,6 +271,7 @@ const (
 	maxDisksPerSATAController              = 30
 	maxDisksPerNVMEController              = 15
 	maxDisksPerNVMEControllerHWVersion21   = 255 // TODO(akutz)
+	maxDisksPerIDEController               = 2
 )
 
 type ensureDiskControllerBusNumbers struct {
@@ -339,6 +351,10 @@ type ensureDiskControllerData struct {
 	// NVME
 	nvmeBusNumbers     ensureDiskControllerBusNumbers
 	nvmeControllerKeys []int32
+
+	// IDE
+	ideBusNumbers     ensureDiskControllerBusNumbers
+	ideControllerKeys []int32
 }
 
 func (d ensureDiskControllerData) numSCSIControllers() int {
@@ -434,6 +450,12 @@ func (d *ensureDiskControllerData) add(controller vimtypes.BaseVirtualDevice) {
 		d.nvmeBusNumbers.set(busNumber)
 		dc.maxUN = maxDisksPerNVMEController // TODO: maxDisksPerNVMEControllerHWVersion21
 
+	// IDE
+	case *vimtypes.VirtualIDEController:
+		d.ideControllerKeys = append(d.ideControllerKeys, key)
+		d.ideBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerIDEController
+
 	default:
 		panic(fmt.Sprintf("unexpected controller type: %T", controller))
 	}
@@ -508,6 +530,9 @@ func (d *ensureDiskControllerData) mustGetNextUnitNumber(controllerKey int32) in
 //
 // * NVME
 //   - VirtualNVMEController
+//
+// * IDE
+//   - VirtualIDEController
 func ensureDiskControllerFind(
 	disk *vimtypes.VirtualDisk,
 	diskControllers *ensureDiskControllerData) bool {
@@ -549,7 +574,13 @@ func ensureDiskControllerFind(
 		ensureDiskControllerFindWith(
 			disk,
 			diskControllers,
-			diskControllers.nvmeControllerKeys)
+			diskControllers.nvmeControllerKeys) ||
+
+		// IDE
+		ensureDiskControllerFindWith(
+			disk,
+			diskControllers,
+			diskControllers.ideControllerKeys)
 }
 
 func ensureDiskControllerFindWith(

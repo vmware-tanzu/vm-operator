@@ -37,6 +37,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -144,7 +145,6 @@ func CreateAndWaitForNetworkInterfaces(
 		interfaceSpec := &networkSpec.Interfaces[i]
 
 		var result *NetworkInterfaceResult
-		var isVPC bool
 		var err error
 
 		switch networkType {
@@ -154,7 +154,6 @@ func CreateAndWaitForNetworkInterfaces(
 			result, err = createNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		case pkgcfg.NetworkProviderTypeVPC:
 			result, err = createVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-			isVPC = true
 		case pkgcfg.NetworkProviderTypeNamed:
 			result, err = createNamedNetworkInterface(vmCtx, finder, interfaceSpec)
 		default:
@@ -171,7 +170,6 @@ func CreateAndWaitForNetworkInterfaces(
 			interfaceSpec,
 			defaultToGlobalNameservers,
 			defaultToGlobalSearchDomains,
-			isVPC,
 			result)
 
 		results = append(results, *result)
@@ -189,7 +187,6 @@ func applyInterfaceSpecToResult(
 	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec,
 	defaultToGlobalNameservers bool,
 	defaultToGlobalSearchDomains bool,
-	isVPC bool,
 	result *NetworkInterfaceResult) {
 
 	result.Name = interfaceSpec.Name
@@ -212,9 +209,34 @@ func applyInterfaceSpecToResult(
 		result.DHCP6 = true
 	}
 
-	// For VPC we set the interface spec IPs in the SubnetPort so ignore those addresses
-	// here. Otherwise, even for NoIPAM still honor the interface spec addresses.
-	if !isVPC && len(interfaceSpec.Addresses) > 0 {
+	if len(interfaceSpec.Addresses) > 0 {
+		if interfaceSpec.Gateway4 == "" || interfaceSpec.Gateway6 == "" {
+			// Backfill the gateways from the network provider if not specified in
+			// the interface spec before setting the user specified addresses. This
+			// allows for just IP reservation to be done.
+			// Our result is modeled after the network interface CRs, but that ends
+			// up being cumbersome here. Instead, the gateways should be pulled up
+			// in the top level results instead of being a part of the IP config.
+			for i := range result.IPConfigs {
+				gw := result.IPConfigs[i].Gateway
+				if gw == "" {
+					continue
+				}
+
+				if interfaceSpec.Gateway4 == "" { //nolint:gocritic
+					if result.IPConfigs[i].IsIPv4 {
+						interfaceSpec.Gateway4 = gw
+					}
+				} else if interfaceSpec.Gateway6 == "" {
+					if !result.IPConfigs[i].IsIPv4 {
+						interfaceSpec.Gateway6 = gw
+					}
+				} else {
+					break
+				}
+			}
+		}
+
 		result.IPConfigs = make([]NetworkInterfaceIPConfig, 0, len(interfaceSpec.Addresses))
 		for _, addr := range interfaceSpec.Addresses {
 			ip, _, err := net.ParseCIDR(addr)
@@ -234,7 +256,10 @@ func applyInterfaceSpecToResult(
 	if gw4, gw6 := interfaceSpec.Gateway4, interfaceSpec.Gateway6; gw4 != "" || gw6 != "" {
 		// Set the gateway to their user-specified values. For multiple IPs, doing this for
 		// every address may not end up making sense but otherwise hard to determine what
-		// else to do.
+		// else to do but for addresses from our interface spec we do have the CIDR. It does
+		// really end up mattering since for the network customization we'll use the first
+		// gateway. Like mentioned above, how this is modeled vs our needs is a little funky
+		// and should pull out the gateways out of returned IP configuration.
 		for i := range result.IPConfigs {
 			if gw4 != "" && result.IPConfigs[i].IsIPv4 {
 				if gw4 == gatewayIgnored {
@@ -703,37 +728,63 @@ func createVPCNetworkInterface(
 		}
 		vpcSubnetPort.Annotations[constants.VPCAttachmentRef] = "virtualmachine/" + vmCtx.VM.Name + "/" + interfaceSpec.Name
 
+		vpcSubnetPort.Spec.AddressBindings = nil
+
 		// TBD: It doesn't look like VPC actually reconciles if these change.
 		switch {
 		case len(interfaceSpec.Addresses) > 0:
 			for _, ipCidr := range interfaceSpec.Addresses {
-				// Our interface spec IPs include the CIDR but VPC takes just the IP address. This can
-				// lead to funkiness if the user specified an invalid prefix for this network. Here is
-				// what we're going to do: applyInterfaceSpecToResult() will just use whatever comes
-				// back in the SubnetPort Status, ignoring the user prefix. It might be nicer to allow
-				// bare IPs only when using VPC.
-				ip, _, err := net.ParseCIDR(ipCidr)
-				if err != nil || ip == nil {
+				// Our interface spec IPs include the CIDR but VPC takes just
+				// the IP address. This can lead to funkiness if the user
+				// specified an invalid prefix for this network. Here is what
+				// we're going to do: applyInterfaceSpecToResult() will just use
+				// whatever comes back in the SubnetPort Status, ignoring the
+				// user prefix. It might be nicer to allow bare IPs only when
+				// using VPC.
+				ip, _, err := pkgutil.ParseIP(ipCidr)
+
+				var skipReason string
+				switch {
+				case err != nil:
+					skipReason = err.Error()
+				case ip == nil:
+					skipReason = "nil ip"
+				case ip.IsUnspecified():
+					skipReason = "unspecified"
+				case ip.IsLinkLocalMulticast():
+					skipReason = "link local multicast"
+				case ip.IsLinkLocalUnicast():
+					skipReason = "link local unicast"
+				case ip.IsLoopback():
+					skipReason = "loopback"
+				}
+
+				if skipReason != "" {
+					vmCtx.Logger.Info(
+						"Skipping IP address",
+						"ip", ipCidr,
+						"reason", skipReason)
 					continue
 				}
 
+				// Despite being a list, VPC currently only supports just one PortAddressBinding.
 				vpcSubnetPort.Spec.AddressBindings = []vpcv1alpha1.PortAddressBinding{
 					{
 						IPAddress:  ip.String(),
 						MACAddress: strings.ToLower(interfaceSpec.MACAddr),
 					},
 				}
+				break
 			}
 		case interfaceSpec.MACAddr != "":
-			// TBD: VPC will default the MAC when only specifying an IP, but will not do IPAM when
-			// only the specifying the MAC, but they'll have to fix that for no IPAM, right, right?
+			// TBD: VPC will default the MAC when only specifying an IP, but
+			// will not do IPAM when only the specifying the MAC, but they'll
+			// have to fix that for no IPAM, right, right?
 			vpcSubnetPort.Spec.AddressBindings = []vpcv1alpha1.PortAddressBinding{
 				{
 					MACAddress: strings.ToLower(interfaceSpec.MACAddr),
 				},
 			}
-		default:
-			vpcSubnetPort.Spec.AddressBindings = nil
 		}
 
 		return nil

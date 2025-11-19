@@ -78,7 +78,7 @@ func UnstructuredExternal() ([]unstructured.Unstructured, error) {
 // Install installs the CRDs into the provided Kubernetes environment based on
 // the current set of feature/capability flags. This will also remove any APIs
 // from the provided environment if their flags have been disabled.
-func Install(
+func Install( //nolint:gocyclo
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
 	mutateFn func(kind string, obj *unstructured.Unstructured) error) error {
@@ -94,6 +94,8 @@ func Install(
 	}
 
 	crds := slices.Concat(baseCRDs, externalCRDs)
+	logger := pkglog.FromContextOrDefault(ctx)
+	features := pkgcfg.FromContext(ctx).Features
 
 	for i := range crds {
 		c := &crds[i]
@@ -102,7 +104,6 @@ func Install(
 			return fmt.Errorf("failed to get crd name: %w", err)
 		}
 
-		logger := pkglog.FromContextOrDefault(ctx)
 		logger.Info("Processing CRD", "kind", k)
 
 		if mutateFn != nil {
@@ -125,7 +126,7 @@ func Install(
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.VSpherePolicies,
+				features.VSpherePolicies,
 				c,
 				k,
 				nil); err != nil {
@@ -136,7 +137,7 @@ func Install(
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey,
+				features.BringYourOwnEncryptionKey,
 				c,
 				k,
 				nil); err != nil {
@@ -153,7 +154,7 @@ func Install(
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.ImmutableClasses,
+				features.ImmutableClasses,
 				c,
 				k,
 				nil); err != nil {
@@ -165,7 +166,7 @@ func Install(
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.VMGroups,
+				features.VMGroups,
 				c,
 				k,
 				nil); err != nil {
@@ -176,7 +177,7 @@ func Install(
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.FastDeploy,
+				features.FastDeploy,
 				c,
 				k,
 				nil); err != nil {
@@ -198,7 +199,7 @@ func Install(
 					obj *unstructured.Unstructured,
 					shouldRemoveFields bool) error {
 
-					if !pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+					if !features.ImmutableClasses {
 						if err := removeFields(
 							ctx,
 							k,
@@ -210,7 +211,7 @@ func Install(
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.VMGroups {
+					if !features.VMGroups {
 						if err := removeFields(
 							ctx,
 							k,
@@ -223,13 +224,13 @@ func Install(
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.VMSnapshots {
+					if !features.VMSnapshots {
 						if err := removeFields(
 							ctx,
 							k,
 							obj,
 							shouldRemoveFields,
-							specFieldPath("currentSnapshot"),
+							specFieldPath("currentSnapshotName"),
 							statusFieldPath("currentSnapshot"),
 							statusFieldPath("rootSnapshots")); err != nil {
 
@@ -237,7 +238,7 @@ func Install(
 						}
 					}
 
-					if !pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+					if !features.VSpherePolicies {
 						if err := removeFields(
 							ctx,
 							k,
@@ -245,6 +246,58 @@ func Install(
 							shouldRemoveFields,
 							specFieldPath("policies"),
 							statusFieldPath("policies")); err != nil {
+
+							return err
+						}
+					}
+
+					if !features.GuestCustomizationVCDParity {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("bootstrap", "linuxPrep", "password"),
+							specFieldPath("bootstrap", "linuxPrep", "scriptText"),
+							specFieldPath("bootstrap", "linuxPrep", "expirePasswordAfterNextLogin"),
+							specFieldPath("bootstrap", "sysprep", "sysprep", "scriptText"),
+							specFieldPath("bootstrap", "sysprep", "sysprep", "expirePasswordAfterNextLogin"),
+						); err != nil {
+
+							return err
+						}
+					}
+
+					if !features.VMSharedDisks && !features.AllDisksArePVCs {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("volumes", "[]", "applicationType"),
+							specFieldPath("volumes", "[]", "controllerBusNumber"),
+							specFieldPath("volumes", "[]", "controllerType"),
+							specFieldPath("volumes", "[]", "diskMode"),
+							specFieldPath("volumes", "[]", "sharingMode"),
+							specFieldPath("volumes", "[]", "unitNumber"),
+
+							specFieldPath("hardware", "ideControllers"),
+							specFieldPath("hardware", "nvmeControllers"),
+							specFieldPath("hardware", "sataControllers"),
+							specFieldPath("hardware", "scsiControllers"),
+							// Only remove part of RAC related fields, keeping
+							// the remaining cdrom configs.
+							specFieldPath("hardware", "cdrom", "[]", "controllerBusNumber"),
+							specFieldPath("hardware", "cdrom", "[]", "controllerType"),
+							specFieldPath("hardware", "cdrom", "[]", "unitNumber"),
+
+							statusFieldPath("volumes", "[]", "controllerBusNumber"),
+							statusFieldPath("volumes", "[]", "controllerType"),
+							statusFieldPath("volumes", "[]", "diskMode"),
+							statusFieldPath("volumes", "[]", "sharingMode"),
+
+							statusFieldPath("hardware", "controllers"),
+						); err != nil {
 
 							return err
 						}
@@ -262,7 +315,7 @@ func Install(
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				pkgcfg.FromContext(ctx).Features.VMSnapshots,
+				features.VMSnapshots,
 				c,
 				k,
 				nil); err != nil {
@@ -297,17 +350,17 @@ func removeFields(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 
-	for j := range fields {
+	for _, f := range fields {
 		if !shouldRemoveFields {
 			logger.Info(
 				"Skipping CRD field removal",
 				"kind", k,
-				"field", strings.Join(fields[j], "."))
+				"field", strings.Join(f, "."))
 		} else {
 			logger.Info(
 				"Removing CRD field",
 				"kind", k,
-				"field", strings.Join(fields[j], "."))
+				"field", strings.Join(f, "."))
 
 			versions, _, err := unstructured.NestedSlice(
 				c.Object, "spec", "versions")
@@ -318,7 +371,7 @@ func removeFields(
 
 			for k := range versions {
 				v := versions[k].(map[string]any)
-				unstructured.RemoveNestedField(v, fields[j]...)
+				unstructured.RemoveNestedField(v, f...)
 			}
 
 			if err := unstructured.SetNestedSlice(
@@ -484,24 +537,30 @@ func decode(fs embed.FS, fileName string, dst ctrlclient.Object) error {
 	return nil
 }
 
-func specFieldPath(fieldName string) []string {
-	return []string{
-		"schema",
-		"openAPIV3Schema",
-		"properties",
-		"spec",
-		"properties",
-		fieldName,
+func specFieldPath(fieldNames ...string) []string {
+	result := []string{"schema", "openAPIV3Schema", "properties", "spec", "properties"}
+	result = append(result, fieldNames[0])
+	for _, name := range fieldNames[1:] {
+		// Use "[]" to indicate previous element is an array type.
+		if name == "[]" {
+			result = append(result, "items")
+			continue
+		}
+		result = append(result, "properties", name)
 	}
+	return result
 }
 
-func statusFieldPath(fieldName string) []string {
-	return []string{
-		"schema",
-		"openAPIV3Schema",
-		"properties",
-		"status",
-		"properties",
-		fieldName,
+func statusFieldPath(fieldNames ...string) []string {
+	result := []string{"schema", "openAPIV3Schema", "properties", "status", "properties"}
+	result = append(result, fieldNames[0])
+	for _, name := range fieldNames[1:] {
+		// Use "[]" to indicate previous element is an array type.
+		if name == "[]" {
+			result = append(result, "items")
+			continue
+		}
+		result = append(result, "properties", name)
 	}
+	return result
 }

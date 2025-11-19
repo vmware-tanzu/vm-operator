@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"path"
 	"reflect"
 	"regexp"
 	"slices"
@@ -19,6 +18,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vmdk"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -34,11 +34,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 type ReconcileStatusData struct {
@@ -61,6 +63,7 @@ func ReconcileStatus(
 
 	var errs []error
 
+	errs = append(errs, reconcileStatusAnno2Conditions(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusClass(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusPowerState(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusIdentifiers(vmCtx, k8sClient, vcVM, data)...)
@@ -71,6 +74,10 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusZone(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusController(vmCtx, k8sClient, vcVM, data)...)
+
+	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		errs = append(errs, reconcileHardwareCondition(vmCtx, k8sClient, vcVM, data)...)
+	}
 
 	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
 		errs = append(errs, reconcileStatusProbe(vmCtx, k8sClient, vcVM, data)...)
@@ -87,6 +94,53 @@ func ReconcileStatus(
 	MarkReconciliationCondition(vmCtx.VM)
 
 	return apierrorsutil.NewAggregate(errs)
+}
+
+var anno2ConditionRegex = regexp.MustCompile(`^condition.vmoperator.vmware.com.protected/(.+)?$`)
+
+// reconcileStatusAnno2Conditions sets conditions on the VM based on
+// annotation values.
+func reconcileStatusAnno2Conditions(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	for k, v := range vmCtx.VM.Annotations {
+		if anno2ConditionRegex.MatchString(k) {
+			var (
+				t string
+				s metav1.ConditionStatus
+				r string
+				m string
+			)
+			p := strings.Split(v, ";")
+			if len(p) > 0 {
+				t = p[0]
+			}
+			if len(p) > 1 {
+				s = metav1.ConditionStatus(p[1])
+			}
+			if len(p) > 2 {
+				r = p[2]
+			}
+			if len(p) > 3 {
+				m = p[3]
+			}
+			if t != "" {
+				switch s {
+				case metav1.ConditionFalse:
+					conditions.MarkFalse(vmCtx.VM, t, r, m+"%s", "")
+				case metav1.ConditionTrue:
+					conditions.MarkTrue(vmCtx.VM, t)
+				default:
+					conditions.MarkUnknown(vmCtx.VM, t, r, m+"%s", "")
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func reconcileStatusClass(
@@ -169,7 +223,7 @@ func reconcileStatusHardware(
 	}
 
 	var (
-		memTotal       = config.Hardware.MemoryMB
+		memTotal       = int64(config.Hardware.MemoryMB)
 		memReservation int64
 	)
 	if a := config.MemoryAllocation; a != nil {
@@ -186,7 +240,7 @@ func reconcileStatusHardware(
 
 		if r := memTotal; r > 0 {
 			b := r * 1000 * 1000
-			q := kubeutil.BytesToResource(int64(b))
+			q := kubeutil.BytesToResource(b)
 			vmCtx.VM.Status.Hardware.Memory.Total = q
 		}
 		if r := memReservation; r > 0 {
@@ -253,7 +307,22 @@ func reconcileStatusPowerState(
 	_ *object.VirtualMachine,
 	_ ReconcileStatusData) []error { //nolint:unparam
 
-	vmCtx.VM.Status.PowerState = convertPowerState(vmCtx.MoVM.Runtime.PowerState)
+	vmCtx.VM.Status.PowerState = vmopv1util.ConvertPowerState(vmCtx.Logger,
+		vmCtx.MoVM.Runtime.PowerState)
+
+	if vmCtx.VM.Status.PowerState == vmCtx.VM.Spec.PowerState {
+		c := conditions.TrueCondition(vmopv1.VirtualMachinePowerStateSynced)
+		c.Reason = "Synced"
+		c.Message = string(vmCtx.VM.Spec.PowerState)
+		conditions.Set(vmCtx.VM, c)
+	} else {
+		conditions.MarkFalse(
+			vmCtx.VM,
+			vmopv1.VirtualMachinePowerStateSynced,
+			"NotSynced",
+			"spec.powerState=%s != status.powerState=%s",
+			vmCtx.VM.Spec.PowerState, vmCtx.VM.Status.PowerState)
+	}
 
 	return nil
 }
@@ -292,7 +361,7 @@ func reconcileStatusZone(
 
 	var errs []error
 
-	zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
+	zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]
 	if zoneName == "" {
 		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
 			vmCtx, vcVM.Client(), vmCtx.MoVM.ResourcePool.Value)
@@ -307,7 +376,7 @@ func reconcileStatusZone(
 				if vmCtx.VM.Labels == nil {
 					vmCtx.VM.Labels = map[string]string{}
 				}
-				vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				vmCtx.VM.Labels[corev1.LabelTopologyZone] = zoneName
 			}
 		}
 	}
@@ -382,11 +451,13 @@ func reconcileStatusStorage(
 	_ *object.VirtualMachine,
 	_ ReconcileStatusData) []error { //nolint:unparam
 
-	updateChangeBlockTracking(vmCtx.VM, vmCtx.MoVM)
-	updateVolumeStatus(vmCtx.VM, vmCtx.MoVM)
-	updateStorageUsage(vmCtx.VM, vmCtx.MoVM)
+	var errs []error
 
-	return nil
+	updateChangeBlockTracking(vmCtx.VM, vmCtx.MoVM)
+	updateVolumeStatus(vmCtx)
+	errs = append(errs, updateStorageUsage(vmCtx)...)
+
+	return errs
 }
 
 func reconcileStatusNodeName(
@@ -538,18 +609,6 @@ func guestIPStackInfoToIPStackStatus(guestIPStack *vimtypes.GuestStackInfo) vmop
 	status.KernelConfig = convertKeyValueSlice(guestIPStack.IpStackConfig)
 
 	return status
-}
-
-func convertPowerState(powerState vimtypes.VirtualMachinePowerState) vmopv1.VirtualMachinePowerState {
-	switch powerState {
-	case vimtypes.VirtualMachinePowerStatePoweredOff:
-		return vmopv1.VirtualMachinePowerStateOff
-	case vimtypes.VirtualMachinePowerStatePoweredOn:
-		return vmopv1.VirtualMachinePowerStateOn
-	case vimtypes.VirtualMachinePowerStateSuspended:
-		return vmopv1.VirtualMachinePowerStateSuspended
-	}
-	return ""
 }
 
 func convertNetIPConfigInfoIPAddresses(ipAddresses []vimtypes.NetIpConfigInfoIpAddress) []vmopv1.VirtualMachineNetworkInterfaceIPAddrStatus {
@@ -1061,6 +1120,24 @@ func updateGuestNetworkStatus(
 		vm.Status.Network.PrimaryIP6 = primaryIP6
 		vm.Status.Network.IPStacks = ipStackStatuses
 		vm.Status.Network.Interfaces = ifaceStatuses
+
+		// TODO(akutz) Handle additional situations:
+		//             - The VM has IPv4 but not IPv6 and vice versa
+		//             - The network may be disabled, not have interfaces, etc.
+		if primaryIP4 != "" || primaryIP6 != "" {
+			c := conditions.TrueCondition(
+				vmopv1.VirtualMachineGuestNetworkConfigSynced)
+			c.Reason = "Synced"
+			c.Message = fmt.Sprintf("IPv4=%q, IPv6=%q", primaryIP4, primaryIP6)
+			conditions.Set(vm, c)
+		} else {
+			conditions.MarkFalse(
+				vm,
+				vmopv1.VirtualMachineGuestNetworkConfigSynced,
+				"NotSynced",
+				"%s",
+				"Neither IPv4 nor IPv6 address reported by guest")
+		}
 	} else if vm.Status.Network != nil {
 		if cfg := vm.Status.Network.Config; cfg != nil {
 			// Config is the only field we need to preserve.
@@ -1071,6 +1148,7 @@ func updateGuestNetworkStatus(
 			vm.Status.Network = nil
 		}
 	}
+
 }
 
 func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
@@ -1081,12 +1159,20 @@ func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine
 	}
 }
 
-func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) []error {
 
 	var (
-		other     int64
-		disksUsed int64
-		disksReqd int64
+		other           int64
+		disksUsed       int64
+		disksReqd       int64
+		vmSnapshotUsed  int64
+		volSnapshotUsed int64
+
+		moVM        = vmCtx.MoVM
+		vm          = vmCtx.VM
+		snapEnabled = pkgcfg.FromContext(vmCtx).Features.VMSnapshots
+
+		errs []error
 	)
 	// Get the storage consumed by non-disks.
 	if moVM.LayoutEx != nil {
@@ -1103,7 +1189,13 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 				vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotMemory,
 				vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotData:
 
-				// Skip snapshot related non-disk files
+				// Storage consumed by snapshots is tracked separately from
+				// the VM's files if VM Service vmsnapshot feature is enabled.
+				// So, only include snapshot files in the VM's total usage
+				// if vmsnapshot feature is enabled.
+				if !snapEnabled {
+					other += f.UniqueSize
+				}
 			default:
 				other += f.UniqueSize
 			}
@@ -1125,8 +1217,23 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		}
 	}
 
-	if disksReqd == 0 && disksUsed == 0 && other == 0 {
-		return
+	// Get the storage consumed by snapshots.
+	if snapEnabled {
+		var err error
+		vmSnapshotUsed, volSnapshotUsed, err = virtualmachine.GetAllSnapshotSize(vmCtx, moVM)
+		if err != nil {
+			errs = append(errs,
+				fmt.Errorf("failed to compute snapshot size of VM: %w", err),
+			)
+		}
+	}
+
+	if disksReqd == 0 &&
+		disksUsed == 0 &&
+		other == 0 &&
+		vmSnapshotUsed == 0 &&
+		volSnapshotUsed == 0 {
+		return errs
 	}
 
 	if vm.Status.Storage == nil {
@@ -1158,10 +1265,30 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		vm.Status.Storage.Used.Other = kubeutil.BytesToResource(other)
 	}
 
+	if vmSnapshotUsed > 0 || volSnapshotUsed > 0 {
+		if vm.Status.Storage.Used.Snapshots == nil {
+			vm.Status.Storage.Used.Snapshots =
+				&vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{}
+		}
+		if vmSnapshotUsed > 0 {
+			vm.Status.Storage.Used.Snapshots.VM = kubeutil.BytesToResource(vmSnapshotUsed)
+		}
+		if volSnapshotUsed > 0 {
+			vm.Status.Storage.Used.Snapshots.Volume = kubeutil.BytesToResource(volSnapshotUsed)
+		}
+	}
+
 	vm.Status.Storage.Total = kubeutil.BytesToResource(disksReqd + other)
+
+	return errs
 }
 
-func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
+	var (
+		moVM        = vmCtx.MoVM
+		vm          = vmCtx.VM
+		snapEnabled = pkgcfg.FromContext(vmCtx).Features.VMSnapshots
+	)
 	if moVM.Config == nil ||
 		moVM.LayoutEx == nil ||
 		len(moVM.LayoutEx.Disk) == 0 ||
@@ -1171,95 +1298,103 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		return
 	}
 
+	info, ok := pkgvol.FromContext(vmCtx)
+	if !ok {
+		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
+	}
+
+	// Filter out disks with invalid paths.
+	info.Disks = slices.DeleteFunc(info.Disks, func(
+		e pkgvol.VirtualDiskInfo) bool {
+		var diskPath object.DatastorePath
+		return !diskPath.FromString(e.FileName)
+	})
+
+	// Remove stale entries from the status.
 	existingDisksInStatus := map[string]int{}
 	for i := range vm.Status.Volumes {
 		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
 			existingDisksInStatus[vol.DiskUUID] = i
 		}
 	}
-
-	existingDisksInConfig := map[string]struct{}{}
-
-	for i := range moVM.Config.Hardware.Device {
-		vd, ok := moVM.Config.Hardware.Device[i].(*vimtypes.VirtualDisk)
-		if !ok {
-			continue
-		}
-
-		var (
-			diskUUID string
-			fileName string
-			isFCD    = vd.VDiskId != nil && vd.VDiskId.Id != ""
-		)
-
-		switch tb := vd.Backing.(type) {
-		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-			diskUUID = tb.Uuid
-			fileName = tb.FileName
-		case *vimtypes.VirtualDiskSeSparseBackingInfo:
-			diskUUID = tb.Uuid
-			fileName = tb.FileName
-		case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
-			diskUUID = tb.Uuid
-			fileName = tb.FileName
-		case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-			diskUUID = tb.Uuid
-			fileName = tb.FileName
-		case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
-			diskUUID = tb.Uuid
-			fileName = tb.DescriptorFileName
-		}
-
-		var diskPath object.DatastorePath
-		if !diskPath.FromString(fileName) {
-			continue
-		}
-
-		existingDisksInConfig[diskUUID] = struct{}{}
-
-		ctx := context.TODO()
-
-		if diskIndex, ok := existingDisksInStatus[diskUUID]; ok {
-			// The disk is already in the list of volume statuses, so update the
-			// existing status with the usage information.
-			di, _ := vmdk.GetVirtualDiskInfoByUUID(
-				ctx,
-				nil,   /* the client is not needed since props aren't refetched */
-				moVM,  /* use props from this object */
-				false, /* do not refetch props */
-				true,  /* exclude disks related to snapshots */
-				diskUUID)
-			vm.Status.Volumes[diskIndex].Used = kubeutil.BytesToResource(di.UniqueSize)
-			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
-				vm.Status.Volumes[diskIndex].Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
-					ProviderID: di.CryptoKey.ProviderID,
-					KeyID:      di.CryptoKey.KeyID,
+	for _, di := range info.Disks {
+		if volSpec, ok := info.Volumes[di.Target.String()]; ok {
+			if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
+				if volSpec.Name != vm.Status.Volumes[diskIndex].Name {
+					vmCtx.VM.Status.Volumes = slices.Delete(
+						vmCtx.VM.Status.Volumes, diskIndex, diskIndex+1)
+					delete(existingDisksInStatus, di.UUID)
 				}
 			}
-		} else if !isFCD {
-			// The disk is a classic, non-FCD that must be added to the list of
-			// volume statuses.
-			di, _ := vmdk.GetVirtualDiskInfoByUUID(
-				ctx,
-				nil,   /* the client is not needed since props aren't refetched */
-				moVM,  /* use props from this object */
-				false, /* do not refetch props */
-				true,  /* exclude disks related to snapshots */
-				diskUUID)
-			dp := diskPath.Path
+		}
+	}
+	for i := range vm.Status.Volumes {
+		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
+			existingDisksInStatus[vol.DiskUUID] = i
+		}
+	}
+
+	// Update the status.
+	existingDisksInConfig := map[string]struct{}{}
+	for _, di := range info.Disks {
+		existingDisksInConfig[di.UUID] = struct{}{}
+
+		if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
+			// The disk is already in the list of volume statuses, so update the
+			// existing status with the usage information.
+			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
+				vmCtx,
+				nil,         /* no client since props aren't re-fetched */
+				moVM,        /* use props from this object */
+				false,       /* do not refetch props */
+				snapEnabled, /* exclude disks related to snapshots */
+				di.UUID)
+			vm.Status.Volumes[diskIndex].Used = kubeutil.BytesToResource(ddi.UniqueSize)
+			if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
+				vm.Status.Volumes[diskIndex].Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
+					ProviderID: ddi.CryptoKey.ProviderID,
+					KeyID:      ddi.CryptoKey.KeyID,
+				}
+			}
+			// This is for a rare case when VM is upgraded from v1alpha3 to
+			// v1alpha4+. Since vm.status.volume.requested was introduced in
+			// v1alpha4. So we need to patch it if it's missing from status for
+			// Classic disk. Managed disk is taken care of in volume controller.
+			if !di.FCD && vm.Status.Volumes[diskIndex].Requested == nil {
+				vm.Status.Volumes[diskIndex].Requested = kubeutil.BytesToResource(di.CapacityInBytes)
+			}
+		} else if !di.FCD {
+
+			var volName string
+			if volSpec, ok := info.Volumes[di.Target.String()]; ok {
+				volName = volSpec.Name
+			} else {
+				volName = pkgutil.GeneratePVCName("disk", di.UUID)
+			}
+
+			// The disk is a classic, non-FCD that must be added to the list
+			// of volume statuses.
+			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
+				vmCtx,
+				nil,         /* no client since props aren't re-fetched */
+				moVM,        /* use props from this object */
+				false,       /* do not refetch props */
+				snapEnabled, /* exclude disks related to snapshots */
+				di.UUID)
+
 			volStatus := vmopv1.VirtualMachineVolumeStatus{
-				Name:      strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
+				Name:      volName,
 				Type:      vmopv1.VolumeTypeClassic,
 				Attached:  true,
-				DiskUUID:  diskUUID,
+				DiskUUID:  di.UUID,
 				Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
 				Requested: kubeutil.BytesToResource(di.CapacityInBytes),
-				Used:      kubeutil.BytesToResource(di.UniqueSize),
+				Used:      kubeutil.BytesToResource(ddi.UniqueSize),
 			}
-			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
+			if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
 				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
-					ProviderID: di.CryptoKey.ProviderID,
-					KeyID:      di.CryptoKey.KeyID,
+					ProviderID: ddi.CryptoKey.ProviderID,
+					KeyID:      ddi.CryptoKey.KeyID,
 				}
 			}
 			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
@@ -1455,11 +1590,7 @@ func updateSnapshotChildrenStatus(
 	// Return this node's reference to the parent.
 	curSnapshotRef := &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &common.LocalObjectRef{
-			APIVersion: curSnapshot.APIVersion,
-			Kind:       curSnapshot.Kind,
-			Name:       curSnapshot.Name,
-		},
+		Name: curSnapshot.Name,
 	}
 
 	return curSnapshotRef, nil
@@ -1526,8 +1657,8 @@ func updateCurrentSnapshotStatus(
 	currentSnapMoref := vmCtx.MoVM.Snapshot.CurrentSnapshot
 
 	// Find the snapshot name by traversing the snapshot tree.
-	snapshot := FindSnapshotInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, currentSnapMoref.Value)
-	if snapshot == nil {
+	snapshot, err := virtualmachine.FindSnapshot(vmCtx.MoVM, currentSnapMoref.Value)
+	if err != nil || snapshot == nil {
 		vmCtx.Logger.V(4).Info("Could not find snapshot name in tree",
 			"snapshotRef", currentSnapMoref.Value)
 		// Clear the status if we can't find the snapshot name.
@@ -1563,38 +1694,12 @@ func updateCurrentSnapshotStatus(
 		return nil
 	}
 
-	// Update the status to reflect the current snapshot custom resource.
-	currentSnapshot := &vmopv1.VirtualMachineSnapshotReference{
+	// Update the status to reflect the current snapshot name.
+	vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &common.LocalObjectRef{
-			APIVersion: vmSnapshot.APIVersion,
-			Kind:       vmSnapshot.Kind,
-			Name:       vmSnapshot.Name,
-		},
+		Name: vmSnapshot.Name,
 	}
 
-	// Update the status. Let patch helper figure out which fields
-	// need to be updated exactly.
-	vm.Status.CurrentSnapshot = currentSnapshot
-
-	return nil
-}
-
-// FindSnapshotInTree recursively searches the snapshot tree for a
-// snapshot with the given reference value.
-// TODO: AKP: Replace this with a Govmomi helper once merged.
-func FindSnapshotInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, targetRef string) *vimtypes.VirtualMachineSnapshotTree {
-	for _, snapshot := range snapshots {
-		// Check if this snapshot matches the target reference.
-		if snapshot.Snapshot.Value == targetRef {
-			return &snapshot
-		}
-
-		// Recursively search child snapshots.
-		if child := FindSnapshotInTree(snapshot.ChildSnapshotList, targetRef); child != nil {
-			return child
-		}
-	}
 	return nil
 }
 
@@ -1643,11 +1748,7 @@ func updateRootSnapshots(
 
 		newRootSnapshots = append(newRootSnapshots, vmopv1.VirtualMachineSnapshotReference{
 			Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-			Reference: &common.LocalObjectRef{
-				APIVersion: rootSnapshotCR.APIVersion,
-				Kind:       rootSnapshotCR.Kind,
-				Name:       rootSnapshotCR.Name,
-			},
+			Name: rootSnapshotCR.Name,
 		})
 	}
 
@@ -1696,11 +1797,8 @@ func reconcileStatusController(
 		vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 	}
 
-	var (
-		// Map controllers to device key and to their busNumber+type.
-		controllerKeyMap = make(map[int32]*vmopv1.VirtualControllerStatus)
-		controllerMap    = make(map[string]*vmopv1.VirtualControllerStatus)
-	)
+	// Map controller's device key to virtual controller status.
+	controllerKeyMap := make(map[int32]*vmopv1.VirtualControllerStatus)
 
 	// Collect all the controllers.
 	for _, device := range moVM.Config.Hardware.Device {
@@ -1713,15 +1811,17 @@ func reconcileStatusController(
 				Type:      vmopv1.VirtualControllerTypeIDE,
 			}
 
-		case *vimtypes.VirtualSCSIController:
+		case vimtypes.BaseVirtualSCSIController:
+			scsiCtrl := ctrl.GetVirtualSCSIController()
 			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
+				BusNumber: scsiCtrl.BusNumber,
 				Type:      vmopv1.VirtualControllerTypeSCSI,
 			}
 
-		case *vimtypes.VirtualSATAController:
+		case vimtypes.BaseVirtualSATAController:
+			sataCtrl := ctrl.GetVirtualSATAController()
 			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
+				BusNumber: sataCtrl.BusNumber,
 				Type:      vmopv1.VirtualControllerTypeSATA,
 			}
 
@@ -1734,46 +1834,55 @@ func reconcileStatusController(
 
 		if cs != nil {
 			deviceKey := device.GetVirtualDevice().Key
+			cs.DeviceKey = deviceKey
 			controllerKeyMap[deviceKey] = cs
-			displayKey := fmt.Sprintf("%d-%s", cs.BusNumber, cs.Type)
-			controllerMap[displayKey] = cs
 		}
 	}
 
 	// Collect all devices attached to controllers.
 	for _, device := range moVM.Config.Hardware.Device {
-		var unitNumber int32
-		if u := device.GetVirtualDevice().UnitNumber; u != nil {
-			unitNumber = *u
-		}
+
+		var (
+			unitNumber    *int32
+			controllerKey int32
+			deviceType    vmopv1.VirtualDeviceType
+		)
 
 		switch dev := device.(type) {
 		case *vimtypes.VirtualDisk:
-			deviceStatus := vmopv1.VirtualDeviceStatus{
-				Type:       vmopv1.VirtualDeviceTypeDisk,
-				UnitNumber: unitNumber,
-			}
-			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
-				c.Devices = append(c.Devices, deviceStatus)
-			}
+			vdi := pkgutil.GetVirtualDiskInfo(dev)
+			unitNumber = vdi.UnitNumber
+			controllerKey = vdi.ControllerKey
+			deviceType = vmopv1.VirtualDeviceTypeDisk
 
 		case *vimtypes.VirtualCdrom:
-			deviceStatus := vmopv1.VirtualDeviceStatus{
-				Type:       vmopv1.VirtualDeviceTypeCDROM,
-				UnitNumber: unitNumber,
-			}
-			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
-				c.Devices = append(c.Devices, deviceStatus)
-			}
+			cdi := pkgutil.GetVirtualCdromInfo(dev)
+			unitNumber = cdi.UnitNumber
+			controllerKey = cdi.ControllerKey
+			deviceType = vmopv1.VirtualDeviceTypeCDROM
 		}
+
+		// skip devices that are not attached nor owned by the controllers
+		if _, ok := controllerKeyMap[controllerKey]; !ok ||
+			unitNumber == nil || deviceType == "" {
+			continue
+		}
+
+		deviceStatus := vmopv1.VirtualDeviceStatus{
+			Type:       deviceType,
+			UnitNumber: *unitNumber,
+		}
+		controllerKeyMap[controllerKey].Devices = append(
+			controllerKeyMap[controllerKey].Devices, deviceStatus)
+
 	}
 
 	// Convert map to slice and sort for consistent output.
 	var (
 		ctlStatusesIndex int
-		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerMap))
+		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerKeyMap))
 	)
-	for _, cs := range controllerMap {
+	for _, cs := range controllerKeyMap {
 
 		// Sort the device statuses by type and unit number.
 		slices.SortFunc(cs.Devices, func(a, b vmopv1.VirtualDeviceStatus) int {

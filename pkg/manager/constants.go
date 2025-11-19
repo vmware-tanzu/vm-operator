@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package manager
@@ -15,7 +15,7 @@ const (
 
 	// DefaultSyncPeriod is the default value for the eponymous
 	// manager option.
-	DefaultSyncPeriod = time.Minute * 10
+	DefaultSyncPeriod = time.Minute * 30
 
 	// DefaultMaxConcurrentReconciles is the default value for the eponymous
 	// manager option.
@@ -29,7 +29,7 @@ const (
 	DefaultPodName = defaultPrefix + "controller-manager"
 
 	// DefaultPodServiceAccountName is the default name of the pod service account.
-	DefaultPodServiceAccountName = "default"
+	DefaultPodServiceAccountName = defaultPrefix + "service-account"
 
 	// DefaultLeaderElectionID is the default value for the eponymous manager option.
 	DefaultLeaderElectionID = DefaultPodName + "-runtime"
@@ -57,7 +57,7 @@ const (
 	// DefaultWebhookSecretVolumeMountPath is the default value for the
 	// eponymous manager option.
 	//nolint:gosec
-	DefaultWebhookSecretVolumeMountPath = "/tmp/k8s-webhook-server/serving-certs"
+	DefaultWebhookSecretVolumeMountPath = "/etc/vmware/wcp/webhook-certs"
 
 	// DefaultContainerNode is the default value for the eponymous manager option.
 	DefaultContainerNode = false

@@ -17,7 +17,18 @@ const (
 	VirtualControllerTypeSATA VirtualControllerType = "SATA"
 )
 
-// +kubebuilder:validation:Enum=None;Physical;Virtual
+// MaxCount returns the maximum number of controllers per VM.
+func (t VirtualControllerType) MaxCount() int32 {
+	switch t {
+	case VirtualControllerTypeIDE:
+		return 2
+	case VirtualControllerTypeNVME,
+		VirtualControllerTypeSATA,
+		VirtualControllerTypeSCSI:
+		return 4
+	}
+	return 0
+}
 
 type VirtualControllerSharingMode string
 
@@ -56,6 +67,21 @@ type IDEControllerSpec struct {
 	BusNumber int32 `json:"busNumber"`
 }
 
+// MaxSlots returns the maximum number of slots per IDE controller.
+func (c IDEControllerSpec) MaxSlots() int32 {
+	return 2
+}
+
+// MaxCount returns the maximum number of IDE controllers per VM.
+func (c IDEControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeIDE.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c IDEControllerSpec) ReservedUnitNumber() int32 {
+	return -1
+}
+
 type NVMEControllerSpec struct {
 	// +required
 	// +kubebuilder:validation:Minimum=0
@@ -75,11 +101,27 @@ type NVMEControllerSpec struct {
 
 	// +optional
 	// +kubebuilder:default=None
+	// +kubebuilder:validation:Enum=None;Physical
 
 	// SharingMode describes the sharing mode for the controller.
 	//
 	// Defaults to None.
 	SharingMode VirtualControllerSharingMode `json:"sharingMode,omitempty"`
+}
+
+// MaxSlots returns the maximum number of slots per NVME controller.
+func (c NVMEControllerSpec) MaxSlots() int32 {
+	return 64
+}
+
+// MaxCount returns the maximum number of NVME controllers per VM.
+func (c NVMEControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeNVME.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c NVMEControllerSpec) ReservedUnitNumber() int32 {
+	return -1
 }
 
 type SATAControllerSpec struct {
@@ -98,6 +140,21 @@ type SATAControllerSpec struct {
 	// Please note, most of the time this field should be empty so the system
 	// can pick an available slot.
 	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
+}
+
+// MaxSlots returns the maximum number of slots per SATA controller.
+func (c SATAControllerSpec) MaxSlots() int32 {
+	return 30
+}
+
+// MaxCount returns the maximum number of SATA controllers per VM.
+func (c SATAControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeSATA.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c SATAControllerSpec) ReservedUnitNumber() int32 {
+	return -1
 }
 
 type SCSIControllerSpec struct {
@@ -119,6 +176,7 @@ type SCSIControllerSpec struct {
 
 	// +optional
 	// +kubebuilder:default=None
+	// +kubebuilder:validation:Enum=None;Physical;Virtual
 
 	// SharingMode describes the sharing mode for the controller.
 	//
@@ -134,12 +192,32 @@ type SCSIControllerSpec struct {
 	Type SCSIControllerType `json:"type,omitempty"`
 }
 
+// MaxSlots returns the maximum number of devices per SCSI controller type.
+// The controller itself occupies one slot (unit number seven), which you should
+// not use when assigning unit numbers to devices.
+func (c SCSIControllerSpec) MaxSlots() int32 {
+	switch c.Type {
+	case SCSIControllerTypeParaVirtualSCSI:
+		return 65 // There are 64 available slots and 1 reserved.
+	case SCSIControllerTypeBusLogic,
+		SCSIControllerTypeLsiLogic,
+		SCSIControllerTypeLsiLogicSAS:
+		return 16 // There are 15 available slots and 1 reserved.
+	}
+	return 0
+}
+
+// MaxCount returns the maximum number of SCSI controllers per VM.
+func (c SCSIControllerSpec) MaxCount() int32 {
+	return VirtualControllerTypeSCSI.MaxCount()
+}
+
+// ReservedUnitNumber returns any reserved unit numbers or negative one.
+func (c SCSIControllerSpec) ReservedUnitNumber() int32 {
+	return 7
+}
+
 type VirtualDeviceStatus struct {
-	// +required
-
-	// Name describes the name of the virtual device.
-	Name string `json:"name"`
-
 	// +required
 
 	// Type describes the type of the virtual device.
@@ -162,10 +240,14 @@ type VirtualControllerStatus struct {
 	// Type describes the observed type of the controller.
 	Type VirtualControllerType `json:"type"`
 
+	// +required
+
+	// DeviceKey describes the observed device key of the controller.
+	DeviceKey int32 `json:"deviceKey"`
+
 	// +optional
 	// +listType=map
-	// +listMapKey=name
-	// +listMapKey=type
+	// +listMapKey=unitNumber
 
 	// Devices describes the observed devices connected to the controller.
 	Devices []VirtualDeviceStatus `json:"devices,omitempty"`

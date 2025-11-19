@@ -12,12 +12,18 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func intgTests() {
+
+	pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
+		config.Features.VMSharedDisks = true
+	})
+
 	Describe(
 		"Create",
 		Label(
@@ -39,6 +45,18 @@ func intgTests() {
 			testlabels.Webhook,
 		),
 		intgTestsValidateUpdate,
+	)
+	Describe(
+		"Update CD-ROM Controller",
+		Serial,
+		Label(
+			testlabels.Update,
+			testlabels.EnvTest,
+			testlabels.API,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		intgTestsValidateCdromController,
 	)
 	Describe(
 		"Delete",
@@ -65,6 +83,11 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 
 	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace
+
+	// add controller bus number to all volumes to simulate what the mutation
+	// webhook would do. We use bus 1 because bus 0 is rejected for CREATE
+	// operations.
+	setControllerForPVCWithBusNumber(ctx.vm, 1)
 
 	return ctx
 }
@@ -139,6 +162,7 @@ func intgTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
+
 		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 	})
 
@@ -254,30 +278,20 @@ func intgTestsValidateUpdate() {
 			BeforeEach(func() {
 				vmSnapshot := builder.DummyVirtualMachineSnapshot(ctx.vm.Namespace, "dummy-vm-snapshot", ctx.vm.Name)
 
-				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-					Kind:       "VirtualMachineSnapshot",
-					APIVersion: "vmoperator.vmware.com/v1alpha5",
-					Name:       vmSnapshot.Name,
-				}
+				ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 			})
 
 			It("should allow the request", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})
-		When("snapshot ref is invalid", func() {
+		When("currentSnapshotName is empty", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-					Kind:       "VMSnapshot",
-					APIVersion: "",
-					Name:       "",
-				}
+				ctx.vm.Spec.CurrentSnapshotName = ""
 			})
 
-			It("should not allow the request", func() {
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("spec.currentSnapshot.name: Required value"))
-				Expect(err.Error()).To(ContainSubstring("Unsupported value: \"VMSnapshot\": supported values: \"VirtualMachineSnapshot\""))
+			It("should allow the request", func() {
+				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 	})
@@ -285,43 +299,6 @@ func intgTestsValidateUpdate() {
 	Context("VirtualMachine update while VM is powered on", func() {
 		BeforeEach(func() {
 			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-		})
-
-		When("Bootstrap is updated", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-						RawCloudConfig: &common.SecretKeySelector{},
-					},
-				}
-			})
-
-			It("rejects the request", func() {
-				expectedReason := field.Forbidden(field.NewPath("spec", "bootstrap"),
-					"updates to this field is not allowed when VM power is on").Error()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(expectedReason))
-			})
-		})
-
-		When("Network is updated", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-					HostName: "my-new-name",
-					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-						{
-							Name: "eth100",
-						},
-					},
-				}
-			})
-
-			It("rejects the request", func() {
-				expectedReason := field.Forbidden(field.NewPath("spec", "network", "interfaces").Index(0).Child("name"),
-					"field is immutable").Error()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(expectedReason))
-			})
 		})
 
 		When("Volume for PVC is added", func() {
@@ -337,6 +314,8 @@ func intgTestsValidateUpdate() {
 							},
 						},
 					})
+
+				setControllerForPVCWithBusNumber(ctx.vm, 1)
 			})
 
 			It("does not reject the request", func() {
@@ -365,7 +344,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				expectedReason := field.Forbidden(field.NewPath("spec", "hardware", "cdrom[0]", "name"),
-					"updates to this field is not allowed when VM power is on").Error()
+					"adding new CD-ROMs is not allowed when VM is powered on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -412,6 +391,133 @@ func intgTestsValidateDelete() {
 		It("should allow the request", func() {
 			Expect(ctx.Namespace).ToNot(BeNil())
 			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+}
+
+func intgTestsValidateCdromController() {
+	var (
+		ctx *intgValidatingWebhookContext
+		err error
+	)
+
+	BeforeEach(func() {
+		ctx = newIntgValidatingWebhookContext()
+		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+		ctx.vm.Spec.Hardware.Cdrom = ctx.vm.Spec.Hardware.Cdrom[:1]
+		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+	})
+
+	JustBeforeEach(func() {
+		err = ctx.Client.Update(suite, ctx.vm)
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	Context("CD-ROM controller validation with real webhook environment", func() {
+		When("CD-ROM has missing required controller fields", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = ""
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = nil
+				ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = nil
+			})
+
+			It("should deny the request with proper field paths", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerType").String()))
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerBusNumber").String()))
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "unitNumber").String()))
+				Expect(err.Error()).To(ContainSubstring("Required value"))
+			})
+		})
+
+		When("CD-ROM has invalid IDE controller bus number and unit number", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(10))
+				ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(10))
+			})
+
+			It("should deny the request with proper error messages", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerBusNumber").String()))
+				Expect(err.Error()).To(ContainSubstring("IDE controllerBusNumber must be in the range of 0 to 1"))
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "unitNumber").String()))
+				Expect(err.Error()).To(ContainSubstring("IDE unitNumber must be in the range of 0 to 1"))
+			})
+		})
+
+		When("CD-ROM has SATA controller with invalid bus number and unit number", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(5))
+				ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(30))
+			})
+
+			It("should deny the request with proper error messages", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerBusNumber").String()))
+				Expect(err.Error()).To(ContainSubstring("SATA controllerBusNumber must be in the range of 0 to 3"))
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "unitNumber").String()))
+				Expect(err.Error()).To(ContainSubstring("SATA unitNumber must be in the range of 0 to 29"))
+			})
+		})
+
+		When("two CD-ROMs have duplicate unit numbers on same controller", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware.Cdrom = append(ctx.vm.Spec.Hardware.Cdrom,
+					vmopv1.VirtualMachineCdromSpec{
+						Name:                "cdrom2",
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
+						Image: vmopv1.VirtualMachineImageRef{
+							Kind: "VirtualMachineImage",
+							Name: "test-image-2",
+						},
+					})
+			})
+
+			It("should deny the request with duplicate error", func() {
+				Expect(err).To(HaveOccurred())
+				expectedPath := field.NewPath("spec", "hardware", "cdrom[1]", "unitNumber")
+				Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
+				Expect(err.Error()).To(ContainSubstring("Duplicate value"))
+			})
+		})
+
+		When("CD-ROM controller fields change when VM is powered on", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+				ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+				Expect(ctx.Client.Status().Update(ctx, ctx.vm)).To(Succeed())
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
+				ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
+			})
+
+			It("should deny the request with power state errors", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerType").String()))
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerBusNumber").String()))
+				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "unitNumber").String()))
+				Expect(err.Error()).To(ContainSubstring("updates to this field is not allowed when VM power is on"))
+			})
+		})
+
+		When("valid CD-ROM controller configuration", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+				ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(0))
+				ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(0))
+			})
+
+			It("should allow the request", func() {
+				Expect(err).ToNot(HaveOccurred())
+			})
 		})
 	})
 }

@@ -37,7 +37,7 @@ const (
 )
 
 var (
-	errVMRefNil = pkgerr.NoRequeueNoErr("VirtualMachineSnapshot VMRef is nil")
+	errVMNameEmpty = pkgerr.NoRequeueNoErr("VirtualMachineSnapshot VMName is empty")
 )
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
@@ -133,20 +133,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 				vmSnapshot.Namespace,
 				sc)
 		}
+
 		reconcileSnapshotReadyCondition(vmSnapshot)
-		vmSnapshotCtx.Logger.Info("Patching VirtualMachineSnapshot", "snapshot", vmSnapshot)
+
+		vmSnapshotCtx.Logger.V(4).Info("Patching VirtualMachineSnapshot",
+			"snapshot", vmSnapshot)
 		if err := patchHelper.Patch(ctx, vmSnapshot); err != nil {
 			if reterr == nil {
 				reterr = err
 			}
-			vmSnapshotCtx.Logger.Error(err, "patch failed")
 		}
 	}()
 
 	if !vmSnapshot.DeletionTimestamp.IsZero() {
 		if err := r.ReconcileDelete(vmSnapshotCtx); err != nil {
-			vmSnapshotCtx.Logger.Error(err, "Failed to delete VirtualMachineSnapshot")
-			return ctrl.Result{}, err
+			return ctrl.Result{},
+				fmt.Errorf("failed to delete VirtualMachineSnapshot: %w", err)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -165,15 +167,14 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 	vmSnapshot := ctx.VirtualMachineSnapshot
 	ctx.Logger.Info("Fetching VirtualMachine from snapshot object")
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return ctrl.Result{}, errVMRefNil
+	if vmSnapshot.Spec.VMName == "" {
+		return ctrl.Result{}, errors.New("vmName is required")
 	}
 
 	vm := &vmopv1.VirtualMachine{}
-	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
+	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMName, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
-		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to get VirtualMachine %q: %w", objKey, err)
 	}
 
 	ctx.VM = vm
@@ -229,26 +230,33 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		return nil
 	}
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return errVMRefNil
+	if vmSnapshot.Spec.VMName == "" {
+		return errVMNameEmpty
+	}
+
+	// We should notify all impacted SPUs to update their requested capacity and
+	// used capacity of the SPU that shares the same SC as the owner VM.
+	if vmSnapshot.Status.Storage != nil &&
+		vmSnapshot.Status.Storage.Requested != nil {
+
+		for _, requested := range vmSnapshot.Status.Storage.Requested {
+			ctx.StorageClassesToSync.Insert(requested.StorageClass)
+		}
 	}
 
 	vm := &vmopv1.VirtualMachine{}
-	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
+	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMName, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
 		if apierrors.IsNotFound(err) {
 			ctx.Logger.V(5).Info("VirtualMachine not found, assuming the " +
 				"snapshot is deleted along with moVM, remove finalizer")
 			controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
-			// We don't sync SPU since we don't know which StorageClass of the VM.
+			// No need to explicitly enqueue SPU update here since VM deletion
+			// will trigger SPU sync for usage update.
 			return nil
 		}
-		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-		return err
+		return fmt.Errorf("failed to get VirtualMachine %q: %w", objKey, err)
 	}
-
-	// Enqueue the storage class to sync corresponding SPU.
-	ctx.StorageClassesToSync.Insert(vm.Spec.StorageClass)
 
 	ctx.VM = vm
 
@@ -302,8 +310,11 @@ func ensureCSIVolumeSyncAnnotation(vmSnapshot *vmopv1.VirtualMachineSnapshot) {
 		vmSnapshot.Annotations = make(map[string]string)
 	}
 	// As long as the value is not set to completed by CSI driver, we need to mark it as requested.
-	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] != constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
-		vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = constants.CSIVSphereVolumeSyncAnnotationValueRequested
+	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] !=
+		constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
+
+		vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] =
+			constants.CSIVSphereVolumeSyncAnnotationValueRequested
 	}
 }
 
@@ -349,10 +360,12 @@ func (r *Reconciler) calculateRequestedCapacity(ctx *pkgctx.VirtualMachineSnapsh
 	ctx.Logger.V(5).Info("Updated vmSnapshot requested capacity",
 		"requested", vmSnapshot.Status.Storage.Requested)
 
-	// Enqueue the storage classes to sync corresponding SPU.
+	// Add storageClasses referenced by the VM to the queue so their corresponding
+	// SPUs could be synced to update their requested capacity.
 	for _, requested := range vmSnapshot.Status.Storage.Requested {
 		ctx.StorageClassesToSync.Insert(requested.StorageClass)
 	}
+
 	return nil
 }
 
@@ -376,12 +389,29 @@ func (r *Reconciler) calculateUsedCapacity(ctx *pkgctx.VirtualMachineSnapshotCon
 	vmSnapshot.Status.Storage.Used = total
 	ctx.Logger.V(5).Info("Updated vmSnapshot's status used capacity", "used", total)
 
-	// Enqueue the storage class to sync corresponding SPU only after CSI has completed the sync.
+	// Enqueue storage classes to sync corresponding SPUs with requested/used
+	// capacity again after CSI has completed the sync.
 	// Also mark the CSI volume sync condition as true.
 	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
 		constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
-		pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
-		ctx.StorageClassesToSync.Insert(vm.Spec.StorageClass)
+
+		if !pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition) {
+			// Add storageClasses referenced by the VM to the queue so their
+			// corresponding SPUs could be synced to update their requested/used
+			// capacity.
+			// Ideally it should always be synced but trying to save some
+			// cycles to only sync all impacted SPUs after CSI sync is done.
+			for _, requested := range vmSnapshot.Status.Storage.Requested {
+				ctx.StorageClassesToSync.Insert(requested.StorageClass)
+			}
+
+			pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
+		} else {
+			// In most of the cases, we just need to update the used capacity of
+			// the SPU that has same StorageClass as VM.
+			ctx.StorageClassesToSync.Insert(vm.Spec.StorageClass)
+		}
 	}
+
 	return nil
 }

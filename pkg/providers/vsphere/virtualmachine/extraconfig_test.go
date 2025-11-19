@@ -49,7 +49,7 @@ func extraConfigTests() {
 	unchangedTestFn := func(reset bool) {
 		before, err := virtualmachine.GetExtraConfigFromObject(ctx, vcVM)
 		Expect(err).ToNot(HaveOccurred())
-		after, err := virtualmachine.GetFilteredExtraConfigFromObject(ctx, vcVM, reset)
+		after, err := virtualmachine.FilteredExtraConfig(before, reset)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(after.Diff(before...)).To(BeNil())
 	}
@@ -101,6 +101,7 @@ func extraConfigTests() {
 			toBeRemoved = pkgutil.OptionValues{
 				&vimtypes.OptionValue{Key: strings.ToUpper("guestinfo.v1"), Value: "v1"},
 				&vimtypes.OptionValue{Key: "vmservice.v2", Value: "v2"},
+				&vimtypes.OptionValue{Key: "imageregistry.itemSeed", Value: "1234"},
 			}
 		)
 		BeforeEach(func() {
@@ -110,7 +111,7 @@ func extraConfigTests() {
 		testFn := func(reset bool) {
 			before, err := virtualmachine.GetExtraConfigFromObject(ctx, vcVM)
 			Expect(err).ToNot(HaveOccurred())
-			after, err := virtualmachine.GetFilteredExtraConfigFromObject(ctx, vcVM, reset)
+			after, err := virtualmachine.FilteredExtraConfig(before, reset)
 			Expect(err).ToNot(HaveOccurred())
 			if reset {
 				for k := range toBeRemoved.StringMap() {
@@ -137,12 +138,14 @@ func extraConfigTests() {
 		})
 
 		testFn := func(reset bool) {
-			out, err := virtualmachine.GetFilteredExtraConfigFromObject(ctx, vcVM, reset)
+			before, err := virtualmachine.GetExtraConfigFromObject(ctx, vcVM)
+			Expect(err).NotTo(HaveOccurred())
+			after, err := virtualmachine.FilteredExtraConfig(before, reset)
 			if reset {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to filter extraConfig"))
 				Expect(err.Error()).To(ContainSubstring("expected value's datatype string"))
-				Expect(out).To(BeNil())
+				Expect(after).To(BeNil())
 			} else {
 				Expect(err).ToNot(HaveOccurred())
 			}

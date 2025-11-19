@@ -13,11 +13,11 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -202,7 +202,7 @@ func applyPlacementResultsToGroups(
 				idx = len(vmGroup.Status.Members) - 1
 			}
 
-			vmGroup.Status.Members[idx].Placement = placeResultToGroupMemberPlacement(vm.Name, &result)
+			vmGroup.Status.Members[idx].Placement = placeResultToGroupMemberPlacement(&result)
 			// TODO: Clear this on failure for the root group
 			pkgcond.MarkTrue(&vmGroup.Status.Members[idx], vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
 		}
@@ -221,11 +221,9 @@ func findVMMemberStatus(vmName string, members []vmopv1.VirtualMachineGroupMembe
 }
 
 func placeResultToGroupMemberPlacement(
-	vmName string,
 	result *placement.Result) *vmopv1.VirtualMachinePlacementStatus {
 
 	placementStatus := &vmopv1.VirtualMachinePlacementStatus{}
-	placementStatus.Name = vmName
 	placementStatus.Zone = result.ZoneName
 	placementStatus.Pool = result.PoolMoRef.Value
 
@@ -235,10 +233,11 @@ func placeResultToGroupMemberPlacement(
 
 	for _, ds := range result.Datastores {
 		status := vmopv1.VirtualMachineGroupPlacementDatastoreStatus{
-			Name:                 ds.Name,
-			ID:                   ds.MoRef.Value,
-			URL:                  ds.URL,
-			SupportedDiskFormats: ds.DiskFormats,
+			Name:                             ds.Name,
+			ID:                               ds.MoRef.Value,
+			URL:                              ds.URL,
+			SupportedDiskFormats:             ds.DiskFormats,
+			TopLevelDirectoryCreateSupported: ds.TopLevelDirectoryCreateSupported,
 		}
 		if ds.ForDisk {
 			status.DiskKey = ptr.To(ds.DiskKey)

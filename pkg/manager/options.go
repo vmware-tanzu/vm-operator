@@ -135,6 +135,12 @@ type Options struct {
 	// Defaults to the eponymous constant in this package.
 	ContainerNode bool
 
+	// UsePriorityQueue flag indicates whether the controller-runtime priority
+	// queue feature is enabled.
+	//
+	// Defaults to true.
+	UsePriorityQueue bool
+
 	Logger     *logr.Logger
 	KubeConfig *rest.Config
 	Scheme     *runtime.Scheme

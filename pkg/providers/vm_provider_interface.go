@@ -59,13 +59,12 @@ type VirtualMachineProviderInterface interface {
 
 	GetItemFromLibraryByName(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	GetItemFromInventoryByName(ctx context.Context, contentLibrary, itemName string) (object.Reference, error)
-	GetCloneTasksForVM(ctx context.Context, vm *vmopv1.VirtualMachine, moID, descriptionID string) ([]vimtypes.TaskInfo, error)
 	ContainsExtraConfigEntry(ctx context.Context, objVM *object.VirtualMachine, key, value string) (bool, error)
 
 	UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
 	SyncVirtualMachineImage(ctx context.Context, cli, vmi ctrlclient.Object) error
 
-	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
+	GetTasksByActID(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
 
 	// DoesProfileSupportEncryption returns true if the specified profile
 	// supports encryption by checking whether or not the underlying policy

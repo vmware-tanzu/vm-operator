@@ -14,7 +14,6 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vmdk"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -22,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -51,8 +51,14 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 		}
 	}
 
-	if ovfEnvelope.Disk != nil && len(ovfEnvelope.Disk.Disks) > 0 {
-		populateImageStatusFromOVFDiskSection(status, ovfEnvelope.Disk)
+	if ovfEnvelope.Disk != nil &&
+		ovfEnvelope.VirtualSystem != nil &&
+		len(ovfEnvelope.VirtualSystem.VirtualHardware) > 0 {
+
+		populateImageStatusFromOVFDiskSection(
+			status,
+			ovfEnvelope.VirtualSystem.VirtualHardware[0],
+			ovfEnvelope.Disk.Disks)
 	} else {
 		status.Disks = nil
 	}
@@ -62,6 +68,8 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 
 // UpdateVmiWithVirtualMachine updates the given VMI object from a
 // mo.VirtualMachine data structure.
+//
+//nolint:gocyclo
 func UpdateVmiWithVirtualMachine(
 	ctx context.Context,
 	obj client.Object,
@@ -150,45 +158,23 @@ func UpdateVmiWithVirtualMachine(
 	for _, bd := range vm.Config.Hardware.Device {
 		if disk, ok := bd.(*vimtypes.VirtualDisk); ok {
 
-			var (
-				capacity *resource.Quantity
-				size     *resource.Quantity
-			)
-
-			var uuid string
-			switch tb := disk.Backing.(type) {
-			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskSeSparseBackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
-				uuid = tb.Uuid
-			default:
-				capacity = kubeutil.BytesToResource(disk.CapacityInBytes)
-			}
-
-			if uuid != "" {
+			if info := pkgutil.GetVirtualDiskInfo(disk); info.UUID != "" {
 				di, _ := vmdk.GetVirtualDiskInfoByUUID(
 					ctx,
-					nil,   /* the client is not needed since props aren't refetched */
+					nil,   /* client is nil since props are not re-fetched */
 					vm,    /* use props from this object */
 					false, /* do not refetch props */
 					false, /* include disks related to snapshots */
-					uuid)
-				capacity = kubeutil.BytesToResource(di.CapacityInBytes)
-				size = kubeutil.BytesToResource(di.Size)
-			}
+					info.UUID)
 
-			status.Disks = append(
-				status.Disks,
-				vmopv1.VirtualMachineImageDiskInfo{
-					Capacity: capacity,
-					Size:     size,
-				})
+				status.Disks = append(
+					status.Disks,
+					vmopv1.VirtualMachineImageDiskInfo{
+						Name:      info.UUID,
+						Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
+						Requested: kubeutil.BytesToResource(di.Size),
+					})
+			}
 		}
 	}
 
@@ -273,24 +259,56 @@ func initImageStatusFromOVFVirtualSystem(
 	}
 }
 
-func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineImageStatus, diskSection *ovf.DiskSection) {
-	imageStatus.Disks = make([]vmopv1.VirtualMachineImageDiskInfo, len(diskSection.Disks))
+func populateImageStatusFromOVFDiskSection(
+	status *vmopv1.VirtualMachineImageStatus,
+	hardware ovf.VirtualHardwareSection,
+	disks []ovf.VirtualDiskDesc) {
 
-	for i, disk := range diskSection.Disks {
-		diskDetail := vmopv1.VirtualMachineImageDiskInfo{}
-		if disk.PopulatedSize != nil {
-			populatedSize := int64(*disk.PopulatedSize)
-			diskDetail.Size = kubeutil.BytesToResource(populatedSize)
+	status.Disks = nil
+
+	diskIDToDisk := map[string]ovf.VirtualDiskDesc{}
+	for _, d := range disks {
+		diskIDToDisk[d.DiskID] = d
+	}
+
+	for _, i := range hardware.Item {
+		if i.ResourceType != nil && *i.ResourceType == ovf.DiskDrive {
+
+			diskName := i.ElementName
+
+			if len(i.HostResource) > 0 {
+
+				diskID := strings.TrimPrefix(i.HostResource[0], "ovf:/disk/")
+
+				if d, ok := diskIDToDisk[diskID]; ok {
+					di := vmopv1.VirtualMachineImageDiskInfo{
+						// Set the name of the disk in the VMI's status.diskInfo
+						// section to ElementName. This is the same value that
+						// is placed in the VirtualDisk's Description.Label
+						// field when the OVF is converted into a ConfigSpec.
+						// This allows users to map the disk from the ConfigSpec
+						// to the disk in the VMI.
+						Name: diskName,
+					}
+
+					if d.PopulatedSize != nil {
+						populatedSize := int64(*d.PopulatedSize)
+						di.Requested = kubeutil.BytesToResource(populatedSize)
+					}
+
+					// Parse the disk capacity.
+					if c, _ := strconv.ParseInt(d.Capacity, 10, 64); c != 0 {
+						if u := d.CapacityAllocationUnits; u != nil {
+							m := ovf.ParseCapacityAllocationUnits(*u)
+							c *= m
+						}
+						di.Limit = kubeutil.BytesToResource(c)
+					}
+
+					status.Disks = append(status.Disks, di)
+				}
+			}
 		}
-
-		capacity, _ := strconv.ParseInt(disk.Capacity, 10, 64)
-		if capacityAllocationUnits := disk.CapacityAllocationUnits; capacityAllocationUnits != nil && capacity != 0 {
-			bytesMultiplier := ovf.ParseCapacityAllocationUnits(*capacityAllocationUnits)
-			capacity *= bytesMultiplier
-		}
-		diskDetail.Capacity = kubeutil.BytesToResource(capacity)
-
-		imageStatus.Disks[i] = diskDetail
 	}
 }
 

@@ -1,0 +1,16 @@
+# This patch sets the security context for the controller-manager pod.
+# The pod runs as the 'nobody' user (UID/GID 65534) that matches the existing
+# behavior defined in the Dockerfile. The fsGroup ensures mounted volumes
+# (secrets, configmaps) are readable by the 'nobody' user.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534

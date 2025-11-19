@@ -5,13 +5,13 @@
 package mutation
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,6 +90,46 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	mgr.GetWebhookServer().Register(hook.Path, hook)
 
 	return nil
+}
+
+// MutateOnCreateFn is a function called to mutate a VM on create.
+type MutateOnCreateFn func(
+	ctx *pkgctx.WebhookRequestContext,
+	client ctrlclient.Client,
+	newVM *vmopv1.VirtualMachine) (wasMutated bool, _ error)
+
+// MutateOnUpdateFn is a function called to mutate a VM on update.
+type MutateOnUpdateFn func(
+	ctx *pkgctx.WebhookRequestContext,
+	client ctrlclient.Client,
+	newVM, oldVM *vmopv1.VirtualMachine) (wasMutated bool, _ error)
+
+var (
+	// MutateOnCreateFuncs is used to register functions called when a VM is
+	// created. Values must be type MutateOnCreateFn.
+	MutateOnCreateFuncs sync.Map
+
+	// MutateOnUpdateFuncs is used to register functions called when a VM is
+	// updated. Values must be type MutateOnUpdateFn.
+	MutateOnUpdateFuncs sync.Map
+)
+
+func init() {
+	MutateOnCreateFuncs.Store(
+		"create.vmoperator.vmware.com/set-created-at-annotations",
+		(MutateOnCreateFn)(SetCreatedAtAnnotations))
+
+	MutateOnCreateFuncs.Store(
+		"create.vmoperator.vmware.com/set-default-controllers",
+		(MutateOnCreateFn)(SetDefaultControllers))
+
+	MutateOnUpdateFuncs.Store(
+		"update.vmoperator.vmware.com/set-default-cdrom-image-kind",
+		(MutateOnUpdateFn)(SetDefaultCdromImgKindOnUpdate))
+
+	MutateOnUpdateFuncs.Store(
+		"update.vmoperator.vmware.com/mutate-cdrom-controller",
+		(MutateOnUpdateFn)(MutateCdromControllerOnUpdate))
 }
 
 // NewMutator returns the package's Mutator.
@@ -205,6 +245,7 @@ func ResolveClassAndClassName(
 	return false, nil
 }
 
+//nolint:gocyclo
 func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	if ctx.Op == admissionv1.Delete {
 		return admission.Allowed("")
@@ -221,7 +262,6 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	case admissionv1.Create:
 		// SetCreatedAtAnnotations always mutates the VM on create.
 		wasMutated = true
-		SetCreatedAtAnnotations(ctx, modified)
 		AddDefaultNetworkInterface(ctx, m.client, modified)
 		SetDefaultPowerState(ctx, m.client, modified)
 		SetDefaultCdromImgKindOnCreate(ctx, modified)
@@ -245,6 +285,27 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 				return admission.Denied(err.Error())
 			}
 		}
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+			if _, err := SetPVCVolumeDefaults(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			}
+		}
+
+		// Iterate over the externally registered mutate functions.
+		var rangeErr error
+		MutateOnCreateFuncs.Range(func(key, value any) bool {
+			if fn, ok := value.(MutateOnCreateFn); ok {
+				if _, err := fn(ctx, m.client, modified); err != nil {
+					rangeErr = err
+					return false
+				}
+			}
+			return true
+		})
+		if rangeErr != nil {
+			return admission.Denied(rangeErr.Error())
+		}
+
 	case admissionv1.Update:
 		oldVM, err := m.vmFromUnstructured(ctx.OldObj)
 		if err != nil {
@@ -279,10 +340,6 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			}
 		}
 
-		if ok := SetDefaultCdromImgKindOnUpdate(ctx, modified, oldVM); ok {
-			wasMutated = true
-		}
-
 		if pkgcfg.FromContext(ctx).Features.VMGroups {
 			if ok := vmopv1util.RemoveStaleGroupOwnerRef(modified, oldVM); ok {
 				wasMutated = true
@@ -290,6 +347,40 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			if ok := CleanupApplyPowerStateChangeTimeAnno(ctx, modified, oldVM); ok {
 				wasMutated = true
 			}
+		}
+
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+			// Add controllers as needed for new volumes.
+			if ok, err := AddControllersForVolumes(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			} else if ok {
+				wasMutated = true
+			}
+
+			if ok, err := SetPVCVolumeDefaults(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			} else if ok {
+				wasMutated = true
+			}
+		}
+
+		// Iterate over the externally registered mutate functions.
+		var rangeErr error
+		MutateOnUpdateFuncs.Range(func(_, value any) bool {
+			if fn, ok := value.(MutateOnUpdateFn); ok {
+				wm, err := fn(ctx, m.client, modified, oldVM)
+				if err != nil {
+					rangeErr = err
+					return false
+				}
+				if wm {
+					wasMutated = true
+				}
+			}
+			return true
+		})
+		if rangeErr != nil {
+			return admission.Denied(rangeErr.Error())
 		}
 	}
 
@@ -554,21 +645,14 @@ func SetDefaultInstanceUUID(
 	return false, nil
 }
 
-// SetDefaultBiosUUID sets a default bios uuid for a new VM.
-// If CloudInit is the Bootstrap method, CloudInit InstanceID is also set to
-// BiosUUID.
+// SetDefaultBiosUUID sets a default bios uuid for a new VM if one was not
+// provided. If CloudInit is the Bootstrap method, CloudInit InstanceID
+// is also set to BiosUUID.
 // Return true if a default bios uuid was set, otherwise false.
 func SetDefaultBiosUUID(
 	ctx *pkgctx.WebhookRequestContext,
 	client ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
-
-	// DevOps users are not allowed to set spec.biosUUID when creating a VM.
-	if !ctx.IsPrivilegedAccount && vm.Spec.BiosUUID != "" {
-		return false, field.Forbidden(
-			field.NewPath("spec", "biosUUID"),
-			"only privileged users may set this field")
-	}
 
 	var wasMutated bool
 
@@ -650,7 +734,10 @@ func ResolveImageNameOnCreate(
 	return false, nil
 }
 
-func SetCreatedAtAnnotations(ctx context.Context, vm *vmopv1.VirtualMachine) {
+func SetCreatedAtAnnotations(
+	ctx *pkgctx.WebhookRequestContext,
+	_ ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (_ bool, _ error) {
 	// If this is the first time the VM has been created, then record the
 	// build version and storage schema version into the VM's annotations.
 	// This enables future work to know at what version a VM was "created."
@@ -659,6 +746,29 @@ func SetCreatedAtAnnotations(ctx context.Context, vm *vmopv1.VirtualMachine) {
 	}
 	vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
 	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+	return true, nil
+}
+
+// SetDefaultControllers sets the default device controllers for a VM.
+func SetDefaultControllers(
+	_ *pkgctx.WebhookRequestContext,
+	_ ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (_ bool, _ error) {
+	if vm.Spec.Hardware == nil {
+		vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+	}
+
+	if len(vm.Spec.Hardware.IDEControllers) == 0 {
+		for i := int32(0); i < vmopv1.VirtualControllerTypeIDE.MaxCount(); i++ {
+			vm.Spec.Hardware.IDEControllers = append(
+				vm.Spec.Hardware.IDEControllers,
+				vmopv1.IDEControllerSpec{BusNumber: i},
+			)
+		}
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // SetLastResizeAnnotations sets the last resize annotation as needed when the class name changes.
@@ -726,7 +836,8 @@ func SetDefaultCdromImgKindOnCreate(
 
 func SetDefaultCdromImgKindOnUpdate(
 	ctx *pkgctx.WebhookRequestContext,
-	vm, oldVM *vmopv1.VirtualMachine) bool {
+	_ ctrlclient.Client,
+	vm, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
 	var (
 		mutated          bool
@@ -736,7 +847,7 @@ func SetDefaultCdromImgKindOnUpdate(
 	)
 
 	if newHW == nil {
-		return false
+		return false, nil
 	}
 
 	if oldHW != nil {
@@ -756,7 +867,7 @@ func SetDefaultCdromImgKindOnUpdate(
 		}
 	}
 
-	return mutated
+	return mutated, nil
 }
 
 func SetImageNameFromCdrom(

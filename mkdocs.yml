@@ -137,6 +137,8 @@ nav:
     - VirtualMachineClass: concepts/workloads/vm-class.md
     - WebConsoleRequest: concepts/workloads/vm-web-console.md
     - Guest Customization: concepts/workloads/guest.md
+    - VirtualMachine Placement: concepts/workloads/vm-placement.md
+    - VirtualMachineGroup: concepts/workloads/vm-group.md
     - Policies: concepts/workloads/vsphere-policies.md
   - Images:
     - concepts/images/README.md

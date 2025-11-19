@@ -24,6 +24,7 @@ var (
 	extraConfigDenyKeyPrefixes = [...]string{
 		"guestinfo.",
 		"vmservice.",
+		"imageregistry.",
 	}
 	extraConfigAllowKeys = [...]string{
 		"vmservice.virtualmachine.pvc.disk.data",
@@ -48,25 +49,13 @@ func GetExtraConfigFromObject(
 	return o.Config.ExtraConfig, nil
 }
 
-func GetFilteredExtraConfigFromObject(
-	ctx context.Context,
-	vm *object.VirtualMachine,
-	reset bool) (pkgutil.OptionValues, error) {
-	var extraConfig pkgutil.OptionValues
-	var err error
-	if extraConfig, err = GetExtraConfigFromObject(ctx, vm); err != nil {
-		return nil, err
-	}
-
-	return FilteredExtraConfig(extraConfig, reset)
-}
-
 // FilteredExtraConfig removes or resets those key entries which have prefix
 // that is in the deny key prefix list, but not in the allow key list.
 // It returns a new filtered OptionValues object if the operation is successful.
 func FilteredExtraConfig(
 	in pkgutil.OptionValues,
 	reset bool) (pkgutil.OptionValues, error) {
+
 	allowKeys := sets.New(extraConfigAllowKeys[:]...)
 	filtered := in.Map()
 

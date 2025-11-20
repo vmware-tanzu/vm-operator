@@ -1406,7 +1406,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
 								Attached:  false,
-								DiskUUID:  dummyDiskUUID,
+								DiskUUID:  "diskuuid1",
 							},
 						},
 						cnsv1alpha1.VolumeStatus{
@@ -1414,7 +1414,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName2,
 								Attached:  true,
-								DiskUUID:  dummyDiskUUID,
+								DiskUUID:  "diskuuid2",
 							},
 						},
 					)

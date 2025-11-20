@@ -73,30 +73,38 @@ func (v validator) validateControllerSpecOnUpdate(
 
 	switch ctrlType {
 	case vmopv1.VirtualControllerTypeIDE:
-		if busNum < 0 || busNum >= pkgutil.IDEControllerMaxCount {
+		if busNum < 0 || busNum >= vmopv1.VirtualControllerTypeIDE.MaxCount() {
 			allErrs = append(allErrs, field.Invalid(
 				fieldPath.Child("controllerBusNumber"),
 				busNum,
-				fmt.Sprintf(controllerBusNumberRangeFmt, ctrlType, pkgutil.IDEControllerMaxCount-1)))
+				fmt.Sprintf(controllerBusNumberRangeFmt,
+					ctrlType,
+					vmopv1.VirtualControllerTypeIDE.MaxCount()-1)))
 		}
-		if unitNum < 0 || unitNum >= pkgutil.IDEControllerMaxSlotCount {
+		if unitNum < 0 || unitNum >= (vmopv1.IDEControllerSpec{}).MaxSlots() {
 			allErrs = append(allErrs, field.Invalid(
 				fieldPath.Child("unitNumber"),
 				unitNum,
-				fmt.Sprintf(unitNumberRangeFmt, ctrlType, pkgutil.IDEControllerMaxSlotCount-1)))
+				fmt.Sprintf(unitNumberRangeFmt,
+					ctrlType,
+					(vmopv1.IDEControllerSpec{}).MaxSlots()-1)))
 		}
 	case vmopv1.VirtualControllerTypeSATA:
-		if busNum < 0 || busNum >= pkgutil.SATAControllerMaxCount {
+		if busNum < 0 || busNum >= vmopv1.VirtualControllerTypeSATA.MaxCount() {
 			allErrs = append(allErrs, field.Invalid(
 				fieldPath.Child("controllerBusNumber"),
 				busNum,
-				fmt.Sprintf(controllerBusNumberRangeFmt, ctrlType, pkgutil.SATAControllerMaxCount-1)))
+				fmt.Sprintf(controllerBusNumberRangeFmt,
+					ctrlType,
+					vmopv1.VirtualControllerTypeSATA.MaxCount()-1)))
 		}
-		if unitNum < 0 || unitNum >= pkgutil.SATAControllerMaxSlotCount {
+		if unitNum < 0 || unitNum >= (vmopv1.SATAControllerSpec{}).MaxSlots() {
 			allErrs = append(allErrs, field.Invalid(
 				fieldPath.Child("unitNumber"),
 				unitNum,
-				fmt.Sprintf(unitNumberRangeFmt, ctrlType, pkgutil.SATAControllerMaxSlotCount-1)))
+				fmt.Sprintf(unitNumberRangeFmt,
+					ctrlType,
+					(vmopv1.SATAControllerSpec{}).MaxSlots()-1)))
 		}
 	}
 

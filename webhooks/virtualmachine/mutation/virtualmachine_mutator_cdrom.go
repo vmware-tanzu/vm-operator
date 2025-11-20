@@ -5,35 +5,30 @@
 package mutation
 
 import (
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
-	couldNotFindSlotMessage    = "Could not find an available slot for CD-ROM device"
-	incompletePlacementMessage = "CD-ROM with incomplete placement " +
-		"information will be rejected by validating webhook"
+	skippedNoControllerMessage          = "Skipping CD-ROM: no available controller slots"
+	skippedNoSlotMessage                = "Skipping CD-ROM: no available slot on controller"
+	skippedPartialPlacementMessage      = "Skipping CD-ROM: partial placement not supported"
+	skippedInvalidControllerTypeMessage = "Skipping CD-ROM: controller type not supported for CD-ROMs"
 )
 
-// ControllerSlot represents a controller slot position with bus number, unit
-// number, and controller type. It is used to track available slots for CD-ROM
-// devices on IDE and SATA controllers during mutation.
-type ControllerSlot struct {
-	BusNumber      int32
-	UnitNumber     int32
-	ControllerType vmopv1.VirtualControllerType
-}
-
 // MutateCdromControllerOnUpdate mutates CD-ROM controller assignments for
-// VirtualMachine updates. The mutator only handles two specific scenarios:
-// complete omission (auto-assign) or
-// explicit controller selection with existing controller (find unit number).
-// It also updates the vm.spec.hardware.controllers field to reflect the
-// new controller assignments.
+// VirtualMachine updates. It processes explicit placements (controller type,
+// bus number, and unit number all specified) first to reserve their slots,
+// then assigns implicit placements. For implicit placements, if controller type
+// and bus number are specified, it assigns the next available unit number on
+// that controller. If all fields are empty, it auto-assigns by trying IDE
+// controllers first, then falling back to SATA controllers.
 func MutateCdromControllerOnUpdate(
 	ctx *pkgctx.WebhookRequestContext,
 	_ ctrlclient.Client,
@@ -43,51 +38,111 @@ func MutateCdromControllerOnUpdate(
 		return false, nil
 	}
 
-	if vm.Spec.Hardware == nil {
+	if vm.Spec.Hardware == nil || len(vm.Spec.Hardware.Cdrom) == 0 {
 		return false, nil
 	}
 
 	var (
-		hwSpec      = vm.Spec.Hardware
-		usedSlotMap = constructUsedSlotMap(vm)
-		wasMutated  bool
+		hwSpec         = vm.Spec.Hardware
+		wasMutated     bool
+		occupiedSlots  = constructOccupiedSlots(vm)
+		explicitCdroms []*vmopv1.VirtualMachineCdromSpec
+		implicitCdroms []*vmopv1.VirtualMachineCdromSpec
 	)
 
 	for i := range hwSpec.Cdrom {
 		cdrom := &hwSpec.Cdrom[i]
 
+		if cdrom.ControllerType != vmopv1.VirtualControllerTypeIDE &&
+			cdrom.ControllerType != vmopv1.VirtualControllerTypeSATA &&
+			cdrom.ControllerType != "" {
+			ctx.Logger.Info(skippedInvalidControllerTypeMessage,
+				"cdrom", cdrom.Name,
+				"controllerType", cdrom.ControllerType)
+			continue
+		}
+
+		if cdrom.ControllerBusNumber != nil &&
+			cdrom.ControllerType != "" &&
+			cdrom.UnitNumber != nil {
+
+			explicitCdroms = append(explicitCdroms, cdrom)
+		} else {
+			implicitCdroms = append(implicitCdroms, cdrom)
+		}
+	}
+
+	if processExplicitCdroms(explicitCdroms, occupiedSlots, hwSpec) {
+		wasMutated = true
+	}
+
+	if processImplicitCdroms(ctx, implicitCdroms, occupiedSlots, hwSpec) {
+		wasMutated = true
+	}
+
+	return wasMutated, nil
+}
+
+// processExplicitCdroms processes CD-ROMs with complete placement information
+// (controller type, bus number, and unit number all specified). It creates
+// controllers if they don't exist and marks their slots as occupied. Returns
+// true if any controllers were added.
+func processExplicitCdroms(
+	explicitPlacementCdroms []*vmopv1.VirtualMachineCdromSpec,
+	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
+	hwSpec *vmopv1.VirtualMachineHardwareSpec) bool {
+
+	var mutated bool
+
+	for _, cdrom := range explicitPlacementCdroms {
+		if addControllerAndInitSlotMap(
+			occupiedSlots,
+			hwSpec,
+			cdrom.ControllerType,
+			cdrom.ControllerBusNumber) {
+
+			mutated = true
+		}
+		occupiedSlots[pkgutil.ControllerID{
+			ControllerType: cdrom.ControllerType,
+			BusNumber:      *cdrom.ControllerBusNumber,
+		}].Insert(*cdrom.UnitNumber)
+	}
+
+	return mutated
+}
+
+// processImplicitCdroms processes CD-ROMs that need placement assignment.
+// It handles partial placements (controller type and bus specified) and full
+// auto-assignment (all fields empty). For full auto-assignment, it tries IDE
+// controllers first, then falls back to SATA controllers. Returns true if any
+// CD-ROMs were assigned.
+func processImplicitCdroms(
+	ctx *pkgctx.WebhookRequestContext,
+	implicitPlacementCdroms []*vmopv1.VirtualMachineCdromSpec,
+	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
+	hwSpec *vmopv1.VirtualMachineHardwareSpec) bool {
+
+	var mutated bool
+
+	for _, cdrom := range implicitPlacementCdroms {
+
 		var (
-			mutated          bool
-			placementDefined bool
-			availableSlot    *ControllerSlot
+			desiredCtrl = pkgutil.ControllerID{
+				ControllerType: vmopv1.VirtualControllerTypeIDE,
+				BusNumber:      int32(-1),
+			}
 		)
 
 		switch {
 		case cdrom.ControllerBusNumber != nil &&
 			cdrom.ControllerType != "" &&
-			cdrom.UnitNumber != nil:
-			// When all placement values are specified, use the specified
-			// values and add the controller if it doesn't exist.
-			if addControllerAndInitSlotMap(
-				usedSlotMap, hwSpec, cdrom.ControllerType, *cdrom.ControllerBusNumber) {
-				wasMutated = true
-			}
-			availableSlot = &ControllerSlot{
-				BusNumber:      *cdrom.ControllerBusNumber,
-				UnitNumber:     *cdrom.UnitNumber,
-				ControllerType: cdrom.ControllerType,
-			}
-			placementDefined = true
-
-		case cdrom.ControllerBusNumber != nil &&
-			cdrom.ControllerType != "" &&
 			cdrom.UnitNumber == nil:
-			// Controller type and bus number are specified,
-			// find an available unit number.
-			availableSlot, mutated = findNextAvailableSlot(
-				usedSlotMap, hwSpec, cdrom.ControllerBusNumber, cdrom.ControllerType)
-			if mutated {
-				wasMutated = true
+			// Partial placement with controller information provided.
+
+			desiredCtrl = pkgutil.ControllerID{
+				ControllerType: cdrom.ControllerType,
+				BusNumber:      *cdrom.ControllerBusNumber,
 			}
 
 		case cdrom.ControllerBusNumber == nil &&
@@ -95,234 +150,175 @@ func MutateCdromControllerOnUpdate(
 			cdrom.UnitNumber == nil:
 			// All controller fields are omitted,
 			// auto-assign by trying IDE first, then SATA.
-			availableSlot, mutated = findNextAvailableSlot(
-				usedSlotMap, hwSpec, nil, vmopv1.VirtualControllerTypeIDE)
-			if mutated {
-				wasMutated = true
+
+			desiredCtrl.BusNumber = findNextAvailableBusNumber(
+				occupiedSlots,
+				desiredCtrl.ControllerType)
+
+			if desiredCtrl.BusNumber == -1 {
+				desiredCtrl.ControllerType = vmopv1.VirtualControllerTypeSATA
+				desiredCtrl.BusNumber = findNextAvailableBusNumber(
+					occupiedSlots,
+					desiredCtrl.ControllerType)
 			}
 
-			if availableSlot == nil {
-				availableSlot, mutated = findNextAvailableSlot(
-					usedSlotMap, hwSpec, nil, vmopv1.VirtualControllerTypeSATA)
-				if mutated {
-					wasMutated = true
-				}
+			if desiredCtrl.BusNumber == -1 {
+				ctx.Logger.Info(skippedNoControllerMessage,
+					"cdrom", cdrom.Name,
+					"attemptedControllers", []string{
+						string(vmopv1.VirtualControllerTypeIDE),
+						string(vmopv1.VirtualControllerTypeSATA),
+					})
+				continue
 			}
 
 		default:
 			// Skip mutation for other partial configurations.
+			ctx.Logger.Info(skippedPartialPlacementMessage,
+				"cdrom", cdrom.Name,
+				"hasControllerType", cdrom.ControllerType != "",
+				"hasBusNumber", cdrom.ControllerBusNumber != nil,
+				"hasUnitNumber", cdrom.UnitNumber != nil)
 			continue
 		}
-
-		if availableSlot == nil {
-			ctx.Logger.Info(couldNotFindSlotMessage,
-				"vmName", vm.Name,
-				"vmNamespace", vm.Namespace,
-				"cdromName", cdrom.Name,
-				"cdromIndex", i,
-				"message", incompletePlacementMessage)
-			continue
-		}
-
-		cdrom.ControllerType = availableSlot.ControllerType
-		cdrom.ControllerBusNumber = &availableSlot.BusNumber
-		cdrom.UnitNumber = &availableSlot.UnitNumber
-
-		ctrlID := pkgutil.ControllerID{
-			ControllerType: availableSlot.ControllerType,
-			BusNumber:      availableSlot.BusNumber,
-		}
-
-		switch availableSlot.ControllerType {
-		case vmopv1.VirtualControllerTypeIDE:
-			if availableSlot.UnitNumber < 0 ||
-				availableSlot.UnitNumber >= pkgutil.IDEControllerMaxSlotCount {
-				continue
-			}
-		case vmopv1.VirtualControllerTypeSATA:
-			if availableSlot.UnitNumber < 0 ||
-				availableSlot.UnitNumber >= pkgutil.SATAControllerMaxSlotCount {
-				continue
-			}
-		default:
-			// Skip unsupported controller types.
-			continue
-		}
-
-		usedSlotMap[ctrlID][availableSlot.UnitNumber] = true
-
-		if !placementDefined {
-			wasMutated = true
-		}
-	}
-
-	return wasMutated, nil
-}
-
-// getControllerLimits returns the maximum controller count and slot count for the
-// specified controller type. Returns (0, 0) for unsupported controller types.
-func getControllerLimits(controllerType vmopv1.VirtualControllerType) (
-	maxControllerCount, maxSlotCount int32) {
-
-	switch controllerType {
-	case vmopv1.VirtualControllerTypeIDE:
-		return pkgutil.IDEControllerMaxCount, pkgutil.IDEControllerMaxSlotCount
-	case vmopv1.VirtualControllerTypeSATA:
-		return pkgutil.SATAControllerMaxCount, pkgutil.SATAControllerMaxSlotCount
-	default:
-		return 0, 0
-	}
-
-}
-
-// addControllerAndInitSlotMap adds a controller to the hardware spec and initializes
-// its slot map if it doesn't already exist. Returns true if a controller was added.
-func addControllerAndInitSlotMap(
-	usedSlotMap map[pkgutil.ControllerID][]bool,
-	hwSpec *vmopv1.VirtualMachineHardwareSpec,
-	controllerType vmopv1.VirtualControllerType,
-	busNumber int32) bool {
-
-	ctrlID := pkgutil.ControllerID{
-		ControllerType: controllerType,
-		BusNumber:      busNumber,
-	}
-
-	// Check if controller already exists.
-	if _, exists := usedSlotMap[ctrlID]; exists {
-		return false
-	}
-
-	// Get the max slot count for this controller type.
-	_, maxSlotCount := getControllerLimits(controllerType)
-	if maxSlotCount == 0 {
-		return false
-	}
-
-	// Initialize the slot map.
-	usedSlotMap[ctrlID] = make([]bool, maxSlotCount)
-
-	// Add the controller to the hardware spec.
-	switch controllerType {
-	case vmopv1.VirtualControllerTypeIDE:
-		hwSpec.IDEControllers = append(hwSpec.IDEControllers,
-			vmopv1.IDEControllerSpec{BusNumber: busNumber})
-		return true
-	case vmopv1.VirtualControllerTypeSATA:
-		hwSpec.SATAControllers = append(hwSpec.SATAControllers,
-			vmopv1.SATAControllerSpec{BusNumber: busNumber})
-		return true
-	}
-
-	return false
-}
-
-// findNextAvailableSlot finds the next available slot on a controller of the
-// specified type. If desiredBusNum is specified, it will add the controller
-// if it doesn't exist. If desiredBusNum is nil (auto-assignment), it will
-// create a new controller if needed and there is available bus.
-func findNextAvailableSlot(
-	usedSlotMap map[pkgutil.ControllerID][]bool,
-	hwSpec *vmopv1.VirtualMachineHardwareSpec,
-	desiredBusNum *int32,
-	controllerType vmopv1.VirtualControllerType) (*ControllerSlot, bool) {
-
-	var (
-		wasMutated                       bool
-		nextBusNum                       *int32
-		maxControllerCount, maxSlotCount = getControllerLimits(controllerType)
-	)
-
-	if maxSlotCount == 0 {
-		return nil, false
-	}
-
-	// Add the controller to the hardware spec if desired bus number is
-	// specified and it is not in the spec.
-	if desiredBusNum != nil && addControllerAndInitSlotMap(
-		usedSlotMap, hwSpec, controllerType, *desiredBusNum) {
-		wasMutated = true
-	}
-
-	for busNum := range maxControllerCount {
-
-		// Skip if the bus number is not the desired bus number
-		// when desired bus number is specified.
-		if desiredBusNum != nil && *desiredBusNum != busNum {
-			continue
-		}
-
-		ctrlID := pkgutil.ControllerID{
-			ControllerType: controllerType,
-			BusNumber:      busNum,
-		}
-		if _, exists := usedSlotMap[ctrlID]; !exists {
-			if nextBusNum == nil {
-				nextBusNum = &busNum
-			}
-			continue
-		}
-
-		for unitNum := range maxSlotCount {
-			if !usedSlotMap[ctrlID][unitNum] {
-				return &ControllerSlot{
-					BusNumber:      busNum,
-					UnitNumber:     unitNum,
-					ControllerType: controllerType,
-				}, wasMutated
-			}
-		}
-
-	}
-
-	if nextBusNum != nil {
 
 		if addControllerAndInitSlotMap(
-			usedSlotMap, hwSpec, controllerType, *nextBusNum) {
-			wasMutated = true
+			occupiedSlots,
+			hwSpec,
+			desiredCtrl.ControllerType,
+			&desiredCtrl.BusNumber) {
+
+			mutated = true
 		}
 
-		return &ControllerSlot{
-			BusNumber:      *nextBusNum,
-			UnitNumber:     0,
-			ControllerType: controllerType,
-		}, wasMutated
+		desiredUnitNum := vmopv1util.NextAvailableUnitNumber(
+			vmopv1util.CreateNewController(
+				desiredCtrl.ControllerType,
+				desiredCtrl.BusNumber,
+				""),
+			occupiedSlots[desiredCtrl])
+
+		if desiredUnitNum == -1 {
+			ctx.Logger.Info(skippedNoSlotMessage,
+				"cdrom", cdrom.Name,
+				"controllerType", desiredCtrl.ControllerType,
+				"busNumber", desiredCtrl.BusNumber)
+			continue
+		}
+
+		occupiedSlots[desiredCtrl].Insert(desiredUnitNum)
+		cdrom.ControllerType = desiredCtrl.ControllerType
+		cdrom.ControllerBusNumber = &desiredCtrl.BusNumber
+		cdrom.UnitNumber = &desiredUnitNum
+
+		mutated = true
 	}
 
-	return nil, wasMutated
+	return mutated
 }
 
-// constructUsedSlotMap builds a map of used controller slots from the VM's
-// hardware spec and status. It initializes slot maps for IDE and SATA
-// controllers and marks slots as used by non-CD-ROM devices to avoid
-// conflicts when assigning new CD-ROM devices.
-func constructUsedSlotMap(
-	vm *vmopv1.VirtualMachine) map[pkgutil.ControllerID][]bool {
+// addControllerAndInitSlotMap adds a controller to the hardware spec and
+// initializes its slot map if it doesn't already exist. Returns true if a
+// controller was added.
+func addControllerAndInitSlotMap(
+	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
+	hwSpec *vmopv1.VirtualMachineHardwareSpec,
+	ctrlType vmopv1.VirtualControllerType,
+	busNumber *int32) bool {
 
-	usedSlotMap := make(map[pkgutil.ControllerID][]bool)
-
-	if vm.Spec.Hardware == nil {
-		return usedSlotMap
+	if busNumber == nil {
+		return false
 	}
 
+	ctrlID := pkgutil.ControllerID{
+		ControllerType: ctrlType,
+		BusNumber:      *busNumber,
+	}
+
+	if _, exists := occupiedSlots[ctrlID]; exists {
+		return false
+	}
+
+	switch ctrlType {
+	case vmopv1.VirtualControllerTypeIDE:
+		hwSpec.IDEControllers = append(hwSpec.IDEControllers,
+			vmopv1.IDEControllerSpec{BusNumber: *busNumber})
+	case vmopv1.VirtualControllerTypeSATA:
+		hwSpec.SATAControllers = append(hwSpec.SATAControllers,
+			vmopv1.SATAControllerSpec{BusNumber: *busNumber})
+	default:
+		return false
+	}
+
+	occupiedSlots[ctrlID] = sets.New[int32]()
+	return true
+}
+
+// findNextAvailableBusNumber finds the next available bus number for the
+// specified controller type. It first tries to find existing controllers with
+// available slots, then looks for unused bus numbers to create new controllers.
+// Returns -1 if no bus numbers are available.
+func findNextAvailableBusNumber(
+	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
+	ctrlType vmopv1.VirtualControllerType) int32 {
+
+	firstAvailableBusNumber := int32(-1)
+
+	for busNum := range ctrlType.MaxCount() {
+		ctrlID := pkgutil.ControllerID{
+			ControllerType: ctrlType,
+			BusNumber:      busNum,
+		}
+
+		if _, exists := occupiedSlots[ctrlID]; exists {
+			unitNum := vmopv1util.NextAvailableUnitNumber(
+				vmopv1util.CreateNewController(ctrlType, busNum, ""),
+				occupiedSlots[ctrlID])
+			if unitNum != -1 {
+				return busNum
+			}
+		} else if firstAvailableBusNumber == -1 {
+			firstAvailableBusNumber = busNum
+		}
+	}
+
+	return firstAvailableBusNumber
+}
+
+// constructOccupiedSlots builds a map of occupied controller slots from the
+// VM's hardware spec and status. It tracks which slots are occupied by
+// non-CD-ROM devices to avoid conflicts when assigning new CD-ROM devices.
+func constructOccupiedSlots(
+	vm *vmopv1.VirtualMachine) map[pkgutil.ControllerID]sets.Set[int32] {
+
+	occupiedSlots := make(map[pkgutil.ControllerID]sets.Set[int32])
+
+	if vm.Spec.Hardware == nil {
+		return occupiedSlots
+	}
+
+	// Initialize sets for each controller in the spec.
 	for _, controller := range vm.Spec.Hardware.IDEControllers {
-		usedSlotMap[pkgutil.ControllerID{
+		ctrlID := pkgutil.ControllerID{
 			ControllerType: vmopv1.VirtualControllerTypeIDE,
 			BusNumber:      controller.BusNumber,
-		}] = make([]bool, pkgutil.IDEControllerMaxSlotCount)
+		}
+		occupiedSlots[ctrlID] = sets.New[int32]()
 	}
 
 	for _, controller := range vm.Spec.Hardware.SATAControllers {
-		usedSlotMap[pkgutil.ControllerID{
+		ctrlID := pkgutil.ControllerID{
 			ControllerType: vmopv1.VirtualControllerTypeSATA,
 			BusNumber:      controller.BusNumber,
-		}] = make([]bool, pkgutil.SATAControllerMaxSlotCount)
+		}
+		occupiedSlots[ctrlID] = sets.New[int32]()
 	}
 
 	if vm.Status.Hardware == nil {
-		return usedSlotMap
+		return occupiedSlots
 	}
 
+	// Mark slots occupied by non-CD-ROM devices.
 	for _, ctrl := range vm.Status.Hardware.Controllers {
 		if ctrl.Type != vmopv1.VirtualControllerTypeIDE &&
 			ctrl.Type != vmopv1.VirtualControllerTypeSATA {
@@ -334,18 +330,18 @@ func constructUsedSlotMap(
 			BusNumber:      ctrl.BusNumber,
 		}
 
-		// Skip if the controller is not in the used slot map since
+		// Skip if the controller is not in the occupied slots map since
 		// we are treating controllers in the spec as the source of truth.
-		if _, exists := usedSlotMap[ctrlID]; !exists {
+		if _, exists := occupiedSlots[ctrlID]; !exists {
 			continue
 		}
 
 		for _, dev := range ctrl.Devices {
 			if dev.Type != vmopv1.VirtualDeviceTypeCDROM {
-				usedSlotMap[ctrlID][dev.UnitNumber] = true
+				occupiedSlots[ctrlID].Insert(dev.UnitNumber)
 			}
 		}
 	}
 
-	return usedSlotMap
+	return occupiedSlots
 }

@@ -21,19 +21,16 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		vm  *vmopv1.VirtualMachine
 	)
 
-	// Helper function to call the mutator and return results.
 	callMutator := func() (bool, error) {
 		return mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
 	}
 
-	// Helper function to assert CD-ROM controller assignment.
 	assertCdromController := func(index int, controllerType vmopv1.VirtualControllerType, busNumber, unitNumber int32) {
 		Expect(vm.Spec.Hardware.Cdrom[index].ControllerType).To(Equal(controllerType))
 		Expect(vm.Spec.Hardware.Cdrom[index].ControllerBusNumber).To(Equal(ptr.To(busNumber)))
 		Expect(vm.Spec.Hardware.Cdrom[index].UnitNumber).To(Equal(ptr.To(unitNumber)))
 	}
 
-	// Helper function to assert controller creation.
 	assertControllerCreated := func(controllerType vmopv1.VirtualControllerType, expectedCount int, expectedBusNumbers ...int32) {
 		switch controllerType {
 		case vmopv1.VirtualControllerTypeIDE:
@@ -49,7 +46,6 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		}
 	}
 
-	// Helper function to set up CD-ROM specs with names.
 	setupCdromSpecs := func(names ...string) {
 		vm.Spec.Hardware.Cdrom = make([]vmopv1.VirtualMachineCdromSpec, len(names))
 		for i, name := range names {
@@ -57,25 +53,20 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		}
 	}
 
-	// Helper function to create a CD-ROM spec with placement info.
 	cdromSpec := func(name string, controllerType vmopv1.VirtualControllerType, busNumber, unitNumber *int32) vmopv1.VirtualMachineCdromSpec {
 		return builder.DummyCdromSpec(name, "", "", controllerType, busNumber, unitNumber, nil, nil)
 	}
 
-	// Helper function for common test pattern: call mutator and assert success.
-	expectMutationSuccess := func() bool {
+	expectMutationSuccess := func() {
 		wasMutated, err := callMutator()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(wasMutated).To(BeTrue())
-		return wasMutated
 	}
 
-	// Helper function for common test pattern: call mutator and assert no mutation.
-	expectNoMutation := func() bool {
+	expectNoMutation := func() {
 		wasMutated, err := callMutator()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(wasMutated).To(BeFalse())
-		return wasMutated
 	}
 
 	BeforeEach(func() {
@@ -141,51 +132,32 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		})
 
 		Context("When VM has CD-ROM with controller type and bus number but no unit number", func() {
-			Context("IDE controller", func() {
-				It("should add controller and assign unit number when controller does not exist", func() {
+			DescribeTable("should handle partial placement with controller type and bus number",
+				func(ctrlType vmopv1.VirtualControllerType, setupController func()) {
+					setupController()
 					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						cdromSpec("cdrom1", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), nil),
+						cdromSpec("cdrom1", ctrlType, ptr.To(int32(0)), nil),
 					}
 					expectMutationSuccess()
-					// Controller should be added to spec.
-					assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 1, 0)
-					assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 0, 0)
-				})
-
-				It("should assign unit number when controller exists in spec", func() {
-					vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
-						{BusNumber: 0},
-					}
-					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						cdromSpec("cdrom1", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), nil),
-					}
-					expectMutationSuccess()
-					assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 0, 0)
-				})
-			})
-
-			Context("SATA controller", func() {
-				It("should add controller and assign unit number when controller does not exist", func() {
-					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						cdromSpec("cdrom1", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), nil),
-					}
-					expectMutationSuccess()
-					// Controller should be added to spec.
-					assertControllerCreated(vmopv1.VirtualControllerTypeSATA, 1, 0)
-					assertCdromController(0, vmopv1.VirtualControllerTypeSATA, 0, 0)
-				})
-
-				It("should assign unit number when controller exists in spec", func() {
-					vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
-						{BusNumber: 0},
-					}
-					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						cdromSpec("cdrom1", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), nil),
-					}
-					expectMutationSuccess()
-					assertCdromController(0, vmopv1.VirtualControllerTypeSATA, 0, 0)
-				})
-			})
+					assertCdromController(0, ctrlType, 0, 0)
+				},
+				Entry("IDE controller - creates controller when not exists",
+					vmopv1.VirtualControllerTypeIDE,
+					func() {}), // No setup needed, controller will be created
+				Entry("IDE controller - uses existing controller",
+					vmopv1.VirtualControllerTypeIDE,
+					func() {
+						vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{{BusNumber: 0}}
+					}),
+				Entry("SATA controller - creates controller when not exists",
+					vmopv1.VirtualControllerTypeSATA,
+					func() {}), // No setup needed, controller will be created
+				Entry("SATA controller - uses existing controller",
+					vmopv1.VirtualControllerTypeSATA,
+					func() {
+						vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{{BusNumber: 0}}
+					}),
+			)
 		})
 
 		Context("When VM has multiple CD-ROMs", func() {
@@ -216,71 +188,36 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		})
 
 		Context("When VM has controllers in status with occupied slots", func() {
-			Context("IDE controller", func() {
-				BeforeEach(func() {
-					vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
-						Controllers: []vmopv1.VirtualControllerStatus{
-							{
-								Type:      vmopv1.VirtualControllerTypeIDE,
-								BusNumber: 0,
-								Devices: []vmopv1.VirtualDeviceStatus{
-									{
-										Type:       vmopv1.VirtualDeviceTypeDisk,
-										UnitNumber: 0,
-									},
-								},
+			DescribeTable("should avoid occupied slots used by non-CD-ROM devices",
+				func(ctrlType vmopv1.VirtualControllerType, setupController func()) {
+					setupController()
+					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						cdromSpec("cdrom1", ctrlType, ptr.To(int32(0)), nil),
+					}
+					vm.Status.Hardware.Controllers = []vmopv1.VirtualControllerStatus{
+						{
+							Type:      ctrlType,
+							BusNumber: 0,
+							Devices: []vmopv1.VirtualDeviceStatus{
+								{Type: vmopv1.VirtualDeviceTypeDisk, UnitNumber: 0},
 							},
 						},
 					}
-					vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
-						{BusNumber: 0},
-					}
-					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						cdromSpec("cdrom1", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), nil),
-					}
-				})
 
-				It("should avoid occupied slot used by non-CD-ROM device", func() {
-					wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeTrue())
-					// Should assign unit 1 since unit 0 is occupied by a disk.
-					assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 0, 1)
-				})
-			})
-
-			Context("SATA controller", func() {
-				BeforeEach(func() {
-					vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
-						Controllers: []vmopv1.VirtualControllerStatus{
-							{
-								Type:      vmopv1.VirtualControllerTypeSATA,
-								BusNumber: 0,
-								Devices: []vmopv1.VirtualDeviceStatus{
-									{
-										Type:       vmopv1.VirtualDeviceTypeDisk,
-										UnitNumber: 0,
-									},
-								},
-							},
-						},
-					}
-					vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
-						{BusNumber: 0},
-					}
-					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						cdromSpec("cdrom1", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), nil),
-					}
-				})
-
-				It("should avoid occupied slot used by non-CD-ROM device", func() {
-					wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeTrue())
-					// Should assign unit 1 since unit 0 is occupied by a disk.
-					assertCdromController(0, vmopv1.VirtualControllerTypeSATA, 0, 1)
-				})
-			})
+					expectMutationSuccess()
+					assertCdromController(0, ctrlType, 0, 1)
+				},
+				Entry("IDE controller",
+					vmopv1.VirtualControllerTypeIDE,
+					func() {
+						vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{{BusNumber: 0}}
+					}),
+				Entry("SATA controller",
+					vmopv1.VirtualControllerTypeSATA,
+					func() {
+						vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{{BusNumber: 0}}
+					}),
+			)
 		})
 
 		Context("When no slots are available", func() {
@@ -504,34 +441,25 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		})
 
 		Context("When VM has mixed CD-ROM configurations", func() {
-			BeforeEach(func() {
+			It("should only process CD-ROMs that need controller assignment", func() {
 				vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
 					{BusNumber: 0},
 				}
 				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-					// Complete controller info is processed to update usedSlotMap.
 					cdromSpec("cdrom1", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0))),
-					// Incomplete info should be processed by the mutator.
 					{Name: "cdrom2"},
-					// Unit number with incomplete controller info should be skipped.
 					cdromSpec("cdrom3", vmopv1.VirtualControllerTypeIDE, nil, ptr.To(int32(1))),
 				}
-			})
 
-			It("should only process CD-ROMs that need controller assignment", func() {
-				wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
+				wasMutated, err := callMutator()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wasMutated).To(BeTrue())
 
 				// cdrom1 should remain unchanged since it has complete info.
-				Expect(vm.Spec.Hardware.Cdrom[0].ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
-				Expect(vm.Spec.Hardware.Cdrom[0].ControllerBusNumber).To(Equal(ptr.To(int32(0))))
-				Expect(vm.Spec.Hardware.Cdrom[0].UnitNumber).To(Equal(ptr.To(int32(0))))
+				assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 0, 0)
 
 				// cdrom2 should get unit 1 since unit 0 is now used by cdrom1.
-				Expect(vm.Spec.Hardware.Cdrom[1].ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
-				Expect(vm.Spec.Hardware.Cdrom[1].ControllerBusNumber).To(Equal(ptr.To(int32(0))))
-				Expect(vm.Spec.Hardware.Cdrom[1].UnitNumber).To(Equal(ptr.To(int32(1))))
+				assertCdromController(1, vmopv1.VirtualControllerTypeIDE, 0, 1)
 
 				// cdrom3 should remain unchanged since it has unit number with incomplete controller info.
 				Expect(vm.Spec.Hardware.Cdrom[2].ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
@@ -539,5 +467,311 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 				Expect(vm.Spec.Hardware.Cdrom[2].UnitNumber).To(Equal(ptr.To(int32(1))))
 			})
 		})
+
+		Context("When explicit and implicit placements are mixed", func() {
+			It("should process explicit placements first to reserve slots", func() {
+				vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{BusNumber: 0},
+				}
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					// Implicit - should be processed after explicit
+					{Name: "cdrom1"},
+					// Explicit - should reserve IDE 0:1
+					cdromSpec("cdrom2", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(1))),
+					// Implicit - should be processed after explicit
+					{Name: "cdrom3"},
+				}
+
+				expectMutationSuccess()
+				// cdrom1 should get IDE 0:0 (first available slot)
+				assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 0, 0)
+				// cdrom2 should keep its explicit placement IDE 0:1
+				assertCdromController(1, vmopv1.VirtualControllerTypeIDE, 0, 1)
+				// cdrom3 should get IDE 1:0 (IDE 0 is full, create new controller)
+				assertCdromController(2, vmopv1.VirtualControllerTypeIDE, 1, 0)
+				assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 2, 0, 1)
+			})
+
+			It("should handle multiple explicit placements with gaps for implicit", func() {
+				vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+					{BusNumber: 0},
+				}
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					// Explicit placements creating gaps: slots 0, 3, 5
+					cdromSpec("cdrom1", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(0))),
+					cdromSpec("cdrom2", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(3))),
+					cdromSpec("cdrom3", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(5))),
+					// Implicit placements - will try IDE first (preferred), not fill SATA gaps
+					{Name: "cdrom4"},
+					{Name: "cdrom5"},
+				}
+
+				expectMutationSuccess()
+				assertCdromController(0, vmopv1.VirtualControllerTypeSATA, 0, 0)
+				assertCdromController(1, vmopv1.VirtualControllerTypeSATA, 0, 3)
+				assertCdromController(2, vmopv1.VirtualControllerTypeSATA, 0, 5)
+				// cdrom4 should get IDE 0:0 (implicit CDs prefer IDE first)
+				assertCdromController(3, vmopv1.VirtualControllerTypeIDE, 0, 0)
+				// cdrom5 should get IDE 0:1
+				assertCdromController(4, vmopv1.VirtualControllerTypeIDE, 0, 1)
+				assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 1, 0)
+			})
+
+			It("should handle explicit placements on non-existent controllers", func() {
+				// No controllers in spec initially
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					// Implicit
+					{Name: "cdrom1"},
+					// Explicit on non-existent SATA controller
+					cdromSpec("cdrom2", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(0))),
+					// Implicit - should prefer IDE first
+					{Name: "cdrom3"},
+					// Explicit on non-existent IDE controller
+					cdromSpec("cdrom4", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(1)), ptr.To(int32(0))),
+				}
+
+				expectMutationSuccess()
+				// cdrom1 should get IDE 1:1 (explicit created IDE 1, so reuse it with available slot 1)
+				assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 1, 1)
+				// cdrom2 keeps its explicit SATA 0:0 (controller created)
+				assertCdromController(1, vmopv1.VirtualControllerTypeSATA, 0, 0)
+				// cdrom3 should get IDE 0:0 (no more slots on IDE 1, create IDE 0)
+				assertCdromController(2, vmopv1.VirtualControllerTypeIDE, 0, 0)
+				// cdrom4 keeps its explicit IDE 1:0 (controller created)
+				assertCdromController(3, vmopv1.VirtualControllerTypeIDE, 1, 0)
+				// IDE controllers: created in order [1, 0] because explicit (IDE 1) processed first
+				assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 2, 1, 0)
+				assertControllerCreated(vmopv1.VirtualControllerTypeSATA, 1, 0)
+			})
+
+			It("should handle explicit placements across multiple controller types", func() {
+				vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{BusNumber: 0},
+				}
+				vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+					{BusNumber: 0},
+				}
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					// Explicit IDE placements - fill IDE 0 completely
+					cdromSpec("cdrom1", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0))),
+					cdromSpec("cdrom2", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(1))),
+					// Explicit SATA placement
+					cdromSpec("cdrom3", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(10))),
+					// Implicit - IDE is full, should use SATA
+					{Name: "cdrom4"},
+					{Name: "cdrom5"},
+				}
+
+				expectMutationSuccess()
+				assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 0, 0)
+				assertCdromController(1, vmopv1.VirtualControllerTypeIDE, 0, 1)
+				assertCdromController(2, vmopv1.VirtualControllerTypeSATA, 0, 10)
+				// cdrom4 should get IDE 1:0 (IDE 0 is full, create IDE 1)
+				assertCdromController(3, vmopv1.VirtualControllerTypeIDE, 1, 0)
+				// cdrom5 should get IDE 1:1
+				assertCdromController(4, vmopv1.VirtualControllerTypeIDE, 1, 1)
+				assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 2, 0, 1)
+			})
+
+			It("should correctly track slots when explicit placement is on different bus", func() {
+				vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{BusNumber: 0},
+					{BusNumber: 1},
+				}
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					// Explicit placement on IDE bus 1
+					cdromSpec("cdrom1", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(1)), ptr.To(int32(0))),
+					// Implicit - should prefer bus 0 (lower bus number)
+					{Name: "cdrom2"},
+					{Name: "cdrom3"},
+					// Explicit placement on IDE bus 0
+					cdromSpec("cdrom4", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0))),
+					// Implicit
+					{Name: "cdrom5"},
+				}
+
+				expectMutationSuccess()
+				// After processing: IDE 0 has slots 0,1 occupied; IDE 1 has slots 0,1 occupied
+				// IDE is exhausted (max 2 controllers, each with 2 slots = 4 total, all used)
+				// cdrom5 must fall back to SATA
+				assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 1, 0)
+				// cdrom2 should get IDE 0:1 (explicit cdrom4 will take 0:0, so first implicit gets 0:1)
+				assertCdromController(1, vmopv1.VirtualControllerTypeIDE, 0, 1)
+				// cdrom3 should get IDE 1:1 (bus 0 is full, bus 1 has slot 1 available)
+				assertCdromController(2, vmopv1.VirtualControllerTypeIDE, 1, 1)
+				// cdrom4 keeps explicit IDE 0:0
+				assertCdromController(3, vmopv1.VirtualControllerTypeIDE, 0, 0)
+				// cdrom5 should fallback to SATA 0:0 (all IDE exhausted)
+				assertCdromController(4, vmopv1.VirtualControllerTypeSATA, 0, 0)
+				// IDE controllers exist, SATA controller created
+				assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 2, 0, 1)
+				assertControllerCreated(vmopv1.VirtualControllerTypeSATA, 1, 0)
+			})
+
+			It("should handle explicit placements filling up entire controller", func() {
+				vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{BusNumber: 0},
+				}
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					// Implicit
+					{Name: "cdrom1"},
+					// Explicit placements filling IDE 0 completely (slots 0 and 1)
+					cdromSpec("cdrom2", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0))),
+					cdromSpec("cdrom3", vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(1))),
+					// Implicit - should create new controller
+					{Name: "cdrom4"},
+				}
+
+				expectMutationSuccess()
+				// cdrom1 should get IDE 1:0 (bus 0 will be full after explicit placements)
+				assertCdromController(0, vmopv1.VirtualControllerTypeIDE, 1, 0)
+				assertCdromController(1, vmopv1.VirtualControllerTypeIDE, 0, 0)
+				assertCdromController(2, vmopv1.VirtualControllerTypeIDE, 0, 1)
+				// cdrom4 should get IDE 1:1
+				assertCdromController(3, vmopv1.VirtualControllerTypeIDE, 1, 1)
+				assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 2, 0, 1)
+			})
+
+			It("should process explicit placements even when mixed with partial specs", func() {
+				vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+					{BusNumber: 0},
+				}
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					// Explicit
+					cdromSpec("cdrom1", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(5))),
+					// Implicit - will try IDE first (preferred)
+					{Name: "cdrom2"},
+					// Partial (has controller and bus, missing unit) - implicit
+					cdromSpec("cdrom3", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), nil),
+					// Explicit
+					cdromSpec("cdrom4", vmopv1.VirtualControllerTypeSATA, ptr.To(int32(0)), ptr.To(int32(2))),
+					// Implicit
+					{Name: "cdrom5"},
+				}
+
+				expectMutationSuccess()
+				assertCdromController(0, vmopv1.VirtualControllerTypeSATA, 0, 5)
+				// cdrom2 should get IDE 0:0 (implicit prefers IDE)
+				assertCdromController(1, vmopv1.VirtualControllerTypeIDE, 0, 0)
+				// cdrom3 should get SATA 0:0 (partial with SATA specified, first available)
+				assertCdromController(2, vmopv1.VirtualControllerTypeSATA, 0, 0)
+				assertCdromController(3, vmopv1.VirtualControllerTypeSATA, 0, 2)
+				// cdrom5 should get IDE 0:1 (implicit prefers IDE)
+				assertCdromController(4, vmopv1.VirtualControllerTypeIDE, 0, 1)
+				assertControllerCreated(vmopv1.VirtualControllerTypeIDE, 1, 0)
+			})
+		})
+
+		Context("Controller slot exhaustion", func() {
+			It("should skip CD-ROM when both IDE and SATA controllers are full", func() {
+				// Fill all IDE controllers (2 controllers × 2 slots = 4 slots)
+				vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+					{BusNumber: 0}, {BusNumber: 1},
+				}
+				// Fill all SATA controllers (4 controllers × 30 slots = 120 slots)
+				// We'll simulate by filling slots 0-29 on each of the 4 SATA controllers
+				vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+					{BusNumber: 0}, {BusNumber: 1}, {BusNumber: 2}, {BusNumber: 3},
+				}
+
+				// Fill all IDE slots with non-CD-ROM devices
+				ideControllers := []vmopv1.VirtualControllerStatus{
+					{
+						Type:      vmopv1.VirtualControllerTypeIDE,
+						BusNumber: 0,
+						Devices: []vmopv1.VirtualDeviceStatus{
+							{Type: vmopv1.VirtualDeviceTypeDisk, UnitNumber: 0},
+							{Type: vmopv1.VirtualDeviceTypeDisk, UnitNumber: 1},
+						},
+					},
+					{
+						Type:      vmopv1.VirtualControllerTypeIDE,
+						BusNumber: 1,
+						Devices: []vmopv1.VirtualDeviceStatus{
+							{Type: vmopv1.VirtualDeviceTypeDisk, UnitNumber: 0},
+							{Type: vmopv1.VirtualDeviceTypeDisk, UnitNumber: 1},
+						},
+					},
+				}
+
+				// Fill all SATA slots with non-CD-ROM devices
+				sataControllers := []vmopv1.VirtualControllerStatus{}
+				for busNum := int32(0); busNum < 4; busNum++ {
+					devices := []vmopv1.VirtualDeviceStatus{}
+					for unitNum := int32(0); unitNum < 30; unitNum++ {
+						devices = append(devices, vmopv1.VirtualDeviceStatus{
+							Type:       vmopv1.VirtualDeviceTypeDisk,
+							UnitNumber: unitNum,
+						})
+					}
+					sataControllers = append(sataControllers, vmopv1.VirtualControllerStatus{
+						Type:      vmopv1.VirtualControllerTypeSATA,
+						BusNumber: busNum,
+						Devices:   devices,
+					})
+				}
+
+				vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: append(ideControllers, sataControllers...),
+				}
+
+				vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					{Name: "cdrom1"},
+				}
+
+				expectNoMutation()
+				// CD-ROM should remain unassigned
+				Expect(vm.Spec.Hardware.Cdrom[0].ControllerType).To(BeEmpty())
+				Expect(vm.Spec.Hardware.Cdrom[0].ControllerBusNumber).To(BeNil())
+				Expect(vm.Spec.Hardware.Cdrom[0].UnitNumber).To(BeNil())
+			})
+		})
+
+		Context("Partial placement with full controller", func() {
+			DescribeTable("should skip CD-ROM when specified controller is full",
+				func(ctrlType vmopv1.VirtualControllerType, maxSlots int32, setupController func()) {
+					setupController()
+
+					// Fill all slots with non-CD-ROM devices
+					devices := []vmopv1.VirtualDeviceStatus{}
+					for unitNum := int32(0); unitNum < maxSlots; unitNum++ {
+						devices = append(devices, vmopv1.VirtualDeviceStatus{
+							Type:       vmopv1.VirtualDeviceTypeDisk,
+							UnitNumber: unitNum,
+						})
+					}
+					vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+						Controllers: []vmopv1.VirtualControllerStatus{
+							{
+								Type:      ctrlType,
+								BusNumber: 0,
+								Devices:   devices,
+							},
+						},
+					}
+					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						cdromSpec("cdrom1", ctrlType, ptr.To(int32(0)), nil),
+					}
+
+					expectNoMutation()
+					Expect(vm.Spec.Hardware.Cdrom[0].ControllerType).To(Equal(ctrlType))
+					Expect(vm.Spec.Hardware.Cdrom[0].ControllerBusNumber).To(Equal(ptr.To(int32(0))))
+					Expect(vm.Spec.Hardware.Cdrom[0].UnitNumber).To(BeNil())
+				},
+				Entry("IDE controller with 2 slots full",
+					vmopv1.VirtualControllerTypeIDE,
+					int32(2),
+					func() {
+						vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{{BusNumber: 0}}
+					}),
+				Entry("SATA controller with 30 slots full",
+					vmopv1.VirtualControllerTypeSATA,
+					int32(30),
+					func() {
+						vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{{BusNumber: 0}}
+					}),
+			)
+		})
+
 	})
 })

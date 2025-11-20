@@ -11,12 +11,13 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
+	callOnUpdateOnlyMessage    = "MutateCdromControllerOnUpdate should only be called on update"
 	couldNotFindSlotMessage    = "Could not find an available slot for CD-ROM device"
-	incompletePlacementMessage = "CD-ROM with incomplete placement " +
-		"information will be rejected by validating webhook"
+	incompletePlacementMessage = "CD-ROM with incomplete placement information will be rejected by validating webhook"
 )
 
 // ControllerSlot represents a controller slot position with bus number, unit
@@ -37,9 +38,18 @@ type ControllerSlot struct {
 func MutateCdromControllerOnUpdate(
 	ctx *pkgctx.WebhookRequestContext,
 	_ ctrlclient.Client,
-	vm, _ *vmopv1.VirtualMachine) (bool, error) {
+	vm, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
 	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		return false, nil
+	}
+
+	if oldVM == nil {
+		ctx.Logger.Info(callOnUpdateOnlyMessage)
+		return false, nil
+	}
+
+	if !vmopv1util.VMSchemaUpgraded(ctx, *oldVM) {
 		return false, nil
 	}
 

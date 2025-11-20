@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 const (
@@ -659,16 +660,10 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 			vol.PersistentVolumeClaim.ClaimName == volStatus.PersistentVolumeClaim.ClaimName {
 
 			vmVolStatus = attachmentStatusToVolumeStatus(volStatus.Name, volStatus)
-			existingVol := existingVMManagedVolStatus[vol.Name]
-			vmVolStatus.Used = existingVol.Used
-			vmVolStatus.Crypto = existingVol.Crypto
-			vmVolStatus.ControllerType = existingVol.ControllerType
-			vmVolStatus.ControllerBusNumber = existingVol.ControllerBusNumber
-			vmVolStatus.UnitNumber = existingVol.UnitNumber
-			vmVolStatus.DiskMode = existingVol.DiskMode
-			vmVolStatus.SharingMode = existingVol.SharingMode
 
-			// Add PVC capacity information
+			updateVolumeStatusWithExistingVMStatus(&vmVolStatus, existingVMManagedVolStatus)
+
+			// Add PVC capacity information.
 			if err := r.updateVolumeStatusWithPVCInfo(
 				ctx,
 				volStatus.PersistentVolumeClaim.ClaimName,
@@ -1029,14 +1024,8 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 			// vm.status.vol and legacyAttachment.
 			if vol.PersistentVolumeClaim.ClaimName == att.Spec.VolumeName {
 				vmVolStatus := legacyAttachmentToVolumeStatus(vol.Name, att)
-				existingVol := existingVMManagedVolStatus[vol.Name]
-				vmVolStatus.Used = existingVol.Used
-				vmVolStatus.Crypto = existingVol.Crypto
-				vmVolStatus.ControllerType = existingVol.ControllerType
-				vmVolStatus.ControllerBusNumber = existingVol.ControllerBusNumber
-				vmVolStatus.UnitNumber = existingVol.UnitNumber
-				vmVolStatus.DiskMode = existingVol.DiskMode
-				vmVolStatus.SharingMode = existingVol.SharingMode
+
+				updateVolumeStatusWithExistingVMStatus(&vmVolStatus, existingVMManagedVolStatus)
 
 				// Add PVC capacity information
 				if err := r.updateVolumeStatusWithPVCInfo(
@@ -1096,7 +1085,10 @@ func updateVMVolumeStatus(
 	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, v2...)
 
 	// Sort the volume statuses to ensure consistent ordering.
-	vmopv1.SortVirtualMachineVolumeStatuses(ctx.VM.Status.Volumes)
+	pkgvol.SortVirtualMachineVolumeStatuses(
+		ctx.VM.Status.Volumes,
+		false, // Sort by TargetID.
+	)
 }
 
 // categorizeVolumeSpecs categorizes the volume specs into two categories:
@@ -1146,4 +1138,20 @@ func categorizeVolumeSpecs(
 		volumeSpecsForBatch = append(volumeSpecsForBatch, vol)
 	}
 	return volumeSpecsForBatch, volumeSpecsForLegacy
+}
+
+// Update the target vmVolStatus with info from existing VM vol status.
+func updateVolumeStatusWithExistingVMStatus(
+	vmVolStatus *vmopv1.VirtualMachineVolumeStatus,
+	existingVMManagedVolStatusMap map[string]vmopv1.VirtualMachineVolumeStatus) {
+
+	existingVolStatus := existingVMManagedVolStatusMap[vmVolStatus.Name]
+
+	vmVolStatus.Used = existingVolStatus.Used
+	vmVolStatus.Crypto = existingVolStatus.Crypto
+	vmVolStatus.ControllerType = existingVolStatus.ControllerType
+	vmVolStatus.ControllerBusNumber = existingVolStatus.ControllerBusNumber
+	vmVolStatus.UnitNumber = existingVolStatus.UnitNumber
+	vmVolStatus.DiskMode = existingVolStatus.DiskMode
+	vmVolStatus.SharingMode = existingVolStatus.SharingMode
 }

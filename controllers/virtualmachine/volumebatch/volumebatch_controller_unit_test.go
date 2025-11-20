@@ -941,8 +941,8 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(2))
 						Expect(attachment.Status.VolumeStatus).To(HaveLen(2))
-						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 1, 0, false)
-						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 1, false)
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0, false)
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 1, 1, false)
 					})
 				})
 
@@ -950,23 +950,29 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 					classicDisk1 := func() vmopv1.VirtualMachineVolumeStatus {
 						return vmopv1.VirtualMachineVolumeStatus{
-							Name:     "my-disk-0",
-							Type:     vmopv1.VolumeTypeClassic,
-							Limit:    ptr.To(resource.MustParse("10Gi")),
-							Used:     ptr.To(resource.MustParse("91Gi")),
-							Attached: true,
-							DiskUUID: "100",
+							Name:                "my-disk-0",
+							Type:                vmopv1.VolumeTypeClassic,
+							Limit:               ptr.To(resource.MustParse("10Gi")),
+							Used:                ptr.To(resource.MustParse("91Gi")),
+							Attached:            true,
+							DiskUUID:            "100",
+							ControllerBusNumber: ptr.To(int32(1)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							UnitNumber:          ptr.To(int32(0)),
 						}
 					}
 
 					classicDisk2 := func() vmopv1.VirtualMachineVolumeStatus {
 						return vmopv1.VirtualMachineVolumeStatus{
-							Name:     "my-disk-1",
-							Type:     vmopv1.VolumeTypeClassic,
-							Limit:    ptr.To(resource.MustParse("15Gi")),
-							Used:     ptr.To(resource.MustParse("5Gi")),
-							Attached: true,
-							DiskUUID: "101",
+							Name:                "my-disk-1",
+							Type:                vmopv1.VolumeTypeClassic,
+							Limit:               ptr.To(resource.MustParse("15Gi")),
+							Used:                ptr.To(resource.MustParse("5Gi")),
+							Attached:            true,
+							DiskUUID:            "101",
+							ControllerBusNumber: ptr.To(int32(1)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							UnitNumber:          ptr.To(int32(1)),
 						}
 					}
 
@@ -990,15 +996,17 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 						attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 						Expect(attachment).ToNot(BeNil())
 
-						By("VM Status.Volumes are sorted by DiskUUID", func() {
+						By("VM Status.Volumes are stable sorted by Target ID", func() {
 							Expect(vm.Status.Volumes).To(HaveLen(4))
 							Expect(attachment.Status.VolumeStatus).To(HaveLen(2))
 
-							Expect(vm.Status.Volumes[0]).To(Equal(classicDisk1()))
-							Expect(vm.Status.Volumes[1]).To(Equal(classicDisk2()))
+							// Classic disks have target ID.
+							Expect(vm.Status.Volumes[2]).To(Equal(classicDisk1()))
+							Expect(vm.Status.Volumes[3]).To(Equal(classicDisk2()))
 
-							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 2, 1, false)
-							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 3, 0, false)
+							// Empty target ID so ranked before Classic disks.
+							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0, false)
+							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 1, 1, false)
 						})
 					}
 
@@ -1021,7 +1029,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 							GinkgoHelper()
 
-							Expect(vm.Status.Volumes[3].Used).To(Equal(ptr.To(resource.MustParse("1Gi"))))
+							Expect(vm.Status.Volumes[0].Used).To(Equal(ptr.To(resource.MustParse("1Gi"))))
 						}
 
 						It("includes the PVC usage in the result", func() {
@@ -1052,7 +1060,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 								GinkgoHelper()
 
-								Expect(vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("20Gi"))))
+								Expect(vm.Status.Volumes[0].Limit).To(Equal(ptr.To(resource.MustParse("20Gi"))))
 							}
 
 							When("PVC has limit", func() {
@@ -1112,7 +1120,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 							GinkgoHelper()
 
-							Expect(vm.Status.Volumes[3].Crypto).To(Equal(newCryptoStatus()))
+							Expect(vm.Status.Volumes[0].Crypto).To(Equal(newCryptoStatus()))
 						}
 
 						BeforeEach(func() {
@@ -1128,6 +1136,31 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 						It("includes the PVC crypto in the result", func() {
 							assertBaselineVolStatus()
 							assertPVCHasCrypto()
+						})
+					})
+
+					When("Existing status has Controller info", func() {
+						BeforeEach(func() {
+							vm.Status.Volumes = append(vm.Status.Volumes,
+								vmopv1.VirtualMachineVolumeStatus{
+									Name:                vmVol1.Name,
+									Type:                vmopv1.VolumeTypeManaged,
+									ControllerBusNumber: ptr.To(int32(0)),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									UnitNumber:          ptr.To(int32(0)),
+								},
+								vmopv1.VirtualMachineVolumeStatus{
+									Name:                vmVol2.Name,
+									Type:                vmopv1.VolumeTypeManaged,
+									ControllerBusNumber: ptr.To(int32(0)),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									UnitNumber:          ptr.To(int32(1)),
+								},
+							)
+						})
+
+						It("include the Controller info and sort by controller info", func() {
+							assertBaselineVolStatus()
 						})
 					})
 				})
@@ -1360,7 +1393,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
 
-					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
+					By("VM Status.Volumes are stable-sorted by Spec.Volumes order, and attached should be False", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(1))
 						Expect(attachment.Status.VolumeStatus).To(HaveLen(1))
 						assertVMVolStatusFromBatchAttachmentSpec(vm, attachment, 0, 0)

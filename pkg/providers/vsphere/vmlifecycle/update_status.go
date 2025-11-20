@@ -1438,7 +1438,12 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 		})
 
 	// This sort order is consistent with the logic from the volumes controller.
-	vmopv1.SortVirtualMachineVolumeStatuses(vm.Status.Volumes)
+	// If VMSharedDisks is enabled, sort by TargetID.
+	sortByUUID := !pkgcfg.FromContext(vmCtx).Features.VMSharedDisks
+	pkgvol.SortVirtualMachineVolumeStatuses(
+		vm.Status.Volumes,
+		sortByUUID,
+	)
 }
 
 type probeResult uint8

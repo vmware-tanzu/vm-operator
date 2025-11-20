@@ -42,10 +42,9 @@ import (
 )
 
 const (
-	webHookName            = "default"
-	defaultInterfaceName   = "eth0"
-	defaultNamedNetwork    = "VM Network"
-	defaultCdromNamePrefix = "cdrom"
+	webHookName          = "default"
+	defaultInterfaceName = "eth0"
+	defaultNamedNetwork  = "VM Network"
 
 	vmclassKind = "VirtualMachineClass"
 )
@@ -350,14 +349,13 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		}
 
 		if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-			// Add controllers as needed for new volumes.
-			if ok, err := AddControllersForVolumes(ctx, m.client, modified); err != nil {
+			if ok, err := SetPVCVolumeDefaults(ctx, m.client, modified); err != nil {
 				return admission.Denied(err.Error())
 			} else if ok {
 				wasMutated = true
 			}
-
-			if ok, err := SetPVCVolumeDefaults(ctx, m.client, modified); err != nil {
+			// Add controllers as needed for new volumes.
+			if ok, err := AddControllersForVolumes(ctx, m.client, modified); err != nil {
 				return admission.Denied(err.Error())
 			} else if ok {
 				wasMutated = true

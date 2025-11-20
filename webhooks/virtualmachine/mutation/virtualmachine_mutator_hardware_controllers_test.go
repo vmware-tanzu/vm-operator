@@ -1317,6 +1317,8 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wasMutated).To(BeFalse())
 				Expect(vm.Spec.Volumes[0].ApplicationType).To(BeEmpty())
+				Expect(vm.Spec.Volumes[0].DiskMode).To(BeEmpty())
+				Expect(vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
 			})
 		})
 
@@ -1342,6 +1344,7 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wasMutated).To(BeTrue())
 				Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
+				Expect(vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
 			})
 		})
 

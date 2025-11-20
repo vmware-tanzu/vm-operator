@@ -207,17 +207,6 @@ var _ = Describe("Reconcile", func() {
 					}
 				})
 
-				When("VM is powered on", func() {
-					BeforeEach(func() {
-						moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
-					})
-
-					It("should succeeds without making any changes", func() {
-						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
-					})
-				})
-
 				It("should create a new IDE controller", func() {
 					Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 					Expect(configSpec.DeviceChange).To(HaveLen(1))
@@ -228,6 +217,24 @@ var _ = Describe("Reconcile", func() {
 						int32(0),
 						ptr.To[int32](-1),
 					)
+				})
+
+				When("VM is powered on", func() {
+					BeforeEach(func() {
+						moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+					})
+
+					It("should create a new IDE controller", func() {
+						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(configSpec.DeviceChange).To(HaveLen(1))
+						assertIDEControllerDeviceChange(
+							configSpec.DeviceChange,
+							0,
+							vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							int32(0),
+							ptr.To[int32](-1),
+						)
+					})
 				})
 
 				When("IDE controller is already configured in VM", func() {
@@ -1072,6 +1079,88 @@ var _ = Describe("Reconcile", func() {
 							nil,
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI)
+					})
+				})
+			})
+
+			When("VM is PoweredOn", func() {
+				BeforeEach(func() {
+					moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+				})
+
+				When("There are add and delete device changes", func() {
+					BeforeEach(func() {
+						vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							IDEControllers: []vmopv1.IDEControllerSpec{
+								{
+									BusNumber: 0,
+								},
+							},
+						}
+
+						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device,
+							&vimtypes.VirtualIDEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										ControllerKey: pciControllerKey,
+									},
+									BusNumber: 1,
+								},
+							},
+						)
+					})
+
+					It("should add both device changes", func() {
+						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(configSpec.DeviceChange).To(HaveLen(2))
+
+						assertIDEControllerDeviceChange(
+							configSpec.DeviceChange,
+							0,
+							vimtypes.VirtualDeviceConfigSpecOperationRemove,
+							int32(1),
+							nil,
+						)
+						assertIDEControllerDeviceChange(
+							configSpec.DeviceChange,
+							1,
+							vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							int32(0),
+							ptr.To[int32](-1),
+						)
+					})
+				})
+
+				When("There are edit device change", func() {
+					BeforeEach(func() {
+						vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							NVMEControllers: []vmopv1.NVMEControllerSpec{
+								{
+									BusNumber:     0,
+									SharingMode:   vmopv1.VirtualControllerSharingModeNone,
+									PCISlotNumber: ptr.To(int32(1)),
+								},
+							},
+						}
+						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device,
+							&vimtypes.VirtualNVMEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										ControllerKey: pciControllerKey,
+										SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
+											PciSlotNumber: 0,
+										},
+									},
+									BusNumber: 0,
+								},
+								SharedBus: string(vimtypes.VirtualNVMEControllerSharingNoSharing),
+							},
+						)
+					})
+
+					It("should succeed but not add the edit event to device changes", func() {
+						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(configSpec.DeviceChange).To(HaveLen(0))
 					})
 				})
 			})

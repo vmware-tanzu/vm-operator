@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -138,6 +139,17 @@ func (r *reconciler) ReconcileNormal(
 	ctx context.Context,
 	obj *vmopv1.VirtualMachineImageCache) (retErr error) {
 
+	//
+	// Check if any of the spec.locations or status.locations have an empty
+	// profileID field and remove those entries if they do. This is a
+	// side-effect of a weird order-of-operations on Supervisor where the Fast
+	// Deploy FSS could get enabled prior to the VMIC CRD being updated, causing
+	// the old version to be used before the field was introduced.
+	//
+	if cleanupEmptyProfileIDs(obj) {
+		return nil
+	}
+
 	// TODO(akutz) It is not possible to reset the entire image status each
 	//             time as it causes images with cached disks to be constantly
 	//             re-reconciled since their condition's LastTransitionTime is
@@ -244,6 +256,29 @@ func (r *reconciler) ReconcileNormal(
 	pkgcond.SetSummary(obj, pkgcond.WithStepCounter())
 
 	return nil
+}
+
+func cleanupEmptyProfileIDs(
+	obj *vmopv1.VirtualMachineImageCache) bool {
+
+	var (
+		oldSpecLocLen = len(obj.Spec.Locations)
+		oldStatLocLen = len(obj.Status.Locations)
+	)
+
+	obj.Spec.Locations = slices.DeleteFunc(
+		obj.Spec.Locations,
+		func(e vmopv1.VirtualMachineImageCacheLocationSpec) bool {
+			return e.ProfileID == ""
+		})
+	obj.Status.Locations = slices.DeleteFunc(
+		obj.Status.Locations,
+		func(e vmopv1.VirtualMachineImageCacheLocationStatus) bool {
+			return e.ProfileID == ""
+		})
+
+	return oldSpecLocLen != len(obj.Spec.Locations) ||
+		oldStatLocLen != len(obj.Status.Locations)
 }
 
 func (r *reconciler) reconcileFiles(

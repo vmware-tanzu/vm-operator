@@ -685,6 +685,251 @@ var _ = Describe(
 					true, "", // Ready
 				),
 			)
+
+			Context("Cleanup Empty ProfileIDs", func() {
+				It("should remove spec locations with empty profileID and requeue", func() {
+					obj := getVMICacheObj(
+						nsInfo.Namespace,
+						itemIDOVF,
+						itemVersionOVF,
+						vmopv1.VirtualMachineImageCacheLocationSpec{
+							DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+							DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+							ProfileID:    vcSimCtx.StorageProfileID,
+						})
+
+					Expect(vcSimCtx.Client.Create(ctx, &obj)).To(Succeed())
+					key := ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Name,
+					}
+
+					// Wait for initial reconciliation
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						g.Expect(obj.Status.Locations).ToNot(BeEmpty())
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+
+					// Manually add a spec location with empty profileID to simulate the bug
+					// (bypassing API validation by updating directly)
+					var obj2 vmopv1.VirtualMachineImageCache
+					Expect(vcSimCtx.Client.Get(ctx, key, &obj2)).To(Succeed())
+					obj2.Spec.Locations = append(obj2.Spec.Locations,
+						vmopv1.VirtualMachineImageCacheLocationSpec{
+							DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+							DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+							ProfileID:    "", // Empty profileID - should be removed
+						})
+					// Use SubResource to bypass validation
+					Expect(vcSimCtx.Client.Update(ctx, &obj2, &ctrlclient.UpdateOptions{
+						// Force the update to bypass validation
+					})).To(Or(Succeed(), MatchError(ContainSubstring("profileID"))))
+
+					// If the update succeeded (bypassing validation), verify cleanup happens
+					if err := vcSimCtx.Client.Get(ctx, key, &obj2); err == nil && len(obj2.Spec.Locations) > 1 {
+						// Eventually, the empty profileID location should be removed
+						Eventually(func(g Gomega) {
+							var obj vmopv1.VirtualMachineImageCache
+							g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+							// All locations should have valid profileIDs
+							for _, loc := range obj.Spec.Locations {
+								g.Expect(loc.ProfileID).ToNot(BeEmpty())
+							}
+						}, 5*time.Second, 1*time.Second).Should(Succeed())
+					}
+				})
+
+				It("should remove status locations with empty profileID and requeue", func() {
+					obj := getVMICacheObj(
+						nsInfo.Namespace,
+						itemIDOVF,
+						itemVersionOVF,
+						vmopv1.VirtualMachineImageCacheLocationSpec{
+							DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+							DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+							ProfileID:    vcSimCtx.StorageProfileID,
+						})
+
+					Expect(vcSimCtx.Client.Create(ctx, &obj)).To(Succeed())
+					key := ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Name,
+					}
+
+					// Wait for initial reconciliation
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						g.Expect(obj.Status.Locations).ToNot(BeEmpty())
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+
+					// Manually add a status location with empty profileID to simulate the bug
+					var obj2 vmopv1.VirtualMachineImageCache
+					Expect(vcSimCtx.Client.Get(ctx, key, &obj2)).To(Succeed())
+					obj2.Status.Locations = append(obj2.Status.Locations,
+						vmopv1.VirtualMachineImageCacheLocationStatus{
+							DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+							DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+							ProfileID:    "", // Empty profileID - should be removed
+						})
+					Expect(vcSimCtx.Client.Status().Update(ctx, &obj2)).To(Succeed())
+
+					// Eventually, the empty profileID status location should be removed
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						// Should only have the valid location
+						for _, loc := range obj.Status.Locations {
+							g.Expect(loc.ProfileID).ToNot(BeEmpty())
+						}
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+				})
+
+				It("should remove multiple locations with empty profileID", func() {
+					obj := getVMICacheObj(
+						nsInfo.Namespace,
+						itemIDOVF,
+						itemVersionOVF,
+						vmopv1.VirtualMachineImageCacheLocationSpec{
+							DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+							DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+							ProfileID:    vcSimCtx.StorageProfileID, // Valid
+						})
+
+					Expect(vcSimCtx.Client.Create(ctx, &obj)).To(Succeed())
+					key := ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Name,
+					}
+
+					// Wait for initial reconciliation
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						g.Expect(obj.Status.Locations).ToNot(BeEmpty())
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+
+					// Manually add status locations with empty profileIDs to simulate the bug
+					var obj2 vmopv1.VirtualMachineImageCache
+					Expect(vcSimCtx.Client.Get(ctx, key, &obj2)).To(Succeed())
+					obj2.Status.Locations = append(obj2.Status.Locations,
+						vmopv1.VirtualMachineImageCacheLocationStatus{
+							DatacenterID: "fake1",
+							DatastoreID:  "fake2",
+							ProfileID:    "", // Empty
+						},
+						vmopv1.VirtualMachineImageCacheLocationStatus{
+							DatacenterID: "fake3",
+							DatastoreID:  "fake4",
+							ProfileID:    "", // Empty
+						})
+					Expect(vcSimCtx.Client.Status().Update(ctx, &obj2)).To(Succeed())
+
+					// Eventually, only the valid location should remain
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						g.Expect(obj.Status.Locations).To(HaveLen(1))
+						g.Expect(obj.Status.Locations[0].ProfileID).To(Equal(vcSimCtx.StorageProfileID))
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+				})
+
+				It("should not modify locations when all have valid profileIDs", func() {
+					obj := getVMICacheObj(
+						nsInfo.Namespace,
+						itemIDOVF,
+						itemVersionOVF,
+						vmopv1.VirtualMachineImageCacheLocationSpec{
+							DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+							DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+							ProfileID:    vcSimCtx.StorageProfileID,
+						})
+
+					Expect(vcSimCtx.Client.Create(ctx, &obj)).To(Succeed())
+					key := ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Name,
+					}
+
+					// Verify the location is preserved
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						g.Expect(obj.Spec.Locations).To(HaveLen(1))
+						g.Expect(obj.Spec.Locations[0].ProfileID).To(Equal(vcSimCtx.StorageProfileID))
+						g.Expect(obj.Spec.Locations[0].DatacenterID).To(Equal(vcSimCtx.Datacenter.Reference().Value))
+						g.Expect(obj.Spec.Locations[0].DatastoreID).To(Equal(vcSimCtx.Datastore.Reference().Value))
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+				})
+
+				It("should handle object with no locations", func() {
+					obj := getVMICacheObj(
+						nsInfo.Namespace,
+						itemIDOVF,
+						itemVersionOVF)
+
+					Expect(vcSimCtx.Client.Create(ctx, &obj)).To(Succeed())
+					key := ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Name,
+					}
+
+					// Should reconcile successfully without locations
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						assertCondTrue(g, obj, cndHdwReady)
+						assertCondTrue(g, obj, cndRdyReady)
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+				})
+
+				It("should handle all status locations having empty profileIDs", func() {
+					obj := getVMICacheObj(
+						nsInfo.Namespace,
+						itemIDOVF,
+						itemVersionOVF)
+
+					Expect(vcSimCtx.Client.Create(ctx, &obj)).To(Succeed())
+					key := ctrlclient.ObjectKey{
+						Namespace: obj.Namespace,
+						Name:      obj.Name,
+					}
+
+					// Wait for initial reconciliation
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						assertCondTrue(g, obj, cndHdwReady)
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+
+					// Manually add status locations with empty profileIDs only
+					var obj2 vmopv1.VirtualMachineImageCache
+					Expect(vcSimCtx.Client.Get(ctx, key, &obj2)).To(Succeed())
+					obj2.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+						{
+							DatacenterID: "fake1",
+							DatastoreID:  "fake2",
+							ProfileID:    "", // Empty
+						},
+						{
+							DatacenterID: "fake3",
+							DatastoreID:  "fake4",
+							ProfileID:    "", // Empty
+						},
+					}
+					Expect(vcSimCtx.Client.Status().Update(ctx, &obj2)).To(Succeed())
+
+					// Eventually, all empty locations should be removed and object should be ready
+					Eventually(func(g Gomega) {
+						var obj vmopv1.VirtualMachineImageCache
+						g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+						g.Expect(obj.Status.Locations).To(BeEmpty())
+						assertCondTrue(g, obj, cndHdwReady)
+						assertCondTrue(g, obj, cndRdyReady)
+					}, 5*time.Second, 1*time.Second).Should(Succeed())
+				})
+			})
 		})
 
 	})

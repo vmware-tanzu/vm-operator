@@ -917,7 +917,8 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			})
 			expectedErr = upgradevm.ErrUpgradeSchema
 
-			scsiCtrl = builder.DummyParaVirtualSCSIController(testControllerKey, 0)
+			scsiCtrl = builder.DummyParaVirtualSCSIController(
+			testControllerKey, 0, vimtypes.VirtualSCSISharingNoSharing)
 
 			diskDevice1 = builder.DummyVirtualDiskWithCapacity(testDiskKey1, testControllerKey, 0, testDiskFileName1, testDiskUUID1, testDiskCapacity1)
 			diskDevice2 = builder.DummyVirtualDiskWithCapacity(testDiskKey2, testControllerKey, 1, testDiskFileName2, testDiskUUID2, testDiskCapacity2)
@@ -1215,8 +1216,10 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			)
 
 			BeforeEach(func() {
-				scsiCtrl0 = builder.DummyParaVirtualSCSIController(testControllerKey0, 0)
-				scsiCtrl1 = builder.DummyParaVirtualSCSIController(testControllerKey1, 1)
+			scsiCtrl0 = builder.DummyParaVirtualSCSIController(
+				testControllerKey0, 0, vimtypes.VirtualSCSISharingNoSharing)
+			scsiCtrl1 = builder.DummyParaVirtualSCSIController(
+				testControllerKey1, 1, vimtypes.VirtualSCSISharingNoSharing)
 
 				diskDevice1.ControllerKey = testControllerKey0
 				diskDevice2.ControllerKey = testControllerKey1

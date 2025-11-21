@@ -2511,11 +2511,25 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		}
 	}
 
-	// Inherit the image's disks and their controllers.
-	pkgutil.CopyStorageControllersAndDisks(
-		&createArgs.ConfigSpec,
-		imgConfigSpec,
-		createArgs.StorageProfileID)
+	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		pkgutil.CopyStorageControllersAndDisksWithOverride(
+			vmCtx,
+			&createArgs.ConfigSpec,
+			imgConfigSpec,
+			createArgs.StorageProfileID,
+			true)
+
+		pkgutil.AddControllersFromVMSpec(
+			vmCtx,
+			vmCtx.VM,
+			&createArgs.ConfigSpec)
+	} else {
+		// Inherit the image's disks and their controllers.
+		pkgutil.CopyStorageControllersAndDisks(
+			&createArgs.ConfigSpec,
+			imgConfigSpec,
+			createArgs.StorageProfileID)
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
 		if err := vs.vmCreateGenConfigSpecImagePVCDataSourceRefs(

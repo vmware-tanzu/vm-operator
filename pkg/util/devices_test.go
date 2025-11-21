@@ -9,7 +9,9 @@ import (
 	. "github.com/onsi/gomega"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	builder "github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func newPCIPassthroughDevice(profile string) *vimtypes.VirtualPCIPassthrough {
@@ -369,4 +371,79 @@ var _ = Describe("GetPreferredDiskFormat", func() {
 			vimtypes.DatastoreSectorFormatEmulated_512,
 		),
 	)
+})
+
+var _ = Describe("GetControllerID", func() {
+	DescribeTable("should extract ControllerID from virtual controllers",
+		func(device vimtypes.BaseVirtualDevice, expectedType vmopv1.VirtualControllerType, expectedBus int32) {
+			ctrlID := util.GetControllerID(device)
+			Expect(ctrlID).ToNot(BeNil())
+			Expect(ctrlID.ControllerType).To(Equal(expectedType))
+			Expect(ctrlID.BusNumber).To(Equal(expectedBus))
+		},
+		Entry(
+			"VirtualIDEController",
+			builder.DummyIDEController(-100, 0, nil),
+			vmopv1.VirtualControllerTypeIDE,
+			int32(0),
+		),
+		Entry(
+			"ParaVirtualSCSIController",
+			builder.DummyParaVirtualSCSIController(-200, 1, vimtypes.VirtualSCSISharingNoSharing),
+			vmopv1.VirtualControllerTypeSCSI,
+			int32(1),
+		),
+		Entry(
+			"VirtualLsiLogicController",
+			builder.DummyLsiLogicController(-300, 2, vimtypes.VirtualSCSISharingNoSharing),
+			vmopv1.VirtualControllerTypeSCSI,
+			int32(2),
+		),
+		Entry(
+			"VirtualBusLogicController",
+			builder.DummyBusLogicController(-400, 3, vimtypes.VirtualSCSISharingNoSharing),
+			vmopv1.VirtualControllerTypeSCSI,
+			int32(3),
+		),
+		Entry(
+			"VirtualSATAController",
+			builder.DummyVirtualSATAController(-500, 0),
+			vmopv1.VirtualControllerTypeSATA,
+			int32(0),
+		),
+		Entry(
+			"VirtualAHCIController (SATA subtype)",
+			builder.DummyVirtualSATAController(-600, 1),
+			vmopv1.VirtualControllerTypeSATA,
+			int32(1),
+		),
+		Entry(
+			"VirtualNVMEController",
+			builder.DummyNVMEController(-700, 0),
+			vmopv1.VirtualControllerTypeNVME,
+			int32(0),
+		),
+	)
+
+	Context("non-controller devices", func() {
+		It("should return nil for VirtualDisk", func() {
+			Expect(util.GetControllerID(&vimtypes.VirtualDisk{})).To(BeNil())
+		})
+
+		It("should return nil for VirtualVmxnet3", func() {
+			Expect(util.GetControllerID(&vimtypes.VirtualVmxnet3{})).To(BeNil())
+		})
+
+		It("should return nil for VirtualCdrom", func() {
+			Expect(util.GetControllerID(&vimtypes.VirtualCdrom{})).To(BeNil())
+		})
+
+		It("should return nil for VirtualPCIController", func() {
+			Expect(util.GetControllerID(&vimtypes.VirtualPCIController{})).To(BeNil())
+		})
+
+		It("should return nil for nil device", func() {
+			Expect(util.GetControllerID(nil)).To(BeNil())
+		})
+	})
 })

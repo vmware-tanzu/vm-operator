@@ -19,11 +19,11 @@ var (
 	errInvalidSharingMode = errors.New("invalid sharing mode")
 )
 
-// newIDEController returns a new IDE controller.
+// NewIDEController returns a new IDE controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newIDEController(
+func NewIDEController(
 	spec vmopv1.IDEControllerSpec,
 	pciController *vimtypes.VirtualPCIController,
 	newDeviceKey *int32,
@@ -52,11 +52,11 @@ func validateNVMEController(spec vmopv1.NVMEControllerSpec) error {
 	}
 }
 
-// newNVMEController returns a new NVME controller.
+// NewNVMEController returns a new NVME controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newNVMEController(
+func NewNVMEController(
 	ctx context.Context,
 	spec vmopv1.NVMEControllerSpec,
 	pciController *vimtypes.VirtualPCIController,
@@ -85,11 +85,11 @@ func newNVMEController(
 	return controller
 }
 
-// newSATAController returns a new SATA controller.
+// NewSATAController returns a new SATA controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newSATAController(
+func NewSATAController(
 	spec vmopv1.SATAControllerSpec,
 	pciController *vimtypes.VirtualPCIController,
 	newDeviceKey *int32,
@@ -118,11 +118,11 @@ func newSATAController(
 	return controller
 }
 
-// newSCSIController returns a new SCSI controller.
+// NewSCSIController returns a new SCSI controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newSCSIController(
+func NewSCSIController(
 	ctx context.Context,
 	spec vmopv1.SCSIControllerSpec,
 	pciController *vimtypes.VirtualPCIController,
@@ -237,8 +237,8 @@ func sharingModeToNVMEControllerSharing(
 	}
 }
 
-// addDeviceChange adds a DeviceChange operation to configSpec.DeviceChange.
-func addDeviceChangeOp(
+// AddDeviceChangeOp adds a DeviceChange operation to configSpec.DeviceChange.
+func AddDeviceChangeOp(
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	controller vimtypes.BaseVirtualDevice,
 	op vimtypes.VirtualDeviceConfigSpecOperation,

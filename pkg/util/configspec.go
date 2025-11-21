@@ -19,7 +19,10 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
 )
 
 // MarshalConfigSpecToXML returns a byte slice of the provided ConfigSpec
@@ -137,6 +140,25 @@ func DevicesFromConfigSpec(
 	return devices
 }
 
+// GetDeviceConfigSpec returns the VirtualDeviceConfigSpec from the given
+// BaseVirtualDeviceConfigSpec. Returns nil if devChange is nil, if the
+// spec is nil, or if the device is nil.
+func GetDeviceConfigSpec(
+	devChange vimtypes.BaseVirtualDeviceConfigSpec,
+) *vimtypes.VirtualDeviceConfigSpec {
+
+	if devChange == nil {
+		return nil
+	}
+
+	spec := devChange.GetVirtualDeviceConfigSpec()
+	if spec == nil || spec.Device == nil {
+		return nil
+	}
+
+	return spec
+}
+
 // SanitizeVMClassConfigSpec clears fields in the class ConfigSpec that are
 // not allowed or supported.
 func SanitizeVMClassConfigSpec(
@@ -161,8 +183,12 @@ func SanitizeVMClassConfigSpec(
 	RemoveDevicesFromConfigSpec(configSpec, isNonRDMDisk)
 }
 
-// RemoveDevicesFromConfigSpec removes devices from config spec device changes based on the matcher function.
-func RemoveDevicesFromConfigSpec(configSpec *vimtypes.VirtualMachineConfigSpec, fn func(vimtypes.BaseVirtualDevice) bool) {
+// RemoveDevicesFromConfigSpec removes devices from config spec device changes
+// based on the matcher function.
+func RemoveDevicesFromConfigSpec(
+	configSpec *vimtypes.VirtualMachineConfigSpec,
+	fn func(vimtypes.BaseVirtualDevice) bool) {
+
 	if configSpec == nil {
 		return
 	}
@@ -170,6 +196,9 @@ func RemoveDevicesFromConfigSpec(configSpec *vimtypes.VirtualMachineConfigSpec, 
 	var targetDevChanges []vimtypes.BaseVirtualDeviceConfigSpec
 	for _, devChange := range configSpec.DeviceChange {
 		dSpec := devChange.GetVirtualDeviceConfigSpec()
+		if dSpec == nil || dSpec.Device == nil {
+			continue
+		}
 		if !fn(dSpec.Device) {
 			targetDevChanges = append(targetDevChanges, devChange)
 		}
@@ -322,4 +351,223 @@ func CopyStorageControllersAndDisks(
 		}
 		return false
 	})
+}
+
+// overrideOrAppendController adds a controller to configSpec, replacing any
+// existing controller with the same type and bus number. If a conflict is
+// detected (same ControllerType and BusNumber), the entire controller ConfigSpec
+// is replaced with newCtrl. This means all controller properties are updated,
+// including SCSI subtype (e.g., ParaVirtual vs LSI Logic) and sharing mode.
+// The new controller's device key is used, and any disks attached to the old
+// controller will be discarded. It returns the overridden controller's device
+// key, or 0 if no override occurred.
+func overrideOrAppendController(
+	dst *vimtypes.VirtualMachineConfigSpec,
+	newCtrl vimtypes.BaseVirtualDevice,
+	existingCtrlIdx map[ControllerID]int) int32 {
+
+	newCtrlID := GetControllerID(newCtrl)
+	if newCtrlID == nil || dst == nil {
+		return 0
+	}
+
+	if idx, exists := existingCtrlIdx[*newCtrlID]; exists {
+		oldSpec := GetDeviceConfigSpec(dst.DeviceChange[idx])
+		if oldSpec == nil {
+			return 0
+		}
+
+		dst.DeviceChange[idx] = &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+			Device:    newCtrl,
+		}
+		return oldSpec.Device.GetVirtualDevice().Key
+	}
+
+	dst.DeviceChange = append(dst.DeviceChange,
+		&vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+			Device:    newCtrl,
+		})
+	existingCtrlIdx[*newCtrlID] = len(dst.DeviceChange) - 1
+	return 0
+}
+
+// CopyStorageControllersAndDisksWithOverride copies storage controllers and
+// disks from src to dst with conflict resolution. Controllers from src override
+// dst controllers with matching type and bus number. When a dst controller is
+// overridden, disks attached to it are discarded.
+func CopyStorageControllersAndDisksWithOverride(
+	ctx context.Context,
+	dst *vimtypes.VirtualMachineConfigSpec,
+	src vimtypes.VirtualMachineConfigSpec,
+	storagePolicyID string,
+	removeUnusedControllersFromSrc bool) {
+
+	if dst == nil {
+		return
+	}
+
+	logger := pkglog.FromContextOrDefault(ctx)
+
+	existingCtrlIdx := map[ControllerID]int{}
+	for idx, devChange := range dst.DeviceChange {
+		spec := GetDeviceConfigSpec(devChange)
+		if spec == nil ||
+			spec.Operation != vimtypes.VirtualDeviceConfigSpecOperationAdd {
+			continue
+		}
+		if ctrlID := GetControllerID(spec.Device); ctrlID != nil {
+			existingCtrlIdx[*ctrlID] = idx
+		}
+	}
+
+	var (
+		removedDstCtrlKeys = map[int32]struct{}{}
+		srcCtrlKeys        = map[int32]struct{}{}
+		ctrlKeysWithDisks  = map[int32]struct{}{}
+	)
+
+	for _, devChange := range src.DeviceChange {
+		srcSpec := GetDeviceConfigSpec(devChange)
+		if srcSpec == nil ||
+			srcSpec.Operation != vimtypes.VirtualDeviceConfigSpecOperationAdd {
+			continue
+		}
+
+		if ctrlID := GetControllerID(srcSpec.Device); ctrlID != nil {
+			srcKey := srcSpec.Device.GetVirtualDevice().Key
+			removedKey := overrideOrAppendController(
+				dst,
+				srcSpec.Device,
+				existingCtrlIdx)
+
+			if removedKey != 0 {
+				removedDstCtrlKeys[removedKey] = struct{}{}
+				logger.Info("Controller overridden",
+					"type", ctrlID.ControllerType,
+					"bus", ctrlID.BusNumber,
+					"removedKey", removedKey,
+					"newKey", srcKey)
+			}
+			srcCtrlKeys[srcKey] = struct{}{}
+			continue
+		}
+
+		if disk, ok := srcSpec.Device.(*vimtypes.VirtualDisk); ok {
+			ctrlKeysWithDisks[disk.ControllerKey] = struct{}{}
+
+			dstSpec := &vimtypes.VirtualDeviceConfigSpec{
+				Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+				Device:        disk,
+			}
+			if storagePolicyID != "" {
+				dstSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+					&vimtypes.VirtualMachineDefinedProfileSpec{
+						ProfileId: storagePolicyID,
+					},
+				}
+			}
+			dst.DeviceChange = append(dst.DeviceChange, dstSpec)
+		}
+	}
+
+	RemoveDevicesFromConfigSpec(dst, func(dev vimtypes.BaseVirtualDevice) bool {
+		switch d := dev.(type) {
+		case *vimtypes.VirtualDisk:
+			_, removed := removedDstCtrlKeys[d.ControllerKey]
+			if removed {
+				logger.Info("Disk removed from dst due to controller override",
+					"diskKey", d.Key,
+					"controllerKey", d.ControllerKey)
+			}
+			return removed
+		case vimtypes.BaseVirtualController:
+			if !removeUnusedControllersFromSrc {
+				return false
+			}
+			key := d.GetVirtualController().Key
+			_, isFromSrc := srcCtrlKeys[key]
+			_, hasDisks := ctrlKeysWithDisks[key]
+			shouldRemove := isFromSrc && !hasDisks
+			if shouldRemove {
+				if ctrlID := GetControllerID(dev); ctrlID != nil {
+					logger.Info("Unused controller removed",
+						"type", ctrlID.ControllerType,
+						"bus", ctrlID.BusNumber,
+						"key", key)
+				}
+			}
+			return shouldRemove
+		default:
+			return false
+		}
+	})
+}
+
+// AddControllersFromVMSpec adds user-defined controllers from vm.Spec.Hardware
+// to dst, overriding any existing controllers with the same type and bus number.
+func AddControllersFromVMSpec(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	dst *vimtypes.VirtualMachineConfigSpec) {
+
+	if vm == nil || dst == nil || vm.Spec.Hardware == nil {
+		return
+	}
+
+	var (
+		pciCtrl   *vimtypes.VirtualPCIController
+		newDevKey int32
+	)
+
+	for _, devChange := range dst.DeviceChange {
+		spec := GetDeviceConfigSpec(devChange)
+		if spec == nil || spec.Operation ==
+			vimtypes.VirtualDeviceConfigSpecOperationRemove {
+			continue
+		}
+
+		if pciCtrl == nil {
+			if pci, ok := spec.Device.(*vimtypes.VirtualPCIController); ok {
+				pciCtrl = pci
+			}
+		}
+
+		newDevKey = min(newDevKey, spec.Device.GetVirtualDevice().Key)
+	}
+
+	if pciCtrl == nil {
+		return
+	}
+
+	src := vimtypes.VirtualMachineConfigSpec{
+		DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{},
+	}
+	newDevKey--
+
+	for _, spec := range vm.Spec.Hardware.IDEControllers {
+		virtualcontroller.AddDeviceChangeOp(&src,
+			virtualcontroller.NewIDEController(spec, pciCtrl, &newDevKey),
+			vimtypes.VirtualDeviceConfigSpecOperationAdd)
+	}
+	for _, spec := range vm.Spec.Hardware.NVMEControllers {
+		virtualcontroller.AddDeviceChangeOp(&src,
+			virtualcontroller.NewNVMEController(ctx, spec, pciCtrl, &newDevKey),
+			vimtypes.VirtualDeviceConfigSpecOperationAdd)
+	}
+	for _, spec := range vm.Spec.Hardware.SATAControllers {
+		virtualcontroller.AddDeviceChangeOp(&src,
+			virtualcontroller.NewSATAController(spec, pciCtrl, &newDevKey),
+			vimtypes.VirtualDeviceConfigSpecOperationAdd)
+	}
+	for _, spec := range vm.Spec.Hardware.SCSIControllers {
+		virtualcontroller.AddDeviceChangeOp(&src,
+			virtualcontroller.NewSCSIController(
+				ctx, spec, pciCtrl, &newDevKey).(vimtypes.BaseVirtualDevice),
+			vimtypes.VirtualDeviceConfigSpecOperationAdd)
+	}
+
+	CopyStorageControllersAndDisksWithOverride(ctx, dst, src, "", false)
 }

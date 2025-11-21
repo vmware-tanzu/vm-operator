@@ -1896,9 +1896,190 @@ func vmTests() {
 							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
 						})
 
+						When("global default is direct mode", func() {
+							JustBeforeEach(func() {
+								pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+									config.FastDeployMode = pkgconst.FastDeployModeDirect
+								})
+							})
+
+							It("should succeed with direct mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(BeEmpty())
+							})
+						})
+
+						When("global default is linked mode", func() {
+							JustBeforeEach(func() {
+								pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+									config.FastDeployMode = pkgconst.FastDeployModeLinked
+								})
+							})
+
+							It("should succeed with linked mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+							})
+
+							When("vm uses encrypted storage class", func() {
+								JustBeforeEach(func() {
+									var storageClass storagev1.StorageClass
+									Expect(ctx.Client.Get(
+										ctx,
+										client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+										&storageClass)).To(Succeed())
+									Expect(kubeutil.MarkEncryptedStorageClass(
+										ctx,
+										ctx.Client,
+										storageClass,
+										true)).To(Succeed())
+
+									vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+									Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+								})
+
+								It("should succeed by falling back to direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// Even though global default is linked, encrypted storage should
+									// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+						})
+
+						When("vm specifies direct mode via annotation", func() {
+							JustBeforeEach(func() {
+								vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+							})
+
+							It("should succeed with direct mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(BeEmpty())
+							})
+						})
+
+						When("vm specifies linked mode via annotation", func() {
+							JustBeforeEach(func() {
+								vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+							})
+
+							It("should succeed with linked mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+							})
+
+							When("vm does not support online promote disks", func() {
+								JustBeforeEach(func() {
+									// Add a PCI passthrough device with device backing that does NOT support online
+									// promote.
+									configSpec := vimtypes.VirtualMachineConfigSpec{
+										DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+											&vimtypes.VirtualDeviceConfigSpec{
+												Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+												Device: &vimtypes.VirtualPCIPassthrough{
+													VirtualDevice: vimtypes.VirtualDevice{
+														Backing: &vimtypes.VirtualPCIPassthroughDeviceBackingInfo{
+															Id: "fake-pci-device",
+														},
+													},
+												},
+											},
+										},
+									}
+
+									var w bytes.Buffer
+									enc := vimtypes.NewJSONEncoder(&w)
+									Expect(enc.Encode(configSpec)).To(Succeed())
+
+									vmClass.Spec.ConfigSpec = w.Bytes()
+									Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
+								})
+
+								It("should succeed by falling back to direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// Even though annotation says linked, online promote not supported should
+									// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+
+									// Verify the PCI passthrough device is present
+									devList := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+									pciDevices := devList.SelectByType(&vimtypes.VirtualPCIPassthrough{})
+									Expect(pciDevices).ToNot(BeEmpty())
+								})
+							})
+						})
 					})
 				})
-
 			})
 
 			When("using async create", func() {

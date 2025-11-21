@@ -10,7 +10,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -257,19 +256,9 @@ func determineTargetController(
 			*vol.ControllerBusNumber, sharingMode)
 	}
 
-	// If an existing controller does not exist with an available slot,
-	// create a new one if a bus is available.
-	startingBusNum := int32(0)
-	if !pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-		// If all disks are PVCs is not enabled we need to skip bus number 0,
-		// because controller 0 and bus 0 are at least reserved to the boot disk,
-		// which will not be backfilled to the PVCs without this feature enabled.
-		startingBusNum = int32(1)
-	}
-
 	// If a specific bus number is not requested, get the first controller
 	// matching the type and sharing mode and that has an available slot.
-	for busNum := startingBusNum; busNum < controllerType.MaxCount(); busNum++ {
+	for busNum := int32(0); busNum < controllerType.MaxCount(); busNum++ {
 		controllerID := pkgutil.ControllerID{
 			ControllerType: controllerType,
 			BusNumber:      busNum,
@@ -294,7 +283,7 @@ func determineTargetController(
 	}
 
 	// If no available controller is found, create a new one.
-	for busNum := startingBusNum; busNum < controllerType.MaxCount(); busNum++ {
+	for busNum := int32(0); busNum < controllerType.MaxCount(); busNum++ {
 		if _, ok := controllerSpecs.Get(controllerType, busNum); !ok {
 			return vmopv1util.CreateNewController(controllerType, busNum, sharingMode)
 		}

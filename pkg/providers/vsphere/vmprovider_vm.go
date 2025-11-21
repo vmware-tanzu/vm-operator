@@ -959,7 +959,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	//
 	// 6. Reconcile unmanaged disks into spec.volumes.
 	//
-	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+	if f := pkgcfg.FromContext(vmCtx).Features; f.AllDisksArePVCs || f.VMSharedDisks {
 		if err := vs.reconcileBackfillUnmanagedDisks(vmCtx); err != nil {
 			if pkgerr.IsNoRequeueError(err) {
 				return errOrReconcileErr(reconcileErr, err)

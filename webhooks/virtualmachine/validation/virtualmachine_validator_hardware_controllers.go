@@ -60,45 +60,6 @@ func (v validator) validateControllers(
 	var allErrs field.ErrorList
 	hwPath := field.NewPath("spec", "hardware")
 
-	// AllDisksArePVCs will backfill boot disk so we don't need to skip 0.
-	// But if not enabled, we need to make sure busNumber 0 is not used.
-	if !pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-		// Validate that when creating a VM, the bus number is not 0 because
-		// it is reserved for the default controller.
-
-		if oldVM == nil {
-			for i, controller := range vm.Spec.Hardware.SCSIControllers {
-				if controller.BusNumber == 0 {
-					allErrs = append(allErrs, field.Invalid(
-						hwPath.Child("scsiControllers").Index(i).Child("busNumber"),
-						controller.BusNumber,
-						invalidControllerBusNumberZero,
-					))
-				}
-			}
-
-			for i, controller := range vm.Spec.Hardware.SATAControllers {
-				if controller.BusNumber == 0 {
-					allErrs = append(allErrs, field.Invalid(
-						hwPath.Child("sataControllers").Index(i).Child("busNumber"),
-						controller.BusNumber,
-						invalidControllerBusNumberZero,
-					))
-				}
-			}
-
-			for i, controller := range vm.Spec.Hardware.NVMEControllers {
-				if controller.BusNumber == 0 {
-					allErrs = append(allErrs, field.Invalid(
-						hwPath.Child("nvmeControllers").Index(i).Child("busNumber"),
-						controller.BusNumber,
-						invalidControllerBusNumberZero,
-					))
-				}
-			}
-		}
-	}
-
 	allErrs = append(allErrs, v.validateControllerWhenPoweredOn(ctx, vm, oldVM, hwPath)...)
 
 	maxIDEControllers := int(vmopv1.VirtualControllerTypeIDE.MaxCount())
@@ -125,7 +86,7 @@ func (v validator) validateControllerWhenPoweredOn(
 
 	// Skip the check if it's create or oldVM's powerState is not poweredOn.
 	// Even when new VM has PoweredOff, we still don't allow updating
-	// controllers, since reoncilePowerState is called after reconcileConfig.
+	// controllers, since reconcilePowerState is called after reconcileConfig.
 	if oldVM == nil || oldVM.Spec.PowerState != vmopv1.VirtualMachinePowerStateOn {
 		return nil
 	}

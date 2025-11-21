@@ -255,56 +255,6 @@ func controllerValidationTests() {
 			ctx.vm.Spec.Hardware.NVMEControllers = nil
 		})
 
-		When("creating VM with SCSI controller at bus 0", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
-					{
-						BusNumber:   0,
-						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
-					},
-				}
-			})
-
-			It("should reject due to bus 0 being reserved", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.scsiControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
-			})
-		})
-
-		When("creating VM with SATA controller at bus 0", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
-					{
-						BusNumber: 0,
-					},
-				}
-			})
-
-			It("should reject due to bus 0 being reserved", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.sataControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
-			})
-		})
-
-		When("creating VM with NVME controller at bus 0", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
-					{
-						BusNumber: 0,
-					},
-				}
-			})
-
-			It("should reject due to bus 0 being reserved", func() {
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.nvmeControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
-			})
-		})
-
 		When("creating VM with SCSI controller at bus 1", func() {
 			BeforeEach(func() {
 				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
@@ -341,51 +291,20 @@ func controllerValidationTests() {
 			})
 		})
 
-		When("creating VM with multiple controllers, one at bus 0", func() {
+		When("creating VM with SCSI controller at bus 0", func() {
 			BeforeEach(func() {
-				ctx.oldVM = nil
 				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 					{
 						BusNumber:   0,
 						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
 						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
-					{
-						BusNumber:   1,
-						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
-					},
 				}
 			})
 
-			It("should reject due to bus 0 being reserved", func() {
+			It("should allow controller at bus 0 on create", func() {
 				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.hardware.scsiControllers[0].busNumber: Invalid value: 0: bus number 0 is reserved for the default controller"))
-			})
-		})
-
-		When("AllDisksArePVCs is enabled", func() {
-			BeforeEach(func() {
-				pkgcfg.SetContext(&ctx.WebhookRequestContext, func(config *pkgcfg.Config) {
-					config.Features.AllDisksArePVCs = true
-				})
-			})
-			When("creating VM with SCSI controller at bus 0", func() {
-				BeforeEach(func() {
-					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
-						{
-							BusNumber:   0,
-							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1.VirtualControllerSharingModeNone,
-						},
-					}
-				})
-
-				It("should accept", func() {
-					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-					Expect(response.Allowed).To(BeTrue())
-				})
+				Expect(response.Allowed).To(BeTrue())
 			})
 		})
 	})

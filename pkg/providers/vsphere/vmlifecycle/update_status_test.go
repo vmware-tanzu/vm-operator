@@ -2162,6 +2162,227 @@ var _ = Describe("UpdateStatus", func() {
 					}))
 				})
 			})
+
+			Context("disk attachment properties (DiskMode, SharingMode, ProvisioningMode)", func() {
+				BeforeEach(func() {
+					// Set up disks with various backing types and attachment properties
+					vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.ParaVirtualSCSIController{
+									VirtualSCSIController: vimtypes.VirtualSCSIController{
+										VirtualController: vimtypes.VirtualController{
+											BusNumber: 0,
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 200,
+											},
+										},
+									},
+								},
+								// Classic disk with thin provisioning, persistent mode
+								&vimtypes.VirtualDisk{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+												FileName: "[datastore] vm/classic-thin.vmdk",
+											},
+											DiskMode:        string(vimtypes.VirtualDiskModePersistent),
+											Sharing:         string(vimtypes.VirtualDiskSharingSharingNone),
+											ThinProvisioned: ptr.To(true),
+											EagerlyScrub:    ptr.To(false),
+											Uuid:            "200",
+										},
+										Key:           200,
+										ControllerKey: 200,
+										UnitNumber:    ptr.To[int32](0),
+									},
+									CapacityInBytes: 10 * oneGiBInBytes,
+								},
+								// Classic disk with thick eager zero, independent persistent mode
+								&vimtypes.VirtualDisk{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+												FileName: "[datastore] vm/classic-thick-eager.vmdk",
+											},
+											DiskMode:        string(vimtypes.VirtualDiskModeIndependent_persistent),
+											Sharing:         string(vimtypes.VirtualDiskSharingSharingNone),
+											ThinProvisioned: ptr.To(false),
+											EagerlyScrub:    ptr.To(true),
+											Uuid:            "201",
+										},
+										Key:           201,
+										ControllerKey: 200,
+										UnitNumber:    ptr.To[int32](1),
+									},
+									CapacityInBytes: 20 * oneGiBInBytes,
+								},
+								// Classic disk with thick lazy zero, nonpersistent mode
+								&vimtypes.VirtualDisk{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+												FileName: "[datastore] vm/classic-thick-lazy.vmdk",
+											},
+											DiskMode:        string(vimtypes.VirtualDiskModeNonpersistent),
+											Sharing:         string(vimtypes.VirtualDiskSharingSharingNone),
+											ThinProvisioned: ptr.To(false),
+											EagerlyScrub:    ptr.To(false),
+											Uuid:            "202",
+										},
+										Key:           202,
+										ControllerKey: 200,
+										UnitNumber:    ptr.To[int32](2),
+									},
+									CapacityInBytes: 30 * oneGiBInBytes,
+								},
+								// Managed disk (FCD) with multiwriter sharing and independent nonpersistent mode
+								&vimtypes.VirtualDisk{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+												FileName: "[datastore] fcd/managed-multiwriter.vmdk",
+											},
+											DiskMode:        string(vimtypes.VirtualDiskModeIndependent_nonpersistent),
+											Sharing:         string(vimtypes.VirtualDiskSharingSharingMultiWriter),
+											ThinProvisioned: ptr.To(true),
+											Uuid:            "300",
+										},
+										Key:        300,
+										UnitNumber: ptr.To[int32](0),
+									},
+									CapacityInBytes: 50 * oneGiBInBytes,
+									VDiskId: &vimtypes.ID{
+										Id: "fcd-300",
+									},
+								},
+							},
+						},
+					}
+					vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+						Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+							{Key: 200, Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{{FileKey: []int32{0, 10}}}},
+							{Key: 201, Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{{FileKey: []int32{1, 11}}}},
+							{Key: 202, Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{{FileKey: []int32{2, 12}}}},
+							{Key: 300, Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{{FileKey: []int32{3, 13}}}},
+						},
+						File: []vimtypes.VirtualMachineFileLayoutExFileInfo{
+							{Key: 0, Size: 500, UniqueSize: 500},
+							{Key: 10, Size: 10 * oneGiBInBytes, UniqueSize: 5 * oneGiBInBytes},
+							{Key: 1, Size: 500, UniqueSize: 500},
+							{Key: 11, Size: 20 * oneGiBInBytes, UniqueSize: 15 * oneGiBInBytes},
+							{Key: 2, Size: 500, UniqueSize: 500},
+							{Key: 12, Size: 30 * oneGiBInBytes, UniqueSize: 20 * oneGiBInBytes},
+							{Key: 3, Size: 500, UniqueSize: 500},
+							{Key: 13, Size: 50 * oneGiBInBytes, UniqueSize: 40 * oneGiBInBytes},
+						},
+					}
+				})
+
+				When("classic disks have various attachment properties", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					Specify("status.volumes includes disk attachment properties for classic disks", func() {
+						Expect(vmCtx.VM.Status.Volumes).To(HaveLen(3))
+
+						// Classic disk with thin provisioning, persistent mode
+						Expect(vmCtx.VM.Status.Volumes[0].Name).To(Equal(pkgutil.GeneratePVCName("disk", "200")))
+						Expect(vmCtx.VM.Status.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModePersistent))
+						Expect(vmCtx.VM.Status.Volumes[0].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
+						Expect(vmCtx.VM.Status.Volumes[0].ProvisioningMode).To(Equal(vmopv1.VolumeProvisioningModeThin))
+
+						// Classic disk with thick eager zero, independent persistent mode
+						Expect(vmCtx.VM.Status.Volumes[1].Name).To(Equal(pkgutil.GeneratePVCName("disk", "201")))
+						Expect(vmCtx.VM.Status.Volumes[1].DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
+						Expect(vmCtx.VM.Status.Volumes[1].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
+						Expect(vmCtx.VM.Status.Volumes[1].ProvisioningMode).To(Equal(vmopv1.VolumeProvisioningModeThickEagerZero))
+
+						// Classic disk with thick lazy zero, nonpersistent mode
+						Expect(vmCtx.VM.Status.Volumes[2].Name).To(Equal(pkgutil.GeneratePVCName("disk", "202")))
+						Expect(vmCtx.VM.Status.Volumes[2].DiskMode).To(Equal(vmopv1.VolumeDiskModeNonPersistent))
+						Expect(vmCtx.VM.Status.Volumes[2].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
+						Expect(vmCtx.VM.Status.Volumes[2].ProvisioningMode).To(Equal(vmopv1.VolumeProvisioningModeThick))
+					})
+				})
+
+				When("managed disk (FCD) has attachment properties", func() {
+					BeforeEach(func() {
+						// Simulate volume controller creating managed volume status without disk properties
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:      "my-managed-disk",
+								DiskUUID:  "300",
+								Type:      vmopv1.VolumeTypeManaged,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(100 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								// DiskMode, SharingMode, ProvisioningMode not set by volume controller
+							},
+						}
+					})
+
+					Specify("status.volumes includes disk attachment properties for managed disk", func() {
+						Expect(vmCtx.VM.Status.Volumes).To(HaveLen(4)) // 3 classic + 1 managed
+
+						// Find the managed disk in the status
+						var managedDisk *vmopv1.VirtualMachineVolumeStatus
+						for i := range vmCtx.VM.Status.Volumes {
+							if vmCtx.VM.Status.Volumes[i].Type == vmopv1.VolumeTypeManaged {
+								managedDisk = &vmCtx.VM.Status.Volumes[i]
+								break
+							}
+						}
+
+						Expect(managedDisk).ToNot(BeNil())
+						Expect(managedDisk.Name).To(Equal("my-managed-disk"))
+						Expect(managedDisk.DiskUUID).To(Equal("300"))
+						Expect(managedDisk.DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentNonPersistent))
+						Expect(managedDisk.SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
+						Expect(managedDisk.ProvisioningMode).To(Equal(vmopv1.VolumeProvisioningModeThin))
+						Expect(managedDisk.Used).To(Equal(kubeutil.BytesToResource(500 + (40 * oneGiBInBytes))))
+					})
+				})
+
+				When("existing disk has properties updated", func() {
+					BeforeEach(func() {
+						// Existing disk with old/missing properties
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:             pkgutil.GeneratePVCName("disk", "200"),
+								DiskUUID:         "200",
+								Type:             vmopv1.VolumeTypeClassic,
+								Attached:         true,
+								Limit:            kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Requested:        kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Used:             kubeutil.BytesToResource(5 * oneGiBInBytes),
+								DiskMode:         "", // Empty/unset
+								SharingMode:      "", // Empty/unset
+								ProvisioningMode: "", // Empty/unset
+							},
+						}
+					})
+
+					Specify("status.volumes updates disk attachment properties for existing disk", func() {
+						Expect(vmCtx.VM.Status.Volumes).To(HaveLen(3)) // All classic disks
+
+						// Find disk 200 and verify properties were updated
+						var disk200 *vmopv1.VirtualMachineVolumeStatus
+						for i := range vmCtx.VM.Status.Volumes {
+							if vmCtx.VM.Status.Volumes[i].DiskUUID == "200" {
+								disk200 = &vmCtx.VM.Status.Volumes[i]
+								break
+							}
+						}
+
+						Expect(disk200).ToNot(BeNil())
+						Expect(disk200.DiskMode).To(Equal(vmopv1.VolumeDiskModePersistent))
+						Expect(disk200.SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
+						Expect(disk200.ProvisioningMode).To(Equal(vmopv1.VolumeProvisioningModeThin))
+					})
+				})
+			})
 		})
 	})
 

@@ -4012,6 +4012,7 @@ func autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineV
 	// WARNING: in.Type requires manual conversion: does not exist in peer-type
 	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.ProvisioningMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	// WARNING: in.Limit requires manual conversion: does not exist in peer-type
 	// WARNING: in.Requested requires manual conversion: does not exist in peer-type

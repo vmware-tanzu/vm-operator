@@ -295,6 +295,13 @@ type VirtualMachineVolumeStatus struct {
 
 	// +optional
 
+	// ProvisioningMode describes the volume's observed provisioning mode.
+	// This indicates whether the disk is thin-provisioned, thick-provisioned,
+	// or thick-provisioned with eager zeroing.
+	ProvisioningMode VolumeProvisioningMode `json:"provisioningMode,omitempty"`
+
+	// +optional
+
 	// Crypto describes the volume's encryption status.
 	Crypto *VirtualMachineVolumeCryptoStatus `json:"crypto,omitempty"`
 

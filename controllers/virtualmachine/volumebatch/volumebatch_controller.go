@@ -648,6 +648,7 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 			vmVolStatus.UnitNumber = existingVol.UnitNumber
 			vmVolStatus.DiskMode = existingVol.DiskMode
 			vmVolStatus.SharingMode = existingVol.SharingMode
+			vmVolStatus.ProvisioningMode = existingVol.ProvisioningMode
 
 			// Add PVC capacity information
 			if err := r.updateVolumeStatusWithPVCInfo(
@@ -1018,6 +1019,7 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 				vmVolStatus.UnitNumber = existingVol.UnitNumber
 				vmVolStatus.DiskMode = existingVol.DiskMode
 				vmVolStatus.SharingMode = existingVol.SharingMode
+				vmVolStatus.ProvisioningMode = existingVol.ProvisioningMode
 
 				// Add PVC capacity information
 				if err := r.updateVolumeStatusWithPVCInfo(

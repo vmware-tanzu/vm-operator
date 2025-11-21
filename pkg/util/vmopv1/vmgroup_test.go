@@ -19,8 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -614,7 +616,7 @@ var _ = Describe("GroupToMembersMapperFn", func() {
 						Status: vmopv1.VirtualMachineStatus{
 							Conditions: []metav1.Condition{
 								linkedTrueCondition,
-								metav1.Condition{
+								{
 									Type:   vmopv1.VirtualMachineConditionPlacementReady,
 									Status: metav1.ConditionTrue,
 								},
@@ -667,7 +669,7 @@ var _ = Describe("GroupToMembersMapperFn", func() {
 						Status: vmopv1.VirtualMachineStatus{
 							Conditions: []metav1.Condition{
 								linkedTrueCondition,
-								metav1.Condition{
+								{
 									Type:   vmopv1.VirtualMachineConditionPlacementReady,
 									Status: metav1.ConditionFalse,
 								},
@@ -738,7 +740,7 @@ var _ = Describe("GroupToMembersMapperFn", func() {
 						Status: vmopv1.VirtualMachineGroupStatus{
 							Conditions: []metav1.Condition{
 								linkedTrueCondition,
-								metav1.Condition{
+								{
 									Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 									Status: metav1.ConditionTrue,
 								},
@@ -763,7 +765,7 @@ var _ = Describe("GroupToMembersMapperFn", func() {
 						},
 						Status: vmopv1.VirtualMachineGroupStatus{
 							Conditions: []metav1.Condition{
-								metav1.Condition{
+								{
 									Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 									Status: metav1.ConditionFalse,
 								},
@@ -859,5 +861,393 @@ var _ = Describe("MemberToGroupMapperFn", func() {
 		reqs = vmopv1util.MemberToGroupMapperFn(ctx)(ctx, vmg)
 		Expect(reqs).To(HaveLen(1))
 		Expect(reqs[0].NamespacedName).To(Equal(groupKey))
+	})
+})
+
+var _ = Describe("PolicyEvalToVMToVMGroupMapperFunc", func() {
+	const (
+		namespaceName      = "fake-namespace"
+		groupName          = "group-name"
+		vmName             = "my-vm"
+		policyEvalName     = "vm-my-vm"
+		vmKind             = "VirtualMachine"
+		readyConditionType = "Ready"
+	)
+	var (
+		ctx           context.Context
+		k8sClient     ctrlclient.Client
+		policyEvalObj *vspherepolv1.PolicyEvaluation
+		vmObj         *vmopv1.VirtualMachine
+		groupObj      *vmopv1.VirtualMachineGroup
+		withObjs      []ctrlclient.Object
+		reqs          []reconcile.Request
+		vmUID         types.UID
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		withObjs = nil
+		vmUID = "vm-uid-12345"
+
+		policyEvalObj = &vspherepolv1.PolicyEvaluation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespaceName,
+				Name:      policyEvalName,
+			},
+		}
+
+		vmObj = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespaceName,
+				Name:      vmName,
+				UID:       vmUID,
+			},
+		}
+
+		groupObj = &vmopv1.VirtualMachineGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespaceName,
+				Name:      groupName,
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		k8sClient = builder.NewFakeClient(withObjs...)
+		reqs = vmopv1util.PolicyEvalToVMToVMGroupMapperFunc(ctx, k8sClient)(ctx, policyEvalObj)
+	})
+
+	When("PolicyEvaluation generation does not match observed generation", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 2
+			policyEvalObj.Status.ObservedGeneration = 1
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("PolicyEvaluation is not ready", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionFalse,
+				},
+			}
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("PolicyEvaluation has no owner reference", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("PolicyEvaluation owner is not a VirtualMachine", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       "VirtualMachineGroup",
+					Name:       groupName,
+					UID:        "some-uid",
+					Controller: ptr.To(true),
+				},
+			}
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("PolicyEvaluation owner VM does not exist", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       vmKind,
+					Name:       vmName,
+					UID:        vmUID,
+					Controller: ptr.To(true),
+				},
+			}
+			// Don't add vmObj to withObjs
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("VM has no group name", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       vmKind,
+					Name:       vmName,
+					UID:        vmUID,
+					Controller: func() *bool { b := true; return &b }(),
+				},
+			}
+			vmObj.Spec.GroupName = ""
+			withObjs = append(withObjs, vmObj)
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("VM is not group linked", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       vmKind,
+					Name:       vmName,
+					UID:        vmUID,
+					Controller: ptr.To(true),
+				},
+			}
+			vmObj.Spec.GroupName = groupName
+			vmObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+					Status: metav1.ConditionFalse,
+				},
+			}
+			withObjs = append(withObjs, vmObj)
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("VM is group linked but placement is ready", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       vmKind,
+					Name:       vmName,
+					UID:        vmUID,
+					Controller: ptr.To(true),
+				},
+			}
+			vmObj.Spec.GroupName = groupName
+			vmObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+					Status: metav1.ConditionTrue,
+				},
+				{
+					Type:   vmopv1.VirtualMachineConditionPlacementReady,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			withObjs = append(withObjs, vmObj)
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("VM is group linked and placement is not ready", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       vmKind,
+					Name:       vmName,
+					UID:        vmUID,
+					Controller: ptr.To(true),
+				},
+			}
+			vmObj.Spec.GroupName = groupName
+			vmObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+					Status: metav1.ConditionTrue,
+				},
+				{
+					Type:   vmopv1.VirtualMachineConditionPlacementReady,
+					Status: metav1.ConditionFalse,
+				},
+			}
+			withObjs = append(withObjs, vmObj, groupObj)
+		})
+
+		Specify("one reconcile request should be returned for the group", func() {
+			Expect(reqs).To(HaveExactElements(
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: namespaceName,
+						Name:      groupName,
+					},
+				},
+			))
+		})
+	})
+
+	When("VM is group linked and placement condition is missing", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       vmKind,
+					Name:       vmName,
+					UID:        vmUID,
+					Controller: ptr.To(true),
+				},
+			}
+			vmObj.Spec.GroupName = groupName
+			vmObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			withObjs = append(withObjs, vmObj, groupObj)
+		})
+
+		Specify("one reconcile request should be returned for the group", func() {
+			Expect(reqs).To(HaveExactElements(
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: namespaceName,
+						Name:      groupName,
+					},
+				},
+			))
+		})
+	})
+
+	When("PolicyEvaluation has non-controller owner reference", func() {
+		BeforeEach(func() {
+			policyEvalObj.Generation = 1
+			policyEvalObj.Status.ObservedGeneration = 1
+			policyEvalObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   readyConditionType,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			// Owner reference without Controller field set to true
+			policyEvalObj.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       vmKind,
+					Name:       vmName,
+					UID:        vmUID,
+				},
+			}
+			vmObj.Spec.GroupName = groupName
+			vmObj.Status.Conditions = []metav1.Condition{
+				{
+					Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+					Status: metav1.ConditionTrue,
+				},
+			}
+			withObjs = append(withObjs, vmObj)
+		})
+
+		Specify("no reconcile requests should be returned", func() {
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	When("PolicyEvaluation panics with wrong object type", func() {
+		It("should panic when not passed a PolicyEvaluation", func() {
+			wrongObj := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespaceName,
+					Name:      vmName,
+				},
+			}
+			k8sClient := builder.NewFakeClient()
+			mapperFunc := vmopv1util.PolicyEvalToVMToVMGroupMapperFunc(ctx, k8sClient)
+			Expect(func() {
+				mapperFunc(ctx, wrongObj)
+			}).To(PanicWith("Expected PolicyEvaluation, but got *v1alpha5.VirtualMachine"))
+		})
 	})
 })

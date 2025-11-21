@@ -26,6 +26,9 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	virtualmachinegroup.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.VSpherePolicies = true
+		})
 		return nil
 	})
 

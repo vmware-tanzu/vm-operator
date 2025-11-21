@@ -3954,13 +3954,62 @@ func vmTests() {
 				Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
 			})
 
+			It("Does not delete paused VM", func() {
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				uniqueID := vm.Status.UniqueID
+				Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+
+				sctx := ctx.SimulatorContext()
+				sctx.WithLock(
+					vcVM.Reference(),
+					func() {
+						vm := sctx.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+						vm.Config.ExtraConfig = append(vm.Config.ExtraConfig,
+							&vimtypes.OptionValue{
+								Key:   vmopv1.PauseVMExtraConfigKey,
+								Value: "True",
+							})
+					},
+				)
+
+				err = vmProvider.DeleteVirtualMachine(ctx, vm)
+				Expect(err).To(HaveOccurred())
+				var noRequeueErr pkgerr.NoRequeueError
+				Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
+				Expect(noRequeueErr.Message).To(Equal(constants.VMPausedByAdminError))
+				Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+			})
+
+			Context("Fast Deploy is enabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.FastDeploy = true
+					})
+				})
+
+				It("return success", func() {
+					// TODO: We don't have explicit promote tests in here so
+					// punt on that. But with the feature enable, we'll get
+					// all the VM's tasks.
+					_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					uniqueID := vm.Status.UniqueID
+					Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+
+					err = vmProvider.DeleteVirtualMachine(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
+				})
+			})
+
 			DescribeTable("VM is not connected",
 				func(state vimtypes.VirtualMachineConnectionState) {
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
-
-					var moVM mo.VirtualMachine
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
 
 					sctx := ctx.SimulatorContext()
 					sctx.WithLock(

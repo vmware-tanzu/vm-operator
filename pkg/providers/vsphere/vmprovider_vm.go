@@ -1893,6 +1893,12 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 							}
 						}
 
+						readyCond := pkgcnd.TrueCondition(vmopv1.VirtualMachineConditionImageCacheReady)
+						readyCond.Message = fmt.Sprintf(
+							"VirtualMachineImageCache location %s:%s was ready at %s",
+							datacenterID, datastoreID, c.LastTransitionTime.Format(time.RFC3339))
+						pkgcnd.Set(vmCtx.VM, readyCond)
+
 						return nil
 					}
 

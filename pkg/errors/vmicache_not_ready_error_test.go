@@ -14,6 +14,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 )
@@ -60,6 +62,14 @@ var _ = Describe("VMICacheNotReadyError", func() {
 					obj.GetAnnotations(),
 					pkgconst.VMICacheLocationAnnotationKey,
 					expLocation)
+
+				if vm, ok := obj.(*vmopv1.VirtualMachine); ok {
+					c := pkgcond.Get(vm, vmopv1.VirtualMachineConditionImageCacheReady)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal("NotReady"))
+					Expect(c.Message).To(Equal(e.Error()))
+				}
 			}
 		},
 
@@ -96,6 +106,17 @@ var _ = Describe("VMICacheNotReadyError", func() {
 				Name: "vmi-123",
 			},
 			&corev1.ConfigMap{},
+			true,
+			"vmi-123",
+			"",
+		),
+
+		Entry(
+			"error is VMICacheNotReadyError with VirtualMachine object",
+			pkgerr.VMICacheNotReadyError{
+				Name: "vmi-123",
+			},
+			&vmopv1.VirtualMachine{},
 			true,
 			"vmi-123",
 			"",

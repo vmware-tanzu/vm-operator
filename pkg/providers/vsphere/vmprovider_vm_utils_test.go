@@ -326,17 +326,15 @@ func vmUtilTests() {
 		})
 
 		When("VM image exists but the image is not ready", func() {
-
 			const expectedErrMsg = "VirtualMachineImage is not ready"
 
 			Context("VM image has the Ready condition set to False", func() {
-				reason := vmopv1.VirtualMachineImageProviderNotReadyReason
-				errMsg := "Provider item is not in ready condition"
+				const errMsg = "Provider item is not in ready condition"
 
 				BeforeEach(func() {
 					conditions.MarkFalse(nsVMImage,
 						vmopv1.ReadyConditionType,
-						reason,
+						vmopv1.VirtualMachineImageProviderNotReadyReason,
 						"%s", errMsg)
 					initObjects = append(initObjects, nsVMImage)
 					vmCtx.VM.Spec.Image.Name = nsVMImage.Name
@@ -345,14 +343,17 @@ func vmUtilTests() {
 				It("returns error and sets VM condition with reason and message from the image", func() {
 					_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
 					Expect(err).To(HaveOccurred())
-
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-					expectedCondition := []metav1.Condition{
-						*conditions.FalseCondition(
-							vmopv1.VirtualMachineConditionImageReady, reason, "%s", errMsg),
-					}
-					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+					imageReadyCond := conditions.Get(nsVMImage, vmopv1.ReadyConditionType)
+					Expect(imageReadyCond).ToNot(BeNil())
+
+					c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(imageReadyCond.Reason))
+					Expect(c.Message).To(Equal(errMsg))
+					Expect(c.LastTransitionTime).To(Equal(imageReadyCond.LastTransitionTime))
 				})
 			})
 

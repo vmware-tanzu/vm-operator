@@ -9,12 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -268,22 +270,33 @@ func GetVirtualMachineImageSpecAndStatus(
 			err
 	}
 
-	vmiNotReadyMessage := "VirtualMachineImage is not ready"
+	imageReadyCond := conditions.Get(obj.(conditions.Getter), vmopv1.ReadyConditionType)
+	if imageReadyCond == nil || imageReadyCond.Status != metav1.ConditionTrue {
+		const vmiNotReadyMessage = "VirtualMachineImage is not ready"
 
-	// Mirror the image's ReadyConditionType into the VM's
-	// VirtualMachineConditionImageReady.
-	conditions.SetMirror(
-		vmCtx.VM,
-		vmopv1.VirtualMachineConditionImageReady,
-		obj.(conditions.Getter),
-		conditions.WithFallbackValue(false, "NotReady", vmiNotReadyMessage))
+		reason := "NotReady"
+		message := vmiNotReadyMessage
+		if imageReadyCond != nil {
+			reason = imageReadyCond.Reason
+			message = imageReadyCond.Message
+		}
 
-	if conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady) {
+		conditions.MarkFalse(
+			vmCtx.VM,
+			vmopv1.VirtualMachineConditionImageReady,
+			reason,
+			"%s", message)
+
 		return nil,
 			vmopv1.VirtualMachineImageSpec{},
 			vmopv1.VirtualMachineImageStatus{},
 			errors.New(vmiNotReadyMessage)
 	}
+
+	c := conditions.TrueCondition(vmopv1.VirtualMachineConditionImageReady)
+	c.Message = fmt.Sprintf("VirtualMachineImage was ready at %s",
+		imageReadyCond.LastTransitionTime.Format(time.RFC3339))
+	conditions.Set(vmCtx.VM, c)
 
 	return obj, spec, status, nil
 }

@@ -891,13 +891,12 @@ func errOrReconcileErr(reconcileErr, err error) error {
 //  3. Fetch attached tags
 //  4. Fetch volume info
 //  5. Reconcile status
-//  6. Reconcile backfill unmanaged disks
-//  7. Reconcile schema upgrade
-//  8. Reconcile backup state
-//  9. Reconcile snapshot revert
-//  10. Reconcile config
-//  11. Reconcile power state
-//  12. Reconcile snapshot create
+//  6. Reconcile schema upgrade
+//  7. Reconcile backup state
+//  8. Reconcile snapshot revert
+//  9. Reconcile config
+//  10. Reconcile power state
+//  11. Reconcile snapshot create
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -957,20 +956,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 6. Reconcile unmanaged disks into spec.volumes.
-	//
-	if f := pkgcfg.FromContext(vmCtx).Features; f.AllDisksArePVCs || f.VMSharedDisks {
-		if err := vs.reconcileBackfillUnmanagedDisks(vmCtx); err != nil {
-			if pkgerr.IsNoRequeueError(err) {
-				return errOrReconcileErr(reconcileErr, err)
-			}
-			reconcileErr = getReconcileErr(
-				"unmanaged to managed disks", reconcileErr, err)
-		}
-	}
-
-	//
-	// 7. Reconcile schema upgrade
+	// 6. Reconcile schema upgrade
 	//
 	//    It is important that this step occurs *after* the status is
 	//    reconciled. This is because reconciling the status builds information
@@ -984,7 +970,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 8. Reconcile backup state (VKS nodes excluded)
+	// 7. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -994,7 +980,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 9. Reconcile snapshot revert
+	// 8. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
@@ -1006,7 +992,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 10. Reconcile config
+	// 9. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1023,7 +1009,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 11. Reconcile power state
+	// 10. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1033,7 +1019,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 12. Reconcile snapshot create
+	// 11. Reconcile snapshot create
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
@@ -1176,26 +1162,31 @@ func (vs *vSphereVMProvider) getVolumeInfo(
 	), nil
 }
 
-func (vs *vSphereVMProvider) reconcileBackfillUnmanagedDisks(
-	vmCtx pkgctx.VirtualMachineContext) error {
-
-	return vmconfunmanagedvolsfill.Reconcile(
-		vmCtx,
-		nil,
-		nil,
-		vmCtx.VM,
-		vmCtx.MoVM,
-		nil)
-}
-
 func (vs *vSphereVMProvider) reconcileSchemaUpgrade(
 	vmCtx pkgctx.VirtualMachineContext) error {
 
-	return upgradevm.ReconcileSchemaUpgrade(
+	var backfillErr error
+	if f := pkgcfg.FromContext(vmCtx).Features; f.VMSharedDisks || f.AllDisksArePVCs {
+		backfillErr = vmconfunmanagedvolsfill.Reconcile(
+			vmCtx,
+			nil,
+			nil,
+			vmCtx.VM,
+			vmCtx.MoVM,
+			nil)
+		if backfillErr != nil && !errors.Is(backfillErr, ErrBackfillVolInfo) {
+			// No error or ErrPendingBackfill are the only expected errors.
+			return fmt.Errorf("unexpected unmanaged disk backfill error: %w", backfillErr)
+		}
+	}
+
+	upgradeErr := upgradevm.ReconcileSchemaUpgrade(
 		vmCtx,
 		vs.k8sClient,
 		vmCtx.VM,
 		vmCtx.MoVM)
+
+	return errors.Join(backfillErr, upgradeErr)
 }
 
 func (vs *vSphereVMProvider) reconcileConfig(

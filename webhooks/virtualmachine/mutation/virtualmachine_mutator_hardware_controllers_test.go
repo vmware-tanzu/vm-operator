@@ -1327,11 +1327,25 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 				vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
 			})
 
-			It("should set the default PVC volume application type", func() {
+			It("should set default disk and sharing modes if not already set", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wasMutated).To(BeTrue())
 				Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
 				Expect(vm.Spec.Volumes[0].SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
+			})
+
+			When("disk and sharing modes are already set", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeNonPersistent
+					vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
+				})
+
+				It("should not set default disk and sharing modes if already set", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeNonPersistent))
+					Expect(vm.Spec.Volumes[0].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
+				})
 			})
 		})
 
@@ -1340,11 +1354,23 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 				vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
 			})
 
-			It("should set the default PVC volume application type", func() {
+			It("should set default disk mode if not already set", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wasMutated).To(BeTrue())
 				Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
 				Expect(vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
+			})
+
+			When("disk mode is already set", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeNonPersistent
+				})
+
+				It("should not set default disk mode if already set", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeNonPersistent))
+				})
 			})
 		})
 

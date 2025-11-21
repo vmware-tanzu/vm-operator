@@ -519,13 +519,93 @@ func controllerValidationTests() {
 						ControllerBusNumber: ptr.To(int32(0)),
 						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 						UnitNumber:          ptr.To(int32(0)),
+						DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
+						SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
 					},
 				}
 			})
 
 			It("should allow (mutation webhook added controller)", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeTrue())
+				Expect(response.Allowed).To(BeTrue(), response.Result.Message)
+			})
+		})
+
+		When("OracleRAC volume with sharing mode not MultiWriter", func() {
+			BeforeEach(func() {
+				// Mutation webhook would have added a None controller for OracleRAC.
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "vol1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc1",
+								},
+							},
+						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
+						SharingMode:         vmopv1.VolumeSharingModeNone,
+						DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
+					},
+				}
+			})
+
+			It("should reject if sharing mode is not MultiWriter", func() {
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse(), response.Result.Message)
+				Expect(string(response.Result.Reason)).To(ContainSubstring(
+					"SharingMode must be MultiWriter for OracleRAC volumes"))
+			})
+		})
+
+		When("OracleRAC volume with disk mode not IndependentPersistent", func() {
+			BeforeEach(func() {
+				// Mutation webhook would have added a None controller for OracleRAC.
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "vol1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc1",
+								},
+							},
+						},
+						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ControllerBusNumber: ptr.To(int32(0)),
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						UnitNumber:          ptr.To(int32(0)),
+						SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
+						DiskMode:            vmopv1.VolumeDiskModeNonPersistent,
+					},
+				}
+			})
+
+			It("should reject if disk mode is not IndependentPersistent", func() {
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse(), response.Result.Message)
+				Expect(string(response.Result.Reason)).To(ContainSubstring(
+					"DiskMode must be IndependentPersistent for OracleRAC volumes"))
 			})
 		})
 
@@ -554,6 +634,7 @@ func controllerValidationTests() {
 						ControllerBusNumber: ptr.To(int32(0)),
 						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 						UnitNumber:          ptr.To(int32(0)),
+						DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
 					},
 				}
 			})
@@ -564,13 +645,14 @@ func controllerValidationTests() {
 			})
 		})
 
-		When("OracleRAC volume with appropriate controller", func() {
+		When("MicrosoftWSFC volume with disk mode not IndependentPersistent", func() {
 			BeforeEach(func() {
+				// Mutation webhook would have added a Physical controller for WSFC.
 				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 					{
 						BusNumber:   0,
 						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 					},
 				}
 
@@ -584,17 +666,20 @@ func controllerValidationTests() {
 								},
 							},
 						},
-						ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+						ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
 						ControllerBusNumber: ptr.To(int32(0)),
 						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 						UnitNumber:          ptr.To(int32(0)),
+						DiskMode:            vmopv1.VolumeDiskModeNonPersistent,
 					},
 				}
 			})
 
-			It("should allow the volume", func() {
+			It("should reject if disk mode is not IndependentPersistent", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeTrue())
+				Expect(response.Allowed).To(BeFalse(), response.Result.Message)
+				Expect(string(response.Result.Reason)).To(ContainSubstring(
+					"DiskMode must be IndependentPersistent for MicrosoftWSFC volumes"))
 			})
 		})
 	})

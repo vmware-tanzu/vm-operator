@@ -36,6 +36,14 @@ func Convert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha5_VirtualMa
 	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha5_VirtualMachineNetworkInterfaceStatus(in, out, s)
 }
 
+// Convert_v1alpha6_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolumeStatus drops
+// ProvisioningMode, which does not exist in v1alpha5.
+func Convert_v1alpha6_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolumeStatus(
+	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolumeStatus(in, out, s)
+}
+
 // Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec drops
 // fields that do not exist in v1alpha5; they are preserved via MarshalData on ConvertFrom.
 func Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(

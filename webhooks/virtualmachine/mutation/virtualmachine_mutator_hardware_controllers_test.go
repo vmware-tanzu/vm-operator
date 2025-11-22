@@ -1148,15 +1148,15 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 				// Each volume should be assigned to its respective controller.
 				scsiVol := ctx.vm.Spec.Volumes[0]
 				Expect(scsiVol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
-				Expect(*scsiVol.ControllerBusNumber).To(Equal(int32(1)))
+				Expect(*scsiVol.ControllerBusNumber).To(Equal(int32(0)))
 
 				sataVol := ctx.vm.Spec.Volumes[1]
 				Expect(sataVol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSATA))
-				Expect(*sataVol.ControllerBusNumber).To(Equal(int32(1)))
+				Expect(*sataVol.ControllerBusNumber).To(Equal(int32(0)))
 
 				nvmeVol := ctx.vm.Spec.Volumes[2]
 				Expect(nvmeVol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
-				Expect(*nvmeVol.ControllerBusNumber).To(Equal(int32(1)))
+				Expect(*nvmeVol.ControllerBusNumber).To(Equal(int32(0)))
 			})
 		})
 
@@ -1261,14 +1261,14 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 
 				// Should have created one SCSI controller.
 				Expect(ctx.vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
-				Expect(ctx.vm.Spec.Hardware.SCSIControllers[0].BusNumber).To(Equal(int32(1)))
+				Expect(ctx.vm.Spec.Hardware.SCSIControllers[0].BusNumber).To(Equal(int32(0)))
 
 				// SCSI volume should have placement assigned.
 				scsiVol := ctx.vm.Spec.Volumes[len(ctx.vm.Spec.Volumes)-1]
 				Expect(scsiVol.Name).To(Equal("scsi-vol"))
 				Expect(scsiVol.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 				Expect(scsiVol.ControllerBusNumber).ToNot(BeNil())
-				Expect(*scsiVol.ControllerBusNumber).To(Equal(int32(1)))
+				Expect(*scsiVol.ControllerBusNumber).To(Equal(int32(0)))
 				Expect(scsiVol.UnitNumber).ToNot(BeNil())
 				// Unit number should be assigned.
 				Expect(*scsiVol.UnitNumber).To(BeNumerically(">=", 0))

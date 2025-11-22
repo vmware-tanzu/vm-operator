@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -42,9 +43,29 @@ func controllerValidationTests() {
 		ctx.vm.Spec.Volumes = nil
 		ctx.vm.Status.UniqueID = "vm-123"
 
+		// Set both new and old VMs as already schema-upgraded by adding annotations.
+		// The validator checks oldVM.Annotations to determine if schema upgrade
+		// restrictions apply during updates. By marking both as upgraded, controller
+		// validation tests can run without being blocked by schema upgrade restrictions.
+		if ctx.vm.Annotations == nil {
+			ctx.vm.Annotations = make(map[string]string)
+		}
+		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
+		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+
+		// Also add to oldVM for UPDATE scenarios
+		if ctx.oldVM != nil {
+			if ctx.oldVM.Annotations == nil {
+				ctx.oldVM.Annotations = make(map[string]string)
+			}
+			ctx.oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
+			ctx.oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		}
+
 		// Enable VMSharedDisks feature flag for consistency.
 		pkgcfg.SetContext(&ctx.WebhookRequestContext, func(config *pkgcfg.Config) {
 			config.Features.VMSharedDisks = true
+			config.BuildVersion = testBuildVersion // Set to match test annotations
 		})
 	})
 
@@ -606,18 +627,17 @@ func controllerValidationTests() {
 	Context("CD-ROM conflict validation", func() {
 		When("volume tries to use slot occupied by CD-ROM", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				// Set up SATA controller for both CD-ROM and volume
+				ctx.vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
 					{
-						BusNumber:   0,
-						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						BusNumber: 0,
 					},
 				}
 				ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 					{
 						Name:                "cdrom1",
 						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						ControllerBusNumber: ptr.To(int32(0)),
 						UnitNumber:          ptr.To(int32(5)),
 					},
@@ -634,7 +654,7 @@ func controllerValidationTests() {
 							},
 						},
 						ControllerBusNumber: ptr.To(int32(0)),
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						UnitNumber:          ptr.To(int32(5)),
 					},
 				}
@@ -643,24 +663,23 @@ func controllerValidationTests() {
 			It("should reject due to unit number conflict with CD-ROM", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].unitNumber: Invalid value: 5: controller unit number SCSI:0:5 is already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[0].unitNumber: Invalid value: 5: controller unit number SATA:0:5 is already in use"))
 			})
 		})
 
 		When("volume uses different slot than CD-ROM", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				// Set up SATA controller for both CD-ROM and volume
+				ctx.vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
 					{
-						BusNumber:   0,
-						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						BusNumber: 0,
 					},
 				}
 				ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 					{
 						Name:                "cdrom1",
 						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso", Kind: "VirtualMachineImage"},
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						ControllerBusNumber: ptr.To(int32(0)),
 						UnitNumber:          ptr.To(int32(5)),
 					},
@@ -677,7 +696,7 @@ func controllerValidationTests() {
 							},
 						},
 						ControllerBusNumber: ptr.To(int32(0)),
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						UnitNumber:          ptr.To(int32(6)),
 					},
 				}
@@ -698,18 +717,24 @@ func controllerValidationTests() {
 						SharingMode: vmopv1.VirtualControllerSharingModeNone,
 					},
 				}
+				// Use SATA controller for CD-ROMs (CD-ROMs cannot use SCSI)
+				ctx.vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+					{
+						BusNumber: 0,
+					},
+				}
 				ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 					{
 						Name:                "cdrom1",
 						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso-1", Kind: "VirtualMachineImage"},
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						ControllerBusNumber: ptr.To(int32(0)),
 						UnitNumber:          ptr.To(int32(3)),
 					},
 					{
 						Name:                "cdrom2",
 						Image:               vmopv1.VirtualMachineImageRef{Name: "test-iso-2", Kind: "VirtualMachineImage"},
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						ControllerBusNumber: ptr.To(int32(0)),
 						UnitNumber:          ptr.To(int32(5)),
 					},
@@ -726,7 +751,7 @@ func controllerValidationTests() {
 							},
 						},
 						ControllerBusNumber: ptr.To(int32(0)),
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						UnitNumber:          ptr.To(int32(0)),
 					},
 					{
@@ -739,7 +764,7 @@ func controllerValidationTests() {
 							},
 						},
 						ControllerBusNumber: ptr.To(int32(0)),
-						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
 						UnitNumber:          ptr.To(int32(3)), // Conflicts with cdrom1.
 					},
 				}
@@ -748,7 +773,7 @@ func controllerValidationTests() {
 			It("should reject volume that conflicts with CD-ROM", func() {
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[1].unitNumber: Invalid value: 3: controller unit number SCSI:0:3 is already in use"))
+				Expect(string(response.Result.Reason)).To(Equal("spec.volumes[1].unitNumber: Invalid value: 3: controller unit number SATA:0:3 is already in use"))
 			})
 		})
 	})

@@ -68,6 +68,7 @@ const (
 	newVMClass                     = "new-class"
 	oldVMClass                     = "old-class"
 	invalidImageKindMsg            = "supported: " + vmiKind + "; " + cvmiKind
+	testBuildVersion               = "v1.0.0"
 
 	invalidClassInstanceReference              = "must specify a valid reference to a VirtualMachineClassInstance object"
 	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
@@ -362,9 +363,20 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
+
+		// Set the VM as already schema-upgraded by adding annotations.
+		// This allows tests to validate create operations without triggering
+		// schema upgrade restrictions.
+		if ctx.vm.Annotations == nil {
+			ctx.vm.Annotations = make(map[string]string)
+		}
+		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
+		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.WorkloadDomainIsolation = true
 			config.Features.VMSharedDisks = true
+			config.BuildVersion = testBuildVersion // Set to match test annotations
 		})
 	})
 
@@ -4335,6 +4347,28 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
+
+		// Set both new and old VMs as already schema-upgraded by adding annotations.
+		// The validator checks oldVM to determine if schema upgrade restrictions apply.
+		// By setting both, tests can validate update operations without triggering
+		// schema upgrade restrictions (unless explicitly testing those scenarios).
+		if ctx.vm.Annotations == nil {
+			ctx.vm.Annotations = make(map[string]string)
+		}
+		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
+		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+
+		if ctx.oldVM != nil {
+			if ctx.oldVM.Annotations == nil {
+				ctx.oldVM.Annotations = make(map[string]string)
+			}
+			ctx.oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
+			ctx.oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		}
+
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.BuildVersion = testBuildVersion // Set to match test annotations
+		})
 	})
 
 	AfterEach(func() {

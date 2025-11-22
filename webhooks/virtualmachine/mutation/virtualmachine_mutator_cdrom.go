@@ -44,7 +44,9 @@ func MutateCdromControllerOnUpdate(
 		return false, nil
 	}
 
-	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
+	// Check the schema upgrade status on the new VM to ensure the mutation
+	// is applied immediately after the schema upgrade completes.
+	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *vm) {
 		return false, nil
 	}
 

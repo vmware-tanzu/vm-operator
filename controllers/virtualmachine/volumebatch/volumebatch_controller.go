@@ -567,7 +567,7 @@ func (r *Reconciler) buildVolumeSpecs(
 		default:
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
 				Message: fmt.Sprintf("%s unsupported sharing mode: %s for volume %s",
-					buildErrMsg, vol.DiskMode, vol.Name)})
+					buildErrMsg, vol.SharingMode, vol.Name)})
 			continue
 		}
 

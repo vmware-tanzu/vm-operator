@@ -348,8 +348,11 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			}
 		}
 
-		if pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
-			vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
+		// Check the schema upgrade status on the new VM to ensure the mutation
+		// is applied immediately after the schema upgrade completes.
+		if (pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
+			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs) &&
+			vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *modified) {
 			if ok, err := SetPVCVolumeDefaults(ctx, m.client, modified); err != nil {
 				return admission.Denied(err.Error())
 			} else if ok {

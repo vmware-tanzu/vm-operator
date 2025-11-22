@@ -58,9 +58,9 @@ func (c *ControllerIssues) Message() string {
 	)
 }
 
-// VolumeIssues stores PVC volume configuration issues found during verification.
+// VolumeIssues stores volume configuration issues found during verification.
 // The missing and unexpected volumes are sorted. The incomplete placement
-// PVCs are appended in order when looping through the spec list.
+// volumes are appended in order when looping through the spec list.
 type VolumeIssues struct {
 	Missing             []pkgutil.DevicePlacement
 	Unexpected          []pkgutil.DevicePlacement
@@ -79,9 +79,9 @@ func (v *VolumeIssues) HasIssues() bool {
 // comma-separated lists for better readability.
 func (v *VolumeIssues) Message() string {
 	return formatIssues(
-		formatList(v.Missing, "missing PVC volumes"),
-		formatList(v.Unexpected, "unexpected PVC volumes"),
-		formatStrings(v.IncompletePlacement, "PVC volumes with incomplete placement"),
+		formatList(v.Missing, "missing volumes"),
+		formatList(v.Unexpected, "unexpected volumes"),
+		formatStrings(v.IncompletePlacement, "volumes with incomplete placement"),
 	)
 }
 
@@ -211,7 +211,7 @@ func reconcileHardwareCondition(
 	)
 
 	checkControllers(vmCtx.VM, hwInfo, &issues.ControllerIssues)
-	checkPVCVolumes(vmCtx.VM, hwInfo, &issues.VolumeIssues)
+	checkVolumes(vmCtx.VM, hwInfo, &issues.VolumeIssues)
 	checkCDROMDevices(vmCtx, k8sClient, hwInfo, &issues.CDROMIssues)
 
 	if issues.HasIssues() {
@@ -283,10 +283,10 @@ func checkControllers(
 	conditions.MarkTrue(vm, vmopv1.VirtualMachineHardwareControllersVerified)
 }
 
-// checkPVCVolumes verifies that all PVC volumes in the spec are attached and
+// checkVolumes verifies that all volumes in the spec are attached and
 // no extra disks are attached that aren't in the spec. It sets the
 // VirtualMachineHardwareVolumesVerified condition.
-func checkPVCVolumes(
+func checkVolumes(
 	vm *vmopv1.VirtualMachine,
 	hwInfo pkgutil.HardwareInfo,
 	issues *VolumeIssues) {
@@ -325,8 +325,7 @@ func checkPVCVolumes(
 	for _, volStatus := range vm.Status.Volumes {
 		// Ignore Attached status here since we will be checking again the
 		// hardware status directly.
-		if volStatus.Type != vmopv1.VolumeTypeClassic &&
-			volStatus.DiskUUID != "" {
+		if volStatus.DiskUUID != "" {
 			volNameByDiskUUID[volStatus.DiskUUID] = volStatus.Name
 		}
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,36 +32,67 @@ const (
 	cvmiKind = "Cluster" + vmiKind
 )
 
-// UpdateCdromDeviceChanges reconciles the desired CD-ROM devices specified in
-// VM.Spec.Cdrom with the current CD-ROM devices in the VM. It returns a list of
-// device changes required to update the CD-ROM devices.
-func UpdateCdromDeviceChanges(
-	vmCtx pkgctx.VirtualMachineContext,
-	restClient *rest.Client,
+// UpdateCdromDeviceChangesWithSharedDisks implements CD-ROM reconciliation with
+// placement change support (VMSharedDisks enabled). It waits for controller
+// changes to complete before reconciling CD-ROMs to ensure controllers are
+// fully created before CD-ROMs reference them.
+func UpdateCdromDeviceChangesWithSharedDisks(
+	ctx context.Context,
 	k8sClient ctrlclient.Client,
-	curDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
-		return updateCdromDeviceChangesWithSharedDisks(
-			vmCtx, restClient, k8sClient, curDevices)
+	if moVM.Config == nil {
+		return nil
 	}
 
-	return updateCdromDeviceChangesLegacy(
-		vmCtx, restClient, k8sClient, curDevices)
-}
+	// For powered-on VMs, only connection state changes are allowed
+	// via UpdateConfigSpecCdromDeviceConnection.
+	if moVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOn {
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"Skipping CD-ROM device reconciliation because VM is powered on")
+		return nil
+	}
 
-// updateCdromDeviceChangesWithSharedDisks implements CD-ROM reconciliation with
-// placement change support (VMSharedDisks enabled).
-func updateCdromDeviceChangesWithSharedDisks(
-	vmCtx pkgctx.VirtualMachineContext,
-	restClient *rest.Client,
-	k8sClient ctrlclient.Client,
-	curDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
-
-	hw := vmCtx.VM.Spec.Hardware
+	hw := vm.Spec.Hardware
 	if hw == nil {
-		return nil, nil
+		return nil
 	}
+
+	// Check if there are any IDE or SATA controller changes pending.
+	// If so, skip CD-ROM reconciliation and let controllers settle first.
+	for _, change := range configSpec.DeviceChange {
+		dc := change.GetVirtualDeviceConfigSpec()
+		if dc == nil || dc.Device == nil {
+			continue
+		}
+
+		switch dc.Device.(type) {
+		case *vimtypes.VirtualIDEController,
+			*vimtypes.VirtualAHCIController:
+			pkglog.FromContextOrDefault(ctx).V(4).Info(
+				"Skipping CD-ROM reconciliation because IDE/SATA controller changes are pending",
+				"operation", dc.Operation)
+			return nil
+		}
+	}
+
+	restClient := pkgctx.GetRestClient(ctx)
+	if restClient == nil {
+		return errors.New("rest client not found in context")
+	}
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: ctx,
+		Logger:  pkglog.FromContextOrDefault(ctx),
+		VM:      vm,
+		MoVM:    moVM,
+	}
+
+	// No controller changes pending, use current devices directly.
+	curDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 
 	var (
 		deviceChanges                  = make([]vimtypes.BaseVirtualDeviceConfigSpec, 0)
@@ -76,14 +108,14 @@ func updateCdromDeviceChangesWithSharedDisks(
 		bFileName, cdrom, err := findCdromBySpec(
 			vmCtx, k8sClient, specCdrom, curDevices, libManager)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Check if existing CD-ROM has placement changes.
 		if cdrom != nil {
 			placementChanged, err := hasControllerPlacementChanged(cdrom, specCdrom, ctrlKeyToInfo)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if placementChanged {
@@ -128,7 +160,7 @@ func updateCdromDeviceChangesWithSharedDisks(
 	if err := ensureAllCdromsHaveControllersAssigned(
 		expectedBackingFileNameToCdrom, newCurDevices,
 		newCdromBackingFileNameToSpec); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Update connection state for existing CD-ROMs.
@@ -139,16 +171,22 @@ func updateCdromDeviceChangesWithSharedDisks(
 	)
 	deviceChanges = append(deviceChanges, curCdromChanges...)
 
-	return deviceChanges, nil
+	configSpec.DeviceChange = append(configSpec.DeviceChange, deviceChanges...)
+	return nil
 }
 
-// updateCdromDeviceChangesLegacy implements CD-ROM reconciliation with
+// UpdateCdromDeviceChangesLegacy implements CD-ROM reconciliation with
 // automatic controller assignment (VMSharedDisks disabled).
-func updateCdromDeviceChangesLegacy(
+// It creates controllers on demand if needed.
+func UpdateCdromDeviceChangesLegacy(
 	vmCtx pkgctx.VirtualMachineContext,
 	restClient *rest.Client,
 	k8sClient ctrlclient.Client,
 	curDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
+
+	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		return nil, nil
+	}
 
 	hw := vmCtx.VM.Spec.Hardware
 	if hw == nil {

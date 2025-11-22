@@ -149,7 +149,6 @@ type VirtualMachineVolume struct {
 	ControllerType VirtualControllerType `json:"controllerType,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=Persistent
 
 	// DiskMode describes the desired mode to use when attaching the volume.
 	//
@@ -159,15 +158,16 @@ type VirtualMachineVolume struct {
 	// Also, any data written to volumes attached as IndependentNonPersistent or
 	// NonPersistent will be discarded when the VM is powered off.
 	//
-	// Defaults to Persistent.
+	// When applicationType=OracleRAC or applicationType=MicrosoftWSFC, this
+	// field defaults to IndependentPersistent.
+	// Otherwise, defaults to Persistent.
 	DiskMode VolumeDiskMode `json:"diskMode,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=None
 
 	// SharingMode describes the volume's desired sharing mode.
 	//
-	// When applicationType=OracleRAC, the field defaults to MultiWriter.
+	// When applicationType=OracleRAC, this field defaults to MultiWriter.
 	// Otherwise, defaults to None.
 	SharingMode VolumeSharingMode `json:"sharingMode,omitempty"`
 

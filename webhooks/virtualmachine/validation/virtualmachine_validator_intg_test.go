@@ -13,6 +13,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -22,6 +23,7 @@ func intgTests() {
 
 	pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
 		config.Features.VMSharedDisks = true
+		config.BuildVersion = testBuildVersion // Match annotations set in test VMs
 	})
 
 	Describe(
@@ -403,6 +405,15 @@ func intgTestsValidateCdromController() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
+
+		// Add schema upgrade annotations so CD-ROM controller validation runs
+		// The annotation values must match what the webhook context expects (set in intgTests).
+		if ctx.vm.Annotations == nil {
+			ctx.vm.Annotations = make(map[string]string)
+		}
+		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
+		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+
 		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 		ctx.vm.Spec.Hardware.Cdrom = ctx.vm.Spec.Hardware.Cdrom[:1]
 		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())

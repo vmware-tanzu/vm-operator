@@ -2507,9 +2507,10 @@ var _ = Describe("UpdateStatus", func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 					config.Features.VMSharedDisks = true
 				})
-				// Clear MoVM.Config so tests can set it up as needed.
+				// Clear MoVM.Config and LayoutEx so tests can set them up as needed.
 				// reconcileStatusController() will populate status from MoVM.Config.Hardware.Device.
 				vmCtx.MoVM.Config = nil
+				vmCtx.MoVM.LayoutEx = nil
 				// Clear default volumes, CD-ROMs, and controllers from DummyVirtualMachine.
 				vmCtx.VM.Spec.Volumes = nil
 				vmCtx.VM.Spec.Hardware = nil
@@ -2810,8 +2811,11 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
-			Context("PVC volume mismatches", func() {
-				When("spec has PVC volume but it's not attached", func() {
+			Context("Volume verification", func() {
+				// Note: All volumes in vm.Spec.Volumes must have a PersistentVolumeClaim source.
+				// This includes both managed (PVC) volumes and classic disks when represented
+				// as PVCs (e.g., when AllDisksArePVCs feature is enabled).
+				When("spec has volume but it's not attached", func() {
 					BeforeEach(func() {
 						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
 						setupSCSIControllerInSpec(0)
@@ -2827,12 +2831,12 @@ var _ = Describe("UpdateStatus", func() {
 						assertConditionFalse(
 							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
 							map[string]string{
-								vmopv1.VirtualMachineHardwareVolumesVerified: "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing volumes: pvc-volume-1 (SCSI:0:0)",
 							})
 					})
 				})
 
-				When("PVC volume has incomplete placement information", func() {
+				When("volume has incomplete placement information", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
@@ -2853,12 +2857,12 @@ var _ = Describe("UpdateStatus", func() {
 						assertConditionFalse(
 							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
 							map[string]string{
-								vmopv1.VirtualMachineHardwareVolumesVerified: "PVC volumes with incomplete placement: pvc-volume-incomplete",
+								vmopv1.VirtualMachineHardwareVolumesVerified: "volumes with incomplete placement: pvc-volume-incomplete",
 							})
 					})
 				})
 
-				When("PVC volume is correctly attached", func() {
+				When("volume is correctly attached", func() {
 					BeforeEach(func() {
 						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
 						setupSCSIControllerInSpec(0)
@@ -2882,7 +2886,7 @@ var _ = Describe("UpdateStatus", func() {
 					})
 				})
 
-				When("unexpected PVC volume is attached", func() {
+				When("unexpected volume is attached", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
 						setupSCSIControllerInSpec(0)
@@ -2901,11 +2905,160 @@ var _ = Describe("UpdateStatus", func() {
 						}
 					})
 
-					It("should mark the condition as false with unexpected PVC volumes error", func() {
+					It("should mark the condition as false with unexpected volumes error", func() {
 						assertConditionFalse(
 							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
 							map[string]string{
-								vmopv1.VirtualMachineHardwareVolumesVerified: "unexpected PVC volumes: pvc-volume-1 (SCSI:0:0)",
+								vmopv1.VirtualMachineHardwareVolumesVerified: "unexpected volumes: pvc-volume-1 (SCSI:0:0)",
+							})
+					})
+				})
+			})
+
+			Context("Classic disk volumes", func() {
+				When("classic disk volume is correctly attached", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyClassicVirtualMachineVolume(
+								"classic-disk-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-classic", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "classic-disk-1",
+								DiskUUID: "disk-uuid-classic",
+								Type:     vmopv1.VolumeTypeClassic,
+							},
+						}
+					})
+
+					It("should mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("classic disk volume is missing", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyClassicVirtualMachineVolume(
+								"classic-disk-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device with controller but no disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+						)
+						// No volumes in status
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+					})
+
+					It("should mark the condition as false with missing volume error", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing volumes: classic-disk-1 (SCSI:0:0)",
+							})
+					})
+				})
+
+				When("mixed PVC and classic disk volumes are correctly attached", func() {
+					BeforeEach(func() {
+						// Both PVC-backed volume and classic disk volume
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyPVCVirtualMachineVolume(
+								"pvc-volume-1",
+								"test-pvc",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+							builder.DummyClassicVirtualMachineVolume(
+								"classic-disk-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(1)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device with both disks.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-pvc", ""),
+							builder.DummyVirtualDisk(2001, 1000, ptr.To(int32(1)), "disk-uuid-classic", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-pvc",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+							{
+								Name:     "classic-disk-1",
+								DiskUUID: "disk-uuid-classic",
+								Type:     vmopv1.VolumeTypeClassic,
+							},
+						}
+					})
+
+					It("should mark the condition as true for both volume types", func() {
+						assertConditionTrue()
+					})
+				})
+
+				When("classic disk is missing from mixed types", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyPVCVirtualMachineVolume(
+								"pvc-volume-1",
+								"test-pvc",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+							builder.DummyClassicVirtualMachineVolume(
+								"classic-disk-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(1)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device with only PVC disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-pvc", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-pvc",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+						}
+					})
+
+					It("should mark the condition as false with missing classic disk", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing volumes: classic-disk-1 (SCSI:0:1)",
 							})
 					})
 				})
@@ -3096,7 +3249,7 @@ var _ = Describe("UpdateStatus", func() {
 						assertConditionFalse(
 							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
 							map[string]string{
-								vmopv1.VirtualMachineHardwareVolumesVerified: "missing PVC volumes: pvc-volume-1 (SCSI:0:0), pvc-volume-2 (SCSI:0:1)",
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing volumes: pvc-volume-1 (SCSI:0:0), pvc-volume-2 (SCSI:0:1)",
 							})
 					})
 				})
@@ -3131,7 +3284,7 @@ var _ = Describe("UpdateStatus", func() {
 						assertConditionFalse(
 							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
 							map[string]string{
-								vmopv1.VirtualMachineHardwareVolumesVerified: "PVC volumes with incomplete placement: pvc-volume-incomplete-1, pvc-volume-incomplete-2",
+								vmopv1.VirtualMachineHardwareVolumesVerified: "volumes with incomplete placement: pvc-volume-incomplete-1, pvc-volume-incomplete-2",
 							})
 					})
 				})
@@ -3159,7 +3312,7 @@ var _ = Describe("UpdateStatus", func() {
 								vmopv1.VirtualMachineHardwareVolumesVerified),
 							map[string]string{
 								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
-								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing volumes: pvc-volume-1 (SCSI:0:0)",
 							})
 					})
 				})
@@ -3206,7 +3359,7 @@ var _ = Describe("UpdateStatus", func() {
 								vmopv1.VirtualMachineHardwareCDROMVerified),
 							map[string]string{
 								vmopv1.VirtualMachineHardwareControllersVerified: "missing controllers: SCSI:0\nunexpected controllers: IDE:0",
-								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing PVC volumes: pvc-volume-1 (SCSI:0:0)",
+								vmopv1.VirtualMachineHardwareVolumesVerified:     "missing volumes: pvc-volume-1 (SCSI:0:0)",
 								vmopv1.VirtualMachineHardwareCDROMVerified:       fmt.Sprintf("missing CD-ROM devices: %s (IDE:0:0)", testVMIFileName),
 							})
 					})

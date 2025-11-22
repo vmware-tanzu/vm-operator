@@ -90,7 +90,7 @@ func cdromTests() {
 			})
 
 			JustBeforeEach(func() {
-				result, resultErr = virtualmachine.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
+				result, resultErr = virtualmachine.UpdateCdromDeviceChangesLegacy(vmCtx, restClient, k8sClient, curDevices)
 				Expect(resultErr).ToNot(HaveOccurred())
 			})
 
@@ -558,7 +558,7 @@ func cdromTests() {
 			JustBeforeEach(func() {
 				k8sClient = builder.NewFakeClient(k8sInitObjs...)
 
-				result, resultErr = virtualmachine.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
+				result, resultErr = virtualmachine.UpdateCdromDeviceChangesLegacy(vmCtx, restClient, k8sClient, curDevices)
 				Expect(resultErr).To(HaveOccurred())
 			})
 
@@ -1099,7 +1099,190 @@ func cdromTests() {
 			})
 
 			JustBeforeEach(func() {
-				result, resultErr = virtualmachine.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
+				// Set up the restClient in context
+				ctx := pkgctx.WithRestClient(vmCtx.Context, restClient)
+
+				// Create moVM with the current devices
+				moVM := mo.VirtualMachine{
+					Config: &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: curDevices,
+						},
+					},
+					Runtime: vmCtx.MoVM.Runtime,
+				}
+
+				// Create empty configSpec
+				configSpec := &vimtypes.VirtualMachineConfigSpec{}
+
+				resultErr = virtualmachine.UpdateCdromDeviceChangesWithSharedDisks(
+					ctx,
+					k8sClient,
+					vmCtx.VM,
+					nil, // vcVM not needed for these tests
+					moVM,
+					configSpec)
+				result = configSpec.DeviceChange
+			})
+
+			When("VM is powered on and needs CD-ROM devices added", func() {
+
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0)), ptr.To(true), ptr.To(true)),
+						},
+					}
+
+					curDevices = object.VirtualDeviceList{
+						builder.DummyIDEController(ideControllerKey, 0, []int32{}),
+					}
+				})
+
+				It("should skip adding CD-ROM devices when VM is powered on", func() {
+					Expect(resultErr).ToNot(HaveOccurred())
+					Expect(result).To(BeEmpty())
+				})
+			})
+
+			When("controller changes are pending in configSpec", func() {
+				var pendingConfigSpec *vimtypes.VirtualMachineConfigSpec
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(1)), ptr.To(true), ptr.To(true)),
+						},
+					}
+					curDevices = object.VirtualDeviceList{
+						builder.DummyIDEController(ideControllerKey, 0, []int32{}),
+					}
+				})
+
+				JustBeforeEach(func() {
+					ctx := pkgctx.WithRestClient(vmCtx.Context, restClient)
+					moVM := mo.VirtualMachine{
+						Config: &vimtypes.VirtualMachineConfigInfo{
+							Hardware: vimtypes.VirtualHardware{
+								Device: curDevices,
+							},
+						},
+						Runtime: vmCtx.MoVM.Runtime,
+					}
+
+					resultErr = virtualmachine.UpdateCdromDeviceChangesWithSharedDisks(
+						ctx, k8sClient, vmCtx.VM, nil, moVM, pendingConfigSpec)
+				})
+
+				When("IDE controller is being added", func() {
+					BeforeEach(func() {
+						pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+							DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+									Device:    builder.DummyIDEController(-100, 1, nil),
+								},
+							},
+						}
+					})
+
+					It("should skip CD-ROM reconciliation", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(pendingConfigSpec.DeviceChange).To(HaveLen(1)) // Only IDE controller, no CD-ROM
+					})
+				})
+
+				When("SATA controller is being added", func() {
+					BeforeEach(func() {
+						pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+							DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+									Device:    builder.DummySATAController(-200, 0, nil),
+								},
+							},
+						}
+					})
+
+					It("should skip CD-ROM reconciliation", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(pendingConfigSpec.DeviceChange).To(HaveLen(1)) // Only SATA controller, no CD-ROM
+					})
+				})
+
+				When("IDE controller is being removed", func() {
+					BeforeEach(func() {
+						pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+							DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+									Device:    builder.DummyIDEController(ideControllerKey, 0, nil),
+								},
+							},
+						}
+					})
+
+					It("should skip CD-ROM reconciliation", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(pendingConfigSpec.DeviceChange).To(HaveLen(1)) // Only removal, no CD-ROM
+					})
+				})
+
+				When("SATA controller is being edited", func() {
+					BeforeEach(func() {
+						pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+							DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+									Device:    builder.DummySATAController(sataControllerKey, 0, nil),
+								},
+							},
+						}
+					})
+
+					It("should skip CD-ROM reconciliation", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(pendingConfigSpec.DeviceChange).To(HaveLen(1)) // Only edit, no CD-ROM
+					})
+				})
+
+				When("non-CD-ROM controller (SCSI) is being added", func() {
+					BeforeEach(func() {
+						pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+							DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+									Device:    builder.DummyParaVirtualSCSIController(-300, 0),
+								},
+							},
+						}
+					})
+
+					It("should proceed with CD-ROM reconciliation", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(pendingConfigSpec.DeviceChange).To(HaveLen(2)) // SCSI controller + CD-ROM
+					})
+				})
+
+				When("disk device is being added", func() {
+					BeforeEach(func() {
+						pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+							DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+									Device:    builder.DummyVirtualDisk(-400, ideControllerKey, ptr.To(int32(0)), "", ""),
+								},
+							},
+						}
+					})
+
+					It("should proceed with CD-ROM reconciliation", func() {
+						Expect(resultErr).ToNot(HaveOccurred())
+						Expect(pendingConfigSpec.DeviceChange).To(HaveLen(2)) // Disk + CD-ROM
+					})
+				})
 			})
 
 			When("VM.Spec.Cdrom adds a new CD-ROM device with controller information", func() {
@@ -1315,37 +1498,6 @@ func cdromTests() {
 
 						// Second operation should be add with new placement.
 						verifyCdromDeviceConfigSpec(result[1], vimtypes.VirtualDeviceConfigSpecOperationAdd, false, false, true, ideControllerKey, 1, vmiFileName)
-					})
-				})
-
-				When("no placement change, only connection state changes", func() {
-
-					BeforeEach(func() {
-						vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
-
-						vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-							Cdrom: []vmopv1.VirtualMachineCdromSpec{
-								builder.DummyCdromSpec(cdromName1, vmiName, vmiKind, vmopv1.VirtualControllerTypeIDE, ptr.To(int32(0)), ptr.To(int32(0)), ptr.To(true), ptr.To(true)),
-							},
-						}
-
-						curDevices = object.VirtualDeviceList{
-							builder.DummyIDEController(ideControllerKey, 0, []int32{cdromDeviceKey1}),
-							builder.DummyCdromDevice(cdromDeviceKey1, ideControllerKey, 0, vmiFileName),
-						}
-					})
-
-					It("should only update connection state without remove/add", func() {
-						Expect(resultErr).ToNot(HaveOccurred())
-						Expect(result).To(HaveLen(1))
-
-						// Should only be edit operation for connection state.
-						Expect(result[0].GetVirtualDeviceConfigSpec().Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
-						editedDevice := result[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualCdrom)
-						Expect(editedDevice.Key).To(Equal(cdromDeviceKey1))
-						Expect(editedDevice.ControllerKey).To(Equal(ideControllerKey))
-						Expect(*editedDevice.UnitNumber).To(Equal(int32(0)))
-						Expect(editedDevice.Connectable.Connected).To(BeTrue())
 					})
 				})
 

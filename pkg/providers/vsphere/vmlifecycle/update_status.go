@@ -1283,6 +1283,55 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) []error {
 	return errs
 }
 
+// convertDiskMode converts vSphere disk mode string to vmopv1.VolumeDiskMode.
+func convertDiskMode(diskMode string) vmopv1.VolumeDiskMode {
+	switch diskMode {
+	case string(vimtypes.VirtualDiskModeIndependent_persistent):
+		return vmopv1.VolumeDiskModeIndependentPersistent
+	case string(vimtypes.VirtualDiskModeIndependent_nonpersistent):
+		return vmopv1.VolumeDiskModeIndependentNonPersistent
+	case string(vimtypes.VirtualDiskModeNonpersistent):
+		return vmopv1.VolumeDiskModeNonPersistent
+	case string(vimtypes.VirtualDiskModePersistent):
+		return vmopv1.VolumeDiskModePersistent
+	default:
+		// Default to persistent if unknown or empty.
+		return vmopv1.VolumeDiskModePersistent
+	}
+}
+
+// convertSharingMode converts vSphere sharing mode to vmopv1.VolumeSharingMode.
+func convertSharingMode(sharing vimtypes.VirtualDiskSharing) vmopv1.VolumeSharingMode {
+	switch sharing {
+	case vimtypes.VirtualDiskSharingSharingMultiWriter:
+		return vmopv1.VolumeSharingModeMultiWriter
+	case vimtypes.VirtualDiskSharingSharingNone:
+		return vmopv1.VolumeSharingModeNone
+	default:
+		// Default to None if unknown or empty.
+		return vmopv1.VolumeSharingModeNone
+	}
+}
+
+// convertProvisioningMode determines the provisioning mode from ThinProvisioned
+// and EagerlyScrub flags.
+func convertProvisioningMode(thinProvisioned, eagerlyScrub *bool) vmopv1.VolumeProvisioningMode {
+	// If ThinProvisioned is true, it's thin provisioned.
+	if thinProvisioned != nil && *thinProvisioned {
+		return vmopv1.VolumeProvisioningModeThin
+	}
+	// If ThinProvisioned is false or nil, check EagerlyScrub for thick variants.
+	if eagerlyScrub != nil && *eagerlyScrub {
+		return vmopv1.VolumeProvisioningModeThickEagerZero
+	}
+	// Default to thick (lazy zeroed) if thinProvisioned is false.
+	if thinProvisioned != nil && !*thinProvisioned {
+		return vmopv1.VolumeProvisioningModeThick
+	}
+	// If both are nil, return empty string (unknown/unset).
+	return ""
+}
+
 func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 	var (
 		moVM        = vmCtx.MoVM
@@ -1356,6 +1405,8 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 					KeyID:      ddi.CryptoKey.KeyID,
 				}
 			}
+			// Note: DiskMode, SharingMode, and ProvisioningMode are set later
+			// in a single pass for all volumes (both classic and managed).
 			// This is for a rare case when VM is upgraded from v1alpha3 to
 			// v1alpha4+. Since vm.status.volume.requested was introduced in
 			// v1alpha4. So we need to patch it if it's missing from status for
@@ -1420,6 +1471,8 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 					KeyID:      ddi.CryptoKey.KeyID,
 				}
 			}
+			// Note: DiskMode, SharingMode, and ProvisioningMode are set later
+			// in a single pass for all volumes (both classic and managed).
 			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
 		}
 	}
@@ -1436,6 +1489,45 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				return false
 			}
 		})
+
+	// Update disk attachment properties for ALL volumes (classic and managed).
+	// This is done in a single pass at the end to ensure consistency.
+	// For managed volumes, the volume controllers populate status from CnsNodeVmAttachment,
+	// which doesn't include DiskMode, SharingMode, or ProvisioningMode.
+	// We populate these properties here by matching DiskUUID with vSphere disk info.
+	diskInfoByUUID := make(map[string]pkgvol.VirtualDiskInfo)
+	for _, di := range info.Disks {
+		if di.UUID != "" {
+			diskInfoByUUID[di.UUID] = di
+		}
+	}
+
+	for i := range vm.Status.Volumes {
+		vol := &vm.Status.Volumes[i]
+		if vol.DiskUUID == "" {
+			continue
+		}
+
+		di, ok := diskInfoByUUID[vol.DiskUUID]
+		if !ok {
+			vmCtx.Logger.V(4).Info("No disk info found for volume",
+				"volumeName", vol.Name,
+				"volumeType", vol.Type,
+				"diskUUID", vol.DiskUUID)
+			continue
+		}
+
+		// Populate disk attachment properties from vSphere disk info.
+		if di.DiskMode != "" {
+			vol.DiskMode = convertDiskMode(di.DiskMode)
+		}
+		if di.Sharing != "" {
+			vol.SharingMode = convertSharingMode(di.Sharing)
+		}
+		if provMode := convertProvisioningMode(di.ThinProvisioned, di.EagerlyScrub); provMode != "" {
+			vol.ProvisioningMode = provMode
+		}
+	}
 
 	// This sort order is consistent with the logic from the volumes controller.
 	vmopv1.SortVirtualMachineVolumeStatuses(vm.Status.Volumes)

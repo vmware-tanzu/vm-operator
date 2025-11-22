@@ -253,6 +253,9 @@ type VirtualDiskInfo struct {
 	DeviceKey       int32
 	CryptoKey       *vimtypes.CryptoKeyId
 	Sharing         vimtypes.VirtualDiskSharing
+	DiskMode        string
+	ThinProvisioned *bool
+	EagerlyScrub    *bool
 	HasParent       bool
 	ControllerKey   int32
 	UnitNumber      *int32
@@ -287,36 +290,44 @@ func GetVirtualDiskInfo(
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
+		vdi.DiskMode = tb.DiskMode
 		vdi.HasParent = tb.Parent != nil
 	case *vimtypes.VirtualDiskSparseVer1BackingInfo: // No UUID or Crypto
 		vdi.FileName = tb.FileName
+		vdi.DiskMode = tb.DiskMode
 		vdi.HasParent = tb.Parent != nil
 	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
+		vdi.DiskMode = tb.DiskMode
 		vdi.HasParent = tb.Parent != nil
 	case *vimtypes.VirtualDiskFlatVer1BackingInfo: // No UUID or Crypto
 		vdi.FileName = tb.FileName
+		vdi.DiskMode = tb.DiskMode
 		vdi.HasParent = tb.Parent != nil
 	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+		vdi.DiskMode = tb.DiskMode
+		vdi.ThinProvisioned = tb.ThinProvisioned
+		vdi.EagerlyScrub = tb.EagerlyScrub
 		vdi.HasParent = tb.Parent != nil
 	case *vimtypes.VirtualDiskLocalPMemBackingInfo: // No Crypto
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
-	case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo: // No Crypto
+		vdi.DiskMode = tb.DiskMode
+	case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo: // No Crypto, No DiskMode
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
-	case *vimtypes.VirtualDiskRawDiskVer2BackingInfo: // No Crypto
+	case *vimtypes.VirtualDiskRawDiskVer2BackingInfo: // No Crypto, No DiskMode
 		vdi.FileName = tb.DescriptorFileName
 		vdi.UUID = tb.Uuid
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
-	case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo: // No Crypto
+	case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo: // No Crypto, No DiskMode
 		vdi.FileName = tb.DescriptorFileName
 		vdi.UUID = tb.Uuid
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)

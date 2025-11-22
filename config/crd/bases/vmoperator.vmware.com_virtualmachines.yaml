@@ -13430,6 +13430,16 @@ spec:
                     name:
                       description: Name describes the name of the volume.
                       type: string
+                    provisioningMode:
+                      description: |-
+                        ProvisioningMode describes the volume's observed provisioning mode.
+                        This indicates whether the disk is thin-provisioned, thick-provisioned,
+                        or thick-provisioned with eager zeroing.
+                      enum:
+                      - Thin
+                      - Thick
+                      - ThickEagerZero
+                      type: string
                     requested:
                       anyOf:
                       - type: integer

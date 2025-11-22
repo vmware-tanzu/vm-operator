@@ -632,11 +632,17 @@ func (s *Session) getConfigSpecForPoweredOffVM(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
-	cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
-	if err != nil {
-		return nil, false, fmt.Errorf("update CD-ROM device changes error: %w", err)
+	// Note: When VMSharedDisks feature is disabled, CD-ROM reconciliation happens here.
+	// When VMSharedDisks is enabled, CD-ROM reconciliation is deferred to doReconfigure()
+	// after virtual controllers are reconciled to ensure newly added controllers are
+	// available for CD-ROM placement.
+	if !pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChangesLegacy(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
+		if err != nil {
+			return nil, false, fmt.Errorf("update CD-ROM device changes error: %w", err)
+		}
+		configSpec.DeviceChange = append(configSpec.DeviceChange, cdromDeviceChanges...)
 	}
-	configSpec.DeviceChange = append(configSpec.DeviceChange, cdromDeviceChanges...)
 
 	return configSpec, needsResize, nil
 }
@@ -1338,6 +1344,17 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
 		if err := reconcileVirtualControllers(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+
+		if err := virtualmachine.UpdateCdromDeviceChangesWithSharedDisks(
 			ctx,
 			k8sClient,
 			vm,

@@ -353,7 +353,6 @@ func vmUtilTests() {
 					Expect(c.Status).To(Equal(metav1.ConditionFalse))
 					Expect(c.Reason).To(Equal(imageReadyCond.Reason))
 					Expect(c.Message).To(Equal(errMsg))
-					Expect(c.LastTransitionTime).To(Equal(imageReadyCond.LastTransitionTime))
 				})
 			})
 

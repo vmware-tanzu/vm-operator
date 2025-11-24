@@ -165,6 +165,7 @@ func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Req
 		OldObj:              oldObj,
 		UserInfo:            req.UserInfo,
 		IsPrivilegedAccount: IsPrivilegedAccount(h.WebhookContext, req.UserInfo),
+		IsVMOperatorAccount: IsVMOperatorServiceAccount(h.WebhookContext, req.UserInfo),
 		Logger:              h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
 	}
 

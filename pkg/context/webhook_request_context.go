@@ -38,6 +38,9 @@ type WebhookRequestContext struct {
 	// - in the privileged account env var
 	IsPrivilegedAccount bool
 
+	// IsVMOperatorAccount is if this request is from VM Operator.
+	IsVMOperatorAccount bool
+
 	// UserInfo is the user information associated with the webhook request.
 	UserInfo authv1.UserInfo
 

@@ -317,12 +317,19 @@ func SetPVCVolumeDefaults(
 
 		switch v.ApplicationType {
 		case vmopv1.VolumeApplicationTypeOracleRAC:
-			v.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
-			v.SharingMode = vmopv1.VolumeSharingModeMultiWriter
-			wasMutated = true
+			if v.DiskMode == "" {
+				v.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+				wasMutated = true
+			}
+			if v.SharingMode == "" {
+				v.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+				wasMutated = true
+			}
 		case vmopv1.VolumeApplicationTypeMicrosoftWSFC:
-			v.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
-			wasMutated = true
+			if v.DiskMode == "" {
+				v.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+				wasMutated = true
+			}
 		case "":
 			// Skip.
 		default:

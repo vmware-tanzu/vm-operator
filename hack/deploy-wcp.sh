@@ -56,6 +56,9 @@ VC_SSH_PASSWORD=
 TESTBED_INFO=
 SV_CLUSTER=
 
+VMOP_YAML="/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml"
+VMOP_YAML_TEMPLATE="/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/.vmop.yaml.template"
+
 #########################################
 
 function log() {
@@ -170,13 +173,20 @@ function sv_get_cp_ips() {
 }
 
 function sv_copy_and_load_image() {
-    local svip=$1 image=$2
+    local svip=$1 image=$2 image_ref=$3
 
     sv_cp_scp_cmd "$svip" "$image"
     sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import '${image##*/}'"
     #sv_cp_ssh_cmd "$svip" "ctr -n k8s.io images ls | grep vmop"
 
     log "$svip: copied and loaded image"
+
+    cmd="sed -i.bak '/^        image: .*vmop/s|: .*|: '"${image_ref}"'|' $VMOP_YAML"
+    sv_cp_ssh_cmd "$svip" "$cmd"
+    cmd="sed -i.bak '/^        image: .*vmop/s|: .*|: '"${image_ref}"'|' $VMOP_YAML_TEMPLATE"
+    sv_cp_ssh_cmd "$svip" "$cmd"
+
+    log "$svip: updated deployment yaml"
 }
 
 function sv_update_deployment_image() {
@@ -272,7 +282,7 @@ log "Supervisor CP IPs: ${SV_IPS[*]}"
 # times but could use the first SV CP as the source for the other 2.
 pids=()
 for ip in "${SV_IPS[@]}" ; do
-    sv_copy_and_load_image "$ip" "$IMAGE" &
+    sv_copy_and_load_image "$ip" "$IMAGE" "$IMAGE_REF" &
     pids+=($!)
 done
 wait "${pids[@]}"

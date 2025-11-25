@@ -444,11 +444,14 @@ func unitTestsMutating() {
 					BeforeEach(func() {
 						ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 							{
-								Name:    "eth0",
+								Name: "eth0",
+							},
+							{
+								Name:    "eth1",
 								Network: &vmopv1common.PartialObjectRef{},
 							},
 							{
-								Name: "eth1",
+								Name: "eth2",
 								Network: &vmopv1common.PartialObjectRef{
 									Name: "my-network",
 								},
@@ -459,7 +462,7 @@ func unitTestsMutating() {
 
 					It("Should update network ref", func() {
 						Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
-						Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(2))
+						Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(3))
 
 						Expect(ctx.vm.Spec.Network.Interfaces[0].Name).To(Equal("eth0"))
 						Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
@@ -471,7 +474,13 @@ func unitTestsMutating() {
 						Expect(ctx.vm.Spec.Network.Interfaces[1].Network).ShouldNot(BeNil())
 						Expect(ctx.vm.Spec.Network.Interfaces[1].Network.Kind).To(BeEmpty())
 						Expect(ctx.vm.Spec.Network.Interfaces[1].Network.APIVersion).To(BeEmpty())
-						Expect(ctx.vm.Spec.Network.Interfaces[1].Network.Name).To(Equal("my-network"))
+						Expect(ctx.vm.Spec.Network.Interfaces[1].Network.Name).To(Equal(networkName))
+
+						Expect(ctx.vm.Spec.Network.Interfaces[2].Name).To(Equal("eth2"))
+						Expect(ctx.vm.Spec.Network.Interfaces[2].Network).ShouldNot(BeNil())
+						Expect(ctx.vm.Spec.Network.Interfaces[2].Network.Kind).To(BeEmpty())
+						Expect(ctx.vm.Spec.Network.Interfaces[2].Network.APIVersion).To(BeEmpty())
+						Expect(ctx.vm.Spec.Network.Interfaces[2].Network.Name).To(Equal("my-network"))
 					})
 				})
 			})

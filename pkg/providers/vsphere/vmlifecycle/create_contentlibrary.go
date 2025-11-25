@@ -7,6 +7,7 @@ package vmlifecycle
 import (
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
@@ -61,7 +62,9 @@ func deployOVF(
 		},
 	}
 
-	vmCtx.Logger.Info("Deploying OVF Library Item", "itemID", item.ID, "itemName", item.Name, "deploy", deploy)
+	vmCtx.Logger.Info("Deploying OVF Library Item",
+		"itemID", item.ID, "itemName", item.Name, "deploy", deploy,
+		"k8sVMCreateTimestamp", vmCtx.VM.CreationTimestamp.Format(time.RFC3339))
 
 	return vcenter.NewManager(restClient).DeployLibraryItem(
 		util.WithVAPIActivationID(vmCtx, restClient, vmCtx.VM.Spec.InstanceUUID),
@@ -80,7 +83,9 @@ func createVM(
 	vmFolder := object.NewFolder(vimClient, vimtypes.ManagedObjectReference{Type: "Folder", Value: createArgs.FolderMoID})
 	resourcePool := object.NewResourcePool(vimClient, vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: createArgs.ResourcePoolMoID})
 
-	vmCtx.Logger.Info("Creating VM with params", "vmFolder", vmFolder.Reference(), "resourcePool", resourcePool.Reference(), "createConfigSpec", createConfigSpec)
+	vmCtx.Logger.Info("Creating VM with params", "vmFolder", vmFolder.Reference(),
+		"resourcePool", resourcePool.Reference(), "createConfigSpec", createConfigSpec,
+		"k8sVMCreateTimestamp", vmCtx.VM.CreationTimestamp.Format(time.RFC3339))
 	task, err := vmFolder.CreateVM(vmCtx, createConfigSpec, resourcePool, nil)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Failed to create VM")

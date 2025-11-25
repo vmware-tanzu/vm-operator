@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/fault"
@@ -328,7 +329,8 @@ func fastDeploy(
 	logger.Info(
 		"Deploying VM with Fast Deploy",
 		"mode", fastDeployMode,
-		"reason", fastDeployModeReason)
+		"reason", fastDeployModeReason,
+		"k8sVMCreateTimestamp", vmCtx.VM.CreationTimestamp.Format(time.RFC3339))
 
 	if strings.EqualFold(fastDeployMode, pkgconst.FastDeployModeLinked) {
 		return fastDeployLinked(

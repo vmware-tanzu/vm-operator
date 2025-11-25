@@ -34,6 +34,7 @@ type funcs struct {
 	CreateOrUpdateVirtualMachineFn      func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	CreateOrUpdateVirtualMachineAsyncFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error)
 	DeleteVirtualMachineFn              func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	CleanupVirtualMachineFn             func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	PublishVirtualMachineFn             func(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
@@ -118,6 +119,18 @@ func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *vmopv1.Virtua
 		return s.DeleteVirtualMachineFn(ctx, vm)
 	}
 	s.deleteFromVMMap(vm)
+	return nil
+}
+
+func (s *VMProvider) CleanupVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if s.CleanupVirtualMachineFn != nil {
+		return s.CleanupVirtualMachineFn(ctx, vm)
+	}
+	// Fake implementation does nothing - real cleanup happens in the vsphere provider
 	return nil
 }
 

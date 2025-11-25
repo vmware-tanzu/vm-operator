@@ -4223,6 +4223,85 @@ func vmTests() {
 			)
 		})
 
+		Context("Cleanup VM", func() {
+			const zoneName = "az-1"
+
+			BeforeEach(func() {
+				// Explicitly place the VM into one of the zones that the test context will create.
+				vm.Labels[corev1.LabelTopologyZone] = zoneName
+			})
+
+			JustBeforeEach(func() {
+				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			})
+
+			It("successfully cleans up VM service state", func() {
+				vcVM, err := ctx.Finder.VirtualMachine(ctx, vm.Name)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Set up some VM Operator managed fields
+				configSpec := vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
+							Key:   constants.ExtraConfigVMServiceNamespacedName,
+							Value: vm.Namespace + "/" + vm.Name,
+						},
+						&vimtypes.OptionValue{
+							Key:   "guestinfo.userdata",
+							Value: "test-data",
+						},
+					},
+					ManagedBy: &vimtypes.ManagedByInfo{
+						ExtensionKey: vmopv1.ManagedByExtensionKey,
+						Type:         vmopv1.ManagedByExtensionType,
+					},
+				}
+
+				task, err := vcVM.Reconfigure(ctx, configSpec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(task.Wait(ctx)).To(Succeed())
+
+				// Verify fields are set before cleanup
+				var moVMBefore mo.VirtualMachine
+				err = vcVM.Properties(ctx, vcVM.Reference(), []string{"config"}, &moVMBefore)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(moVMBefore.Config).ToNot(BeNil())
+				Expect(moVMBefore.Config.ManagedBy).ToNot(BeNil())
+				Expect(moVMBefore.Config.ManagedBy.ExtensionKey).To(Equal(vmopv1.ManagedByExtensionKey))
+
+				// Run cleanup
+				Expect(vmProvider.CleanupVirtualMachine(ctx, vm)).To(Succeed())
+
+				// Verify VM Operator managed fields were removed
+				var moVMAfter mo.VirtualMachine
+				err = vcVM.Properties(ctx, vcVM.Reference(), []string{"config"}, &moVMAfter)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(moVMAfter.Config).ToNot(BeNil())
+
+				// Check ExtraConfig
+				ecList := object.OptionValueList(moVMAfter.Config.ExtraConfig)
+				val, ok := ecList.Get(constants.ExtraConfigVMServiceNamespacedName)
+				Expect(!ok || val == "").To(BeTrue(), "Expected vmservice.namespacedName to be removed")
+
+				val2, ok2 := ecList.Get("guestinfo.userdata")
+				Expect(!ok2 || val2 == "").To(BeTrue(), "Expected guestinfo.userdata to be removed")
+
+				// Check ManagedBy
+				Expect(moVMAfter.Config.ManagedBy).To(BeNil())
+
+				// Verify VM still exists in vCenter
+				Expect(ctx.GetVMFromMoID(vm.Status.UniqueID)).ToNot(BeNil())
+			})
+
+			It("returns success when VM does not exist in vCenter", func() {
+				// Delete the VM from vCenter first
+				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+
+				// Cleanup should succeed even though VM doesn't exist
+				Expect(vmProvider.CleanupVirtualMachine(ctx, vm)).To(Succeed())
+			})
+		})
+
 		Context("Guest Heartbeat", func() {
 			JustBeforeEach(func() {
 				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())

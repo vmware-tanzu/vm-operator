@@ -468,6 +468,17 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 				"managedObjectID", ctx.VM.Status.UniqueID,
 				"biosUUID", ctx.VM.Status.BiosUUID,
 				"instanceUUID", ctx.VM.Status.InstanceUUID)
+
+			// Clean up all VM Operator modifications from the vCenter VM
+			// before removing the finalizer. This ensures the VM is left in
+			// a clean state without any ExtraConfig keys or ManagedBy fields.
+			// TODO: we should also remove any tags added to the VM for
+			// affinity / anti-affinity or policy evaluations.
+			if err := r.VMProvider.CleanupVirtualMachine(ctx, ctx.VM); err != nil {
+				return fmt.Errorf("failed to cleanup VM Operator modifications: %w", err)
+			}
+
+			ctx.Logger.V(4).Info("Successfully sanitized vCenter VM before unregistering")
 		} else {
 			defer func() {
 				r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)

@@ -1835,9 +1835,7 @@ func (v validator) validateSchemaUpgrade(
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
 	}
 
-	if oldUpBuildVer == "" || oldUpSchemVer == "" ||
-		oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion ||
-		oldUpSchemVer != vmopv1.GroupVersion.Version {
+	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
 		// Prevent most users from modifying the VM spec fields,
 		// that are backfilled by the schema upgrade and mutable,
 		// before the schema upgrade is completed.

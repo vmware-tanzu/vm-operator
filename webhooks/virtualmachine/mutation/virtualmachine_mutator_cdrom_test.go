@@ -10,6 +10,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
@@ -22,7 +23,15 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 	)
 
 	callMutator := func() (bool, error) {
-		return mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, nil)
+		// Create oldVM with proper schema upgrade annotations at call time
+		oldVM := vm.DeepCopy()
+		if oldVM.Annotations == nil {
+			oldVM.Annotations = make(map[string]string)
+		}
+
+		oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
+		oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		return mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, oldVM)
 	}
 
 	assertCdromController := func(index int, controllerType vmopv1.VirtualControllerType, busNumber, unitNumber int32) {
@@ -81,7 +90,7 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 
 	Context("When VMSharedDisks feature is disabled", func() {
 		BeforeEach(func() {
-			pkgcfg.SetContext(ctx.Context, func(config *pkgcfg.Config) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = false
 			})
 			setupCdromSpecs("cdrom1")
@@ -92,10 +101,30 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		})
 	})
 
+	Context("When VM schema has not been upgraded", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+			})
+			setupCdromSpecs("cdrom1")
+		})
+
+		It("should not mutate when oldVM does not have upgrade annotations", func() {
+			oldVM := vm.DeepCopy()
+			oldVM.Annotations = nil
+
+			wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, oldVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(wasMutated).To(BeFalse())
+		})
+
+	})
+
 	Context("When VMSharedDisks feature is enabled", func() {
 		BeforeEach(func() {
-			pkgcfg.SetContext(ctx.Context, func(config *pkgcfg.Config) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = true
+				config.BuildVersion = "v1"
 			})
 		})
 

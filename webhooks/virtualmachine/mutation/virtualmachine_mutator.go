@@ -459,6 +459,8 @@ func setDefaultNetworkInterfaceNetwork(
 			ifaceNetwork.Name = networkRef.Name
 			return true
 		}
+
+		return false
 	}
 
 	if ifaceNetwork == nil {

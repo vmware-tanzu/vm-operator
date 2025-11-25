@@ -13,12 +13,19 @@ import (
 
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var _ = Context("Context", func() {
@@ -1358,4 +1365,297 @@ var _ = Describe("GetVolumeInfoFromConfigSpec", func() {
 		})
 	})
 
+})
+
+var _ = Describe("IsVolumeEncrypted", func() {
+	var (
+		ctx       context.Context
+		vol       vmopv1.VirtualMachineVolume
+		k8sClient ctrlclient.Client
+	)
+
+	const (
+		vmNamespace = "test-namespace"
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContext()
+		k8sClient = builder.NewFakeClient()
+	})
+
+	When("Volume has no PVC", func() {
+		It("should return false", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name:                       "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					// No PVC.
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeFalse())
+		})
+	})
+
+	When("Volume has instance storage claim with encrypted storage class", func() {
+		BeforeEach(func() {
+			// Create encrypted storage class.
+			encSC := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "encrypted-sc",
+				},
+				Provisioner: "fake-provisioner",
+				Parameters: map[string]string{
+					"storagePolicyID": "encrypted-policy-id",
+				},
+			}
+			Expect(k8sClient.Create(ctx, encSC)).To(Succeed())
+			Expect(kubeutil.MarkEncryptedStorageClass(ctx, k8sClient, *encSC, true)).To(Succeed())
+		})
+
+		It("should return true", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
+							StorageClass: "encrypted-sc",
+							Size:         resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeTrue())
+		})
+	})
+
+	When("Volume has instance storage claim with non-encrypted storage class", func() {
+		BeforeEach(func() {
+			// Create non-encrypted storage class.
+			nonEncSC := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "non-encrypted-sc",
+				},
+				Provisioner: "fake-provisioner",
+				Parameters: map[string]string{
+					"storagePolicyID": "non-encrypted-policy-id",
+				},
+			}
+			Expect(k8sClient.Create(ctx, nonEncSC)).To(Succeed())
+		})
+
+		It("should return false", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
+							StorageClass: "non-encrypted-sc",
+							Size:         resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeFalse())
+		})
+	})
+
+	When("Volume has instance storage claim with empty storage class name", func() {
+		It("should return false", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
+							StorageClass: "",
+							Size:         resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeFalse())
+		})
+	})
+
+	When("Volume has instance storage claim with non-existent storage class", func() {
+		It("should return false", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
+							StorageClass: "non-existent-sc",
+							Size:         resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeFalse())
+		})
+	})
+
+	When("Volume has regular PVC claim with encrypted storage class", func() {
+		BeforeEach(func() {
+			// Create encrypted storage class.
+			encSC := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "encrypted-sc",
+				},
+				Provisioner: "fake-provisioner",
+				Parameters: map[string]string{
+					"storagePolicyID": "encrypted-policy-id",
+				},
+			}
+			Expect(k8sClient.Create(ctx, encSC)).To(Succeed())
+			Expect(kubeutil.MarkEncryptedStorageClass(ctx, k8sClient, *encSC, true)).To(Succeed())
+
+			// Create PVC with encrypted storage class
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pvc",
+					Namespace: vmNamespace,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: ptr.To("encrypted-sc"),
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+		})
+
+		It("should return true", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "test-pvc",
+						},
+					},
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeTrue())
+		})
+	})
+
+	When("Volume has regular PVC claim with non-encrypted storage class", func() {
+		BeforeEach(func() {
+			// Create non-encrypted storage class
+			nonEncSC := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "non-encrypted-sc",
+				},
+				Provisioner: "fake-provisioner",
+				Parameters: map[string]string{
+					"storagePolicyID": "non-encrypted-policy-id",
+				},
+			}
+			Expect(k8sClient.Create(ctx, nonEncSC)).To(Succeed())
+
+			// Create PVC with non-encrypted storage class
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pvc",
+					Namespace: vmNamespace,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: ptr.To("non-encrypted-sc"),
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+		})
+
+		It("should return false", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "test-pvc",
+						},
+					},
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeFalse())
+		})
+	})
+
+	When("Volume has regular PVC claim with nil storage class name", func() {
+		BeforeEach(func() {
+			// Create PVC with nil storage class
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pvc",
+					Namespace: vmNamespace,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: nil,
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+		})
+
+		It("should return false", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "test-pvc",
+						},
+					},
+				},
+			}
+			isEncrypted, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isEncrypted).To(BeFalse())
+		})
+	})
+
+	When("PVC does not exist", func() {
+		It("should return error", func() {
+			vol = vmopv1.VirtualMachineVolume{
+				Name: "test-volume",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "non-existent-pvc",
+						},
+					},
+				},
+			}
+			_, err := pkgvol.IsVolumeEncrypted(ctx, k8sClient, vmNamespace, vol)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
 })

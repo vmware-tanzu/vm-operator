@@ -18,6 +18,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -7940,7 +7941,8 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.oldVM.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
 						ctx.oldVM.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeMultiWriter
 						ctx.oldVM.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
-						ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+
+						ctx.vm.Spec.Volumes[0].ApplicationType = ""
 						ctx.vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
 						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
 					},
@@ -8848,6 +8850,279 @@ func unitTestsValidateVolumeUnitNumber(
 					),
 					validate: doValidateWithMsg(
 						"controller unit number SCSI:0:0 is already in use",
+					),
+				},
+			),
+		)
+	})
+
+	Context("Volume Encryption and MultiWriter Validation", func() {
+		var (
+			ctx *unitValidatingWebhookContext
+		)
+
+		const (
+			encryptedStorageClass    = "encrypted-storage-class"
+			nonEncryptedStorageClass = "non-encrypted-storage-class"
+			encryptionClassName      = "my-encryption-class"
+			instanceStoragePVCName   = "instance-storage-pvc"
+			nonEncryptedPVCName      = "non-encrypted-pvc"
+			encryptedPVCName         = "encrypted-pvc"
+		)
+
+		BeforeEach(func() {
+			ctx = newUnitTestContextForValidatingWebhook(true)
+
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.BuildVersion = testBuildVersion
+				config.Features.VMSharedDisks = true
+				config.Features.BringYourOwnEncryptionKey = true
+			})
+
+			// Set upgrade annotations
+			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+
+			// Create encrypted storage class
+			encSC := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: encryptedStorageClass,
+				},
+				Provisioner: "test-provisioner",
+				Parameters: map[string]string{
+					"storagePolicyID": "encrypted-policy-id",
+				},
+			}
+			Expect(ctx.Client.Create(ctx, encSC)).To(Succeed())
+			Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *encSC, true)).To(Succeed())
+
+			// Create non-encrypted storage class
+			nonEncSC := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nonEncryptedStorageClass,
+				},
+				Provisioner: "test-provisioner",
+				Parameters: map[string]string{
+					"storagePolicyID": "non-encrypted-policy-id",
+				},
+			}
+			Expect(ctx.Client.Create(ctx, nonEncSC)).To(Succeed())
+
+			// Create the PVC with non-encrypted storage class.
+			nonEncryptedPVC := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nonEncryptedPVCName,
+					Namespace: ctx.vm.Namespace,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: ptr.To(nonEncryptedStorageClass),
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			Expect(ctx.Client.Create(ctx, nonEncryptedPVC)).To(Succeed())
+
+			// Create the PVC with encrypted storage class.
+			encryptedPVC := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      encryptedPVCName,
+					Namespace: ctx.vm.Namespace,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: ptr.To(encryptedStorageClass),
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			Expect(ctx.Client.Create(ctx, encryptedPVC)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			ctx = nil
+		})
+
+		DescribeTable("validateVolumeEncryptionAndSharing",
+			func(params testParams) {
+				if params.setup != nil {
+					params.setup(ctx)
+				}
+				if !params.skipSetControllerForPVC {
+					setControllerForPVC(ctx.vm)
+					if ctx.oldVM != nil {
+						setControllerForPVC(ctx.oldVM)
+					}
+				}
+				if !params.skipBypassUpgradeCheck {
+					bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+				}
+
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				if ctx.oldVM != nil {
+					ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+					Expect(err).ToNot(HaveOccurred())
+				}
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(params.expectAllowed))
+				if params.validate != nil {
+					params.validate(response)
+				}
+			},
+
+			Entry("should allow non-encrypted PVC volume with MultiWriter",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: nonEncryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should deny encrypted PVC volume with MultiWriter",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: encryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						"MultiWriter sharing mode is not supported for encrypted volumes",
+					),
+				},
+			),
+
+			Entry("should allow non-encrypted PVC volume with non-MultiWriter",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: nonEncryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should allow encrypted PVC volume without MultiWriter sharing mode",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: encryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should skip validation when volume has not changed",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Set up an encrypted volume with MultiWriter in both old and new
+						volume := vmopv1.VirtualMachineVolume{
+							Name: "test-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: encryptedPVCName,
+									},
+								},
+							},
+							SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+						}
+
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{volume}
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{volume}
+					},
+					expectAllowed: true, // Validation is skipped because volume hasn't changed
+				},
+			),
+
+			Entry("should validate when volume changes from non-MultiWriter to MultiWriter with encryption",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// New VM: MultiWriter
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: encryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter, // Changed to MultiWriter
+							},
+						}
+
+						// Old VM: None sharing mode
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: encryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						"MultiWriter sharing mode is not supported for encrypted volumes",
 					),
 				},
 			),

@@ -4007,6 +4007,7 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
 					ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
 					ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To[int32](0)
+					ctx.vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
 
 					// Add SCSI controller with Physical sharing mode
 					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{

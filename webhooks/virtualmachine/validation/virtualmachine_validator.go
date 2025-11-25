@@ -1246,6 +1246,7 @@ func (v validator) validateControllerFields(
 }
 
 func (v validator) validateApplicationFields(
+	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath field.Path,
 ) field.ErrorList {
@@ -1275,6 +1276,21 @@ func (v validator) validateApplicationFields(
 				vol.DiskMode,
 				"DiskMode must be IndependentPersistent for MicrosoftWSFC volumes",
 			))
+		}
+
+		// Validate that the controller sharing mode is Physical for MicrosoftWSFC volumes
+		// if a controller is specified.
+		if vol.ControllerBusNumber != nil && vol.ControllerType != "" {
+			controllerSpecs := vmopv1util.NewControllerSpecs(*vm)
+			if controller, ok := controllerSpecs.Get(vol.ControllerType, *vol.ControllerBusNumber); ok {
+				if vmopv1util.GetControllerSharingMode(controller) != vmopv1util.MicrosoftWSFCControllerSharingMode {
+					allErrs = append(allErrs, field.Invalid(
+						volPath.Child("applicationType"),
+						vol.ApplicationType,
+						fmt.Sprintf("Controller sharing mode must be %s for a MicrosoftWSFC volume", vmopv1util.MicrosoftWSFCControllerSharingMode),
+					))
+				}
+			}
 		}
 	}
 
@@ -1343,7 +1359,7 @@ func (v validator) validateVolume(
 	}
 
 	allErrs = append(allErrs,
-		v.validateApplicationFields(vol, *volPath)...,
+		v.validateApplicationFields(vm, vol, *volPath)...,
 	)
 
 	// Validate access mode, sharing mode, and controller combinations if VM is
@@ -1359,8 +1375,7 @@ func (v validator) validateVolume(
 		volumeChanged = true
 	}
 
-	if oldVol == nil ||
-		vm == nil ||
+	if oldVol == nil || vm == nil ||
 		!equality.Semantic.DeepEqual(oldVM.Spec.Hardware, vm.Spec.Hardware) {
 
 		hardwareChanged = true
@@ -1368,9 +1383,9 @@ func (v validator) validateVolume(
 
 	if volumeChanged || hardwareChanged {
 		allErrs = append(allErrs,
-			v.validateVolumeAccessModeAndSharingModeCombinations(
+			v.validateSharedVolumesOrControllers(
 				ctx,
-				vm,
+				*vm,
 				vol,
 				volPath, pvcPath,
 			)...,
@@ -1387,12 +1402,13 @@ func (v validator) validateVolume(
 	return allErrs
 }
 
-// validateVolumeAccessModeAndSharingModeCombinations validates the combinations
-// of PVC access mode, volume sharing mode, and controller sharing mode
-// according to the business rules.
-func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
+// validateSharedVolumesOrControllers validates:
+// - That a RWX PVC can only be used with a MultiWriter volume or a shared controller.
+// - That a RWO PVC can only be used with a MultiWriter volume.
+// - That a disk cannot be encrypted if it is shared or if the controller is shared.
+func (v validator) validateSharedVolumesOrControllers(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine,
+	vm vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath, pvcPath *field.Path) field.ErrorList {
 
@@ -1400,16 +1416,9 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 		allErrs          field.ErrorList
 		volShared        bool
 		pvcShared        bool
+		pvcEncrypted     bool
 		controllerShared bool
 	)
-
-	// TODO(Faisal A): Remove this once we validate all the combinations that
-	// are allowed, but for now we will only perform validation for OracleRAC
-	// and MicrosoftWSFC volumes.
-	if vol.ApplicationType != vmopv1.VolumeApplicationTypeOracleRAC &&
-		vol.ApplicationType != vmopv1.VolumeApplicationTypeMicrosoftWSFC {
-		return allErrs
-	}
 
 	if vol.SharingMode != "" {
 		volShared = vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter
@@ -1440,16 +1449,60 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 			return allErrs
 		}
 		pvcShared = slices.Contains(obj.Spec.AccessModes, corev1.ReadWriteMany)
+
+		pvcStorageClassName := obj.Spec.StorageClassName
+		if pvcStorageClassName != nil {
+			var err error
+			pvcEncrypted, _, err = kubeutil.IsEncryptedStorageClass(
+				ctx,
+				v.client,
+				*pvcStorageClassName)
+			if err != nil {
+				ctx.Logger.Error(err,
+					"failed to check PVC encryption. Assuming PVC is not encrypted.",
+					"volume", vol.Name,
+					"claimName", vol.PersistentVolumeClaim.ClaimName,
+					"namespace", ctx.Namespace,
+					"storageClassName", *pvcStorageClassName,
+				)
+			}
+		}
 	}
 
 	// Get the controller sharing mode for the specified controller
 	controllerSharingMode := v.getControllerSharingMode(
-		ctx,
 		vm,
-		vol.ControllerType,
-		vol.ControllerBusNumber,
+		vol,
 	)
-	controllerShared = controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical
+	controllerShared = vol.ControllerType == vmopv1.VirtualControllerTypeSCSI &&
+		(controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical ||
+			controllerSharingMode == vmopv1.VirtualControllerSharingModeVirtual)
+
+	// MultiWriter volumes or shared controllers (Physical/Virtual) cannot be encrypted.
+	if pvcEncrypted {
+		if volShared {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("sharingMode"),
+				vol.SharingMode,
+				"MultiWriter disk sharing is not supported for encrypted volumes"))
+		}
+
+		if controllerShared {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("controllerBusNumber"),
+				fmt.Sprintf("%s:%d", vol.ControllerType, *vol.ControllerBusNumber),
+				fmt.Sprintf("Controller with sharing mode %s is not supported for encrypted volumes",
+					controllerSharingMode)))
+		}
+	}
+
+	// TODO(Faisal A): Remove this once we validate all the combinations that
+	// are allowed, but for now we will only perform the PVC access mode and
+	// volume/controller sharing modes for OracleRAC and MicrosoftWSFC volumes.
+	if vol.ApplicationType != vmopv1.VolumeApplicationTypeOracleRAC &&
+		vol.ApplicationType != vmopv1.VolumeApplicationTypeMicrosoftWSFC {
+		return allErrs
+	}
 
 	// Rule 1 -- If the PVC is not shared, the volume and controller must not
 	//           be shared.
@@ -1467,9 +1520,10 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 		if controllerShared {
 			allErrs = append(allErrs,
 				field.Invalid(
-					volPath.Child("controllerType"),
-					vol.ControllerType,
-					"Physical controller sharing mode is not allowed for ReadWriteOnce volume",
+					volPath.Child("controllerBusNumber"),
+					fmt.Sprintf("%s:%d", vol.ControllerType, *vol.ControllerBusNumber),
+					fmt.Sprintf("Controller with sharing mode %s is not allowed for ReadWriteOnce volume",
+						controllerSharingMode),
 				),
 			)
 		}
@@ -1482,7 +1536,7 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 			field.Invalid(
 				volPath.Child("sharingMode"),
 				vol.SharingMode,
-				"ReadWriteMany PVC must have a MultiWriter volume or Physical controller sharing mode",
+				"ReadWriteMany PVC must have a shared volume or controller",
 			),
 		)
 	}
@@ -1493,36 +1547,24 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 // getControllerSharingMode gets the sharing mode of the specified controller
 // from the VM hardware spec.
 // Returns the sharing mode if the controller was found and it supports
-// sharing mode, otherwise returns None.
+// sharing mode, otherwise returns the default sharing mode for the volume
+// based on the application type.
 func (v validator) getControllerSharingMode(
-	_ *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine,
-	controllerType vmopv1.VirtualControllerType,
-	controllerBusNumber *int32) vmopv1.VirtualControllerSharingMode {
+	vm vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+) vmopv1.VirtualControllerSharingMode {
 
-	if vm.Spec.Hardware == nil ||
-		controllerType == "" ||
-		controllerBusNumber == nil {
-		return vmopv1.VirtualControllerSharingModeNone
-	}
+	controllerType := vol.ControllerType
+	controllerBusNumber := vol.ControllerBusNumber
 
-	// Find the controller with the specified type and bus number
-	switch controllerType {
-	case vmopv1.VirtualControllerTypeSCSI:
-		for _, controller := range vm.Spec.Hardware.SCSIControllers {
-			if controller.BusNumber == *controllerBusNumber {
-				return controller.SharingMode
-			}
-		}
-	case vmopv1.VirtualControllerTypeNVME:
-		for _, controller := range vm.Spec.Hardware.NVMEControllers {
-			if controller.BusNumber == *controllerBusNumber {
-				return controller.SharingMode
-			}
+	if controllerType != "" && controllerBusNumber != nil {
+		controllerSpecs := vmopv1util.NewControllerSpecs(vm)
+		if controller, ok := controllerSpecs.Get(controllerType, *controllerBusNumber); ok {
+			return vmopv1util.GetControllerSharingMode(controller)
 		}
 	}
 
-	return vmopv1.VirtualControllerSharingModeNone
+	return vmopv1util.DefaultControllerSharingMode(vol)
 }
 
 // validateInstanceStorageVolumes validates if instance storage volumes are added/modified.

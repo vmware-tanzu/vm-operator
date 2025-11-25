@@ -31,6 +31,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -1113,6 +1114,380 @@ var _ = Describe("CnsRegisterVolumeToVirtualMachineMapper", func() {
 			Expect(func() {
 				mapperFunc(ctx, nil)
 			}).To(Panic())
+		})
+	})
+})
+
+var _ = Describe("IsFSRSupported", func() {
+	var (
+		vm vmopv1.VirtualMachine
+	)
+
+	BeforeEach(func() {
+		vm = vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-vm",
+				Namespace: "test-namespace",
+			},
+		}
+	})
+
+	Context("when VM has no hardware spec", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = nil
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has no SCSI controllers", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has no volumes", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has SCSI controller with None sharing mode", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has SCSI controller with Virtual sharing mode", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeVirtual,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has SCSI controller with Physical sharing mode but no attached disks", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(1)), // Attached to controller 1, not 0.
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has SCSI controller with Physical sharing mode and attached disk", func() {
+		It("should return false (FSR is NOT supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)), // Attached to Physical shared controller.
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeFalse())
+		})
+	})
+
+	Context("when VM has multiple SCSI controllers and one Physical shared controller has a disk", func() {
+		It("should return false (FSR is NOT supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+					{
+						BusNumber:   2,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeVirtual,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+				{
+					Name:                "disk-2",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(1)), // Attached to Physical shared controller.
+					UnitNumber:          ptr.To(int32(0)),
+				},
+				{
+					Name:                "disk-3",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(2)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeFalse())
+		})
+	})
+
+	Context("when VM has multiple Physical shared controllers with disks", func() {
+		It("should return false (FSR is NOT supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+				{
+					Name:                "disk-2",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(1)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeFalse())
+		})
+	})
+
+	Context("when VM has multiple Physical shared controllers but only one has a disk", func() {
+		It("should return false (FSR is NOT supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)), // Only controller 0 has a disk.
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeFalse())
+		})
+	})
+
+	Context("when VM has Physical shared controller with multiple disks", func() {
+		It("should return false (FSR is NOT supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+				{
+					Name:                "disk-2",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(1)),
+				},
+				{
+					Name:                "disk-3",
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(2)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeFalse())
+		})
+	})
+
+	Context("when VM has only Physical shared controllers but all without disks", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has Physical shared SCSI controller but volume is attached to non-SCSI controller", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerType:      vmopv1.VirtualControllerTypeNVME,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has Physical shared SCSI controller but volume has no ControllerType specified", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:                "disk-1",
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+
+	Context("when VM has Physical shared SCSI controller but volume has no ControllerBusNumber specified", func() {
+		It("should return true (FSR is supported)", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name:           "disk-1",
+					ControllerType: vmopv1.VirtualControllerTypeSCSI,
+					UnitNumber:     ptr.To(int32(0)),
+				},
+			}
+			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
 		})
 	})
 })

@@ -303,17 +303,32 @@ func fastDeploy(
 	}
 
 	// Determine the type of fast deploy operation.
-	var fastDeployMode string
+	var (
+		fastDeployMode       string
+		fastDeployModeReason string
+	)
 
-	if createArgs.IsEncryptedStorageProfile {
+	switch {
+	case createArgs.IsEncryptedStorageProfile:
 		fastDeployMode = pkgconst.FastDeployModeDirect
-	} else {
+		fastDeployModeReason = "encrypted storage profile"
+	case !pkgutil.IsOnlinePromoteDisksSupported(createArgs.ConfigSpec):
+		fastDeployMode = pkgconst.FastDeployModeDirect
+		fastDeployModeReason = "online promote disks not supported"
+	default:
 		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
 		if fastDeployMode == "" {
 			fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
+			fastDeployModeReason = "global default"
+		} else {
+			fastDeployModeReason = "from annotation"
 		}
 	}
-	logger.Info("Deploying VM with Fast Deploy", "mode", fastDeployMode)
+
+	logger.Info(
+		"Deploying VM with Fast Deploy",
+		"mode", fastDeployMode,
+		"reason", fastDeployModeReason)
 
 	if strings.EqualFold(fastDeployMode, pkgconst.FastDeployModeLinked) {
 		return fastDeployLinked(

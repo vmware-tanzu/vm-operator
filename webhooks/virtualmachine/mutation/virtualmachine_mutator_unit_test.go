@@ -20,7 +20,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -246,19 +246,45 @@ func unitTestsMutating() {
 						},
 						{
 							Name:    "eth1",
-							Network: &common.PartialObjectRef{},
+							Network: &vmopv1common.PartialObjectRef{},
 						},
 						{
 							Name: "eth2",
-							Network: &common.PartialObjectRef{
-								Name: "do-not-change-this-network-name",
+							Network: &vmopv1common.PartialObjectRef{
+								Name: "eth2-do-not-change-this-network-name",
+							},
+						},
+						{
+							Name: "eth3",
+							Network: &vmopv1common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									APIVersion: "netoperator.vmware.com/v1alpha1",
+								},
+							},
+						},
+						{
+							Name: "eth4",
+							Network: &vmopv1common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									Kind: "Network",
+								},
+							},
+						},
+						{
+							Name: "eth5",
+							Network: &vmopv1common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									APIVersion: "netoperator.vmware.com/v1alpha1",
+									Kind:       "Network",
+								},
+								Name: "eth5-do-not-change-this-network-name",
 							},
 						},
 					},
 				}
 
 				Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
-				Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(3))
+				Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(6))
 
 				iface0 := &ctx.vm.Spec.Network.Interfaces[0]
 				Expect(iface0.Name).To(Equal("eth0"))
@@ -277,9 +303,30 @@ func unitTestsMutating() {
 				iface2 := &ctx.vm.Spec.Network.Interfaces[2]
 				Expect(iface2.Name).To(Equal("eth2"))
 				Expect(iface2.Network).ToNot(BeNil())
-				Expect(iface2.Network.Name).To(Equal("do-not-change-this-network-name"))
+				Expect(iface2.Network.Name).To(Equal("eth2-do-not-change-this-network-name"))
 				Expect(iface2.Network.Kind).To(Equal("Network"))
 				Expect(iface2.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface3 := &ctx.vm.Spec.Network.Interfaces[3]
+				Expect(iface3.Name).To(Equal("eth3"))
+				Expect(iface3.Network).ToNot(BeNil())
+				Expect(iface3.Network.Name).To(BeEmpty())
+				Expect(iface3.Network.Kind).To(Equal("Network"))
+				Expect(iface3.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface4 := &ctx.vm.Spec.Network.Interfaces[4]
+				Expect(iface4.Name).To(Equal("eth4"))
+				Expect(iface4.Network).ToNot(BeNil())
+				Expect(iface4.Network.Name).To(BeEmpty())
+				Expect(iface4.Network.Kind).To(Equal("Network"))
+				Expect(iface4.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface5 := &ctx.vm.Spec.Network.Interfaces[5]
+				Expect(iface5.Name).To(Equal("eth5"))
+				Expect(iface5.Network).ToNot(BeNil())
+				Expect(iface5.Network.Name).To(Equal("eth5-do-not-change-this-network-name"))
+				Expect(iface5.Network.Kind).To(Equal("Network"))
+				Expect(iface5.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
 			})
 		})
 	})
@@ -398,11 +445,11 @@ func unitTestsMutating() {
 						ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 							{
 								Name:    "eth0",
-								Network: &common.PartialObjectRef{},
+								Network: &vmopv1common.PartialObjectRef{},
 							},
 							{
 								Name: "eth1",
-								Network: &common.PartialObjectRef{
+								Network: &vmopv1common.PartialObjectRef{
 									Name: "my-network",
 								},
 							},
@@ -445,19 +492,45 @@ func unitTestsMutating() {
 						},
 						{
 							Name:    "eth1",
-							Network: &common.PartialObjectRef{},
+							Network: &vmopv1common.PartialObjectRef{},
 						},
 						{
 							Name: "eth2",
-							Network: &common.PartialObjectRef{
-								Name: "do-not-change-this-network-name",
+							Network: &vmopv1common.PartialObjectRef{
+								Name: "eth2-do-not-change-this-network-name",
+							},
+						},
+						{
+							Name: "eth3",
+							Network: &vmopv1common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									APIVersion: "netoperator.vmware.com/v1alpha1",
+								},
+							},
+						},
+						{
+							Name: "eth4",
+							Network: &vmopv1common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									Kind: "Network",
+								},
+							},
+						},
+						{
+							Name: "eth5",
+							Network: &vmopv1common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									APIVersion: "netoperator.vmware.com/v1alpha1",
+									Kind:       "Network",
+								},
+								Name: "eth5-do-not-change-this-network-name",
 							},
 						},
 					},
 				}
 
 				Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
-				Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(3))
+				Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(6))
 
 				iface0 := &ctx.vm.Spec.Network.Interfaces[0]
 				Expect(iface0.Name).To(Equal("eth0"))
@@ -476,9 +549,30 @@ func unitTestsMutating() {
 				iface2 := &ctx.vm.Spec.Network.Interfaces[2]
 				Expect(iface2.Name).To(Equal("eth2"))
 				Expect(iface2.Network).ToNot(BeNil())
-				Expect(iface2.Network.Name).To(Equal("do-not-change-this-network-name"))
+				Expect(iface2.Network.Name).To(Equal("eth2-do-not-change-this-network-name"))
 				Expect(iface2.Network.Kind).To(Equal("Network"))
 				Expect(iface2.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface3 := &ctx.vm.Spec.Network.Interfaces[3]
+				Expect(iface3.Name).To(Equal("eth3"))
+				Expect(iface3.Network).ToNot(BeNil())
+				Expect(iface3.Network.Name).To(BeEmpty())
+				Expect(iface3.Network.Kind).To(Equal("Network"))
+				Expect(iface3.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface4 := &ctx.vm.Spec.Network.Interfaces[4]
+				Expect(iface4.Name).To(Equal("eth4"))
+				Expect(iface4.Network).ToNot(BeNil())
+				Expect(iface4.Network.Name).To(BeEmpty())
+				Expect(iface4.Network.Kind).To(Equal("Network"))
+				Expect(iface4.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface5 := &ctx.vm.Spec.Network.Interfaces[5]
+				Expect(iface5.Name).To(Equal("eth5"))
+				Expect(iface5.Network).ToNot(BeNil())
+				Expect(iface5.Network.Name).To(Equal("eth5-do-not-change-this-network-name"))
+				Expect(iface5.Network.Kind).To(Equal("Network"))
+				Expect(iface5.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
 			})
 		})
 	})
@@ -1498,7 +1592,7 @@ func unitTestsMutating() {
 		Context("when spec.class has empty name", func() {
 			BeforeEach(func() {
 				ctx.vm.Spec.ClassName = ""
-				ctx.vm.Spec.Class = &common.LocalObjectRef{
+				ctx.vm.Spec.Class = &vmopv1common.LocalObjectRef{
 					Name: "",
 				}
 			})
@@ -1513,7 +1607,7 @@ func unitTestsMutating() {
 		Context("when both spec.className and spec.class are set", func() {
 			BeforeEach(func() {
 				ctx.vm.Spec.ClassName = testClassName
-				ctx.vm.Spec.Class = &common.LocalObjectRef{
+				ctx.vm.Spec.Class = &vmopv1common.LocalObjectRef{
 					Name: testInstanceName,
 				}
 			})
@@ -1631,7 +1725,7 @@ func unitTestsMutating() {
 		Context("when spec.class is set but spec.className is empty", func() {
 			BeforeEach(func() {
 				ctx.vm.Spec.ClassName = ""
-				ctx.vm.Spec.Class = &common.LocalObjectRef{
+				ctx.vm.Spec.Class = &vmopv1common.LocalObjectRef{
 					Name: testInstanceName,
 				}
 			})

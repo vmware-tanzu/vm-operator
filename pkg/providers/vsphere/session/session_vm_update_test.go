@@ -1491,8 +1491,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					By("Specifying virtual controllers in the VM spec", func() {
 						vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
 							{
-								BusNumber:     1,
-								PCISlotNumber: ptr.To(int32(2)), // Changed to 2.
+								BusNumber: 1,
 							},
 						}
 					})

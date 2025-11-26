@@ -116,13 +116,6 @@ func (v validator) validateControllerWhenPoweredOn(
 		scsiPath := hwPath.Child("scsiControllers")
 		for i, newC := range vm.Spec.Hardware.SCSIControllers {
 			if oldC, ok := oldSCSIControllerSettings[newC.BusNumber]; ok {
-				if !reflect.DeepEqual(newC.PCISlotNumber, oldC.PCISlotNumber) {
-					allErrs = append(allErrs,
-						field.Forbidden(
-							scsiPath.Index(i).Child("pciSlotNumber"),
-							updatesNotAllowedWhenPowerOn),
-					)
-				}
 				if !reflect.DeepEqual(newC.SharingMode, oldC.SharingMode) {
 					allErrs = append(allErrs,
 						field.Forbidden(
@@ -140,31 +133,9 @@ func (v validator) validateControllerWhenPoweredOn(
 			}
 		}
 
-		for i, newC := range vm.Spec.Hardware.SATAControllers {
-			if oldC, ok := oldSATAControllerSettings[newC.BusNumber]; ok {
-				if !reflect.DeepEqual(newC.PCISlotNumber, oldC.PCISlotNumber) {
-					allErrs = append(allErrs,
-						field.Forbidden(
-							hwPath.
-								Child("sataControllers").
-								Index(i).
-								Child("pciSlotNumber"),
-							updatesNotAllowedWhenPowerOn),
-					)
-				}
-			}
-		}
-
 		nvmePath := hwPath.Child("nvmeControllers")
 		for i, newC := range vm.Spec.Hardware.NVMEControllers {
 			if oldC, ok := oldNVMEControllerSettings[newC.BusNumber]; ok {
-				if !reflect.DeepEqual(newC.PCISlotNumber, oldC.PCISlotNumber) {
-					allErrs = append(allErrs,
-						field.Forbidden(
-							nvmePath.Index(i).Child("pciSlotNumber"),
-							updatesNotAllowedWhenPowerOn),
-					)
-				}
 				if !reflect.DeepEqual(newC.SharingMode, oldC.SharingMode) {
 					allErrs = append(allErrs,
 						field.Forbidden(

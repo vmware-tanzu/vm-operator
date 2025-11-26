@@ -6568,15 +6568,6 @@ spec:
                                   maximum: 3
                                   minimum: 0
                                   type: integer
-                                pciSlotNumber:
-                                  description: |-
-                                    PCISlotNumber describes the desired PCI slot number to use for this
-                                    controller.
-
-                                    Please note, most of the time this field should be empty so the system
-                                    can pick an available slot.
-                                  format: int32
-                                  type: integer
                                 sharingMode:
                                   default: None
                                   description: |-
@@ -6610,15 +6601,6 @@ spec:
                                   maximum: 3
                                   minimum: 0
                                   type: integer
-                                pciSlotNumber:
-                                  description: |-
-                                    PCISlotNumber describes the desired PCI slot number to use for this
-                                    controller.
-
-                                    Please note, most of the time this field should be empty so the system
-                                    can pick an available slot.
-                                  format: int32
-                                  type: integer
                               required:
                               - busNumber
                               type: object
@@ -6639,15 +6621,6 @@ spec:
                                   format: int32
                                   maximum: 3
                                   minimum: 0
-                                  type: integer
-                                pciSlotNumber:
-                                  description: |-
-                                    PCISlotNumber describes the desired PCI slot number to use for this
-                                    controller.
-
-                                    Please note, most of the time this field should be empty so the system
-                                    can pick an available slot.
-                                  format: int32
                                   type: integer
                                 sharingMode:
                                   default: None

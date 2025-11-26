@@ -345,7 +345,6 @@ var _ = Describe("Reconcile", func() {
 						0,
 						vimtypes.VirtualDeviceConfigSpecOperationAdd,
 						int32(0),
-						nil,
 						vimtypes.VirtualNVMEControllerSharingNoSharing,
 					)
 				})
@@ -407,7 +406,6 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(1),
-							nil,
 							vimtypes.VirtualNVMEControllerSharingNoSharing,
 						)
 						assertNVMEControllerDeviceChange(
@@ -415,7 +413,6 @@ var _ = Describe("Reconcile", func() {
 							1,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
-							nil,
 							vimtypes.VirtualNVMEControllerSharingNoSharing,
 						)
 					})
@@ -473,7 +470,6 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(1),
-							nil,
 							vimtypes.VirtualNVMEControllerSharingPhysicalSharing,
 						)
 						assertNVMEControllerDeviceChange(
@@ -481,43 +477,7 @@ var _ = Describe("Reconcile", func() {
 							1,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(2),
-							nil,
 							vimtypes.VirtualNVMEControllerSharingPhysicalSharing,
-						)
-					})
-				})
-
-				When("NVME controller is specified in spec with different PCI slot number", func() {
-					BeforeEach(func() {
-						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device,
-							&vimtypes.VirtualNVMEController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										ControllerKey: pciControllerKey,
-										SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-											PciSlotNumber: 0,
-										},
-									},
-									BusNumber: 0,
-								},
-								SharedBus: string(vimtypes.VirtualNVMEControllerSharingNoSharing),
-							},
-						)
-
-						Expect(vm.Spec.Hardware.NVMEControllers).To(HaveLen(1))
-						vm.Spec.Hardware.NVMEControllers[0].PCISlotNumber = ptr.To(int32(1))
-					})
-
-					It("should edit the NVME controller with different PCI slot number", func() {
-						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(1))
-						assertNVMEControllerDeviceChange(
-							configSpec.DeviceChange,
-							0,
-							vimtypes.VirtualDeviceConfigSpecOperationEdit,
-							int32(0),
-							ptr.To(int32(1)),
-							vimtypes.VirtualNVMEControllerSharingNoSharing,
 						)
 					})
 				})
@@ -536,35 +496,8 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationEdit,
 							int32(0),
-							nil,
 							vimtypes.VirtualNVMEControllerSharingPhysicalSharing,
 						)
-					})
-				})
-				When("NVME controller on VM has a PCI slot number, while spec doens't specify it", func() {
-					BeforeEach(func() {
-						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device,
-							&vimtypes.VirtualNVMEController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										ControllerKey: pciControllerKey,
-										SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-											PciSlotNumber: 0,
-										},
-									},
-									BusNumber: 0,
-								},
-								SharedBus: string(vimtypes.VirtualNVMEControllerSharingNoSharing),
-							},
-						)
-
-						Expect(vm.Spec.Hardware.NVMEControllers).To(HaveLen(1))
-						vm.Spec.Hardware.NVMEControllers[0].PCISlotNumber = nil
-					})
-
-					It("should do nothing", func() {
-						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
 					})
 				})
 			})
@@ -588,7 +521,6 @@ var _ = Describe("Reconcile", func() {
 						0,
 						vimtypes.VirtualDeviceConfigSpecOperationAdd,
 						int32(0),
-						nil,
 					)
 				})
 
@@ -639,14 +571,12 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(1),
-							nil,
 						)
 						assertSATAControllerDeviceChange(
 							configSpec.DeviceChange,
 							1,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
-							nil,
 						)
 					})
 				})
@@ -701,78 +631,13 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(1),
-							nil,
 						)
 						assertSATAControllerDeviceChange(
 							configSpec.DeviceChange,
 							1,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(2),
-							nil,
 						)
-					})
-				})
-
-				When("SATA controller is specified in spec with different PCI slot number", func() {
-					BeforeEach(func() {
-						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device,
-							&vimtypes.VirtualAHCIController{
-								VirtualSATAController: vimtypes.VirtualSATAController{
-									VirtualController: vimtypes.VirtualController{
-										VirtualDevice: vimtypes.VirtualDevice{
-											ControllerKey: pciControllerKey,
-											SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-												PciSlotNumber: 0,
-											},
-										},
-										BusNumber: 0,
-									},
-								},
-							},
-						)
-
-						Expect(vm.Spec.Hardware.SATAControllers).To(HaveLen(1))
-						vm.Spec.Hardware.SATAControllers[0].PCISlotNumber = ptr.To(int32(1))
-					})
-
-					It("should edit the SATA controller with different PCI slot number", func() {
-						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(1))
-						assertSATAControllerDeviceChange(
-							configSpec.DeviceChange,
-							0,
-							vimtypes.VirtualDeviceConfigSpecOperationEdit,
-							int32(0),
-							ptr.To(int32(1)),
-						)
-					})
-				})
-
-				When("SATA controller on VM has a PCI slot number, while spec doens't specify it", func() {
-					BeforeEach(func() {
-						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device,
-							&vimtypes.VirtualAHCIController{
-								VirtualSATAController: vimtypes.VirtualSATAController{
-									VirtualController: vimtypes.VirtualController{
-										VirtualDevice: vimtypes.VirtualDevice{
-											ControllerKey: pciControllerKey,
-											SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-												PciSlotNumber: 0,
-											},
-										},
-										BusNumber: 0,
-									},
-								},
-							},
-						)
-
-						Expect(vm.Spec.Hardware.SATAControllers).To(HaveLen(1))
-						vm.Spec.Hardware.SATAControllers[0].PCISlotNumber = nil
-					})
-
-					It("should do nothing", func() {
-						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
 					})
 				})
 			})
@@ -798,7 +663,6 @@ var _ = Describe("Reconcile", func() {
 						0,
 						vimtypes.VirtualDeviceConfigSpecOperationAdd,
 						int32(0),
-						nil,
 						vimtypes.VirtualSCSISharingNoSharing,
 						vmopv1.SCSIControllerTypeParaVirtualSCSI)
 				})
@@ -886,7 +750,6 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(1),
-							nil,
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeBusLogic,
 						)
@@ -895,7 +758,6 @@ var _ = Describe("Reconcile", func() {
 							1,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
-							nil,
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI,
 						)
@@ -958,7 +820,6 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(1),
-							nil,
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeLsiLogic)
 						assertSCSIControllerDeviceChange(
@@ -966,46 +827,8 @@ var _ = Describe("Reconcile", func() {
 							1,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(2),
-							nil,
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeLsiLogicSAS)
-					})
-				})
-
-				When("SCSI controller is specified in spec with different PCI slot number", func() {
-					BeforeEach(func() {
-						moVM.Config.Hardware.Device = append(moVM.Config.Hardware.Device,
-							&vimtypes.ParaVirtualSCSIController{
-								VirtualSCSIController: vimtypes.VirtualSCSIController{
-									VirtualController: vimtypes.VirtualController{
-										VirtualDevice: vimtypes.VirtualDevice{
-											ControllerKey: pciControllerKey,
-											SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-												PciSlotNumber: 1,
-											},
-										},
-										BusNumber: 0,
-									},
-									SharedBus: vimtypes.VirtualSCSISharingNoSharing,
-								},
-							},
-						)
-
-						Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
-						vm.Spec.Hardware.SCSIControllers[0].PCISlotNumber = ptr.To(int32(2))
-					})
-
-					It("should edit the SCSI controller with different PCI slot number", func() {
-						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(1))
-						assertSCSIControllerDeviceChange(
-							configSpec.DeviceChange,
-							0,
-							vimtypes.VirtualDeviceConfigSpecOperationEdit,
-							int32(0),
-							ptr.To(int32(2)),
-							vimtypes.VirtualSCSISharingNoSharing,
-							vmopv1.SCSIControllerTypeParaVirtualSCSI)
 					})
 				})
 
@@ -1036,7 +859,6 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationEdit,
 							int32(0),
-							nil,
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI)
 					})
@@ -1067,7 +889,6 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(0),
-							nil,
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeBusLogic)
 
@@ -1076,7 +897,6 @@ var _ = Describe("Reconcile", func() {
 							1,
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
-							nil,
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI)
 					})
@@ -1136,9 +956,8 @@ var _ = Describe("Reconcile", func() {
 						vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
 							NVMEControllers: []vmopv1.NVMEControllerSpec{
 								{
-									BusNumber:     0,
-									SharingMode:   vmopv1.VirtualControllerSharingModeNone,
-									PCISlotNumber: ptr.To(int32(1)),
+									BusNumber:   0,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
 								},
 							},
 						}
@@ -1147,13 +966,10 @@ var _ = Describe("Reconcile", func() {
 								VirtualController: vimtypes.VirtualController{
 									VirtualDevice: vimtypes.VirtualDevice{
 										ControllerKey: pciControllerKey,
-										SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-											PciSlotNumber: 0,
-										},
 									},
 									BusNumber: 0,
 								},
-								SharedBus: string(vimtypes.VirtualNVMEControllerSharingNoSharing),
+								SharedBus: string(vimtypes.VirtualNVMEControllerSharingPhysicalSharing),
 							},
 						)
 					})
@@ -1197,7 +1013,6 @@ func assertNVMEControllerDeviceChange(
 	index int,
 	expectedOperation vimtypes.VirtualDeviceConfigSpecOperation,
 	busNumber int32,
-	pciSlotNumber *int32,
 	sharingMode vimtypes.VirtualNVMEControllerSharing,
 ) {
 
@@ -1212,11 +1027,6 @@ func assertNVMEControllerDeviceChange(
 	devNVME, ok := dev.Device.(*vimtypes.VirtualNVMEController)
 	Expect(ok).To(BeTrue(), "device is not a VirtualNVMEController")
 	Expect(devNVME.BusNumber).To(Equal(busNumber), "bus number doesn't match")
-	if pciSlotNumber != nil {
-		slotInfo, ok := devNVME.SlotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo)
-		Expect(ok).To(BeTrue(), fmt.Sprintf("slot info is not a VirtualDevicePciBusSlotInfo: %v", devNVME.SlotInfo))
-		Expect(slotInfo.PciSlotNumber).To(Equal(*pciSlotNumber), "PCI slot number doesn't match")
-	}
 	Expect(devNVME.SharedBus).To(Equal(string(sharingMode)), "sharing mode doesn't match")
 }
 
@@ -1225,7 +1035,6 @@ func assertSATAControllerDeviceChange(
 	index int,
 	expectedOperation vimtypes.VirtualDeviceConfigSpecOperation,
 	busNumber int32,
-	pciSlotNumber *int32,
 ) {
 
 	GinkgoHelper()
@@ -1239,11 +1048,6 @@ func assertSATAControllerDeviceChange(
 	devSATA, ok := dev.Device.(*vimtypes.VirtualAHCIController)
 	Expect(ok).To(BeTrue(), "device is not a VirtualAHCIController")
 	Expect(devSATA.BusNumber).To(Equal(busNumber), "bus number doesn't match")
-	if pciSlotNumber != nil {
-		slotInfo, ok := devSATA.SlotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo)
-		Expect(ok).To(BeTrue(), "slot info is not a VirtualDevicePciBusSlotInfo")
-		Expect(slotInfo.PciSlotNumber).To(Equal(*pciSlotNumber), "PCI slot number doesn't match")
-	}
 }
 
 func assertSCSIControllerDeviceChange(
@@ -1251,7 +1055,6 @@ func assertSCSIControllerDeviceChange(
 	index int,
 	expectedOperation vimtypes.VirtualDeviceConfigSpecOperation,
 	busNumber int32,
-	pciSlotNumber *int32,
 	sharingMode vimtypes.VirtualSCSISharing,
 	scsiControllerType vmopv1.SCSIControllerType,
 ) {
@@ -1270,10 +1073,5 @@ func assertSCSIControllerDeviceChange(
 
 	devSCSIController := devSCSI.GetVirtualSCSIController()
 	Expect(devSCSIController.GetVirtualSCSIController().BusNumber).To(Equal(busNumber), "bus number doesn't match")
-	if pciSlotNumber != nil {
-		slotInfo, ok := devSCSIController.SlotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo)
-		Expect(ok).To(BeTrue(), fmt.Sprintf("slot info is not a VirtualDevicePciBusSlotInfo: %v", devSCSIController.SlotInfo))
-		Expect(slotInfo.PciSlotNumber).To(Equal(*pciSlotNumber), "PCI slot number doesn't match")
-	}
 	Expect(devSCSIController.SharedBus).To(Equal(sharingMode), "sharing mode doesn't match")
 }

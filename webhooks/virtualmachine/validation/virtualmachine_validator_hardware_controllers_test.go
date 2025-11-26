@@ -924,41 +924,19 @@ func controllerValidationTests() {
 			})
 
 			DescribeTable("update", validateUpdateTest,
-				Entry("should deny when scsiController pciSlotNumber is updated",
-					testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-								},
-							}
-							ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(1)),
-								},
-							}
-						},
-						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.hardware.scsiControllers[0].pciSlotNumber: Forbidden: updates to this field is not allowed when VM power is on"),
-					},
-				),
 				Entry("should deny when scsiController sharingMode is updated",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-									SharingMode:   vmopv1.VirtualControllerSharingModeNone,
+									BusNumber:   1,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
 								},
 							}
 							ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-									SharingMode:   vmopv1.VirtualControllerSharingModePhysical,
+									BusNumber:   1,
+									SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 								},
 							}
 						},
@@ -971,85 +949,21 @@ func controllerValidationTests() {
 						setup: func(ctx *unitValidatingWebhookContext) {
 							ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-									SharingMode:   vmopv1.VirtualControllerSharingModeNone,
-									Type:          vmopv1.SCSIControllerTypeParaVirtualSCSI,
+									BusNumber:   1,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
+									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
 								},
 							}
 							ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-									SharingMode:   vmopv1.VirtualControllerSharingModeNone,
-									Type:          vmopv1.SCSIControllerTypeBusLogic,
+									BusNumber:   1,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
+									Type:        vmopv1.SCSIControllerTypeBusLogic,
 								},
 							}
 						},
 						expectAllowed: false,
 						validate:      doValidateWithMsg("spec.hardware.scsiControllers[0].type: Forbidden: updates to this field is not allowed when VM power is on"),
-					},
-				),
-				Entry("should deny when sataController pciSlotNumber is updated",
-					testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.oldVM.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-								},
-							}
-							ctx.vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(1)),
-								},
-							}
-						},
-						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.hardware.sataControllers[0].pciSlotNumber: Forbidden: updates to this field is not allowed when VM power is on"),
-					},
-				),
-				Entry("should deny when nvmeControllers pciSlotNumber is updated",
-					testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.oldVM.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-								},
-							}
-							ctx.vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(1)),
-								},
-							}
-						},
-						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.hardware.nvmeControllers[0].pciSlotNumber: Forbidden: updates to this field is not allowed when VM power is on"),
-					},
-				),
-				Entry("should deny when nvmeControllers pciSlotNumber is updated",
-					testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.oldVM.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-									SharingMode:   vmopv1.VirtualControllerSharingModeNone,
-								},
-							}
-							ctx.vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
-								{
-									BusNumber:     1,
-									PCISlotNumber: ptr.To(int32(0)),
-									SharingMode:   vmopv1.VirtualControllerSharingModePhysical,
-								},
-							}
-						},
-						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.hardware.nvmeControllers[0].sharingMode: Forbidden: updates to this field is not allowed when VM power is on"),
 					},
 				),
 			)
@@ -1088,14 +1002,14 @@ func controllerValidationTests() {
 				It("should allow", func() {
 					ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 						{
-							BusNumber:     1,
-							PCISlotNumber: ptr.To(int32(0)),
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
 						},
 					}
 					ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
 						{
-							BusNumber:     1,
-							PCISlotNumber: ptr.To(int32(1)),
+							BusNumber:   1,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 						},
 					}
 

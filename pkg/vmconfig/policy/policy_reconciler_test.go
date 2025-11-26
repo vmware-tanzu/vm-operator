@@ -427,6 +427,10 @@ var _ = Describe("Reconcile", func() {
 						vmconfpolicy.ExtraConfigPolicyTagsKey)
 					recordedPolicies := strings.Split(recordedPolicyCSV, ",")
 					Expect(recordedPolicies).To(ConsistOf(policyTag1ID, policyTag2ID))
+
+					Expect(configSpec.TagSpecs).To(ConsistOf(
+						tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag1ID),
+						tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag2ID)))
 				})
 			})
 
@@ -479,6 +483,11 @@ var _ = Describe("Reconcile", func() {
 						vmconfpolicy.ExtraConfigPolicyTagsKey)
 					recordedPolicies := strings.Split(recordedPolicyCSV, ",")
 					Expect(recordedPolicies).To(ConsistOf(policyTag1ID, policyTag2ID, policyTag3ID))
+
+					Expect(configSpec.TagSpecs).To(ConsistOf(
+						tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag1ID),
+						tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag2ID),
+						tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag3ID)))
 				})
 			})
 		})
@@ -586,8 +595,16 @@ var _ = Describe("Reconcile", func() {
 							// Should only have the non-policy tag
 							Expect(tagIDs).To(ContainElement(vcSimCtx.TagID))
 							Expect(tagIDs).ToNot(ContainElement(policyTag3ID))
+
+							// BMV: I think the test setup for this is a little funky: policyTag3ID
+							// does not look to have a PolicyEval for it, so that's why it isn't here.
+							ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
+								GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
+							Expect(ok).To(BeTrue())
+							Expect(ecTags).To(BeEmpty())
 						})
 					})
+
 					When("the vm is subject to a single policy", func() {
 						When("that policy's tags are already associated with the vm", func() {
 							BeforeEach(func() {
@@ -656,6 +673,8 @@ var _ = Describe("Reconcile", func() {
 								}
 								Expect(finalTagIDs).To(ContainElement(vcSimCtx.TagID))
 								Expect(finalTagIDs).To(ContainElement(policyTag3ID))
+
+								Expect(configSpec.ExtraConfig).To(BeEmpty())
 							})
 						})
 						When("that policy's tags are not already associated with the vm", func() {
@@ -727,6 +746,13 @@ var _ = Describe("Reconcile", func() {
 								// Should have the new policy tags
 								Expect(finalTagIDs).To(ContainElement(policyTag1ID))
 								Expect(finalTagIDs).To(ContainElement(policyTag2ID))
+
+								// Should have new policy tags added
+								ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
+									GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
+								Expect(ok).To(BeTrue())
+								Expect(strings.Split(ecTags, ",")).To(ConsistOf(
+									policyTag1ID, policyTag2ID))
 							})
 						})
 					})
@@ -799,6 +825,13 @@ var _ = Describe("Reconcile", func() {
 								Expect(finalTagIDs).To(ContainElement(policyTag1ID))
 								Expect(finalTagIDs).To(ContainElement(policyTag2ID))
 								Expect(finalTagIDs).To(ContainElement(policyTag3ID))
+
+								// Should have new policy tags added
+								ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
+									GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
+								Expect(ok).To(BeTrue())
+								Expect(strings.Split(ecTags, ",")).To(ConsistOf(
+									policyTag1ID, policyTag2ID, policyTag3ID))
 							})
 						})
 						When("the tags on the vm are for some of the policies", func() {
@@ -867,6 +900,14 @@ var _ = Describe("Reconcile", func() {
 								// Should have the missing policy tags
 								Expect(finalTagIDs).To(ContainElement(policyTag2ID))
 								Expect(finalTagIDs).To(ContainElement(policyTag3ID))
+
+								// Should have existing policyTag1ID, and the two newly added
+								// policyTag2ID and policyTag3ID policies
+								ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
+									GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
+								Expect(ok).To(BeTrue())
+								Expect(strings.Split(ecTags, ",")).To(ConsistOf(
+									policyTag1ID, policyTag2ID, policyTag3ID))
 							})
 						})
 					})
@@ -915,14 +956,15 @@ var _ = Describe("Reconcile", func() {
 						// Ensure VM has no tags
 						initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(len(initialTags)).To(Equal(0))
+						Expect(initialTags).To(BeEmpty())
 
 						err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.ExtraConfig).To(BeEmpty())
 
 						finalTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(len(finalTags)).To(Equal(0))
+						Expect(finalTags).To(BeEmpty())
 
 						// Ensure VM status has no policies.
 						Expect(vm.Status.Policies).To(HaveLen(0))
@@ -930,6 +972,7 @@ var _ = Describe("Reconcile", func() {
 						// Reconcile again so the VM status is updated.
 						err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.ExtraConfig).To(BeEmpty())
 
 						// Ensure VM status still has no policies.
 						Expect(vm.Status.Policies).To(HaveLen(0))
@@ -984,7 +1027,7 @@ var _ = Describe("Reconcile", func() {
 						// Ensure VM starts with no tags
 						initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(len(initialTags)).To(Equal(0))
+						Expect(initialTags).To(BeEmpty())
 
 						err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 						Expect(err).ToNot(HaveOccurred())
@@ -995,6 +1038,11 @@ var _ = Describe("Reconcile", func() {
 						for i, tag := range finalTags {
 							finalTagIDs[i] = tag.ID
 						}
+
+						ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
+							GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
+						Expect(ok).To(BeTrue())
+						Expect(strings.Split(ecTags, ",")).To(ConsistOf(policyTag1ID))
 
 						// Should now have policy tags
 						Expect(len(finalTags)).To(BeNumerically(">", 0))
@@ -1085,7 +1133,7 @@ var _ = Describe("Reconcile", func() {
 						// Ensure VM starts with no tags
 						initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(len(initialTags)).To(Equal(0))
+						Expect(initialTags).To(BeEmpty())
 
 						err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 						Expect(err).ToNot(HaveOccurred())
@@ -1102,6 +1150,12 @@ var _ = Describe("Reconcile", func() {
 						Expect(finalTagIDs).To(ContainElement(policyTag1ID))
 						Expect(finalTagIDs).To(ContainElement(policyTag2ID))
 						Expect(finalTagIDs).To(ContainElement(policyTag3ID))
+
+						ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
+							GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
+						Expect(ok).To(BeTrue())
+						Expect(strings.Split(ecTags, ",")).To(ConsistOf(
+							policyTag1ID, policyTag2ID, policyTag3ID))
 
 						// Ensure the VM status was not updated yet.
 						Expect(vm.Status.Policies).To(HaveLen(0))
@@ -1558,3 +1612,17 @@ var _ = Describe("Reconcile", func() {
 		})
 	})
 })
+
+func tagSpec(
+	op vimtypes.ArrayUpdateOperation, //nolint:unparam
+	uuid string) vimtypes.TagSpec {
+
+	return vimtypes.TagSpec{
+		ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+			Operation: op,
+		},
+		Id: vimtypes.TagId{
+			Uuid: uuid,
+		},
+	}
+}

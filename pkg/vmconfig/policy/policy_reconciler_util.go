@@ -243,5 +243,7 @@ func getTagsFromPolicyEvaluationResults(
 		}
 	}
 
-	return active.UnsortedList()
+	// Return ordered list since we later strings.Join() and
+	// string compare the result.
+	return sets.List(active)
 }

@@ -19,7 +19,9 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -51,6 +53,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
+		Watches(
+			&vspherepolv1.ComputePolicy{},
+			handler.EnqueueRequestsFromMapFunc(
+				computePolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
+		Watches(
+			&vspherepolv1.TagPolicy{},
+			handler.EnqueueRequestsFromMapFunc(
+				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
 		WithOptions(controller.Options{
 			LogConstructor: pkglog.ControllerLogConstructor(
 				controllerNameShort,
@@ -561,6 +571,17 @@ func (r *Reconciler) addComputePolicy(
 	obj *vspherepolv1.PolicyEvaluation,
 	pol vspherepolv1.ComputePolicy) error {
 
+	// Check if this policy is already in the results to avoid duplicates.
+	if slices.ContainsFunc(
+		obj.Status.Policies,
+		func(p vspherepolv1.PolicyEvaluationResult) bool {
+			return p.Name == pol.Name && p.Kind == computePolicyKind
+		}) {
+
+		// Policy already exists, skip adding it again.
+		return nil
+	}
+
 	var tags []string
 	for _, tpn := range pol.Spec.Tags {
 		var (
@@ -576,17 +597,6 @@ func (r *Reconciler) addComputePolicy(
 		tags = append(tags, tp.Spec.Tags...)
 	}
 
-	// Check if this policy is already in the results to avoid duplicates.
-	if slices.ContainsFunc(
-		obj.Status.Policies,
-		func(p vspherepolv1.PolicyEvaluationResult) bool {
-			return p.Name == pol.Name && p.Kind == computePolicyKind
-		}) {
-
-		// Policy already exists, skip adding it again.
-		return nil
-	}
-
 	obj.Status.Policies = append(
 		obj.Status.Policies,
 		vspherepolv1.PolicyEvaluationResult{
@@ -599,4 +609,69 @@ func (r *Reconciler) addComputePolicy(
 	)
 
 	return nil
+}
+
+// computePolicyToPolicyEvaluationMapperFn returns a mapper function that returns
+// the PolicyEvaluations that need to be reconciled for a ComputePolicy event. For
+// now, we just return all the objects in the namespace to force a re-evaluation
+// but it should be smarter: we could see if it matches here (but at the cost of
+// double evaluation), or check the PolicyEval Status.Policies and skip ones that
+// already have this or newer observed Generation.
+func computePolicyToPolicyEvaluationMapperFn(
+	_ context.Context,
+	client ctrlclient.Client) handler.MapFunc {
+
+	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
+		obj := o.(*vspherepolv1.ComputePolicy)
+
+		logger := pkglog.FromContextOrDefault(ctx).WithValues(
+			"computePolicyName", obj.Name, "namespace", obj.Namespace)
+
+		policyEvalList := &vspherepolv1.PolicyEvaluationList{}
+		if err := client.List(
+			ctx,
+			policyEvalList,
+			ctrlclient.InNamespace(obj.Namespace),
+			//
+			// !!! WARNING !!!
+			//
+			// The use of the UnsafeDisableDeepCopy option improves
+			// performance by skipping a CPU-intensive operation, since
+			// there can be a PolicyEvaluation for each VM.
+			ctrlclient.UnsafeDisableDeepCopy); err != nil {
+			logger.Error(err, "Failed to list PolicyEvaluations during ComputePolicy watch mapper")
+			return nil
+		}
+
+		requests := make([]reconcile.Request, 0, len(policyEvalList.Items))
+		for _, policyEval := range policyEvalList.Items {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: ctrlclient.ObjectKey{
+					Namespace: policyEval.Namespace,
+					Name:      policyEval.Name,
+				},
+			})
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling PolicyEvaluations due to ComputePolicy watch",
+				"requests", requests)
+		}
+
+		return requests
+	}
+}
+
+// tagPolicyToPolicyEvaluationMapperFn returns a mapper function that returns
+// the PolicyEvaluations that need to be reconciled for a TagPolicy event.
+func tagPolicyToPolicyEvaluationMapperFn(
+	_ context.Context,
+	_ ctrlclient.Client) handler.MapFunc {
+
+	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
+		// TODO
+		// obj := o.(*vspherepolv1.TagPolicy)
+		return nil
+	}
 }

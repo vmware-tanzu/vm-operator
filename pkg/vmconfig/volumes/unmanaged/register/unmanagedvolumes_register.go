@@ -589,6 +589,9 @@ func ensurePVCForUnmanagedDisk(
 		// Assign the storage class to the PVC.
 		obj.Spec.StorageClassName = &diskInfo.StorageClass
 
+		// Any disks already attached to the VM should be assumed as Block.
+		obj.Spec.VolumeMode = ptr.To(corev1.PersistentVolumeBlock)
+
 		// Set dataSourceRef to point to this VM.
 		obj.Spec.DataSourceRef = &expDSRef
 

@@ -24,6 +24,12 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
+// VMNameToPolicyEvalName returns the name of the PolicyEvaluation for
+// a VM name.
+func VMNameToPolicyEvalName(vmName string) string {
+	return "vm-" + vmName
+}
+
 // getPolicyEvaluationResults evaluates the vsphere.policy.vmware.com resources
 // that apply to the provided VM and returns the results or
 // PolicyEvaluationNotReadyError when the evaluation is not yet complete.
@@ -121,7 +127,7 @@ func getPolicyEvaluationResults(
 	obj := vspherepolv1.PolicyEvaluation{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: vm.Namespace,
-			Name:      "vm-" + vm.Name,
+			Name:      VMNameToPolicyEvalName(vm.Name),
 		},
 	}
 

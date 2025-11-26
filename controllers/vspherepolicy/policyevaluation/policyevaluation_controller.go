@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -30,6 +31,7 @@ import (
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -53,6 +55,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
+		Watches(
+			&vmopv1.VirtualMachine{},
+			handler.EnqueueRequestsFromMapFunc(
+				virtualMachineToPolicyEvaluationMapperFn(ctx, r.Client))).
 		Watches(
 			&vspherepolv1.ComputePolicy{},
 			handler.EnqueueRequestsFromMapFunc(
@@ -609,6 +615,27 @@ func (r *Reconciler) addComputePolicy(
 	)
 
 	return nil
+}
+
+// virtualMachineToPolicyEvaluationMapperFn returns a mapper functon that returns
+// the PolicyEvaluation that needs to be reconciled for a VirtualMachine event,
+// such as labels change, or explicit policy change in the VM Spec.Policies.
+func virtualMachineToPolicyEvaluationMapperFn(
+	_ context.Context,
+	_ ctrlclient.Client) handler.MapFunc {
+
+	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
+		obj := o.(*vmopv1.VirtualMachine)
+
+		return []reconcile.Request{
+			{
+				NamespacedName: ctrlclient.ObjectKey{
+					Namespace: obj.Namespace,
+					Name:      vmconfpolicy.VMNameToPolicyEvalName(obj.Name),
+				},
+			},
+		}
+	}
 }
 
 // computePolicyToPolicyEvaluationMapperFn returns a mapper function that returns

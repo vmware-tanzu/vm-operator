@@ -1373,7 +1373,6 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 func cnsAttachmentForVMVolume(
 	vm *vmopv1.VirtualMachine,
 	vmVol vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
-	t := true
 	return &cnsv1alpha1.CnsNodeVmAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.CNSAttachmentNameForVolume(vm.Name, vmVol.Name),
@@ -1384,8 +1383,8 @@ func cnsAttachmentForVMVolume(
 					Kind:               "VirtualMachine",
 					Name:               vm.Name,
 					UID:                vm.UID,
-					Controller:         &t,
-					BlockOwnerDeletion: &t,
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				},
 			},
 		},

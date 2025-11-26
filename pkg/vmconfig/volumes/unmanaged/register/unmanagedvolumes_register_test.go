@@ -396,6 +396,8 @@ var _ = Describe("Reconcile", func() {
 					// Verify PVC properties
 					Expect(pvc.Spec.StorageClassName).ToNot(BeNil())
 					Expect(*pvc.Spec.StorageClassName).To(Equal("my-storage-class-1"))
+					Expect(pvc.Spec.VolumeMode).ToNot(BeNil())
+					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeBlock))
 					Expect(pvc.Spec.DataSourceRef).ToNot(BeNil())
 					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))
@@ -505,6 +507,8 @@ var _ = Describe("Reconcile", func() {
 					// Verify PVC properties
 					Expect(pvc.Spec.StorageClassName).ToNot(BeNil())
 					Expect(*pvc.Spec.StorageClassName).To(Equal("my-storage-class-1"))
+					Expect(pvc.Spec.VolumeMode).ToNot(BeNil())
+					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeBlock))
 					Expect(pvc.Spec.DataSourceRef).ToNot(BeNil())
 					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))

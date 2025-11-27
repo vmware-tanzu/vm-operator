@@ -24,6 +24,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
+// ExtraConfigPolicyTagsKey is the ExtraConfig key that contains the tag
+// UUIDs that we have applied from the VM's PolicyEvaluation, so can later
+// only remove tags that we have applied.
 const ExtraConfigPolicyTagsKey = "vmservice.policy.tags"
 
 // ErrPolicyNotReady is returned by the reconciler when the evaluated policy is
@@ -97,7 +100,6 @@ func (r reconciler) Reconcile(
 		vm,
 		moVM,
 		*configSpec)
-
 	if err != nil {
 		return fmt.Errorf("failed to evaluate policy: %w", err)
 	}
@@ -111,8 +113,6 @@ func (r reconciler) Reconcile(
 
 		logger = pkglog.FromContextOrDefault(ctx)
 	)
-
-	mgr := tags.NewManager(restClient)
 
 	shouldBe = getTagsFromPolicyEvaluationResults(results...)
 
@@ -148,10 +148,18 @@ func (r reconciler) Reconcile(
 		"toAdd", toAdd,
 		"toRem", toRem)
 
-	// TODO(akutz) Update this to the new field that takes Tags in the
-	//             ConfigSpec once it is available. For now we will use
-	//             this for testing.
 	if moVM.Config == nil {
+		for _, tag := range toAdd {
+			configSpec.TagSpecs = append(configSpec.TagSpecs, vimtypes.TagSpec{
+				ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+					Operation: vimtypes.ArrayUpdateOperationAdd,
+				},
+				Id: vimtypes.TagId{
+					Uuid: tag,
+				},
+			})
+		}
+
 		configSpec.ExtraConfig = append(configSpec.ExtraConfig,
 			&vimtypes.OptionValue{
 				Key:   ExtraConfigPolicyTagsKey,
@@ -159,6 +167,8 @@ func (r reconciler) Reconcile(
 			},
 		)
 	} else {
+		mgr := tags.NewManager(restClient)
+
 		if len(toRem) > 0 {
 			if err := mgr.DetachMultipleTagsFromObject(
 				ctx,
@@ -182,7 +192,7 @@ func (r reconciler) Reconcile(
 		if len(toAdd) > 0 || len(toRem) > 0 {
 			var (
 				ec    = object.OptionValueList(moVM.Config.ExtraConfig)
-				ev    = strings.Join(toAdd, ",")
+				ev    = strings.Join(shouldBe, ",")
 				av, _ = ec.GetString(ExtraConfigPolicyTagsKey)
 			)
 

@@ -1197,6 +1197,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 										Tags: []string{policyTag1ID, policyTag2ID},
 									},
 								},
+								Conditions: []metav1.Condition{
+									*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+								},
 							},
 						}
 
@@ -1266,6 +1269,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 										Kind: "ComputePolicy",
 										Tags: []string{policyTag1ID},
 									},
+								},
+								Conditions: []metav1.Condition{
+									*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
 								},
 							},
 						}

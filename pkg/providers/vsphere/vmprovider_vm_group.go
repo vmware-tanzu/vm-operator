@@ -6,12 +6,14 @@ package vsphere
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
@@ -19,12 +21,24 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 )
 
 type vmGroupPlacementArgs struct {
 	configSpecs           []vimtypes.VirtualMachineConfigSpec
 	childResourcePoolName string
 }
+
+const (
+	vmKind = "VirtualMachine"
+)
+
+var (
+	// ErrVMGroupPlacementConfigSpec is the error returned when not all VMs in the group
+	// placement were able to get their placement ConfigSpec, so group placement could not
+	// be done.
+	ErrVMGroupPlacementConfigSpec = errors.New("failed to get all VM placement ConfigSpecs")
+)
 
 func (vs *vSphereVMProvider) PlaceVirtualMachineGroup(
 	ctx context.Context,
@@ -66,6 +80,7 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 
 	placementArgs := &vmGroupPlacementArgs{}
 	firstVM := true
+	var errs []error
 
 	for _, grpPlacement := range groupPlacements {
 		for _, vm := range grpPlacement.VMMembers {
@@ -82,26 +97,61 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 
 			createArgs, err := vs.vmGroupGetVMCreatePrereqs(vmCtx, vcClient)
 			if err != nil {
-				return nil, err
+				err := fmt.Errorf("failed to get VM placement prereqs: %w", err)
+				setVMPlacementReadyCondErr(grpPlacement.VMGroup, vm, err)
+				errs = append(errs, err)
+				continue
 			}
 
 			if firstVM {
 				placementArgs.childResourcePoolName = createArgs.ChildResourcePoolName
 				firstVM = false
 			} else if placementArgs.childResourcePoolName != createArgs.ChildResourcePoolName {
-				return nil, fmt.Errorf("all VMs being placed as group must belong to same child ResourcePool")
+				// Since PlaceVmsXCluster only takes a single list of candidate RPs, all the VMs
+				// must have the same child name.
+				err := errors.New("all VMs being placed as group must belong to same child ResourcePool")
+				setVMPlacementReadyCondErr(grpPlacement.VMGroup, vm, err)
+				errs = append(errs, err)
+				continue
 			}
 
-			configSpec, err := vs.vmGroupGetVMPlacementConfigSpec(vmCtx, createArgs)
+			configSpec, err := vs.vmGroupGetVMPlacementConfigSpec(vmCtx, vcClient, createArgs)
 			if err != nil {
-				return nil, err
+				err := fmt.Errorf("failed to get VM placement ConfigSpec: %w", err)
+				setVMPlacementReadyCondErr(grpPlacement.VMGroup, vm, err)
+				errs = append(errs, err)
+				continue
 			}
+
+			memberStatus := getOrAddVMMemberStatus(grpPlacement.VMGroup, vm)
+			pkgcond.MarkFalse(
+				memberStatus,
+				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+				"PendingPlacement",
+				"")
 
 			placementArgs.configSpecs = append(placementArgs.configSpecs, *configSpec)
 		}
 	}
 
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("%w: %w", ErrVMGroupPlacementConfigSpec, errors.Join(errs...))
+	}
+
 	return placementArgs, nil
+}
+
+func setVMPlacementReadyCondErr(
+	vmGroup *vmopv1.VirtualMachineGroup,
+	vm *vmopv1.VirtualMachine,
+	err error) {
+
+	memberStatus := getOrAddVMMemberStatus(vmGroup, vm)
+	pkgcond.MarkError(
+		memberStatus,
+		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+		"NotReady",
+		err)
 }
 
 func (vs *vSphereVMProvider) vmGroupGetVMCreatePrereqs(
@@ -141,6 +191,7 @@ func (vs *vSphereVMProvider) vmGroupGetVMCreatePrereqs(
 
 func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
 
 	if err := vs.vmCreateGenConfigSpec(vmCtx, createArgs); err != nil {
@@ -149,6 +200,20 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 
 	{
 		// Partial vmCreateDoPlacement():
+
+		if pkgcfg.FromContext(vmCtx).Features.VSpherePolicies {
+			if err := vmconfpolicy.Reconcile(
+				pkgctx.WithRestClient(vmCtx, vcClient.RestClient()),
+				vs.k8sClient,
+				vcClient.Client.VimClient(),
+				vmCtx.VM,
+				vmCtx.MoVM,
+				&createArgs.ConfigSpec); err != nil {
+
+				return nil, fmt.Errorf(
+					"failed to reconcile vSphere policies for placement: %w", err)
+			}
+		}
 
 		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
@@ -192,32 +257,35 @@ func applyPlacementResultsToGroups(
 				return fmt.Errorf("no placement result for VM %s in group %s", vm.Name, vmGroup.Name)
 			}
 
-			idx := findVMMemberStatus(vm.Name, vmGroup.Status.Members)
-			if idx < 0 {
-				m := vmopv1.VirtualMachineGroupMemberStatus{
-					Name: vm.Name,
-					Kind: "VirtualMachine",
-				}
-				vmGroup.Status.Members = append(vmGroup.Status.Members, m)
-				idx = len(vmGroup.Status.Members) - 1
-			}
-
-			vmGroup.Status.Members[idx].Placement = placeResultToGroupMemberPlacement(&result)
+			memberStatus := getOrAddVMMemberStatus(vmGroup, vm)
+			memberStatus.Placement = placeResultToGroupMemberPlacement(&result)
 			// TODO: Clear this on failure for the root group
-			pkgcond.MarkTrue(&vmGroup.Status.Members[idx], vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+			pkgcond.MarkTrue(memberStatus, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
 		}
 	}
 
 	return nil
 }
 
-func findVMMemberStatus(vmName string, members []vmopv1.VirtualMachineGroupMemberStatus) int {
-	for i := range members {
-		if members[i].Name == vmName && members[i].Kind == "VirtualMachine" {
-			return i
+func getOrAddVMMemberStatus(
+	vmGroup *vmopv1.VirtualMachineGroup,
+	vm *vmopv1.VirtualMachine) *vmopv1.VirtualMachineGroupMemberStatus {
+
+	for i, m := range vmGroup.Status.Members {
+		if m.Kind == vmKind && m.Name == vm.Name && m.UID == vm.UID {
+			return &vmGroup.Status.Members[i]
 		}
 	}
-	return -1
+
+	vmGroup.Status.Members = append(vmGroup.Status.Members,
+		vmopv1.VirtualMachineGroupMemberStatus{
+			Name: vm.Name,
+			Kind: vmKind,
+			UID:  vm.UID,
+		},
+	)
+
+	return &vmGroup.Status.Members[len(vmGroup.Status.Members)-1]
 }
 
 func placeResultToGroupMemberPlacement(

@@ -76,12 +76,6 @@ func newNVMEController(
 		SharedBus: string(sharingModeToNVMEControllerSharing(ctx, spec.SharingMode)),
 	}
 
-	if spec.PCISlotNumber != nil {
-		controller.GetVirtualDevice().SlotInfo = &vimtypes.VirtualDevicePciBusSlotInfo{
-			PciSlotNumber: *spec.PCISlotNumber,
-		}
-	}
-
 	return controller
 }
 
@@ -107,12 +101,6 @@ func newSATAController(
 				BusNumber: spec.BusNumber,
 			},
 		},
-	}
-
-	if spec.PCISlotNumber != nil {
-		controller.GetVirtualDevice().SlotInfo = &vimtypes.VirtualDevicePciBusSlotInfo{
-			PciSlotNumber: *spec.PCISlotNumber,
-		}
 	}
 
 	return controller
@@ -185,13 +173,6 @@ func newSCSIController(
 				SharedBus: sharingModeToSCSIVimTypes(ctx, spec.SharingMode),
 			},
 		}
-	}
-
-	if spec.PCISlotNumber != nil {
-		controller.GetVirtualSCSIController().GetVirtualDevice().SlotInfo =
-			&vimtypes.VirtualDevicePciBusSlotInfo{
-				PciSlotNumber: *spec.PCISlotNumber,
-			}
 	}
 
 	return controller
@@ -345,7 +326,9 @@ func diffSATAControllerByBusNumber(
 	toRemove []*vimtypes.VirtualAHCIController,
 ) {
 
-	return diffByBusNumber(ctx, existing, desired, sataDeviceMatchSpec, editSATAController)
+	// No match and edit function, since we only expose bus number,
+	// which is immutable.
+	return diffByBusNumber(ctx, existing, desired, nil, nil)
 }
 
 // diffSCSIControllerByBusNumber compares two maps keyed by bus number by
@@ -371,12 +354,6 @@ func editNVMEController(
 	spec vmopv1.NVMEControllerSpec,
 ) (needRecreate bool) {
 
-	if spec.PCISlotNumber != nil {
-		dev.GetVirtualDevice().SlotInfo = &vimtypes.VirtualDevicePciBusSlotInfo{
-			PciSlotNumber: *spec.PCISlotNumber,
-		}
-	}
-
 	if dev.SharedBus != string(sharingModeToNVMEControllerSharing(ctx, spec.SharingMode)) {
 		dev.SharedBus = string(sharingModeToNVMEControllerSharing(ctx, spec.SharingMode))
 	}
@@ -394,62 +371,7 @@ func nvmeDeviceMatchSpec(
 	spec vmopv1.NVMEControllerSpec,
 ) bool {
 
-	if pciSlotNumberMatch(spec.PCISlotNumber, dev.SlotInfo) &&
-		string(sharingModeToNVMEControllerSharing(ctx, spec.SharingMode)) == dev.SharedBus {
-		return true
-	}
-
-	return false
-}
-
-// pciSlotNumberMatch checks if the PCI slot number matches the spec.
-// Match when:
-// - Spec's slot number is nil, which indicates the system selects the slot.
-// - Both the spec and the device have PCI slot number and are equal.
-func pciSlotNumberMatch(slotNumber *int32, slotInfo vimtypes.BaseVirtualDeviceBusSlotInfo) bool {
-	if slotNumber == nil {
-		return true
-	}
-
-	if slotInfo != nil {
-		pciSlotInfo, ok := slotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo)
-		if !ok {
-			return false
-		}
-		return *slotNumber == pciSlotInfo.PciSlotNumber
-	}
-
-	return false
-}
-
-// sataDeviceMatchSpec checks if the device matches the spec.
-// Only match when:
-// - PCI slot number matches.
-func sataDeviceMatchSpec(
-	_ context.Context,
-	dev *vimtypes.VirtualAHCIController,
-	spec vmopv1.SATAControllerSpec,
-) bool {
-
-	return pciSlotNumberMatch(spec.PCISlotNumber, dev.SlotInfo)
-}
-
-// editSATAController edits the device to match the spec.
-// Modify the PCI slot number if needed.
-// Return bool to indicate that the device needs to be recreated.
-func editSATAController(
-	_ context.Context,
-	dev *vimtypes.VirtualAHCIController,
-	spec vmopv1.SATAControllerSpec,
-) (needRecreate bool) {
-
-	if spec.PCISlotNumber != nil {
-		dev.GetVirtualDevice().SlotInfo = &vimtypes.VirtualDevicePciBusSlotInfo{
-			PciSlotNumber: *spec.PCISlotNumber,
-		}
-	}
-
-	return false
+	return string(sharingModeToNVMEControllerSharing(ctx, spec.SharingMode)) == dev.SharedBus
 }
 
 // scsiDeviceMatchSpec checks if the device matches the spec.
@@ -464,8 +386,7 @@ func scsiDeviceMatchSpec(
 
 	scsi := dev.GetVirtualSCSIController()
 
-	return pciSlotNumberMatch(spec.PCISlotNumber, scsi.SlotInfo) &&
-		sharingModeToSCSIVimTypes(ctx, spec.SharingMode) == scsi.SharedBus &&
+	return sharingModeToSCSIVimTypes(ctx, spec.SharingMode) == scsi.SharedBus &&
 		SCSIControllerTypeMatch(dev, spec.Type)
 }
 
@@ -499,13 +420,6 @@ func editSCSIController(
 		// A recreate is needed, return true and let the caller remove
 		// the existing device and add the new one.
 		return true
-	}
-
-	if spec.PCISlotNumber != nil {
-		dev.GetVirtualSCSIController().GetVirtualDevice().SlotInfo =
-			&vimtypes.VirtualDevicePciBusSlotInfo{
-				PciSlotNumber: *spec.PCISlotNumber,
-			}
 	}
 
 	if dev.GetVirtualSCSIController().SharedBus != sharingModeToSCSIVimTypes(ctx, spec.SharingMode) {

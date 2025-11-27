@@ -91,15 +91,6 @@ type NVMEControllerSpec struct {
 	BusNumber int32 `json:"busNumber"`
 
 	// +optional
-
-	// PCISlotNumber describes the desired PCI slot number to use for this
-	// controller.
-	//
-	// Please note, most of the time this field should be empty so the system
-	// can pick an available slot.
-	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
-
-	// +optional
 	// +kubebuilder:default=None
 	// +kubebuilder:validation:Enum=None;Physical
 
@@ -131,15 +122,6 @@ type SATAControllerSpec struct {
 
 	// BusNumber describes the desired bus number of the controller.
 	BusNumber int32 `json:"busNumber"`
-
-	// +optional
-
-	// PCISlotNumber describes the desired PCI slot number to use for this
-	// controller.
-	//
-	// Please note, most of the time this field should be empty so the system
-	// can pick an available slot.
-	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
 }
 
 // MaxSlots returns the maximum number of slots per SATA controller.
@@ -164,15 +146,6 @@ type SCSIControllerSpec struct {
 
 	// BusNumber describes the desired bus number of the controller.
 	BusNumber int32 `json:"busNumber"`
-
-	// +optional
-
-	// PCISlotNumber describes the desired PCI slot number to use for this
-	// controller.
-	//
-	// Please note, most of the time this field should be empty so the system
-	// can pick an available slot.
-	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
 
 	// +optional
 	// +kubebuilder:default=None

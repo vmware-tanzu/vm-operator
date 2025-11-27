@@ -221,13 +221,6 @@ func initSpecHardware(vm *vmopv1.VirtualMachine) {
 	}
 }
 
-func getPCISlot(i vimtypes.BaseVirtualDeviceBusSlotInfo) *int32 {
-	if pi, ok := i.(*vimtypes.VirtualDevicePciBusSlotInfo); ok {
-		return ptr.To(pi.PciSlotNumber)
-	}
-	return nil
-}
-
 func reconcileIDEController(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
@@ -291,10 +284,6 @@ func reconcileNVMEController(
 	case string(vimtypes.VirtualNVMEControllerSharingPhysicalSharing):
 		newController.SharingMode = vmopv1.VirtualControllerSharingModePhysical
 	}
-	if pi, ok := dev.SlotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo); ok {
-		newController.PCISlotNumber = ptr.To(pi.PciSlotNumber)
-	}
-	newController.PCISlotNumber = getPCISlot(dev.SlotInfo)
 
 	vm.Spec.Hardware.NVMEControllers = append(
 		vm.Spec.Hardware.NVMEControllers,
@@ -330,10 +319,6 @@ func reconcileSATAController(
 	newController := vmopv1.SATAControllerSpec{
 		BusNumber: dev.BusNumber,
 	}
-	if pi, ok := dev.SlotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo); ok {
-		newController.PCISlotNumber = ptr.To(pi.PciSlotNumber)
-	}
-	newController.PCISlotNumber = getPCISlot(dev.SlotInfo)
 
 	vm.Spec.Hardware.SATAControllers = append(
 		vm.Spec.Hardware.SATAControllers,
@@ -369,8 +354,7 @@ func reconcileSCSIController(
 	initSpecHardware(vm)
 
 	newController := vmopv1.SCSIControllerSpec{
-		BusNumber:     baseController.BusNumber,
-		PCISlotNumber: getPCISlot(baseController.SlotInfo),
+		BusNumber: baseController.BusNumber,
 	}
 
 	switch baseController.SharedBus {

@@ -346,9 +346,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 									VirtualController: vimtypes.VirtualController{
 										VirtualDevice: vimtypes.VirtualDevice{
 											Key: 300,
-											SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-												PciSlotNumber: 32,
-											},
 										},
 										BusNumber: 0,
 									},
@@ -364,7 +361,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 						controller := vm.Spec.Hardware.NVMEControllers[0]
 						Expect(controller.BusNumber).To(Equal(int32(0)))
 						Expect(controller.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
-						Expect(controller.PCISlotNumber).To(HaveValue(Equal(int32(32))))
 					})
 
 					When("NVME controller already exists in VM spec", func() {
@@ -400,9 +396,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 										VirtualController: vimtypes.VirtualController{
 											VirtualDevice: vimtypes.VirtualDevice{
 												Key: 400,
-												SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-													PciSlotNumber: 33,
-												},
 											},
 											BusNumber: 0,
 										},
@@ -417,7 +410,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 						Expect(vm.Spec.Hardware.SATAControllers).To(HaveLen(1))
 						controller := vm.Spec.Hardware.SATAControllers[0]
 						Expect(controller.BusNumber).To(Equal(int32(0)))
-						Expect(controller.PCISlotNumber).To(HaveValue(Equal(int32(33))))
 					})
 
 					When("SATA controller already exists in VM spec", func() {
@@ -444,9 +436,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 											VirtualController: vimtypes.VirtualController{
 												VirtualDevice: vimtypes.VirtualDevice{
 													Key: 1000,
-													SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
-														PciSlotNumber: 16,
-													},
 												},
 												BusNumber: 0,
 											},
@@ -464,7 +453,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 							Expect(controller.BusNumber).To(Equal(int32(0)))
 							Expect(controller.Type).To(Equal(vmopv1.SCSIControllerTypeParaVirtualSCSI))
 							Expect(controller.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
-							Expect(controller.PCISlotNumber).To(HaveValue(Equal(int32(16))))
 						})
 					})
 

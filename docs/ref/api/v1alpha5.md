@@ -457,8 +457,6 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
-| `pciSlotNumber` _integer_ | PCISlotNumber describes the desired PCI slot number to use for this
-controller.
 
 Please note, most of the time this field should be empty so the system
 can pick an available slot. |
@@ -717,8 +715,6 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
-| `pciSlotNumber` _integer_ | PCISlotNumber describes the desired PCI slot number to use for this
-controller.
 
 Please note, most of the time this field should be empty so the system
 can pick an available slot. |
@@ -735,8 +731,6 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
-| `pciSlotNumber` _integer_ | PCISlotNumber describes the desired PCI slot number to use for this
-controller.
 
 Please note, most of the time this field should be empty so the system
 can pick an available slot. |
@@ -4196,4 +4190,3 @@ VolumeType describes the type of a VirtualMachine volume.
 _Appears in:_
 - [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
-

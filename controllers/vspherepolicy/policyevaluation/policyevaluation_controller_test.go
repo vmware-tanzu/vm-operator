@@ -1994,7 +1994,7 @@ var _ = Describe("Reconcile", func() {
 
 						result, err := reconciler.Reconcile(ctx, req)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory policies"))
+						Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory compute policies"))
 						Expect(result).To(Equal(ctrl.Result{}))
 					})
 				})
@@ -2078,7 +2078,7 @@ var _ = Describe("Reconcile", func() {
 
 				result, err := reconciler.Reconcile(ctx, req)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory policies"))
+				Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory compute policies"))
 				Expect(err.Error()).To(ContainSubstring("failed to list compute policies"))
 				Expect(result).To(Equal(ctrl.Result{}))
 			})

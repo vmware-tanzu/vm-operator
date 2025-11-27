@@ -42,6 +42,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	vmconfanno2extraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/anno2extraconfig"
 	vmconfbootoptions "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
+	vmconfcdrom "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/cdrom"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
@@ -632,7 +633,7 @@ func (s *Session) getConfigSpecForPoweredOffVM(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
-	cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
+	cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChangesLegacy(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
 	if err != nil {
 		return nil, false, fmt.Errorf("update CD-ROM device changes error: %w", err)
 	}
@@ -1254,6 +1255,25 @@ func reconcileVirtualControllers(
 	return nil
 }
 
+func reconcileCdrom(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling CD-ROM devices")
+
+	return vmconfcdrom.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1338,6 +1358,17 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
 		if err := reconcileVirtualControllers(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+
+		if err := reconcileCdrom(
 			ctx,
 			k8sClient,
 			vm,

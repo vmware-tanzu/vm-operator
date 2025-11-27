@@ -1133,10 +1133,7 @@ func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	if ctx.IsVMOperatorAccount {
-		// TODO(akutz): This can be removed after we merge the implementations
-		// of reconcileBackfillUnmanagedDisks and reconcileSchemaUpgrade
-		// in vmprovider_vm.go into a single patch of the VM CRD.
+	if oldVM != nil && !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
 		return nil
 	}
 
@@ -2288,7 +2285,9 @@ func (v validator) validateCdrom(
 				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
 			}
 		} else {
-			allErrs = append(allErrs, v.validateCdromControllerSpecsOnUpdate(newCD, f)...)
+			if vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *newVM) {
+				allErrs = append(allErrs, v.validateCdromControllerSpecsOnUpdate(newCD, f)...)
+			}
 		}
 	}
 

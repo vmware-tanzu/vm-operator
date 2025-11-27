@@ -7474,7 +7474,6 @@ spec:
                               - SATA
                               type: string
                             diskMode:
-                              default: Persistent
                               description: |-
                                 DiskMode describes the desired mode to use when attaching the volume.
 
@@ -7484,7 +7483,9 @@ spec:
                                 Also, any data written to volumes attached as IndependentNonPersistent or
                                 NonPersistent will be discarded when the VM is powered off.
 
-                                Defaults to Persistent.
+                                When applicationType=OracleRAC or applicationType=MicrosoftWSFC, this
+                                field defaults to IndependentPersistent.
+                                Otherwise, defaults to Persistent.
                               enum:
                               - IndependentNonPersistent
                               - IndependentPersistent
@@ -7540,11 +7541,10 @@ spec:
                               - claimName
                               type: object
                             sharingMode:
-                              default: None
                               description: |-
                                 SharingMode describes the volume's desired sharing mode.
 
-                                When applicationType=OracleRAC, the field defaults to MultiWriter.
+                                When applicationType=OracleRAC, this field defaults to MultiWriter.
                                 Otherwise, defaults to None.
                               enum:
                               - MultiWriter

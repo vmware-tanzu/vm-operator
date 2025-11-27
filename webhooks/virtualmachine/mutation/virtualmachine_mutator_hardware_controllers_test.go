@@ -37,6 +37,17 @@ func controllerTests() {
 		),
 		controllerMutationTests,
 	)
+
+	Describe(
+		"AddControllersForVolumes with AllDisksArePVCs",
+		Label(
+			testlabels.Create,
+			testlabels.Update,
+			testlabels.Mutation,
+			testlabels.Webhook,
+		),
+		controllerMutationTestsWithAllDisksArePVCs,
+	)
 }
 
 // controllerTestParams defines the parameters for controller type agnostic tests.
@@ -154,12 +165,34 @@ func controllerMutationTests() {
 		})
 	})
 
-	testNilHardware(func() *unitMutationWebhookContext { return ctx })
-	testControllerTypeAgnostic(func() *unitMutationWebhookContext { return ctx })
-	testSCSISharingMode(func() *unitMutationWebhookContext { return ctx })
-	testMultipleControllerTypes(func() *unitMutationWebhookContext { return ctx })
-	testSetPVCVolumesDefaults(func() *unitMutationWebhookContext { return ctx })
-	testSchemaUpgradeCheck(func() *unitMutationWebhookContext { return ctx })
+	runControllerTests(func() *unitMutationWebhookContext { return ctx })
+}
+
+// Test the same controller mutations with AllDisksArePVCs feature gate instead of VMSharedDisks.
+func controllerMutationTestsWithAllDisksArePVCs() {
+	var (
+		ctx *unitMutationWebhookContext
+	)
+
+	BeforeEach(func() {
+		ctx = newUnitTestContextForMutatingWebhook()
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.AllDisksArePVCs = true
+			config.Features.VMSharedDisks = false
+		})
+	})
+
+	runControllerTests(func() *unitMutationWebhookContext { return ctx })
+}
+
+// runControllerTests runs all controller-related tests with the provided context.
+func runControllerTests(getCtx func() *unitMutationWebhookContext) {
+	testNilHardware(getCtx)
+	testControllerTypeAgnostic(getCtx)
+	testSCSISharingMode(getCtx)
+	testMultipleControllerTypes(getCtx)
+	testSetPVCVolumesDefaults(getCtx)
+	testSchemaUpgradeCheck(getCtx)
 }
 
 func testNilHardware(getCtx func() *unitMutationWebhookContext) {
@@ -1316,12 +1349,12 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 		})
 
 		When("vm has pvc and it doesn't have application type", func() {
-			It("should not set any defaults", func() {
+			It("should set default disk mode and sharing mode", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(wasMutated).To(BeFalse())
+				Expect(wasMutated).To(BeTrue())
 				Expect(vm.Spec.Volumes[0].ApplicationType).To(BeEmpty())
-				Expect(vm.Spec.Volumes[0].DiskMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
+				Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModePersistent))
+				Expect(vm.Spec.Volumes[0].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
 			})
 		})
 
@@ -1343,7 +1376,7 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 					vm.Spec.Volumes[0].SharingMode = vmopv1.VolumeSharingModeNone
 				})
 
-				It("should not set default disk and sharing modes if already set", func() {
+				It("should not override user-specified disk and sharing modes", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(wasMutated).To(BeFalse())
 					Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeNonPersistent))
@@ -1361,7 +1394,7 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wasMutated).To(BeTrue())
 				Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
-				Expect(vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
+				Expect(vm.Spec.Volumes[0].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
 			})
 
 			When("disk mode is already set", func() {
@@ -1369,37 +1402,11 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 					vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeNonPersistent
 				})
 
-				It("should not set default disk mode if already set", func() {
+				It("should not override user-specified disk mode", func() {
 					Expect(err).ToNot(HaveOccurred())
-					Expect(wasMutated).To(BeFalse())
+					Expect(wasMutated).To(BeTrue())
 					Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeNonPersistent))
 				})
-			})
-		})
-
-		When("vm has pvc and it has application type other than OracleRAC or MicrosoftWSFC", func() {
-			BeforeEach(func() {
-				vm.Spec.Volumes[0].ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
-				vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-					Name: "test-volume-2",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: "test-pvc-2",
-							},
-						},
-					},
-					ApplicationType: "invalid",
-				})
-			})
-
-			It("should return error with unsupported application type", func() {
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(
-					"spec[1].applicationType: " +
-						"Unsupported value: \"invalid\":" +
-						" supported values: \"OracleRAC\", \"MicrosoftWSFC\""))
-				Expect(wasMutated).To(BeFalse())
 			})
 		})
 
@@ -1437,9 +1444,9 @@ func testSetPVCVolumesDefaults(getCtx func() *unitMutationWebhookContext) {
 				Expect(vm.Spec.Volumes[0].DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
 				Expect(vm.Spec.Volumes[0].SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
 				Expect(vm.Spec.Volumes[1].DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
-				Expect(vm.Spec.Volumes[1].SharingMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[2].DiskMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[2].SharingMode).To(BeEmpty())
+				Expect(vm.Spec.Volumes[1].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
+				Expect(vm.Spec.Volumes[2].DiskMode).To(Equal(vmopv1.VolumeDiskModePersistent))
+				Expect(vm.Spec.Volumes[2].SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
 			})
 		})
 
@@ -1482,13 +1489,15 @@ func testSchemaUpgradeCheck(getCtx func() *unitMutationWebhookContext) {
 
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = true
-				config.BuildVersion = "v1"
+				config.BuildVersion = testBuildVersion
 			})
 		})
 
 		simulateUpdateWithoutSchemaUpgrade := func() {
+			ctx.vm.Annotations = nil
+
+			// oldVM doesn't matter for the schema upgrade check
 			oldVM := ctx.vm.DeepCopy()
-			oldVM.Annotations = nil
 
 			oldObj, err := builder.ToUnstructured(oldVM)
 			Expect(err).ToNot(HaveOccurred())

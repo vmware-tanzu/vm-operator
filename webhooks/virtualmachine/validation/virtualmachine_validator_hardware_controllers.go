@@ -53,6 +53,10 @@ func (v validator) validateControllers(
 		return nil
 	}
 
+	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *vm) {
+		return nil
+	}
+
 	if vm.Spec.Hardware == nil {
 		return nil
 	}

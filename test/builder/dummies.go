@@ -971,3 +971,24 @@ func DummyCnsNodeVMAttachment(name, namespace, nodeUUID, volumeName, diskUUID st
 		},
 	}
 }
+
+// DummyClassicVirtualMachineVolume returns a dummy VirtualMachineVolume for a classic disk.
+// Classic disks have controller placement information but no PersistentVolumeClaim source.
+func DummyClassicVirtualMachineVolume(
+	name string,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32,
+	unitNumber *int32) vmopv1.VirtualMachineVolume {
+	return vmopv1.VirtualMachineVolume{
+		Name: name,
+		VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+			// Classic disks do not have a PersistentVolumeClaim source
+			PersistentVolumeClaim: nil,
+		},
+		ControllerType:      controllerType,
+		ControllerBusNumber: controllerBusNumber,
+		UnitNumber:          unitNumber,
+		DiskMode:            vmopv1.VolumeDiskModePersistent,
+		SharingMode:         vmopv1.VolumeSharingModeNone,
+	}
+}

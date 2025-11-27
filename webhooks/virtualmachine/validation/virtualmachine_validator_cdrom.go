@@ -59,8 +59,27 @@ func (v validator) validateControllerSpecOnUpdate(
 			field.Required(fieldPath.Child("unitNumber"), ""))
 	}
 
-	// Only validate ranges if all required fields are present.
-	if cdrom.ControllerType == "" || cdrom.ControllerBusNumber == nil ||
+	// If any required field is missing, return early
+	if len(allErrs) > 0 {
+		return allErrs
+	}
+
+	allErrs = append(allErrs, validateControllerTypeAndRanges(cdrom, fieldPath)...)
+
+	return allErrs
+}
+
+// validateControllerTypeAndRanges validates that the controller type is supported
+// (IDE or SATA) and that the bus number and unit number are within valid ranges
+// for the specified controller type.
+func validateControllerTypeAndRanges(
+	cdrom vmopv1.VirtualMachineCdromSpec,
+	fieldPath *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if cdrom.ControllerType == "" ||
+		cdrom.ControllerBusNumber == nil ||
 		cdrom.UnitNumber == nil {
 		return allErrs
 	}
@@ -106,6 +125,15 @@ func (v validator) validateControllerSpecOnUpdate(
 					ctrlType,
 					(vmopv1.SATAControllerSpec{}).MaxSlots()-1)))
 		}
+	default:
+		// Reject unsupported controller types (SCSI, NVME, etc.)
+		allErrs = append(allErrs, field.NotSupported(
+			fieldPath.Child("controllerType"),
+			ctrlType,
+			[]string{
+				string(vmopv1.VirtualControllerTypeIDE),
+				string(vmopv1.VirtualControllerTypeSATA),
+			}))
 	}
 
 	return allErrs
@@ -172,6 +200,11 @@ func (v validator) validateCdromControllerSpecsOnCreate(
 			allErrs = append(allErrs, field.Required(
 				cdromFieldPath.Child("controllerType"),
 				"must be set when controllerBusNumber is specified"))
+		}
+
+		// If all controller fields are specified, validate controller type and ranges.
+		if cdrom.ControllerType != "" && cdrom.ControllerBusNumber != nil && cdrom.UnitNumber != nil {
+			allErrs = append(allErrs, validateControllerTypeAndRanges(cdrom, cdromFieldPath)...)
 		}
 	}
 

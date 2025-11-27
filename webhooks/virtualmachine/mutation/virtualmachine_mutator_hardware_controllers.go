@@ -6,7 +6,6 @@ package mutation
 
 import (
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -319,18 +318,21 @@ func SetPVCVolumeDefaults(
 				v.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
 				wasMutated = true
 			}
-		case "":
-			// Skip.
+			if v.SharingMode == "" {
+				v.SharingMode = vmopv1.VolumeSharingModeNone
+				wasMutated = true
+			}
 		default:
-			// This should already fail at the schema validation already.
-			return false, field.NotSupported(
-				field.NewPath("spec").Index(i).
-					Child("applicationType"),
-				v.ApplicationType,
-				[]string{
-					string(vmopv1.VolumeApplicationTypeOracleRAC),
-					string(vmopv1.VolumeApplicationTypeMicrosoftWSFC),
-				})
+			// No application type specified. Set default values:
+			// DiskMode defaults to Persistent and SharingMode defaults to None.
+			if v.DiskMode == "" {
+				v.DiskMode = vmopv1.VolumeDiskModePersistent
+				wasMutated = true
+			}
+			if v.SharingMode == "" {
+				v.SharingMode = vmopv1.VolumeSharingModeNone
+				wasMutated = true
+			}
 		}
 	}
 	return wasMutated, nil

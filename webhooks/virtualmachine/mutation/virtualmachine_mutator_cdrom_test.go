@@ -16,6 +16,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
 )
 
+const (
+	testBuildVersion = "v1"
+)
+
 var _ = Describe("MutateCdromControllerOnUpdate", func() {
 	var (
 		ctx *builder.UnitTestContextForMutatingWebhook
@@ -23,14 +27,15 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 	)
 
 	callMutator := func() (bool, error) {
-		// Create oldVM with proper schema upgrade annotations at call time
-		oldVM := vm.DeepCopy()
-		if oldVM.Annotations == nil {
-			oldVM.Annotations = make(map[string]string)
+		// Add schema upgrade annotations to vm (the new VM being mutated).
+		// The mutator only checks if the new VM is schema upgraded.
+		if vm.Annotations == nil {
+			vm.Annotations = make(map[string]string)
 		}
+		vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
+		vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
 
-		oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
-		oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		oldVM := vm.DeepCopy()
 		return mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, oldVM)
 	}
 
@@ -109,9 +114,11 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 			setupCdromSpecs("cdrom1")
 		})
 
-		It("should not mutate when oldVM does not have upgrade annotations", func() {
+		It("should not mutate when newVM does not have upgrade annotations", func() {
+
 			oldVM := vm.DeepCopy()
-			oldVM.Annotations = nil
+			// vm does not have upgrade annotations - this is what prevents mutation
+			vm.Annotations = nil
 
 			wasMutated, err := mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, oldVM)
 			Expect(err).ToNot(HaveOccurred())
@@ -124,7 +131,7 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = true
-				config.BuildVersion = "v1"
+				config.BuildVersion = testBuildVersion
 			})
 		})
 

@@ -513,7 +513,7 @@ func registerUnmanagedDisks(
 					k8sClient,
 					vimClient,
 					vm,
-					pvc.Name,
+					pvc,
 					di); err != nil {
 
 					return false, fmt.Errorf(
@@ -685,14 +685,14 @@ func ensureCnsRegisterVolumeForDisk(
 	k8sClient ctrlclient.Client,
 	_ *vim25.Client,
 	vm *vmopv1.VirtualMachine,
-	pvcName string,
+	pvc *corev1.PersistentVolumeClaim,
 	diskInfo pkgvol.VirtualDiskInfo) (*cnsv1alpha1.CnsRegisterVolume, error) {
 
 	var (
 		obj = &cnsv1alpha1.CnsRegisterVolume{}
 		key = ctrlclient.ObjectKey{
 			Namespace: vm.Namespace,
-			Name:      pvcName,
+			Name:      pvc.Name,
 		}
 	)
 
@@ -707,7 +707,7 @@ func ensureCnsRegisterVolumeForDisk(
 		// The CRV is not found, create a new one.
 		//
 		// Set the object metadata.
-		obj.Name = pvcName
+		obj.Name = pvc.Name
 		obj.Namespace = vm.Namespace
 
 		obj.Labels = map[string]string{
@@ -741,13 +741,30 @@ func ensureCnsRegisterVolumeForDisk(
 				diskInfo.FileName, err)
 		}
 
-		volumeMode := corev1.PersistentVolumeBlock
-		if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		var (
+			volumeMode    corev1.PersistentVolumeMode
+			vmSharedDisks = pkgcfg.FromContext(ctx).Features.VMSharedDisks
+		)
+
+		switch {
+		case pvc.Spec.VolumeMode != nil:
+			volumeMode = *pvc.Spec.VolumeMode
+
+			if !vmSharedDisks &&
+				volumeMode != corev1.PersistentVolumeFilesystem {
+				return nil, fmt.Errorf(
+					"volume mode %s not supported unless VMSharedDisks is enabled",
+					volumeMode)
+			}
+
+		case !vmSharedDisks:
 			volumeMode = corev1.PersistentVolumeFilesystem
+		default:
+			volumeMode = corev1.PersistentVolumeBlock
 		}
 
 		obj.Spec = cnsv1alpha1.CnsRegisterVolumeSpec{
-			PvcName:     pvcName,
+			PvcName:     pvc.Name,
 			DiskURLPath: datastoreURL,
 			VolumeMode:  volumeMode,
 		}

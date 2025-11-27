@@ -150,8 +150,8 @@ func (r *Reconciler) ReconcileDelete(
 }
 
 const (
-	failMandatoryPolicies = "failed to reconcile mandatory policies"
-	failExplicitPolicies  = "failed to reconcile explicit policies"
+	mandatoryPoliciesReconcileFailedReason = "MandatoryPoliciesReconcileFailed"
+	explicitPoliciesReconcileFailedReason  = "ExplicitPoliciesReconcileFailed"
 )
 
 func (r *Reconciler) ReconcileNormal(
@@ -170,20 +170,18 @@ func (r *Reconciler) ReconcileNormal(
 		conditions.MarkError(
 			obj,
 			vspherepolv1.ReadyConditionType,
-			failMandatoryPolicies,
+			mandatoryPoliciesReconcileFailedReason,
 			err)
-		return ctrl.Result{}, fmt.Errorf(
-			failMandatoryPolicies+": %w", err)
+		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileExplicitPolicies(ctx, obj); err != nil {
 		conditions.MarkError(
 			obj,
 			vspherepolv1.ReadyConditionType,
-			failExplicitPolicies,
+			explicitPoliciesReconcileFailedReason,
 			err)
-		return ctrl.Result{}, fmt.Errorf(
-			failExplicitPolicies+": %w", err)
+		return ctrl.Result{}, err
 	}
 
 	// Update the observed generation.

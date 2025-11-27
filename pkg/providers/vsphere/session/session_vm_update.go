@@ -704,26 +704,64 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 
 	// If VM spec has a PVC, check if the volume is attached before powering on.
 	var (
-		notFoundNames   []string
-		unattachedNames []string
+		notFoundNames            []string
+		unattachedNames          []string
+		volNameToTargetIDInSpec  = map[string]vmopv1util.TargetID{}
+		classicTargetIDsInStatus = map[vmopv1util.TargetID]struct{}{}
+		volNameToStatus          = map[string]vmopv1.VirtualMachineVolumeStatus{}
 	)
 
-	for _, volume := range vmCtx.VM.Spec.Volumes {
-		if pvc := volume.PersistentVolumeClaim; pvc != nil {
-			found := false
-			for _, volumeStatus := range vmCtx.VM.Status.Volumes {
-				if volumeStatus.Name == volume.Name {
-					found = true
-					if !volumeStatus.Attached {
+	// Collect the target IDs of the volumes from spec.
+	for _, v := range vmCtx.VM.Spec.Volumes {
+		if v.ControllerType != "" &&
+			v.ControllerBusNumber != nil &&
+			v.UnitNumber != nil {
+
+			volNameToTargetIDInSpec[v.Name] = vmopv1util.TargetID{
+				ControllerType: v.ControllerType,
+				ControllerBus:  *v.ControllerBusNumber,
+				UnitNumber:     *v.UnitNumber,
+			}
+		}
+	}
+
+	// Collect the target IDs of the classic volumes from status.
+	for _, v := range vmCtx.VM.Status.Volumes {
+		if v.Type == vmopv1.VolumeTypeClassic {
+			if v.ControllerType != "" &&
+				v.ControllerBusNumber != nil &&
+				v.UnitNumber != nil {
+
+				classicTargetIDsInStatus[vmopv1util.TargetID{
+					ControllerType: v.ControllerType,
+					ControllerBus:  *v.ControllerBusNumber,
+					UnitNumber:     *v.UnitNumber,
+				}] = struct{}{}
+			}
+		}
+		volNameToStatus[v.Name] = v
+	}
+
+	for _, volSpec := range vmCtx.VM.Spec.Volumes {
+		if pvc := volSpec.PersistentVolumeClaim; pvc != nil {
+			if volStat, ok := volNameToStatus[volSpec.Name]; ok {
+				if !volStat.Attached {
+					// Allow unattached volumes through as long as they
+					// show up as a classic volume in status.
+					var isAttachedClassicVol bool
+					if tidSpec, ok := volNameToTargetIDInSpec[volStat.Name]; ok {
+						if _, ok := classicTargetIDsInStatus[tidSpec]; ok {
+							isAttachedClassicVol = true
+						}
+					}
+					if !isAttachedClassicVol {
 						unattachedNames = append(
 							unattachedNames,
-							volume.Name)
+							volSpec.Name)
 					}
-					break
 				}
-			}
-			if !found {
-				notFoundNames = append(notFoundNames, volume.Name)
+			} else {
+				notFoundNames = append(notFoundNames, volSpec.Name)
 			}
 		}
 	}

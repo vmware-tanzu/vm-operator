@@ -105,8 +105,26 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.OnlyControllerOwner(),
 		),
 	)); err != nil {
+		return fmt.Errorf(
+			"failed to start VirtualMachine watch "+
+				"for CnsNodeVmAttachment: %w", err)
+	}
 
-		return err
+	// Watch for changes for CnsRegisterVolume, and enqueue
+	// VirtualMachine which is the owner of CnsRegisterVolume.
+	if err := c.Watch(source.Kind(
+		mgr.GetCache(),
+		&cnsv1alpha1.CnsRegisterVolume{},
+		handler.TypedEnqueueRequestForOwner[*cnsv1alpha1.CnsRegisterVolume](
+			mgr.GetScheme(),
+			mgr.GetRESTMapper(),
+			&vmopv1.VirtualMachine{},
+			handler.OnlyControllerOwner(),
+		),
+	)); err != nil {
+		return fmt.Errorf(
+			"failed to start VirtualMachine watch "+
+				"for CnsRegisterVolume: %w", err)
 	}
 
 	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
@@ -157,7 +175,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				),
 			)); err != nil {
 
-				return nil, fmt.Errorf("failed to start VirtualMachine watch: %w", err)
+				return nil, fmt.Errorf(
+					"failed to start VirtualMachine watch "+
+						"for PersistentVolumeClaim: %w", err)
 			}
 
 			r.logger.Info("Started deferred PVC cache and watch for instance storage")

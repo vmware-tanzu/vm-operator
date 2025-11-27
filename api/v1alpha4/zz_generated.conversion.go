@@ -4911,6 +4911,7 @@ func autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineV
 	out.Type = VirtualMachineVolumeType(in.Type)
 	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.ProvisioningMode requires manual conversion: does not exist in peer-type
 	out.Crypto = (*VirtualMachineVolumeCryptoStatus)(unsafe.Pointer(in.Crypto))
 	out.Limit = (*resource.Quantity)(unsafe.Pointer(in.Limit))
 	out.Requested = (*resource.Quantity)(unsafe.Pointer(in.Requested))

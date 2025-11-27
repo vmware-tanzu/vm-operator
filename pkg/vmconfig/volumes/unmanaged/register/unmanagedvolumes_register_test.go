@@ -320,6 +320,10 @@ var _ = Describe("Reconcile", func() {
 
 			When("VM has unmanaged disks with no sharing", func() {
 				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+
 					Expect(unmanagedvolsfill.Reconcile(
 						ctx,
 						nil,
@@ -430,6 +434,9 @@ var _ = Describe("Reconcile", func() {
 
 			When("VM has unmanaged disk with MultiWriter sharing", func() {
 				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = false
+					})
 					Expect(unmanagedvolsfill.Reconcile(
 						ctx,
 						nil,
@@ -508,7 +515,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(pvc.Spec.StorageClassName).ToNot(BeNil())
 					Expect(*pvc.Spec.StorageClassName).To(Equal("my-storage-class-1"))
 					Expect(pvc.Spec.VolumeMode).ToNot(BeNil())
-					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeBlock))
+					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeFilesystem))
 					Expect(pvc.Spec.DataSourceRef).ToNot(BeNil())
 					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))

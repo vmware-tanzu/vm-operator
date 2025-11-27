@@ -25,6 +25,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
@@ -589,8 +590,13 @@ func ensurePVCForUnmanagedDisk(
 		// Assign the storage class to the PVC.
 		obj.Spec.StorageClassName = &diskInfo.StorageClass
 
-		// Any disks already attached to the VM should be assumed as Block.
-		obj.Spec.VolumeMode = ptr.To(corev1.PersistentVolumeBlock)
+		// Any disks already attached to the VM should be assumed as Block if
+		// RAC is enabled.
+		volumeMode := corev1.PersistentVolumeBlock
+		if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+			volumeMode = corev1.PersistentVolumeFilesystem
+		}
+		obj.Spec.VolumeMode = ptr.To(volumeMode)
 
 		// Set dataSourceRef to point to this VM.
 		obj.Spec.DataSourceRef = &expDSRef
@@ -735,9 +741,15 @@ func ensureCnsRegisterVolumeForDisk(
 				diskInfo.FileName, err)
 		}
 
+		volumeMode := corev1.PersistentVolumeBlock
+		if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+			volumeMode = corev1.PersistentVolumeFilesystem
+		}
+
 		obj.Spec = cnsv1alpha1.CnsRegisterVolumeSpec{
 			PvcName:     pvcName,
 			DiskURLPath: datastoreURL,
+			VolumeMode:  volumeMode,
 		}
 
 		// Set the AccessMode to ReadWriteMany if the existing,

@@ -115,7 +115,26 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.OnlyControllerOwner(),
 		),
 	)); err != nil {
-		return fmt.Errorf("failed to start CnsNodeVMBatchAttachment watch: %w", err)
+		return fmt.Errorf(
+			"failed to start VirtualMachine watch "+
+				"for CnsNodeVMBatchAttachment: %w", err)
+	}
+
+	// Watch for changes for CnsRegisterVolume, and enqueue
+	// VirtualMachine which is the owner of CnsRegisterVolume.
+	if err := c.Watch(source.Kind(
+		mgr.GetCache(),
+		&cnsv1alpha1.CnsRegisterVolume{},
+		handler.TypedEnqueueRequestForOwner[*cnsv1alpha1.CnsRegisterVolume](
+			mgr.GetScheme(),
+			mgr.GetRESTMapper(),
+			&vmopv1.VirtualMachine{},
+			handler.OnlyControllerOwner(),
+		),
+	)); err != nil {
+		return fmt.Errorf(
+			"failed to start VirtualMachine watch "+
+				"for CnsRegisterVolume: %w", err)
 	}
 
 	return nil

@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/tags"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -1623,6 +1624,308 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					})
 
 					assertUpdate()
+				})
+			})
+		})
+
+		Context("Volume Reconciliation", func() {
+			BeforeEach(func() {
+				// Set the desired power state to on so IsOffToOn() returns true
+				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			})
+
+			When("VM has a PVC with no status entry", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "my-pvc",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "my-pvc",
+									},
+								},
+							},
+						},
+					}
+					vm.Status.Volumes = nil
+				})
+				It("should return an error about pending volume (not found)", func() {
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(`notFound="my-pvc"`))
+				})
+			})
+
+			When("VM has a PVC that is not attached", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "my-pvc",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "my-pvc",
+									},
+								},
+							},
+						},
+					}
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-pvc",
+							Attached: false,
+							Type:     vmopv1.VolumeTypeManaged,
+						},
+					}
+				})
+				It("should return an error about pending volume (not attached)", func() {
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(`notAttached="my-pvc"`))
+				})
+			})
+
+			When("VM has a PVC that is attached", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "my-pvc",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "my-pvc",
+									},
+								},
+							},
+						},
+					}
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-pvc",
+							Attached: true,
+							Type:     vmopv1.VolumeTypeManaged,
+						},
+					}
+				})
+				It("should proceed without error from volume reconciliation", func() {
+					// The error returned will be from bootstrap customize, not volumes
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(Or(BeNil(), MatchError(vmlifecycle.ErrBootstrapCustomize)))
+				})
+			})
+
+			When("VM has a classic volume being registered as a PVC (unattached but with matching target ID)", func() {
+				BeforeEach(func() {
+					// Spec has a PVC with target ID (controller type, bus number, unit number)
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name:                "classic-disk-as-pvc",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "classic-disk-as-pvc",
+									},
+								},
+							},
+						},
+					}
+					// Status has the volume as a classic type (not yet attached as PVC)
+					// but with matching target ID, indicating it's being registered
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:                "classic-disk-as-pvc",
+							Attached:            false,
+							Type:                vmopv1.VolumeTypeClassic,
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+						},
+					}
+				})
+				It("should allow power on even though the PVC is not attached", func() {
+					// The error returned will be from bootstrap customize, not volumes
+					// This is the key behavior change from the commit
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(Or(BeNil(), MatchError(vmlifecycle.ErrBootstrapCustomize)))
+				})
+			})
+
+			When("VM has a classic volume with datastore reference (unattached, different target IDs)", func() {
+				BeforeEach(func() {
+					// Spec has a PVC with target ID
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name:                "classic-disk-as-pvc",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "classic-disk-as-pvc",
+									},
+								},
+							},
+						},
+					}
+					// Status has the volume as a classic type but with DIFFERENT target ID
+					// This should NOT allow power on
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:                "classic-disk-as-pvc",
+							Attached:            false,
+							Type:                vmopv1.VolumeTypeClassic,
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](2), // Different unit number
+						},
+					}
+				})
+				It("should return an error about pending volume (not attached)", func() {
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(`notAttached="classic-disk-as-pvc"`))
+				})
+			})
+
+			When("VM has a PVC without target ID in spec and classic volume in status", func() {
+				BeforeEach(func() {
+					// Spec has a PVC without target ID
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "classic-disk-as-pvc",
+							// No ControllerType, ControllerBusNumber, or UnitNumber
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "classic-disk-as-pvc",
+									},
+								},
+							},
+						},
+					}
+					// Status has the volume as a classic type with target ID
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:                "classic-disk-as-pvc",
+							Attached:            false,
+							Type:                vmopv1.VolumeTypeClassic,
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+						},
+					}
+				})
+				It("should return an error because spec has no target ID", func() {
+					// Without target ID in spec, it cannot match the classic volume
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(`notAttached="classic-disk-as-pvc"`))
+				})
+			})
+
+			When("VM has multiple PVCs with mixed attachment states", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name:                "classic-disk-as-pvc",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "classic-disk-as-pvc",
+									},
+								},
+							},
+						},
+						{
+							Name: "regular-pvc",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "regular-pvc",
+									},
+								},
+							},
+						},
+					}
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:                "classic-disk-as-pvc",
+							Attached:            false,
+							Type:                vmopv1.VolumeTypeClassic,
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+						},
+						{
+							Name:     "regular-pvc",
+							Attached: true,
+							Type:     vmopv1.VolumeTypeManaged,
+						},
+					}
+				})
+				It("should allow power on when classic volume matches and regular PVC is attached", func() {
+					// The classic disk is allowed because it matches target ID
+					// The regular PVC is attached
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(Or(BeNil(), MatchError(vmlifecycle.ErrBootstrapCustomize)))
+				})
+			})
+
+			When("VM has multiple PVCs with one unattached regular PVC", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name:                "classic-disk-as-pvc",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "classic-disk-as-pvc",
+									},
+								},
+							},
+						},
+						{
+							Name: "regular-pvc",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "regular-pvc",
+									},
+								},
+							},
+						},
+					}
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:                "classic-disk-as-pvc",
+							Attached:            false,
+							Type:                vmopv1.VolumeTypeClassic,
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+						},
+						{
+							Name:     "regular-pvc",
+							Attached: false, // Not attached
+							Type:     vmopv1.VolumeTypeManaged,
+						},
+					}
+				})
+				It("should return an error for the unattached regular PVC", func() {
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(`notAttached="regular-pvc"`))
 				})
 			})
 		})

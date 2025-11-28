@@ -6,6 +6,8 @@ package virtualmachine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -14,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
@@ -22,6 +25,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	vmconfunmanagedvolsfill "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
 )
 
 var ErrUpgradeSchema = pkgerr.NoRequeueNoErr("upgraded vm schema")
@@ -54,43 +59,127 @@ func ReconcileSchemaUpgrade(
 		panic("moVM.config is nil")
 	}
 
-	logger := pkglog.FromContextOrDefault(ctx)
-	logger.V(4).Info("Reconciling schema upgrade for VM")
-
 	var (
-		curBuildVersion  = pkgcfg.FromContext(ctx).BuildVersion
-		curSchemaVersion = vmopv1.GroupVersion.Version
-
-		vmBuildVersion  = vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		vmSchemaVersion = vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		logger   = pkglog.FromContextOrDefault(ctx)
+		features = pkgcfg.FromContext(ctx).Features
 	)
 
-	if vmBuildVersion == curBuildVersion &&
-		vmSchemaVersion == curSchemaVersion {
+	logger.V(4).Info("Reconciling schema upgrade for VM")
 
-		logger.V(4).Info("Skipping reconciliation of schema upgrade for VM" +
-			" that is already upgraded")
+	if vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *vm) {
+
+		if features.AllDisksArePVCs || features.VMSharedDisks {
+			// Ensure the backfill condition is marked ready since the backfill
+			// reconcile will not be called again since it's been marked as
+			// upgraded.
+			pkgcond.MarkTrue(vm, vmconfunmanagedvolsfill.Condition)
+		}
+
+		logger.V(4).Info(
+			"Skipping reconciliation of schema upgrade for VM" +
+				" that is already upgraded")
 		return nil
 	}
 
-	reconcileBIOSUUID(ctx, vm, moVM)
-	reconcileInstanceUUID(ctx, vm, moVM)
-	reconcileCloudInitInstanceUUID(ctx, vm, moVM)
-	reconcileControllers(ctx, vm, moVM)
-	reconcileDevices(ctx, vm, moVM, k8sClient)
+	var (
+		wasModified        bool
+		wasFeatureModified bool
 
-	// Indicate the VM has been upgraded.
-	if vm.Annotations == nil {
-		vm.Annotations = map[string]string{}
+		curBuildVersion  = pkgcfg.FromContext(ctx).BuildVersion
+		curSchemaVersion = vmopv1.GroupVersion.Version
+
+		vmBuildVersion   = vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
+		vmSchemaVersion  = vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		vmFeatureVersion = vmopv1util.ParseFeatureVersion(
+			vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey])
+	)
+
+	if vmBuildVersion != curBuildVersion {
+		vm.SetAnnotation(
+			pkgconst.UpgradedToBuildVersionAnnotationKey,
+			curBuildVersion)
+		wasModified = true
 	}
-	vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = curBuildVersion
-	vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = curSchemaVersion
 
-	logger.V(4).Info("Upgraded VM schema version",
-		"buildVersion", curBuildVersion,
-		"schemaVersion", curSchemaVersion)
+	if vmSchemaVersion != curSchemaVersion {
+		vm.SetAnnotation(
+			pkgconst.UpgradedToSchemaVersionAnnotationKey,
+			curSchemaVersion)
+		wasModified = true
+	}
 
-	return ErrUpgradeSchema
+	if f := vmopv1util.FeatureVersionBase; !vmFeatureVersion.Has(f) {
+		reconcileBIOSUUID(ctx, vm, moVM)
+		reconcileInstanceUUID(ctx, vm, moVM)
+		reconcileCloudInitInstanceUUID(ctx, vm, moVM)
+
+		wasFeatureModified = true
+		vmFeatureVersion.Set(f)
+	}
+
+	//
+	// The order of this and the next upgrade are important:
+	//
+	// 1. The vmconfunmanagedvolsfill.Reconcile *must* run first,
+	// 2. followed by reconcileControllers and reconcileDisks,
+	// 3. when AllDisksArePVCs or VMSharedDisks are enabled.
+	//
+	// This ensures any disks from the VM images are properly backfilled into
+	// the VM's spec so that the mutation webhook can make informed decisions
+	// about any new PVCs added by a user.
+	if features.AllDisksArePVCs || features.VMSharedDisks {
+		if f := vmopv1util.FeatureVersionAllDisksArePVCs; !vmFeatureVersion.Has(f) {
+			if err := vmconfunmanagedvolsfill.Reconcile(
+				ctx,
+				nil,
+				nil,
+				vm,
+				moVM,
+				nil); err != nil {
+
+				if !errors.Is(err, vmconfunmanagedvolsfill.ErrPendingBackfill) {
+					return fmt.Errorf(
+						"unexpected unmanaged disk backfill error: %w", err)
+				}
+			}
+
+			wasFeatureModified = true
+			vmFeatureVersion.Set(f)
+		}
+	}
+
+	if features.VMSharedDisks {
+		if f := vmopv1util.FeatureVersionVMSharedDisks; !vmFeatureVersion.Has(f) {
+			reconcileControllers(ctx, vm, moVM)
+			reconcileDevices(ctx, vm, moVM, k8sClient)
+
+			wasFeatureModified = true
+			vmFeatureVersion.Set(f)
+		}
+	}
+
+	if wasFeatureModified {
+		vm.SetAnnotation(
+			pkgconst.UpgradedToFeatureVersionAnnotationKey,
+			vmFeatureVersion.String())
+	}
+
+	if wasModified || wasFeatureModified {
+		logger.V(4).Info("Upgraded VM schema version",
+			"buildVersion", curBuildVersion,
+			"schemaVersion", curSchemaVersion,
+			"featureVersion", vmFeatureVersion)
+
+		// Only cause the reconcile loop to exit early IFF there were any
+		// modifications. This is not just efficient, but it also ensures that
+		// a capability being disabled does not result in a circular reconcile
+		// loop due to the ActivatedFeatureVersion no longer ever able to match
+		// the one set on a VM that was upgraded when a now disabled feature was
+		// previously enabled.
+		return ErrUpgradeSchema
+	}
+
+	return nil
 }
 
 func reconcileBIOSUUID(
@@ -186,12 +275,6 @@ func reconcileControllers(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM controllers")
-
-	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-		logger.V(4).Info("Skipping controllers reconciliation due to" +
-			"disabled VMSharedDisks capability")
-		return
-	}
 
 	for i := range moVM.Config.Hardware.Device {
 		switch d := moVM.Config.Hardware.Device[i].(type) {
@@ -395,12 +478,6 @@ func reconcileDevices(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM devices")
-
-	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-		logger.V(4).Info("Skipping devices reconciliation due to" +
-			"disabled VMSharedDisks capability")
-		return
-	}
 
 	// Build a map of controller key to controller info from VM status.
 	// Note: vm.status is always reconciled before calling this function,

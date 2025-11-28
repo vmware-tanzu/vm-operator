@@ -498,25 +498,3 @@ func ConvertPowerState(logger logr.Logger,
 		return vmopv1.VirtualMachinePowerStateOff
 	}
 }
-
-// IsVirtualMachineSchemaUpgraded returns true if the VM's schema has been
-// upgraded to the current build and schema versions by checking the upgrade
-// annotations.
-func IsVirtualMachineSchemaUpgraded(
-	ctx context.Context,
-	vm vmopv1.VirtualMachine) bool {
-
-	var (
-		upBuildVer = vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		upSchemVer = vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
-	)
-
-	if upBuildVer != "" &&
-		upSchemVer != "" &&
-		upBuildVer == pkgcfg.FromContext(ctx).BuildVersion &&
-		upSchemVer == vmopv1.GroupVersion.Version {
-		return true
-	}
-
-	return false
-}

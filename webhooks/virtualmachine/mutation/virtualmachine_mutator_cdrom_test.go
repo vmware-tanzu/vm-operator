@@ -12,6 +12,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
 )
@@ -34,6 +35,7 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 		}
 		vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
 		vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
 
 		oldVM := vm.DeepCopy()
 		return mutation.MutateCdromControllerOnUpdate(&ctx.WebhookRequestContext, nil, vm, oldVM)

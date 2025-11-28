@@ -38,6 +38,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	vmconfunmanagedvolsfil "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
+	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -172,9 +174,9 @@ func unmanagedVolumesTests() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
 				To(MatchError(vsphere.ErrRegisterVolumes))
 			Expect(conditions.IsTrue(
-				vm, "VirtualMachineUnmanagedVolumesBackfill")).To(BeTrue())
+				vm, vmconfunmanagedvolsfil.Condition)).To(BeTrue())
 			Expect(conditions.IsFalse(
-				vm, "VirtualMachineUnmanagedVolumesRegister")).To(BeTrue())
+				vm, vmconfunmanagedvolsreg.Condition)).To(BeTrue())
 
 			Expect(vm.Spec.Volumes).To(HaveLen(1))
 			Expect(vm.Spec.Volumes[0].PersistentVolumeClaim).ToNot(BeNil())
@@ -244,7 +246,7 @@ func unmanagedVolumesTests() {
 			}, crv))).To(Succeed())
 
 			Expect(conditions.IsTrue(
-				vm, "VirtualMachineUnmanagedVolumesRegister")).To(BeTrue())
+				vm, vmconfunmanagedvolsreg.Condition)).To(BeTrue())
 		})
 	})
 
@@ -388,9 +390,9 @@ func unmanagedVolumesTests() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
 				To(MatchError(vsphere.ErrRegisterVolumes))
 			Expect(conditions.IsTrue(
-				vm, "VirtualMachineUnmanagedVolumesBackfill")).To(BeTrue())
+				vm, vmconfunmanagedvolsfil.Condition)).To(BeTrue())
 			Expect(conditions.IsFalse(
-				vm, "VirtualMachineUnmanagedVolumesRegister")).To(BeTrue())
+				vm, vmconfunmanagedvolsreg.Condition)).To(BeTrue())
 
 			// Check that a volume was added for the unmanaged disk.
 			Expect(vm.Spec.Volumes).To(HaveLen(1))
@@ -463,7 +465,7 @@ func unmanagedVolumesTests() {
 			}, crv))).To(Succeed())
 
 			Expect(conditions.IsTrue(
-				vm, "VirtualMachineUnmanagedVolumesRegister")).To(BeTrue())
+				vm, vmconfunmanagedvolsreg.Condition)).To(BeTrue())
 		})
 	})
 }

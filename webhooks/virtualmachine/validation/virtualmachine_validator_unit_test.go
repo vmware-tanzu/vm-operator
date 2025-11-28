@@ -141,6 +141,7 @@ func bypassUpgradeCheck(ctx *context.Context, objects ...metav1.Object) {
 		a := obj.GetAnnotations()
 		a[pkgconst.UpgradedToBuildVersionAnnotationKey] = fake
 		a[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		a[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(*ctx).String()
 		obj.SetAnnotations(a)
 	}
 }
@@ -364,6 +365,12 @@ func unitTestsValidateCreate() {
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.WorkloadDomainIsolation = true
+			config.Features.VMSharedDisks = true
+			config.BuildVersion = testBuildVersion // Set to match test annotations
+		})
+
 		// Set the VM as already schema-upgraded by adding annotations.
 		// This allows tests to validate create operations without triggering
 		// schema upgrade restrictions.
@@ -372,12 +379,7 @@ func unitTestsValidateCreate() {
 		}
 		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
 		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
-
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.Features.WorkloadDomainIsolation = true
-			config.Features.VMSharedDisks = true
-			config.BuildVersion = testBuildVersion // Set to match test annotations
-		})
+		ctx.vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
 	})
 
 	AfterEach(func() {
@@ -4348,6 +4350,10 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
 
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.BuildVersion = testBuildVersion // Set to match test annotations
+		})
+
 		// Set both new and old VMs as already schema-upgraded by adding annotations.
 		// The validator checks oldVM to determine if schema upgrade restrictions apply.
 		// By setting both, tests can validate update operations without triggering
@@ -4357,6 +4363,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		}
 		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
 		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		ctx.vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
 
 		if ctx.oldVM != nil {
 			if ctx.oldVM.Annotations == nil {
@@ -4364,11 +4371,8 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			}
 			ctx.oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
 			ctx.oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+			ctx.oldVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
 		}
-
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.BuildVersion = testBuildVersion // Set to match test annotations
-		})
 	})
 
 	AfterEach(func() {
@@ -7490,6 +7494,62 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			},
 		),
 
+		Entry("disallow adding upgradedToFeatureVersion annotation for non VM Op service account / system:masters",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.PrivilegedUsers = fake
+					})
+					ctx.UserInfo.Username = fake
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToFeatureVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				validate: doValidateWithMsg(
+					`metadata.annotations[vmoperator.vmware.com/upgraded-to-feature-version]: Forbidden: modifying this annotation is restricted to privileged users`,
+				),
+			},
+		),
+
+		Entry("allow adding upgradedToFeatureVersion annotation for VM Op service account",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					ctx.UserInfo.Username = strings.Join(
+						[]string{
+							"system",
+							"serviceaccount",
+							ctx.Namespace,
+							ctx.ServiceAccountName,
+						}, ":")
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToFeatureVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow adding upgradedToFeatureVersion annotation for system:masters",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					ctx.UserInfo.Groups = []string{"system:masters"}
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToFeatureVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
 		Entry("disallow BiosUUID change when upgradedToBuildVersion annotation is missing",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
@@ -7626,6 +7686,28 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					}
 					ctx.vm.Annotations = map[string]string{
 						pkgconst.UpgradedToBuildVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow anyone to delete upgradedToFeatureVersion",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.BuildVersion = fake
+					})
+					ctx.oldVM.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey:   fake,
+						pkgconst.UpgradedToSchemaVersionAnnotationKey:  vmopv1.GroupVersion.Version,
+						pkgconst.UpgradedToFeatureVersionAnnotationKey: "1",
+					}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey:  fake,
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: vmopv1.GroupVersion.Version,
 					}
 				},
 				skipBypassUpgradeCheck: true,
@@ -8294,6 +8376,13 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			func(testName string,
 				setup func(*unitValidatingWebhookContext),
 				expectAllowed bool) {
+
+				if ctx.vm != nil {
+					ctx.vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
+				}
+				if ctx.oldVM != nil {
+					ctx.oldVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
+				}
 
 				setup(ctx)
 

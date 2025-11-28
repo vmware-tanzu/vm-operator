@@ -36,8 +36,7 @@ const (
 	//
 	// Please note, a validation webhook will deny any patch/update operations
 	// on VirtualMachine objects from unprivileged users until such time the
-	// object has this annotation with a value that matches the current build
-	// version.
+	// object has this annotation with a value that matches the expected value.
 	UpgradedToBuildVersionAnnotationKey = upgradedToPrefix + "build-version"
 
 	// UpgradedToSchemaVersionAnnotationKey is set on VirtualMachine
@@ -47,9 +46,18 @@ const (
 	//
 	// Please note, a validation webhook will deny any patch/update operations
 	// on VirtualMachine objects from unprivileged users until such time the
-	// object has this annotation with a value that matches the current build
-	// version.
+	// object has this annotation with a value that matches the expected value.
 	UpgradedToSchemaVersionAnnotationKey = upgradedToPrefix + "schema-version"
+
+	// UpgradedToFeatureVersionAnnotationKey is set on VirtualMachine
+	// objects when the function "ReconcileSchemaUpgrade" from
+	// pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go is
+	// executed.
+	//
+	// Please note, a validation webhook will deny any patch/update operations
+	// on VirtualMachine objects from unprivileged users until such time the
+	// object has this annotation with a value that matches the expected value.
+	UpgradedToFeatureVersionAnnotationKey = upgradedToPrefix + "feature-version"
 
 	// MinSupportedHWVersionForPVC is the supported virtual hardware version for
 	// persistent volumes.

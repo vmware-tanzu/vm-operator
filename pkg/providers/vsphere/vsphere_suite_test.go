@@ -102,8 +102,7 @@ func createOrUpdateVM(
 				errors.Is(err, vsphere.ErrPromoteDisks),
 				errors.Is(err, vsphere.ErrSnapshotRevert),
 				errors.Is(err, vsphere.ErrPolicyNotReady),
-				errors.Is(err, vsphere.ErrUpgradeSchema),
-				errors.Is(err, vsphere.ErrBackfillVolInfo):
+				errors.Is(err, vsphere.ErrUpgradeSchema):
 
 				repeat = true
 			default:
@@ -162,7 +161,7 @@ func createOrUpdateVMAsync(
 
 	chanErr, err := provider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
 	if err != nil {
-		if errors.Is(err, vsphere.ErrBackfillVolInfo) {
+		if errors.Is(err, vsphere.ErrUpgradeSchema) {
 			ExpectWithOffset(1, ctx.Client.Update(
 				ctx,
 				vm)).To(Succeed())

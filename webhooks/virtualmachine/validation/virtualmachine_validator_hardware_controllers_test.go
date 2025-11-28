@@ -17,6 +17,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -40,6 +41,13 @@ func controllerValidationTests() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
+
+		// Enable VMSharedDisks feature flag for consistency.
+		pkgcfg.SetContext(&ctx.WebhookRequestContext, func(config *pkgcfg.Config) {
+			config.Features.VMSharedDisks = true
+			config.BuildVersion = testBuildVersion // Set to match test annotations
+		})
+
 		ctx.vm.Spec.Volumes = nil
 		ctx.vm.Status.UniqueID = "vm-123"
 
@@ -52,6 +60,7 @@ func controllerValidationTests() {
 		}
 		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
 		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		ctx.vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
 
 		// Also add to oldVM for UPDATE scenarios
 		if ctx.oldVM != nil {
@@ -60,13 +69,8 @@ func controllerValidationTests() {
 			}
 			ctx.oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
 			ctx.oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+			ctx.oldVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(ctx).String()
 		}
-
-		// Enable VMSharedDisks feature flag for consistency.
-		pkgcfg.SetContext(&ctx.WebhookRequestContext, func(config *pkgcfg.Config) {
-			config.Features.VMSharedDisks = true
-			config.BuildVersion = testBuildVersion // Set to match test annotations
-		})
 	})
 
 	// Update ctx.Obj and ctx.OldObj from ctx.vm and ctx.oldVM before each test.

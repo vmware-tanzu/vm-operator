@@ -24,7 +24,7 @@ import (
 )
 
 // Condition is the name of the condition that stores the result.
-const Condition = "VirtualMachineUnmanagedVolumesBackfill"
+const Condition = "VirtualMachineUnmanagedVolumesBackfilled"
 
 // ErrPendingBackfill is returned from Reconcile to indicate to exit the VM
 // reconcile workflow early.

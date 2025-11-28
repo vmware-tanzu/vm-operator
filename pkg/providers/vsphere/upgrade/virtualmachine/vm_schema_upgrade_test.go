@@ -176,10 +176,50 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 					Uuid:         "123",
 				}
 			})
-			It("should not modify any of the fields it would otherwise upgrade", func() {
-				Expect(vm.Spec.InstanceUUID).To(BeEmpty())
-				Expect(vm.Spec.BiosUUID).To(BeEmpty())
-				Expect(vm.Spec.Bootstrap.CloudInit.InstanceID).To(BeEmpty())
+
+			When("feature version annotation is missing", func() {
+				BeforeEach(func() {
+					expectedErr = upgradevm.ErrUpgradeSchema
+					// Remove feature version annotation to simulate upgrade
+					delete(vm.Annotations, pkgconst.UpgradedToFeatureVersionAnnotationKey)
+				})
+
+				It("should perform upgrade", func() {
+					// Without feature version annotation, upgrade should still occur
+					// since the feature versioning is new
+					Expect(vm.Spec.InstanceUUID).To(Equal("123"))
+					Expect(vm.Spec.BiosUUID).To(Equal("123"))
+				})
+			})
+
+			When("feature version is outdated", func() {
+				BeforeEach(func() {
+					expectedErr = upgradevm.ErrUpgradeSchema
+					// Set an old feature version (only base)
+					vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = "1"
+					// Enable a new feature that requires upgrade
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+				})
+
+				It("should perform upgrade to add new feature", func() {
+					// Upgrade should occur because feature version doesn't include VMSharedDisks
+				})
+			})
+
+			When("all annotations match current versions", func() {
+				BeforeEach(func() {
+					expectedErr = nil
+					// Set feature version to match current activated features
+					vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = "1" // Base only
+				})
+
+				It("should not modify any of the fields it would otherwise upgrade", func() {
+					Expect(vm.Spec.InstanceUUID).To(BeEmpty())
+					Expect(vm.Spec.BiosUUID).To(BeEmpty())
+					Expect(vm.Spec.Bootstrap.CloudInit.InstanceID).To(BeEmpty())
+				})
 			})
 		})
 
@@ -198,7 +238,69 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 				ExpectWithOffset(1, vm.Annotations).To(HaveKeyWithValue(
 					pkgconst.UpgradedToSchemaVersionAnnotationKey,
 					vmopv1.GroupVersion.Version))
+				ExpectWithOffset(1, vm.Annotations).To(HaveKey(
+					pkgconst.UpgradedToFeatureVersionAnnotationKey))
 			}
+
+			assertFeatureVersion := func(expected string) {
+				ExpectWithOffset(1, vm.Annotations).To(HaveKeyWithValue(
+					pkgconst.UpgradedToFeatureVersionAnnotationKey,
+					expected))
+			}
+
+			Context("Feature version tracking", func() {
+				When("no features are enabled", func() {
+					It("should set feature version to base only", func() {
+						assertUpgraded()
+						// Feature version should be "1" (base only)
+						assertFeatureVersion("1")
+					})
+				})
+
+				When("VMSharedDisks feature is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+					})
+
+					It("should set feature version including VMSharedDisks and AllDisksArePVCs", func() {
+						assertUpgraded()
+						// Feature version should be "7" (base=1 | VMSharedDisks=2 | AllDisksArePVCs=4)
+						// VMSharedDisks enables both VMSharedDisks and AllDisksArePVCs features
+						assertFeatureVersion("7")
+					})
+				})
+
+				When("AllDisksArePVCs feature is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.AllDisksArePVCs = true
+						})
+					})
+
+					It("should set feature version including AllDisksArePVCs", func() {
+						assertUpgraded()
+						// Feature version should be "5" (base=1 | AllDisksArePVCs=4)
+						assertFeatureVersion("5")
+					})
+				})
+
+				When("both VMSharedDisks and AllDisksArePVCs features are enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+							config.Features.AllDisksArePVCs = true
+						})
+					})
+
+					It("should set feature version including both features", func() {
+						assertUpgraded()
+						// Feature version should be "7" (base=1 | VMSharedDisks=2 | AllDisksArePVCs=4)
+						assertFeatureVersion("7")
+					})
+				})
+			})
 
 			Context("BIOS UUID reconciliation", func() {
 				When("BIOS UUID is empty in VM spec", func() {
@@ -291,6 +393,150 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 					})
 					It("should not set CloudInit InstanceID", func() {
 						Expect(vm.Spec.Bootstrap.CloudInit).To(BeNil())
+					})
+				})
+			})
+
+			Context("Incremental feature upgrade", func() {
+				When("VM has base feature version but VMSharedDisks is newly enabled", func() {
+					BeforeEach(func() {
+						// VM was previously upgraded with only base features
+						vm.Annotations = map[string]string{
+							pkgconst.UpgradedToBuildVersionAnnotationKey:   pkgcfg.FromContext(ctx).BuildVersion,
+							pkgconst.UpgradedToSchemaVersionAnnotationKey:  vmopv1.GroupVersion.Version,
+							pkgconst.UpgradedToFeatureVersionAnnotationKey: "1", // Base only
+						}
+						// Now VMSharedDisks is enabled
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+						// Add a controller to test controller reconciliation
+						moVM.Config.Hardware = vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualIDEController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{Key: 200},
+										BusNumber:     0,
+									},
+								},
+							},
+						}
+					})
+
+					It("should upgrade to include VMSharedDisks and AllDisksArePVCs features", func() {
+						assertUpgraded()
+						// Feature version should now be "7" (base=1 | VMSharedDisks=2 | AllDisksArePVCs=4)
+						// VMSharedDisks enables both features
+						assertFeatureVersion("7")
+						// Controller should be reconciled
+						Expect(vm.Spec.Hardware).ToNot(BeNil())
+						Expect(vm.Spec.Hardware.IDEControllers).To(HaveLen(1))
+					})
+				})
+
+				When("VM has base feature version but AllDisksArePVCs is newly enabled", func() {
+					BeforeEach(func() {
+						// VM was previously upgraded with only base features
+						vm.Annotations = map[string]string{
+							pkgconst.UpgradedToBuildVersionAnnotationKey:   pkgcfg.FromContext(ctx).BuildVersion,
+							pkgconst.UpgradedToSchemaVersionAnnotationKey:  vmopv1.GroupVersion.Version,
+							pkgconst.UpgradedToFeatureVersionAnnotationKey: "1", // Base only
+						}
+						// Now AllDisksArePVCs is enabled
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.AllDisksArePVCs = true
+						})
+					})
+
+					It("should upgrade to include AllDisksArePVCs feature", func() {
+						assertUpgraded()
+						// Feature version should now be "5" (base=1 | AllDisksArePVCs=4)
+						assertFeatureVersion("5")
+					})
+				})
+
+				When("VM has base+AllDisksArePVCs but VMSharedDisks is newly enabled", func() {
+					BeforeEach(func() {
+						// VM was previously upgraded with base and AllDisksArePVCs
+						vm.Annotations = map[string]string{
+							pkgconst.UpgradedToBuildVersionAnnotationKey:   pkgcfg.FromContext(ctx).BuildVersion,
+							pkgconst.UpgradedToSchemaVersionAnnotationKey:  vmopv1.GroupVersion.Version,
+							pkgconst.UpgradedToFeatureVersionAnnotationKey: "5", // base=1 | AllDisksArePVCs=4
+						}
+						// Now VMSharedDisks is also enabled
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.AllDisksArePVCs = true
+							config.Features.VMSharedDisks = true
+						})
+						// Add a controller to test controller reconciliation
+						moVM.Config.Hardware = vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualIDEController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{Key: 200},
+										BusNumber:     0,
+									},
+								},
+							},
+						}
+					})
+
+					It("should upgrade to include all features", func() {
+						assertUpgraded()
+						// Feature version should now be "7" (base=1 | VMSharedDisks=2 | AllDisksArePVCs=4)
+						assertFeatureVersion("7")
+						// Controller should be reconciled
+						Expect(vm.Spec.Hardware).ToNot(BeNil())
+						Expect(vm.Spec.Hardware.IDEControllers).To(HaveLen(1))
+					})
+				})
+			})
+
+			Context("Conditional upgrade execution based on features", func() {
+				When("VMSharedDisks feature is not enabled", func() {
+					BeforeEach(func() {
+						// VMSharedDisks is NOT enabled
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = false
+						})
+						// Add a controller that would normally be reconciled
+						moVM.Config.Hardware = vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualIDEController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{Key: 200},
+										BusNumber:     0,
+									},
+								},
+							},
+						}
+					})
+
+					It("should not reconcile controllers or devices", func() {
+						assertUpgraded()
+						// Controllers should not be reconciled
+						Expect(vm.Spec.Hardware).To(BeNil())
+						// Feature version should only have base
+						assertFeatureVersion("1")
+					})
+				})
+
+				When("neither AllDisksArePVCs nor VMSharedDisks is enabled", func() {
+					BeforeEach(func() {
+						// Both features are NOT enabled
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = false
+							config.Features.AllDisksArePVCs = false
+						})
+					})
+
+					It("should only perform base upgrades", func() {
+						assertUpgraded()
+						// Only base features should be upgraded
+						Expect(vm.Spec.BiosUUID).To(Equal("test-bios-uuid"))
+						Expect(vm.Spec.InstanceUUID).To(Equal("test-instance-uuid"))
+						// Feature version should only have base
+						assertFeatureVersion("1")
 					})
 				})
 			})
@@ -961,10 +1207,14 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		When("VM has no volumes", func() {
 			BeforeEach(func() {
 				vm.Spec.Volumes = nil
+				// Also clear disk devices so unmanaged volume backfill doesn't add them
+				moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+					scsiCtrl,
+				}
 			})
 
 			It("should skip reconciliation", func() {
-				Expect(vm.Spec.Volumes).To(BeNil())
+				Expect(vm.Spec.Volumes).To(BeEmpty())
 			})
 		})
 

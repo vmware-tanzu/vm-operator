@@ -12,19 +12,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func intgTests() {
-
-	pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
-		config.Features.VMSharedDisks = true
-		config.BuildVersion = testBuildVersion // Match annotations set in test VMs
-	})
 
 	Describe(
 		"Create",
@@ -413,6 +408,7 @@ func intgTestsValidateCdromController() {
 		}
 		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
 		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		ctx.vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(suite).String()
 
 		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 		ctx.vm.Spec.Hardware.Cdrom = ctx.vm.Spec.Hardware.Cdrom[:1]

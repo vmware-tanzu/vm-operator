@@ -1800,11 +1800,13 @@ func (v validator) validateSchemaUpgrade(
 	fieldPath := field.NewPath("metadata", "annotations")
 
 	var (
-		newUpBuildVer = newVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		newUpSchemVer = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		newUpBuildVer   = newVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
+		newUpSchemVer   = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		newUpFeatureVer = newVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 
-		oldUpBuildVer = oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		oldUpSchemVer = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		oldUpBuildVer   = oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
+		oldUpSchemVer   = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		oldUpFeatureVer = oldVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 	)
 
 	switch {
@@ -1830,6 +1832,19 @@ func (v validator) validateSchemaUpgrade(
 		// Allow anyone to delete the annotation.
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
+	}
+
+	switch {
+	case newUpFeatureVer != "" && newUpFeatureVer != oldUpFeatureVer:
+		// Prevent most users from modifying these annotations.
+		allErrs = append(allErrs, field.Forbidden(
+			fieldPath.Key(pkgconst.UpgradedToFeatureVersionAnnotationKey),
+			modRestrictedAnnotation))
+
+	case oldUpFeatureVer != "" && newUpFeatureVer == "":
+		// Allow anyone to delete the annotation.
+		ctx.Logger.V(4).Info("Deleted annotation",
+			"key", pkgconst.UpgradedToFeatureVersionAnnotationKey)
 	}
 
 	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {

@@ -39,7 +39,7 @@ import (
 )
 
 // Condition is the name of the condition that stores the result.
-const Condition = "VirtualMachineUnmanagedVolumesRegister"
+const Condition = "VirtualMachineUnmanagedVolumesRegistered"
 
 // ErrPendingRegister is returned from Reconcile to indicate to exit the VM
 // reconcile workflow early.

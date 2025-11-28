@@ -22,6 +22,11 @@ var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
 	"default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com")
 
 func TestWebhook(t *testing.T) {
+	pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
+		config.Features.VMSharedDisks = true
+		config.BuildVersion = testBuildVersion // Match annotations set in test VMs
+	})
+
 	suite.Register(t, "Validation webhook suite", intgTests, unitTests)
 }
 

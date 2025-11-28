@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/env"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -113,6 +114,7 @@ var _ = Describe(
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
+						BuildVersion:           pkg.BuildVersion,
 						MaxCreateVMsOnProvider: 101,
 						PrivilegedUsers:        "102",
 						NetworkProviderType:    "103",

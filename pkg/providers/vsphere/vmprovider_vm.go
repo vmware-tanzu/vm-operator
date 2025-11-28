@@ -73,7 +73,6 @@ import (
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
-	vmconfunmanagedvolsfill "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
@@ -93,7 +92,6 @@ var (
 	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
 	ErrSnapshotRevert         = pkgerr.NoRequeueNoErr("reverted snapshot")
 	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
-	ErrBackfillVolInfo        = vmconfunmanagedvolsfill.ErrPendingBackfill
 	ErrRegisterVolumes        = vmconfunmanagedvolsreg.ErrPendingRegister
 )
 
@@ -1165,28 +1163,11 @@ func (vs *vSphereVMProvider) getVolumeInfo(
 func (vs *vSphereVMProvider) reconcileSchemaUpgrade(
 	vmCtx pkgctx.VirtualMachineContext) error {
 
-	var backfillErr error
-	if f := pkgcfg.FromContext(vmCtx).Features; f.VMSharedDisks || f.AllDisksArePVCs {
-		backfillErr = vmconfunmanagedvolsfill.Reconcile(
-			vmCtx,
-			nil,
-			nil,
-			vmCtx.VM,
-			vmCtx.MoVM,
-			nil)
-		if backfillErr != nil && !errors.Is(backfillErr, ErrBackfillVolInfo) {
-			// No error or ErrPendingBackfill are the only expected errors.
-			return fmt.Errorf("unexpected unmanaged disk backfill error: %w", backfillErr)
-		}
-	}
-
-	upgradeErr := upgradevm.ReconcileSchemaUpgrade(
+	return upgradevm.ReconcileSchemaUpgrade(
 		vmCtx,
 		vs.k8sClient,
 		vmCtx.VM,
 		vmCtx.MoVM)
-
-	return errors.Join(backfillErr, upgradeErr)
 }
 
 func (vs *vSphereVMProvider) reconcileConfig(

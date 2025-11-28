@@ -1133,7 +1133,9 @@ func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	if oldVM != nil && !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
+	if ctx.IsVMOperatorAccount ||
+		(oldVM != nil && !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM)) {
+
 		return nil
 	}
 

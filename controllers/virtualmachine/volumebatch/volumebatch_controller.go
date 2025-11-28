@@ -334,6 +334,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		r.processBatchAttachmentAndFilterVolumeSpecs(
 			ctx,
 			volumeSpecsForBatch,
+			batchAttachment,
 		)
 	if processErr != nil {
 		ctx.Logger.Error(processErr, "Error processing CnsNodeVMBatchAttachments")
@@ -398,18 +399,51 @@ func (r *Reconciler) getBatchAttachmentForVM(
 func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	ctx *pkgctx.VolumeContext,
 	vmVolumeSpecsForBatch []vmopv1.VirtualMachineVolume,
+	batchAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 ) ([]cnsv1alpha1.VolumeSpec, error) {
 	var (
 		toBeBuiltPvcVols = make([]vmopv1.VirtualMachineVolume, 0)
 		retErr           error
 	)
 
-	for _, vol := range vmVolumeSpecsForBatch {
-		if err := r.handlePVCWithWFFC(ctx, vol); err != nil {
-			retErr = errOrNoRequeueErr(retErr, err)
-		} else {
-			toBeBuiltPvcVols = append(toBeBuiltPvcVols, vol)
+	// Record the 'volumeName:pvcName' pair in existing batchAttachment spec.
+	// So we could tell whether we need to verify the PVC of it.
+	existingVolVolKey := sets.New[string]()
+	if batchAttachment != nil {
+		for _, vol := range batchAttachment.Spec.Volumes {
+			existingVolVolKey.Insert(vol.Name + ":" + vol.PersistentVolumeClaim.ClaimName)
 		}
+	}
+
+	for _, vol := range vmVolumeSpecsForBatch {
+		if vol.PersistentVolumeClaim == nil {
+			continue
+		}
+		// If volumes are already added to batchAttachment, no need to
+		// handlePVCWithWFFC or check boundness.
+		if existingVolVolKey.Has(vol.Name + ":" + vol.PersistentVolumeClaim.ClaimName) {
+			toBeBuiltPvcVols = append(toBeBuiltPvcVols, vol)
+			continue
+		}
+
+		pvc, err := r.getPVC(ctx, vol.PersistentVolumeClaim.ClaimName)
+		if err != nil {
+			retErr = errOrNoRequeueErr(retErr, err)
+			continue
+		}
+
+		// Handle PVC with WFFC first since it handles PVCS that are unbound.
+		if err := r.handlePVCWithWFFC(ctx, vol, pvc); err != nil {
+			retErr = errOrNoRequeueErr(retErr, err)
+			continue
+		}
+
+		// Ignore pvcs that are not bound.
+		if pvc.Status.Phase != corev1.ClaimBound {
+			continue
+		}
+
+		toBeBuiltPvcVols = append(toBeBuiltPvcVols, vol)
 	}
 
 	volumeSpecs, err := r.buildVolumeSpecs(toBeBuiltPvcVols, ctx.VM.Status.Hardware)
@@ -423,6 +457,24 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	}
 
 	return volumeSpecs, retErr
+}
+
+func (r *Reconciler) getPVC(
+	ctx *pkgctx.VolumeContext,
+	pvcName string,
+) (corev1.PersistentVolumeClaim, error) {
+
+	pvc := corev1.PersistentVolumeClaim{}
+	pvcKey := client.ObjectKey{
+		Namespace: ctx.VM.Namespace,
+		Name:      pvcName,
+	}
+
+	if err := r.Get(ctx, pvcKey, &pvc); err != nil {
+		return pvc, fmt.Errorf("cannot get PVC: %w", err)
+	}
+
+	return pvc, nil
 }
 
 // createOrUpdateBatchAttachment handles the creation or update of
@@ -749,20 +801,11 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(_ *pkgctx.VolumeContext) (bool
 func (r *Reconciler) handlePVCWithWFFC(
 	ctx *pkgctx.VolumeContext,
 	volume vmopv1.VirtualMachineVolume,
+	pvc corev1.PersistentVolumeClaim,
 ) error {
 
-	if volume.PersistentVolumeClaim == nil || volume.PersistentVolumeClaim.InstanceVolumeClaim != nil {
+	if volume.PersistentVolumeClaim.InstanceVolumeClaim != nil {
 		return nil
-	}
-
-	pvc := corev1.PersistentVolumeClaim{}
-	pvcKey := client.ObjectKey{
-		Namespace: ctx.VM.Namespace,
-		Name:      volume.PersistentVolumeClaim.ClaimName,
-	}
-
-	if err := r.Get(ctx, pvcKey, &pvc); err != nil {
-		return fmt.Errorf("cannot get PVC: %w", err)
 	}
 
 	if pvc.Status.Phase == corev1.ClaimBound {

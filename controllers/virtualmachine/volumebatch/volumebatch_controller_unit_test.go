@@ -332,7 +332,7 @@ func unitTestsReconcile() {
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
 
 					attVol1 := attachment.Spec.Volumes[0]
-					Expect(attVol1.Name).To(Equal("cns-volume-1"))
+					Expect(attVol1.Name).To(Equal(volumeName1))
 					Expect(attVol1.PersistentVolumeClaim.ClaimName).To(Equal(claimName1))
 
 					Expect(vm.Status.Volumes).To(HaveLen(1))
@@ -384,6 +384,26 @@ func unitTestsReconcile() {
 						To(Equal(ptr.To(int32(1000))))
 					Expect(attVol1.PersistentVolumeClaim.UnitNumber).
 						To(Equal(ptr.To(int32(5))))
+				})
+			})
+
+			When("PVC is not bound", func() {
+				BeforeEach(func() {
+					initObjects = nil
+					boundPVC1.Status.Phase = corev1.ClaimPending
+					sc := builder.DummyStorageClass()
+					boundPVC1.Spec.StorageClassName = &sc.Name
+					initObjects = append(initObjects, boundPVC1, sc)
+				})
+
+				It("should not add the volume to batchAttachment", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+
+					Expect(attachment).NotTo(BeNil())
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
 				})
 			})
 		})
@@ -1253,44 +1273,39 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 			})
 
-			When("There an existing CnsNodeVMBatchAttachment has the PVC in spec", func() {
-				var batchAtt *cnsv1alpha1.CnsNodeVMBatchAttachment
+			When("There an existing CnsNodeVMBatchAttachment has the volume with that PVC in spec", func() {
 				BeforeEach(func() {
-					batchAtt = &cnsv1alpha1.CnsNodeVMBatchAttachment{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
-							Namespace: vm.Namespace,
-						},
-						Spec: cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
-							Volumes: []cnsv1alpha1.VolumeSpec{
-								{
-									Name: "cns-volume-1",
-									PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
-										ClaimName: claimName1,
-									},
-								},
+					batchAtt := cnsBatchAttachmentForVMVolume(vm, nil)
+					batchAtt.Spec.Volumes = []cnsv1alpha1.VolumeSpec{
+						{
+							Name: volumeName1,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
+								ClaimName: claimName1,
 							},
 						},
 					}
-				})
 
-				AfterEach(func() {
-					batchAtt = nil
-				})
-
-				JustBeforeEach(func() {
 					initObjects = append(initObjects, batchAtt)
 				})
 
-				It("returns success", func() {
+				It("returns success and skip handling PVC with WFFC", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
 
-					By("Adds node-is-zone and selected-node annotation to PVC", func() {
+					By("Skip adding node-is-zone and selected-node annotation to PVC", func() {
 						pvc := &corev1.PersistentVolumeClaim{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
-						Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "true"))
-						Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, zoneName))
+						Expect(pvc.Annotations).NotTo(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "true"))
+						Expect(pvc.Annotations).NotTo(HaveKeyWithValue(storagehelpers.AnnSelectedNode, zoneName))
+					})
+
+					By("Keeping the volume in batchAttachment spec", func() {
+						attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+						Expect(attachment).ToNot(BeNil())
+						Expect(attachment.Spec.Volumes).To(HaveLen(1))
+						attVol1 := attachment.Spec.Volumes[0]
+						Expect(attVol1.Name).To(Equal(volumeName1))
+						Expect(attVol1.PersistentVolumeClaim.ClaimName).To(Equal(claimName1))
 					})
 				})
 			})
@@ -1472,7 +1487,6 @@ func assertBatchAttachmentSpec(
 func cnsBatchAttachmentForVMVolume(
 	vm *vmopv1.VirtualMachine,
 	vmVols []vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVMBatchAttachment {
-	t := true
 	batchAttachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
@@ -1483,8 +1497,8 @@ func cnsBatchAttachmentForVMVolume(
 					Kind:               "VirtualMachine",
 					Name:               vm.Name,
 					UID:                vm.UID,
-					Controller:         &t,
-					BlockOwnerDeletion: &t,
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				},
 			},
 		},

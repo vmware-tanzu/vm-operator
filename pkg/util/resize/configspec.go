@@ -89,7 +89,7 @@ func compareHardware(
 	outCS *vimtypes.VirtualMachineConfigSpec) {
 
 	cmp(ci.Hardware.NumCPU, cs.NumCPUs, &outCS.NumCPUs)
-	cmp(ci.Hardware.NumCoresPerSocket, cs.NumCoresPerSocket, &outCS.NumCoresPerSocket)
+	cmpPtr(ci.Hardware.NumCoresPerSocket, cs.NumCoresPerSocket, &outCS.NumCoresPerSocket)
 	// outCS.AutoCoresPerSocket = ...
 	cmp(int64(ci.Hardware.MemoryMB), cs.MemoryMB, &outCS.MemoryMB)
 	cmpPtr(ci.Hardware.VirtualICH7MPresent, cs.VirtualICH7MPresent, &outCS.VirtualICH7MPresent)

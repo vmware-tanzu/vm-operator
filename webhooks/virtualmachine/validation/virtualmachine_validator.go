@@ -41,6 +41,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -1133,10 +1134,18 @@ func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	if ctx.IsVMOperatorAccount ||
-		(oldVM != nil && !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM)) {
-
+	if ctx.IsVMOperatorAccount {
 		return nil
+	}
+
+	if oldVM != nil {
+		if err := vmopv1util.IsObjectSchemaUpgraded(
+			ctx, oldVM); err != nil {
+
+			pkglog.FromContextOrDefault(ctx).Info(
+				"Skipping volume validation", "reason", err.Error())
+			return nil
+		}
 	}
 
 	var (
@@ -1849,7 +1858,7 @@ func (v validator) validateSchemaUpgrade(
 			"key", pkgconst.UpgradedToFeatureVersionAnnotationKey)
 	}
 
-	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *oldVM) {
+	if vmopv1util.IsObjectSchemaUpgraded(ctx, oldVM) != nil {
 		// Prevent most users from modifying the VM spec fields,
 		// that are backfilled by the schema upgrade and mutable,
 		// before the schema upgrade is completed.
@@ -2302,7 +2311,11 @@ func (v validator) validateCdrom(
 				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
 			}
 		} else {
-			if vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *newVM) {
+			if err := vmopv1util.IsObjectSchemaUpgraded(ctx, newVM); err != nil {
+				pkglog.FromContextOrDefault(ctx).Info(
+					"Skipping cd-rom controller validation",
+					"reason", err.Error())
+			} else {
 				allErrs = append(allErrs, v.validateCdromControllerSpecsOnUpdate(newCD, f)...)
 			}
 		}

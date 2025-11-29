@@ -14,6 +14,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -53,7 +54,9 @@ func (v validator) validateControllers(
 		return nil
 	}
 
-	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *vm) {
+	if err := vmopv1util.IsObjectSchemaUpgraded(ctx, vm); err != nil {
+		pkglog.FromContextOrDefault(ctx).Info(
+			"Skipping controller validation", "reason", err.Error())
 		return nil
 	}
 

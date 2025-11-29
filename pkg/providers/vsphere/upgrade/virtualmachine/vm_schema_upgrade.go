@@ -66,15 +66,15 @@ func ReconcileSchemaUpgrade(
 
 	logger.V(4).Info("Reconciling schema upgrade for VM")
 
-	if vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *vm) {
-
+	if err := vmopv1util.IsObjectSchemaUpgraded(ctx, vm); err != nil {
+		logger.Info("Upgrading VM", "reason", err.Error())
+	} else {
 		if features.AllDisksArePVCs || features.VMSharedDisks {
 			// Ensure the backfill condition is marked ready since the backfill
 			// reconcile will not be called again since it's been marked as
 			// upgraded.
 			pkgcond.MarkTrue(vm, vmconfunmanagedvolsfill.Condition)
 		}
-
 		logger.V(4).Info(
 			"Skipping reconciliation of schema upgrade for VM" +
 				" that is already upgraded")

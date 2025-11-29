@@ -11,6 +11,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -46,7 +47,10 @@ func MutateCdromControllerOnUpdate(
 
 	// Check the schema upgrade status on the new VM to ensure the mutation
 	// is applied immediately after the schema upgrade completes.
-	if !vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *vm) {
+	if err := vmopv1util.IsObjectSchemaUpgraded(ctx, vm); err != nil {
+		pkglog.FromContextOrDefault(ctx).Info(
+			"Skipping cd-rom controller mutation",
+			"reason", err.Error())
 		return false, nil
 	}
 

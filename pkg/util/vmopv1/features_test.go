@@ -5,6 +5,8 @@
 package vmopv1_test
 
 import (
+	"errors"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -26,7 +28,8 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		annotationsNil,
 		vmSharedDisks,
 		allDisksArePVCs,
-		expected bool,
+		expectErr bool,
+		expectedErr error,
 	) {
 		ctx := pkgcfg.WithConfig(pkgcfg.Config{
 			BuildVersion: buildVersion,
@@ -58,7 +61,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 			}
 		}
 
-		Ω(vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, vm)).Should(Equal(expected))
+		err := vmopv1util.IsObjectSchemaUpgraded(ctx, &vm)
+		if expectErr {
+			Ω(err).Should(MatchError(expectedErr))
+		} else {
+			Ω(err).ShouldNot(HaveOccurred())
+		}
 	},
 	Entry(
 		"all annotations are set correctly with no features",
@@ -69,7 +77,8 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		true,
+		false,
+		nil,
 	),
 	Entry(
 		"all annotations are set correctly with VMSharedDisks",
@@ -80,7 +89,8 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		true,
 		false,
-		true,
+		false,
+		nil,
 	),
 	Entry(
 		"all annotations are set correctly with AllDisksArePVCs",
@@ -91,7 +101,8 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		true,
-		true,
+		false,
+		nil,
 	),
 	Entry(
 		"all annotations are set correctly with all features",
@@ -102,7 +113,20 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		true,
 		true,
+		false,
+		nil,
+	),
+	Entry(
+		"all annotations are set correctly with all features with a cap disabled",
+		"1.2.3-test",
+		ptr.To("1.2.3-test"),
+		ptr.To(vmopv1.GroupVersion.Version),
+		ptr.To("7"),
+		false,
+		false,
 		true,
+		false,
+		nil,
 	),
 	Entry(
 		"build version annotation is missing",
@@ -113,7 +137,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "buildVersion",
+			Object: "",
+			Target: "1.2.3-test",
+		},
 	),
 	Entry(
 		"schema version annotation is missing",
@@ -124,7 +153,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "schemaVersion",
+			Object: "",
+			Target: vmopv1.GroupVersion.Version,
+		},
 	),
 	Entry(
 		"feature version annotation is missing",
@@ -135,7 +169,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "featureVersion",
+			Object: "",
+			Target: "1",
+		},
 	),
 	Entry(
 		"all annotations are missing",
@@ -146,7 +185,24 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		errors.Join(
+			vmopv1util.NotUpgradedErr{
+				Type:   "buildVersion",
+				Object: "",
+				Target: "1.2.3-test",
+			},
+			vmopv1util.NotUpgradedErr{
+				Type:   "schemaVersion",
+				Object: "",
+				Target: vmopv1.GroupVersion.Version,
+			},
+			vmopv1util.NotUpgradedErr{
+				Type:   "featureVersion",
+				Object: "",
+				Target: "1",
+			},
+		),
 	),
 	Entry(
 		"build version annotation is empty",
@@ -157,7 +213,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "buildVersion",
+			Object: "",
+			Target: "1.2.3-test",
+		},
 	),
 	Entry(
 		"schema version annotation is empty",
@@ -168,7 +229,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "schemaVersion",
+			Object: "",
+			Target: vmopv1.GroupVersion.Version,
+		},
 	),
 	Entry(
 		"feature version annotation is empty",
@@ -179,7 +245,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "featureVersion",
+			Object: "",
+			Target: "1",
+		},
 	),
 	Entry(
 		"build version annotation does not match context build version",
@@ -190,7 +261,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "buildVersion",
+			Object: "0.0.0-wrong",
+			Target: "1.2.3-test",
+		},
 	),
 	Entry(
 		"schema version annotation does not match current schema version",
@@ -201,7 +277,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "schemaVersion",
+			Object: "v1alpha4",
+			Target: vmopv1.GroupVersion.Version,
+		},
 	),
 	Entry(
 		"feature version annotation does not match activated features",
@@ -212,7 +293,12 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		true,
 		false,
-		false,
+		true,
+		vmopv1util.NotUpgradedErr{
+			Type:   "featureVersion",
+			Object: "1",
+			Target: "3",
+		},
 	),
 	Entry(
 		"all annotations do not match",
@@ -223,7 +309,24 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		false,
 		false,
 		false,
-		false,
+		true,
+		errors.Join(
+			vmopv1util.NotUpgradedErr{
+				Type:   "buildVersion",
+				Object: "0.0.0-wrong",
+				Target: "1.2.3-test",
+			},
+			vmopv1util.NotUpgradedErr{
+				Type:   "schemaVersion",
+				Object: "v1alpha4",
+				Target: vmopv1.GroupVersion.Version,
+			},
+			vmopv1util.NotUpgradedErr{
+				Type:   "featureVersion",
+				Object: "",
+				Target: "1",
+			},
+		),
 	),
 	Entry(
 		"annotations map is nil",
@@ -234,7 +337,24 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		true,
 		false,
 		false,
-		false,
+		true,
+		errors.Join(
+			vmopv1util.NotUpgradedErr{
+				Type:   "buildVersion",
+				Object: "",
+				Target: "1.2.3-test",
+			},
+			vmopv1util.NotUpgradedErr{
+				Type:   "schemaVersion",
+				Object: "",
+				Target: vmopv1.GroupVersion.Version,
+			},
+			vmopv1util.NotUpgradedErr{
+				Type:   "featureVersion",
+				Object: "",
+				Target: "1",
+			},
+		),
 	),
 )
 
@@ -262,7 +382,7 @@ var _ = Describe("FeatureVersion", func() {
 			func(fv vmopv1util.FeatureVersion, expected string) {
 				Ω(fv.String()).Should(Equal(expected))
 			},
-			Entry("empty", vmopv1util.FeatureVersionEmpty, "0"),
+			Entry("empty", vmopv1util.FeatureVersionEmpty, ""),
 			Entry("base", vmopv1util.FeatureVersionBase, "1"),
 			Entry("VMSharedDisks", vmopv1util.FeatureVersionVMSharedDisks, "2"),
 			Entry("AllDisksArePVCs", vmopv1util.FeatureVersionAllDisksArePVCs, "4"),

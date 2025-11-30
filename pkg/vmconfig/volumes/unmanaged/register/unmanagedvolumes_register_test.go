@@ -402,6 +402,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(*pvc.Spec.StorageClassName).To(Equal("my-storage-class-1"))
 					Expect(pvc.Spec.VolumeMode).ToNot(BeNil())
 					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeBlock))
+					Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
 					Expect(pvc.Spec.DataSourceRef).ToNot(BeNil())
 					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))
@@ -429,6 +430,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(crv.OwnerReferences[0].Kind).To(Equal("VirtualMachine"))
 					Expect(crv.OwnerReferences[0].Name).To(Equal(vm.Name))
 					Expect(*crv.OwnerReferences[0].Controller).To(BeTrue())
+					Expect(crv.Spec.BackingType).ToNot(BeEmpty())
 				})
 			})
 
@@ -516,6 +518,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(*pvc.Spec.StorageClassName).To(Equal("my-storage-class-1"))
 					Expect(pvc.Spec.VolumeMode).ToNot(BeNil())
 					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeFilesystem))
+					Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
 					Expect(pvc.Spec.DataSourceRef).ToNot(BeNil())
 					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))
@@ -543,6 +546,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(crv.OwnerReferences[0].Kind).To(Equal("VirtualMachine"))
 					Expect(crv.OwnerReferences[0].Name).To(Equal(vm.Name))
 					Expect(*crv.OwnerReferences[0].Controller).To(BeTrue())
+					Expect(crv.Spec.BackingType).ToNot(BeEmpty())
 				})
 			})
 

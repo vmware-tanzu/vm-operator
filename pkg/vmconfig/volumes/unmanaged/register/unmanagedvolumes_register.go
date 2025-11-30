@@ -38,8 +38,16 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 )
 
-// Condition is the name of the condition that stores the result.
-const Condition = "VirtualMachineUnmanagedVolumesRegistered"
+const (
+	// Condition is the name of the condition that stores the result.
+	Condition = "VirtualMachineUnmanagedVolumesRegistered"
+
+	// DiskBackingAnnotation is the type of the backing disk.
+	// It is added on the PVC during static volume provisioning
+	// and is used to specify the `CnsBackingType` during volume attachment.
+	// The values correspond to the CnsVolumeBackingType enum.
+	DiskBackingAnnotation = "cns.vmware.com.protected/disk-backing"
+)
 
 // ErrPendingRegister is returned from Reconcile to indicate to exit the VM
 // reconcile workflow early.
@@ -590,6 +598,11 @@ func ensurePVCForUnmanagedDisk(
 		// Assign the storage class to the PVC.
 		obj.Spec.StorageClassName = &diskInfo.StorageClass
 
+		// Assign the disk backing type.
+		obj.Annotations = map[string]string{
+			DiskBackingAnnotation: string(diskInfo.BackingType),
+		}
+
 		// Any disks already attached to the VM should be assumed as Block if
 		// RAC is enabled.
 		volumeMode := corev1.PersistentVolumeBlock
@@ -630,8 +643,9 @@ func ensurePVCForUnmanagedDisk(
 	}
 
 	var (
-		hasDSRef    bool
-		hasOwnerRef bool
+		hasDSRef       bool
+		hasOwnerRef    bool
+		hasBackingType bool
 	)
 
 	// Check to see if the PVC already has the expected OwnerRef.
@@ -657,7 +671,12 @@ func ensurePVCForUnmanagedDisk(
 		}
 	}
 
-	if hasOwnerRef && hasDSRef {
+	// Check to see if the PVC already has the backing type.
+	if obj.Annotations[DiskBackingAnnotation] == string(diskInfo.BackingType) {
+		hasBackingType = true
+	}
+
+	if hasOwnerRef && hasDSRef && hasBackingType {
 		return obj, nil
 	}
 
@@ -669,6 +688,14 @@ func ensurePVCForUnmanagedDisk(
 	// And the OwnerReference to the PVC that points back to the VM.
 	if !hasOwnerRef {
 		obj.OwnerReferences = append(obj.OwnerReferences, expOwnerRef)
+	}
+
+	// Add the backing type.
+	if !hasBackingType {
+		if obj.Annotations == nil {
+			obj.Annotations = map[string]string{}
+		}
+		obj.Annotations[DiskBackingAnnotation] = string(diskInfo.BackingType)
 	}
 
 	if err := k8sClient.Patch(ctx, obj, objPatch); err != nil {
@@ -777,6 +804,9 @@ func ensureCnsRegisterVolumeForDisk(
 		} else {
 			obj.Spec.AccessMode = corev1.ReadWriteOnce
 		}
+
+		// Set the disk backing type.
+		obj.Spec.BackingType = string(diskInfo.BackingType)
 
 		// Create the CRV.
 		if err := k8sClient.Create(ctx, obj); err != nil {

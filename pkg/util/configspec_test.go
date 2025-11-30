@@ -468,7 +468,7 @@ var virtualMachineConfigInfoForTests vimtypes.VirtualMachineConfigInfo = vimtype
 	RebootPowerOff: addrOfBool(false),
 	Hardware: vimtypes.VirtualHardware{
 		NumCPU:              1,
-		NumCoresPerSocket:   1,
+		NumCoresPerSocket:   ptr.To[int32](1),
 		AutoCoresPerSocket:  addrOfBool(true),
 		MemoryMB:            2048,
 		VirtualICH7MPresent: addrOfBool(false),

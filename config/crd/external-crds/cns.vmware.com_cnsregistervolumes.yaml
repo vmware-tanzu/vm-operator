@@ -45,6 +45,11 @@ spec:
                   CnsRegisterVolume has.
                   AccessMode must be specified if VolumeID is specified.
                 type: string
+              backingType:
+                description: |-
+                  BackingType enumerates types of backing for batch attach operations.
+                  These values correspond to the CnsVolumeBackingType enum.
+                type: string
               diskURLPath:
                 description: |-
                   DiskUrlPath is URL path to an existing block volume to be imported into

@@ -60,12 +60,12 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigSpec{}),
 
 		Entry("NumCoresPerSocket needs updating",
-			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCoresPerSocket: 2}},
-			ConfigSpec{NumCoresPerSocket: 4},
-			ConfigSpec{NumCoresPerSocket: 4}),
+			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCoresPerSocket: ptr.To[int32](2)}},
+			ConfigSpec{NumCoresPerSocket: ptr.To[int32](4)},
+			ConfigSpec{NumCoresPerSocket: ptr.To[int32](4)}),
 		Entry("NumCoresPerSocket does not need updating",
-			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCoresPerSocket: 4}},
-			ConfigSpec{NumCoresPerSocket: 4},
+			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCoresPerSocket: ptr.To[int32](4)}},
+			ConfigSpec{NumCoresPerSocket: ptr.To[int32](4)},
 			ConfigSpec{}),
 
 		Entry("MemoryMB needs updating",

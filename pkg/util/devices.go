@@ -12,6 +12,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	cnstypes "github.com/vmware/govmomi/cns/types"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -258,6 +259,7 @@ type VirtualDiskInfo struct {
 	UnitNumber      *int32
 	CapacityInBytes int64
 	Device          *vimtypes.VirtualDisk
+	BackingType     cnstypes.CnsVolumeBackingType
 }
 
 // Name returns the name of the disk to use in the volume status as well as
@@ -288,38 +290,49 @@ func GetVirtualDiskInfo(
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
 		vdi.HasParent = tb.Parent != nil
+		vdi.BackingType = cnstypes.CnsVolumeBackingTypeSeSparseBackingInfo
 	case *vimtypes.VirtualDiskSparseVer1BackingInfo: // No UUID or Crypto
 		vdi.FileName = tb.FileName
 		vdi.HasParent = tb.Parent != nil
+		vdi.BackingType = cnstypes.CnsVolumeBackingTypeSparseVer1BackingInfo
 	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
 		vdi.HasParent = tb.Parent != nil
+		vdi.BackingType = cnstypes.CnsVolumeBackingTypeSparseVer2BackingInfo
 	case *vimtypes.VirtualDiskFlatVer1BackingInfo: // No UUID or Crypto
 		vdi.FileName = tb.FileName
 		vdi.HasParent = tb.Parent != nil
+		vdi.BackingType = cnstypes.CnsVolumeBackingTypeFlatVer1BackingInfo
 	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
 		vdi.HasParent = tb.Parent != nil
+		vdi.BackingType = cnstypes.CnsVolumeBackingTypeFlatVer2BackingInfo
 	case *vimtypes.VirtualDiskLocalPMemBackingInfo: // No Crypto
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
+		vdi.BackingType = cnstypes.CnsVolumeBackingTypeLocalPMemBackingInfo
 	case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo: // No Crypto
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+		vdi.BackingType = cnstypes.CnsVolumeBackingTypeRawDiskMappingVer1BackingInfo
 	case *vimtypes.VirtualDiskRawDiskVer2BackingInfo: // No Crypto
 		vdi.FileName = tb.DescriptorFileName
 		vdi.UUID = tb.Uuid
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+		// TODO(akutz) Incomplete enum?
+		// vdi.BackingType = cnstypes.CnsVolumeBackingTypeRawDiskMappingVer2BackingInfo
 	case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo: // No Crypto
 		vdi.FileName = tb.DescriptorFileName
 		vdi.UUID = tb.Uuid
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+		// TODO(akutz) Incomplete enum?
+		// vdi.BackingType = cnstypes.CnsVolumeBackingTypePartitionedRawDiskVer2BackingInfo
 	}
 
 	if di := vd.DeviceInfo; di != nil {

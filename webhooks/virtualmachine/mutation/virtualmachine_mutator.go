@@ -36,6 +36,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -350,19 +351,33 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 
 		// Check the schema upgrade status on the new VM to ensure the mutation
 		// is applied immediately after the schema upgrade completes.
-		if (pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
-			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs) &&
-			vmopv1util.IsVirtualMachineSchemaUpgraded(ctx, *modified) {
-			if ok, err := SetPVCVolumeDefaults(ctx, m.client, modified); err != nil {
-				return admission.Denied(err.Error())
-			} else if ok {
-				wasMutated = true
-			}
-			// Add controllers as needed for new volumes.
-			if ok, err := AddControllersForVolumes(ctx, m.client, modified); err != nil {
-				return admission.Denied(err.Error())
-			} else if ok {
-				wasMutated = true
+
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
+			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+
+			if err := vmopv1util.IsObjectSchemaUpgraded(
+				ctx, modified); err != nil {
+
+				pkglog.FromContextOrDefault(ctx).Info(
+					"Skipping pvc defaults and controller for volume mutation",
+					"reason", err.Error())
+
+			} else {
+				if ok, err := SetPVCVolumeDefaults(
+					ctx, m.client, modified); err != nil {
+
+					return admission.Denied(err.Error())
+				} else if ok {
+					wasMutated = true
+				}
+				// Add controllers as needed for new volumes.
+				if ok, err := AddControllersForVolumes(
+					ctx, m.client, modified); err != nil {
+
+					return admission.Denied(err.Error())
+				} else if ok {
+					wasMutated = true
+				}
 			}
 		}
 

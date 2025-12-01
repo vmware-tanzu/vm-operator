@@ -120,9 +120,81 @@ Virtual machines deployed and managed by VM Operator support _all_ the same hard
 
 As long as they are specified in the VM class, features such as virtual GPUs, device groups, and SR-IOV NICs are all supported.
 
+### Controllers
+
+A `VirtualMachine` supports multiple types of storage controllers, each with specific capabilities and limitations. Controllers can be explicitly configured in the `spec.hardware` section or automatically provisioned when attaching volumes and CD-ROMs.
+
+#### Controller Types
+
+The following controller types are supported:
+
+| Type | Max Controllers | Max Slots per Controller | Reserved Unit | Notes |
+|------|:---------------:|:------------------------:|:-------------:|-------|
+| IDE | 2 | 2 | N/A | Typically used for CD-ROM devices |
+| NVME | 4 | 64 | N/A | High-performance storage option |
+| SATA | 4 | 30 | N/A | Also used for CD-ROM devices |
+| SCSI | 4 | Varies by type | 7 | See SCSI Controller Types below |
+
+#### SCSI Controller Types
+
+SCSI controllers support different adapter types, each with varying capacity:
+
+| SCSI Type | Max Slots | Available Slots |
+|-----------|:---------:|:---------------:|
+| ParaVirtual | 65 | 64 |
+| BusLogic | 16 | 15 |
+| LsiLogic | 16 | 15 |
+| LsiLogicSAS | 16 | 15 |
+
+!!! note
+    SCSI controllers occupy unit number 7 on their own bus, reducing the available slots by one.
+
+#### Controller Sharing Modes
+
+Controllers support different sharing modes for specialized workloads:
+
+| Sharing Mode | Supported Controllers | Description |
+|--------------|----------------------|-------------|
+| None | SCSI, NVME | No sharing (default for most controllers) |
+| Physical | SCSI, NVME | Physical bus sharing for cluster workloads (e.g., Microsoft WSFC) |
+| Virtual | SCSI | Virtual bus sharing for multi-writer scenarios |
+
+#### Configuring Controllers
+
+Controllers can be explicitly configured in the `spec.hardware` section:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: my-vm
+spec:
+  hardware:
+    scsiControllers:
+    - busNumber: 0
+      sharingMode: None
+      type: ParaVirtual
+    - busNumber: 1
+      sharingMode: Physical
+      type: ParaVirtual
+    sataControllers:
+    - busNumber: 0
+    nvmeControllers:
+    - busNumber: 0
+      sharingMode: None
+```
+
+When controllers are not explicitly specified, they are automatically created as needed when volumes or CD-ROMs are attached. For example, when adding a volume without specifying a controller, a ParaVirtual SCSI controller with `sharingMode: None` will be created if no SCSI controller with available slots exists (and the maximum of 4 SCSI controllers has not been reached).
+
+The mutation webhook applies the following logic when creating controllers automatically:
+
+* **Default volumes**: Creates a ParaVirtual SCSI controller with `sharingMode: None`
+* **OracleRAC volumes**: Creates a ParaVirtual SCSI controller with `sharingMode: None` (note: the volume itself has `sharingMode: MultiWriter`)
+* **MicrosoftWSFC volumes**: Creates a ParaVirtual SCSI controller with `sharingMode: Physical`
+
 ### Status
 
-Information about the hardware being used (ex. CPU, memory, vGPUs, etc.) can be gleamed from the VM's status, ex.:
+Information about the hardware being used (ex. CPU, memory, vGPUs, controllers, etc.) can be gleamed from the VM's status, ex.:
 
 ```yaml
 status:
@@ -140,7 +212,28 @@ status:
     - migrationType: Enhanced
       profile: grid_p40-2q
       type: Nvidia
+    controllers:
+    - busNumber: 0
+      deviceKey: 1000
+      type: SCSI
+      devices:
+      - type: Disk
+        unitNumber: 0
+      - type: Disk
+        unitNumber: 1
+    - busNumber: 1
+      deviceKey: 1001
+      type: IDE
+      devices:
+      - type: CDROM
+        unitNumber: 0
 ```
+
+The `status.hardware.controllers` field provides visibility into the actual controller configuration on the VM, including:
+
+* The controller's bus number and type
+* The vSphere device key for the controller
+* A list of devices (disks and CD-ROMs) attached to each controller with their unit numbers
 
 Examples of other hardware (ex. storage, vTPMs, etc.) in the status are illustrated throughout this page.
 
@@ -710,6 +803,81 @@ There are two types of volumes: _Managed_ and _Classic_:
 * **Managed** volumes refer to storage that is provided by [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes).
 * **Classic** volumes refer to the disk(s) that came from the `VirtualMachineImage` or `ClusterVirtualMachineImage` from which the `VirtualMachine` was deployed.
 
+#### Volume Specification
+
+A volume in the `spec.volumes` field supports the following properties:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | The volume's name (must be a DNS_LABEL and unique within the VM) |
+| `persistentVolumeClaim` | object | Reference to a PersistentVolumeClaim |
+| `controllerType` | enum | Controller type: `IDE`, `NVME`, `SATA`, or `SCSI` (defaults to `SCSI` if not specified) |
+| `controllerBusNumber` | int32 | The bus number of the controller (references `spec.hardware.<controllerType>Controllers`) |
+| `unitNumber` | int32 | The unit number on the controller (must be unique per controller and cannot be 7 for SCSI) |
+| `diskMode` | enum | The disk attachment mode (see [Disk Modes](#disk-modes)) |
+| `sharingMode` | enum | The disk sharing mode: `None` or `MultiWriter` (see [Sharing Modes](#sharing-modes)) |
+| `applicationType` | enum | Application-specific volume configuration: `OracleRAC` or `MicrosoftWSFC` (see [Application Types](#application-types)) |
+
+All placement-related fields (`controllerType`, `controllerBusNumber`, `unitNumber`) are immutable once set. The `diskMode`, `sharingMode`, and `applicationType` fields are also immutable.
+
+##### Disk Modes
+
+The `diskMode` field controls how changes to the disk are persisted:
+
+| Disk Mode | Persistent | Independent | Included in Snapshots | Notes |
+|-----------|:----------:|:-----------:|:---------------------:|-------|
+| `Persistent` | Yes | No | Yes | Default mode for standard volumes |
+| `IndependentPersistent` | Yes | Yes | No | Changes persist but disk not included in snapshots/backups; default for OracleRAC and MicrosoftWSFC |
+| `NonPersistent` | No | No | Yes | Changes discarded on power-off |
+| `IndependentNonPersistent` | No | Yes | No | Changes discarded on power-off, not included in snapshots |
+
+!!! warning
+    Any data written to volumes attached as `IndependentNonPersistent` or `NonPersistent` will be discarded when the VM is powered off.
+
+##### Sharing Modes
+
+The `sharingMode` field controls whether the volume can be shared across multiple VMs:
+
+| Sharing Mode | Description |
+|--------------|-------------|
+| `None` | Volume is not shared (default for most volumes, and for MicrosoftWSFC) |
+| `MultiWriter` | Volume can be shared across multiple VMs for multi-writer scenarios (default for OracleRAC) |
+
+For `MultiWriter` volumes, the PersistentVolumeClaim must have `ReadWriteMany` access mode.
+
+##### Application Types
+
+The `applicationType` field provides application-specific defaults for specialized workloads:
+
+| Application Type | Default Disk Mode | Default Sharing Mode | Controller Selection |
+|------------------|-------------------|----------------------|---------------------|
+| `OracleRAC` | `IndependentPersistent` | `MultiWriter` | First SCSI controller with `sharingMode: None` and available slot. If none exists, creates a new ParaVirtual SCSI controller with `sharingMode: None` (if fewer than 4 SCSI controllers exist). |
+| `MicrosoftWSFC` | `IndependentPersistent` | `None` | First SCSI controller with `sharingMode: Physical` and available slot. If none exists, creates a new ParaVirtual SCSI controller with `sharingMode: Physical` (if fewer than 4 SCSI controllers exist). |
+
+!!! note "Application-Based Defaults"
+    When an `applicationType` is specified, the corresponding `diskMode` and `sharingMode` values are automatically set by the mutation webhook if not explicitly provided. The validation webhook ensures these values are correct and will reject requests with invalid combinations.
+    
+    The `applicationType` field is immutable and cannot be changed after the volume is created.
+
+#### Volume Placement
+
+When adding a volume, VM Operator determines the appropriate controller and unit number using the following logic:
+
+1. **Explicit Placement**: If `controllerType`, `controllerBusNumber`, and `unitNumber` are all specified, the volume is attached to that exact location. The request will fail if:
+    * The specified controller doesn't exist
+    * The specified unit number is already in use
+    * The specified unit number is invalid (e.g., 7 for SCSI controllers)
+
+2. **Partial Placement**: If only `controllerType` and/or `controllerBusNumber` are specified, VM Operator selects an available unit number on the specified or first matching controller.
+
+3. **Application-Based Placement**: If `applicationType` is specified, the controller is selected based on the application's requirements (see [Application Types](#application-types)).
+
+4. **Automatic Placement** (default): If no placement fields are specified, the volume is attached to:
+    * The first SCSI controller with an available slot
+    * If no SCSI controller has available slots, a new ParaVirtual SCSI controller is created (if fewer than 4 SCSI controllers exist)
+
+The chosen placement is reflected in `status.volumes` with the actual `controllerType`, `controllerBusNumber`, and `unitNumber` values.
+
 #### Adding Volumes
 
 ##### Adding Classic Volumes
@@ -755,6 +923,32 @@ The following steps describe how to provide additional storage with [PersistentV
           claimName: my-pvc
     ```
 
+    For more control over placement, you can specify additional fields:
+
+    ```yaml
+    spec:
+      volumes:
+      - name: my-disk-1
+        persistentVolumeClaim:
+          claimName: my-pvc
+        controllerType: SCSI
+        controllerBusNumber: 0
+        unitNumber: 2
+        diskMode: Persistent
+        sharingMode: None
+    ```
+
+    For specialized workloads like Oracle RAC, use the `applicationType`:
+
+    ```yaml
+    spec:
+      volumes:
+      - name: oracle-data
+        persistentVolumeClaim:
+          claimName: oracle-data-pvc
+        applicationType: OracleRAC
+    ```
+
 3. Wait for the new volume to be provisioned and attached to the VM.
 
 4. SSH into the guest.
@@ -765,21 +959,26 @@ The following steps describe how to provide additional storage with [PersistentV
 
 #### Volume Status
 
-The field `status.volumes` described the observed state of a `VirtualMachine` resource's volumes, including information about the volume's usage and encryption properties:
+The field `status.volumes` described the observed state of a `VirtualMachine` resource's volumes, including information about the volume's usage, placement, and encryption properties:
 
 === "Volume Properties"
 
     | Name | Description |
     |------|-------------|
-    | `attached` | Whether or not the volume has been successfully attached to the `VirtualMachine`. |
-    | `crypto` | An optional field set only if the volume is encrypted. |
-    | `diskUUID` | The unique identifier of the volume's underlying disk. |
-    | `error` | The last observed error that may have occurred when attaching/detaching the disk. |
     | `name` | The name of the volume. For managed disks this is the name from `spec.volumes` and for classic disks this is the name of the underlying disk. |
     | `type` | The [type](#volume-type) of the attached volume, i.e. either `Classic` or `Managed` |
+    | `attached` | Whether or not the volume has been successfully attached to the `VirtualMachine`. |
+    | `controllerType` | The observed controller type to which the volume is attached (`IDE`, `NVME`, `SATA`, or `SCSI`). |
+    | `controllerBusNumber` | The observed bus number of the controller to which the volume is attached. |
+    | `unitNumber` | The observed unit number of the volume on its controller. |
+    | `diskMode` | The observed disk mode (`Persistent`, `IndependentPersistent`, `NonPersistent`, or `IndependentNonPersistent`). |
+    | `sharingMode` | The observed sharing mode (`None` or `MultiWriter`). |
+    | `diskUUID` | The unique identifier of the volume's underlying disk. |
     | `limit` | The maximum amount of space that may be used by this volume. |
     | `requested` | The minimum amount of space that may be used by this volume. |
     | `used` | The total storage space occupied by the volume on disk. |
+    | `crypto` | An optional field set only if the volume is encrypted. |
+    | `error` | The last observed error that may have occurred when attaching/detaching the disk. |
 
 === "Encryption Properties"
 
@@ -795,15 +994,20 @@ The following example shows the status for a single, classic, encrypted volume:
 ```yaml
 status:
   volumes:
-  - attached: true
+  - name: my-vm
+    type: Classic
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 0
+    diskMode: Persistent
+    sharingMode: None
+    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
+    limit: 10Gi
+    used: 2Gi
     crypto:
       keyID: "19"
       providerID: gce2e-standard
-    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
-    limit: 10Gi
-    name: my-vm
-    type: Classic
-    used: 2Gi
 ```
 
 The status may also reflect multiple volumes, both classic and managed:
@@ -811,21 +1015,49 @@ The status may also reflect multiple volumes, both classic and managed:
 ```yaml
 status:
   volumes:
-  - attached: true
+  - name: my-vm
+    type: Classic
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 0
+    diskMode: Persistent
+    sharingMode: None
+    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
+    limit: 10Gi
+    used: 2Gi
     crypto:
       keyID: "19"
       providerID: gce2e-standard
-    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
-    limit: 10Gi
-    name: my-vm
-    type: Classic
-    used: 2Gi
-  - attached: true
+  - name: my-disk-1
+    type: Managed
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 1
+    diskMode: Persistent
+    sharingMode: None
     diskUUID: 6000C299-8a21-f2ad-7084-2195c255f905
     limit: 1Gi
-    name: my-disk-1
-    type: Managed
     used: "0"
+```
+
+For Oracle RAC volumes with multi-writer support, the status would show:
+
+```yaml
+status:
+  volumes:
+  - name: oracle-data
+    type: Managed
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 2
+    diskMode: IndependentPersistent
+    sharingMode: MultiWriter
+    diskUUID: 6000C299-1234-5678-9abc-def012345678
+    limit: 100Gi
+    used: 45Gi
 ```
 
 

@@ -2110,3 +2110,182 @@ Groups and their members report various conditions:
     - Keep nesting levels reasonable (2-3 levels max)
     - Use hierarchy to model real application relationships
     - Ensure parent groups account for child group dependencies
+
+## Schema Upgrade
+
+VM Operator automatically upgrades `VirtualMachine` resources to match the current schema, build version, and activated features. This process ensures existing VMs benefit from new capabilities without manual intervention.
+
+### Overview
+
+When VM Operator is upgraded or new capabilities are activated, existing `VirtualMachine` resources may need their specifications enriched with data from the underlying vSphere VM. This process, called _schema upgrade_, happens automatically during VM reconciliation and ensures that:
+
+1. The VM's spec reflects the actual state in vSphere
+2. New features can operate on existing VMs
+3. Users can modify VMs using the latest API fields
+
+### Upgrade Tracking
+
+Schema upgrades are tracked using three annotations on each `VirtualMachine`:
+
+| Annotation | Description |
+|------------|-------------|
+| `vmoperator.vmware.com/upgraded-to-build-version` | The build version of VM Operator when the VM was last upgraded |
+| `vmoperator.vmware.com/upgraded-to-schema-version` | The API schema version when the VM was last upgraded (e.g., `v1alpha5`) |
+| `vmoperator.vmware.com/upgraded-to-feature-version` | A bitmask tracking which feature-specific upgrades have been applied |
+
+A VM is considered fully upgraded when all three annotations match the current runtime values. Until then, certain operations may be skipped or restricted.
+
+### Feature Versions
+
+The feature version is a bitmask that tracks feature-specific schema upgrades:
+
+| Feature Bit | Value | Description |
+|-------------|:-----:|-------------|
+| `Base` | 1 | Basic upgrade including BIOS UUID, Instance UUID, and Cloud-Init instance UUID reconciliation |
+| `VMSharedDisks` | 2 | Adds controller and device information to support shared disks and advanced placement |
+| `AllDisksArePVCs` | 4 | Backfills unmanaged (classic) volumes into `spec.volumes` to enable PVC-based management |
+
+The feature version is computed by OR'ing together all activated feature bits. For example, if both `VMSharedDisks` and `AllDisksArePVCs` are enabled, the feature version would be `7` (1 | 2 | 4).
+
+### Upgrade Process
+
+The schema upgrade process runs during VM reconciliation and consists of several stages:
+
+#### Base Upgrade
+
+When a VM's feature version doesn't include the `Base` bit, the following fields are reconciled from vSphere:
+
+* `spec.biosUUID` - The VM's BIOS UUID
+* `spec.instanceUUID` - The VM's instance UUID
+* `metadata.annotations["vmoperator.vmware.com/instance-id"]` - Cloud-Init instance UUID
+
+#### Volume Backfill
+
+When the `AllDisksArePVCs` feature is enabled and the VM's feature version doesn't include this bit, unmanaged volumes (classic disks from the VM image) are backfilled into `spec.volumes`. This process:
+
+1. Identifies all virtual disks attached to the VM in vSphere
+2. Filters out First Class Disks (FCDs) and linked clones
+3. For each unmanaged disk not already in `spec.volumes`, creates a new volume entry with:
+    * A generated name
+    * Controller placement information (`controllerType`, `controllerBusNumber`)
+    * Unit number
+
+The backfill operation sets a condition `VirtualMachineUnmanagedVolumesBackfilled` and temporarily pauses reconciliation to allow the spec update to be persisted.
+
+!!! note
+    Volume backfill does not create PersistentVolumeClaim references for classic disks. It only adds the volume metadata to enable consistent volume management.
+
+#### Controller Reconciliation
+
+For each controller present in vSphere but missing from `spec.hardware`, a new controller entry is created:
+
+* **IDE Controllers**: Added to `spec.hardware.ideControllers` with bus number
+* **NVME Controllers**: Added to `spec.hardware.nvmeControllers` with bus number and sharing mode
+* **SATA Controllers**: Added to `spec.hardware.sataControllers` with bus number
+* **SCSI Controllers**: Added to `spec.hardware.scsiControllers` with:
+    * Bus number
+    * Controller type (ParaVirtual, BusLogic, LsiLogic, LsiLogicSAS)
+    * Sharing mode (None, Physical, Virtual)
+
+#### Device Reconciliation
+
+For disks and CD-ROMs already defined in `spec.volumes` or `spec.hardware.cdrom`, placement information is backfilled:
+
+* **Disk Placement**: For each PVC volume, the schema upgrade process:
+    1. Queries `CnsNodeVmAttachment` resources to map PVC names to disk UUIDs
+    2. Matches disk UUIDs to virtual disks in vSphere
+    3. Backfills `unitNumber`, `controllerType`, and `controllerBusNumber` if missing
+    4. Skips backfill if any existing placement field conflicts with vSphere state
+
+* **CD-ROM Placement**: For each CD-ROM device, placement fields are similarly backfilled based on the actual device configuration in vSphere.
+
+The backfill is atomic - either all three placement fields (`unitNumber`, `controllerType`, `controllerBusNumber`) are set together, or none are modified. This prevents partial state that could lead to validation errors.
+
+### Mutation Webhook Behavior
+
+The `VirtualMachine` mutation webhook sets default values for volumes and controllers during create and update operations:
+
+#### Volume Defaults
+
+When a volume with a PersistentVolumeClaim is added:
+
+1. **Application-Based Defaults**: If `applicationType` is specified:
+    * `OracleRAC`: Sets `diskMode: IndependentPersistent` and `sharingMode: MultiWriter`
+    * `MicrosoftWSFC`: Sets `diskMode: IndependentPersistent` and `sharingMode: None`
+
+2. **Standard Defaults**: If no `applicationType` is specified:
+    * `diskMode`: Defaults to `Persistent`
+    * `sharingMode`: Defaults to `None`
+
+#### Controller Creation
+
+When a volume is added and no suitable controller exists (only if the VM is already schema-upgraded):
+
+1. The webhook identifies the required controller based on `applicationType` or default logic
+2. If no matching controller exists with available slots, a new controller is added:
+    * `OracleRAC`: Creates a ParaVirtual SCSI controller with `sharingMode: None`
+    * `MicrosoftWSFC`: Creates a ParaVirtual SCSI controller with `sharingMode: Physical`
+    * Default: Creates a ParaVirtual SCSI controller with `sharingMode: None`
+
+3. Controller creation is skipped if 4 controllers of that type already exist
+
+!!! note
+    Controller creation and volume defaults are only applied during update operations if the VM's schema upgrade annotations indicate it is fully upgraded. This prevents conflicts during the upgrade process.
+
+### Validation Webhook Behavior
+
+The `VirtualMachine` validation webhook enforces placement and application-specific constraints:
+
+#### Placement Validation
+
+For VMs that have been schema-upgraded, volume placement fields are validated:
+
+* `unitNumber`: Required for existing VMs (not required when first creating a VM)
+* `controllerType`: Required for existing VMs (not required when first creating a VM)
+* `controllerBusNumber`: Required for existing VMs (not required when first creating a VM)
+
+These requirements ensure that once a volume is placed, its location is explicitly tracked and cannot be inadvertently changed.
+
+#### Application Type Validation
+
+When `applicationType` is specified, the validator ensures:
+
+* **OracleRAC volumes**:
+    * `sharingMode` must be `MultiWriter`
+    * `diskMode` must be `IndependentPersistent`
+
+* **MicrosoftWSFC volumes**:
+    * `diskMode` must be `IndependentPersistent`
+
+If these constraints are violated, the validation webhook rejects the request with a detailed error message.
+
+### Upgrade Lifecycle Example
+
+Consider a VM originally created before `VMSharedDisks` support was added:
+
+1. **Initial State**: VM has a classic disk from the image, no annotations
+2. **Build Version Upgrade**: `upgraded-to-build-version` and `upgraded-to-schema-version` are set
+3. **Base Feature Upgrade**: BIOS and instance UUIDs are reconciled, `upgraded-to-feature-version: "1"` is set
+4. **AllDisksArePVCs Enabled**: Unmanaged volumes are backfilled into `spec.volumes`, feature version becomes `"5"` (1 | 4)
+5. **VMSharedDisks Enabled**: Controllers are added to `spec.hardware.scsiControllers`, placement info is backfilled for all volumes, feature version becomes `"7"` (1 | 2 | 4)
+6. **Fully Upgraded**: VM can now be modified with full placement control and application-specific volume configurations
+
+### Checking Upgrade Status
+
+You can check if a VM has been fully upgraded by examining its annotations:
+
+```bash
+kubectl get vm my-vm -o jsonpath='{.metadata.annotations}' | jq
+```
+
+Example output for a fully upgraded VM:
+
+```json
+{
+  "vmoperator.vmware.com/upgraded-to-build-version": "v1.2.3",
+  "vmoperator.vmware.com/upgraded-to-schema-version": "v1alpha5",
+  "vmoperator.vmware.com/upgraded-to-feature-version": "7"
+}
+```
+
+If the `upgraded-to-feature-version` value is less than the expected value for all enabled features, the VM is still undergoing schema upgrade. The upgrade will complete automatically during the next reconciliation.

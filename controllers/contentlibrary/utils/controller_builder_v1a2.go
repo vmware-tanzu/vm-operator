@@ -28,8 +28,8 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -499,7 +499,6 @@ func (r *ReconcilerV1A2) syncImageContent(
 		}
 	}
 
-	// TODO: (abaruni) Update to allow for non-CLS backed libraries
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, cliObj, vmiObj)
 	if err != nil {
 		if !pkgerr.WatchVMICacheIfNotReady(err, cliObj) {

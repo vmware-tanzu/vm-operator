@@ -291,6 +291,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 							}),
 						},
 					},
+					{
+						Name:                "my-volume-3",
+						ControllerType:      vmopv1.VirtualControllerTypeSATA,
+						ControllerBusNumber: ptrOf[int32](0),
+						UnitNumber:          ptrOf[int32](0),
+					},
 				},
 				ReadinessProbe: &vmopv1.VirtualMachineReadinessProbeSpec{
 					TCPSocket: &vmopv1.TCPSocketAction{

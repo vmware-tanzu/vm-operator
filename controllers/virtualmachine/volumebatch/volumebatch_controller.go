@@ -362,6 +362,15 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		// Keep going to return aggregated error below.
 	}
 
+	// Record the volumes currently in status so we can log what's removed.
+	beforeStatusVolumes := make(map[string]string, len(ctx.VM.Spec.Volumes))
+	for _, vol := range ctx.VM.Status.Volumes {
+		if vol.Type == vmopv1.VolumeTypeManaged {
+			name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
+			beforeStatusVolumes[name] = vol.DiskUUID
+		}
+	}
+
 	volumeStatusesForBatch := r.getVMVolStatusesFromBatchAttachment(
 		ctx,
 		batchAttachment,
@@ -382,6 +391,30 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		volumeStatusesForBatch,
 		volumeStatusesForLegacy,
 	)
+
+	if len(beforeStatusVolumes) > 0 {
+		for _, vol := range ctx.VM.Status.Volumes {
+			if vol.Type != vmopv1.VolumeTypeManaged {
+				continue
+			}
+
+			name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
+			// Might not know the UUID before being attached, but also the volume
+			// spec can be updated with a different PVC. Remove entries with an
+			// empty UUID but we could just do this by name, with the potential
+			// for missing actual removals.
+			uuid, ok := beforeStatusVolumes[name]
+			if ok && (uuid == "" || uuid == vol.DiskUUID) {
+				delete(beforeStatusVolumes, name)
+			}
+		}
+
+		if len(beforeStatusVolumes) > 0 {
+			ctx.Logger.Info("Removing detached volumes from VM Status",
+				"removedCount", len(beforeStatusVolumes),
+				"removedVolumes", beforeStatusVolumes)
+		}
+	}
 
 	return errOrNoRequeueErr(deleteErr, processErr)
 }
@@ -422,14 +455,16 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	vmVolumeSpecsForBatch []vmopv1.VirtualMachineVolume,
 	batchAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 ) ([]cnsv1alpha1.VolumeSpec, error) {
+
 	var (
-		toBeBuiltPvcVols = make([]vmopv1.VirtualMachineVolume, 0)
-		retErr           error
+		toBeBuiltPvcVols  = make([]vmopv1.VirtualMachineVolume, 0)
+		existingVolVolKey = sets.New[string]()
+		toAddVolVolKey    = sets.New[string]()
+		retErr            error
 	)
 
 	// Record the 'volumeName:pvcName' pair in existing batchAttachment spec.
 	// So we could tell whether we need to verify the PVC of it.
-	existingVolVolKey := sets.New[string]()
 	if batchAttachment != nil {
 		for _, vol := range batchAttachment.Spec.Volumes {
 			existingVolVolKey.Insert(vol.Name + ":" + vol.PersistentVolumeClaim.ClaimName)
@@ -441,9 +476,12 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 			ctx.Logger.V(4).Info("PVC not set for Volume", "volName", vol.Name)
 			continue
 		}
+
 		// If volumes are already added to batchAttachment, no need to
 		// handlePVCWithWFFC or check boundness.
-		if existingVolVolKey.Has(vol.Name + ":" + vol.PersistentVolumeClaim.ClaimName) {
+		key := vol.Name + ":" + vol.PersistentVolumeClaim.ClaimName
+		if existingVolVolKey.Has(key) {
+			existingVolVolKey.Delete(key)
 			toBeBuiltPvcVols = append(toBeBuiltPvcVols, vol)
 			continue
 		}
@@ -452,7 +490,7 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 		if err != nil {
 			retErr = errOrNoRequeueErr(retErr,
 				fmt.Errorf("failed to get PVC %s for volume %s: %w",
-					pvc.Name, vol.Name, err))
+					vol.PersistentVolumeClaim.ClaimName, vol.Name, err))
 			continue
 		}
 
@@ -473,8 +511,13 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 			continue
 		}
 
+		toAddVolVolKey.Insert(key)
 		toBeBuiltPvcVols = append(toBeBuiltPvcVols, vol)
 	}
+
+	// Remaining existing batch keys are no longer referenced in the
+	// VM spec so they are going to be removed.
+	toRemovePvcVolVolKey := existingVolVolKey
 
 	volumeSpecs, err := r.buildVolumeSpecs(toBeBuiltPvcVols, ctx.VM.Status.Hardware)
 	if err != nil {
@@ -484,6 +527,13 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	// Create or update batch attachment.
 	if err := r.createOrUpdateBatchAttachment(ctx, volumeSpecs); err != nil {
 		retErr = errOrNoRequeueErr(retErr, err)
+	} else if toAddVolVolKey.Len() > 0 || toRemovePvcVolVolKey.Len() > 0 {
+		ctx.Logger.Info(
+			"Added/removed volumes to CnsNodeVMBatchAttachment",
+			"addedCount", len(toAddVolVolKey),
+			"addedVolumes", toAddVolVolKey.UnsortedList(),
+			"removedCount", len(toRemovePvcVolVolKey),
+			"removedVolumes", toRemovePvcVolVolKey.UnsortedList())
 	}
 
 	return volumeSpecs, retErr
@@ -599,9 +649,6 @@ func (r *Reconciler) buildVolumeSpecs(
 	}
 
 	for _, vol := range volumes {
-
-		pvcSpec := vol.PersistentVolumeClaim
-
 		// The validating webhook should have verified it already.
 		// It returns NoRequeueError because we do not want to keep reconciling
 		// volume with incorrect spec unless the spec is fixed.
@@ -626,7 +673,7 @@ func (r *Reconciler) buildVolumeSpecs(
 		cnsVolumeSpec := cnsv1alpha1.VolumeSpec{
 			Name: vol.Name,
 			PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
-				ClaimName:     pvcSpec.ClaimName,
+				ClaimName:     vol.PersistentVolumeClaim.ClaimName,
 				ControllerKey: ptr.To(ctrlDevKey),
 			},
 		}
@@ -990,7 +1037,6 @@ func getVolumeStatusesWithDetachingVolumeInLegacyAttachment(
 	orphanedAttachmentsMap map[string]cnsv1alpha1.CnsNodeVmAttachment,
 ) []vmopv1.VirtualMachineVolumeStatus {
 
-	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
 	// Maintain mapping of diskUUID -> attachment.
 	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachmentsMap))
 	for _, attachment := range orphanedAttachmentsMap {
@@ -1005,6 +1051,7 @@ func getVolumeStatusesWithDetachingVolumeInLegacyAttachment(
 	// want this behavior. It can be nice though to show detaching volumes. It would be nice if
 	// the Volume status has a reference to the CnsNodeVmAttachment.
 	// Once its attachment is deleted, the volume status will be removed.
+	var volumeStatuses []vmopv1.VirtualMachineVolumeStatus
 	for _, volume := range ctx.VM.Status.Volumes {
 		if attachment, ok := uuidAttachments[volume.DiskUUID]; ok {
 			volName := volume.Name
@@ -1026,7 +1073,7 @@ func getVolumeStatusWithDetachingVolumeFromBatchAttachment(
 	volumeSpecs []cnsv1alpha1.VolumeSpec,
 ) []vmopv1.VirtualMachineVolumeStatus {
 
-	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
+	var volumeStatuses []vmopv1.VirtualMachineVolumeStatus
 
 	attachVolSpecNames := sets.New[string]()
 	for _, volSpecs := range volumeSpecs {
@@ -1085,9 +1132,10 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 	vmVolumeSpecsForLegacy []vmopv1.VirtualMachineVolume,
 ) []vmopv1.VirtualMachineVolumeStatus {
 
-	volumeStatuses := []vmopv1.VirtualMachineVolumeStatus{}
+	var volumeStatuses []vmopv1.VirtualMachineVolumeStatus
+
 	// Maintain the mapping of LegacyAttachmentName -> Attachment.
-	orphanedAttachmentsMap := make(map[string]cnsv1alpha1.CnsNodeVmAttachment)
+	orphanedAttachmentsMap := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachments))
 	for _, o := range orphanedAttachments {
 		orphanedAttachmentsMap[o.Name] = o
 	}

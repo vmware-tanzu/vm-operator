@@ -7,13 +7,15 @@ package network
 import (
 	"net"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
-func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.CustomizationAdapterMapping, error) {
+func GuestOSCustomization(results NetworkInterfaceResults,
+	logger logr.Logger) ([]vimtypes.CustomizationAdapterMapping, error) {
 	mappings := make([]vimtypes.CustomizationAdapterMapping, 0, len(results.Results))
 
-	for _, r := range results.Results {
+	for i, r := range results.Results {
 		adapter := vimtypes.CustomizationIPSettings{
 			// Per-adapter is only supported on Windows. Linux only supports the global and ignores this field.
 			DnsServerList: r.Nameservers,
@@ -79,6 +81,30 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 				}
 			}
 		}
+
+		// When adapter.Ip is nil, the vSphere API requires it to be set.
+		// Set it to disable IPv4, which handles both IPv6-only and completely unconfigured cases.
+		if adapter.Ip == nil {
+			adapter.Ip = &vimtypes.CustomizationDisableIpV4{}
+			if adapter.IpV6Spec != nil {
+				// IPv6-only: disable IPv4
+				logger.Info("IPv6-only: set adapter.Ip to disable IPv4",
+					"adapterIndex", i,
+					"macAddress", r.MacAddress)
+			} else {
+				// Completely unconfigured: disable IPv4 to satisfy vSphere API requirement
+				// This matches Linux behavior where an interface can exist without an IP address
+				logger.Info("Unconfigured interface: set adapter.Ip to disable IPv4",
+					"adapterIndex", i,
+					"macAddress", r.MacAddress)
+			}
+		}
+
+		logger.V(4).Info("Final adapter state",
+			"adapterIndex", i,
+			"macAddress", r.MacAddress,
+			"adapterIp", adapter.Ip,
+			"hasIpV6Spec", adapter.IpV6Spec != nil)
 
 		mappings = append(mappings, vimtypes.CustomizationAdapterMapping{
 			MacAddress: r.MacAddress,

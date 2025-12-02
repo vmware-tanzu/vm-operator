@@ -40,7 +40,7 @@ func BootStrapLinuxPrep(
 		return nil, nil, customizeAtNextPowerOn, nil
 	}
 
-	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)
+	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create GOSC NIC mappings: %w", err)
 	}

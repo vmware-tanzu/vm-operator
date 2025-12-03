@@ -826,14 +826,6 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 			vmopv1.VirtualMachineConditionCreated,
 			"Error",
 			vimErr)
-
-		if pkgcfg.FromContext(ctx).Features.FastDeploy {
-			pkgcnd.MarkError(
-				ctx.VM,
-				vmopv1.VirtualMachineConditionPlacementReady,
-				"Error",
-				vimErr)
-		}
 	} else {
 		if pkgcfg.FromContext(ctx).Features.FastDeploy {
 			if zoneName := args.ZoneName; zoneName != "" {

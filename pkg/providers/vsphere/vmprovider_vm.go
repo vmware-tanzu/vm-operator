@@ -1568,7 +1568,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 
 	// Should never happen when this function is called, check just in case.
 	if vmCtx.VM.Spec.GroupName == "" {
-		return fmt.Errorf("VM.Spec.GroupName is empty")
+		return pkgerr.NoRequeueError{Message: "VM.Spec.GroupName is empty"}
 	}
 
 	var vmg vmopv1.VirtualMachineGroup
@@ -1595,7 +1595,9 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		&memberStatus,
 		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 	) {
-		return fmt.Errorf("VM Group placement is not ready")
+		return pkgerr.NoRequeueError{
+			Message: "VM Group placement is not ready",
+		}
 	}
 
 	placementStatus := memberStatus.Placement

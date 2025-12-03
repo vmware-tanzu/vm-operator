@@ -6,7 +6,9 @@ env:
   # sometimes we need to explicitly override the Go version, ex. CVEs,
   # when it is not possible to update the go.mod version yet, ex. the
   # internal builds do not yet support that version of Go.
-  GO_VERSION: ""
+
+  GO_VERSION: "1.24.11" # TODO(akutz) For GO-2025-4155.
+                        #             Remove once internal builds use 1.24.11.
 
 on:
   pull_request:

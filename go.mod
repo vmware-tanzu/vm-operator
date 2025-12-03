@@ -47,7 +47,7 @@ require (
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250624211456-dfc90459c658
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20250826165015-90a4bb21727b
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20250813103855-288a237381b5
-	github.com/vmware/govmomi v0.53.0-alpha.0.0.20251129033841-75fed5cec5e3
+	github.com/vmware/govmomi v0.53.0-alpha.0.0.20251203154250-bac7c15eb77d
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/net v0.46.0 // indirect
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/24

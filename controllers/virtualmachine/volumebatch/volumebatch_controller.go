@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -158,6 +159,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	}
 
+	// Setup deferred instance storage PVC cache
+	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
+		r.instanceStoragePVCCache = NewDeferredInstanceStoragePVCCache(
+			c, mgr, &ctx.SyncPeriod, r.logger)
+	}
+
 	return nil
 }
 
@@ -184,6 +191,8 @@ type Reconciler struct {
 	logger     logr.Logger
 	recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
+
+	instanceStoragePVCCache *DeferredInstanceStoragePVCCache
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -241,10 +250,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 		return pkgerr.ResultFromError(err)
 	}
 
-	// TODO: In case of instance storage volumes, we need to make
-	// sure we queue the reconcile if any of the PVCs are not bound.
-
-	return ctrl.Result{}, nil
+	return vmopv1util.ShouldRequeueForInstanceStoragePVCs(ctx, volCtx.VM), nil
 }
 
 func errOrNoRequeueErr(err1, err2 error) error {
@@ -275,9 +281,17 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for batch volume processing")
 	}()
 
-	// Reconcile instance storage volumes
-	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
-		ready, err := r.reconcileInstanceStoragePVCs(ctx)
+	// Reconcile instance storage volumes if configured
+	if pkgcfg.FromContext(ctx).Features.InstanceStorage &&
+		vmopv1util.IsInstanceStoragePresent(ctx.VM) {
+
+		isPVCReader, err := r.instanceStoragePVCCache.GetClient()
+		if err != nil {
+			ctx.Logger.Error(err, "Failed to get deferred PVC client for instance storage")
+			return err
+		}
+
+		ready, err := vmopv1util.ReconcileInstanceStoragePVCs(ctx, r.Client, isPVCReader, r.recorder)
 		if err != nil || !ready {
 			return err
 		}
@@ -811,19 +825,6 @@ func (r *Reconciler) ReconcileDelete(_ *pkgctx.VolumeContext) error {
 	// deleted before the volumes are detached & removed.
 
 	return nil
-}
-
-// reconcileInstanceStoragePVCs handles instance storage PVC lifecycle management.
-// This provides feature parity with the v1 controller's instance storage support.
-func (r *Reconciler) reconcileInstanceStoragePVCs(_ *pkgctx.VolumeContext) (bool, error) {
-	// TODO: Implement instance storage PVC reconciliation
-	// This method should:
-	// - Create missing instance storage PVCs
-	// - Handle PVC binding and placement
-	// - Manage instance storage annotations
-	// - Handle placement failures and cleanup
-
-	return true, nil
 }
 
 // handlePVCWithWFFC handles PVCs with WaitForFirstConsumer binding mode.

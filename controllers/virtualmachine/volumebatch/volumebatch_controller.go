@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -120,9 +121,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				"for CnsNodeVMBatchAttachment: %w", err)
 	}
 
-	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs ||
-		pkgcfg.FromContext(ctx).Features.VMSharedDisks {
-
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 		// Watch for changes for CnsRegisterVolume, and enqueue
 		// VirtualMachine which is the owner of CnsRegisterVolume.
 		if err := c.Watch(source.Kind(
@@ -140,6 +139,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 					"for CnsRegisterVolume: %w", err)
 
 		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs ||
+		pkgcfg.FromContext(ctx).Features.InstanceStorage {
 
 		// Watch for changes for PersistentVolumeClaim, and enqueue
 		// VirtualMachine which is the owner of PersistentVolumeClaim.
@@ -241,10 +244,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 		return pkgerr.ResultFromError(err)
 	}
 
-	// TODO: In case of instance storage volumes, we need to make
-	// sure we queue the reconcile if any of the PVCs are not bound.
-
-	return ctrl.Result{}, nil
+	return vmopv1util.ShouldRequeueForInstanceStoragePVCs(ctx, volCtx.VM), nil
 }
 
 func errOrNoRequeueErr(err1, err2 error) error {
@@ -275,9 +275,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for batch volume processing")
 	}()
 
-	// Reconcile instance storage volumes
-	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
-		ready, err := r.reconcileInstanceStoragePVCs(ctx)
+	// Reconcile instance storage volumes if configured
+	if pkgcfg.FromContext(ctx).Features.InstanceStorage &&
+		vmopv1util.IsInstanceStoragePresent(ctx.VM) {
+
+		ready, err := vmopv1util.ReconcileInstanceStoragePVCs(ctx, r.Client, r.Client, r.recorder)
 		if err != nil || !ready {
 			return err
 		}
@@ -858,19 +860,6 @@ func (r *Reconciler) ReconcileDelete(_ *pkgctx.VolumeContext) error {
 	// deleted before the volumes are detached & removed.
 
 	return nil
-}
-
-// reconcileInstanceStoragePVCs handles instance storage PVC lifecycle management.
-// This provides feature parity with the v1 controller's instance storage support.
-func (r *Reconciler) reconcileInstanceStoragePVCs(_ *pkgctx.VolumeContext) (bool, error) {
-	// TODO: Implement instance storage PVC reconciliation
-	// This method should:
-	// - Create missing instance storage PVCs
-	// - Handle PVC binding and placement
-	// - Manage instance storage annotations
-	// - Handle placement failures and cleanup
-
-	return true, nil
 }
 
 // handlePVCWithWFFC handles PVCs with WaitForFirstConsumer binding mode.

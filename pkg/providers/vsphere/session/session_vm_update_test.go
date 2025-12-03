@@ -1183,7 +1183,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 							Spec: vspherepolv1.PolicyEvaluationSpec{
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										//GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
+										GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
 										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
 									},
 								},
@@ -1256,7 +1256,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 							Spec: vspherepolv1.PolicyEvaluationSpec{
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										//GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
+										GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
 										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
 									},
 								},

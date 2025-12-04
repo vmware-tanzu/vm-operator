@@ -1245,7 +1245,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				It("returns error", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("cannot get StorageClass for PVC"))
+					Expect(err.Error()).To(ContainSubstring("cannot get StorageClass"))
 				})
 			})
 

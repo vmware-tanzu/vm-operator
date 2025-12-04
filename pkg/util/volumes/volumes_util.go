@@ -9,11 +9,16 @@ import (
 	"fmt"
 	"slices"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -281,4 +286,54 @@ func FromContext(ctx context.Context) (VolumeInfo, bool) {
 	}
 	val, ok := obj.(VolumeInfo)
 	return val, ok
+}
+
+// IsVolumeEncrypted checks if a volume will be encrypted based on the PVC's
+// storage class.
+func IsVolumeEncrypted(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	volNamespace string,
+	vol vmopv1.VirtualMachineVolume) (bool, error) {
+
+	// For PVC volumes, check the storage class.
+	if pvc := vol.PersistentVolumeClaim; pvc != nil {
+		var storageClassName string
+
+		// Instance storage volumes have their own storage class.
+		if isClaim := pvc.InstanceVolumeClaim; isClaim != nil {
+			storageClassName = isClaim.StorageClass
+		} else {
+			// Get regular storage class from regular PVC.
+			obj := &corev1.PersistentVolumeClaim{}
+			if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: volNamespace,
+				Name:      pvc.ClaimName,
+			}, obj); err != nil {
+				if apierrors.IsNotFound(err) {
+					// PVC doesn't exist yet, can't determine encryption.
+					return false, fmt.Errorf("PVC, %s/%s, not found: %w",
+						volNamespace, pvc.ClaimName, err)
+				}
+				return false, err
+			}
+
+			if obj.Spec.StorageClassName != nil {
+				storageClassName = *obj.Spec.StorageClassName
+			}
+		}
+
+		if storageClassName != "" {
+			isEncrypted, _, err := kube.IsEncryptedStorageClass(
+				ctx,
+				k8sClient,
+				storageClassName)
+			if err != nil {
+				return false, err
+			}
+			return isEncrypted, nil
+		}
+	}
+
+	return false, nil
 }

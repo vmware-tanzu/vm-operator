@@ -225,7 +225,7 @@ func processVolumes(
 // If there are no slots in any controllers or all the bus numbers are
 // occupied, the methods returns nil.
 func determineTargetController(
-	ctx pkgctx.WebhookRequestContext,
+	_ pkgctx.WebhookRequestContext,
 	vol *vmopv1.VirtualMachineVolume,
 	controllerSpecs vmopv1util.ControllerSpecs,
 	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
@@ -237,10 +237,7 @@ func determineTargetController(
 		controllerType = vmopv1.VirtualControllerTypeSCSI
 	}
 
-	sharingMode := vmopv1.VirtualControllerSharingModeNone
-	if vol.ApplicationType == vmopv1.VolumeApplicationTypeMicrosoftWSFC {
-		sharingMode = vmopv1.VirtualControllerSharingModePhysical
-	}
+	sharingMode := vmopv1util.DefaultControllerSharingMode(*vol)
 
 	// If a specific controller bus number is requested, return if one exists
 	// or create one.

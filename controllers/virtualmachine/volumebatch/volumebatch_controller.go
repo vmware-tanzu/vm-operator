@@ -120,21 +120,42 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				"for CnsNodeVMBatchAttachment: %w", err)
 	}
 
-	// Watch for changes for CnsRegisterVolume, and enqueue
-	// VirtualMachine which is the owner of CnsRegisterVolume.
-	if err := c.Watch(source.Kind(
-		mgr.GetCache(),
-		&cnsv1alpha1.CnsRegisterVolume{},
-		handler.TypedEnqueueRequestForOwner[*cnsv1alpha1.CnsRegisterVolume](
-			mgr.GetScheme(),
-			mgr.GetRESTMapper(),
-			&vmopv1.VirtualMachine{},
-			handler.OnlyControllerOwner(),
-		),
-	)); err != nil {
-		return fmt.Errorf(
-			"failed to start VirtualMachine watch "+
-				"for CnsRegisterVolume: %w", err)
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs ||
+		pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+
+		// Watch for changes for CnsRegisterVolume, and enqueue
+		// VirtualMachine which is the owner of CnsRegisterVolume.
+		if err := c.Watch(source.Kind(
+			mgr.GetCache(),
+			&cnsv1alpha1.CnsRegisterVolume{},
+			handler.TypedEnqueueRequestForOwner[*cnsv1alpha1.CnsRegisterVolume](
+				mgr.GetScheme(),
+				mgr.GetRESTMapper(),
+				&vmopv1.VirtualMachine{},
+				handler.OnlyControllerOwner(),
+			),
+		)); err != nil {
+			return fmt.Errorf(
+				"failed to start VirtualMachine watch "+
+					"for CnsRegisterVolume: %w", err)
+
+		}
+
+		// Watch for changes for PersistentVolumeClaim, and enqueue
+		// VirtualMachine which is the owner of PersistentVolumeClaim.
+		if err := c.Watch(source.Kind(
+			mgr.GetCache(),
+			&corev1.PersistentVolumeClaim{},
+			handler.TypedEnqueueRequestForOwner[*corev1.PersistentVolumeClaim](
+				mgr.GetScheme(),
+				mgr.GetRESTMapper(),
+				&vmopv1.VirtualMachine{},
+			),
+		)); err != nil {
+			return fmt.Errorf(
+				"failed to start VirtualMachine watch "+
+					"for PersistentVolumeClaim: %w", err)
+		}
 	}
 
 	return nil
@@ -417,6 +438,7 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 
 	for _, vol := range vmVolumeSpecsForBatch {
 		if vol.PersistentVolumeClaim == nil {
+			ctx.Logger.V(4).Info("PVC not set for Volume", "volName", vol.Name)
 			continue
 		}
 		// If volumes are already added to batchAttachment, no need to
@@ -428,18 +450,26 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 
 		pvc, err := r.getPVC(ctx, vol.PersistentVolumeClaim.ClaimName)
 		if err != nil {
-			retErr = errOrNoRequeueErr(retErr, err)
+			retErr = errOrNoRequeueErr(retErr,
+				fmt.Errorf("failed to get PVC %s for volume %s: %w",
+					pvc.Name, vol.Name, err))
 			continue
 		}
 
 		// Handle PVC with WFFC first since it handles PVCS that are unbound.
 		if err := r.handlePVCWithWFFC(ctx, vol, pvc); err != nil {
-			retErr = errOrNoRequeueErr(retErr, err)
+			retErr = errOrNoRequeueErr(retErr,
+				fmt.Errorf("failed to handle PVC %s with WFFC for volume %s: %w",
+					pvc.Name, vol.Name, err))
 			continue
 		}
 
 		// Ignore pvcs that are not bound.
 		if pvc.Status.Phase != corev1.ClaimBound {
+			ctx.Logger.V(4).Info("PVC is not bound",
+				"pvcName", pvc.Name,
+				"volName", vol.Name,
+				"phase", pvc.Status.Phase)
 			continue
 		}
 
@@ -820,14 +850,14 @@ func (r *Reconciler) handlePVCWithWFFC(
 
 	scName := pvc.Spec.StorageClassName
 	if scName == nil {
-		return fmt.Errorf("PVC %s does not have StorageClassName set", pvc.Name)
+		return errors.New("PVC does not have StorageClassName set")
 	} else if *scName == "" {
 		return nil
 	}
 
 	sc := &storagev1.StorageClass{}
 	if err := r.Get(ctx, client.ObjectKey{Name: *scName}, sc); err != nil {
-		return fmt.Errorf("cannot get StorageClass for PVC %s: %w", pvc.Name, err)
+		return fmt.Errorf("cannot get StorageClass: %w", err)
 	}
 
 	if mode := sc.VolumeBindingMode; mode == nil ||
@@ -1188,5 +1218,6 @@ func categorizeVolumeSpecs(
 		// legacy CnsNodeVmAttachment or those whose PVCs have been changed.
 		volumeSpecsForBatch = append(volumeSpecsForBatch, vol)
 	}
+
 	return volumeSpecsForBatch, volumeSpecsForLegacy
 }

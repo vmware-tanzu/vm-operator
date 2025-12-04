@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,8 +23,8 @@ import (
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -117,6 +118,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return ctrl.Result{}, nil
 }
 
+type resourceKindInfo struct {
+	kind               string
+	nameFunc           func(string) string
+	quotaExtensionName string
+	// Only create StoragePolicyUsage for enabled resource kinds.
+	enabled bool
+	// If yes, check if quotaExtensionName is correct, otherwise delete the
+	// SPU.
+	requireExtensionNameCheck bool
+}
+
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
 	logger logr.Logger,
@@ -137,14 +149,9 @@ func (r *Reconciler) ReconcileNormal(
 	}
 
 	// Create the StoragePolicyUsage resources for below kinds:
-	// - VirtualMachine
-	// - VirtualMachineSnapshot
-	resourceKinds := []struct {
-		kind               string
-		nameFunc           func(string) string
-		quotaExtensionName string
-		enabled            bool // Only create StoragePolicyUsage for enabled resource kinds
-	}{
+	// - VirtualMachine.
+	// - VirtualMachineSnapshot.
+	resourceKinds := []resourceKindInfo{
 		{
 			kind:               spqutil.VirtualMachineKind,
 			nameFunc:           spqutil.StoragePolicyUsageNameForVM,
@@ -152,15 +159,17 @@ func (r *Reconciler) ReconcileNormal(
 			enabled:            true,
 		},
 		{
-			kind:               spqutil.VirtualMachineSnapshotKind,
-			nameFunc:           spqutil.StoragePolicyUsageNameForVMSnapshot,
-			quotaExtensionName: spqutil.StoragePolicyQuotaVMSnapshotExtensionName,
-			enabled:            pkgcfg.FromContext(ctx).Features.VMSnapshots,
+			kind:                      spqutil.VirtualMachineSnapshotKind,
+			nameFunc:                  spqutil.StoragePolicyUsageNameForVMSnapshot,
+			quotaExtensionName:        spqutil.StoragePolicyQuotaVMSnapshotExtensionName,
+			enabled:                   pkgcfg.FromContext(ctx).Features.VMSnapshots,
+			requireExtensionNameCheck: pkgcfg.FromContext(ctx).Features.VMSnapshots,
 		},
 	}
 
 	var errs []error
 	for i := range objs {
+		objectName := objs[i].Name
 		for _, resourceKind := range resourceKinds {
 			if !resourceKind.enabled {
 				logger.V(4).Info("Skip creating storage policy usage for resource kind",
@@ -168,36 +177,25 @@ func (r *Reconciler) ReconcileNormal(
 				continue
 			}
 
-			spu := spqv1.StoragePolicyUsage{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: spq.Namespace,
-					Name:      resourceKind.nameFunc(objs[i].Name),
-				},
-			}
-
-			fn := func() error {
-				if err := ctrlutil.SetControllerReference(
-					spq, &spu, r.Scheme()); err != nil {
-
-					return err
-				}
-
-				spu.Spec.StorageClassName = objs[i].Name
-				spu.Spec.StoragePolicyId = spq.Spec.StoragePolicyId
-				spu.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
-				spu.Spec.ResourceKind = resourceKind.kind
-				spu.Spec.ResourceExtensionName = resourceKind.quotaExtensionName
-				spu.Spec.ResourceExtensionNamespace = r.PodNamespace
-				spu.Spec.CABundle = caBundle
-
-				return nil
-			}
-
-			if _, err := ctrlutil.CreateOrPatch(
+			// Handle Upgrade Workaround (Delete-Then-Create if name is wrong).
+			// This should just be a one time thing during upgrade.
+			if err := r.handleIncorrectSPUResourceExtensionName(
 				ctx,
-				r.Client,
-				&spu,
-				fn); err != nil {
+				spq.Namespace,
+				resourceKind,
+				objectName); err != nil {
+
+				errs = append(errs, err)
+				continue
+			}
+
+			// Create or Patch the SPU.
+			if err := r.createOrPatchSPU(
+				ctx,
+				spq,
+				resourceKind,
+				objectName,
+				caBundle); err != nil {
 
 				errs = append(errs, err)
 			}
@@ -205,4 +203,92 @@ func (r *Reconciler) ReconcileNormal(
 	}
 
 	return errors.Join(errs...)
+}
+
+// handleIncorrectSPUResourceExtensionName checks for and deletes an SPU if its
+// ResourceExtensionName is incorrect due to an upgrade scenario
+// (workaround for immutability).
+func (r *Reconciler) handleIncorrectSPUResourceExtensionName(
+	ctx context.Context,
+	namespace string,
+	resourceKind resourceKindInfo,
+	objectName string) error {
+
+	if !resourceKind.requireExtensionNameCheck {
+		return nil
+	}
+
+	spu := spqv1.StoragePolicyUsage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      resourceKind.nameFunc(objectName),
+		},
+	}
+
+	if err := r.Client.Get(
+		ctx,
+		client.ObjectKey{Namespace: spu.Namespace, Name: spu.Name},
+		&spu); err != nil {
+
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch SPU %s: %w", spu.Name, err)
+		}
+		// SPU not found, nothing to delete.
+		return nil
+	}
+
+	// Check if the current SPU has the wrong name (due to old VMOP version)
+	if resourceKind.quotaExtensionName != spu.Spec.ResourceExtensionName {
+		pkglog.FromContextOrDefault(ctx).Info(
+			"SPU found with wrong quotaExtensionName, deleting",
+			"spuNamespace", spu.Namespace,
+			"spuName", spu.Name,
+			"expected", resourceKind.quotaExtensionName,
+			"found", spu.Spec.ResourceExtensionName)
+
+		if err := r.Client.Delete(ctx, &spu); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete SPU %s: %w", spu.Name, err)
+			}
+		}
+		// SPU not found, nothing to delete.
+	}
+	return nil
+}
+
+// createOrPatchSPU ensures the StoragePolicyUsage exists and has the correct spec.
+func (r *Reconciler) createOrPatchSPU(
+	ctx context.Context,
+	spq *spqv1.StoragePolicyQuota,
+	resourceKind resourceKindInfo,
+	objectName string,
+	caBundle []byte) error {
+
+	spu := spqv1.StoragePolicyUsage{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: spq.Namespace,
+			Name:      resourceKind.nameFunc(objectName),
+		},
+	}
+
+	mutator := func() error {
+		if err := ctrlutil.SetControllerReference(spq, &spu, r.Scheme()); err != nil {
+			return err
+		}
+
+		spu.Spec.StorageClassName = objectName
+		spu.Spec.StoragePolicyId = spq.Spec.StoragePolicyId
+		spu.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
+		spu.Spec.ResourceKind = resourceKind.kind
+		spu.Spec.ResourceExtensionName = resourceKind.quotaExtensionName
+		spu.Spec.ResourceExtensionNamespace = r.PodNamespace
+		spu.Spec.CABundle = caBundle
+
+		return nil
+	}
+
+	if _, err := ctrlutil.CreateOrPatch(ctx, r.Client, &spu, mutator); err != nil {
+		return fmt.Errorf("failed to CreateOrPatch SPU %s: %w", spu.Name, err)
+	}
+	return nil
 }

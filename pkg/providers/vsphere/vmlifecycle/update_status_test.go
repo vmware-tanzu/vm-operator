@@ -1112,6 +1112,16 @@ var _ = Describe("UpdateStatus", func() {
 									},
 								},
 							},
+							&vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										BusNumber: 1,
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 201,
+										},
+									},
+								},
+							},
 
 							// classic
 							&vimtypes.VirtualDisk{
@@ -1143,8 +1153,9 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "101",
 									},
-									Key:        101,
-									UnitNumber: ptr.To[int32](0),
+									Key:           101,
+									ControllerKey: 200,
+									UnitNumber:    ptr.To[int32](0),
 								},
 								CapacityInBytes: 1 * oneGiBInBytes,
 							},
@@ -1157,8 +1168,9 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "102",
 									},
-									Key:        102,
-									UnitNumber: ptr.To[int32](0),
+									Key:           102,
+									ControllerKey: 200,
+									UnitNumber:    ptr.To[int32](1),
 								},
 								CapacityInBytes: 2 * oneGiBInBytes,
 							},
@@ -1171,8 +1183,9 @@ var _ = Describe("UpdateStatus", func() {
 										},
 										Uuid: "103",
 									},
-									Key:        103,
-									UnitNumber: ptr.To[int32](0),
+									Key:           103,
+									ControllerKey: 201,
+									UnitNumber:    ptr.To[int32](0),
 								},
 								CapacityInBytes: 3 * oneGiBInBytes,
 							},
@@ -1431,70 +1444,152 @@ var _ = Describe("UpdateStatus", func() {
 				})
 
 				When("target id is in volume", func() {
-					BeforeEach(func() {
-						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
-							config.Features.AllDisksArePVCs = true
+					When("AllDisksArePVCs is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.AllDisksArePVCs = true
+							})
+						})
+						Specify("status.volumes includes the classic disks, volumes are sorted by UUID", func() {
+							Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+								{
+									Name:     pkgutil.GeneratePVCName("disk", "100"),
+									DiskUUID: "100",
+									Type:     vmopv1.VolumeTypeClassic,
+									Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+										KeyID:      "my-key-id",
+										ProviderID: "my-provider-id",
+									},
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(10 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(10 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](3),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+								},
+								{
+									Name:                pkgutil.GeneratePVCName("disk", "101"),
+									DiskUUID:            "101",
+									Type:                vmopv1.VolumeTypeClassic,
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(1 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(1 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](0),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+								},
+								{
+									Name:                pkgutil.GeneratePVCName("disk", "102"),
+									DiskUUID:            "102",
+									Type:                vmopv1.VolumeTypeClassic,
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(2 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(2 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](1),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+								},
+								{
+									Name:                pkgutil.GeneratePVCName("disk", "103"),
+									DiskUUID:            "103",
+									Type:                vmopv1.VolumeTypeClassic,
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(3 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(3 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](0),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](1),
+								},
+								{
+									Name:       pkgutil.GeneratePVCName("disk", "104"),
+									DiskUUID:   "104",
+									Type:       vmopv1.VolumeTypeClassic,
+									Attached:   true,
+									Limit:      kubeutil.BytesToResource(4 * oneGiBInBytes),
+									Requested:  kubeutil.BytesToResource(4 * oneGiBInBytes),
+									Used:       kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+									UnitNumber: ptr.To[int32](0),
+								},
+							}))
 						})
 					})
-					Specify("status.volumes includes the classic disks", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:     pkgutil.GeneratePVCName("disk", "100"),
-								DiskUUID: "100",
-								Type:     vmopv1.VolumeTypeClassic,
-								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
-									KeyID:      "my-key-id",
-									ProviderID: "my-provider-id",
+
+					When("VMSharedDisks is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMSharedDisks = true
+							})
+						})
+						Specify("status.volumes includes the classic disks, volumes are sorted by TargetID", func() {
+							Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+								{
+									Name:       pkgutil.GeneratePVCName("disk", "104"),
+									DiskUUID:   "104",
+									Type:       vmopv1.VolumeTypeClassic,
+									Attached:   true,
+									Limit:      kubeutil.BytesToResource(4 * oneGiBInBytes),
+									Requested:  kubeutil.BytesToResource(4 * oneGiBInBytes),
+									Used:       kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+									UnitNumber: ptr.To[int32](0),
 								},
-								Attached:            true,
-								Limit:               kubeutil.BytesToResource(10 * oneGiBInBytes),
-								Requested:           kubeutil.BytesToResource(10 * oneGiBInBytes),
-								Used:                kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
-								UnitNumber:          ptr.To[int32](3),
-								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-								ControllerBusNumber: ptr.To[int32](0),
-							},
-							{
-								Name:       pkgutil.GeneratePVCName("disk", "101"),
-								DiskUUID:   "101",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(1 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(1 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
-							},
-							{
-								Name:       pkgutil.GeneratePVCName("disk", "102"),
-								DiskUUID:   "102",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(2 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(2 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
-							},
-							{
-								Name:       pkgutil.GeneratePVCName("disk", "103"),
-								DiskUUID:   "103",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(3 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(3 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
-							},
-							{
-								Name:       pkgutil.GeneratePVCName("disk", "104"),
-								DiskUUID:   "104",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(4 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(4 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
-							},
-						}))
+								{
+									Name:                pkgutil.GeneratePVCName("disk", "101"),
+									DiskUUID:            "101",
+									Type:                vmopv1.VolumeTypeClassic,
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(1 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(1 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](0),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+								},
+								{
+									Name:                pkgutil.GeneratePVCName("disk", "102"),
+									DiskUUID:            "102",
+									Type:                vmopv1.VolumeTypeClassic,
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(2 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(2 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](1),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+								},
+								{
+									Name:     pkgutil.GeneratePVCName("disk", "100"),
+									DiskUUID: "100",
+									Type:     vmopv1.VolumeTypeClassic,
+									Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+										KeyID:      "my-key-id",
+										ProviderID: "my-provider-id",
+									},
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(10 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(10 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](3),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](0),
+								},
+								{
+									Name:                pkgutil.GeneratePVCName("disk", "103"),
+									DiskUUID:            "103",
+									Type:                vmopv1.VolumeTypeClassic,
+									Attached:            true,
+									Limit:               kubeutil.BytesToResource(3 * oneGiBInBytes),
+									Requested:           kubeutil.BytesToResource(3 * oneGiBInBytes),
+									Used:                kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+									UnitNumber:          ptr.To[int32](0),
+									ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+									ControllerBusNumber: ptr.To[int32](1),
+								},
+							}))
+						})
 					})
 				})
 			})
@@ -1730,7 +1825,7 @@ var _ = Describe("UpdateStatus", func() {
 			When("there is a classic disk w an invalid path", func() {
 				BeforeEach(func() {
 					vmCtx.MoVM.Config.Hardware.
-						Device[1].(*vimtypes.VirtualDisk).
+						Device[2].(*vimtypes.VirtualDisk).
 						Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).
 						FileName = "invalid"
 				})

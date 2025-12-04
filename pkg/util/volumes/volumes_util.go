@@ -5,6 +5,7 @@
 package volumes
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -281,4 +282,21 @@ func FromContext(ctx context.Context) (VolumeInfo, bool) {
 	}
 	val, ok := obj.(VolumeInfo)
 	return val, ok
+}
+
+// SortVirtualMachineVolumeStatuses sorts the provided list of
+// VirtualMachineVolumeStatus objects. If byUUID is true, sort by
+// UUID as the old behavior. Otherwise sort by TargetID.
+func SortVirtualMachineVolumeStatuses(s []vmopv1.VirtualMachineVolumeStatus, byUUID bool) {
+	keyExtractor := func(v vmopv1.VirtualMachineVolumeStatus) string {
+		if byUUID {
+			return v.DiskUUID
+		}
+		return vmopv1util.GetTargetID(v)
+	}
+
+	// Use slices.SortStableFunc with the key extractor to perform the comparison.
+	slices.SortStableFunc(s, func(a, b vmopv1.VirtualMachineVolumeStatus) int {
+		return cmp.Compare(keyExtractor(a), keyExtractor(b))
+	})
 }

@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/storageclass"
+	"github.com/vmware-tanzu/vm-operator/controllers/storage/storageclass"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"

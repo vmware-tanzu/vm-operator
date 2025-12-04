@@ -12,10 +12,13 @@ import (
 
 	"github.com/go-logr/logr"
 	storagev1 "k8s.io/api/storage/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -73,6 +76,7 @@ type Reconciler struct {
 }
 
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=storagepolicies,verbs=get;list;watch;create;update;patch;delete
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
@@ -96,17 +100,36 @@ func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
 	obj *storagev1.StorageClass) error {
 
+	logger := pkglog.FromContextOrDefault(ctx)
+
 	policyID, err := kubeutil.GetStoragePolicyID(*obj)
 	if err != nil {
-		pkglog.FromContextOrDefault(ctx).Error(err, "failed to get storage policy ID")
-		// Don't return an error: an update to the StorageClass will cause a reconcile.
+		logger.Error(err, "failed to get storage policy ID")
+
+		// Don't return an error: an update to the StorageClass will cause a
+		// reconcile.
 		return nil
 	}
 
-	ok, err := r.vmProvider.DoesProfileSupportEncryption(ctx, policyID)
+	pol := vmopv1.StoragePolicy{
+		ObjectMeta: v1.ObjectMeta{
+			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+			Name:      policyID,
+		},
+	}
+	res, err := controllerutil.CreateOrPatch(ctx, r, &pol, func() error {
+		pol.Spec.ID = policyID
+		return controllerutil.SetOwnerReference(obj, &pol, r.Scheme())
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create or patch storage policy %s/%s: %w",
+			pol.Namespace, pol.Name, err)
 	}
 
-	return kubeutil.MarkEncryptedStorageClass(ctx, r.Client, *obj, ok)
+	logger.Info("Created or patch storage policy object",
+		"namespace", pol.Namespace,
+		"name", pol.Name,
+		"result", res)
+
+	return nil
 }

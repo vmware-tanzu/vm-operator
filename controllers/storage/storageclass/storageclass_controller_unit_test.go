@@ -18,7 +18,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/storageclass"
+	"github.com/vmware-tanzu/vm-operator/controllers/storage/storageclass"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"

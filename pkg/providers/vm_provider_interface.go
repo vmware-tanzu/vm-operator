@@ -75,6 +75,10 @@ type VirtualMachineProviderInterface interface {
 	// contains any IOFILTERs.
 	DoesProfileSupportEncryption(ctx context.Context, profileID string) (bool, error)
 
+	// GetStoragePolicyStatus returns the status information for a given
+	// storage policy.
+	GetStoragePolicyStatus(ctx context.Context, profileID string) (vmopv1.StoragePolicyStatus, error)
+
 	// VSphereClient returns the provider's vSphere client.
 	VSphereClient(context.Context) (*client.Client, error)
 

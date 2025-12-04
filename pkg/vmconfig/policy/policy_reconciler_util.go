@@ -87,8 +87,14 @@ func getPolicyEvaluationResults(
 		//
 		// Existing VM.
 		//
-		guestID = moVM.Guest.GuestId
-		guestFamily = vspherepolv1.FromVimGuestFamily(moVM.Guest.GuestFamily)
+		// Use Config.GuestId (the configured guest OS type) rather than
+		// Guest.GuestId (runtime guest info from VMware Tools), since the
+		// latter may not be available until the VM is powered on and VMware
+		// Tools is running.
+		//
+		// GuestFamily is not available in Config, so we'll derive it from
+		// GuestId below.
+		guestID = moVM.Config.GuestId
 	case moVM.Config == nil:
 		//
 		// New VM.
@@ -96,9 +102,8 @@ func getPolicyEvaluationResults(
 		guestID = configSpec.GuestId
 	}
 
-	// If the guestFamily could not be detected, then discover it from the
-	// guestID.
-	if guestFamily == "" && guestID != "" {
+	// Derive the guestFamily from the guestID.
+	if guestID != "" {
 		vimGuestID := vimtypes.VirtualMachineGuestOsIdentifier(guestID)
 		vimGuestFamily := vimGuestID.ToFamily()
 		guestFamily = vspherepolv1.FromVimGuestFamily(string(vimGuestFamily))

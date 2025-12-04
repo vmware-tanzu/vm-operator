@@ -310,6 +310,54 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	return chanErr, nil
 }
 
+// CleanupVirtualMachine cleans and sanitizes the vSphere VM before it
+// is unregistered from Supervisor. This is used when a VM custom
+// resource with
+// "vmoperator.vmware.com.protected/skip-delete-platform-resource"
+// annotation is deleted.
+func (vs *vSphereVMProvider) CleanupVirtualMachine(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) error {
+
+	vmNamespacedName := vm.NamespacedName()
+
+	if _, ok := currentlyReconciling.Load(vmNamespacedName); ok {
+		// If the VM is already being reconciled in a goroutine then it cannot
+		// be cleaned up yet.  Return and requeue.
+		return providers.ErrReconcileInProgress
+	}
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "cleanupVM")),
+		Logger:  pkglog.FromContextOrDefault(ctx),
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, false)
+	if err != nil {
+		return err
+	} else if vcVM == nil {
+		// VM does not exist, nothing to clean up.
+		vmCtx.Logger.Info("VM does not exist in vCenter, skipping cleanup")
+		return nil
+	}
+
+	// Clean up all VM Operator modifications from the vCenter VM.
+	if err := virtualmachine.CleanupVMServiceState(
+		vmCtx,
+		vcVM); err != nil {
+
+		return fmt.Errorf("failed to cleanup VM service state: %w", err)
+	}
+
+	return nil
+}
+
 func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) error {

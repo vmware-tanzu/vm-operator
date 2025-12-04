@@ -41,6 +41,10 @@ type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	CreateOrUpdateVirtualMachineAsync(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error)
 	DeleteVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	// CleanupVirtualMachine removes all VM Operator modifications from a vCenter VM
+	// without deleting it. This is used when a VM has the skip-delete-platform-resource
+	// annotation to ensure the vCenter VM is left in a clean state.
+	CleanupVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	PublishVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)

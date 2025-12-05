@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -130,6 +131,25 @@ func GetImage(
 			return vmopv1.VirtualMachineImage{}, err
 		}
 		obj = vmopv1.VirtualMachineImage(obj2)
+	case "":
+		// A VirtualMachine created when spec.image was not in the API storage
+		// version - like v1alpha2 - will not have the kind field backfilled.
+		// That is only done either in the VM mutation during create, or if
+		// the timing is just right during the VC VM deployment in
+		// GetVirtualMachineImageSpecAndStatus().
+		// Do what those two places do here and resolve the image.
+		imgObj, err := ResolveImageName(ctx, k8sClient, namespace, imgRef.Name)
+		if err != nil {
+			return vmopv1.VirtualMachineImage{}, err
+		}
+
+		switch timg := imgObj.(type) {
+		case *vmopv1.VirtualMachineImage:
+			obj = *timg
+		case *vmopv1.ClusterVirtualMachineImage:
+			obj = vmopv1.VirtualMachineImage(*timg)
+		}
+
 	default:
 		return vmopv1.VirtualMachineImage{},
 			fmt.Errorf("unsupported image kind: %q", imgRef.Kind)

@@ -628,9 +628,11 @@ func GetAttachedDiskUUIDToPVC(
 
 		if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
 			if vol.Type == vmopv1.VolumeTypeClassic {
-				// Do not worry about classic volumes that are not fully converted
-				// to PVCs yet.
-				continue
+				if _, ok := vmVolNameToPVCName[vol.Name]; !ok {
+					// Do not worry about classic volumes that do not have a
+					// claimName associated with them.
+					continue
+				}
 			}
 		}
 

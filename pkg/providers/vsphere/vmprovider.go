@@ -49,6 +49,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
+	pkgutilstorage "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/storage"
 )
 
 const (
@@ -694,6 +695,22 @@ func (vs *vSphereVMProvider) DoesProfileSupportEncryption(
 	}
 
 	return c.PbmClient().SupportsEncryption(ctx, profileID)
+}
+
+func (vs *vSphereVMProvider) GetStoragePolicyStatus(
+	ctx context.Context, profileID string) (vmopv1.StoragePolicyStatus, error) {
+
+	c, err := vs.getVcClient(ctx)
+	if err != nil {
+		return vmopv1.StoragePolicyStatus{}, err
+	}
+
+	return pkgutilstorage.GetStoragePolicyStatus(
+		ctx,
+		vs.k8sClient,
+		c.VimClient(),
+		c.PbmClient(),
+		profileID)
 }
 
 func (vs *vSphereVMProvider) VSphereClient(

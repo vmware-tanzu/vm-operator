@@ -251,6 +251,8 @@ rules:
   - vmoperator.vmware.com
   resources:
   - clustervirtualmachineimages
+  - storagepolicies
+  - storagepolicies/status
   - virtualmachineclasses
   - virtualmachineclassinstances
   - virtualmachinegrouppublishrequests

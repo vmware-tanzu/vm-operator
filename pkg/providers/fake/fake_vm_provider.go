@@ -59,10 +59,12 @@ type funcs struct {
 	GetTasksByActIDFn func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
 
 	DoesProfileSupportEncryptionFn func(ctx context.Context, profileID string) (bool, error)
-	VSphereClientFn                func(context.Context) (*vsclient.Client, error)
-	DeleteSnapshotFn               func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
-	GetSnapshotSizeFn              func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
-	SyncVMSnapshotTreeStatusFn     func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	GetStoragePolicyStatusFn       func(ctx context.Context, profileID string) (vmopv1.StoragePolicyStatus, error)
+
+	VSphereClientFn            func(context.Context) (*vsclient.Client, error)
+	DeleteSnapshotFn           func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
+	GetSnapshotSizeFn          func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
+	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 }
 
 type VMProvider struct {
@@ -402,6 +404,19 @@ func (s *VMProvider) DoesProfileSupportEncryption(
 		return fn(ctx, profileID)
 	}
 	return false, nil
+}
+
+// GetStoragePolicyStatus returns the status information for a given
+// storage policy.
+func (s *VMProvider) GetStoragePolicyStatus(
+	ctx context.Context, profileID string) (vmopv1.StoragePolicyStatus, error) {
+
+	s.Lock()
+	defer s.Unlock()
+	if fn := s.GetStoragePolicyStatusFn; fn != nil {
+		return fn(ctx, profileID)
+	}
+	return vmopv1.StoragePolicyStatus{}, nil
 }
 
 func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error) {

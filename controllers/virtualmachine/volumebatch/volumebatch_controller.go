@@ -120,8 +120,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				"for CnsNodeVMBatchAttachment: %w", err)
 	}
 
-	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs ||
-		pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 
 		// Watch for changes for CnsRegisterVolume, and enqueue
 		// VirtualMachine which is the owner of CnsRegisterVolume.

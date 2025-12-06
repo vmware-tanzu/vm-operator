@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -19,10 +17,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
 	storagehelpers "k8s.io/component-helpers/storage/volume"
 	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -34,11 +30,11 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
-	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -130,64 +126,8 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
 		// Instance storage isn't enabled in all envs and is not that commonly used. Avoid the
 		// memory and CPU cost of watching PVCs until we encounter a VM with instance storage.
-
-		r.GetInstanceStoragePVCClient = func() (client.Reader, error) {
-			r.isPVCWatchStartedLock.Lock()
-			defer r.isPVCWatchStartedLock.Unlock()
-
-			if r.isPVCWatchStarted {
-				return r.isPVCCache, nil
-			}
-
-			if r.isPVCCache == nil {
-				// PVC label we set in createInstanceStoragePVC().
-				isPVCLabels := metav1.LabelSelector{
-					MatchLabels: map[string]string{constants.InstanceStorageLabelKey: "true"},
-				}
-				labelSelector, err := metav1.LabelSelectorAsSelector(&isPVCLabels)
-				if err != nil {
-					return nil, err
-				}
-
-				// This cache will only contain instance storage PVCs because of the label selector.
-				pvcCache, err := pkgmgr.NewLabelSelectorCacheForObject(
-					mgr,
-					&ctx.SyncPeriod,
-					&corev1.PersistentVolumeClaim{},
-					labelSelector)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create PVC cache: %w", err)
-				}
-
-				r.isPVCCache = pvcCache
-			}
-
-			// Watch for changes for PersistentVolumeClaim, and enqueue
-			// VirtualMachine which is the owner of PersistentVolumeClaim.
-			if err := c.Watch(source.Kind(
-				r.isPVCCache,
-				&corev1.PersistentVolumeClaim{},
-				handler.TypedEnqueueRequestForOwner[*corev1.PersistentVolumeClaim](
-					mgr.GetScheme(),
-					mgr.GetRESTMapper(),
-					&vmopv1.VirtualMachine{},
-					handler.OnlyControllerOwner(),
-				),
-			)); err != nil {
-
-				return nil, fmt.Errorf(
-					"failed to start VirtualMachine watch "+
-						"for PersistentVolumeClaim: %w", err)
-			}
-
-			r.logger.Info("Started deferred PVC cache and watch for instance storage")
-			r.isPVCWatchStarted = true
-			return r.isPVCCache, nil
-		}
-	} else {
-		r.GetInstanceStoragePVCClient = func() (client.Reader, error) {
-			return nil, fmt.Errorf("method GetInstanceStoragePVCClient should only be called when the feature is enabled")
-		}
+		r.instanceStoragePVCCache = volumebatch.NewDeferredInstanceStoragePVCCache(c, mgr, &ctx.SyncPeriod, r.logger)
+		r.GetInstanceStoragePVCClient = r.instanceStoragePVCCache.GetClient
 	}
 
 	return nil
@@ -219,9 +159,7 @@ type Reconciler struct {
 
 	// The instance storage PVC cache and watch are deferred until actually required.
 	GetInstanceStoragePVCClient func() (client.Reader, error)
-	isPVCWatchStarted           bool
-	isPVCWatchStartedLock       sync.Mutex
-	isPVCCache                  ctrlcache.Cache
+	instanceStoragePVCCache     *volumebatch.DeferredInstanceStoragePVCCache
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -281,22 +219,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 	if err := r.ReconcileNormal(volCtx); err != nil {
 		return ctrl.Result{}, err
 	}
-	return r.reconcileResult(volCtx), nil
-}
-
-func (r *Reconciler) reconcileResult(ctx *pkgctx.VolumeContext) ctrl.Result {
-	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
-		// Requeue the request if all instance storage PVCs are not bound.
-		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
-		if !pvcsBound && vmopv1util.IsInstanceStoragePresent(ctx.VM) {
-			return ctrl.Result{RequeueAfter: wait.Jitter(
-				pkgcfg.FromContext(ctx).InstanceStorage.SeedRequeueDuration,
-				pkgcfg.FromContext(ctx).InstanceStorage.JitterMaxFactor,
-			)}
-		}
-	}
-
-	return ctrl.Result{}
+	return vmopv1util.ShouldRequeueForInstanceStoragePVCs(volCtx, volCtx.VM), nil
 }
 
 func (r *Reconciler) ReconcileDelete(_ *pkgctx.VolumeContext) error {
@@ -313,8 +236,15 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for processing volumes")
 	}()
 
-	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
-		ready, err := r.reconcileInstanceStoragePVCs(ctx)
+	if pkgcfg.FromContext(ctx).Features.InstanceStorage &&
+		vmopv1util.IsInstanceStoragePresent(ctx.VM) {
+
+		isPVCReader, err := r.GetInstanceStoragePVCClient()
+		if err != nil {
+			return fmt.Errorf("failed to get deferred PVC client for instance storage: %w", err)
+		}
+
+		ready, err := vmopv1util.ReconcileInstanceStoragePVCs(ctx, r.Client, isPVCReader, r.recorder)
 		if err != nil || !ready {
 			return err
 		}
@@ -352,263 +282,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	}
 
 	return apierrorsutil.NewAggregate([]error{deleteErr, processErr})
-}
-
-func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *pkgctx.VolumeContext) (bool, error) {
-	// NOTE: We could check for InstanceStoragePVCsBoundAnnotationKey here and short circuit
-	// all of this. Might leave stale PVCs though. Need to think more: instance storage is
-	// this odd quasi reconcilable thing.
-
-	// If the VM Spec doesn't have any instance storage volumes, there is nothing for us to do.
-	// We do not support removing - or changing really - this type of volume.
-	isVolumes := vmopv1util.FilterInstanceStorageVolumes(ctx.VM)
-	if len(isVolumes) == 0 {
-		return true, nil
-	}
-
-	isPVCReader, err := r.GetInstanceStoragePVCClient()
-	if err != nil {
-		ctx.Logger.Error(err, "Failed to get deferred PVC client for instance storage")
-		return false, err
-	}
-
-	pvcList, getErrs := r.getInstanceStoragePVCs(ctx, isPVCReader, isVolumes)
-	if getErrs != nil {
-		return false, apierrorsutil.NewAggregate(getErrs)
-	}
-
-	expectedVolumesMap := map[string]struct{}{}
-	for _, vol := range isVolumes {
-		expectedVolumesMap[vol.Name] = struct{}{}
-	}
-
-	var (
-		stalePVCs  []client.ObjectKey
-		createErrs []error
-	)
-	existingVolumesMap := map[string]struct{}{}
-	failedVolumesMap := map[string]struct{}{}
-	boundCount := 0
-	selectedNode := ctx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey]
-	createPVCs := len(selectedNode) > 0
-
-	for _, pvc := range pvcList {
-		if !pvc.DeletionTimestamp.IsZero() {
-			// Ignore PVC that is being deleted. Likely this is from a previous failed
-			// placement and CSI hasn't fully cleaned up yet (a finalizer is still present).
-			// NOTE: Don't add this to existingVolumesMap[], so we'll try to create in case
-			// our cache is stale.
-			continue
-		}
-
-		if !metav1.IsControlledBy(&pvc, ctx.VM) {
-			// This PVC's OwnerRef doesn't match with VM resource UUID. This shouldn't happen
-			// since PVCs are always created with OwnerRef as well as Controller watch filters
-			// out non instance storage PVCs. Ignore it.
-			continue
-		}
-
-		existingVolumesMap[pvc.Name] = struct{}{}
-
-		pvcNode, exists := pvc.Annotations[storagehelpers.AnnSelectedNode]
-		if !exists || pvcNode != selectedNode {
-			// This PVC is ours but NOT on our selected node. Likely, placement previously failed
-			// and we're trying again on a different node.
-			// NOTE: This includes even when selectedNode is "". Bias for full cleanup.
-			stalePVCs = append(stalePVCs, client.ObjectKeyFromObject(&pvc))
-			continue
-		}
-
-		if instanceStoragePVCFailed(ctx, &pvc) {
-			// This PVC is ours but has failed. This instance storage placement is doomed.
-			failedVolumesMap[pvc.Name] = struct{}{}
-			continue
-		}
-
-		if pvc.Status.Phase != corev1.ClaimBound {
-			// CSI is still processing this PVC.
-			continue
-		}
-
-		// This PVC is successfully bound to our selected host, and is ready for attachment.
-		boundCount++
-	}
-
-	placementFailed := len(failedVolumesMap) > 0
-	if placementFailed {
-		// Need to start placement over. PVCs successfully realized are recreated or
-		// retailed depending on the next host selection.
-		return false, r.instanceStoragePlacementFailed(ctx, failedVolumesMap)
-	}
-
-	deleteErrs := r.deleteInstanceStoragePVCs(ctx, stalePVCs)
-	if createPVCs {
-		createErrs = r.createMissingInstanceStoragePVCs(ctx, isVolumes, existingVolumesMap, selectedNode)
-	}
-
-	fullyBound := boundCount == len(isVolumes)
-	if fullyBound {
-		// All of our instance storage volumes are bound. This is our final state.
-		ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = "true"
-	}
-
-	// There are some implicit relationship between these values. Like there should have been
-	// nothing missing to be created if we were fully bound. There is a case where some or all
-	// PVCs are successfully created but not found.
-	// Returns
-	//   1. (false, nil) if some or all PVCs not bound and all or some PVCs created.
-	//   2. (false, err) if some or all PVCs not bound and error occurs while deleting or creating PVCs.
-	//   3. (true, nil) if all PVCs are bound.
-	return fullyBound, apierrorsutil.NewAggregate(append(deleteErrs, createErrs...))
-}
-
-func instanceStoragePVCFailed(ctx context.Context, pvc *corev1.PersistentVolumeClaim) bool {
-	errAnn := pvc.Annotations[constants.InstanceStoragePVPlacementErrorAnnotationKey]
-	if strings.HasPrefix(errAnn, constants.InstanceStoragePVPlacementErrorPrefix) &&
-		time.Since(pvc.CreationTimestamp.Time) >= pkgcfg.FromContext(ctx).InstanceStorage.PVPlacementFailedTTL {
-		// This triggers delete PVCs operation - Delay it by 5m (default) so that the system is
-		// not over loaded with repeated create/delete PVCs.
-		// NOTE: There is no limitation of CSI on the rate of create/delete PVCs. With this delay,
-		// there is a better chance of successful instance storage VM creation after a delay.
-		// At the moment there is no logic to anti-affinitize the VM to the ESX Host that just failed,
-		// there is a very high chance that the VM will keep landing on the same host. This will lead
-		// to a wasteful tight loop of failed attempts to bring up the instance VM.
-		return true
-	}
-
-	return false
-}
-
-func (r *Reconciler) instanceStoragePlacementFailed(
-	ctx *pkgctx.VolumeContext,
-	failedVolumesMap map[string]struct{}) error {
-
-	// Tell the VM controller that it needs to compute placement again.
-	delete(ctx.VM.Annotations, constants.InstanceStorageSelectedNodeAnnotationKey)
-	delete(ctx.VM.Annotations, constants.InstanceStorageSelectedNodeMOIDAnnotationKey)
-
-	objKeys := make([]client.ObjectKey, 0, len(failedVolumesMap))
-	for volName := range failedVolumesMap {
-		objKeys = append(objKeys, client.ObjectKey{Name: volName, Namespace: ctx.VM.Namespace})
-	}
-	deleteErrs := r.deleteInstanceStoragePVCs(ctx, objKeys)
-
-	return apierrorsutil.NewAggregate(deleteErrs)
-}
-
-func (r *Reconciler) createMissingInstanceStoragePVCs(
-	ctx *pkgctx.VolumeContext,
-	isVolumes []vmopv1.VirtualMachineVolume,
-	existingVolumesMap map[string]struct{},
-	selectedNode string) []error {
-
-	var createErrs []error
-
-	for _, vol := range isVolumes {
-		if _, exists := existingVolumesMap[vol.Name]; !exists {
-			createErrs = append(createErrs, r.createInstanceStoragePVC(ctx, vol, selectedNode))
-		}
-	}
-
-	return createErrs
-}
-
-func (r *Reconciler) createInstanceStoragePVC(
-	ctx *pkgctx.VolumeContext,
-	volume vmopv1.VirtualMachineVolume,
-	selectedNode string) error {
-
-	claim := volume.PersistentVolumeClaim.InstanceVolumeClaim
-
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      volume.PersistentVolumeClaim.ClaimName,
-			Namespace: ctx.VM.Namespace,
-			Labels:    map[string]string{constants.InstanceStorageLabelKey: "true"},
-			Annotations: map[string]string{
-				storagehelpers.AnnSelectedNode: selectedNode,
-			},
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			StorageClassName: &claim.StorageClass,
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: claim.Size,
-				},
-			},
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-		},
-	}
-
-	if c := ctx.VM.Spec.Crypto; c != nil && c.EncryptionClassName != "" {
-		// Assign the InstanceStorage PVC the same EncryptionClass as the VM.
-		pvc.Annotations[constants.EncryptionClassNameAnnotation] = c.EncryptionClassName
-	}
-
-	if err := controllerutil.SetControllerReference(ctx.VM, pvc, r.Client.Scheme()); err != nil {
-		// This is an unexpected error.
-		return fmt.Errorf("cannot set controller reference on PersistentVolumeClaim: %w", err)
-	}
-
-	// We merely consider creating non-existing PVCs in reconcileInstanceStoragePVCs flow.
-	// We specifically don't need of CreateOrUpdate / CreateOrPatch.
-	if err := r.Create(ctx, pvc); err != nil {
-		if vmopv1util.IsInsufficientQuota(err) {
-			r.recorder.EmitEvent(ctx.VM, "Create", err, true)
-		}
-		return err
-	}
-
-	return nil
-}
-
-func (r *Reconciler) getInstanceStoragePVCs(
-	ctx *pkgctx.VolumeContext,
-	pvcReader client.Reader,
-	volumes []vmopv1.VirtualMachineVolume) ([]corev1.PersistentVolumeClaim, []error) {
-
-	var errs []error
-	pvcList := make([]corev1.PersistentVolumeClaim, 0)
-
-	for _, vol := range volumes {
-		objKey := client.ObjectKey{
-			Namespace: ctx.VM.Namespace,
-			Name:      vol.PersistentVolumeClaim.ClaimName,
-		}
-		pvc := &corev1.PersistentVolumeClaim{}
-		if err := pvcReader.Get(ctx, objKey, pvc); err != nil {
-			if client.IgnoreNotFound(err) != nil {
-				errs = append(errs, err)
-			}
-			continue
-		}
-
-		pvcList = append(pvcList, *pvc)
-	}
-
-	return pvcList, errs
-}
-
-func (r *Reconciler) deleteInstanceStoragePVCs(
-	ctx *pkgctx.VolumeContext,
-	objKeys []client.ObjectKey) []error {
-
-	var errs []error
-
-	for _, objKey := range objKeys {
-		pvc := &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      objKey.Name,
-				Namespace: objKey.Namespace,
-			},
-		}
-
-		if err := r.Delete(ctx, pvc); client.IgnoreNotFound(err) != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return errs
 }
 
 // Return the existing CnsNodeVmAttachments that are for this VM.

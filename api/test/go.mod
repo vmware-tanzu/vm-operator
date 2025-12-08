@@ -1,6 +1,6 @@
 module github.com/vmware-tanzu/vm-operator/api/test
 
-go 1.24.4
+go 1.24.11
 
 replace github.com/vmware-tanzu/vm-operator/api => ../
 

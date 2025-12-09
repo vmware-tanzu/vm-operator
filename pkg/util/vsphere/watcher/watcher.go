@@ -35,6 +35,8 @@ const (
 // watch.
 func DefaultWatchedPropertyPaths() []string {
 	return []string{
+		"config.annotation",
+
 		"config.extraConfig",
 		"config.hardware.device",
 		"config.keyId",

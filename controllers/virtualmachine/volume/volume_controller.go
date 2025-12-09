@@ -45,6 +45,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -786,9 +787,10 @@ func (r *Reconciler) processAttachments(
 	// Update the existing status with the new list of managed volumes.
 	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, volumeStatuses...)
 
-	// This is how the previous code sorted, but IMO keeping in Spec order makes
-	// more sense.
-	vmopv1.SortVirtualMachineVolumeStatuses(ctx.VM.Status.Volumes)
+	pkgvol.SortVirtualMachineVolumeStatuses(
+		ctx.VM.Status.Volumes,
+		true, // Sort by UUID.
+	)
 
 	return apierrorsutil.NewAggregate(createErrs)
 }

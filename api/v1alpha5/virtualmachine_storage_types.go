@@ -5,8 +5,6 @@
 package v1alpha5
 
 import (
-	"slices"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -342,19 +340,21 @@ type VirtualMachineVolumeStatus struct {
 	Error string `json:"error,omitempty"`
 }
 
-// SortVirtualMachineVolumeStatuses sorts the provided list of
-// VirtualMachineVolumeStatus objects.
-func SortVirtualMachineVolumeStatuses(s []VirtualMachineVolumeStatus) {
-	slices.SortFunc(s, func(a, b VirtualMachineVolumeStatus) int {
-		switch {
-		case a.DiskUUID < b.DiskUUID:
-			return -1
-		case a.DiskUUID > b.DiskUUID:
-			return 1
-		default:
-			return 0
-		}
-	})
+// GetControllerType returns the type of controller to which the disk is
+// attached.
+func (v VirtualMachineVolumeStatus) GetControllerType() VirtualControllerType {
+	return v.ControllerType
+}
+
+// GetControllerBusNumber returns the bus number of the controller to which the
+// disk is connected.
+func (v VirtualMachineVolumeStatus) GetControllerBusNumber() *int32 {
+	return v.ControllerBusNumber
+}
+
+// GetUnitNumber returns the disk's unit number.
+func (v VirtualMachineVolumeStatus) GetUnitNumber() *int32 {
+	return v.UnitNumber
 }
 
 // VirtualMachineStorageStatus defines the observed state of a VirtualMachine's

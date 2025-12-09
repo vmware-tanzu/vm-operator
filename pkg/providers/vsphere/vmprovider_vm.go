@@ -1653,11 +1653,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 
 	// Create a placement result from the group's placement status.
 	var result placement.Result
-
-	if placementStatus.Zone != "" {
-		result.ZonePlacement = true
-		result.ZoneName = placementStatus.Zone
-	}
+	result.ZoneName = placementStatus.Zone
 
 	if placementStatus.Node != "" {
 		result.HostMoRef = &vimtypes.ManagedObjectReference{
@@ -1712,6 +1708,19 @@ func processPlacementResult(
 	createArgs *VMCreateArgs,
 	result placement.Result) error {
 
+	if result.ZoneName != "" {
+		if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+			createArgs.ZoneName = result.ZoneName
+		} else {
+			if vmCtx.VM.Labels == nil {
+				vmCtx.VM.Labels = map[string]string{}
+			}
+			// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
+			// then this is the pre-assigned zone on later create attempts.
+			vmCtx.VM.Labels[corev1.LabelTopologyZone] = result.ZoneName
+		}
+	}
+
 	if result.PoolMoRef.Value != "" {
 		createArgs.ResourcePoolMoID = result.PoolMoRef.Value
 	}
@@ -1736,7 +1745,6 @@ func processPlacementResult(
 
 	if result.InstanceStoragePlacement {
 		hostMoID := createArgs.HostMoID
-
 		if hostMoID == "" {
 			return fmt.Errorf("placement result missing host required for instance storage")
 		}
@@ -1751,19 +1759,6 @@ func processPlacementResult(
 		}
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = hostFQDN
-	}
-
-	if result.ZonePlacement {
-		if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
-			createArgs.ZoneName = result.ZoneName
-		} else {
-			if vmCtx.VM.Labels == nil {
-				vmCtx.VM.Labels = map[string]string{}
-			}
-			// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
-			// then this is the pre-assigned zone on later create attempts.
-			vmCtx.VM.Labels[corev1.LabelTopologyZone] = result.ZoneName
-		}
 	}
 
 	return nil

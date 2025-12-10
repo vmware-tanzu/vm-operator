@@ -4441,6 +4441,8 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 
 	doTest := func(args testParams) {
 
+		GinkgoHelper()
+
 		args.setup(ctx)
 
 		// Set controllerBusNumber on volumes after setup to simulate mutation webhook
@@ -8350,6 +8352,144 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 								},
 							},
 						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("Volume PVC ClaimName conflicts with other volumes", func() {
+		DescribeTable("Create", doTest,
+			Entry("should deny volumes with duplicate ClaimName",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// New VM adds volumes with duplicate ClaimName
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc-1",
+										},
+									},
+								},
+							},
+							{
+								Name: "new-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc-1",
+										},
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						"spec.volumes[1].persistentVolumeClaim.claimName: Duplicate value: \"existing-pvc-1\"",
+					),
+				},
+			),
+			Entry("should allow volmes with different ClaimName",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// New VM adds volumes with duplicate ClaimName
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc-1",
+										},
+									},
+								},
+							},
+							{
+								Name: "new-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc-2", // different from existing-pvc-1.
+										},
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+
+		DescribeTable("Update", doTest,
+			Entry("should deny new volume with same ClaimName",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc-1",
+										},
+									},
+								},
+							},
+						}
+
+						// New VM adds a second volume with different ClaimName
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-1",
+									},
+								},
+							},
+						})
+					},
+					validate: doValidateWithMsg(
+						"spec.volumes[1].persistentVolumeClaim.claimName: Duplicate value: \"existing-pvc-1\"",
+					),
+				},
+			),
+			Entry("should allow new volume with different ClaimName",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Setup old VM with one volume
+						ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "existing-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "existing-pvc-1",
+										},
+									},
+								},
+							},
+						}
+
+						// New VM adds a second volume with different ClaimName
+						ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "new-pvc-2",
+									},
+								},
+							},
+						})
 					},
 					expectAllowed: true,
 				},

@@ -181,7 +181,7 @@ var _ = Describe("GOSC", func() {
 				Expect(mapping.MacAddress).To(Equal(macAddr1))
 				Expect(adapter.Gateway).To(BeEmpty())
 				Expect(adapter.SubnetMask).To(BeEmpty())
-				Expect(adapter.Ip).To(BeNil())
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationDisableIpV4{}))
 				Expect(adapter.IpV6Spec).To(BeNil())
 			})
 		})

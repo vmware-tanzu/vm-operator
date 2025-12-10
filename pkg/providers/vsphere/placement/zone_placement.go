@@ -6,6 +6,7 @@ package placement
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -67,6 +68,11 @@ type DatastoreResult struct {
 	ForDisk bool
 	DiskKey int32
 }
+
+var (
+	ErrNoPlacementCandidates      = errors.New("no placement candidates")
+	ErrNoPlacementRecommendations = errors.New("no placement recommendations")
+)
 
 func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
 	res.ZonePlacement = true
@@ -260,9 +266,10 @@ func getPlacementRecommendations(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
 	candidates map[string][]string,
-	configSpec vimtypes.VirtualMachineConfigSpec) []Recommendation {
+	configSpec vimtypes.VirtualMachineConfigSpec) (Recommendation, error) {
 
 	var recommendations []Recommendation
+	var errs []error
 
 	for zoneName, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
@@ -273,38 +280,47 @@ func getPlacementRecommendations(
 
 			cluster, err := rpMoIDToCluster(vmCtx, vcClient, rpMoRef)
 			if err != nil {
-				vmCtx.Logger.Error(err, "failed to get CCR from RP", "zone", zoneName, "rpMoID", rpMoID)
+				errs = append(errs, fmt.Errorf("error getting cluster for zone %s rpMoID %s: %w",
+					zoneName, rpMoID, err))
 				continue
 			}
 
-			recs, err := PlaceVMForCreate(vmCtx, cluster, configSpec)
+			rec, err := PlaceVMForCreate(vmCtx, cluster, configSpec)
 			if err != nil {
-				vmCtx.Logger.Error(err, "PlaceVM failed", "zone", zoneName,
-					"clusterMoID", cluster.Reference().Value, "rpMoID", rpMoID)
+				errs = append(errs, fmt.Errorf("PlaceVM failed for zone %s ccrMoID %s: %w",
+					zoneName, cluster.Reference().Value, err))
 				continue
 			}
 
-			if len(recs) == 0 {
-				vmCtx.Logger.Info("No placement recommendations", "zone", zoneName,
+			if rec == nil {
+				vmCtx.Logger.Info("No placement recommendation", "zone", zoneName,
 					"clusterMoID", cluster.Reference().Value, "rpMoID", rpMoID)
 				continue
 			}
 
 			// Replace the resource pool returned by PlaceVM - that is the cluster's root RP - with
 			// our more specific namespace or namespace child RP since this VM needs to be under the
-			// more specific RP. This makes the recommendations returned here the same as what zonal
+			// more specific RP. This makes the recommendation returned here the same as what zonal
 			// would return.
-			for idx := range recs {
-				recs[idx].PoolMoRef = rpMoRef
-			}
-
-			recommendations = append(recommendations, recs...)
+			rec.PoolMoRef = rpMoRef
+			recommendations = append(recommendations, *rec)
 		}
 	}
 
-	vmCtx.Logger.V(5).Info("Non zonal placement recommendations", "recommendations", recommendations)
+	err := errors.Join(errs...)
+	if err != nil {
+		vmCtx.Logger.Error(err, "PlaceVM recommendation errors",
+			"recommendations", recommendations, "candidates", candidates)
+	}
 
-	return recommendations
+	if len(recommendations) == 0 {
+		if err == nil {
+			err = ErrNoPlacementRecommendations
+		}
+		return Recommendation{}, err
+	}
+
+	return recommendations[rand.Intn(len(recommendations))], nil // nolint:gosec
 }
 
 // getZonalPlacementRecommendations calls DRS PlaceVmsXCluster to determine clusters suitable for placement.
@@ -314,7 +330,7 @@ func getZonalPlacementRecommendations(
 	finder *find.Finder,
 	candidates map[string][]string,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	needHostPlacement, needDatastorePlacement bool) ([]Recommendation, error) {
+	needHostPlacement, needDatastorePlacement bool) (Recommendation, error) {
 
 	var candidateRPMoRefs []vimtypes.ManagedObjectReference
 
@@ -328,20 +344,25 @@ func getZonalPlacementRecommendations(
 		}
 	}
 
-	var recommendations []Recommendation
+	var recommendation Recommendation
 
 	if len(candidateRPMoRefs) == 1 {
 		// If there is only one candidate, we might be able to skip some work.
-
 		if needHostPlacement || needDatastorePlacement {
 			// This is a hack until PlaceVmsXCluster() supports instance storage disks.
+			// (this isn't quite right: we should be supporting IS on stretched)
 			vmCtx.Logger.Info("Falling back into non-zonal placement since the only candidate needs host selected",
 				"rpMoID", candidateRPMoRefs[0].Value)
-			return getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec), nil
-		}
+			rec, err := getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
+			if err != nil {
+				return Recommendation{}, fmt.Errorf("PlaceVM failed: %w", err)
+			}
+			recommendation = rec
 
-		vmCtx.Logger.V(5).Info("Doing implied placement since there is only one candidate")
-		recommendations = append(recommendations, Recommendation{PoolMoRef: candidateRPMoRefs[0]})
+		} else {
+			vmCtx.Logger.V(5).Info("Doing implied placement since there is only one candidate")
+			recommendation = Recommendation{PoolMoRef: candidateRPMoRefs[0]}
+		}
 
 	} else {
 		clusterRecommendations, err := ClusterPlaceVMForCreate(
@@ -353,15 +374,18 @@ func getZonalPlacementRecommendations(
 			needHostPlacement,
 			needDatastorePlacement)
 		if err != nil {
-			vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
-			return nil, err
+			return Recommendation{}, fmt.Errorf("PlaceVmsXCluster failed: %w", err)
 		}
 
-		recommendations = clusterRecommendations[configSpec.Name]
+		rec, ok := clusterRecommendations[configSpec.Name]
+		if !ok {
+			return Recommendation{}, ErrNoPlacementRecommendations
+		}
+		recommendation = rec
 	}
 
-	vmCtx.Logger.V(5).Info("Placement recommendations", "recommendations", recommendations)
-	return recommendations, nil
+	vmCtx.Logger.V(5).Info("Got placement recommendation", "rec", recommendation)
+	return recommendation, nil
 }
 
 // Placement determines if the VM needs placement, and if so, determines where to place the VM
@@ -395,7 +419,7 @@ func Placement(
 	}
 
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no placement candidates available")
+		return nil, ErrNoPlacementCandidates
 	}
 
 	if constraints.Zones.Len() > 0 {
@@ -418,16 +442,16 @@ func Placement(
 		}
 
 		if len(allowedCandidates) == 0 {
-			return nil, fmt.Errorf("no placement candidates available after applying zone constraints: %s",
-				strings.Join(constraints.Zones.UnsortedList(), ","))
+			return nil, fmt.Errorf("no candidates remaining after applying zone constraints %s: %w",
+				strings.Join(constraints.Zones.UnsortedList(), ","), ErrNoPlacementCandidates)
 		}
 
 		candidates = allowedCandidates
 	}
 
-	var recommendations []Recommendation
+	var recommendation Recommendation
 	if curResult.needZonePlacement {
-		recommendations, err = getZonalPlacementRecommendations(
+		recommendation, err = getZonalPlacementRecommendations(
 			vmCtx,
 			vcClient,
 			finder,
@@ -435,24 +459,28 @@ func Placement(
 			configSpec,
 			curResult.needHostPlacement,
 			curResult.needDatastorePlacement)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get zonal placement recommendations: %w", err)
-		}
 	} else {
-		recommendations = getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
+		recommendation, err = getPlacementRecommendations(
+			vmCtx,
+			vcClient,
+			candidates,
+			configSpec)
 	}
 
-	if len(recommendations) == 0 {
-		return nil, fmt.Errorf("no placement recommendations available")
+	if err != nil {
+		return nil, err
 	}
 
-	selectedRecommendation := recommendations[rand.Intn(len(recommendations))] // nolint:gosec
-	zoneName := resourcePoolToZoneName[selectedRecommendation.PoolMoRef.Value]
-	vmCtx.Logger.V(4).Info("Placement recommendation", "zone", zoneName, "recommendation", selectedRecommendation)
+	zoneName, ok := resourcePoolToZoneName[recommendation.PoolMoRef.Value]
+	if !ok {
+		// This should never happen: placement returned a non-candidate RP.
+		return nil, fmt.Errorf("no zone assignment for ResourcePool %s",
+			recommendation.PoolMoRef.Value)
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
 		// Get the name and type of the datastores.
-		if err := getDatastoreProperties(vmCtx, vcClient, &selectedRecommendation); err != nil {
+		if err := getDatastoreProperties(vmCtx, vcClient, &recommendation); err != nil {
 			return nil, err
 		}
 	}
@@ -461,13 +489,12 @@ func Placement(
 		ZonePlacement:            curResult.needZonePlacement,
 		InstanceStoragePlacement: curResult.needHostPlacement,
 		ZoneName:                 zoneName,
-		PoolMoRef:                selectedRecommendation.PoolMoRef,
-		HostMoRef:                selectedRecommendation.HostMoRef,
-		Datastores:               selectedRecommendation.Datastores,
+		PoolMoRef:                recommendation.PoolMoRef,
+		HostMoRef:                recommendation.HostMoRef,
+		Datastores:               recommendation.Datastores,
 	}
 
-	vmCtx.Logger.V(4).Info("Placement result", "result", result)
-
+	vmCtx.Logger.Info("Placement result", "result", result)
 	return &result, nil
 }
 

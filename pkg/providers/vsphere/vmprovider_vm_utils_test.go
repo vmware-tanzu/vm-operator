@@ -24,7 +24,9 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -1062,44 +1064,42 @@ func vmUtilTests() {
 			attachedPVC.Namespace = vmCtx.VM.Namespace
 			initObjects = append(initObjects, unusedPVC, unattachedPVC, attachedPVC)
 
-			vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-				{
-					Name: "unattached-vol",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: unattachedPVC.Name,
-							},
+			volumeInfo := pkgvol.VolumeInfo{
+				Disks: []pkgvol.VirtualDiskInfo{
+					{
+						VirtualDiskInfo: util.VirtualDiskInfo{
+							FileName: "[datastore] vm/my-disk-101.vmdk",
+							UUID:     attachedDiskUUID,
+						},
+						Target: vmopv1util.TargetID{
+							ControllerType: vmopv1.VirtualControllerTypeSCSI,
+							ControllerBus:  0,
+							UnitNumber:     0,
 						},
 					},
 				},
-				{
-					Name: "attached-vol",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: attachedPVC.Name,
+				Volumes: map[string]*vmopv1.VirtualMachineVolume{
+					"SCSI:0:0": {
+						Name: "attached-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: attachedPVC.Name,
+								},
 							},
 						},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To[int32](0),
+						UnitNumber:          ptr.To[int32](0),
 					},
 				},
 			}
 
-			vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
-				{
-					Name:     "unattached-vol",
-					Attached: false,
-					DiskUUID: "unattached-disk-uuid",
-				},
-				{
-					Name:     "attached-vol",
-					Attached: true,
-					DiskUUID: attachedDiskUUID,
-				},
-			}
+			vmCtx.Context = pkgvol.WithContext(vmCtx.Context, volumeInfo)
 		})
 
 		It("Should return a map of disk uuid to PVCs that are attached to the VM", func() {
+
 			diskUUIDToPVCMap, err := vsphere.GetAttachedDiskUUIDToPVC(vmCtx, k8sClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(diskUUIDToPVCMap).To(HaveLen(1))
@@ -1112,39 +1112,62 @@ func vmUtilTests() {
 
 	Context("GetAttachedClassicDiskUUIDs", func() {
 
-		var (
-			attachedClassicVolStatus = vmopv1.VirtualMachineVolumeStatus{
-				Name:     "attached-vol",
-				DiskUUID: "attached-classic-disk-uuid",
-				Attached: true,
-				Type:     vmopv1.VolumeTypeClassic,
-			}
-			unattachedClassicVolStatus = vmopv1.VirtualMachineVolumeStatus{
-				Name:     "unattached-vol",
-				DiskUUID: "unattached-classic-disk-uuid",
-				Attached: false,
-				Type:     vmopv1.VolumeTypeClassic,
-			}
-			pvcVolStatus = vmopv1.VirtualMachineVolumeStatus{
-				Name:     "attached-pvc-vol",
-				DiskUUID: "attached-pvc-disk-uuid",
-				Attached: true,
-				Type:     vmopv1.VolumeTypeManaged,
-			}
-		)
-
 		BeforeEach(func() {
-			vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
-				attachedClassicVolStatus,
-				unattachedClassicVolStatus,
-				pvcVolStatus,
+			volumeInfo := pkgvol.VolumeInfo{
+				Disks: []pkgvol.VirtualDiskInfo{
+					{
+						VirtualDiskInfo: util.VirtualDiskInfo{
+							FileName: "[datastore] vm/my-disk-102.vmdk",
+							UUID:     "attached-classic-disk-uuid",
+						},
+						Target: vmopv1util.TargetID{
+							ControllerType: vmopv1.VirtualControllerTypeSCSI,
+							ControllerBus:  0,
+							UnitNumber:     1,
+						},
+					},
+					{
+						VirtualDiskInfo: util.VirtualDiskInfo{
+							FileName: "[datastore] vm/my-disk-101.vmdk",
+							UUID:     "attached-pvc-disk-uuid",
+						},
+						Target: vmopv1util.TargetID{
+							ControllerType: vmopv1.VirtualControllerTypeSCSI,
+							ControllerBus:  0,
+							UnitNumber:     0,
+						},
+					},
+				},
+				Volumes: map[string]*vmopv1.VirtualMachineVolume{
+					"SCSI:0:0": {
+						Name: "attached-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "attached-pvc-vol",
+								},
+							},
+						},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To[int32](0),
+						UnitNumber:          ptr.To[int32](0),
+					},
+					"SCSI:0:1": {
+						Name:                "attached-pvc-vol",
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To[int32](0),
+						UnitNumber:          ptr.To[int32](1),
+					},
+				},
 			}
+
+			vmCtx.Context = pkgvol.WithContext(vmCtx.Context, volumeInfo)
 		})
 
 		It("Should return only the attached classic disk UUID", func() {
 			diskUUIDs := vsphere.GetAttachedClassicDiskUUIDs(vmCtx)
 			Expect(diskUUIDs).To(HaveLen(1))
-			Expect(diskUUIDs).To(HaveKey(attachedClassicVolStatus.DiskUUID))
+			Expect(diskUUIDs).To(HaveKey("attached-classic-disk-uuid"))
 		})
 	})
 

@@ -1248,23 +1248,23 @@ func cdromTests() {
 					})
 				})
 
-				When("non-CD-ROM controller (SCSI) is being added", func() {
-					BeforeEach(func() {
-						pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
-							DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
-								&vimtypes.VirtualDeviceConfigSpec{
-									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-									Device:    builder.DummyParaVirtualSCSIController(-300, 0),
-								},
+			When("non-CD-ROM controller (SCSI) is being added", func() {
+				BeforeEach(func() {
+					pendingConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+							&vimtypes.VirtualDeviceConfigSpec{
+								Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+								Device:    builder.DummyParaVirtualSCSIController(-300, 0, vimtypes.VirtualSCSISharingNoSharing),
 							},
-						}
-					})
-
-					It("should proceed with CD-ROM reconciliation", func() {
-						Expect(resultErr).ToNot(HaveOccurred())
-						Expect(pendingConfigSpec.DeviceChange).To(HaveLen(2)) // SCSI controller + CD-ROM
-					})
+						},
+					}
 				})
+
+				It("should proceed with CD-ROM reconciliation", func() {
+					Expect(resultErr).ToNot(HaveOccurred())
+					Expect(pendingConfigSpec.DeviceChange).To(HaveLen(2)) // SCSI controller + CD-ROM
+				})
+			})
 
 				When("disk device is being added", func() {
 					BeforeEach(func() {

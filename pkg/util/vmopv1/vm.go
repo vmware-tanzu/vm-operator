@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -497,4 +498,39 @@ func ConvertPowerState(logger logr.Logger,
 			"powerState", powerState)
 		return vmopv1.VirtualMachinePowerStateOff
 	}
+}
+
+// IsFSRSupported checks if Fast-Suspend-Resume is supported for the VM.
+// A VM does not support FSR if,
+// - One of its physical shared SCSI controllers has an attached disk.
+func IsFSRSupported(vm vmopv1.VirtualMachine) bool {
+
+	if vm.Spec.Hardware == nil {
+		return true
+	}
+
+	controllersWithDisks := make(sets.Set[int32])
+	for _, vol := range vm.Spec.Volumes {
+		if vol.ControllerType == vmopv1.VirtualControllerTypeSCSI &&
+			vol.ControllerBusNumber != nil {
+
+			controllersWithDisks.Insert(*vol.ControllerBusNumber)
+		}
+	}
+
+	// FSR is not supported if one of its shared SCSI controllers has an
+	// attached disk.
+	isFSRSupported := true
+
+	// Check if one of its shared SCSI controllers has an attached disk.
+	for _, controller := range vm.Spec.Hardware.SCSIControllers {
+		if controller.SharingMode == vmopv1.VirtualControllerSharingModePhysical {
+			if controllersWithDisks.Has(controller.BusNumber) {
+				isFSRSupported = false
+				break
+			}
+		}
+	}
+
+	return isFSRSupported
 }

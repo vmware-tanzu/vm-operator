@@ -6,6 +6,7 @@ package validation_test
 
 import (
 	"fmt"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1026,6 +1027,309 @@ func controllerValidationTests() {
 					response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 					Expect(response.Allowed).To(Equal(true))
 				})
+			})
+		})
+	})
+
+	Context("Hot-Adding SCSI Controllers", func() {
+		When("FSR is not supported and adding a new SCSI controller", func() {
+			BeforeEach(func() {
+				// Set VM to powered on state for hot-add validation to run.
+				ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+
+				// New VM has 2 SCSI controllers.
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "disk-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc-1",
+								},
+							},
+						},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
+					},
+				}
+			})
+
+			It("should deny the update", func() {
+				// Simulate adding a controller during the update.
+				ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				}
+
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(string(response.Result.Reason)).To(ContainSubstring("not allowed when FSR is not supported"))
+			})
+		})
+
+		When("FSR is supported and adding a new SCSI controller", func() {
+			BeforeEach(func() {
+				// Set up old VM without shared controllers or with shared controller
+				// without disk, which makes FSR supported.
+				ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+
+				// New VM adds a second SCSI controller
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+			})
+
+			It("should allow the update", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+
+		When("FSR is not supported but not adding new controllers", func() {
+			BeforeEach(func() {
+				// Set up old VM with a shared SCSI controller with an attached disk
+				ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				}
+
+				ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "disk-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "pvc-1",
+								},
+							},
+						},
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
+					},
+				}
+
+				// Keep the same controller but add another volume to the same controller.
+				ctx.vm.Spec.Hardware = ctx.oldVM.Spec.Hardware.DeepCopy()
+				ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+				ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+					Name: "disk-2",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc-2",
+							},
+						},
+					},
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(1)),
+				})
+			})
+
+			It("should allow the update", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+
+		When("old VM has nil hardware", func() {
+			BeforeEach(func() {
+				ctx.oldVM.Spec.Hardware = nil
+
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+			})
+
+			It("should allow the update (validation skipped)", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+
+		When("new VM has nil hardware", func() {
+			BeforeEach(func() {
+				ctx.oldVM.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+
+				ctx.vm.Spec.Hardware = nil
+			})
+
+			It("should allow the update (validation skipped)", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+	})
+
+	Context("IDE Controller Count Validation", func() {
+		When("creating a VM without IDE controllers", func() {
+			BeforeEach(func() {
+				ctx.oldVM = nil
+				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					IDEControllers: []vmopv1.IDEControllerSpec{},
+				}
+			})
+
+			It("should deny the creation", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(string(response.Result.Reason)).To(ContainSubstring("ideControllers"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("must have exactly 2 controllers"))
+			})
+		})
+
+		When("creating a VM with correct number of IDE controllers", func() {
+			BeforeEach(func() {
+				ctx.oldVM = nil
+				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					IDEControllers: []vmopv1.IDEControllerSpec{
+						{BusNumber: 0},
+						{BusNumber: 1},
+					},
+				}
+			})
+
+			It("should allow the creation", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+
+		When("updating a VM to remove IDE controllers", func() {
+			BeforeEach(func() {
+				ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					IDEControllers: []vmopv1.IDEControllerSpec{
+						{BusNumber: 0},
+						{BusNumber: 1},
+					},
+				}
+				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					IDEControllers: []vmopv1.IDEControllerSpec{},
+				}
+			})
+
+			It("should be denied", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(string(response.Result.Reason)).To(ContainSubstring("ideControllers"))
+				Expect(string(response.Result.Reason)).To(ContainSubstring("must have exactly 2 controllers"))
+			})
+		})
+
+		When("updating a VM with no IDE controllers to add IDE controllers", func() {
+			BeforeEach(func() {
+				ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					IDEControllers: []vmopv1.IDEControllerSpec{},
+				}
+				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					IDEControllers: []vmopv1.IDEControllerSpec{
+						{BusNumber: 0},
+						{BusNumber: 1},
+					},
+				}
+			})
+
+			It("should allow the update", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
 			})
 		})
 	})

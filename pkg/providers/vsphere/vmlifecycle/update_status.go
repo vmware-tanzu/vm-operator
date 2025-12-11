@@ -1375,6 +1375,13 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				}
 			}
 
+			// Classic disk should be converted to PVC in the end.
+			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+				if di.FCD && vm.Status.Volumes[diskIndex].Type == vmopv1.VolumeTypeClassic {
+					vm.Status.Volumes[diskIndex].Type = vmopv1.VolumeTypeManaged
+				}
+			}
+
 		} else if !di.FCD {
 
 			var volName string

@@ -1149,10 +1149,11 @@ func (v validator) validateVolumes(
 	}
 
 	var (
-		allErrs       field.ErrorList
-		volumesPath   = field.NewPath("spec", "volumes")
-		volumeSpecMap = sets.New[string]()
-		oldVolumesMap = map[string]*vmopv1.VirtualMachineVolume{}
+		allErrs           field.ErrorList
+		volumesPath       = field.NewPath("spec", "volumes")
+		volumeNamesSet    = sets.New[string]()
+		oldVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
+		volumePVCNamesSet = sets.New[string]()
 	)
 
 	if oldVM != nil {
@@ -1167,11 +1168,11 @@ func (v validator) validateVolumes(
 		volPath := volumesPath.Index(i)
 
 		if vol.Name != "" {
-			if _, found := volumeSpecMap[vol.Name]; found {
+			if _, found := volumeNamesSet[vol.Name]; found {
 				allErrs = append(allErrs, field.Duplicate(
 					volPath.Child("name"), vol.Name))
 			} else {
-				volumeSpecMap.Insert(vol.Name)
+				volumeNamesSet.Insert(vol.Name)
 			}
 		} else {
 			allErrs = append(allErrs, field.Required(volPath.Child("name"), ""))
@@ -1186,6 +1187,18 @@ func (v validator) validateVolumes(
 			}
 		}
 
+		// Validate that no two volumes have the same PVC claim name.
+		if claimName := vol.PersistentVolumeClaim.ClaimName; claimName != "" {
+			if volumePVCNamesSet.Has(claimName) {
+				allErrs = append(allErrs, field.Duplicate(
+					volPath.Child("persistentVolumeClaim", "claimName"),
+					claimName,
+				))
+			} else {
+				volumePVCNamesSet.Insert(claimName)
+			}
+		}
+
 		allErrs = append(allErrs,
 			v.validateVolume(
 				ctx,
@@ -1195,13 +1208,6 @@ func (v validator) validateVolumes(
 				vol,
 				volPath)...)
 
-		if pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
-			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-
-			allErrs = append(allErrs,
-				v.validateControllerFields(vol, oldVM, *volPath)...,
-			)
-		}
 	}
 
 	return allErrs
@@ -1327,35 +1333,9 @@ func (v validator) validateVolume(
 	}
 
 	if oldVol != nil && oldVol.Name == vol.Name {
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ApplicationType,
-			oldVol.ApplicationType,
-			volPath.Child("applicationType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ControllerBusNumber,
-			oldVol.ControllerBusNumber,
-			volPath.Child("controllerBusNumber"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ControllerType,
-			oldVol.ControllerType,
-			volPath.Child("controllerType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.DiskMode,
-			oldVol.DiskMode,
-			volPath.Child("diskMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.SharingMode,
-			oldVol.SharingMode,
-			volPath.Child("sharingMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.UnitNumber,
-			oldVol.UnitNumber,
-			volPath.Child("unitNumber"))...)
+		allErrs = append(allErrs,
+			v.validateVolumeImmutableFields(vol, oldVol, *volPath)...,
+		)
 	}
 
 	allErrs = append(allErrs,
@@ -1398,6 +1378,49 @@ func (v validator) validateVolume(
 			"hardwareChanged", hardwareChanged,
 		)
 	}
+
+	allErrs = append(allErrs,
+		v.validateControllerFields(vol, oldVM, *volPath)...,
+	)
+
+	return allErrs
+}
+
+func (v validator) validateVolumeImmutableFields(
+	vol vmopv1.VirtualMachineVolume,
+	oldVol *vmopv1.VirtualMachineVolume,
+	volPath field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ApplicationType,
+		oldVol.ApplicationType,
+		volPath.Child("applicationType"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ControllerBusNumber,
+		oldVol.ControllerBusNumber,
+		volPath.Child("controllerBusNumber"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ControllerType,
+		oldVol.ControllerType,
+		volPath.Child("controllerType"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.DiskMode,
+		oldVol.DiskMode,
+		volPath.Child("diskMode"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.SharingMode,
+		oldVol.SharingMode,
+		volPath.Child("sharingMode"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.UnitNumber,
+		oldVol.UnitNumber,
+		volPath.Child("unitNumber"))...)
 
 	return allErrs
 }

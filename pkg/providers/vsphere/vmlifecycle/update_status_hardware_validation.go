@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -211,7 +212,7 @@ func reconcileHardwareCondition(
 	)
 
 	checkControllers(vmCtx.VM, hwInfo, &issues.ControllerIssues)
-	checkVolumes(vmCtx.VM, hwInfo, &issues.VolumeIssues)
+	checkVolumes(vmCtx, hwInfo, &issues.VolumeIssues)
 	checkCDROMDevices(vmCtx, k8sClient, hwInfo, &issues.CDROMIssues)
 
 	if issues.HasIssues() {
@@ -287,11 +288,12 @@ func checkControllers(
 // no extra disks are attached that aren't in the spec. It sets the
 // VirtualMachineHardwareVolumesVerified condition.
 func checkVolumes(
-	vm *vmopv1.VirtualMachine,
+	vmCtx pkgctx.VirtualMachineContext,
 	hwInfo pkgutil.HardwareInfo,
 	issues *VolumeIssues) {
 
 	var (
+		vm       = vmCtx.VM
 		expected = sets.New[pkgutil.DevicePlacement]()
 		actual   = sets.New[pkgutil.DevicePlacement]()
 	)
@@ -325,6 +327,14 @@ func checkVolumes(
 	for _, volStatus := range vm.Status.Volumes {
 		// Ignore Attached status here since we will be checking again the
 		// hardware status directly.
+
+		// Skip classic disk volumes if AllDisksArePVCs is not enabled due
+		// to lack of placement information in vm.spec.volumes.
+		if !pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs &&
+			volStatus.Type == vmopv1.VolumeTypeClassic {
+			continue
+		}
+
 		if volStatus.DiskUUID != "" {
 			volNameByDiskUUID[volStatus.DiskUUID] = volStatus.Name
 		}

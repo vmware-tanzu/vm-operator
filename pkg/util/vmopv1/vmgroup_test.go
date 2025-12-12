@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -876,7 +876,7 @@ var _ = Describe("PolicyEvalToVMToVMGroupMapperFunc", func() {
 	var (
 		ctx           context.Context
 		k8sClient     ctrlclient.Client
-		policyEvalObj *vspherepolv1.PolicyEvaluation
+		policyEvalObj *polv1.PolicyEvaluation
 		vmObj         *vmopv1.VirtualMachine
 		groupObj      *vmopv1.VirtualMachineGroup
 		withObjs      []ctrlclient.Object
@@ -889,7 +889,7 @@ var _ = Describe("PolicyEvalToVMToVMGroupMapperFunc", func() {
 		withObjs = nil
 		vmUID = "vm-uid-12345"
 
-		policyEvalObj = &vspherepolv1.PolicyEvaluation{
+		policyEvalObj = &polv1.PolicyEvaluation{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: namespaceName,
 				Name:      policyEvalName,

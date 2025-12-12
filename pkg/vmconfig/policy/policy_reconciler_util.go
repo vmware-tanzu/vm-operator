@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -38,7 +38,7 @@ func getPolicyEvaluationResults(
 	k8sClient ctrlclient.Client,
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine,
-	configSpec vimtypes.VirtualMachineConfigSpec) ([]vspherepolv1.PolicyEvaluationResult, error) {
+	configSpec vimtypes.VirtualMachineConfigSpec) ([]polv1.PolicyEvaluationResult, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx).
 		WithName("getPolicyEvaluationResults")
@@ -75,7 +75,7 @@ func getPolicyEvaluationResults(
 	// Ensure the workload criteria is considered.
 	var (
 		guestID        string
-		guestFamily    vspherepolv1.GuestFamilyType
+		guestFamily    polv1.GuestFamilyType
 		workloadLabels map[string]string
 	)
 	if len(vm.Labels) > 0 {
@@ -106,15 +106,15 @@ func getPolicyEvaluationResults(
 	if guestID != "" {
 		vimGuestID := vimtypes.VirtualMachineGuestOsIdentifier(guestID)
 		vimGuestFamily := vimGuestID.ToFamily()
-		guestFamily = vspherepolv1.FromVimGuestFamily(string(vimGuestFamily))
+		guestFamily = polv1.FromVimGuestFamily(string(vimGuestFamily))
 	}
 
 	// Ensure the explicit policies are considered.
 	var (
-		explicitPolicies []vspherepolv1.LocalObjectRef
+		explicitPolicies []polv1.LocalObjectRef
 	)
 	if vmp := vm.Spec.Policies; len(vmp) > 0 {
-		explicitPolicies = make([]vspherepolv1.LocalObjectRef, len(vmp))
+		explicitPolicies = make([]polv1.LocalObjectRef, len(vmp))
 		for i := range vmp {
 			explicitPolicies[i].APIVersion = vmp[i].APIVersion
 			explicitPolicies[i].Kind = vmp[i].Kind
@@ -129,7 +129,7 @@ func getPolicyEvaluationResults(
 		"imageLabels", imageLabels,
 		"workloadLabels", workloadLabels)
 
-	obj := vspherepolv1.PolicyEvaluation{
+	obj := polv1.PolicyEvaluation{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: vm.Namespace,
 			Name:      VMNameToPolicyEvalName(vm.Name),
@@ -164,7 +164,7 @@ func getPolicyEvaluationResults(
 		if imageName == "" && len(imageLabels) == 0 {
 			obj.Spec.Image = nil
 		} else {
-			obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+			obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 				Name:   imageName,
 				Labels: imageLabels,
 			}
@@ -174,9 +174,9 @@ func getPolicyEvaluationResults(
 		if guestID == "" && guestFamily == "" && len(workloadLabels) == 0 {
 			obj.Spec.Workload = nil
 		} else {
-			obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+			obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 				Labels: workloadLabels,
-				Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+				Guest: &polv1.PolicyEvaluationGuestSpec{
 					GuestID:     guestID,
 					GuestFamily: guestFamily,
 				},
@@ -201,7 +201,7 @@ func getPolicyEvaluationResults(
 			"reason", reason,
 			"generation", obj.Generation,
 			"observedGeneration", obj.Status.ObservedGeneration,
-			"isReadyCondition", pkgcond.IsTrue(obj, vspherepolv1.ReadyConditionType),
+			"isReadyCondition", pkgcond.IsTrue(obj, polv1.ReadyConditionType),
 			"spec", obj.Spec)
 
 		// The object is still being processed.
@@ -225,7 +225,7 @@ func getPolicyEvaluationResults(
 			return nil, waiting("generation")
 		}
 
-		if !pkgcond.IsTrue(obj, vspherepolv1.ReadyConditionType) {
+		if !pkgcond.IsTrue(obj, polv1.ReadyConditionType) {
 			return nil, waiting("ready")
 		}
 
@@ -244,7 +244,7 @@ func getPolicyEvaluationResults(
 // getTagsFromPolicyEvaluationResults returns the list of vSphere tag UUIDs
 // from one of more PolicyEvaluationResult objects.
 func getTagsFromPolicyEvaluationResults(
-	results ...vspherepolv1.PolicyEvaluationResult) []string {
+	results ...polv1.PolicyEvaluationResult) []string {
 
 	active := sets.Set[string]{}
 

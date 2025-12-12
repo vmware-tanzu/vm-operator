@@ -22,7 +22,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -1164,7 +1164,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					})
 
 					By("Creating a PolicyEvaluation object with policy results", func() {
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1180,17 +1180,17 @@ var _ = Describe("UpdateVirtualMachine", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestFamily: polv1.GuestFamilyTypeLinux,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies: []vspherepolv1.PolicyEvaluationResult{
+								Policies: []polv1.PolicyEvaluationResult{
 									{
 										Name: "test-update-active-policy",
 										Kind: "ComputePolicy",
@@ -1198,7 +1198,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 									},
 								},
 								Conditions: []metav1.Condition{
-									*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+									*conditions.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1237,7 +1237,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 						vm.UID = "test-vm-policy-change-uid"
 
 						// Create initial PolicyEvaluation
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1253,17 +1253,17 @@ var _ = Describe("UpdateVirtualMachine", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestFamily: polv1.GuestFamilyTypeLinux,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies: []vspherepolv1.PolicyEvaluationResult{
+								Policies: []polv1.PolicyEvaluationResult{
 									{
 										Name: "initial-policy",
 										Kind: "ComputePolicy",
@@ -1271,7 +1271,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 									},
 								},
 								Conditions: []metav1.Condition{
-									*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+									*conditions.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1292,7 +1292,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 
 					By("Updating the PolicyEvaluation with new tags", func() {
 						// Get the existing PolicyEvaluation
-						policyEval := &vspherepolv1.PolicyEvaluation{}
+						policyEval := &polv1.PolicyEvaluation{}
 						Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
 							Namespace: vm.Namespace,
 							Name:      "vm-" + vm.Name,
@@ -1303,7 +1303,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 						Expect(ctx.Client.Update(ctx, policyEval)).To(Succeed())
 
 						policyEval.Status.ObservedGeneration = 2
-						policyEval.Status.Policies = []vspherepolv1.PolicyEvaluationResult{
+						policyEval.Status.Policies = []polv1.PolicyEvaluationResult{
 							{
 								Name: "updated-policy",
 								Kind: "ComputePolicy",
@@ -1349,7 +1349,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					})
 
 					By("Creating a PolicyEvaluation object (which should be ignored)", func() {
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1365,17 +1365,17 @@ var _ = Describe("UpdateVirtualMachine", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestFamily: polv1.GuestFamilyTypeLinux,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies: []vspherepolv1.PolicyEvaluationResult{
+								Policies: []polv1.PolicyEvaluationResult{
 									{
 										Name: "ignored-policy",
 										Kind: "ComputePolicy",

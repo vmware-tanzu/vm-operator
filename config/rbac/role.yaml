@@ -362,3 +362,16 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - storagepolicies
+  - storagepolicies/status
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

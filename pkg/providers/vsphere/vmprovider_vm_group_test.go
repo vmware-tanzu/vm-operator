@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
@@ -295,13 +295,13 @@ func vmGroupTests() {
 			assertNotReadyMemberStatusForVM(vm2, vmGroup.Status.Members[1], "NotReady")
 
 			markPolicyEvalReady := func(vm *vmopv1.VirtualMachine) {
-				policyEval := &vspherepolv1.PolicyEvaluation{}
+				policyEval := &polv1.PolicyEvaluation{}
 				Expect(ctx.Client.Get(ctx, client.ObjectKey{
 					Namespace: vm.Namespace,
 					Name:      "vm-" + vm.Name},
 					policyEval)).To(Succeed())
 				policyEval.Status.ObservedGeneration = policyEval.Generation
-				pkgcond.MarkTrue(policyEval, vspherepolv1.ReadyConditionType)
+				pkgcond.MarkTrue(policyEval, polv1.ReadyConditionType)
 				Expect(ctx.Client.Status().Update(ctx, policyEval)).To(Succeed())
 			}
 

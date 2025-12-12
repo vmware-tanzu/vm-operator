@@ -40,7 +40,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -5700,7 +5700,7 @@ func vmTests() {
 								vm.UID = "test-vm-policy-uid"
 
 								// Create a PolicyEvaluation object that will be found during policy reconciliation
-								policyEval := &vspherepolv1.PolicyEvaluation{
+								policyEval := &polv1.PolicyEvaluation{
 									ObjectMeta: metav1.ObjectMeta{
 										Namespace:  vm.Namespace,
 										Name:       "vm-" + vm.Name,
@@ -5716,17 +5716,17 @@ func vmTests() {
 											},
 										},
 									},
-									Spec: vspherepolv1.PolicyEvaluationSpec{
-										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+									Spec: polv1.PolicyEvaluationSpec{
+										Workload: &polv1.PolicyEvaluationWorkloadSpec{
+											Guest: &polv1.PolicyEvaluationGuestSpec{
 												GuestID:     "ubuntu64Guest",
-												GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+												GuestFamily: polv1.GuestFamilyTypeLinux,
 											},
 										},
 									},
-									Status: vspherepolv1.PolicyEvaluationStatus{
+									Status: polv1.PolicyEvaluationStatus{
 										ObservedGeneration: 1,
-										Policies: []vspherepolv1.PolicyEvaluationResult{
+										Policies: []polv1.PolicyEvaluationResult{
 											{
 												Name: "test-active-policy",
 												Kind: "ComputePolicy",
@@ -5734,7 +5734,7 @@ func vmTests() {
 											},
 										},
 										Conditions: []metav1.Condition{
-											*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+											*conditions.TrueCondition(polv1.ReadyConditionType),
 										},
 									},
 								}
@@ -5781,7 +5781,7 @@ func vmTests() {
 								vm.UID = "test-vm-sync-policy-uid"
 
 								// Create a PolicyEvaluation object that will be found during policy reconciliation
-								policyEval := &vspherepolv1.PolicyEvaluation{
+								policyEval := &polv1.PolicyEvaluation{
 									ObjectMeta: metav1.ObjectMeta{
 										Namespace:  vm.Namespace,
 										Name:       "vm-" + vm.Name,
@@ -5797,17 +5797,17 @@ func vmTests() {
 											},
 										},
 									},
-									Spec: vspherepolv1.PolicyEvaluationSpec{
-										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+									Spec: polv1.PolicyEvaluationSpec{
+										Workload: &polv1.PolicyEvaluationWorkloadSpec{
+											Guest: &polv1.PolicyEvaluationGuestSpec{
 												GuestID:     "ubuntu64Guest",
-												GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+												GuestFamily: polv1.GuestFamilyTypeLinux,
 											},
 										},
 									},
-									Status: vspherepolv1.PolicyEvaluationStatus{
+									Status: polv1.PolicyEvaluationStatus{
 										ObservedGeneration: 1,
-										Policies: []vspherepolv1.PolicyEvaluationResult{
+										Policies: []polv1.PolicyEvaluationResult{
 											{
 												Name: "test-sync-active-policy",
 												Kind: "ComputePolicy",
@@ -5815,7 +5815,7 @@ func vmTests() {
 											},
 										},
 										Conditions: []metav1.Condition{
-											*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+											*conditions.TrueCondition(polv1.ReadyConditionType),
 										},
 									},
 								}
@@ -5857,7 +5857,7 @@ func vmTests() {
 							vm.UID = "test-vm-policy-uid"
 
 							// Create a PolicyEvaluation object that will be found during policy reconciliation
-							policyEval := &vspherepolv1.PolicyEvaluation{
+							policyEval := &polv1.PolicyEvaluation{
 								ObjectMeta: metav1.ObjectMeta{
 									Namespace:  vm.Namespace,
 									Name:       "vm-" + vm.Name,
@@ -5873,18 +5873,18 @@ func vmTests() {
 										},
 									},
 								},
-								Spec: vspherepolv1.PolicyEvaluationSpec{
-									Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-										Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+								Spec: polv1.PolicyEvaluationSpec{
+									Workload: &polv1.PolicyEvaluationWorkloadSpec{
+										Guest: &polv1.PolicyEvaluationGuestSpec{
 											GuestID:     "ubuntu64Guest",
-											GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+											GuestFamily: polv1.GuestFamilyTypeLinux,
 										},
 									},
 								},
-								Status: vspherepolv1.PolicyEvaluationStatus{
+								Status: polv1.PolicyEvaluationStatus{
 									ObservedGeneration: 1,
 									Conditions: []metav1.Condition{
-										*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+										*conditions.TrueCondition(polv1.ReadyConditionType),
 									},
 								},
 							}
@@ -5910,7 +5910,7 @@ func vmTests() {
 
 						By("Setting up PolicyEvaluation for update", func() {
 							// Create a PolicyEvaluation object with updated tags
-							policyEval := &vspherepolv1.PolicyEvaluation{
+							policyEval := &polv1.PolicyEvaluation{
 								ObjectMeta: metav1.ObjectMeta{
 									Namespace: vm.Namespace,
 									Name:      "vm-" + vm.Name,
@@ -5923,9 +5923,9 @@ func vmTests() {
 								policyEval)).To(Succeed())
 
 							// Create a PolicyEvaluation object with updated tags
-							policyEval.Status = vspherepolv1.PolicyEvaluationStatus{
+							policyEval.Status = polv1.PolicyEvaluationStatus{
 								ObservedGeneration: policyEval.Generation,
-								Policies: []vspherepolv1.PolicyEvaluationResult{
+								Policies: []polv1.PolicyEvaluationResult{
 									{
 										Name: "test-updated-active-policy",
 										Kind: "ComputePolicy",
@@ -5933,7 +5933,7 @@ func vmTests() {
 									},
 								},
 								Conditions: []metav1.Condition{
-									*conditions.TrueCondition(vspherepolv1.ReadyConditionType),
+									*conditions.TrueCondition(polv1.ReadyConditionType),
 								},
 							}
 

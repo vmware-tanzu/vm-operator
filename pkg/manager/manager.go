@@ -34,7 +34,7 @@ import (
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	vmopapi "github.com/vmware-tanzu/vm-operator/api"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -72,7 +72,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	_ = imgregv1a1.AddToScheme(opts.Scheme)
 	_ = spqv1.AddToScheme(opts.Scheme)
 	_ = byokv1.AddToScheme(opts.Scheme)
-	_ = vspherepolv1.AddToScheme(opts.Scheme)
+	_ = polv1.AddToScheme(opts.Scheme)
 	_ = appv1a1.AddToScheme(opts.Scheme)
 
 	//

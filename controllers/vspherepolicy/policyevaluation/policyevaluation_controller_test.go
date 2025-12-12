@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/vspherepolicy/policyevaluation"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -54,7 +54,7 @@ var _ = Describe("Reconcile", func() {
 		ctx        context.Context
 		client     ctrlclient.Client
 		reconciler *policyevaluation.Reconciler
-		obj        *vspherepolv1.PolicyEvaluation
+		obj        *polv1.PolicyEvaluation
 		namespace  string
 
 		withObjs  []ctrlclient.Object
@@ -68,26 +68,26 @@ var _ = Describe("Reconcile", func() {
 		withObjs = nil
 		withFuncs = interceptor.Funcs{}
 
-		obj = &vspherepolv1.PolicyEvaluation{
+		obj = &polv1.PolicyEvaluation{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-policy-eval",
 				Namespace: namespace,
 			},
-			Spec: vspherepolv1.PolicyEvaluationSpec{},
+			Spec: polv1.PolicyEvaluationSpec{},
 		}
 	})
 
 	JustBeforeEach(func() {
 		scheme := runtime.NewScheme()
 		Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
-		Expect(vspherepolv1.AddToScheme(scheme)).To(Succeed())
+		Expect(polv1.AddToScheme(scheme)).To(Succeed())
 
 		client = fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithStatusSubresource(
-				&vspherepolv1.PolicyEvaluation{},
-				&vspherepolv1.ComputePolicy{},
-				&vspherepolv1.TagPolicy{},
+				&polv1.PolicyEvaluation{},
+				&polv1.ComputePolicy{},
+				&polv1.TagPolicy{},
 			).
 			WithObjects(withObjs...).
 			WithInterceptorFuncs(withFuncs).
@@ -133,7 +133,7 @@ var _ = Describe("Reconcile", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 
-			var updated vspherepolv1.PolicyEvaluation
+			var updated polv1.PolicyEvaluation
 			Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 			Expect(updated.Finalizers).To(ContainElement(policyevaluation.Finalizer))
 		})
@@ -155,22 +155,22 @@ var _ = Describe("Reconcile", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal(ctrl.Result{}))
 
-				var updated vspherepolv1.PolicyEvaluation
+				var updated polv1.PolicyEvaluation
 				Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 				Expect(updated.Status.Policies).To(BeEmpty())
 			})
 
 			Context("with mandatory compute policy", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-compute-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 						},
 					}
 					withObjs = append(withObjs, computePolicy)
@@ -188,10 +188,10 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
-					Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+					Expect(updated.Status.Policies[0].APIVersion).To(Equal(polv1.GroupVersion.String()))
 					Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
 					Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
 					Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
@@ -200,24 +200,24 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with compute policy that has guest matching", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-compute-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
-									Guest: &vspherepolv1.MatchGuestSpec{
-										GuestID: &vspherepolv1.StringMatcherSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
+									Guest: &polv1.MatchGuestSpec{
+										GuestID: &polv1.StringMatcherSpec{
 											Value: "ubuntu64Guest",
 										},
-										GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-											Value: vspherepolv1.GuestFamilyTypeLinux,
+										GuestFamily: &polv1.GuestFamilyMatcherSpec{
+											Value: polv1.GuestFamilyTypeLinux,
 										},
 									},
 								},
@@ -240,7 +240,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -248,10 +248,10 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has matching guest info", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID:     "ubuntu64Guest",
-								GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+								GuestFamily: polv1.GuestFamilyTypeLinux,
 							},
 						}
 					})
@@ -268,11 +268,11 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 						Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
-						Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+						Expect(updated.Status.Policies[0].APIVersion).To(Equal(polv1.GroupVersion.String()))
 						Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
 						Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 					})
@@ -280,10 +280,10 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has non-matching guest ID", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID:     "windows9_64Guest",
-								GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+								GuestFamily: polv1.GuestFamilyTypeLinux,
 							},
 						}
 					})
@@ -300,7 +300,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -308,10 +308,10 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has non-matching guest family", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID:     "ubuntu64Guest",
-								GuestFamily: vspherepolv1.GuestFamilyTypeWindows,
+								GuestFamily: polv1.GuestFamilyTypeWindows,
 							},
 						}
 					})
@@ -328,7 +328,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -336,24 +336,24 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with compute policy in different namespace that has guest matching", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-compute-policy",
 							Namespace: namespace + "1",
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
-									Guest: &vspherepolv1.MatchGuestSpec{
-										GuestID: &vspherepolv1.StringMatcherSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
+									Guest: &polv1.MatchGuestSpec{
+										GuestID: &polv1.StringMatcherSpec{
 											Value: "ubuntu64Guest",
 										},
-										GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-											Value: vspherepolv1.GuestFamilyTypeLinux,
+										GuestFamily: &polv1.GuestFamilyMatcherSpec{
+											Value: polv1.GuestFamilyTypeLinux,
 										},
 									},
 								},
@@ -365,10 +365,10 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has matching guest info", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID:     "ubuntu64Guest",
-								GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+								GuestFamily: polv1.GuestFamilyTypeLinux,
 							},
 						}
 					})
@@ -385,7 +385,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -393,18 +393,18 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with compute policy that has label matching", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-compute-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
 									Labels: []metav1.LabelSelectorRequirement{
 										{
 											Key:      "app",
@@ -437,7 +437,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -445,7 +445,7 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has matching labels", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 							Labels: map[string]string{
 								"app":     "nginx",
 								"tier":    "web",
@@ -466,11 +466,11 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 						Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
-						Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+						Expect(updated.Status.Policies[0].APIVersion).To(Equal(polv1.GroupVersion.String()))
 						Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
 						Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 					})
@@ -478,7 +478,7 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has partial matching labels", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 							Labels: map[string]string{
 								"app": "nginx",
 							},
@@ -497,7 +497,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -505,7 +505,7 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has non-matching label values", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 							Labels: map[string]string{
 								"app":  "apache",
 								"tier": "web",
@@ -525,7 +525,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -534,17 +534,17 @@ var _ = Describe("Reconcile", func() {
 
 			Context("with compute policy that has tags", func() {
 				var (
-					computePolicy *vspherepolv1.ComputePolicy
-					tagPolicy     *vspherepolv1.TagPolicy
+					computePolicy *polv1.ComputePolicy
+					tagPolicy     *polv1.TagPolicy
 				)
 
 				BeforeEach(func() {
-					tagPolicy = &vspherepolv1.TagPolicy{
+					tagPolicy = &polv1.TagPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-tag-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.TagPolicySpec{
+						Spec: polv1.TagPolicySpec{
 							Tags: []string{
 								"uuid1",
 								"uuid2",
@@ -553,13 +553,13 @@ var _ = Describe("Reconcile", func() {
 					}
 					withObjs = append(withObjs, tagPolicy)
 
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-compute-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 							Tags:            []string{"test-tag-policy"},
 						},
 					}
@@ -592,14 +592,14 @@ var _ = Describe("Reconcile", func() {
 
 			Context("with multiple compute policies", func() {
 				BeforeEach(func() {
-					policies := []*vspherepolv1.ComputePolicy{
+					policies := []*polv1.ComputePolicy{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "policy-1",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 							},
 						},
 						{
@@ -607,10 +607,10 @@ var _ = Describe("Reconcile", func() {
 								Name:      "policy-2",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeOptional,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeOptional,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
 										Labels: []metav1.LabelSelectorRequirement{
 											{
 												Key:      "env",
@@ -627,10 +627,10 @@ var _ = Describe("Reconcile", func() {
 								Name:      "policy-3",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
 										Labels: []metav1.LabelSelectorRequirement{
 											{
 												Key:      "env",
@@ -648,7 +648,7 @@ var _ = Describe("Reconcile", func() {
 						withObjs = append(withObjs, policy)
 					}
 
-					obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+					obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 						Labels: map[string]string{
 							"env": "prod",
 						},
@@ -667,13 +667,13 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 
 					policyNames := make([]string, len(updated.Status.Policies))
 					for i, policy := range updated.Status.Policies {
 						policyNames[i] = policy.Name
-						Expect(policy.APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+						Expect(policy.APIVersion).To(Equal(polv1.GroupVersion.String()))
 						Expect(policy.Kind).To(Equal("ComputePolicy"))
 					}
 					Expect(policyNames).To(ConsistOf("policy-1"))
@@ -681,16 +681,16 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with compute policy that has no matching criteria", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "no-criteria-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 							// No Match spec - should match everything
 						},
 					}
@@ -709,24 +709,24 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
 				})
 			})
 
 			Context("with compute policy that has empty match spec", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "empty-match-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match:           &vspherepolv1.MatchSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match:           &polv1.MatchSpec{
 								// Empty match spec - should match everything
 							},
 						},
@@ -746,25 +746,25 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
 				})
 			})
 
 			Context("with compute policy that has empty workload match spec", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "empty-workload-match-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
 									// Empty workload spec - should match everything
 								},
 							},
@@ -785,27 +785,27 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
 				})
 			})
 
 			Context("with compute policy requiring guest but PolicyEvaluation has nil workload", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "guest-required-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
-									Guest: &vspherepolv1.MatchGuestSpec{
-										GuestID: &vspherepolv1.StringMatcherSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
+									Guest: &polv1.MatchGuestSpec{
+										GuestID: &polv1.StringMatcherSpec{
 											Value: "ubuntu64Guest",
 										},
 									},
@@ -831,28 +831,28 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(BeEmpty())
 				})
 			})
 
 			Context("with compute policy requiring guest family but PolicyEvaluation has nil guest", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "guest-family-required-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
-									Guest: &vspherepolv1.MatchGuestSpec{
-										GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-											Value: vspherepolv1.GuestFamilyTypeLinux,
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
+									Guest: &polv1.MatchGuestSpec{
+										GuestFamily: &polv1.GuestFamilyMatcherSpec{
+											Value: polv1.GuestFamilyTypeLinux,
 										},
 									},
 								},
@@ -862,7 +862,7 @@ var _ = Describe("Reconcile", func() {
 					withObjs = append(withObjs, computePolicy)
 
 					// Workload exists but Guest is nil
-					obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+					obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 						Labels: map[string]string{
 							"app": "test",
 						},
@@ -882,25 +882,25 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(BeEmpty())
 				})
 			})
 
 			Context("with compute policy that has image label matching", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-compute-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Image: &vspherepolv1.MatchImageSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Image: &polv1.MatchImageSpec{
 									Labels: []metav1.LabelSelectorRequirement{
 										{
 											Key:      "version",
@@ -933,7 +933,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -941,7 +941,7 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has matching image labels", func() {
 					BeforeEach(func() {
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Labels: map[string]string{
 								"version": "1.0",
 								"arch":    "amd64",
@@ -962,11 +962,11 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 						Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
-						Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+						Expect(updated.Status.Policies[0].APIVersion).To(Equal(polv1.GroupVersion.String()))
 						Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
 						Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 					})
@@ -974,7 +974,7 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has non-matching image labels", func() {
 					BeforeEach(func() {
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Labels: map[string]string{
 								"version": "2.0",
 								"arch":    "arm64",
@@ -994,7 +994,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -1002,18 +1002,18 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with explicit policies", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "explicit-compute-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
 									Labels: []metav1.LabelSelectorRequirement{
 										{
 											Key:      "env",
@@ -1027,9 +1027,9 @@ var _ = Describe("Reconcile", func() {
 					}
 					withObjs = append(withObjs, computePolicy)
 
-					obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+					obj.Spec.Policies = []polv1.LocalObjectRef{
 						{
-							APIVersion: vspherepolv1.GroupVersion.String(),
+							APIVersion: polv1.GroupVersion.String(),
 							Kind:       "ComputePolicy",
 							Name:       "explicit-compute-policy",
 						},
@@ -1075,7 +1075,7 @@ var _ = Describe("Reconcile", func() {
 
 				Context("with unknown policy kind", func() {
 					BeforeEach(func() {
-						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+						obj.Spec.Policies = []polv1.LocalObjectRef{
 							{
 								APIVersion: "unknown.api/v1",
 								Kind:       "UnknownPolicy",
@@ -1096,7 +1096,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -1104,15 +1104,15 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when explicit policy matches", func() {
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "explicit-matching-compute-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
 										Labels: []metav1.LabelSelectorRequirement{
 											{
 												Key:      "env",
@@ -1126,14 +1126,14 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+						obj.Spec.Policies = []polv1.LocalObjectRef{
 							{
-								APIVersion: vspherepolv1.GroupVersion.String(),
+								APIVersion: polv1.GroupVersion.String(),
 								Kind:       "ComputePolicy",
 								Name:       "explicit-matching-compute-policy",
 							},
 						}
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 							Labels: map[string]string{
 								"env": "prod",
 							},
@@ -1151,11 +1151,11 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 						Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
-						Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+						Expect(updated.Status.Policies[0].APIVersion).To(Equal(polv1.GroupVersion.String()))
 						Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
 						Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 					})
@@ -1163,29 +1163,29 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with duplicate policies", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "duplicate-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 						},
 					}
 					withObjs = append(withObjs, computePolicy)
 
 					// Add the same policy twice in explicit policies
-					obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+					obj.Spec.Policies = []polv1.LocalObjectRef{
 						{
-							APIVersion: vspherepolv1.GroupVersion.String(),
+							APIVersion: polv1.GroupVersion.String(),
 							Kind:       "ComputePolicy",
 							Name:       "duplicate-policy",
 						},
 						{
-							APIVersion: vspherepolv1.GroupVersion.String(),
+							APIVersion: polv1.GroupVersion.String(),
 							Kind:       "ComputePolicy",
 							Name:       "duplicate-policy",
 						},
@@ -1204,30 +1204,30 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					// Should only have 2 entries: one from automatic matching, one from explicit
 					// but since they're the same policy, duplicate prevention should result in only 1
 					Expect(updated.Status.Policies).To(HaveLen(1))
-					Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+					Expect(updated.Status.Policies[0].APIVersion).To(Equal(polv1.GroupVersion.String()))
 					Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
 					Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 				})
 			})
 
 			Context("with combined workload and image matching", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "combined-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
 									Labels: []metav1.LabelSelectorRequirement{
 										{
 											Key:      "app",
@@ -1236,7 +1236,7 @@ var _ = Describe("Reconcile", func() {
 										},
 									},
 								},
-								Image: &vspherepolv1.MatchImageSpec{
+								Image: &polv1.MatchImageSpec{
 									Labels: []metav1.LabelSelectorRequirement{
 										{
 											Key:      "version",
@@ -1253,13 +1253,13 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when both workload and image labels match", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 							Labels: map[string]string{
 								"app": "nginx",
 								"env": "prod",
 							},
 						}
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Labels: map[string]string{
 								"version": "1.0",
 								"arch":    "amd64",
@@ -1279,7 +1279,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
@@ -1287,12 +1287,12 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when workload matches but image doesn't", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
 							Labels: map[string]string{
 								"app": "nginx",
 							},
 						}
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Labels: map[string]string{
 								"version": "2.0", // Different version
 							},
@@ -1311,7 +1311,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
@@ -1319,20 +1319,20 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with policies that have only guest ID specified", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "guest-id-only-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
-									Guest: &vspherepolv1.MatchGuestSpec{
-										GuestID: &vspherepolv1.StringMatcherSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
+									Guest: &polv1.MatchGuestSpec{
+										GuestID: &polv1.StringMatcherSpec{
 											Value: "ubuntu64Guest",
 										},
 										// GuestFamily is empty
@@ -1346,10 +1346,10 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has matching guest ID", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID:     "ubuntu64Guest",
-								GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+								GuestFamily: polv1.GuestFamilyTypeLinux,
 							},
 						}
 					})
@@ -1366,7 +1366,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
@@ -1374,22 +1374,22 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			Context("with policies that have only guest family specified", func() {
-				var computePolicy *vspherepolv1.ComputePolicy
+				var computePolicy *polv1.ComputePolicy
 
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "guest-family-only-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
-									Guest: &vspherepolv1.MatchGuestSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
+									Guest: &polv1.MatchGuestSpec{
 										// GuestID is empty
-										GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-											Value: vspherepolv1.GuestFamilyTypeLinux,
+										GuestFamily: &polv1.GuestFamilyMatcherSpec{
+											Value: polv1.GuestFamilyTypeLinux,
 										},
 									},
 								},
@@ -1401,10 +1401,10 @@ var _ = Describe("Reconcile", func() {
 
 				Context("when PolicyEvaluation has matching guest family", func() {
 					BeforeEach(func() {
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID:     "ubuntu64Guest",
-								GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+								GuestFamily: polv1.GuestFamilyTypeLinux,
 							},
 						}
 					})
@@ -1421,7 +1421,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
@@ -1430,22 +1430,22 @@ var _ = Describe("Reconcile", func() {
 
 			Context("with policies testing various string matching operations", func() {
 				Context("with nil string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "nil-matcher-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
-										Guest: &vspherepolv1.MatchGuestSpec{
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
+										Guest: &polv1.MatchGuestSpec{
 											// GuestID is nil - will test nil string matcher
-											GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-												Value: vspherepolv1.GuestFamilyTypeLinux,
+											GuestFamily: &polv1.GuestFamilyMatcherSpec{
+												Value: polv1.GuestFamilyTypeLinux,
 											},
 										},
 									},
@@ -1454,10 +1454,10 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID:     "ubuntu64Guest",
-								GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+								GuestFamily: polv1.GuestFamilyTypeLinux,
 							},
 						}
 					})
@@ -1474,28 +1474,28 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with NotEqual string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "not-equal-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
-										Guest: &vspherepolv1.MatchGuestSpec{
-											GuestID: &vspherepolv1.StringMatcherSpec{
-												Op:    vspherepolv1.ValueSelectorOpNotEqual,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
+										Guest: &polv1.MatchGuestSpec{
+											GuestID: &polv1.StringMatcherSpec{
+												Op:    polv1.ValueSelectorOpNotEqual,
 												Value: "windowsGuest",
 											},
 										},
@@ -1505,8 +1505,8 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID: "ubuntu64Guest", // Not equal to windowsGuest
 							},
 						}
@@ -1524,27 +1524,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with HasPrefix string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "has-prefix-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Image: &vspherepolv1.MatchImageSpec{
-										Name: &vspherepolv1.StringMatcherSpec{
-											Op:    vspherepolv1.ValueSelectorOpHasPrefix,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Image: &polv1.MatchImageSpec{
+										Name: &polv1.StringMatcherSpec{
+											Op:    polv1.ValueSelectorOpHasPrefix,
 											Value: "nginx:",
 										},
 									},
@@ -1553,7 +1553,7 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Name: "nginx:1.20",
 						}
 					})
@@ -1570,27 +1570,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with NotHasPrefix string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "not-has-prefix-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Image: &vspherepolv1.MatchImageSpec{
-										Name: &vspherepolv1.StringMatcherSpec{
-											Op:    vspherepolv1.ValueSelectorOpNotHasPrefix,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Image: &polv1.MatchImageSpec{
+										Name: &polv1.StringMatcherSpec{
+											Op:    polv1.ValueSelectorOpNotHasPrefix,
 											Value: "apache:",
 										},
 									},
@@ -1599,7 +1599,7 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Name: "nginx:1.20", // Does not have apache: prefix
 						}
 					})
@@ -1616,27 +1616,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with HasSuffix string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "has-suffix-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Image: &vspherepolv1.MatchImageSpec{
-										Name: &vspherepolv1.StringMatcherSpec{
-											Op:    vspherepolv1.ValueSelectorOpHasSuffix,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Image: &polv1.MatchImageSpec{
+										Name: &polv1.StringMatcherSpec{
+											Op:    polv1.ValueSelectorOpHasSuffix,
 											Value: ":latest",
 										},
 									},
@@ -1645,7 +1645,7 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Name: "nginx:latest",
 						}
 					})
@@ -1662,27 +1662,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with NotHasSuffix string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "not-has-suffix-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Image: &vspherepolv1.MatchImageSpec{
-										Name: &vspherepolv1.StringMatcherSpec{
-											Op:    vspherepolv1.ValueSelectorOpNotHasSuffix,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Image: &polv1.MatchImageSpec{
+										Name: &polv1.StringMatcherSpec{
+											Op:    polv1.ValueSelectorOpNotHasSuffix,
 											Value: ":beta",
 										},
 									},
@@ -1691,7 +1691,7 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Name: "nginx:latest", // Does not have :beta suffix
 						}
 					})
@@ -1708,28 +1708,28 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with Contains string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "contains-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
-										Guest: &vspherepolv1.MatchGuestSpec{
-											GuestID: &vspherepolv1.StringMatcherSpec{
-												Op:    vspherepolv1.ValueSelectorOpContains,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
+										Guest: &polv1.MatchGuestSpec{
+											GuestID: &polv1.StringMatcherSpec{
+												Op:    polv1.ValueSelectorOpContains,
 												Value: "ubuntu",
 											},
 										},
@@ -1739,8 +1739,8 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID: "ubuntu64Guest", // Contains "ubuntu"
 							},
 						}
@@ -1758,28 +1758,28 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with NotContains string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "not-contains-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
-										Guest: &vspherepolv1.MatchGuestSpec{
-											GuestID: &vspherepolv1.StringMatcherSpec{
-												Op:    vspherepolv1.ValueSelectorOpNotContains,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
+										Guest: &polv1.MatchGuestSpec{
+											GuestID: &polv1.StringMatcherSpec{
+												Op:    polv1.ValueSelectorOpNotContains,
 												Value: "windows",
 											},
 										},
@@ -1789,8 +1789,8 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID: "ubuntu64Guest", // Does not contain "windows"
 							},
 						}
@@ -1808,27 +1808,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with Match (regex) string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "match-regex-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Image: &vspherepolv1.MatchImageSpec{
-										Name: &vspherepolv1.StringMatcherSpec{
-											Op:    vspherepolv1.ValueSelectorOpMatch,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Image: &polv1.MatchImageSpec{
+										Name: &polv1.StringMatcherSpec{
+											Op:    polv1.ValueSelectorOpMatch,
 											Value: "^nginx:[0-9]+\\.[0-9]+$",
 										},
 									},
@@ -1837,7 +1837,7 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Name: "nginx:1.20", // Matches the regex pattern
 						}
 					})
@@ -1854,27 +1854,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with NotMatch (regex) string matcher", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "not-match-regex-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Image: &vspherepolv1.MatchImageSpec{
-										Name: &vspherepolv1.StringMatcherSpec{
-											Op:    vspherepolv1.ValueSelectorOpNotMatch,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Image: &polv1.MatchImageSpec{
+										Name: &polv1.StringMatcherSpec{
+											Op:    polv1.ValueSelectorOpNotMatch,
 											Value: "^apache:",
 										},
 									},
@@ -1883,7 +1883,7 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Name: "nginx:1.20", // Does not match apache: prefix regex
 						}
 					})
@@ -1900,27 +1900,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(HaveLen(1))
 					})
 				})
 
 				Context("with unknown string matcher operation", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "unknown-op-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Workload: &vspherepolv1.MatchWorkloadSpec{
-										Guest: &vspherepolv1.MatchGuestSpec{
-											GuestID: &vspherepolv1.StringMatcherSpec{
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Workload: &polv1.MatchWorkloadSpec{
+										Guest: &polv1.MatchGuestSpec{
+											GuestID: &polv1.StringMatcherSpec{
 												Op:    "UnknownOperation", // Invalid operation
 												Value: "test",
 											},
@@ -1931,8 +1931,8 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-							Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+							Guest: &polv1.PolicyEvaluationGuestSpec{
 								GuestID: "ubuntu64Guest",
 							},
 						}
@@ -1950,27 +1950,27 @@ var _ = Describe("Reconcile", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result).To(Equal(ctrl.Result{}))
 
-						var updated vspherepolv1.PolicyEvaluation
+						var updated polv1.PolicyEvaluation
 						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 						Expect(updated.Status.Policies).To(BeEmpty())
 					})
 				})
 
 				Context("with invalid regex pattern", func() {
-					var computePolicy *vspherepolv1.ComputePolicy
+					var computePolicy *polv1.ComputePolicy
 
 					BeforeEach(func() {
-						computePolicy = &vspherepolv1.ComputePolicy{
+						computePolicy = &polv1.ComputePolicy{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "invalid-regex-policy",
 								Namespace: namespace,
 							},
-							Spec: vspherepolv1.ComputePolicySpec{
-								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-								Match: &vspherepolv1.MatchSpec{
-									Image: &vspherepolv1.MatchImageSpec{
-										Name: &vspherepolv1.StringMatcherSpec{
-											Op:    vspherepolv1.ValueSelectorOpMatch,
+							Spec: polv1.ComputePolicySpec{
+								EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+								Match: &polv1.MatchSpec{
+									Image: &polv1.MatchImageSpec{
+										Name: &polv1.StringMatcherSpec{
+											Op:    polv1.ValueSelectorOpMatch,
 											Value: "[invalid-regex", // Invalid regex
 										},
 									},
@@ -1979,7 +1979,7 @@ var _ = Describe("Reconcile", func() {
 						}
 						withObjs = append(withObjs, computePolicy)
 
-						obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+						obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 							Name: "nginx:1.20",
 						}
 					})
@@ -2003,16 +2003,16 @@ var _ = Describe("Reconcile", func() {
 	})
 
 	Context("when PolicyEvaluation is being deleted", func() {
-		var deletingPolicyEval *vspherepolv1.PolicyEvaluation
+		var deletingPolicyEval *polv1.PolicyEvaluation
 
 		BeforeEach(func() {
-			deletingPolicyEval = &vspherepolv1.PolicyEvaluation{
+			deletingPolicyEval = &polv1.PolicyEvaluation{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "deleting-policy-eval",
 					Namespace:  namespace,
 					Finalizers: []string{policyevaluation.Finalizer},
 				},
-				Spec: vspherepolv1.PolicyEvaluationSpec{},
+				Spec: polv1.PolicyEvaluationSpec{},
 			}
 			now := metav1.Now()
 			deletingPolicyEval.DeletionTimestamp = &now
@@ -2060,7 +2060,7 @@ var _ = Describe("Reconcile", func() {
 			BeforeEach(func() {
 				withFuncs = interceptor.Funcs{
 					List: func(ctx context.Context, client ctrlclient.WithWatch, list ctrlclient.ObjectList, opts ...ctrlclient.ListOption) error {
-						if _, ok := list.(*vspherepolv1.ComputePolicyList); ok {
+						if _, ok := list.(*polv1.ComputePolicyList); ok {
 							return fmt.Errorf("failed to list compute policies")
 						}
 						return client.List(ctx, list, opts...)
@@ -2086,18 +2086,18 @@ var _ = Describe("Reconcile", func() {
 
 		Context("when multiple tag policies with same tags", func() {
 			var (
-				computePolicy *vspherepolv1.ComputePolicy
-				tagPolicy1    *vspherepolv1.TagPolicy
-				tagPolicy2    *vspherepolv1.TagPolicy
+				computePolicy *polv1.ComputePolicy
+				tagPolicy1    *polv1.TagPolicy
+				tagPolicy2    *polv1.TagPolicy
 			)
 
 			BeforeEach(func() {
-				tagPolicy1 = &vspherepolv1.TagPolicy{
+				tagPolicy1 = &polv1.TagPolicy{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tag-policy-1",
 						Namespace: namespace,
 					},
-					Spec: vspherepolv1.TagPolicySpec{
+					Spec: polv1.TagPolicySpec{
 						Tags: []string{
 							"uuid1",
 							"uuid2",
@@ -2106,12 +2106,12 @@ var _ = Describe("Reconcile", func() {
 				}
 				withObjs = append(withObjs, tagPolicy1)
 
-				tagPolicy2 = &vspherepolv1.TagPolicy{
+				tagPolicy2 = &polv1.TagPolicy{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tag-policy-2",
 						Namespace: namespace,
 					},
-					Spec: vspherepolv1.TagPolicySpec{
+					Spec: polv1.TagPolicySpec{
 						Tags: []string{
 							"uuid3",
 							"uuid4",
@@ -2120,13 +2120,13 @@ var _ = Describe("Reconcile", func() {
 				}
 				withObjs = append(withObjs, tagPolicy2)
 
-				computePolicy = &vspherepolv1.ComputePolicy{
+				computePolicy = &polv1.ComputePolicy{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "multi-tag-policy",
 						Namespace: namespace,
 					},
-					Spec: vspherepolv1.ComputePolicySpec{
-						EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+					Spec: polv1.ComputePolicySpec{
+						EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 						Tags:            []string{"tag-policy-1", "tag-policy-2"},
 					},
 				}
@@ -2145,11 +2145,11 @@ var _ = Describe("Reconcile", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal(ctrl.Result{}))
 
-				var updated vspherepolv1.PolicyEvaluation
+				var updated polv1.PolicyEvaluation
 				Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 				Expect(updated.Status.Policies).To(HaveLen(1))
 				Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
-				Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+				Expect(updated.Status.Policies[0].APIVersion).To(Equal(polv1.GroupVersion.String()))
 				Expect(updated.Status.Policies[0].Kind).To(Equal("ComputePolicy"))
 				Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 				Expect(updated.Status.Policies[0].Tags).To(ConsistOf(
@@ -2158,20 +2158,20 @@ var _ = Describe("Reconcile", func() {
 		})
 
 		Context("nested MatchSpec with boolean operations", func() {
-			var computePolicy *vspherepolv1.ComputePolicy
+			var computePolicy *polv1.ComputePolicy
 
 			Context("with boolean AND operation", func() {
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "nested-and-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Op: vspherepolv1.BooleanOpAnd,
-								Workload: &vspherepolv1.MatchWorkloadSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Op: polv1.BooleanOpAnd,
+								Workload: &polv1.MatchWorkloadSpec{
 									Labels: []metav1.LabelSelectorRequirement{
 										{
 											Key:      "app",
@@ -2180,19 +2180,19 @@ var _ = Describe("Reconcile", func() {
 										},
 									},
 								},
-								Match: []vspherepolv1.MatchSpec{
+								Match: []polv1.MatchSpec{
 									{
-										Workload: &vspherepolv1.MatchWorkloadSpec{
-											Guest: &vspherepolv1.MatchGuestSpec{
-												GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-													Value: vspherepolv1.GuestFamilyTypeLinux,
+										Workload: &polv1.MatchWorkloadSpec{
+											Guest: &polv1.MatchGuestSpec{
+												GuestFamily: &polv1.GuestFamilyMatcherSpec{
+													Value: polv1.GuestFamilyTypeLinux,
 												},
 											},
 										},
 									},
 									{
-										Image: &vspherepolv1.MatchImageSpec{
-											Name: &vspherepolv1.StringMatcherSpec{
+										Image: &polv1.MatchImageSpec{
+											Name: &polv1.StringMatcherSpec{
 												Value: "nginx:1.20",
 											},
 										},
@@ -2203,15 +2203,15 @@ var _ = Describe("Reconcile", func() {
 					}
 					withObjs = append(withObjs, computePolicy)
 
-					obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-						Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-							GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+					obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+						Guest: &polv1.PolicyEvaluationGuestSpec{
+							GuestFamily: polv1.GuestFamilyTypeLinux,
 						},
 						Labels: map[string]string{
 							"app": "nginx",
 						},
 					}
-					obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+					obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 						Name: "nginx:1.20",
 					}
 				})
@@ -2228,7 +2228,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
 				})
@@ -2249,7 +2249,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(BeEmpty())
 				})
@@ -2257,28 +2257,28 @@ var _ = Describe("Reconcile", func() {
 
 			Context("with boolean OR operation", func() {
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "nested-or-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Op: vspherepolv1.BooleanOpOr,
-								Match: []vspherepolv1.MatchSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Op: polv1.BooleanOpOr,
+								Match: []polv1.MatchSpec{
 									{
-										Workload: &vspherepolv1.MatchWorkloadSpec{
-											Guest: &vspherepolv1.MatchGuestSpec{
-												GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-													Value: vspherepolv1.GuestFamilyTypeWindows,
+										Workload: &polv1.MatchWorkloadSpec{
+											Guest: &polv1.MatchGuestSpec{
+												GuestFamily: &polv1.GuestFamilyMatcherSpec{
+													Value: polv1.GuestFamilyTypeWindows,
 												},
 											},
 										},
 									},
 									{
-										Image: &vspherepolv1.MatchImageSpec{
-											Name: &vspherepolv1.StringMatcherSpec{
+										Image: &polv1.MatchImageSpec{
+											Name: &polv1.StringMatcherSpec{
 												Value: "nginx:1.20",
 											},
 										},
@@ -2289,12 +2289,12 @@ var _ = Describe("Reconcile", func() {
 					}
 					withObjs = append(withObjs, computePolicy)
 
-					obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-						Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-							GuestFamily: vspherepolv1.GuestFamilyTypeLinux, // Not Windows
+					obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+						Guest: &polv1.PolicyEvaluationGuestSpec{
+							GuestFamily: polv1.GuestFamilyTypeLinux, // Not Windows
 						},
 					}
-					obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+					obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 						Name: "nginx:1.20", // This matches
 					}
 				})
@@ -2311,15 +2311,15 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
 				})
 
 				It("should not match when all nested conditions fail", func() {
 					// Change both conditions to fail
-					obj.Spec.Workload.Guest.GuestFamily = vspherepolv1.GuestFamilyTypeLinux // Not Windows
-					obj.Spec.Image.Name = "apache:2.4"                                      // Not nginx:1.20
+					obj.Spec.Workload.Guest.GuestFamily = polv1.GuestFamilyTypeLinux // Not Windows
+					obj.Spec.Image.Name = "apache:2.4"                               // Not nginx:1.20
 					Expect(client.Update(ctx, obj)).To(Succeed())
 
 					req := ctrl.Request{
@@ -2333,7 +2333,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(BeEmpty())
 				})
@@ -2341,33 +2341,33 @@ var _ = Describe("Reconcile", func() {
 
 			Context("with deeply nested MatchSpec", func() {
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "deeply-nested-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Op: vspherepolv1.BooleanOpAnd,
-								Match: []vspherepolv1.MatchSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Op: polv1.BooleanOpAnd,
+								Match: []polv1.MatchSpec{
 									{
-										Op: vspherepolv1.BooleanOpOr,
-										Match: []vspherepolv1.MatchSpec{
+										Op: polv1.BooleanOpOr,
+										Match: []polv1.MatchSpec{
 											{
-												Workload: &vspherepolv1.MatchWorkloadSpec{
-													Guest: &vspherepolv1.MatchGuestSpec{
-														GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-															Value: vspherepolv1.GuestFamilyTypeLinux,
+												Workload: &polv1.MatchWorkloadSpec{
+													Guest: &polv1.MatchGuestSpec{
+														GuestFamily: &polv1.GuestFamilyMatcherSpec{
+															Value: polv1.GuestFamilyTypeLinux,
 														},
 													},
 												},
 											},
 											{
-												Workload: &vspherepolv1.MatchWorkloadSpec{
-													Guest: &vspherepolv1.MatchGuestSpec{
-														GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-															Value: vspherepolv1.GuestFamilyTypeWindows,
+												Workload: &polv1.MatchWorkloadSpec{
+													Guest: &polv1.MatchGuestSpec{
+														GuestFamily: &polv1.GuestFamilyMatcherSpec{
+															Value: polv1.GuestFamilyTypeWindows,
 														},
 													},
 												},
@@ -2375,7 +2375,7 @@ var _ = Describe("Reconcile", func() {
 										},
 									},
 									{
-										Image: &vspherepolv1.MatchImageSpec{
+										Image: &polv1.MatchImageSpec{
 											Labels: []metav1.LabelSelectorRequirement{
 												{
 													Key:      "version",
@@ -2391,12 +2391,12 @@ var _ = Describe("Reconcile", func() {
 					}
 					withObjs = append(withObjs, computePolicy)
 
-					obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-						Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-							GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+					obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+						Guest: &polv1.PolicyEvaluationGuestSpec{
+							GuestFamily: polv1.GuestFamilyTypeLinux,
 						},
 					}
-					obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+					obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 						Labels: map[string]string{
 							"version": "1.20",
 						},
@@ -2415,7 +2415,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
 				})
@@ -2423,15 +2423,15 @@ var _ = Describe("Reconcile", func() {
 
 			Context("with mixed workload and image conditions at root level", func() {
 				BeforeEach(func() {
-					computePolicy = &vspherepolv1.ComputePolicy{
+					computePolicy = &polv1.ComputePolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "mixed-conditions-policy",
 							Namespace: namespace,
 						},
-						Spec: vspherepolv1.ComputePolicySpec{
-							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
-							Match: &vspherepolv1.MatchSpec{
-								Workload: &vspherepolv1.MatchWorkloadSpec{
+						Spec: polv1.ComputePolicySpec{
+							EnforcementMode: polv1.PolicyEnforcementModeMandatory,
+							Match: &polv1.MatchSpec{
+								Workload: &polv1.MatchWorkloadSpec{
 									Labels: []metav1.LabelSelectorRequirement{
 										{
 											Key:      "tier",
@@ -2440,17 +2440,17 @@ var _ = Describe("Reconcile", func() {
 										},
 									},
 								},
-								Image: &vspherepolv1.MatchImageSpec{
-									Name: &vspherepolv1.StringMatcherSpec{
+								Image: &polv1.MatchImageSpec{
+									Name: &polv1.StringMatcherSpec{
 										Value: "nginx:1.20",
 									},
 								},
-								Match: []vspherepolv1.MatchSpec{
+								Match: []polv1.MatchSpec{
 									{
-										Workload: &vspherepolv1.MatchWorkloadSpec{
-											Guest: &vspherepolv1.MatchGuestSpec{
-												GuestFamily: &vspherepolv1.GuestFamilyMatcherSpec{
-													Value: vspherepolv1.GuestFamilyTypeLinux,
+										Workload: &polv1.MatchWorkloadSpec{
+											Guest: &polv1.MatchGuestSpec{
+												GuestFamily: &polv1.GuestFamilyMatcherSpec{
+													Value: polv1.GuestFamilyTypeLinux,
 												},
 											},
 										},
@@ -2461,15 +2461,15 @@ var _ = Describe("Reconcile", func() {
 					}
 					withObjs = append(withObjs, computePolicy)
 
-					obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
-						Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-							GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+					obj.Spec.Workload = &polv1.PolicyEvaluationWorkloadSpec{
+						Guest: &polv1.PolicyEvaluationGuestSpec{
+							GuestFamily: polv1.GuestFamilyTypeLinux,
 						},
 						Labels: map[string]string{
 							"tier": "web",
 						},
 					}
-					obj.Spec.Image = &vspherepolv1.PolicyEvaluationImageSpec{
+					obj.Spec.Image = &polv1.PolicyEvaluationImageSpec{
 						Name: "nginx:1.20",
 					}
 				})
@@ -2486,7 +2486,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(HaveLen(1))
 				})
@@ -2507,14 +2507,14 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(BeEmpty())
 				})
 
 				It("should not match when nested condition fails", func() {
 					// Change nested workload guest condition to fail
-					obj.Spec.Workload.Guest.GuestFamily = vspherepolv1.GuestFamilyTypeWindows
+					obj.Spec.Workload.Guest.GuestFamily = polv1.GuestFamilyTypeWindows
 					Expect(client.Update(ctx, obj)).To(Succeed())
 
 					req := ctrl.Request{
@@ -2528,7 +2528,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(Equal(ctrl.Result{}))
 
-					var updated vspherepolv1.PolicyEvaluation
+					var updated polv1.PolicyEvaluation
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 					Expect(updated.Status.Policies).To(BeEmpty())
 				})

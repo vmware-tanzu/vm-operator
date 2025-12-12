@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
@@ -190,7 +190,7 @@ func PolicyEvalToVMToVMGroupMapperFunc(
 ) handler.MapFunc {
 
 	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
-		policyEval, ok := o.(*vspherepolv1.PolicyEvaluation)
+		policyEval, ok := o.(*polv1.PolicyEvaluation)
 		if !ok {
 			panic(fmt.Sprintf("Expected PolicyEvaluation, but got %T", o))
 		}
@@ -198,7 +198,7 @@ func PolicyEvalToVMToVMGroupMapperFunc(
 		if policyEval.Generation != policyEval.Status.ObservedGeneration {
 			return nil
 		}
-		if !conditions.IsTrue(policyEval, vspherepolv1.ReadyConditionType) {
+		if !conditions.IsTrue(policyEval, polv1.ReadyConditionType) {
 			return nil
 		}
 

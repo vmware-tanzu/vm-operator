@@ -1277,8 +1277,16 @@ func unitTestsValidateCreate() {
 		Entry("allow spec.crypto.encryptionClassName when FSS_WCP_VMSERVICE_BYOK is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
-					storageClass1 := builder.DummyStorageClass()
+					const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+					storageClass1 := builder.DummyStorageClassWithID(profileID)
 					Expect(ctx.Client.Create(ctx, storageClass1)).To(Succeed())
+
+					Expect(kubeutil.MarkEncryptedStorageClass(
+						ctx,
+						ctx.Client,
+						*storageClass1,
+						true)).To(Succeed())
 
 					rlName := storageClass1.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
 					resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
@@ -1295,11 +1303,6 @@ func unitTestsValidateCreate() {
 						ctx,
 						client.ObjectKey{Name: ctx.vm.Spec.StorageClass},
 						&storageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						storageClass,
-						true)).To(Succeed())
 
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.BringYourOwnEncryptionKey = true
@@ -1311,8 +1314,16 @@ func unitTestsValidateCreate() {
 		Entry("disallow spec.crypto.encryptionClassName for non-encryption storage class when FSS_WCP_VMSERVICE_BYOK is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
-					storageClass1 := builder.DummyStorageClass()
+					const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+					storageClass1 := builder.DummyStorageClassWithID(profileID)
 					Expect(ctx.Client.Create(ctx, storageClass1)).To(Succeed())
+
+					Expect(kubeutil.MarkEncryptedStorageClass(
+						ctx,
+						ctx.Client,
+						*storageClass1,
+						false)).To(Succeed())
 
 					rlName := storageClass1.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
 					resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
@@ -1323,17 +1334,6 @@ func unitTestsValidateCreate() {
 						EncryptionClassName: fake,
 					}
 					ctx.vm.Spec.Volumes = nil
-
-					var storageClass storagev1.StorageClass
-					Expect(ctx.Client.Get(
-						ctx,
-						client.ObjectKey{Name: ctx.vm.Spec.StorageClass},
-						&storageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						storageClass,
-						false)).To(Succeed())
 
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.BringYourOwnEncryptionKey = true
@@ -1346,8 +1346,16 @@ func unitTestsValidateCreate() {
 		Entry("allow volume when spec.crypto.encryptionClassName is non-empty when FSS_WCP_VMSERVICE_BYOK is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
-					storageClass1 := builder.DummyStorageClass()
+					const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+					storageClass1 := builder.DummyStorageClassWithID(profileID)
 					Expect(ctx.Client.Create(ctx, storageClass1)).To(Succeed())
+
+					Expect(kubeutil.MarkEncryptedStorageClass(
+						ctx,
+						ctx.Client,
+						*storageClass1,
+						true)).To(Succeed())
 
 					storageClass2 := builder.DummyStorageClass()
 					storageClass2.Name += "2"
@@ -1369,17 +1377,6 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
 						EncryptionClassName: fake,
 					}
-
-					var storageClass storagev1.StorageClass
-					Expect(ctx.Client.Get(
-						ctx,
-						client.ObjectKey{Name: ctx.vm.Spec.StorageClass},
-						&storageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						storageClass,
-						true)).To(Succeed())
 
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.BringYourOwnEncryptionKey = true
@@ -8708,7 +8705,7 @@ func commonCreateAndUpdateValidations(
 				},
 				Provisioner: "test-provisioner",
 				Parameters: map[string]string{
-					"storagePolicyID": "encrypted-policy-id",
+					"storagePolicyID": "eb0815ac-b281-4198-b27b-7be39035116b",
 				},
 			}
 			Expect(ctx.Client.Create(ctx, encSC)).To(Succeed())
@@ -8721,7 +8718,7 @@ func commonCreateAndUpdateValidations(
 				},
 				Provisioner: "test-provisioner",
 				Parameters: map[string]string{
-					"storagePolicyID": "non-encrypted-policy-id",
+					"storagePolicyID": "705e4a3e-8e09-4c65-bbd2-87dab8e8b4aa",
 				},
 			}
 			Expect(ctx.Client.Create(ctx, nonEncSC)).To(Succeed())

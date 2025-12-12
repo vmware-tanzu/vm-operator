@@ -776,33 +776,62 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 		}
 	}
 
-	for _, vol := range volumeSpecs {
+	// Get the mapping of controller key to controller type and bus number.
+	// Because cnsv1alpha1.VolumeSpec only has controller key.
+	ctrlDevKeyMap := make(map[int32]pkgutil.ControllerID)
+	for _, ctrlStatus := range ctx.VM.Status.Hardware.Controllers {
+		ctrlDevKeyMap[ctrlStatus.DeviceKey] = pkgutil.ControllerID{
+			ControllerType: ctrlStatus.Type,
+			BusNumber:      ctrlStatus.BusNumber,
+		}
+	}
+
+	// Target IDs of the classic disks in VM volume status.
+	existingClassicDiskTargetIDs := sets.New[string]()
+	for _, volStatus := range ctx.VM.Status.Volumes {
+		if volStatus.Type == vmopv1.VolumeTypeClassic {
+			existingClassicDiskTargetIDs.Insert(vmopv1util.GetTargetID(volStatus))
+		}
+	}
+
+	for _, volSpec := range volumeSpecs {
+		if controllerKey := volSpec.PersistentVolumeClaim.ControllerKey; controllerKey != nil {
+			controllerID := ctrlDevKeyMap[*controllerKey]
+
+			volControllerInfo := vmopv1.VirtualMachineVolumeStatus{
+				ControllerType:      controllerID.ControllerType,
+				ControllerBusNumber: ptr.To(controllerID.BusNumber),
+				UnitNumber:          volSpec.PersistentVolumeClaim.UnitNumber,
+			}
+
+			if existingClassicDiskTargetIDs.Has(vmopv1util.GetTargetID(volControllerInfo)) {
+				ctx.Logger.V(4).Info("current volume exists in vm status as a Classic disk, skip adding new entry",
+					"targetID", vmopv1util.GetTargetID(volControllerInfo),
+					"name", volSpec.Name)
+				continue
+			}
+		}
+
 		// By default just add a basic status.
 		vmVolStatus := vmopv1.VirtualMachineVolumeStatus{
-			Name: vol.Name,
+			Name: volSpec.Name,
 			Type: vmopv1.VolumeTypeManaged,
 		}
 
 		// If the batchAttachment.status already has this volume, and its
 		// PVC hasn't been changed, get its detailed info from vm.status.vol
 		// and batchAttachment.status.vol.
-		if volStatus, ok := existingAttachVolStatus[vol.Name]; ok &&
-			vol.PersistentVolumeClaim.ClaimName == volStatus.PersistentVolumeClaim.ClaimName {
+		if attachVolStatus, ok := existingAttachVolStatus[volSpec.Name]; ok &&
+			volSpec.PersistentVolumeClaim.ClaimName == attachVolStatus.PersistentVolumeClaim.ClaimName {
 
-			vmVolStatus = attachmentStatusToVolumeStatus(volStatus.Name, volStatus)
-			existingVol := existingVMManagedVolStatus[vol.Name]
-			vmVolStatus.Used = existingVol.Used
-			vmVolStatus.Crypto = existingVol.Crypto
-			vmVolStatus.ControllerType = existingVol.ControllerType
-			vmVolStatus.ControllerBusNumber = existingVol.ControllerBusNumber
-			vmVolStatus.UnitNumber = existingVol.UnitNumber
-			vmVolStatus.DiskMode = existingVol.DiskMode
-			vmVolStatus.SharingMode = existingVol.SharingMode
+			vmVolStatus = attachmentStatusToVolumeStatus(volSpec.Name, attachVolStatus)
+
+			updateVolumeStatusWithExistingVMStatus(&vmVolStatus, existingVMManagedVolStatus)
 
 			// Add PVC capacity information
 			if err := r.updateVolumeStatusWithPVCInfo(
 				ctx,
-				volStatus.PersistentVolumeClaim.ClaimName,
+				attachVolStatus.PersistentVolumeClaim.ClaimName,
 				&vmVolStatus); err != nil {
 
 				ctx.Logger.Error(err, "failed to get volume status limit")
@@ -1139,14 +1168,8 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 			// vm.status.vol and legacyAttachment.
 			if vol.PersistentVolumeClaim.ClaimName == att.Spec.VolumeName {
 				vmVolStatus := legacyAttachmentToVolumeStatus(vol.Name, att)
-				existingVol := existingVMManagedVolStatus[vol.Name]
-				vmVolStatus.Used = existingVol.Used
-				vmVolStatus.Crypto = existingVol.Crypto
-				vmVolStatus.ControllerType = existingVol.ControllerType
-				vmVolStatus.ControllerBusNumber = existingVol.ControllerBusNumber
-				vmVolStatus.UnitNumber = existingVol.UnitNumber
-				vmVolStatus.DiskMode = existingVol.DiskMode
-				vmVolStatus.SharingMode = existingVol.SharingMode
+
+				updateVolumeStatusWithExistingVMStatus(&vmVolStatus, existingVMManagedVolStatus)
 
 				// Add PVC capacity information
 				if err := r.updateVolumeStatusWithPVCInfo(
@@ -1257,4 +1280,21 @@ func categorizeVolumeSpecs(
 	}
 
 	return volumeSpecsForBatch, volumeSpecsForLegacy
+}
+
+// updateVolumeStatusWithExistingVMStatus updates the target vmVolStatus with
+// info from existing VM managed volume status.
+func updateVolumeStatusWithExistingVMStatus(
+	vmVolStatus *vmopv1.VirtualMachineVolumeStatus,
+	existingVMManagedVolStatusMap map[string]vmopv1.VirtualMachineVolumeStatus) {
+
+	existingVolStatus := existingVMManagedVolStatusMap[vmVolStatus.Name]
+
+	vmVolStatus.Used = existingVolStatus.Used
+	vmVolStatus.Crypto = existingVolStatus.Crypto
+	vmVolStatus.ControllerType = existingVolStatus.ControllerType
+	vmVolStatus.ControllerBusNumber = existingVolStatus.ControllerBusNumber
+	vmVolStatus.UnitNumber = existingVolStatus.UnitNumber
+	vmVolStatus.DiskMode = existingVolStatus.DiskMode
+	vmVolStatus.SharingMode = existingVolStatus.SharingMode
 }

@@ -90,7 +90,7 @@ func unitTestsReconcile() {
 				Hardware: &vmopv1.VirtualMachineHardwareStatus{
 					Controllers: []vmopv1.VirtualControllerStatus{
 						{
-							Type:      "SCSI",
+							Type:      vmopv1.VirtualControllerTypeSCSI,
 							BusNumber: 0,
 							DeviceKey: 1000,
 						},
@@ -108,7 +108,7 @@ func unitTestsReconcile() {
 					},
 				},
 			},
-			ControllerType:      "SCSI",
+			ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 			ControllerBusNumber: ptr.To(int32(0)),
 			UnitNumber:          ptr.To(int32(0)),
 			DiskMode:            vmopv1.VolumeDiskModePersistent,
@@ -134,7 +134,7 @@ func unitTestsReconcile() {
 					},
 				},
 			},
-			ControllerType:      "SCSI",
+			ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 			ControllerBusNumber: ptr.To(int32(0)),
 			UnitNumber:          ptr.To(int32(1)),
 			DiskMode:            vmopv1.VolumeDiskModePersistent,
@@ -404,6 +404,59 @@ func unitTestsReconcile() {
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(BeEmpty())
+				})
+			})
+
+			When("classic volume in VM status", func() {
+				const classicVolumeName = "classic-volume-1"
+
+				BeforeEach(func() {
+					Expect(vm.Spec.Volumes).To(HaveLen(1))
+					Expect(vm.Spec.Volumes[0].ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
+					Expect(vm.Spec.Volumes[0].ControllerBusNumber).To(Equal(ptr.To(int32(0))))
+					Expect(vm.Spec.Volumes[0].UnitNumber).To(Equal(ptr.To(int32(0))))
+
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:                classicVolumeName,
+							Type:                vmopv1.VolumeTypeClassic,
+							DiskUUID:            "100",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
+						},
+					}
+				})
+
+				When("with same Target ID as the volume in vm.spec.volumes", func() {
+					It("should not add the volume to VM Status.Volumes with Managed type", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(classicVolumeName))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeClassic))
+					})
+				})
+
+				When("with different Target ID as the volume in vm.spec.volumes", func() {
+					BeforeEach(func() {
+						Expect(vm.Spec.Volumes).To(HaveLen(1))
+						// Change the unit number to make the Target ID
+						// different from the classic volume in vm.status.volumes.
+						vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(1))
+					})
+
+					It("should add the volume to VM Status.Volumes with Managed type", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(volumeName1))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+						Expect(vm.Status.Volumes[1].Name).To(Equal(classicVolumeName))
+						Expect(vm.Status.Volumes[1].Type).To(Equal(vmopv1.VolumeTypeClassic))
+					})
 				})
 			})
 		})
@@ -1413,7 +1466,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 			})
 
-			When("Volumes are just being detached and CnsNodeVMBatchAttachment's status has been cleared by CSI yet", func() {
+			When("Volumes are just being detached and CnsNodeVMBatchAttachment's status has not been cleared by CSI yet", func() {
 				BeforeEach(func() {
 					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
 						cnsv1alpha1.VolumeStatus{
@@ -1435,6 +1488,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					)
 					initObjects = append(initObjects, attachment)
 				})
+
 				It("returns success and refresh the vm volume status", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())

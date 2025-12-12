@@ -342,6 +342,23 @@ type VirtualMachineVolumeStatus struct {
 	Error string `json:"error,omitempty"`
 }
 
+// GetControllerType returns the type of controller to which the disk is
+// attached.
+func (v VirtualMachineVolumeStatus) GetControllerType() VirtualControllerType {
+	return v.ControllerType
+}
+
+// GetControllerBusNumber returns the bus number of the controller to which the
+// disk is connected.
+func (v VirtualMachineVolumeStatus) GetControllerBusNumber() *int32 {
+	return v.ControllerBusNumber
+}
+
+// GetUnitNumber returns the disk's unit number.
+func (v VirtualMachineVolumeStatus) GetUnitNumber() *int32 {
+	return v.UnitNumber
+}
+
 // SortVirtualMachineVolumeStatuses sorts the provided list of
 // VirtualMachineVolumeStatus objects.
 func SortVirtualMachineVolumeStatuses(s []VirtualMachineVolumeStatus) {

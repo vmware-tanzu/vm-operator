@@ -2916,6 +2916,13 @@ var _ = Describe("UpdateStatus", func() {
 			})
 
 			Context("Classic disk volumes", func() {
+				BeforeEach(func() {
+					// Enable AllDisksArePVCs feature for classic disk tests
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.AllDisksArePVCs = true
+					})
+				})
+
 				When("classic disk volume is correctly attached", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
@@ -3060,6 +3067,155 @@ var _ = Describe("UpdateStatus", func() {
 							map[string]string{
 								vmopv1.VirtualMachineHardwareVolumesVerified: "missing volumes: classic-disk-1 (SCSI:0:1)",
 							})
+					})
+				})
+			})
+
+			Context("Classic disk volumes when AllDisksArePVCs is disabled", func() {
+				BeforeEach(func() {
+					// Ensure AllDisksArePVCs feature is disabled
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.AllDisksArePVCs = false
+					})
+				})
+
+				When("classic disk volume is attached but not in spec", func() {
+					BeforeEach(func() {
+						// No volumes in spec
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a classic disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-classic", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "classic-disk-1",
+								DiskUUID: "disk-uuid-classic",
+								Type:     vmopv1.VolumeTypeClassic,
+							},
+						}
+					})
+
+					It("should mark the condition as true because classic disks are ignored", func() {
+						// When AllDisksArePVCs is disabled, classic disk volumes are skipped
+						// from the volNameByDiskUUID mapping duce to lack of placement information.
+						assertConditionTrue()
+					})
+				})
+
+				When("classic disk volume is in spec but feature is disabled", func() {
+					BeforeEach(func() {
+						// This scenario tests defensive behavior: normally, classic disks
+						// wouldn't be in spec.volumes when AllDisksArePVCs is disabled.
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyClassicVirtualMachineVolume(
+								"classic-disk-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-classic", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "classic-disk-1",
+								DiskUUID: "disk-uuid-classic",
+								Type:     vmopv1.VolumeTypeClassic,
+							},
+						}
+					})
+
+					It("should mark the condition as false with missing volume", func() {
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing volumes: classic-disk-1 (SCSI:0:0)",
+							})
+					})
+				})
+
+				When("mixed PVC and classic disk volumes with feature disabled", func() {
+					BeforeEach(func() {
+						// Both PVC-backed volume and classic disk volume in spec
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							builder.DummyPVCVirtualMachineVolume(
+								"pvc-volume-1",
+								"test-pvc",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(0)),
+							),
+							builder.DummyClassicVirtualMachineVolume(
+								"classic-disk-1",
+								vmopv1.VirtualControllerTypeSCSI,
+								ptr.To(int32(0)),
+								ptr.To(int32(1)),
+							),
+						}
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device with both disks.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-pvc", ""),
+							builder.DummyVirtualDisk(2001, 1000, ptr.To(int32(1)), "disk-uuid-classic", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-pvc",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+							{
+								Name:     "classic-disk-1",
+								DiskUUID: "disk-uuid-classic",
+								Type:     vmopv1.VolumeTypeClassic,
+							},
+						}
+					})
+
+					It("should validate PVC volume but report classic disk as missing", func() {
+						// PVC volume is validated correctly, but classic disk is skipped from
+						// validation and reported as missing.
+						assertConditionFalse(
+							buildAggregateMessage(vmopv1.VirtualMachineHardwareVolumesVerified),
+							map[string]string{
+								vmopv1.VirtualMachineHardwareVolumesVerified: "missing volumes: classic-disk-1 (SCSI:0:1)",
+							})
+					})
+				})
+
+				When("only PVC volumes with feature disabled", func() {
+					BeforeEach(func() {
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-pvc", ""),
+						)
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "disk-uuid-pvc",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+						}
+					})
+
+					It("should validate PVC volumes normally", func() {
+						// PVC volumes should still be validated normally even when feature is disabled.
+						assertConditionTrue()
 					})
 				})
 			})

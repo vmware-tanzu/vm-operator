@@ -550,16 +550,16 @@ func GetVMSetResourcePolicy(
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(
 	vmCtx pkgctx.VirtualMachineContext,
-	is vmopv1.InstanceStorage) bool {
+	is vmopv1.InstanceStorage) (bool, bool) {
 
 	if vmopv1util.IsInstanceStoragePresent(vmCtx.VM) {
 		// Instance storage disks are copied from the class to the VM only once, regardless
 		// if the class changes.
-		return true
+		return true, false
 	}
 
 	if len(is.Volumes) == 0 {
-		return false
+		return false, false
 	}
 
 	volumes := make([]vmopv1.VirtualMachineVolume, 0, len(is.Volumes))
@@ -586,7 +586,7 @@ func AddInstanceStorageVolumes(
 	}
 
 	vmCtx.VM.Spec.Volumes = append(vmCtx.VM.Spec.Volumes, volumes...)
-	return true
+	return true, true
 }
 
 func GetVMClassConfigSpec(

@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -74,7 +74,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestsFromMapFunc(vmopv1util.MemberToGroupMapperFn(ctx)))
 
 	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
-		c.Watches(&vspherepolv1.PolicyEvaluation{},
+		c.Watches(&polv1.PolicyEvaluation{},
 			handler.EnqueueRequestsFromMapFunc(vmopv1util.PolicyEvalToVMToVMGroupMapperFunc(ctx, r.Client)))
 	}
 

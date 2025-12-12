@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -192,10 +192,10 @@ var _ = Describe("Reconcile", func() {
 			policyTag2ID string
 			policyTag3ID string
 
-			tagPolicy1     *vspherepolv1.TagPolicy
-			tagPolicy2     *vspherepolv1.TagPolicy
-			computePolicy1 *vspherepolv1.ComputePolicy
-			computePolicy2 *vspherepolv1.ComputePolicy
+			tagPolicy1     *polv1.TagPolicy
+			tagPolicy2     *polv1.TagPolicy
+			computePolicy1 *polv1.ComputePolicy
+			computePolicy2 *polv1.ComputePolicy
 		)
 
 		BeforeEach(func() {
@@ -227,47 +227,47 @@ var _ = Describe("Reconcile", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			tagPolicy1 = &vspherepolv1.TagPolicy{
+			tagPolicy1 = &polv1.TagPolicy{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-tag-policy-1",
 					Namespace: vm.Namespace,
 				},
-				Spec: vspherepolv1.TagPolicySpec{
+				Spec: polv1.TagPolicySpec{
 					Tags: []string{
 						policyTag1ID,
 						policyTag2ID,
 					},
 				},
 			}
-			tagPolicy2 = &vspherepolv1.TagPolicy{
+			tagPolicy2 = &polv1.TagPolicy{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-tag-policy-2",
 					Namespace: vm.Namespace,
 				},
-				Spec: vspherepolv1.TagPolicySpec{
+				Spec: polv1.TagPolicySpec{
 					Tags: []string{
 						policyTag3ID,
 					},
 				},
 			}
 
-			computePolicy1 = &vspherepolv1.ComputePolicy{
+			computePolicy1 = &polv1.ComputePolicy{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-compute-policy-1",
 					Namespace: vm.Namespace,
 				},
-				Spec: vspherepolv1.ComputePolicySpec{
-					EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+				Spec: polv1.ComputePolicySpec{
+					EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 					Tags:            []string{tagPolicy1.Name},
 				},
 			}
-			computePolicy2 = &vspherepolv1.ComputePolicy{
+			computePolicy2 = &polv1.ComputePolicy{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-compute-policy-2",
 					Namespace: vm.Namespace,
 				},
-				Spec: vspherepolv1.ComputePolicySpec{
-					EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+				Spec: polv1.ComputePolicySpec{
+					EnforcementMode: polv1.PolicyEnforcementModeMandatory,
 					Tags:            []string{tagPolicy2.Name},
 				},
 			}
@@ -296,7 +296,7 @@ var _ = Describe("Reconcile", func() {
 			When("the policy object is updated", func() {
 				BeforeEach(func() {
 					// Create a PolicyEvaluation that requires policyTag1ID and policyTag2ID
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -312,17 +312,17 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{
-							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						Spec: polv1.PolicyEvaluationSpec{
+							Workload: &polv1.PolicyEvaluationWorkloadSpec{
+								Guest: &polv1.PolicyEvaluationGuestSpec{
 									GuestID:     "ubuntu64Guest",
-									GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									GuestFamily: polv1.GuestFamilyTypeLinux,
 								},
 							},
 						},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies: []vspherepolv1.PolicyEvaluationResult{{
+							Policies: []polv1.PolicyEvaluationResult{{
 								Tags: []string{policyTag1ID, policyTag2ID},
 							}},
 						},
@@ -340,7 +340,7 @@ var _ = Describe("Reconcile", func() {
 			When("the policy generations do not match", func() {
 				BeforeEach(func() {
 					// Create a PolicyEvaluation that requires policyTag1ID and policyTag2ID
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -356,17 +356,17 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{
-							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						Spec: polv1.PolicyEvaluationSpec{
+							Workload: &polv1.PolicyEvaluationWorkloadSpec{
+								Guest: &polv1.PolicyEvaluationGuestSpec{
 									GuestID:     configSpec.GuestId,
-									GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									GuestFamily: polv1.GuestFamilyTypeLinux,
 								},
 							},
 						},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies: []vspherepolv1.PolicyEvaluationResult{{
+							Policies: []polv1.PolicyEvaluationResult{{
 								Tags: []string{policyTag1ID, policyTag2ID},
 							}},
 						},
@@ -385,7 +385,7 @@ var _ = Describe("Reconcile", func() {
 
 				BeforeEach(func() {
 					// Create a PolicyEvaluation that requires policyTag1ID and policyTag2ID
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -401,21 +401,21 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{
-							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						Spec: polv1.PolicyEvaluationSpec{
+							Workload: &polv1.PolicyEvaluationWorkloadSpec{
+								Guest: &polv1.PolicyEvaluationGuestSpec{
 									GuestID:     configSpec.GuestId,
-									GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									GuestFamily: polv1.GuestFamilyTypeLinux,
 								},
 							},
 						},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies: []vspherepolv1.PolicyEvaluationResult{{
+							Policies: []polv1.PolicyEvaluationResult{{
 								Tags: []string{policyTag1ID, policyTag2ID},
 							}},
 							Conditions: []metav1.Condition{
-								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								*pkgcond.TrueCondition(polv1.ReadyConditionType),
 							},
 						},
 					}
@@ -440,7 +440,7 @@ var _ = Describe("Reconcile", func() {
 			When("the vm is subject to multiple policies", func() {
 				BeforeEach(func() {
 					// Create a PolicyEvaluation with multiple policy results
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -456,22 +456,22 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{
-							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						Spec: polv1.PolicyEvaluationSpec{
+							Workload: &polv1.PolicyEvaluationWorkloadSpec{
+								Guest: &polv1.PolicyEvaluationGuestSpec{
 									GuestID:     configSpec.GuestId,
-									GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									GuestFamily: polv1.GuestFamilyTypeLinux,
 								},
 							},
 						},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies: []vspherepolv1.PolicyEvaluationResult{
+							Policies: []polv1.PolicyEvaluationResult{
 								{Tags: []string{policyTag1ID, policyTag2ID}}, // From policy 1
 								{Tags: []string{policyTag3ID}},               // From policy 2
 							},
 							Conditions: []metav1.Condition{
-								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								*pkgcond.TrueCondition(polv1.ReadyConditionType),
 							},
 						},
 					}
@@ -542,7 +542,7 @@ var _ = Describe("Reconcile", func() {
 
 						BeforeEach(func() {
 							// Create a PolicyEvaluation with no resulting policy tags
-							policyEval := &vspherepolv1.PolicyEvaluation{
+							policyEval := &polv1.PolicyEvaluation{
 								ObjectMeta: metav1.ObjectMeta{
 									Namespace:  vm.Namespace,
 									Name:       "vm-" + vm.Name,
@@ -558,19 +558,19 @@ var _ = Describe("Reconcile", func() {
 										},
 									},
 								},
-								Spec: vspherepolv1.PolicyEvaluationSpec{
-									Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-										Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+								Spec: polv1.PolicyEvaluationSpec{
+									Workload: &polv1.PolicyEvaluationWorkloadSpec{
+										Guest: &polv1.PolicyEvaluationGuestSpec{
 											GuestID:     "otherGuest",
-											GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+											GuestFamily: polv1.GuestFamilyTypeOther,
 										},
 									},
 								},
-								Status: vspherepolv1.PolicyEvaluationStatus{
+								Status: polv1.PolicyEvaluationStatus{
 									ObservedGeneration: 1,
-									Policies:           []vspherepolv1.PolicyEvaluationResult{}, // No policies apply
+									Policies:           []polv1.PolicyEvaluationResult{}, // No policies apply
 									Conditions: []metav1.Condition{
-										*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+										*pkgcond.TrueCondition(polv1.ReadyConditionType),
 									},
 								},
 							}
@@ -614,7 +614,7 @@ var _ = Describe("Reconcile", func() {
 						When("that policy's tags are already associated with the vm", func() {
 							BeforeEach(func() {
 								// Create a PolicyEvaluation that requires policyTag3ID
-								policyEval := &vspherepolv1.PolicyEvaluation{
+								policyEval := &polv1.PolicyEvaluation{
 									ObjectMeta: metav1.ObjectMeta{
 										Namespace:  vm.Namespace,
 										Name:       "vm-" + vm.Name,
@@ -630,21 +630,21 @@ var _ = Describe("Reconcile", func() {
 											},
 										},
 									},
-									Spec: vspherepolv1.PolicyEvaluationSpec{
-										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+									Spec: polv1.PolicyEvaluationSpec{
+										Workload: &polv1.PolicyEvaluationWorkloadSpec{
+											Guest: &polv1.PolicyEvaluationGuestSpec{
 												GuestID:     "otherGuest",
-												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+												GuestFamily: polv1.GuestFamilyTypeOther,
 											},
 										},
 									},
-									Status: vspherepolv1.PolicyEvaluationStatus{
+									Status: polv1.PolicyEvaluationStatus{
 										ObservedGeneration: 1,
-										Policies: []vspherepolv1.PolicyEvaluationResult{{
+										Policies: []polv1.PolicyEvaluationResult{{
 											Tags: []string{policyTag3ID},
 										}},
 										Conditions: []metav1.Condition{
-											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+											*pkgcond.TrueCondition(polv1.ReadyConditionType),
 										},
 									},
 								}
@@ -686,7 +686,7 @@ var _ = Describe("Reconcile", func() {
 						When("that policy's tags are not already associated with the vm", func() {
 							BeforeEach(func() {
 								// Create a PolicyEvaluation that requires policyTag1ID and policyTag2ID
-								policyEval := &vspherepolv1.PolicyEvaluation{
+								policyEval := &polv1.PolicyEvaluation{
 									ObjectMeta: metav1.ObjectMeta{
 										Namespace:  vm.Namespace,
 										Name:       "vm-" + vm.Name,
@@ -702,21 +702,21 @@ var _ = Describe("Reconcile", func() {
 											},
 										},
 									},
-									Spec: vspherepolv1.PolicyEvaluationSpec{
-										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+									Spec: polv1.PolicyEvaluationSpec{
+										Workload: &polv1.PolicyEvaluationWorkloadSpec{
+											Guest: &polv1.PolicyEvaluationGuestSpec{
 												GuestID:     "otherGuest",
-												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+												GuestFamily: polv1.GuestFamilyTypeOther,
 											},
 										},
 									},
-									Status: vspherepolv1.PolicyEvaluationStatus{
+									Status: polv1.PolicyEvaluationStatus{
 										ObservedGeneration: 1,
-										Policies: []vspherepolv1.PolicyEvaluationResult{{
+										Policies: []polv1.PolicyEvaluationResult{{
 											Tags: []string{policyTag1ID, policyTag2ID},
 										}},
 										Conditions: []metav1.Condition{
-											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+											*pkgcond.TrueCondition(polv1.ReadyConditionType),
 										},
 									},
 								}
@@ -768,7 +768,7 @@ var _ = Describe("Reconcile", func() {
 						When("the tags on the vm are not for any of the policies", func() {
 							BeforeEach(func() {
 								// Create a PolicyEvaluation with multiple policy results
-								policyEval := &vspherepolv1.PolicyEvaluation{
+								policyEval := &polv1.PolicyEvaluation{
 									ObjectMeta: metav1.ObjectMeta{
 										Namespace:  vm.Namespace,
 										Name:       "vm-" + vm.Name,
@@ -784,22 +784,22 @@ var _ = Describe("Reconcile", func() {
 											},
 										},
 									},
-									Spec: vspherepolv1.PolicyEvaluationSpec{
-										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+									Spec: polv1.PolicyEvaluationSpec{
+										Workload: &polv1.PolicyEvaluationWorkloadSpec{
+											Guest: &polv1.PolicyEvaluationGuestSpec{
 												GuestID:     "otherGuest",
-												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+												GuestFamily: polv1.GuestFamilyTypeOther,
 											},
 										},
 									},
-									Status: vspherepolv1.PolicyEvaluationStatus{
+									Status: polv1.PolicyEvaluationStatus{
 										ObservedGeneration: 1,
-										Policies: []vspherepolv1.PolicyEvaluationResult{
+										Policies: []polv1.PolicyEvaluationResult{
 											{Tags: []string{policyTag1ID, policyTag2ID}}, // From policy 1
 											{Tags: []string{policyTag3ID}},               // From policy 2
 										},
 										Conditions: []metav1.Condition{
-											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+											*pkgcond.TrueCondition(polv1.ReadyConditionType),
 										},
 									},
 								}
@@ -845,7 +845,7 @@ var _ = Describe("Reconcile", func() {
 						When("the tags on the vm are for some of the policies", func() {
 							BeforeEach(func() {
 								// Create a PolicyEvaluation with multiple policy results
-								policyEval := &vspherepolv1.PolicyEvaluation{
+								policyEval := &polv1.PolicyEvaluation{
 									ObjectMeta: metav1.ObjectMeta{
 										Namespace:  vm.Namespace,
 										Name:       "vm-" + vm.Name,
@@ -861,22 +861,22 @@ var _ = Describe("Reconcile", func() {
 											},
 										},
 									},
-									Spec: vspherepolv1.PolicyEvaluationSpec{
-										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+									Spec: polv1.PolicyEvaluationSpec{
+										Workload: &polv1.PolicyEvaluationWorkloadSpec{
+											Guest: &polv1.PolicyEvaluationGuestSpec{
 												GuestID:     "otherGuest",
-												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+												GuestFamily: polv1.GuestFamilyTypeOther,
 											},
 										},
 									},
-									Status: vspherepolv1.PolicyEvaluationStatus{
+									Status: polv1.PolicyEvaluationStatus{
 										ObservedGeneration: 1,
-										Policies: []vspherepolv1.PolicyEvaluationResult{
+										Policies: []polv1.PolicyEvaluationResult{
 											{Tags: []string{policyTag1ID, policyTag2ID}}, // From policy 1
 											{Tags: []string{policyTag3ID}},               // From policy 2
 										},
 										Conditions: []metav1.Condition{
-											*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+											*pkgcond.TrueCondition(polv1.ReadyConditionType),
 										},
 									},
 								}
@@ -927,7 +927,7 @@ var _ = Describe("Reconcile", func() {
 				When("the vm is not subject to any policy", func() {
 					BeforeEach(func() {
 						// Create a PolicyEvaluation with no policy results
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -943,19 +943,19 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     "otherGuest",
-										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+										GuestFamily: polv1.GuestFamilyTypeOther,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies:           []vspherepolv1.PolicyEvaluationResult{}, // No policies apply
+								Policies:           []polv1.PolicyEvaluationResult{}, // No policies apply
 								Conditions: []metav1.Condition{
-									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+									*pkgcond.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -991,7 +991,7 @@ var _ = Describe("Reconcile", func() {
 				When("the vm is subject to a single policy", func() {
 					BeforeEach(func() {
 						// Create a PolicyEvaluation with single policy result
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1007,19 +1007,19 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     "otherGuest",
-										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+										GuestFamily: polv1.GuestFamilyTypeOther,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies: []vspherepolv1.PolicyEvaluationResult{
+								Policies: []polv1.PolicyEvaluationResult{
 									{
-										APIVersion: vspherepolv1.GroupVersion.String(),
+										APIVersion: polv1.GroupVersion.String(),
 										Kind:       "ComputePolicy",
 										Name:       "my-policy-1",
 										Tags:       []string{policyTag1ID},
@@ -1027,7 +1027,7 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 								Conditions: []metav1.Condition{
-									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+									*pkgcond.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1077,7 +1077,7 @@ var _ = Describe("Reconcile", func() {
 							[]vmopv1.PolicyStatus{
 								{
 									PolicySpec: vmopv1.PolicySpec{
-										APIVersion: vspherepolv1.GroupVersion.String(),
+										APIVersion: polv1.GroupVersion.String(),
 										Kind:       "ComputePolicy",
 										Name:       "my-policy-1",
 									},
@@ -1091,7 +1091,7 @@ var _ = Describe("Reconcile", func() {
 				When("the vm is subject to multiple policies", func() {
 					BeforeEach(func() {
 						// Create a PolicyEvaluation with multiple policy results
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1107,26 +1107,26 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     "otherGuest",
-										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+										GuestFamily: polv1.GuestFamilyTypeOther,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies: []vspherepolv1.PolicyEvaluationResult{
+								Policies: []polv1.PolicyEvaluationResult{
 									{
-										APIVersion: vspherepolv1.GroupVersion.String(),
+										APIVersion: polv1.GroupVersion.String(),
 										Kind:       "ComputePolicy",
 										Name:       "my-policy-1",
 										Tags:       []string{policyTag1ID, policyTag2ID},
 										Generation: 1,
 									},
 									{
-										APIVersion: vspherepolv1.GroupVersion.String(),
+										APIVersion: polv1.GroupVersion.String(),
 										Kind:       "ComputePolicy",
 										Name:       "my-policy-2",
 										Tags:       []string{policyTag3ID},
@@ -1134,7 +1134,7 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 								Conditions: []metav1.Condition{
-									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+									*pkgcond.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1187,7 +1187,7 @@ var _ = Describe("Reconcile", func() {
 							[]vmopv1.PolicyStatus{
 								{
 									PolicySpec: vmopv1.PolicySpec{
-										APIVersion: vspherepolv1.GroupVersion.String(),
+										APIVersion: polv1.GroupVersion.String(),
 										Kind:       "ComputePolicy",
 										Name:       "my-policy-1",
 									},
@@ -1195,7 +1195,7 @@ var _ = Describe("Reconcile", func() {
 								},
 								{
 									PolicySpec: vmopv1.PolicySpec{
-										APIVersion: vspherepolv1.GroupVersion.String(),
+										APIVersion: polv1.GroupVersion.String(),
 										Kind:       "ComputePolicy",
 										Name:       "my-policy-2",
 									},
@@ -1231,7 +1231,7 @@ var _ = Describe("Reconcile", func() {
 						withObjs = append(withObjs, image)
 
 						// Create a ready PolicyEvaluation
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1247,26 +1247,26 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Image: &vspherepolv1.PolicyEvaluationImageSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Image: &polv1.PolicyEvaluationImageSpec{
 									Name: "test-image",
 									Labels: map[string]string{
 										"os":      "ubuntu",
 										"version": "22.04",
 									},
 								},
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     "otherGuest",
-										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+										GuestFamily: polv1.GuestFamilyTypeOther,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies:           []vspherepolv1.PolicyEvaluationResult{},
+								Policies:           []polv1.PolicyEvaluationResult{},
 								Conditions: []metav1.Condition{
-									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+									*pkgcond.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1307,7 +1307,7 @@ var _ = Describe("Reconcile", func() {
 						}
 
 						// Create a ready PolicyEvaluation without image spec
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1323,19 +1323,19 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     "otherGuest",
-										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+										GuestFamily: polv1.GuestFamilyTypeOther,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies:           []vspherepolv1.PolicyEvaluationResult{},
+								Policies:           []polv1.PolicyEvaluationResult{},
 								Conditions: []metav1.Condition{
-									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+									*pkgcond.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1368,7 +1368,7 @@ var _ = Describe("Reconcile", func() {
 						withObjs = append(withObjs, image)
 
 						// Create a ready PolicyEvaluation
-						policyEval := &vspherepolv1.PolicyEvaluation{
+						policyEval := &polv1.PolicyEvaluation{
 							ObjectMeta: metav1.ObjectMeta{
 								Namespace:  vm.Namespace,
 								Name:       "vm-" + vm.Name,
@@ -1384,22 +1384,22 @@ var _ = Describe("Reconcile", func() {
 									},
 								},
 							},
-							Spec: vspherepolv1.PolicyEvaluationSpec{
-								Image: &vspherepolv1.PolicyEvaluationImageSpec{
+							Spec: polv1.PolicyEvaluationSpec{
+								Image: &polv1.PolicyEvaluationImageSpec{
 									Name: "test-image-no-labels",
 								},
-								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+								Workload: &polv1.PolicyEvaluationWorkloadSpec{
+									Guest: &polv1.PolicyEvaluationGuestSpec{
 										GuestID:     "otherGuest",
-										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+										GuestFamily: polv1.GuestFamilyTypeOther,
 									},
 								},
 							},
-							Status: vspherepolv1.PolicyEvaluationStatus{
+							Status: polv1.PolicyEvaluationStatus{
 								ObservedGeneration: 1,
-								Policies:           []vspherepolv1.PolicyEvaluationResult{},
+								Policies:           []polv1.PolicyEvaluationResult{},
 								Conditions: []metav1.Condition{
-									*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+									*pkgcond.TrueCondition(polv1.ReadyConditionType),
 								},
 							},
 						}
@@ -1429,7 +1429,7 @@ var _ = Describe("Reconcile", func() {
 					}
 
 					// Create a ready PolicyEvaluation with policies
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -1445,8 +1445,8 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{
-							Policies: []vspherepolv1.LocalObjectRef{
+						Spec: polv1.PolicyEvaluationSpec{
+							Policies: []polv1.LocalObjectRef{
 								{
 									APIVersion: "policy.vmware.com/v1",
 									Kind:       "SecurityPolicy",
@@ -1458,18 +1458,18 @@ var _ = Describe("Reconcile", func() {
 									Name:       "network-policy-1",
 								},
 							},
-							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+							Workload: &polv1.PolicyEvaluationWorkloadSpec{
+								Guest: &polv1.PolicyEvaluationGuestSpec{
 									GuestID:     "otherGuest",
-									GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+									GuestFamily: polv1.GuestFamilyTypeOther,
 								},
 							},
 						},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Policies:           []polv1.PolicyEvaluationResult{},
 							Conditions: []metav1.Condition{
-								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								*pkgcond.TrueCondition(polv1.ReadyConditionType),
 							},
 						},
 					}
@@ -1490,7 +1490,7 @@ var _ = Describe("Reconcile", func() {
 					}
 
 					// Create a ready PolicyEvaluation with workload labels
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -1506,23 +1506,23 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{
-							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
+						Spec: polv1.PolicyEvaluationSpec{
+							Workload: &polv1.PolicyEvaluationWorkloadSpec{
 								Labels: map[string]string{
 									"app":  "web-server",
 									"tier": "frontend",
 								},
-								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+								Guest: &polv1.PolicyEvaluationGuestSpec{
 									GuestID:     "otherGuest",
-									GuestFamily: vspherepolv1.GuestFamilyTypeOther,
+									GuestFamily: polv1.GuestFamilyTypeOther,
 								},
 							},
 						},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Policies:           []polv1.PolicyEvaluationResult{},
 							Conditions: []metav1.Condition{
-								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								*pkgcond.TrueCondition(polv1.ReadyConditionType),
 							},
 						},
 					}
@@ -1543,7 +1543,7 @@ var _ = Describe("Reconcile", func() {
 					moVM.Config.GuestId = "windows9_64Guest"
 
 					// Create a ready PolicyEvaluation with derived guest family
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -1559,19 +1559,19 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{
-							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
-								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+						Spec: polv1.PolicyEvaluationSpec{
+							Workload: &polv1.PolicyEvaluationWorkloadSpec{
+								Guest: &polv1.PolicyEvaluationGuestSpec{
 									GuestID:     "windows9_64Guest",
-									GuestFamily: vspherepolv1.GuestFamilyTypeWindows,
+									GuestFamily: polv1.GuestFamilyTypeWindows,
 								},
 							},
 						},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Policies:           []polv1.PolicyEvaluationResult{},
 							Conditions: []metav1.Condition{
-								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								*pkgcond.TrueCondition(polv1.ReadyConditionType),
 							},
 						},
 					}
@@ -1595,7 +1595,7 @@ var _ = Describe("Reconcile", func() {
 					configSpec.GuestId = ""
 
 					// Create a ready PolicyEvaluation without workload spec
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
 							Name:       "vm-" + vm.Name,
@@ -1611,12 +1611,12 @@ var _ = Describe("Reconcile", func() {
 								},
 							},
 						},
-						Spec: vspherepolv1.PolicyEvaluationSpec{},
-						Status: vspherepolv1.PolicyEvaluationStatus{
+						Spec: polv1.PolicyEvaluationSpec{},
+						Status: polv1.PolicyEvaluationStatus{
 							ObservedGeneration: 1,
-							Policies:           []vspherepolv1.PolicyEvaluationResult{},
+							Policies:           []polv1.PolicyEvaluationResult{},
 							Conditions: []metav1.Condition{
-								*pkgcond.TrueCondition(vspherepolv1.ReadyConditionType),
+								*pkgcond.TrueCondition(polv1.ReadyConditionType),
 							},
 						},
 					}

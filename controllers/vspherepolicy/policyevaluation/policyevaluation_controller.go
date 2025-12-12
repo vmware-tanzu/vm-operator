@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -37,7 +37,7 @@ import (
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vspherepolv1.PolicyEvaluation{}
+		controlledType     = &polv1.PolicyEvaluation{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf(
@@ -60,11 +60,11 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestsFromMapFunc(
 				virtualMachineToPolicyEvaluationMapperFn(ctx, r.Client))).
 		Watches(
-			&vspherepolv1.ComputePolicy{},
+			&polv1.ComputePolicy{},
 			handler.EnqueueRequestsFromMapFunc(
 				computePolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
 		Watches(
-			&vspherepolv1.TagPolicy{},
+			&polv1.TagPolicy{},
 			handler.EnqueueRequestsFromMapFunc(
 				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
 		WithOptions(controller.Options{
@@ -114,7 +114,7 @@ func (r *Reconciler) Reconcile(
 
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	var obj vspherepolv1.PolicyEvaluation
+	var obj polv1.PolicyEvaluation
 	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
 		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
@@ -142,7 +142,7 @@ func (r *Reconciler) Reconcile(
 
 func (r *Reconciler) ReconcileDelete(
 	ctx context.Context,
-	obj *vspherepolv1.PolicyEvaluation) (ctrl.Result, error) {
+	obj *polv1.PolicyEvaluation) (ctrl.Result, error) {
 
 	controllerutil.RemoveFinalizer(obj, Finalizer)
 
@@ -156,7 +156,7 @@ const (
 
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
-	obj *vspherepolv1.PolicyEvaluation) (ctrl.Result, error) {
+	obj *polv1.PolicyEvaluation) (ctrl.Result, error) {
 
 	if controllerutil.AddFinalizer(obj, Finalizer) {
 		// Ensure the finalizer is present before reconciling further.
@@ -169,7 +169,7 @@ func (r *Reconciler) ReconcileNormal(
 	if err := r.reconcileMandatoryPolicies(ctx, obj); err != nil {
 		conditions.MarkError(
 			obj,
-			vspherepolv1.ReadyConditionType,
+			polv1.ReadyConditionType,
 			mandatoryPoliciesReconcileFailedReason,
 			err)
 		return ctrl.Result{}, err
@@ -178,7 +178,7 @@ func (r *Reconciler) ReconcileNormal(
 	if err := r.reconcileExplicitPolicies(ctx, obj); err != nil {
 		conditions.MarkError(
 			obj,
-			vspherepolv1.ReadyConditionType,
+			polv1.ReadyConditionType,
 			explicitPoliciesReconcileFailedReason,
 			err)
 		return ctrl.Result{}, err
@@ -188,14 +188,14 @@ func (r *Reconciler) ReconcileNormal(
 	obj.Status.ObservedGeneration = obj.Generation
 
 	// Update the ready condition.
-	conditions.MarkTrue(obj, vspherepolv1.ReadyConditionType)
+	conditions.MarkTrue(obj, polv1.ReadyConditionType)
 
 	return ctrl.Result{}, nil
 }
 
 func (r *Reconciler) reconcileMandatoryPolicies(
 	ctx context.Context,
-	obj *vspherepolv1.PolicyEvaluation) error {
+	obj *polv1.PolicyEvaluation) error {
 
 	if err := r.reconcileMandatoryComputePolicies(ctx, obj); err != nil {
 		return fmt.Errorf(
@@ -207,9 +207,9 @@ func (r *Reconciler) reconcileMandatoryPolicies(
 
 func (r *Reconciler) reconcileMandatoryComputePolicies(
 	ctx context.Context,
-	obj *vspherepolv1.PolicyEvaluation) error {
+	obj *polv1.PolicyEvaluation) error {
 
-	var list vspherepolv1.ComputePolicyList
+	var list polv1.ComputePolicyList
 	if err := r.Client.List(
 		ctx,
 		&list,
@@ -220,7 +220,7 @@ func (r *Reconciler) reconcileMandatoryComputePolicies(
 
 	for _, p := range list.Items {
 		// Only mandatory policies should be automatically applied.
-		if p.Spec.EnforcementMode != vspherepolv1.PolicyEnforcementModeMandatory {
+		if p.Spec.EnforcementMode != polv1.PolicyEnforcementModeMandatory {
 			continue
 		}
 
@@ -240,8 +240,8 @@ func (r *Reconciler) reconcileMandatoryComputePolicies(
 }
 
 func matchesPolicy(
-	obj *vspherepolv1.PolicyEvaluation,
-	pol vspherepolv1.ComputePolicy) (bool, error) {
+	obj *polv1.PolicyEvaluation,
+	pol polv1.ComputePolicy) (bool, error) {
 
 	if pol.Spec.Match == nil {
 		return true, nil
@@ -251,8 +251,8 @@ func matchesPolicy(
 }
 
 func evaluateMatchSpec(
-	obj *vspherepolv1.PolicyEvaluation,
-	matchSpec *vspherepolv1.MatchSpec) (bool, error) {
+	obj *polv1.PolicyEvaluation,
+	matchSpec *polv1.MatchSpec) (bool, error) {
 
 	if matchSpec == nil {
 		return true, nil
@@ -278,7 +278,7 @@ func evaluateMatchSpec(
 	// Evaluate nested MatchSpec objects using the specified boolean operation.
 	var nestedMatches bool
 	switch matchSpec.Op {
-	case vspherepolv1.BooleanOpOr:
+	case polv1.BooleanOpOr:
 		// OR operation: any nested match must be true
 		nestedMatches = false
 		for _, nestedMatch := range matchSpec.Match {
@@ -308,8 +308,8 @@ func evaluateMatchSpec(
 }
 
 func evaluateWorkloadMatch(
-	obj *vspherepolv1.PolicyEvaluation,
-	matchSpec *vspherepolv1.MatchSpec) (bool, error) {
+	obj *polv1.PolicyEvaluation,
+	matchSpec *polv1.MatchSpec) (bool, error) {
 
 	if matchSpec.Workload == nil {
 		return true, nil
@@ -333,8 +333,8 @@ func evaluateWorkloadMatch(
 }
 
 func evaluateImageMatch(
-	obj *vspherepolv1.PolicyEvaluation,
-	matchSpec *vspherepolv1.MatchSpec) (bool, error) {
+	obj *polv1.PolicyEvaluation,
+	matchSpec *polv1.MatchSpec) (bool, error) {
 
 	if matchSpec.Image == nil {
 		return true, nil
@@ -358,8 +358,8 @@ func evaluateImageMatch(
 }
 
 func evaluateGuestMatch(
-	obj *vspherepolv1.PolicyEvaluation,
-	guestSpec *vspherepolv1.MatchGuestSpec) (bool, error) {
+	obj *polv1.PolicyEvaluation,
+	guestSpec *polv1.MatchGuestSpec) (bool, error) {
 
 	if guestSpec == nil {
 		return true, nil
@@ -403,7 +403,7 @@ func evaluateGuestMatch(
 }
 
 func evaluateWorkloadLabelsMatch(
-	obj *vspherepolv1.PolicyEvaluation,
+	obj *polv1.PolicyEvaluation,
 	labelRequirements []metav1.LabelSelectorRequirement) (bool, error) {
 
 	if len(labelRequirements) == 0 {
@@ -428,7 +428,7 @@ func evaluateWorkloadLabelsMatch(
 }
 
 func evaluateImageLabelsMatch(
-	obj *vspherepolv1.PolicyEvaluation,
+	obj *polv1.PolicyEvaluation,
 	labelRequirements []metav1.LabelSelectorRequirement) (bool, error) {
 
 	if len(labelRequirements) == 0 {
@@ -453,8 +453,8 @@ func evaluateImageLabelsMatch(
 }
 
 func evaluateImageNameMatch(
-	obj *vspherepolv1.PolicyEvaluation,
-	nameSpec *vspherepolv1.StringMatcherSpec) (bool, error) {
+	obj *polv1.PolicyEvaluation,
+	nameSpec *polv1.StringMatcherSpec) (bool, error) {
 
 	if nameSpec == nil {
 		return true, nil
@@ -469,32 +469,32 @@ func evaluateImageNameMatch(
 
 func matchesString(
 	actual string,
-	matcher *vspherepolv1.StringMatcherSpec) (bool, error) {
+	matcher *polv1.StringMatcherSpec) (bool, error) {
 
 	if matcher == nil {
 		return true, nil
 	}
 
 	switch matcher.Op {
-	case vspherepolv1.ValueSelectorOpEqual, "":
+	case polv1.ValueSelectorOpEqual, "":
 		return actual == matcher.Value, nil
-	case vspherepolv1.ValueSelectorOpNotEqual:
+	case polv1.ValueSelectorOpNotEqual:
 		return actual != matcher.Value, nil
-	case vspherepolv1.ValueSelectorOpHasPrefix:
+	case polv1.ValueSelectorOpHasPrefix:
 		return strings.HasPrefix(actual, matcher.Value), nil
-	case vspherepolv1.ValueSelectorOpNotHasPrefix:
+	case polv1.ValueSelectorOpNotHasPrefix:
 		return !strings.HasPrefix(actual, matcher.Value), nil
-	case vspherepolv1.ValueSelectorOpHasSuffix:
+	case polv1.ValueSelectorOpHasSuffix:
 		return strings.HasSuffix(actual, matcher.Value), nil
-	case vspherepolv1.ValueSelectorOpNotHasSuffix:
+	case polv1.ValueSelectorOpNotHasSuffix:
 		return !strings.HasSuffix(actual, matcher.Value), nil
-	case vspherepolv1.ValueSelectorOpContains:
+	case polv1.ValueSelectorOpContains:
 		return strings.Contains(actual, matcher.Value), nil
-	case vspherepolv1.ValueSelectorOpNotContains:
+	case polv1.ValueSelectorOpNotContains:
 		return !strings.Contains(actual, matcher.Value), nil
-	case vspherepolv1.ValueSelectorOpMatch:
+	case polv1.ValueSelectorOpMatch:
 		return regexp.MatchString(matcher.Value, actual)
-	case vspherepolv1.ValueSelectorOpNotMatch:
+	case polv1.ValueSelectorOpNotMatch:
 		ok, err := regexp.MatchString(matcher.Value, actual)
 		return !ok, err
 	default:
@@ -503,12 +503,12 @@ func matchesString(
 }
 
 func matchesGuestFamily(
-	actual vspherepolv1.GuestFamilyType,
-	matcher *vspherepolv1.GuestFamilyMatcherSpec) (bool, error) {
+	actual polv1.GuestFamilyType,
+	matcher *polv1.GuestFamilyMatcherSpec) (bool, error) {
 
-	var sm *vspherepolv1.StringMatcherSpec
+	var sm *polv1.StringMatcherSpec
 	if matcher != nil {
-		sm = &vspherepolv1.StringMatcherSpec{
+		sm = &polv1.StringMatcherSpec{
 			Op:    matcher.Op,
 			Value: string(matcher.Value),
 		}
@@ -521,7 +521,7 @@ const computePolicyKind = "ComputePolicy"
 
 func (r *Reconciler) reconcileExplicitPolicies(
 	ctx context.Context,
-	obj *vspherepolv1.PolicyEvaluation) error {
+	obj *polv1.PolicyEvaluation) error {
 
 	for _, ref := range obj.Spec.Policies {
 		switch ref.Kind {
@@ -544,11 +544,11 @@ func (r *Reconciler) reconcileExplicitPolicies(
 
 func (r *Reconciler) addComputePolicyRef(
 	ctx context.Context,
-	obj *vspherepolv1.PolicyEvaluation,
-	ref vspherepolv1.LocalObjectRef) error {
+	obj *polv1.PolicyEvaluation,
+	ref polv1.LocalObjectRef) error {
 
 	var (
-		pol vspherepolv1.ComputePolicy
+		pol polv1.ComputePolicy
 		key = ctrlclient.ObjectKey{
 			Namespace: obj.Namespace,
 			Name:      ref.Name,
@@ -572,13 +572,13 @@ func (r *Reconciler) addComputePolicyRef(
 
 func (r *Reconciler) addComputePolicy(
 	ctx context.Context,
-	obj *vspherepolv1.PolicyEvaluation,
-	pol vspherepolv1.ComputePolicy) error {
+	obj *polv1.PolicyEvaluation,
+	pol polv1.ComputePolicy) error {
 
 	// Check if this policy is already in the results to avoid duplicates.
 	if slices.ContainsFunc(
 		obj.Status.Policies,
-		func(p vspherepolv1.PolicyEvaluationResult) bool {
+		func(p polv1.PolicyEvaluationResult) bool {
 			return p.Name == pol.Name && p.Kind == computePolicyKind
 		}) {
 
@@ -589,7 +589,7 @@ func (r *Reconciler) addComputePolicy(
 	var tags []string
 	for _, tpn := range pol.Spec.Tags {
 		var (
-			tp  vspherepolv1.TagPolicy
+			tp  polv1.TagPolicy
 			tpk = ctrlclient.ObjectKey{
 				Namespace: obj.Namespace,
 				Name:      tpn,
@@ -603,8 +603,8 @@ func (r *Reconciler) addComputePolicy(
 
 	obj.Status.Policies = append(
 		obj.Status.Policies,
-		vspherepolv1.PolicyEvaluationResult{
-			APIVersion: vspherepolv1.GroupVersion.String(),
+		polv1.PolicyEvaluationResult{
+			APIVersion: polv1.GroupVersion.String(),
 			Kind:       computePolicyKind,
 			Name:       pol.Name,
 			Generation: pol.Generation,
@@ -647,12 +647,12 @@ func computePolicyToPolicyEvaluationMapperFn(
 	client ctrlclient.Client) handler.MapFunc {
 
 	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
-		obj := o.(*vspherepolv1.ComputePolicy)
+		obj := o.(*polv1.ComputePolicy)
 
 		logger := pkglog.FromContextOrDefault(ctx).WithValues(
 			"computePolicyName", obj.Name, "namespace", obj.Namespace)
 
-		policyEvalList := &vspherepolv1.PolicyEvaluationList{}
+		policyEvalList := &polv1.PolicyEvaluationList{}
 		if err := client.List(
 			ctx,
 			policyEvalList,
@@ -696,7 +696,7 @@ func tagPolicyToPolicyEvaluationMapperFn(
 
 	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
 		// TODO
-		// obj := o.(*vspherepolv1.TagPolicy)
+		// obj := o.(*polv1.TagPolicy)
 		return nil
 	}
 }

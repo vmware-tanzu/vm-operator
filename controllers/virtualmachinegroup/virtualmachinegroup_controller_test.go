@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+	polv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -998,7 +998,7 @@ var _ = Describe(
 					vm := &vmopv1.VirtualMachine{}
 					Expect(ctx.Client.Get(ctx, vm1Key, vm)).To(Succeed())
 
-					policyEval := &vspherepolv1.PolicyEvaluation{
+					policyEval := &polv1.PolicyEvaluation{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace: policyEvalKey.Namespace,
 							Name:      policyEvalKey.Name,
@@ -1012,11 +1012,11 @@ var _ = Describe(
 					setProviderPlaceVirtualMachineGroupFn()
 
 					By("marking PolicyEvaluation as Ready")
-					policyEval := &vspherepolv1.PolicyEvaluation{}
+					policyEval := &polv1.PolicyEvaluation{}
 					Expect(ctx.Client.Get(ctx, policyEvalKey, policyEval)).To(Succeed())
 					policyEvalCopy := policyEval.DeepCopy()
 					policyEvalCopy.Status.ObservedGeneration = policyEval.Generation
-					conditions.MarkTrue(policyEvalCopy, vspherepolv1.ReadyConditionType)
+					conditions.MarkTrue(policyEvalCopy, polv1.ReadyConditionType)
 					Expect(ctx.Client.Status().Patch(ctx, policyEvalCopy, client.MergeFrom(policyEval))).To(Succeed())
 
 					By("verifying the group was reconciled")

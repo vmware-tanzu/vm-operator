@@ -133,6 +133,20 @@ func Install( //nolint:gocyclo
 
 				return err
 			}
+		case "StoragePolicy":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				features.BringYourOwnEncryptionKey ||
+					features.VMSharedDisks ||
+					features.AllDisksArePVCs ||
+					features.FastDeploy,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
 		case "EncryptionClass":
 			if err := updateOrDeleteUnstructured(
 				ctx,

@@ -77,22 +77,23 @@ import (
 )
 
 var (
-	ErrSetPowerState          = res.ErrSetPowerState
-	ErrUpgradeSchema          = upgradevm.ErrUpgradeSchema
-	ErrBackup                 = virtualmachine.ErrBackingUp
-	ErrBootstrapReconfigure   = vmlifecycle.ErrBootstrapReconfigure
-	ErrBootstrapCustomize     = vmlifecycle.ErrBootstrapCustomize
-	ErrReconfigure            = session.ErrReconfigure
-	ErrRestart                = pkgerr.NoRequeueNoErr("restarted vm")
-	ErrUpgradeHardwareVersion = session.ErrUpgradeHardwareVersion
-	ErrIsPaused               = pkgerr.NoRequeueNoErr("is paused")
-	ErrHasTask                = pkgerr.NoRequeueNoErr("has outstanding task")
-	ErrPromoteDisks           = vmconfdiskpromo.ErrPromoteDisks
-	ErrCreate                 = pkgerr.NoRequeueNoErr("created vm")
-	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
-	ErrSnapshotRevert         = pkgerr.NoRequeueNoErr("reverted snapshot")
-	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
-	ErrRegisterVolumes        = vmconfunmanagedvolsreg.ErrPendingRegister
+	ErrSetPowerState            = res.ErrSetPowerState
+	ErrUpgradeSchema            = upgradevm.ErrUpgradeSchema
+	ErrBackup                   = virtualmachine.ErrBackingUp
+	ErrBootstrapReconfigure     = vmlifecycle.ErrBootstrapReconfigure
+	ErrBootstrapCustomize       = vmlifecycle.ErrBootstrapCustomize
+	ErrReconfigure              = session.ErrReconfigure
+	ErrRestart                  = pkgerr.NoRequeueNoErr("restarted vm")
+	ErrUpgradeHardwareVersion   = session.ErrUpgradeHardwareVersion
+	ErrIsPaused                 = pkgerr.NoRequeueNoErr("is paused")
+	ErrHasTask                  = pkgerr.NoRequeueNoErr("has outstanding task")
+	ErrPromoteDisks             = vmconfdiskpromo.ErrPromoteDisks
+	ErrCreate                   = pkgerr.NoRequeueNoErr("created vm")
+	ErrUpdate                   = pkgerr.NoRequeueNoErr("updated vm")
+	ErrSnapshotRevert           = pkgerr.NoRequeueNoErr("reverted snapshot")
+	ErrPolicyNotReady           = vmconfpolicy.ErrPolicyNotReady
+	ErrRegisterVolumes          = vmconfunmanagedvolsreg.ErrPendingRegister
+	ErrAddedInstanceStorageVols = pkgerr.NoRequeueNoErr("added instance storage volumes")
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -2187,9 +2188,16 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		// Add the class's instance storage disks - if any - to the VM.Spec.
 		// Once the instance storage disks are added to the VM, they are set in
 		// stone even if the class itself or the VM's assigned class changes.
-		createArgs.HasInstanceStorage = AddInstanceStorageVolumes(
+		var addedVolumes bool
+		createArgs.HasInstanceStorage, addedVolumes = AddInstanceStorageVolumes(
 			vmCtx,
 			createArgs.VMClass.Spec.Hardware.InstanceStorage)
+		if addedVolumes {
+			// Return to update the VM Spec with the just added volumes. This is so
+			// that the VM controller will see the VM has instance storage volumes
+			// and will disable the fast deploy feature in this VM's context.
+			return ErrAddedInstanceStorageVols
+		}
 	}
 
 	vmStorageClass := vmCtx.VM.Spec.StorageClass

@@ -190,14 +190,14 @@ func PlaceVMForCreate(
 		ConfigSpec:    &configSpec,
 	}
 
-	vmCtx.Logger.V(4).Info("PlaceVMForCreate request", "placementSpec", vimtypes.ToString(placementSpec))
+	vmCtx.Logger.V(4).Info("PlaceVM request", "placementSpec", vimtypes.ToString(placementSpec))
 
 	resp, err := cluster.PlaceVm(vmCtx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	vmCtx.Logger.V(6).Info("PlaceVMForCreate response", "resp", vimtypes.ToString(resp))
+	vmCtx.Logger.V(4).Info("PlaceVM response", "placementResult", vimtypes.ToString(resp))
 
 	for _, r := range resp.Recommendations {
 		if r.Reason != string(vimtypes.RecommendationReasonCodeXvmotionPlacement) {
@@ -216,21 +216,21 @@ func PlaceVMForCreate(
 	return nil, nil
 }
 
-// ClusterPlaceVMForCreate determines the suitable cluster placement among the specified ResourcePools.
-func ClusterPlaceVMForCreate(
+// getClusterPlacementRecommendations calls DRS PlaceVmsXCluster to get the placement
+// recommendations for the given VMs.
+func getClusterPlacementRecommendations(
 	ctx context.Context,
 	vcClient *vim25.Client,
 	finder *find.Finder,
 	resourcePoolsMoRefs []vimtypes.ManagedObjectReference,
 	configSpecs []vimtypes.VirtualMachineConfigSpec,
-	needHostPlacement, needDatastorePlacement bool) (map[string]Recommendation, error) {
+	needDatastorePlacement bool) (map[string]Recommendation, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	placementSpec := vimtypes.PlaceVmsXClusterSpec{
 		PlacementType:           string(vimtypes.PlaceVmsXClusterSpecPlacementTypeCreateAndPowerOn),
 		ResourcePools:           resourcePoolsMoRefs,
 		VmPlacementSpecs:        make([]vimtypes.PlaceVmsXClusterSpecVmPlacementSpec, len(configSpecs)),
-		HostRecommRequired:      &needHostPlacement,
 		DatastoreRecommRequired: &needDatastorePlacement,
 	}
 
@@ -262,7 +262,7 @@ func ClusterPlaceVMForCreate(
 		return nil, fmt.Errorf("faults: %v", faultMgs)
 	}
 
-	recommendations := make(map[string]Recommendation)
+	recommendations := make(map[string]Recommendation, len(results.PlacementInfos))
 
 	for _, info := range results.PlacementInfos {
 		if info.Recommendation.Reason != string(vimtypes.RecommendationReasonCodeXClusterPlacement) {

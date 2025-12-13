@@ -149,7 +149,7 @@ func (v validator) validateControllerWhenPoweredOn(
 		}
 
 		allErrs = append(allErrs,
-			v.validateHotAddedControllers(ctx, vm, oldVM, hwPath)...)
+			v.validateHotAddedControllers(vm, oldVM, hwPath)...)
 	}
 
 	return allErrs
@@ -160,7 +160,6 @@ func (v validator) validateControllerWhenPoweredOn(
 // One of the FSR conditions we check for is if the VM has a shared SCSI
 // controller with an attached disk.
 func (v validator) validateHotAddedControllers(
-	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine,
 	hwPath *field.Path,
 ) field.ErrorList {

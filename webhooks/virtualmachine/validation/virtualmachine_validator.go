@@ -1188,14 +1188,16 @@ func (v validator) validateVolumes(
 		}
 
 		// Validate that no two volumes have the same PVC claim name.
-		if claimName := vol.PersistentVolumeClaim.ClaimName; claimName != "" {
-			if volumePVCNamesSet.Has(claimName) {
-				allErrs = append(allErrs, field.Duplicate(
-					volPath.Child("persistentVolumeClaim", "claimName"),
-					claimName,
-				))
-			} else {
-				volumePVCNamesSet.Insert(claimName)
+		if pvc := vol.PersistentVolumeClaim; pvc != nil {
+			if claimName := pvc.ClaimName; claimName != "" {
+				if volumePVCNamesSet.Has(claimName) {
+					allErrs = append(allErrs, field.Duplicate(
+						volPath.Child("persistentVolumeClaim", "claimName"),
+						claimName,
+					))
+				} else {
+					volumePVCNamesSet.Insert(claimName)
+				}
 			}
 		}
 

@@ -1742,7 +1742,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
-			When("vm.status.volumes has a stale (not in spec) classic disk", func() {
+			When("vm.status.volumes has two stale (not in spec) classic disks", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
@@ -1754,17 +1754,38 @@ var _ = Describe("UpdateStatus", func() {
 							ControllerBusNumber: ptr.To[int32](0),
 							UnitNumber:          ptr.To[int32](3),
 						},
+						{
+							Name: pkgutil.GeneratePVCName("disk", "104"),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{},
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](4),
+						},
 					}
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:      "my-old-name",
+							Name:      "my-old-name-1",
 							DiskUUID:  "100",
 							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
 						},
+						{
+							Name:      "my-old-name-2",
+							DiskUUID:  "104",
+							Type:      vmopv1.VolumeTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						},
 					}
+					// Update disk with uuid 104 with same controller info in spec.
+					vd := vmCtx.MoVM.Config.Hardware.Device[5].(*vimtypes.VirtualDisk)
+					vd.ControllerKey = 200
+					vd.UnitNumber = ptr.To[int32](4)
 				})
 				Specify("status.volumes no longer includes the stale classic disk", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{

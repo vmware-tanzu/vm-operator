@@ -1317,17 +1317,29 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			existingDisksInStatus[vol.DiskUUID] = i
 		}
 	}
+	// Collect indices to delete first.
+	indicesToDelete := []int{}
 	for _, di := range info.Disks {
 		if volSpec, ok := info.Volumes[di.Target.String()]; ok {
 			if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
 				if volSpec.Name != vm.Status.Volumes[diskIndex].Name {
-					vmCtx.VM.Status.Volumes = slices.Delete(
-						vmCtx.VM.Status.Volumes, diskIndex, diskIndex+1)
+					indicesToDelete = append(indicesToDelete, diskIndex)
 					delete(existingDisksInStatus, di.UUID)
 				}
 			}
 		}
 	}
+	// Delete in reverse order so that we don't shift indices before deleting
+	// next one.
+	slices.Sort(indicesToDelete)
+	for i := len(indicesToDelete) - 1; i >= 0; i-- {
+		vm.Status.Volumes = slices.Delete(
+			vm.Status.Volumes,
+			indicesToDelete[i],
+			indicesToDelete[i]+1,
+		)
+	}
+	// Update existingDisksInStatus with new indexes.
 	for i := range vm.Status.Volumes {
 		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
 			existingDisksInStatus[vol.DiskUUID] = i

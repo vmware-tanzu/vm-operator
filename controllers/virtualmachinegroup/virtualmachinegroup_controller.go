@@ -605,7 +605,10 @@ func (r *Reconciler) getVMForPlacement(
 		return nil, fmt.Errorf("VM %q is not in group member status", vmName)
 	}
 
-	var alreadyPlaced bool
+	var (
+		alreadyPlaced     bool
+		alreadyPlacedZone string
+	)
 
 	defer func() {
 		if err != nil {
@@ -630,6 +633,12 @@ func (r *Reconciler) getVMForPlacement(
 				Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 				Status: metav1.ConditionTrue,
 				Reason: "AlreadyPlaced",
+
+				//
+				// This is an API contract with VKS to surface the zone of the
+				// already placed VM in this condition, so do not change.
+				//
+				Message: alreadyPlacedZone,
 			})
 		} else {
 			conditions.MarkTrue(memberStatus, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
@@ -651,11 +660,15 @@ func (r *Reconciler) getVMForPlacement(
 
 	// Check if VM has uniqueID set first to update the AlreadyPlaced reason.
 	if vm.Status.UniqueID != "" {
+
 		alreadyPlaced = true
+		alreadyPlacedZone = vm.Status.Zone
+
 		pkglog.FromContextOrDefault(ctx).V(4).Info(
 			"VM has uniqueID, skipping group placement",
 			"vmName", vmName,
 			"uniqueID", vm.Status.UniqueID,
+			"zone", vm.Status.Zone,
 		)
 		return nil, nil
 	}

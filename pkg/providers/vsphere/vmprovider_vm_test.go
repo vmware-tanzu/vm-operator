@@ -2917,14 +2917,20 @@ func vmTests() {
 					}
 					Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
 
+					Expect(vmopv1util.IsInstanceStoragePresent(vm)).To(BeFalse())
+
 					_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-					Expect(err).To(MatchError("instance storage PVCs are not bound yet"))
-					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeFalse())
+					Expect(err).To(MatchError(vsphere.ErrAddedInstanceStorageVols))
 
 					By("Instance storage volumes should be added to VM", func() {
 						Expect(vmopv1util.IsInstanceStoragePresent(vm)).To(BeTrue())
 						expectInstanceStorageVolumes(vm, vmClass.Spec.Hardware.InstanceStorage)
 					})
+
+					_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).To(MatchError("instance storage PVCs are not bound yet"))
+					Expect(vmopv1util.IsInstanceStoragePresent(vm)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeFalse())
 
 					By("Placement should have been done", func() {
 						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionPlacementReady)).To(BeTrue())

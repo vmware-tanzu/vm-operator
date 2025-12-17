@@ -1009,8 +1009,9 @@ func vmUtilTests() {
 		When("InstanceStorage FFS is enabled", func() {
 
 			It("VM Class does not contain instance storage volumes", func() {
-				is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
+				is, added := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 				Expect(is).To(BeFalse())
+				Expect(added).To(BeFalse())
 				Expect(vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)).To(BeEmpty())
 			})
 
@@ -1020,21 +1021,24 @@ func vmUtilTests() {
 				})
 
 				It("Instance Volumes should be added", func() {
-					is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
+					is, added := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
+					Expect(added).To(BeTrue())
 					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
 				})
 
 				It("Instance Storage is already added to VM Spec.Volumes", func() {
-					is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
+					is, added := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
+					Expect(added).To(BeTrue())
 
 					isVolumesBefore := vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)
 					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
 
 					// Instance Storage is already configured, should not patch again
-					is = vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
+					is, added = vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
+					Expect(added).To(BeFalse())
 					isVolumesAfter := vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)
 					Expect(isVolumesAfter).To(HaveLen(len(isVolumesBefore)))
 					Expect(isVolumesAfter).To(Equal(isVolumesBefore))

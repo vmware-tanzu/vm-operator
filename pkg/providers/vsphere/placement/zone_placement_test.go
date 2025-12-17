@@ -133,7 +133,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).ToNot(BeNil())
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(Equal(zoneName))
 					Expect(result.HostMoRef).To(BeNil())
 					Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
@@ -158,7 +157,7 @@ func vcSimPlacement() {
 
 				It("returns an error", func() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
-					Expect(err).To(MatchError("no zones in specified namespace"))
+					Expect(err).To(MatchError("failed to get placement candidates: no zones in specified namespace"))
 					Expect(result).To(BeNil())
 				})
 			})
@@ -167,7 +166,6 @@ func vcSimPlacement() {
 				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(result.ZonePlacement).To(BeTrue())
 				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 				Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
 				Expect(result.HostMoRef).To(BeNil())
@@ -186,7 +184,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(Equal(ctx.ZoneNames[0]))
 					Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
 					Expect(result.HostMoRef).To(BeNil())
@@ -222,7 +219,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 
 					childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
@@ -280,7 +276,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).ToNot(BeEmpty())
 
 					Expect(result.InstanceStoragePlacement).To(BeTrue())
@@ -306,7 +301,6 @@ func vcSimPlacement() {
 						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 						Expect(err).ToNot(HaveOccurred())
 
-						Expect(result.ZonePlacement).To(BeTrue())
 						Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 
 						Expect(result.InstanceStoragePlacement).To(BeTrue())
@@ -342,7 +336,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).ToNot(BeNil())
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(Equal(zoneName))
 					Expect(result.HostMoRef).To(BeNil())
 					Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
@@ -369,7 +362,6 @@ func vcSimPlacement() {
 				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(result.ZonePlacement).To(BeTrue())
 				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 				Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
 				Expect(result.HostMoRef).To(BeNil())
@@ -388,7 +380,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 					Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
 					Expect(result.HostMoRef).To(BeNil())
@@ -413,7 +404,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 
 					childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
@@ -472,9 +462,7 @@ func vcSimPlacement() {
 				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(result.ZonePlacement).To(BeTrue())
 				Expect(result.ZoneName).ToNot(BeEmpty())
-
 				Expect(result.InstanceStoragePlacement).To(BeTrue())
 				Expect(result.HostMoRef).ToNot(BeNil())
 				Expect(result.HostMoRef.Value).ToNot(BeEmpty())
@@ -498,7 +486,6 @@ func vcSimPlacement() {
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 
 					Expect(result.InstanceStoragePlacement).To(BeTrue())
@@ -524,7 +511,6 @@ func vcSimPlacement() {
 			result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(result.ZonePlacement).To(BeTrue())
 			Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 			Expect(result.PoolMoRef).ToNot(BeZero())
 			Expect(result.HostMoRef).To(BeNil())
@@ -552,10 +538,9 @@ func vcSimPlacement() {
 				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(result.ZonePlacement).To(BeTrue())
 				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 				Expect(result.PoolMoRef).ToNot(BeZero())
-				Expect(result.HostMoRef).ToNot(BeNil())
+				Expect(result.HostMoRef).To(BeNil())
 				Expect(result.Datastores).ToNot(BeEmpty())
 				Expect(result.Datastores[0].ForDisk).To(BeFalse())
 				Expect(result.Datastores[0].DiskKey).To(BeZero())
@@ -579,7 +564,6 @@ func vcSimPlacement() {
 			result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(result.ZonePlacement).To(BeTrue())
 			Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 			Expect(result.PoolMoRef).ToNot(BeZero())
 			Expect(result.HostMoRef).To(BeNil())
@@ -595,7 +579,6 @@ func vcSimPlacement() {
 				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(result.ZonePlacement).To(BeTrue())
 				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 				Expect(result.PoolMoRef).ToNot(BeZero())
 				Expect(result.HostMoRef).To(BeNil())

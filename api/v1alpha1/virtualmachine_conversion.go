@@ -274,23 +274,22 @@ func convert_v1alpha1_NetworkInterface_To_v1alpha5_NetworkInterfaceSpec(
 
 	if in.NetworkName != "" || in.NetworkType != "" {
 		out.Network = &vmopv1common.PartialObjectRef{}
-	}
+		out.Network.Name = in.NetworkName
 
-	out.Network.Name = in.NetworkName
-
-	switch in.NetworkType {
-	case "vsphere-distributed":
-		out.Network.TypeMeta.APIVersion = "netoperator.vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "Network"
-	case "nsx-t":
-		out.Network.TypeMeta.APIVersion = "vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "VirtualNetwork"
-	case "nsx-t-subnet":
-		out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "Subnet"
-	case "nsx-t-subnetset":
-		out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "SubnetSet"
+		switch in.NetworkType {
+		case "vsphere-distributed":
+			out.Network.TypeMeta.APIVersion = "netoperator.vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "Network"
+		case "nsx-t":
+			out.Network.TypeMeta.APIVersion = "vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "VirtualNetwork"
+		case "nsx-t-subnet":
+			out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "Subnet"
+		case "nsx-t-subnetset":
+			out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "SubnetSet"
+		}
 	}
 
 	return out

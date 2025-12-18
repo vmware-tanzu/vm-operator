@@ -1758,6 +1758,30 @@ func TestVirtualMachineConversion(t *testing.T) {
 		spokeHubSpoke(g, &spoke, &vmopv1.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine spoke-hub-spoke with empty NetworkName and NetworkType", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Test the edge case where both NetworkName and NetworkType are empty strings.
+		// This is valid in v1alpha1 and should not cause a nil pointer dereference.
+		spoke := vmopv1a1.VirtualMachine{
+			Spec: vmopv1a1.VirtualMachineSpec{
+				ClassName: "best-effort-small",
+				ImageName: "vmi-d5973af773e94c1d8",
+				NetworkInterfaces: []vmopv1a1.VirtualMachineNetworkInterface{
+					{
+						NetworkName: "",
+						NetworkType: "",
+					},
+				},
+			},
+			Status: vmopv1a1.VirtualMachineStatus{
+				Phase: vmopv1a1.Unknown,
+			},
+		}
+
+		spokeHubSpoke(g, &spoke, &vmopv1.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine spoke-hub-spoke with ExtraConfig", func(t *testing.T) {
 		g := NewWithT(t)
 

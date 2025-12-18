@@ -626,8 +626,9 @@ func (r *Reconciler) getVMForPlacement(
 			return
 		}
 
-		// If both error and vm are nil, then the VM is already placed, or will
-		// be placed outside the group. Update PlacementReady condition to True.
+		// Set PlacementReady condition to True if the VM is already placed.
+		// For VMs with zone label override, VMG will receive reconciliation
+		// requests once they're actually placed and update the condition then.
 		if alreadyPlaced {
 			conditions.Set(memberStatus, &metav1.Condition{
 				Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
@@ -640,8 +641,6 @@ func (r *Reconciler) getVMForPlacement(
 				//
 				Message: alreadyPlacedZone,
 			})
-		} else {
-			conditions.MarkTrue(memberStatus, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
 		}
 	}()
 
@@ -656,21 +655,6 @@ func (r *Reconciler) getVMForPlacement(
 
 	if gn := vm.Spec.GroupName; gn != vmGroup.Name {
 		return nil, fmt.Errorf("VM %q is assigned to group %q instead of expected %q", vmName, gn, vmGroup.Name)
-	}
-
-	// Check if VM has uniqueID set first to update the AlreadyPlaced reason.
-	if vm.Status.UniqueID != "" {
-
-		alreadyPlaced = true
-		alreadyPlacedZone = vm.Status.Zone
-
-		pkglog.FromContextOrDefault(ctx).V(4).Info(
-			"VM has uniqueID, skipping group placement",
-			"vmName", vmName,
-			"uniqueID", vm.Status.UniqueID,
-			"zone", vm.Status.Zone,
-		)
-		return nil, nil
 	}
 
 	// Skip if the group already has placement condition ready true for this VM.
@@ -688,7 +672,23 @@ func (r *Reconciler) getVMForPlacement(
 		return nil, nil
 	}
 
+	// Group status doesn't have placement condition ready for this VM (UID).
+	// Check if the VM is already placed or will be placed outside the group.
+
 	memberStatus.UID = vm.GetUID()
+
+	if vm.Status.UniqueID != "" {
+		alreadyPlaced = true
+		alreadyPlacedZone = vm.Status.Zone
+
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"VM has uniqueID, skipping group placement",
+			"vmName", vmName,
+			"uniqueID", vm.Status.UniqueID,
+			"zone", vm.Status.Zone,
+		)
+		return nil, nil
+	}
 
 	// If VM has a zone label, skip group placement to respect zone override.
 	if zoneName := vm.Labels[corev1.LabelTopologyZone]; zoneName != "" {
@@ -700,6 +700,9 @@ func (r *Reconciler) getVMForPlacement(
 		return nil, nil
 	}
 
+	// VMG doesn't have a PlacementReady condition true for this VM (UID).
+	// VM is not already placed, nor has a zone label override.
+	// Return this VM to get it placed by the group.
 	return vm, nil
 }
 

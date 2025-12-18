@@ -649,10 +649,43 @@ var _ = Describe(
 					setVMZoneLabel(vm3Key, "zone-c")
 				})
 
-				It("should skip placing VM by group and mark PlacementReady true", func() {
-					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
-					Expect(groupPlacementCallCount.Load()).To(BeZero(), "VM with zone label should not be placed by group")
+				It("should skip group placement and set PlacementReady after VM is placed", func() {
+					By("verifying provider was not called for group placement")
+					Expect(groupPlacementCallCount.Load()).To(BeZero(),
+						"VMs with zone label override should not be placed by group")
+
+					By("verifying PlacementReady is not set on member status")
+					Consistently(func(g Gomega) {
+						group := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, group)).To(Succeed())
+						g.Expect(group.Status.Members).To(HaveLen(3))
+						for _, ms := range group.Status.Members {
+							if ms.Kind == virtualMachineKind {
+								g.Expect(conditions.Get(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeNil())
+							}
+						}
+					}, "3s").Should(Succeed())
+
+					By("simulating VMs being placed by setting status.uniqueID")
+					setVMUniqueID(vm1Key, "vm-unique-id-1", "zone-a")
+					setVMUniqueID(vm2Key, "vm-unique-id-2", "zone-b")
+					setVMUniqueID(vm3Key, "vm-unique-id-3", "zone-c")
+
+					By("triggering reconciliation of groups")
+					reconcileVMG(vmGroup1Key)
+					reconcileVMG(vmGroup2Key)
+
+					By("verifying group placement call count remains 0")
+					Expect(groupPlacementCallCount.Load()).To(BeZero())
+
+					By("verifying PlacementReady is now true with AlreadyPlaced reason")
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "AlreadyPlaced")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "AlreadyPlaced")
+
+					By("verifying zone is preserved in PlacementReady condition message")
+					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm1Key, "zone-a")
+					verifyGroupPlacementReadyConditionWithZone(vmGroup2Key, vm2Key, "zone-b")
+					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm3Key, "zone-c")
 				})
 			})
 

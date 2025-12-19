@@ -18,9 +18,10 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/storageclass"
+	"github.com/vmware-tanzu/vm-operator/controllers/storage/storageclass"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -41,9 +42,8 @@ func unitTestsReconcile() {
 		initObjects []ctrlclient.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler     *storageclass.Reconciler
-		obj            *storagev1.StorageClass
-		fakeVMProvider *providerfake.VMProvider
+		reconciler *storageclass.Reconciler
+		obj        *storagev1.StorageClass
 
 		err  error
 		name string
@@ -63,23 +63,12 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		initObjects = append(initObjects, obj)
-
 		ctx = suite.NewUnitTestContextForController(initObjects...)
-
-		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
-		fakeVMProvider.DoesProfileSupportEncryptionFn = func(
-			ctx context.Context,
-			profileID string) (bool, error) {
-
-			return profileID == myEncryptedStoragePolicy, nil
-		}
-
 		reconciler = storageclass.NewReconciler(
 			ctx,
 			ctx.Client,
 			ctx.Logger,
-			ctx.Recorder,
-			fakeVMProvider)
+			ctx.Recorder)
 
 		_, err = reconciler.Reconcile(
 			context.Background(),
@@ -112,34 +101,39 @@ func unitTestsReconcile() {
 	When("Normal", func() {
 		When("no storage policy ID", func() {
 			It("should not return an error", func() {
-				// StorageClass update will cause a reconcile so don't need to return an error.
+				// StorageClass update will cause a reconcile so don't need to
+				// return an error.
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})
-		When("not encrypted", func() {
+		When("has invalid storage policy ID", func() {
 			BeforeEach(func() {
 				obj.Parameters = map[string]string{
-					"storagePolicyID": "my-storage-policy",
+					"storagePolicyID": "invalid",
 				}
 			})
-			It("marks item as encrypted and returns success", func() {
+			It("should create a StoragePolicy object", func() {
 				Expect(err).ToNot(HaveOccurred())
-				ok, _, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeFalse())
+				Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+					Name:      kubeutil.GetStoragePolicyObjectName("invalid"),
+				}, &infrav1.StoragePolicy{})).To(Succeed())
 			})
 		})
-		When("encrypted", func() {
+		When("has valid storage policy ID", func() {
+			var profileID string
 			BeforeEach(func() {
+				profileID = uuid.NewString()
 				obj.Parameters = map[string]string{
-					"storagePolicyID": myEncryptedStoragePolicy,
+					"storagePolicyID": profileID,
 				}
 			})
-			It("marks item as encrypted and returns success", func() {
+			It("should create a StoragePolicy object", func() {
 				Expect(err).ToNot(HaveOccurred())
-				ok, _, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeTrue())
+				Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+					Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+				}, &infrav1.StoragePolicy{})).To(Succeed())
 			})
 		})
 	})

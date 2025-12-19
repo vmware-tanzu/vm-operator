@@ -2,7 +2,7 @@
 // The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package storageclass
+package storagepolicy
 
 import (
 	"context"
@@ -11,23 +11,23 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	storagev1 "k8s.io/api/storage/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &storagev1.StorageClass{}
+		controlledType     = &infrav1.StoragePolicy{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -63,7 +63,7 @@ func NewReconciler(
 	}
 }
 
-// Reconciler reconciles a StorageClass object.
+// Reconciler reconciles a StoragePolicy object.
 type Reconciler struct {
 	client.Client
 	Context    context.Context
@@ -72,7 +72,8 @@ type Reconciler struct {
 	vmProvider providers.VirtualMachineProviderInterface
 }
 
-// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=infra.vmware.com,resources=storagepolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=infra.vmware.com,resources=storagepolicies/status,verbs=get;list;watch;create;update;patch;delete
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
@@ -80,10 +81,29 @@ func (r *Reconciler) Reconcile(
 
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	var obj storagev1.StorageClass
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger = logger.WithName(req.Name)
+	ctx = logr.NewContext(ctx, logger)
+
+	var obj infrav1.StoragePolicy
 	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	patchHelper, err := patch.NewHelper(&obj, r.Client)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to init patch helper for %s: %w", req, err)
+	}
+
+	defer func() {
+		if err := patchHelper.Patch(ctx, &obj); err != nil {
+			if reterr == nil {
+				reterr = err
+			}
+			logger.Error(err, "patch failed")
+		}
+	}()
 
 	if !obj.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
@@ -94,19 +114,13 @@ func (r *Reconciler) Reconcile(
 
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
-	obj *storagev1.StorageClass) error {
+	obj *infrav1.StoragePolicy) error {
 
-	policyID, err := kubeutil.GetStoragePolicyID(*obj)
-	if err != nil {
-		pkglog.FromContextOrDefault(ctx).Error(err, "failed to get storage policy ID")
-		// Don't return an error: an update to the StorageClass will cause a reconcile.
-		return nil
-	}
-
-	ok, err := r.vmProvider.DoesProfileSupportEncryption(ctx, policyID)
+	status, err := r.vmProvider.GetStoragePolicyStatus(ctx, obj.Spec.ID)
 	if err != nil {
 		return err
 	}
 
-	return kubeutil.MarkEncryptedStorageClass(ctx, r.Client, *obj, ok)
+	obj.Status = status
+	return nil
 }

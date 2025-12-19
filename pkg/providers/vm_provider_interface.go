@@ -16,6 +16,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
@@ -74,6 +75,10 @@ type VirtualMachineProviderInterface interface {
 	// supports encryption by checking whether or not the underlying policy
 	// contains any IOFILTERs.
 	DoesProfileSupportEncryption(ctx context.Context, profileID string) (bool, error)
+
+	// GetStoragePolicyStatus returns the status information for a given
+	// storage policy.
+	GetStoragePolicyStatus(ctx context.Context, profileID string) (infrav1.StoragePolicyStatus, error)
 
 	// VSphereClient returns the provider's vSphere client.
 	VSphereClient(context.Context) (*client.Client, error)

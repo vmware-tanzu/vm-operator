@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,12 +18,13 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
@@ -60,11 +59,8 @@ var _ = DescribeTable("GetStoragePolicyID",
 	Entry(
 		"does not have policy ID",
 		"",
-		fakeString,
-		kubeutil.ErrMissingParameter{
-			StorageClassName: "my-storage-class",
-			ParameterName:    internal.StoragePolicyIDParameter,
-		}.Error()),
+		"",
+		""),
 )
 
 var _ = Describe("SetStoragePolicyID", func() {
@@ -455,14 +451,15 @@ var _ = Describe("IsEncryptedStorageClass", func() {
 
 var _ = Describe("IsEncryptedStorageProfile", func() {
 	var (
-		ok           bool
-		ctx          context.Context
-		err          error
-		client       ctrlclient.Client
-		funcs        interceptor.Funcs
-		withObjs     []ctrlclient.Object
-		storageClass storagev1.StorageClass
-		profile      string
+		ok            bool
+		ctx           context.Context
+		err           error
+		client        ctrlclient.Client
+		funcs         interceptor.Funcs
+		withObjs      []ctrlclient.Object
+		storageClass  storagev1.StorageClass
+		storagePolicy infrav1.StoragePolicy
+		profileID     string
 	)
 
 	BeforeEach(func() {
@@ -470,33 +467,45 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 			PodNamespace: fakeString,
 		})
 		funcs = interceptor.Funcs{}
+		profileID = uuid.NewString()
 		storageClass = storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fakeString,
 				UID:  types.UID(uuid.NewString()),
 			},
 			Parameters: map[string]string{
-				internal.StoragePolicyIDParameter: fakeString,
+				internal.StoragePolicyIDParameter: profileID,
+			},
+		}
+		storagePolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+				UID:       types.UID(uuid.NewString()),
+			},
+			Spec: infrav1.StoragePolicySpec{
+				ID: profileID,
+			},
+			Status: infrav1.StoragePolicyStatus{
+				Encrypted: true,
 			},
 		}
 		withObjs = []ctrlclient.Object{&storageClass}
-		profile = fakeString
 	})
 
 	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+		Expect(storagev1.AddToScheme(scheme)).To(Succeed())
+
 		client = fake.NewClientBuilder().
 			WithObjects(withObjs...).
+			WithScheme(scheme).
 			WithInterceptorFuncs(funcs).
 			Build()
 
-		Expect(kubeutil.MarkEncryptedStorageClass(
-			ctx,
-			client,
-			storageClass,
-			true)).To(Succeed())
-
 		ok, err = kubeutil.IsEncryptedStorageProfile(
-			ctx, client, profile)
+			ctx, client, profileID)
 	})
 
 	When("getting the StorageClass returns an error", func() {
@@ -532,7 +541,7 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 
 	When("there is a StorageClass but does not match the profile ID", func() {
 		BeforeEach(func() {
-			profile = fakeString + "1"
+			profileID += "1"
 		})
 		It("should return false", func() {
 			Expect(err).ToNot(HaveOccurred())
@@ -540,7 +549,17 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 		})
 	})
 
-	When("there is a StorageClass that matches the profile ID", func() {
+	When("there is not a StoragePolicy", func() {
+		It("should return false", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("there is a StoragePolicy that matches the profile ID", func() {
+		BeforeEach(func() {
+			withObjs = append(withObjs, &storagePolicy)
+		})
 		It("should return true", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ok).To(BeTrue())
@@ -548,119 +567,348 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 	})
 })
 
-var _ = Describe("EncryptedStorageClass", func() {
+var _ = DescribeTable("GetStoragePolicyObjectName",
+	func(in, expOut string) {
+		Expect(kubeutil.GetStoragePolicyObjectName(in)).To(Equal(expOut))
+	},
+	Entry(
+		"empty policy ID",
+		"",
+		""),
+
+	Entry(
+		"invalid policy ID",
+		fakeString,
+		"pol-51d9d4388a3dccf4"),
+
+	Entry(
+		"valid policy ID",
+		"b0b48647-dd96-4e24-8ef0-f5ba458d4d2d",
+		"pol-b0b48647-8ef0f5ba458d4d2d"),
+)
+
+var _ = Describe("MarkEncryptedStorageClass", func() {
 	var (
-		ctx          context.Context
-		client       ctrlclient.Client
-		funcs        interceptor.Funcs
-		storageClass storagev1.StorageClass
+		ctx           context.Context
+		err           error
+		client        ctrlclient.Client
+		funcs         interceptor.Funcs
+		withObjs      []ctrlclient.Object
+		storageClass  storagev1.StorageClass
+		storagePolicy infrav1.StoragePolicy
+		profileID     string
+		encrypted     bool
 	)
 
 	BeforeEach(func() {
 		ctx = pkgcfg.WithConfig(pkgcfg.Config{
 			PodNamespace: fakeString,
 		})
-		funcs = interceptor.Funcs{}
+		funcs = interceptor.Funcs{
+			// The real code does a Patch that includes status changes.
+			// With WithStatusSubresource, we need to intercept and handle this specially.
+			Patch: func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				obj ctrlclient.Object,
+				patch ctrlclient.Patch,
+				opts ...ctrlclient.PatchOption) error {
+
+				// Save the status before patching (for StoragePolicy)
+				var savedStatus *infrav1.StoragePolicyStatus
+				if pol, ok := obj.(*infrav1.StoragePolicy); ok {
+					savedStatus = pol.Status.DeepCopy()
+				}
+
+				// First, apply the spec/metadata patch
+				if err := client.Patch(ctx, obj, patch, opts...); err != nil {
+					return err
+				}
+
+				// Then, apply the status separately (if it's a StoragePolicy and status was set)
+				if savedStatus != nil {
+					if pol, ok := obj.(*infrav1.StoragePolicy); ok {
+						pol.Status = *savedStatus
+						return client.Status().Update(ctx, pol)
+					}
+				}
+				return nil
+			},
+		}
+		profileID = uuid.NewString()
+		encrypted = true
 		storageClass = storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fakeString,
 				UID:  types.UID(uuid.NewString()),
 			},
 			Parameters: map[string]string{
-				internal.StoragePolicyIDParameter: fakeString,
+				internal.StoragePolicyIDParameter: profileID,
 			},
 		}
+		storagePolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+				UID:       types.UID(uuid.NewString()),
+			},
+			Spec: infrav1.StoragePolicySpec{
+				ID: profileID,
+			},
+		}
+		withObjs = []ctrlclient.Object{&storageClass}
 	})
 
 	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+		Expect(storagev1.AddToScheme(scheme)).To(Succeed())
+
 		client = fake.NewClientBuilder().
-			WithObjects(&storageClass).
+			WithObjects(withObjs...).
+			WithScheme(scheme).
+			WithStatusSubresource(&infrav1.StoragePolicy{}).
 			WithInterceptorFuncs(funcs).
 			Build()
+
+		err = kubeutil.MarkEncryptedStorageClass(
+			ctx, client, storageClass, encrypted)
 	})
 
-	When("the storage class is marked as encrypted", func() {
-		JustBeforeEach(func() {
-			Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, true)).To(Succeed())
+	When("StorageClass does not have a policy ID", func() {
+		BeforeEach(func() {
+			storageClass.Parameters = nil
 		})
-		It("should return true", func() {
-			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
+				StorageClassName: fakeString,
+				ParameterName:    internal.StoragePolicyIDParameter,
+			}))
+		})
+	})
+
+	When("StoragePolicy does not exist", func() {
+		It("should create a new StoragePolicy with encryption status", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ok).To(BeTrue())
-			Expect(pid).To(Equal(fakeString))
-		})
-		When("the storage class is marked as encrypted again", func() {
-			JustBeforeEach(func() {
-				Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, true)).To(Succeed())
-			})
-			It("should return true", func() {
-				ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeTrue())
-				Expect(pid).To(Equal(fakeString))
-			})
-		})
-		When("the storage class is marked as unencrypted", func() {
-			JustBeforeEach(func() {
-				Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)).To(Succeed())
-			})
-			It("should return false", func() {
-				ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeFalse())
-				Expect(pid).To(BeEmpty())
 
-			})
+			var obj infrav1.StoragePolicy
+			Expect(client.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			}, &obj)).To(Succeed())
 
-			When("the storage class is marked as encrypted again", func() {
-				JustBeforeEach(func() {
-					Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, true)).To(Succeed())
-				})
-				It("should return true", func() {
-					ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(ok).To(BeTrue())
-					Expect(pid).To(Equal(fakeString))
-				})
-			})
-		})
-
-		When("a second storage class is marked as not encrypted", func() {
-			JustBeforeEach(func() {
-				storageClass.Name += "1"
-				Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)).To(Succeed())
-			})
-			It("should return false for the second storage class", func() {
-				ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeFalse())
-				Expect(pid).To(BeEmpty())
-			})
+			Expect(obj.Spec.ID).To(Equal(profileID))
+			Expect(obj.Status.Encrypted).To(Equal(encrypted))
+			Expect(obj.OwnerReferences).To(HaveLen(1))
+			Expect(obj.OwnerReferences[0].UID).To(Equal(storageClass.UID))
+			Expect(obj.OwnerReferences[0].Name).To(Equal(storageClass.Name))
 		})
 	})
 
-	When("the storage class is not marked as not encrypted", func() {
-		JustBeforeEach(func() {
-			Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)).To(Succeed())
+	When("creating the StoragePolicy returns an error", func() {
+		BeforeEach(func() {
+			funcs.Create = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				obj ctrlclient.Object,
+				opts ...ctrlclient.CreateOption) error {
+
+				if _, ok := obj.(*infrav1.StoragePolicy); ok {
+					return apierrors.NewInternalError(errors.New(fakeString))
+				}
+
+				return client.Create(ctx, obj, opts...)
+			}
 		})
-		It("should return false", func() {
-			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+		It("should return the error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to create StoragePolicy"))
+			Expect(err.Error()).To(ContainSubstring(fakeString))
+		})
+	})
+
+	When("updating the StoragePolicy status returns an error", func() {
+		BeforeEach(func() {
+			funcs.SubResourceUpdate = func(
+				ctx context.Context,
+				client ctrlclient.Client,
+				subResourceName string,
+				obj ctrlclient.Object,
+				opts ...ctrlclient.SubResourceUpdateOption) error {
+
+				if _, ok := obj.(*infrav1.StoragePolicy); ok {
+					return apierrors.NewInternalError(errors.New(fakeString))
+				}
+
+				return client.SubResource(subResourceName).Update(ctx, obj, opts...)
+			}
+		})
+		It("should return the error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to update StoragePolicy"))
+			Expect(err.Error()).To(ContainSubstring(fakeString))
+		})
+	})
+
+	When("StoragePolicy exists and is already marked encrypted with StorageClass as owner", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.Encrypted = true
+			storagePolicy.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: storagev1.SchemeGroupVersion.String(),
+					Kind:       internal.StorageClassKind,
+					Name:       storageClass.Name,
+					UID:        storageClass.UID,
+				},
+			}
+			withObjs = append(withObjs, &storagePolicy)
+			encrypted = true
+		})
+		It("should not update the StoragePolicy", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ok).To(BeFalse())
-			Expect(pid).To(BeEmpty())
+
+			var obj infrav1.StoragePolicy
+			Expect(client.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			}, &obj)).To(Succeed())
+
+			Expect(obj.Status.Encrypted).To(BeTrue())
 		})
 	})
 
-	When("the storage class is not marked at all", func() {
-		It("should return false", func() {
-			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+	When("StoragePolicy exists and is already marked not encrypted with StorageClass as owner", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.Encrypted = false
+			storagePolicy.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: storagev1.SchemeGroupVersion.String(),
+					Kind:       internal.StorageClassKind,
+					Name:       storageClass.Name,
+					UID:        storageClass.UID,
+				},
+			}
+			withObjs = append(withObjs, &storagePolicy)
+			encrypted = false
+		})
+		It("should not update the StoragePolicy", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ok).To(BeFalse())
-			Expect(pid).To(BeEmpty())
+
+			var obj infrav1.StoragePolicy
+			Expect(client.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			}, &obj)).To(Succeed())
+
+			Expect(obj.Status.Encrypted).To(BeFalse())
 		})
 	})
 
-	When("getting the underlying ConfigMap produces a non-404 error", func() {
+	When("StoragePolicy exists but encryption status needs to be updated", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.Encrypted = false
+			storagePolicy.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: storagev1.SchemeGroupVersion.String(),
+					Kind:       internal.StorageClassKind,
+					Name:       storageClass.Name,
+					UID:        storageClass.UID,
+				},
+			}
+			withObjs = append(withObjs, &storagePolicy)
+			encrypted = true
+		})
+		It("should update the encryption status", func() {
+			Expect(err).ToNot(HaveOccurred())
+
+			var obj infrav1.StoragePolicy
+			Expect(client.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			}, &obj)).To(Succeed())
+
+			Expect(obj.Status.Encrypted).To(BeTrue())
+		})
+	})
+
+	When("StoragePolicy exists but StorageClass is not an owner", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.Encrypted = true
+			storagePolicy.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: storagev1.SchemeGroupVersion.String(),
+					Kind:       internal.StorageClassKind,
+					Name:       "other-storage-class",
+					UID:        types.UID(uuid.NewString()),
+				},
+			}
+			withObjs = append(withObjs, &storagePolicy)
+			encrypted = true
+		})
+		It("should add StorageClass as an owner", func() {
+			Expect(err).ToNot(HaveOccurred())
+
+			var obj infrav1.StoragePolicy
+			Expect(client.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			}, &obj)).To(Succeed())
+
+			Expect(obj.OwnerReferences).To(HaveLen(2))
+			Expect(obj.Status.Encrypted).To(BeTrue())
+
+			// Check that both owners are present
+			var foundOriginal, foundNew bool
+			for _, ref := range obj.OwnerReferences {
+				if ref.Name == "other-storage-class" {
+					foundOriginal = true
+				}
+				if ref.Name == storageClass.Name && ref.UID == storageClass.UID {
+					foundNew = true
+				}
+			}
+			Expect(foundOriginal).To(BeTrue())
+			Expect(foundNew).To(BeTrue())
+		})
+	})
+
+	When("patching the StoragePolicy returns an error", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.Encrypted = false
+			storagePolicy.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion: storagev1.SchemeGroupVersion.String(),
+					Kind:       internal.StorageClassKind,
+					Name:       storageClass.Name,
+					UID:        storageClass.UID,
+				},
+			}
+			withObjs = append(withObjs, &storagePolicy)
+			encrypted = true
+
+			funcs.Patch = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				obj ctrlclient.Object,
+				patch ctrlclient.Patch,
+				opts ...ctrlclient.PatchOption) error {
+
+				if _, ok := obj.(*infrav1.StoragePolicy); ok {
+					return apierrors.NewInternalError(errors.New(fakeString))
+				}
+
+				return client.Patch(ctx, obj, patch, opts...)
+			}
+		})
+		It("should return the error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to patch StoragePolicy"))
+			Expect(err.Error()).To(ContainSubstring(fakeString))
+		})
+	})
+
+	When("getting the StoragePolicy returns a non-404 error", func() {
 		BeforeEach(func() {
 			funcs.Get = func(
 				ctx context.Context,
@@ -669,253 +917,16 @@ var _ = Describe("EncryptedStorageClass", func() {
 				obj ctrlclient.Object,
 				opts ...ctrlclient.GetOption) error {
 
-				if _, ok := obj.(*corev1.ConfigMap); ok {
+				if _, ok := obj.(*infrav1.StoragePolicy); ok {
 					return apierrors.NewInternalError(errors.New(fakeString))
 				}
 
 				return client.Get(ctx, key, obj, opts...)
 			}
 		})
-		It("should return an error for IsEncryptedStorageClass", func() {
-			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
-			Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
-			Expect(ok).To(BeFalse())
-			Expect(pid).To(BeEmpty())
-		})
-		It("should return an error for MarkEncryptedStorageClass", func() {
-			err := kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)
-			Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
-		})
-	})
-
-	// Please note, this test requires the use of envtest due to a bug in the
-	// fake client that does not support concurrent patch attempts against the
-	// same ConfigMap resource.
-	When("there are concurrent attempts to update the ConfigMap", func() {
-
-		var (
-			env            envtest.Environment
-			numAttempts    int
-			storageClasses []storagev1.StorageClass
-		)
-
-		BeforeEach(func() {
-			numAttempts = 10
-
-			ctx = pkgcfg.WithConfig(pkgcfg.Config{
-				PodNamespace: "default",
-			})
-		})
-
-		JustBeforeEach(func() {
-			env = envtest.Environment{}
-			restConfig, err := env.Start()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(restConfig).ToNot(BeNil())
-
-			c, err := ctrlclient.New(restConfig, ctrlclient.Options{})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(c).ToNot(BeNil())
-			client = c
-
-			storageClasses = make([]storagev1.StorageClass, numAttempts)
-			for i := range storageClasses {
-				storageClasses[i].Name = strconv.Itoa(i)
-				storageClasses[i].Provisioner = fakeString
-				storageClasses[i].Parameters = map[string]string{
-					internal.StoragePolicyIDParameter: fakeString,
-				}
-				Expect(client.Create(ctx, &storageClasses[i])).To(Succeed())
-			}
-		})
-
-		AfterEach(func() {
-			Expect(env.Stop()).To(Succeed())
-		})
-
-		When("there are concurrent additions", func() {
-			JustBeforeEach(func() {
-				// Ensure the ConfigMap exists so all of the additions use the
-				// Patch operation.
-				Expect(client.Create(ctx, &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      internal.EncryptedStorageClassNamesConfigMapName,
-						Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-					},
-				})).To(Succeed())
-
-				var (
-					ready  sync.WaitGroup
-					marked sync.WaitGroup
-					start  = make(chan struct{})
-				)
-
-				marked.Add(len(storageClasses))
-				ready.Add(len(storageClasses))
-
-				for i := range storageClasses {
-					go func(obj storagev1.StorageClass) {
-						defer GinkgoRecover()
-						defer func() {
-							marked.Done()
-						}()
-						ready.Done()
-						<-start
-						Expect(kubeutil.MarkEncryptedStorageClass(
-							ctx, client, obj, true)).To(Succeed(),
-							"StorageClass.name="+obj.Name)
-					}(storageClasses[i])
-				}
-
-				ready.Wait()
-				close(start)
-				marked.Wait()
-			})
-
-			Specify("all concurrent attempts should succeed", func() {
-				refs, err := internal.GetEncryptedStorageClassRefs(ctx, client)
-				Expect(err).ToNot(HaveOccurred())
-
-				expRefs := make([]any, len(storageClasses))
-				for i := range storageClasses {
-					expRefs[i] = internal.GetOwnerRefForStorageClass(storageClasses[i])
-				}
-				Expect(refs).To(HaveLen(len(expRefs)))
-				Expect(refs).To(ContainElements(expRefs...))
-
-				for i := range storageClasses {
-					ok, pid, err := kubeutil.IsEncryptedStorageClass(
-						ctx, client, storageClasses[i].Name)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(ok).To(BeTrue())
-					Expect(pid).To(Equal(fakeString))
-				}
-			})
-		})
-
-		When("there are concurrent removals", func() {
-			JustBeforeEach(func() {
-				// Mark all the StorageClasses as encrypted.
-				for i := range storageClasses {
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx, client, storageClasses[i], true)).To(Succeed())
-				}
-
-				var (
-					ready  sync.WaitGroup
-					marked sync.WaitGroup
-					start  = make(chan struct{})
-				)
-
-				marked.Add(len(storageClasses))
-				ready.Add(len(storageClasses))
-
-				for i := range storageClasses {
-					go func(obj storagev1.StorageClass) {
-						defer GinkgoRecover()
-						defer func() {
-							marked.Done()
-						}()
-						ready.Done()
-						<-start
-						Expect(kubeutil.MarkEncryptedStorageClass(
-							ctx, client, obj, false)).To(Succeed(),
-							"StorageClass.name="+obj.Name)
-					}(storageClasses[i])
-				}
-
-				ready.Wait()
-				close(start)
-				marked.Wait()
-			})
-
-			Specify("all concurrent attempts should succeed", func() {
-				refs, err := internal.GetEncryptedStorageClassRefs(ctx, client)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(refs).To(BeEmpty())
-
-				for i := range storageClasses {
-					ok, pid, err := kubeutil.IsEncryptedStorageClass(
-						ctx, client, storageClasses[i].Name)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(ok).To(BeFalse())
-					Expect(pid).To(BeEmpty())
-				}
-			})
-		})
-
-		When("there are concurrent additions and removals", func() {
-			BeforeEach(func() {
-				// Set the number of attempts to odd to ensure the count at the
-				// end is not a false-positive due to equal halves.
-				numAttempts = 13
-			})
-
-			JustBeforeEach(func() {
-				// Mark half of the StorageClasses as encrypted.
-				for i := range storageClasses {
-					if i%2 == 0 {
-						Expect(kubeutil.MarkEncryptedStorageClass(
-							ctx, client, storageClasses[i], true)).To(Succeed())
-					}
-				}
-
-				var (
-					ready  sync.WaitGroup
-					marked sync.WaitGroup
-					start  = make(chan struct{})
-				)
-
-				marked.Add(len(storageClasses))
-				ready.Add(len(storageClasses))
-
-				for i := range storageClasses {
-					go func(i int, obj storagev1.StorageClass) {
-						defer GinkgoRecover()
-						defer func() {
-							marked.Done()
-						}()
-						ready.Done()
-						<-start
-						Expect(kubeutil.MarkEncryptedStorageClass(
-							ctx, client, obj, i%2 != 0)).To(Succeed(),
-							"StorageClass.name="+obj.Name)
-					}(i, storageClasses[i])
-				}
-
-				ready.Wait()
-				close(start)
-				marked.Wait()
-			})
-
-			Specify("all concurrent attempts should succeed", func() {
-				refs, err := internal.GetEncryptedStorageClassRefs(ctx, client)
-				Expect(err).ToNot(HaveOccurred())
-
-				var expRefs []any
-				for i := range storageClasses {
-					if i%2 != 0 {
-						expRefs = append(
-							expRefs,
-							internal.GetOwnerRefForStorageClass(storageClasses[i]))
-					}
-				}
-				Expect(refs).To(HaveLen(len(expRefs)))
-				Expect(refs).To(ContainElements(expRefs...))
-
-				for i := range storageClasses {
-					ok, pid, err := kubeutil.IsEncryptedStorageClass(
-						ctx, client, storageClasses[i].Name)
-					Expect(err).ToNot(HaveOccurred())
-					if i%2 == 0 {
-						Expect(ok).To(BeFalse())
-						Expect(pid).To(BeEmpty())
-					} else {
-						Expect(ok).To(BeTrue())
-						Expect(pid).To(Equal(fakeString))
-					}
-				}
-			})
+		It("should return the error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(fakeString))
 		})
 	})
 })

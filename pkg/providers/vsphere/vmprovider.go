@@ -32,6 +32,7 @@ import (
 	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -49,6 +50,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
+	storutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/storage"
 )
 
 const (
@@ -694,6 +696,22 @@ func (vs *vSphereVMProvider) DoesProfileSupportEncryption(
 	}
 
 	return c.PbmClient().SupportsEncryption(ctx, profileID)
+}
+
+func (vs *vSphereVMProvider) GetStoragePolicyStatus(
+	ctx context.Context, profileID string) (infrav1.StoragePolicyStatus, error) {
+
+	c, err := vs.getVcClient(ctx)
+	if err != nil {
+		return infrav1.StoragePolicyStatus{}, err
+	}
+
+	return storutil.GetStoragePolicyStatus(
+		ctx,
+		vs.k8sClient,
+		c.VimClient(),
+		c.PbmClient(),
+		profileID)
 }
 
 func (vs *vSphereVMProvider) VSphereClient(

@@ -97,6 +97,9 @@ type VCSimTestConfig struct {
 	// NumNetworks is the number of networks.
 	NumNetworks int
 
+	// NumDatastores is the number of datastores.
+	NumDatastores int
+
 	// WithContentLibrary configures a Content Library, populated with one image's
 	// name available in the TestContextForVCSim.ContentLibraryImageName.
 	WithContentLibrary bool
@@ -589,6 +592,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	vcModel.Cluster = c.ZoneCount * c.ClustersPerZone
 	vcModel.ClusterHost = 2
 	vcModel.Portgroup = c.networkCount
+	vcModel.Datastore = max(config.NumDatastores, 1)
 
 	Expect(vcModel.Create()).To(Succeed())
 
@@ -622,7 +626,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	Expect(err).ToNot(HaveOccurred())
 	c.folder = folder
 
-	datastore, err := c.Finder.DefaultDatastore(c)
+	datastore, err := c.Finder.Datastore(c, "LocalDS_0")
 	Expect(err).ToNot(HaveOccurred())
 	c.Datastore = datastore
 

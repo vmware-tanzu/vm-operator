@@ -7841,6 +7841,140 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		)
 	})
 
+	Context("Backfilled Volume validation", func() {
+		DescribeTable("Updates", doTest,
+			Entry("should deny removing a backfilled volume",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Create a backfilled volume (no PVC, but has target ID)
+						backfilledVol := vmopv1.VirtualMachineVolume{
+							Name:                "backfilled-vol",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(1)),
+							// No PersistentVolumeClaim
+						}
+						ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, backfilledVol)
+						// Remove it from new VM
+						ctx.vm.Spec.Volumes = slices.DeleteFunc(ctx.vm.Spec.Volumes, func(v vmopv1.VirtualMachineVolume) bool {
+							return v.Name == "backfilled-vol"
+						})
+					},
+					expectAllowed: false,
+					validate:      doValidateWithMsg("spec.volumes: Forbidden: backfilled-vol: removing volume backfilled from classic disk is not allowed"),
+				},
+			),
+			Entry("should deny modifying a backfilled volume",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Create a backfilled volume in old VM
+						backfilledVol := vmopv1.VirtualMachineVolume{
+							Name:                "backfilled-vol",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(1)),
+							// No PersistentVolumeClaim
+						}
+						ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, backfilledVol)
+
+						// Modify it in new VM (change unit number)
+						modifiedVol := backfilledVol.DeepCopy()
+						modifiedVol.UnitNumber = ptr.To(int32(2))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *modifiedVol)
+					},
+					expectAllowed: false,
+					validate:      doValidateWithMsg("spec.volumes: Forbidden: backfilled-vol: modifying backfilled volume is not allowed"),
+				},
+			),
+			Entry("should allow when backfilled volume is unchanged",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Create a backfilled volume in old VM
+						backfilledVol := vmopv1.VirtualMachineVolume{
+							Name:                "backfilled-vol",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(1)),
+							// No PersistentVolumeClaim
+						}
+						ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, backfilledVol)
+
+						// Keep it unchanged in new VM
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *backfilledVol.DeepCopy())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow removing a non-backfilled volume (has PVC)",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Create a volume with PVC (not backfilled)
+						pvcVol := vmopv1.VirtualMachineVolume{
+							Name: "pvc-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "test-pvc",
+									},
+								},
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(1)),
+						}
+						ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, pvcVol)
+						// Remove it from new VM
+						ctx.vm.Spec.Volumes = slices.DeleteFunc(ctx.vm.Spec.Volumes, func(v vmopv1.VirtualMachineVolume) bool {
+							return v.Name == "pvc-vol"
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow when volume has no target ID (not backfilled)",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Create a volume without target ID (missing placement fields)
+						volWithoutTargetID := vmopv1.VirtualMachineVolume{
+							Name: "vol-no-target",
+							// No PersistentVolumeClaim
+							// No ControllerType, ControllerBusNumber, or UnitNumber
+						}
+						ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, volWithoutTargetID)
+						// Remove it from new VM
+						ctx.vm.Spec.Volumes = slices.DeleteFunc(ctx.vm.Spec.Volumes, func(v vmopv1.VirtualMachineVolume) bool {
+							return v.Name == "vol-no-target"
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny modifying ApplicationType of backfilled volume",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Create a backfilled volume in old VM
+						backfilledVol := vmopv1.VirtualMachineVolume{
+							Name:                "backfilled-vol",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(1)),
+							ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+							// No PersistentVolumeClaim
+						}
+						ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, backfilledVol)
+
+						// Change ApplicationType (but keep placement fields same)
+						modifiedVol := backfilledVol.DeepCopy()
+						modifiedVol.ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *modifiedVol)
+					},
+					expectAllowed: false,
+					validate:      doValidateWithMsg("spec.volumes: Forbidden: backfilled-vol: modifying backfilled volume is not allowed"),
+				},
+			),
+		)
+	})
+
 	Context("PVC Volume Controller Fields", func() {
 		const (
 			newVolName = "new-vol"

@@ -68,6 +68,8 @@ const (
 	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
 	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
+	removingBackfilledVolumeNotAllowed         = "removing volume backfilled from classic disk is not allowed"
+	modifyingBackfilledVolumeNotAllowed        = "modifying backfilled volume is not allowed"
 	storageClassNotFoundFmt                    = "Storage policy %s does not exist"
 	storageClassNotAssignedFmt                 = "Storage policy is not associated with the namespace %s"
 	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
@@ -1232,6 +1234,9 @@ func (v validator) validateVolumes(
 
 	}
 
+	allErrs = append(allErrs,
+		v.validateBackfilledVolumesNotRemoved(ctx, vm, oldVM, volumesPath)...)
+
 	return allErrs
 }
 
@@ -1633,6 +1638,64 @@ func (v validator) validateInstanceStorageVolumes(
 	}
 
 	return allErrs
+}
+
+// validateBackfilledVolumesNotRemoved checks if any volumes backfilled from classic
+// disks have been removed from the spec when the AllDisksArePVCs feature is disabled.
+func (v validator) validateBackfilledVolumesNotRemoved(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine,
+	volumesPath *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if oldVM == nil {
+		return allErrs
+	}
+
+	newVolumesMap := make(map[string]*vmopv1.VirtualMachineVolume)
+	for i := range vm.Spec.Volumes {
+		vol := &vm.Spec.Volumes[i]
+		if vol.Name != "" {
+			newVolumesMap[vol.Name] = vol
+		}
+	}
+
+	for _, oldVol := range oldVM.Spec.Volumes {
+		if oldVol.Name == "" {
+			continue
+		}
+
+		if !isBackfilledVolume(&oldVol) {
+			continue
+		}
+
+		newVol, exists := newVolumesMap[oldVol.Name]
+		if !exists {
+			allErrs = append(allErrs, field.Forbidden(
+				volumesPath,
+				fmt.Sprintf("%s: %s", oldVol.Name, removingBackfilledVolumeNotAllowed)))
+			continue
+		}
+
+		if !equality.Semantic.DeepEqual(*newVol, oldVol) {
+			allErrs = append(allErrs, field.Forbidden(
+				volumesPath,
+				fmt.Sprintf("%s: %s", oldVol.Name, modifyingBackfilledVolumeNotAllowed)))
+		}
+	}
+
+	return allErrs
+}
+
+// isBackfilledVolume checks if a volume is a backfilled volume from a classic disk.
+// Backfilled volumes have no PersistentVolumeClaim but have a target ID.
+func isBackfilledVolume(vol *vmopv1.VirtualMachineVolume) bool {
+	if vol.PersistentVolumeClaim != nil {
+		return false
+	}
+
+	return vmopv1util.GetTargetID(vol) != ""
 }
 
 func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookRequestContext) (bool, error) {

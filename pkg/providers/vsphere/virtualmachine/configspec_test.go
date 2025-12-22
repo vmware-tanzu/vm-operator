@@ -614,6 +614,51 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		})
 	})
 
+	Context("vAppConfig Cleanup", func() {
+		Context("ConfigSpec has VAppConfig", func() {
+			BeforeEach(func() {
+				baseConfigSpec.VAppConfig = &vimtypes.VmConfigSpec{
+					Property: []vimtypes.VAppPropertySpec{
+						{
+							Info: &vimtypes.VAppPropertyInfo{
+								Key:   0,
+								Id:    "prop1",
+								Value: "value1",
+							},
+						},
+						{
+							Info: &vimtypes.VAppPropertyInfo{
+								Key:   1,
+								Id:    "prop2",
+								Value: "some-large-config-yaml-content",
+							},
+						},
+					},
+					OvfEnvironmentTransport: []string{"foobar"},
+				}
+			})
+
+			It("should clear the Property field", func() {
+				Expect(configSpec.VAppConfig).ToNot(BeNil())
+				vmConfigSpec := configSpec.VAppConfig.GetVmConfigSpec()
+				Expect(vmConfigSpec).ToNot(BeNil())
+				Expect(vmConfigSpec.Property).To(BeNil())
+				Expect(vmConfigSpec.OvfEnvironmentTransport).To(ContainElement("foobar"))
+			})
+		})
+
+		Context("ConfigSpec does not have VAppConfig", func() {
+			BeforeEach(func() {
+				baseConfigSpec.VAppConfig = nil
+			})
+
+			It("should not panic", func() {
+				// The configSpec was created successfully without panic
+				Expect(configSpec).ToNot(BeNil())
+			})
+		})
+	})
+
 	Context("When InstanceStorage is configured", func() {
 		const storagePolicyID = "storage-id-42"
 

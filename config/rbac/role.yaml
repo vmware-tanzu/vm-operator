@@ -208,6 +208,19 @@ rules:
   - list
   - watch
 - apiGroups:
+  - infra.vmware.com
+  resources:
+  - storagepolicies
+  - storagepolicies/status
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - netoperator.vmware.com
   resources:
   - networkinterfaces
@@ -362,3 +375,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - storagepolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

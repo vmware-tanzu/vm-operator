@@ -9,7 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/storagepolicyquota"
+	"github.com/vmware-tanzu/vm-operator/controllers/storage/storagepolicyquota"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"

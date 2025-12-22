@@ -7,6 +7,7 @@ replace (
 	github.com/vmware-tanzu/vm-operator/external/appplatform => ./external/appplatform
 	github.com/vmware-tanzu/vm-operator/external/byok => ./external/byok
 	github.com/vmware-tanzu/vm-operator/external/capabilities => ./external/capabilities
+	github.com/vmware-tanzu/vm-operator/external/infra => ./external/infra
 	github.com/vmware-tanzu/vm-operator/external/ncp => ./external/ncp
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota => ./external/storage-policy-quota
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ./external/tanzu-topology
@@ -22,6 +23,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/appplatform v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/capabilities v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/infra v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000

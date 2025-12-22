@@ -34,6 +34,20 @@ type LocalObjectRef struct {
 	Name string `json:"name"`
 }
 
+// ManagedObjectID is a unique ID used to identify a managed object on a given
+// vSphere instance
+type ManagedObjectID struct {
+	// +required
+
+	// ObjectID is the object's ID.
+	ObjectID string `json:"objectID"`
+
+	// +optional
+
+	// ServerID is the ID of the server to which the object belongs.
+	ServerID string `json:"serverID,omitempty"`
+}
+
 // +kubebuilder:validation:Enum=Mandatory;Optional
 
 // PolicyEnforcementMode represents the possible enforcement modes.

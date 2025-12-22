@@ -162,6 +162,8 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1
         - alias: vspherepolv1
           pkg: github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1
+        - alias: infrav1
+          pkg: github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1
 
         - alias: proxyaddr
           pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr
@@ -199,6 +201,7 @@ linters:
           - "!$test"
           - "!**/test/builder/*.go"
           - "!**/matcher.go"
+          - "!**/pkg/util/kube/storage.go"
           allow:
           - $gostd
           - github.com/go-logr/logr
@@ -218,6 +221,36 @@ linters:
             desc: "do not import testing packages in non-test sources"
           - pkg: github.com/onsi/gomega
             desc: "do not import testing packages in non-test sources"
+
+        #
+        # This section is a duplicate of the main section, so please keep their
+        # rules in lock-step. However, the one difference is files matched by
+        # this section are allowed to import the "testing" package in order for
+        # something in the file to determine if the code is being executed as
+        # part of a test or not.
+        #
+        allow-testing-import:
+          list-mode: lax # allow unless explicitly denied
+          files:
+          - "**/pkg/util/kube/storage.go"
+          allow:
+          - $gostd
+          - github.com/go-logr/logr
+          - sigs.k8s.io/controller-runtime
+          deny:
+          - pkg: io/ioutil
+            desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+          - pkg: github.com/pkg/errors
+            desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
+          - pkg: k8s.io/utils
+            desc: "replaced by internal packages like pkg/util/ptr"
+          - pkg: github.com/onsi/ginkgo$
+            desc: "do not import testing packages in non-test sources"
+          - pkg: github.com/onsi/ginkgo/v2
+            desc: "do not import testing packages in non-test sources"
+          - pkg: github.com/onsi/gomega
+            desc: "do not import testing packages in non-test sources"
+
         test:
           list-mode: lax # allow unless explicitly denied
           files:

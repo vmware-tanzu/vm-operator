@@ -4407,6 +4407,92 @@ func vmTests() {
 					Expect(path.Datastore).NotTo(BeEmpty())
 				})
 			})
+
+			When("Fast Deploy is enabled", func() {
+
+				var (
+					vmic vmopv1.VirtualMachineImageCache
+				)
+
+				BeforeEach(func() {
+					testConfig.WithContentLibrary = true
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.Features.FastDeploy = true
+					})
+				})
+
+				JustBeforeEach(func() {
+					vmicName := pkgutil.VMIName(ctx.ContentLibraryIsoItemID)
+					vmic = vmopv1.VirtualMachineImageCache{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+							Name:      vmicName,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+				})
+
+				assertVMICNotReady := func(err error, msg, name, dcID, dsID string) {
+					var e pkgerr.VMICacheNotReadyError
+					ExpectWithOffset(1, errors.As(err, &e)).To(BeTrue())
+					ExpectWithOffset(1, e.Message).To(Equal(msg))
+					ExpectWithOffset(1, e.Name).To(Equal(name))
+					ExpectWithOffset(1, e.DatacenterID).To(Equal(dcID))
+					ExpectWithOffset(1, e.DatastoreID).To(Equal(dsID))
+				}
+
+				When("files are not ready", func() {
+					It("should fail", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						assertVMICNotReady(
+							err,
+							"cached files not ready",
+							vmic.Name,
+							ctx.Datacenter.Reference().Value,
+							ctx.Datastore.Reference().Value)
+					})
+				})
+
+				When("files are ready", func() {
+					JustBeforeEach(func() {
+						conditions.MarkTrue(
+							&vmic,
+							vmopv1.VirtualMachineImageCacheConditionFilesReady)
+						// For ISO items, there are no disk files to cache,
+						// so the Files list can be empty.
+						vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+							{
+								DatacenterID: ctx.Datacenter.Reference().Value,
+								DatastoreID:  ctx.Datastore.Reference().Value,
+								Files:        []vmopv1.VirtualMachineImageCacheFileStatus{},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.ReadyConditionType,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+						libMgr := library.NewManager(ctx.RestClient)
+						Expect(libMgr.SyncLibraryItem(ctx,
+							&library.Item{ID: ctx.ContentLibraryIsoItemID},
+							true)).To(Succeed())
+					})
+
+					It("should succeed", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
+						vmPathName := "config.files.vmPathName"
+						props, err := vmProvider.GetVirtualMachineProperties(ctx, vm, []string{vmPathName})
+						Expect(err).NotTo(HaveOccurred())
+						var p object.DatastorePath
+						p.FromString(props[vmPathName].(string))
+						Expect(p.Datastore).NotTo(BeEmpty())
+					})
+				})
+			})
 		})
 
 		Context("Power states", func() {

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -4419,6 +4420,9 @@ func vmTests() {
 					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 						config.Features.FastDeploy = true
 					})
+					// Ensure the VM has a UID to verify the VM directory path
+					// is different from the VM's Kubernetes UID on vSAN.
+					vm.UID = "test-vm-iso-uid"
 				})
 
 				JustBeforeEach(func() {
@@ -4455,11 +4459,22 @@ func vmTests() {
 
 				When("files are ready", func() {
 					JustBeforeEach(func() {
+						// Simulate vSAN datastore with TopLevelDirectoryCreateSupported disabled.
+						sctx := ctx.SimulatorContext()
+						for _, dsEnt := range sctx.Map.All("Datastore") {
+							sctx.WithLock(
+								dsEnt.Reference(),
+								func() {
+									ds := sctx.Map.Get(dsEnt.Reference()).(*simulator.Datastore)
+									ds.Capability.TopLevelDirectoryCreateSupported = ptr.To(false)
+									ds.Summary.Type = string(vimtypes.HostFileSystemVolumeFileSystemTypeVsan)
+								})
+						}
+
+						// Set required fields for ISO VM creation in the VMIC.
 						conditions.MarkTrue(
 							&vmic,
 							vmopv1.VirtualMachineImageCacheConditionFilesReady)
-						// For ISO items, there are no disk files to cache,
-						// so the Files list can be empty.
 						vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
 							{
 								DatacenterID: ctx.Datacenter.Reference().Value,
@@ -4481,7 +4496,7 @@ func vmTests() {
 							true)).To(Succeed())
 					})
 
-					It("should succeed", func() {
+					It("should successfully create the ISO VM in a different UUID-based directory", func() {
 						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
 						vmPathName := "config.files.vmPathName"
@@ -4490,6 +4505,18 @@ func vmTests() {
 						var p object.DatastorePath
 						p.FromString(props[vmPathName].(string))
 						Expect(p.Datastore).NotTo(BeEmpty())
+
+						// The VM path should be something like: <uuid>/test-vm-iso.vmx
+						// When TopLevelDirectoryCreateSupported is false,
+						// DatastoreNamespaceManager.CreateDirectory creates a
+						// new UUID-based directory that is different from the
+						// VM's Kubernetes UID.
+						pathParts := strings.Split(p.Path, "/")
+						Expect(pathParts).To(HaveLen(2))
+						_, err = uuid.Parse(pathParts[0])
+						Expect(err).NotTo(HaveOccurred(), "expected directory to be a UUID, got: %s", pathParts[0])
+						Expect(pathParts[0]).NotTo(Equal(string(vm.UID)),
+							"expected directory to be different from VM's K8s UID")
 					})
 				})
 			})

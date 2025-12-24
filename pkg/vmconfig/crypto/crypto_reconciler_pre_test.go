@@ -614,15 +614,13 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 					When("the vm is not already encrypted", func() {
 						BeforeEach(func() {
 							moVM.Config.KeyId = nil
+							vm.Spec.StorageClass = storageClass1.Name
 						})
-						It("should encrypt the vm", func() {
+						It("should not encrypt the vm", func() {
 							Expect(err).ToNot(HaveOccurred())
 							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
 							Expect(c).To(BeNil())
-							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
-							Expect(ok).To(BeTrue())
-							Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
-							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+							Expect(configSpec.Crypto).To(BeNil())
 						})
 						When("the vm has a vtpm but not encrypted storage class", func() {
 							BeforeEach(func() {

@@ -20,7 +20,7 @@ The following is an example of a `VirtualMachine` resource that bootstraps a Pho
 
 !!! note "Customizing a Guest"
 
-    Please see [this section](./guest.md) for more information on the available bootstrap providers tha may be used to bootstrap a guest's host name, network, and further customize the operating system.
+    Please see [this section](./guest.md) for more information on the available bootstrap providers that may be used to bootstrap a guest's host name, network, and further customize the operating system.
 
 To create the VM shown above, run the following command (replacing `<NAMESPACE>` with the name of the [`Namespace`](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) in which to create the VM):
 

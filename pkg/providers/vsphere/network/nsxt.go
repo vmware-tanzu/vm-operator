@@ -155,7 +155,7 @@ func getDVPGsForCCR(
 	return uuidToDPVG, nil
 }
 
-func VPCPostRetoreBackingFixup(
+func VPCPostRestoreBackingFixup(
 	vmCtx pkgctx.VirtualMachineContext,
 	currentEthCards []vimtypes.BaseVirtualDevice,
 	networkResults NetworkInterfaceResults) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {

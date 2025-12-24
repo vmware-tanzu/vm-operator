@@ -8,9 +8,9 @@ VM Operator virtual machines (VM) have a defined lifecycle. For example, on vSph
 
 This section provides information about workload resources, such as:
 
-* [`VirualMachine`](./vm.md)
+* [`VirtualMachine`](./vm.md)
 * [`VirtualMachine` controller](./vm-controller.md)
-* [`VirualMachineClass`](./vm-class.md)
+* [`VirtualMachineClass`](./vm-class.md)
 * [`VirtualMachineGroup`](./vm-group.md)
 * [`WebConsoleRequest`](./vm-web-console.md)
 

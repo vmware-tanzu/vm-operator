@@ -1879,11 +1879,11 @@ func (v validator) validateSchemaUpgrade(
 
 	var (
 		newUpBuildVer   = newVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		newUpSchemVer   = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		newUpSchemaVer  = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
 		newUpFeatureVer = newVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 
 		oldUpBuildVer   = oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		oldUpSchemVer   = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		oldUpSchemaVer  = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
 		oldUpFeatureVer = oldVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 	)
 
@@ -1900,13 +1900,13 @@ func (v validator) validateSchemaUpgrade(
 	}
 
 	switch {
-	case newUpSchemVer != "" && newUpSchemVer != oldUpSchemVer:
+	case newUpSchemaVer != "" && newUpSchemaVer != oldUpSchemaVer:
 		// Prevent most users from modifying these annotations.
 		allErrs = append(allErrs, field.Forbidden(
 			fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
 			modRestrictedAnnotation))
 
-	case oldUpSchemVer != "" && newUpSchemVer == "":
+	case oldUpSchemaVer != "" && newUpSchemaVer == "":
 		// Allow anyone to delete the annotation.
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
@@ -2976,7 +2976,7 @@ func (v validator) validateImmutableVMAffinity(
 	return allErrs
 }
 
-// validateImmutableFieldsDuringSchemaUpgrade checks the fields tht are
+// validateImmutableFieldsDuringSchemaUpgrade checks the fields that are
 // backfilled by the schema upgrade are not been modified before the schema
 // upgrade has completed. Currently, the schema upgrade backfills fields below:
 // - vm.Spec.BiosUUID

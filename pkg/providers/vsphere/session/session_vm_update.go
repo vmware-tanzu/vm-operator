@@ -370,7 +370,7 @@ func (s *Session) handleRestoredVPCInterfaces(
 	currentEthCards := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device).
 		SelectByType((*vimtypes.VirtualEthernetCard)(nil))
 
-	deviceChanges, err := network.VPCPostRetoreBackingFixup(
+	deviceChanges, err := network.VPCPostRestoreBackingFixup(
 		vmCtx,
 		currentEthCards,
 		networkResults)

@@ -20,7 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("VPCPostRetoreBackingFixup", Label(testlabels.VCSim), func() {
+var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 
 	const (
 		macAddress1 = "01:02:03:04:05:06"
@@ -109,7 +109,7 @@ var _ = Describe("VPCPostRetoreBackingFixup", Label(testlabels.VCSim), func() {
 		networkResult := network.NetworkInterfaceResults{}
 		networkResult.Results = []network.NetworkInterfaceResult{result2}
 
-		devChanges, err := network.VPCPostRetoreBackingFixup(vmCtx, currentEthCards, networkResult)
+		devChanges, err := network.VPCPostRestoreBackingFixup(vmCtx, currentEthCards, networkResult)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(devChanges).To(BeEmpty())
 	})
@@ -122,7 +122,7 @@ var _ = Describe("VPCPostRetoreBackingFixup", Label(testlabels.VCSim), func() {
 		networkResult := network.NetworkInterfaceResults{}
 		networkResult.Results = []network.NetworkInterfaceResult{result1, result2}
 
-		devChanges, err := network.VPCPostRetoreBackingFixup(vmCtx, currentEthCards, networkResult)
+		devChanges, err := network.VPCPostRestoreBackingFixup(vmCtx, currentEthCards, networkResult)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(devChanges).To(HaveLen(1))
 

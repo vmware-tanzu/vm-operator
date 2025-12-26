@@ -364,13 +364,13 @@ var _ = DescribeTable("GetCacheDirectory",
 	Entry(
 		"empty contentVersion should panic",
 		"a", "b", "c", "",
-		"[a] b-84a516841ba77a5b4",
+		"[a] b-84a516841ba77a5b4", // spellchecker:disable-line
 		"",
 	),
 	Entry(
 		"expected path",
 		"a", "b", "c", "d",
-		"[a] b-84a516841ba77a5b4-3c363836cf4e16666",
+		"[a] b-84a516841ba77a5b4-3c363836cf4e16666", // spellchecker:disable-line
 		"",
 	),
 )

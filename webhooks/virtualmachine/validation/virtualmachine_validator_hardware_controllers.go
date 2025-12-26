@@ -84,7 +84,7 @@ func (v validator) validateControllers(
 }
 
 // validateControllerWhenPowernedOn validates that when VM is poweredOn, disallow
-// editting existing controllers, can only add/remove controllers.
+// editing existing controllers, can only add/remove controllers.
 func (v validator) validateControllerWhenPoweredOn(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine,

@@ -576,6 +576,7 @@ var _ = DescribeTable("GetStoragePolicyObjectName",
 		"",
 		""),
 
+	// spellchecker:off
 	Entry(
 		"invalid policy ID",
 		fakeString,
@@ -585,6 +586,7 @@ var _ = DescribeTable("GetStoragePolicyObjectName",
 		"valid policy ID",
 		"b0b48647-dd96-4e24-8ef0-f5ba458d4d2d",
 		"pol-b0b48647-8ef0f5ba458d4d2d"),
+	// spellchecker:on
 )
 
 var _ = Describe("MarkEncryptedStorageClass", func() {

@@ -47,7 +47,7 @@ import (
 const (
 	controllerName = "volumebatch"
 	// In BatchAttachment status, CSI hardcode a volume name entry with :detaching
-	// suffix if it's being detached. CSI only adds that after they have finsihed
+	// suffix if it's being detached. CSI only adds that after they have finished
 	// a CNS detach call, which could take up to minutes. So we still want to add
 	// that suffix ourselves as soon as a volume is removed from vm.spec.volumes.
 	//
@@ -666,7 +666,7 @@ func (r *Reconciler) buildVolumeSpecs(
 		}]
 		if !ok {
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
-				"%s wating for the device controller %q %q to be created for volume %q",
+				"%s waiting for the device controller %q %q to be created for volume %q",
 				buildErrMsg, vol.ControllerType, *vol.ControllerBusNumber, vol.Name)})
 			continue
 		}

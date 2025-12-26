@@ -522,7 +522,7 @@ func reconcileStatusProbe(
 			vmopv1.ReadyConditionType, probeReasonUnknown, "%s", resultMsg)
 	}
 
-	// Emit event whe the condition is added or its status changes.
+	// Emit event when the condition is added or its status changes.
 	if c := conditions.Get(vmCtx.VM, cond.Type); c == nil || c.Status != cond.Status {
 		recorder := vmoprecord.FromContext(vmCtx)
 		if cond.Status == metav1.ConditionTrue {

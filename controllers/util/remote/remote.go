@@ -144,7 +144,7 @@ func DoesNotExistYAMLWithNamespace(ctx context.Context, c client.Client, data []
 // namespace prior to any other actions being performed with or to the object.
 type ForEachObjectInYAMLActionFunc func(context.Context, client.Client, *unstructured.Unstructured) error
 
-// ForEachObjectInYAML excutes actionFn for each object in the provided YAML.
+// ForEachObjectInYAML executes actionFn for each object in the provided YAML.
 // If an error is returned then no further objects are processed.
 // The data may be a single YAML document or multidoc YAML.
 // When a non-empty namespace is provided then all objects are assigned the

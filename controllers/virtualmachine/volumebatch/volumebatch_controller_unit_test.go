@@ -1597,7 +1597,7 @@ func assertVMVolStatusFromBatchAttachmentStatus(
 	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")
 	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Attached), "attached should match")
 	Expect(vmVolStatus.DiskUUID).To(Equal(attachmentVolStatus.PersistentVolumeClaim.DiskUUID), "diskuuid should match")
-	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Error), "error shouuld match")
+	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Error), "error should match")
 }
 
 func assertVMVolStatusFromBatchAttachmentSpec(

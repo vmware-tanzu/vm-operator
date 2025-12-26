@@ -112,7 +112,7 @@ COVERAGE_FILE ?= cover.out
 # Gather a set of root packages that have at least one file that matches
 # the pattern *_test.go as a child or descendent in that directory.
 # However, given this is not a cheap operation, only gather these packages if
-# the test-nocover target is one of the currenty active goals.
+# the test-nocover target is one of the currently active goals.
 ifeq (,$(filter-out test-nocover,$(MAKECMDGOALS)))
 COVERED_PKGS ?= $(shell find . -name '*_test.go' -not -path './api/*' -print | awk -F'/' '{print "./"$$2}' | sort -u)
 endif
@@ -297,6 +297,7 @@ lint: ## Run all the lint targets
 	$(MAKE) lint-go-full
 	$(MAKE) lint-markdown
 	$(MAKE) lint-shell
+	$(MAKE) typos
 
 GOLANGCI_LINT_FLAGS ?= --fast-only=true
 GOLANGCI_LINT_ABS_PATH := $(abspath $(GOLANGCI_LINT))
@@ -325,11 +326,15 @@ lint-go-full: lint-go ## Run slower linters to detect possible issues
 
 .PHONY: lint-markdown
 lint-markdown: ## Lint the project's markdown
-	$(CRI_BIN) run --rm -v "$$(pwd)":/build gcr.io/cluster-api-provider-vsphere/extra/mdlint:0.17.0
+	$(CRI_BIN) run --rm -v "$$(pwd)":/build lifeguard-docker-local.packages.vcfd.broadcom.net/github-runner/mdlint-alpine:0.44.0
 
 .PHONY: lint-shell
 lint-shell: ## Lint the project's shell scripts
-	$(CRI_BIN) run --rm -t -v "$$(pwd)":/build:ro gcr.io/cluster-api-provider-vsphere/extra/shellcheck
+	$(CRI_BIN) run --rm -t -v "$$(pwd)":/build:ro lifeguard-docker-local.packages.vcfd.broadcom.net/github-runner/shellcheck:1.0.2
+
+.PHONY: typos
+typos: ## Detect typos
+	$(CRI_BIN) run --rm -t -v "$$(pwd)":/$$(pwd):ro lifeguard-docker-local.packages.vcfd.broadcom.net/github-runner/typos-cli:1.40.0 /$$(pwd)
 
 .PHONY: fix
 fix: GOLANGCI_LINT_FLAGS = --fast-only=false --fix

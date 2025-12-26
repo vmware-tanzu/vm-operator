@@ -775,7 +775,7 @@ func unitTestsValidateCreate() {
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -810,16 +810,16 @@ func unitTestsValidateCreate() {
 						},
 					}
 					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+				// Fetch the class so we can set an ownerref.
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance without an OnwerRef that points to some other VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
+				// Create the instance without an OwnerRef that points to some other VM class
+				classInstance := &vmopv1.VirtualMachineClassInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "new-class-instance",
+						Namespace: ctx.vm.Namespace,
+						OwnerReferences: []metav1.OwnerReference{
+							{
 									Name: "random-vm-class",
 								},
 							},
@@ -860,7 +860,7 @@ func unitTestsValidateCreate() {
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -4442,7 +4442,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -4482,7 +4482,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance without an OnwerRef that points to some other VM class
+					// Create the instance without an OwnerRef that points to some other VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -4530,7 +4530,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",

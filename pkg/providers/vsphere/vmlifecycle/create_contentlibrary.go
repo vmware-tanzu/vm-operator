@@ -142,6 +142,9 @@ func deployFromContentLibrary(
 	case library.ItemTypeVMTX:
 		return deployVMTX(vmCtx, restClient, item, createArgs)
 	case library.ItemTypeISO:
+		if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+			return fastDeploy(vmCtx, vimClient, createArgs)
+		}
 		return createVM(vmCtx, vimClient, createArgs)
 	default:
 		return nil, fmt.Errorf("item %s not a supported type: %s", item.Name, item.Type)

@@ -1460,6 +1460,15 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	return nil
 }
 
+func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling current snapshot")
+
+	return ReconcileCurrentSnapshot(vmCtx, vs.k8sClient, vcVM)
+}
+
 func verifyConfigInfo(vmCtx pkgctx.VirtualMachineContext) error {
 	if vmCtx.MoVM.Config == nil {
 		return pkgerr.NoRequeueError{

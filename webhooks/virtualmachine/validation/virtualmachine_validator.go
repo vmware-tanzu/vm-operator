@@ -2110,52 +2110,6 @@ func (v validator) validateAvailabilityZone(
 	return allErrs
 }
 
-// protectedAnnotationRegex matches annotations with keys matching the pattern:
-// ^.+\.protected(/.+)?$
-//
-// Examples that match:
-//   - fu.bar.protected
-//   - hello.world.protected/sub-key
-//   - vmoperator.vmware.com.protected/reconcile-priority
-//
-// Examples that do NOT match:
-//   - protected.fu.bar
-//   - hello.world.protected.against/sub-key
-var protectedAnnotationRegex = regexp.MustCompile(`^.+\.protected(/.*)?$`)
-
-// validateProtectedAnnotations validates that annotations matching the
-// protected annotation pattern can only be modified by privileged users.
-func (v validator) validateProtectedAnnotations(vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
-	var allErrs field.ErrorList
-	annotationPath := field.NewPath("metadata", "annotations")
-
-	// Collect all protected annotation keys from both old and new VMs
-	protectedKeys := make(map[string]struct{})
-
-	for k := range vm.Annotations {
-		if protectedAnnotationRegex.MatchString(k) {
-			protectedKeys[k] = struct{}{}
-		}
-	}
-
-	for k := range oldVM.Annotations {
-		if protectedAnnotationRegex.MatchString(k) {
-			protectedKeys[k] = struct{}{}
-		}
-	}
-
-	// Check if any protected annotations have been modified
-	for k := range protectedKeys {
-		if vm.Annotations[k] != oldVM.Annotations[k] {
-			allErrs = append(allErrs, field.Forbidden(
-				annotationPath.Key(k),
-				modifyAnnotationNotAllowedForNonAdmin))
-		}
-	}
-
-	return allErrs
-}
-
 func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
@@ -2179,8 +2133,6 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 	if create {
 		oldVM = &vmopv1.VirtualMachine{}
 	}
-
-	allErrs = append(allErrs, v.validateProtectedAnnotations(vm, oldVM)...)
 
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))

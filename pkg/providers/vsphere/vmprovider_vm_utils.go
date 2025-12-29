@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/ovf"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,11 +22,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"sigs.k8s.io/yaml"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
@@ -600,6 +605,139 @@ func GetVMClassConfigSpec(
 	util.SanitizeVMClassConfigSpec(ctx, &configSpec)
 
 	return configSpec, nil
+}
+
+// GetVMClassConfigSpecFromClassName retrieves the VM Class config spec from a
+// VM Class identified by className and namespace. It returns the config spec
+// derived from either the VM Class's ConfigSpec field or from its hardware
+// devices.
+func GetVMClassConfigSpecFromClassName(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	className, namespace string,
+) (vimtypes.VirtualMachineConfigSpec, error) {
+
+	// For classless VMs, return empty config spec.
+	if className == "" {
+		return vimtypes.VirtualMachineConfigSpec{}, nil
+	}
+
+	vmClass := &vmopv1.VirtualMachineClass{}
+	vmClassKey := ctrlclient.ObjectKey{
+		Name:      className,
+		Namespace: namespace,
+	}
+
+	if err := k8sClient.Get(ctx, vmClassKey, vmClass); err != nil {
+		return vimtypes.VirtualMachineConfigSpec{}, fmt.Errorf(
+			"failed to get VM Class %s: %w", className, err)
+	}
+
+	// If the VM Class has a ConfigSpec, use the existing function to parse it.
+	if len(vmClass.Spec.ConfigSpec) > 0 {
+		return GetVMClassConfigSpec(ctx, vmClass.Spec.ConfigSpec)
+	}
+
+	// Otherwise, create config spec from VM Class devices.
+	return virtualmachine.ConfigSpecFromVMClassDevices(&vmClass.Spec), nil
+}
+
+// GetConfigSpecFromOVFCache retrieves the VM config spec from a
+// VirtualMachineImageCache for OVF images.
+func GetConfigSpecFromOVFCache(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vmiCache vmopv1.VirtualMachineImageCache) (
+	vimtypes.VirtualMachineConfigSpec, error) {
+
+	var ovfConfigMap corev1.ConfigMap
+	if err := k8sClient.Get(
+		ctx,
+		ctrlclient.ObjectKey{
+			Namespace: vmiCache.Namespace,
+			Name:      vmiCache.Status.OVF.ConfigMapName,
+		},
+		&ovfConfigMap); err != nil {
+
+		return vimtypes.VirtualMachineConfigSpec{}, fmt.Errorf(
+			"failed to get ovf configmap: %w, %w",
+			err,
+			pkgerr.VMICacheNotReadyError{Name: vmiCache.Name})
+	}
+
+	var ovfEnvelope ovf.Envelope
+	if err := yaml.Unmarshal(
+		[]byte(ovfConfigMap.Data["value"]), &ovfEnvelope); err != nil {
+
+		return vimtypes.VirtualMachineConfigSpec{},
+			fmt.Errorf("failed to unmarshal ovf yaml into envelope: %w", err)
+	}
+
+	configSpec, err := ovfEnvelope.ToConfigSpec()
+	if err != nil {
+		return vimtypes.VirtualMachineConfigSpec{},
+			fmt.Errorf("failed to transform ovf to config spec: %w", err)
+	}
+
+	return configSpec, nil
+}
+
+// GetVirtualMachineImageCache retrieves and validates a
+// VirtualMachineImageCache resource. It fetches the cache object using the
+// provided itemID and podNamespace, then validates that the hardware is ready
+// by checking the HardwareReady condition. For OVF image types, it also
+// ensures the OVF status exists and the provider version matches the expected
+// itemVersion. Returns the validated cache object or an error if the cache is
+// not found or not ready.
+func GetVirtualMachineImageCache(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	itemID, itemVersion, imageType, podNamespace string,
+) (vmopv1.VirtualMachineImageCache, error) {
+
+	var (
+		vmiCache    vmopv1.VirtualMachineImageCache
+		vmiCacheKey = ctrlclient.ObjectKey{
+			Namespace: podNamespace,
+			Name:      util.VMIName(itemID),
+		}
+	)
+
+	// Get the VirtualMachineImageCache resource.
+	if err := k8sClient.Get(ctx, vmiCacheKey, &vmiCache); err != nil {
+		return vmopv1.VirtualMachineImageCache{},
+			fmt.Errorf("failed to get vmi cache object: %w, %w",
+				err,
+				pkgerr.VMICacheNotReadyError{Name: vmiCacheKey.Name})
+	}
+
+	// Check if the hardware is ready.
+	hardwareReadyCondition := conditions.Get(
+		vmiCache,
+		vmopv1.VirtualMachineImageCacheConditionHardwareReady)
+
+	switch {
+	case hardwareReadyCondition != nil &&
+		hardwareReadyCondition.Status == metav1.ConditionFalse:
+
+		return vmopv1.VirtualMachineImageCache{},
+			fmt.Errorf("failed to get hardware: %s: %w",
+				hardwareReadyCondition.Message,
+				pkgerr.VMICacheNotReadyError{Name: vmiCache.Name})
+
+	case hardwareReadyCondition == nil,
+		hardwareReadyCondition.Status != metav1.ConditionTrue,
+		imageType == "ovf" && vmiCache.Status.OVF == nil,
+		imageType == "ovf" && vmiCache.Status.OVF.ProviderVersion != itemVersion:
+
+		return vmopv1.VirtualMachineImageCache{},
+			pkgerr.VMICacheNotReadyError{
+				Message: "hardware not ready",
+				Name:    vmiCacheKey.Name,
+			}
+	}
+
+	return vmiCache, nil
 }
 
 // GetAttachedDiskUUIDToPVC returns a map of disk UUID to PVC object for all

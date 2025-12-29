@@ -19,7 +19,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/pbm"
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
@@ -34,7 +33,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/yaml"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
@@ -2396,18 +2394,13 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
-	const (
-		imageTypeOVF = "ovf"
-		imageTypeVM  = "vm"
-	)
-
 	var (
 		logger    = vmCtx.Logger
 		imageType = strings.ToLower(createArgs.ImageStatus.Type)
 	)
 
 	switch imageType {
-	case imageTypeOVF, imageTypeVM:
+	case constants.ImageTypeOVF, constants.ImageTypeVM:
 		// Allowed
 	default:
 		logger.Info("Disallowed image type for VM create",
@@ -2425,64 +2418,31 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	}
 	if itemVersion == "" {
 		switch imageType {
-		case imageTypeOVF:
+		case constants.ImageTypeOVF:
 			return errors.New("empty image provider content version")
-		case imageTypeVM:
+		case constants.ImageTypeVM:
 			// TODO(akutz) VM-backed images do not currently have versions
 			//             associated with them. They may eventually, so this
 			//             is a placeholder to handle that use case.
 		}
 	}
 
-	var (
-		vmiCache    vmopv1.VirtualMachineImageCache
-		vmiCacheKey = ctrlclient.ObjectKey{
-			Namespace: pkgcfg.FromContext(vmCtx).PodNamespace,
-			Name:      pkgutil.VMIName(itemID),
-		}
-	)
-
-	// Get the VirtualMachineImageCache resource.
-	if err := vs.k8sClient.Get(
+	// Get and validate the VirtualMachineImageCache
+	vmiCache, err := GetAndValidateVirtualMachineImageCache(
 		vmCtx,
-		vmiCacheKey,
-		&vmiCache); err != nil {
-
-		return fmt.Errorf(
-			"failed to get vmi cache object: %w, %w",
-			err,
-			pkgerr.VMICacheNotReadyError{Name: vmiCacheKey.Name})
-	}
-
-	// Check if the hardware is ready.
-	hardwareReadyCondition := pkgcnd.Get(
-		vmiCache,
-		vmopv1.VirtualMachineImageCacheConditionHardwareReady)
-
-	switch {
-	case hardwareReadyCondition != nil &&
-		hardwareReadyCondition.Status == metav1.ConditionFalse:
-
-		return fmt.Errorf(
-			"failed to get hardware: %s: %w",
-			hardwareReadyCondition.Message,
-			pkgerr.VMICacheNotReadyError{Name: vmiCache.Name})
-
-	case hardwareReadyCondition == nil,
-		hardwareReadyCondition.Status != metav1.ConditionTrue,
-		imageType == imageTypeOVF && vmiCache.Status.OVF == nil,
-		imageType == imageTypeOVF && vmiCache.Status.OVF.ProviderVersion != itemVersion:
-
-		return pkgerr.VMICacheNotReadyError{
-			Message: "hardware not ready",
-			Name:    vmiCacheKey.Name,
-		}
+		vs.k8sClient,
+		itemID,
+		itemVersion,
+		imageType,
+		pkgcfg.FromContext(vmCtx).PodNamespace)
+	if err != nil {
+		return err
 	}
 
 	var imgConfigSpec vimtypes.VirtualMachineConfigSpec
 
-	if imageType == imageTypeOVF {
-		cs, err := vs.getConfigSpecFromOVF(vmCtx, vmiCache)
+	if imageType == constants.ImageTypeOVF {
+		cs, err := GetConfigSpecFromOVFCache(vmCtx, vs.k8sClient, vmiCache)
 		if err != nil {
 			return err
 		}
@@ -2502,7 +2462,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	// Inherit the image's vAppConfig.
 	createArgs.ConfigSpec.VAppConfig = imgConfigSpec.VAppConfig
 
-	if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
+	if imageType == constants.ImageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
 		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {
 		// Inherit the image's CryptoSpec
 		createArgs.ConfigSpec.Crypto = imgConfigSpec.Crypto
@@ -2520,7 +2480,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		// When deploying from an image with type "vm" we do not want to
 		// copy the encryption.bundle property if the vTPM mode specified
 		// in spec.crypto.vTPMMode is 'New'.
-		if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
+		if imageType == constants.ImageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
 			vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeNew {
 
 			srcEC = srcEC.Delete("encryption.bundle")
@@ -2538,11 +2498,40 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		}
 	}
 
-	// Inherit the image's disks and their controllers.
-	pkgutil.CopyStorageControllersAndDisks(
-		&createArgs.ConfigSpec,
-		imgConfigSpec,
-		createArgs.StorageProfileID)
+	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+		if err := pkgutil.MergeStorageControllersAndDisks(
+			&createArgs.ConfigSpec,
+			imgConfigSpec,
+			createArgs.StorageProfileID); err != nil {
+
+			return fmt.Errorf(
+				"%s: %w", pkgutil.ControllerConflictVMClassImage, err)
+		}
+
+		// Calling MergeStorageControllersAndDisks with the user spec devices
+		// for validation purposes only since the user spec controllers will
+		// be reconciled by the virtual controller reconciler after creation.
+		userDefinedConfigSpec := pkgutil.FullyDefinedControllersToConfigSpecs(
+			vmCtx,
+			vmCtx.VM,
+			createArgs.ConfigSpec)
+
+		if err = pkgutil.MergeStorageControllersAndDisks(
+			&userDefinedConfigSpec,
+			createArgs.ConfigSpec,
+			createArgs.StorageProfileID); err != nil {
+
+			return fmt.Errorf(
+				"%s: %w", pkgutil.ControllerConflictVMClassImageUser, err)
+		}
+
+	} else {
+		// Inherit the image's disks and their controllers.
+		pkgutil.CopyStorageControllersAndDisks(
+			&createArgs.ConfigSpec,
+			imgConfigSpec,
+			createArgs.StorageProfileID)
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
 		if err := vs.vmCreateGenConfigSpecImagePVCDataSourceRefs(
@@ -2685,42 +2674,6 @@ func (vs *vSphereVMProvider) updateDiskDeviceFromPVC(
 	}
 
 	return nil
-}
-
-func (vs *vSphereVMProvider) getConfigSpecFromOVF(
-	vmCtx pkgctx.VirtualMachineContext,
-	vmiCache vmopv1.VirtualMachineImageCache) (vimtypes.VirtualMachineConfigSpec, error) {
-
-	var ovfConfigMap corev1.ConfigMap
-	if err := vs.k8sClient.Get(
-		vmCtx,
-		ctrlclient.ObjectKey{
-			Namespace: vmiCache.Namespace,
-			Name:      vmiCache.Status.OVF.ConfigMapName,
-		},
-		&ovfConfigMap); err != nil {
-
-		return vimtypes.VirtualMachineConfigSpec{}, fmt.Errorf(
-			"failed to get ovf configmap: %w, %w",
-			err,
-			pkgerr.VMICacheNotReadyError{Name: vmiCache.Name})
-	}
-
-	var ovfEnvelope ovf.Envelope
-	if err := yaml.Unmarshal(
-		[]byte(ovfConfigMap.Data["value"]), &ovfEnvelope); err != nil {
-
-		return vimtypes.VirtualMachineConfigSpec{},
-			fmt.Errorf("failed to unmarshal ovf yaml into envelope: %w", err)
-	}
-
-	configSpec, err := ovfEnvelope.ToConfigSpec()
-	if err != nil {
-		return vimtypes.VirtualMachineConfigSpec{},
-			fmt.Errorf("failed to transform ovf to config spec: %w", err)
-	}
-
-	return configSpec, nil
 }
 
 func (vs *vSphereVMProvider) getConfigSpecFromVM(

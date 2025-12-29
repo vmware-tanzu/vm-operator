@@ -197,4 +197,9 @@ const (
 	V1alpha5SubnetMask = "V1alpha5_SubnetMask"
 	// V1alpha5FormatNameservers is an alias for versioned templating function V1alpha5_FormatNameservers.
 	V1alpha5FormatNameservers = "V1alpha5_FormatNameservers"
+
+	// ImageTypeOVF is the image type for OVF images from Content Library.
+	ImageTypeOVF = "ovf"
+	// ImageTypeVM is the image type for VM-backed images from inventory.
+	ImageTypeVM = "vm"
 )

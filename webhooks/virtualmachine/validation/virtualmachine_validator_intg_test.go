@@ -81,6 +81,18 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace
 
+	// Create VM Class resource that the VM references.
+	vmClassName := "dummy-class-name"
+	vmClass := builder.DummyVirtualMachineClass(vmClassName)
+	vmClass.Namespace = ctx.vm.Namespace
+	Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+	ctx.vm.Spec.ClassName = vmClassName
+
+	// Create VM Image resource that the VM references.
+	vmImage := builder.DummyVirtualMachineImage(builder.DummyVMIName)
+	vmImage.Namespace = ctx.vm.Namespace
+	Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
+
 	// add controller bus number to all volumes to simulate what the mutation
 	// webhook would do. We use bus 1 because bus 0 is rejected for CREATE
 	// operations.

@@ -64,10 +64,18 @@ var _ = Describe("CalculateReservedForSnapshot", func() {
 		}
 
 		vmClass = builder.DummyVirtualMachineClass("vm-class")
-		vmClass.Spec.Hardware.Memory = size10GB
 		vmClass.Namespace = namespace
 		vm = builder.DummyBasicVirtualMachine("dummy-vm", namespace)
 		vm.Spec.ClassName = vmClass.Name
+
+		vm.Status = vmopv1.VirtualMachineStatus{
+			Hardware: &vmopv1.VirtualMachineHardwareStatus{
+				Memory: &vmopv1.VirtualMachineMemoryAllocationStatus{
+					Total: &size10GB,
+				},
+			},
+		}
+
 		vmSnapshot = builder.DummyVirtualMachineSnapshot(namespace, "my-snapshot", vm.Name)
 		storageClass = builder.DummyStorageClass()
 		vm.Spec.StorageClass = storageClass.Name
@@ -156,18 +164,6 @@ var _ = Describe("CalculateReservedForSnapshot", func() {
 		It("should return an error", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("requests is not set for pvc claim1"))
-		})
-	})
-
-	When("VMClass is not found", func() {
-		BeforeEach(func() {
-			vmSnapshot.Spec.Memory = true
-			vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-			vm.Spec.ClassName = "unknown-vm-class"
-		})
-		It("should return error", func() {
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to get VMClass"))
 		})
 	})
 

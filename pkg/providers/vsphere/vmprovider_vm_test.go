@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -4405,6 +4406,117 @@ func vmTests() {
 					var path object.DatastorePath
 					path.FromString(props[vmPathName].(string))
 					Expect(path.Datastore).NotTo(BeEmpty())
+				})
+			})
+
+			When("Fast Deploy is enabled", func() {
+
+				var (
+					vmic vmopv1.VirtualMachineImageCache
+				)
+
+				BeforeEach(func() {
+					testConfig.WithContentLibrary = true
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.Features.FastDeploy = true
+					})
+					// Ensure the VM has a UID to verify the VM directory path
+					// is different from the VM's Kubernetes UID on vSAN.
+					vm.UID = "test-vm-iso-uid"
+				})
+
+				JustBeforeEach(func() {
+					vmicName := pkgutil.VMIName(ctx.ContentLibraryIsoItemID)
+					vmic = vmopv1.VirtualMachineImageCache{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+							Name:      vmicName,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+				})
+
+				assertVMICNotReady := func(err error, msg, name, dcID, dsID string) {
+					var e pkgerr.VMICacheNotReadyError
+					ExpectWithOffset(1, errors.As(err, &e)).To(BeTrue())
+					ExpectWithOffset(1, e.Message).To(Equal(msg))
+					ExpectWithOffset(1, e.Name).To(Equal(name))
+					ExpectWithOffset(1, e.DatacenterID).To(Equal(dcID))
+					ExpectWithOffset(1, e.DatastoreID).To(Equal(dsID))
+				}
+
+				When("cache files are not ready", func() {
+					It("should fail", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						assertVMICNotReady(
+							err,
+							"cached files not ready",
+							vmic.Name,
+							ctx.Datacenter.Reference().Value,
+							ctx.Datastore.Reference().Value)
+					})
+				})
+
+				When("cache files are ready", func() {
+					JustBeforeEach(func() {
+						// Simulate vSAN datastore with TopLevelDirectoryCreateSupported disabled.
+						sctx := ctx.SimulatorContext()
+						for _, dsEnt := range sctx.Map.All("Datastore") {
+							sctx.WithLock(
+								dsEnt.Reference(),
+								func() {
+									ds := sctx.Map.Get(dsEnt.Reference()).(*simulator.Datastore)
+									ds.Capability.TopLevelDirectoryCreateSupported = ptr.To(false)
+									ds.Summary.Type = string(vimtypes.HostFileSystemVolumeFileSystemTypeVsan)
+								})
+						}
+
+						// Set required fields for ISO VM creation in the VMIC.
+						conditions.MarkTrue(
+							&vmic,
+							vmopv1.VirtualMachineImageCacheConditionFilesReady)
+						vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+							{
+								DatacenterID: ctx.Datacenter.Reference().Value,
+								DatastoreID:  ctx.Datastore.Reference().Value,
+								Files:        []vmopv1.VirtualMachineImageCacheFileStatus{},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.ReadyConditionType,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+						libMgr := library.NewManager(ctx.RestClient)
+						Expect(libMgr.SyncLibraryItem(ctx, &library.Item{ID: ctx.ContentLibraryIsoItemID}, true)).To(Succeed())
+					})
+
+					It("should successfully create the ISO VM in a different UUID-based directory", func() {
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).NotTo(HaveOccurred())
+
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+						var p object.DatastorePath
+						p.FromString(moVM.Config.Files.VmPathName)
+						Expect(p.Datastore).NotTo(BeEmpty())
+
+						// The VM path should be something like: <uuid>/test-vm-iso.vmx
+						// When TopLevelDirectoryCreateSupported is false,
+						// DatastoreNamespaceManager.CreateDirectory creates a
+						// new UUID-based directory that is different from the
+						// VM's Kubernetes UID.
+						pathParts := strings.Split(p.Path, "/")
+						Expect(pathParts).To(HaveLen(2))
+						_, err = uuid.Parse(pathParts[0])
+						Expect(err).NotTo(HaveOccurred(), "expected directory to be a UUID, got: %s", pathParts[0])
+						Expect(pathParts[0]).NotTo(Equal(string(vm.UID)), "expected directory to be different from VM's K8s UID")
+					})
 				})
 			})
 		})

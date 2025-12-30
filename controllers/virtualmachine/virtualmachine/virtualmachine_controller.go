@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -538,27 +537,13 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 	ctx.Logger.Info("Reconciling VirtualMachine")
 
-	defer func(beforeVMStatus *vmopv1.VirtualMachineStatus) {
+	defer func() {
+		l := ctx.Logger
 		if pkgerr.IsNoRequeueError(reterr) {
-			ctx.Logger.V(4).Info(
-				"vm will be re-reconciled by cache watch or async watcher",
-				"result", reterr.Error())
+			l = l.WithValues("noRequeueReason", reterr.Error())
 		}
-		// Log the reconcile time using the CR creation time and the time the VM reached the desired state
-		if reterr == nil && !apiequality.Semantic.DeepEqual(beforeVMStatus, &ctx.VM.Status) {
-			ctx.Logger.Info("Finished Reconciling VirtualMachine with updates to the CR",
-				"createdTime", ctx.VM.CreationTimestamp, "currentTime", time.Now().Format(time.RFC3339),
-				"spec.PowerState", ctx.VM.Spec.PowerState, "status.PowerState", ctx.VM.Status.PowerState)
-		} else {
-			ctx.Logger.Info("Finished Reconciling VirtualMachine")
-		}
-
-		beforeNoIP := beforeVMStatus.Network == nil || (beforeVMStatus.Network.PrimaryIP4 == "" && beforeVMStatus.Network.PrimaryIP6 == "")
-		nowWithIP := ctx.VM.Status.Network != nil && (ctx.VM.Status.Network.PrimaryIP4 != "" || ctx.VM.Status.Network.PrimaryIP6 != "")
-		if beforeNoIP && nowWithIP {
-			ctx.Logger.Info("VM successfully got assigned with an IP address", "time", time.Now().Format(time.RFC3339))
-		}
-	}(ctx.VM.Status.DeepCopy())
+		l.Info("Finished Reconciling VirtualMachine")
+	}()
 
 	defer func() {
 		r.vmMetrics.RegisterVMCreateOrUpdateMetrics(ctx)

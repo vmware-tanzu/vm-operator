@@ -66,7 +66,7 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusAnno2Conditions(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusClass(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusPowerState(vmCtx, k8sClient, vcVM, data)...)
-	errs = append(errs, reconcileStatusIdentifiers(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusPlatform(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusHardware(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusHardwareVersion(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusGuest(vmCtx, k8sClient, vcVM, data)...)
@@ -327,15 +327,29 @@ func reconcileStatusPowerState(
 	return nil
 }
 
-func reconcileStatusIdentifiers(
+// reconcileStatusPlatform updates the VM's status with immutable metadata
+// from vCenter, including identifiers (UniqueID, BiosUUID, InstanceUUID)
+// and provider-specific information like the creation timestamp.
+func reconcileStatusPlatform(
 	vmCtx pkgctx.VirtualMachineContext,
 	_ ctrlclient.Client,
 	_ *object.VirtualMachine,
 	_ ReconcileStatusData) []error { //nolint:unparam
 
+	// TODO(v1alpha6): Deprecate and migrate these fields to the Provider status.
 	vmCtx.VM.Status.UniqueID = vmCtx.MoVM.Self.Value
 	vmCtx.VM.Status.BiosUUID = vmCtx.MoVM.Summary.Config.Uuid
 	vmCtx.VM.Status.InstanceUUID = vmCtx.MoVM.Summary.Config.InstanceUuid
+
+	if vmCtx.VM.Status.Provider == nil {
+		vmCtx.VM.Status.Provider = &vmopv1.VirtualMachineProviderStatus{}
+	}
+	// The creation timestamp is immutable once set.
+	if vmCtx.VM.Status.Provider.CreationTimestamp == nil {
+		if config := vmCtx.MoVM.Config; config != nil && config.CreateDate != nil {
+			vmCtx.VM.Status.Provider.CreationTimestamp = &metav1.Time{Time: *config.CreateDate}
+		}
+	}
 
 	return nil
 }

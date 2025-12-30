@@ -1320,6 +1320,16 @@ type VirtualMachineStatus struct {
 
 	// +optional
 
+	// CreatedAt describes the timestamp when the VirtualMachine was created
+	// in the downstream service. This value is retrieved from
+	// the VM's config.createDate field and is immutable once set.
+	//
+	// This field is only populated after the VM has been successfully created
+	// in vCenter and the creation timestamp is available.
+	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
+
+	// +optional
+
 	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
 	// This field contains the name of the current snapshot.
 	CurrentSnapshot *VirtualMachineSnapshotReference `json:"currentSnapshot,omitempty"`

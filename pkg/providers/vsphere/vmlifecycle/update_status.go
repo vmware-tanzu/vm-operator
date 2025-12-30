@@ -66,7 +66,7 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusAnno2Conditions(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusClass(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusPowerState(vmCtx, k8sClient, vcVM, data)...)
-	errs = append(errs, reconcileStatusIdentifiers(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusMetadata(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusHardware(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusHardwareVersion(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusGuest(vmCtx, k8sClient, vcVM, data)...)
@@ -327,7 +327,10 @@ func reconcileStatusPowerState(
 	return nil
 }
 
-func reconcileStatusIdentifiers(
+// reconcileStatusMetadata updates the VM's status with immutable metadata
+// from vCenter, including identifiers (UniqueID, BiosUUID, InstanceUUID)
+// and the creation timestamp.
+func reconcileStatusMetadata(
 	vmCtx pkgctx.VirtualMachineContext,
 	_ ctrlclient.Client,
 	_ *object.VirtualMachine,
@@ -336,6 +339,14 @@ func reconcileStatusIdentifiers(
 	vmCtx.VM.Status.UniqueID = vmCtx.MoVM.Self.Value
 	vmCtx.VM.Status.BiosUUID = vmCtx.MoVM.Summary.Config.Uuid
 	vmCtx.VM.Status.InstanceUUID = vmCtx.MoVM.Summary.Config.InstanceUuid
+
+	// Only set CreatedAt if it hasn't been set yet and config.createDate is available.
+	// This field is immutable once set.
+	if vmCtx.VM.Status.CreatedAt == nil {
+		if config := vmCtx.MoVM.Config; config != nil && config.CreateDate != nil {
+			vmCtx.VM.Status.CreatedAt = &metav1.Time{Time: *config.CreateDate}
+		}
+	}
 
 	return nil
 }

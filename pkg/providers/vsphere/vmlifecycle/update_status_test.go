@@ -3607,6 +3607,69 @@ var _ = Describe("UpdateStatus", func() {
 			Expect(status.InstanceUUID).To(Equal(instanceUUID))
 			Expect(status.HardwareVersion).To(Equal(int32(19)))
 		})
+
+		Context("CreatedAt timestamp", func() {
+			var createDate *metav1.Time
+
+			BeforeEach(func() {
+				t := metav1.Now()
+				createDate = &t
+				if vmCtx.MoVM.Config == nil {
+					vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{}
+				}
+				vmCtx.MoVM.Config.CreateDate = &createDate.Time
+			})
+
+			When("CreatedAt is not set in status", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.CreatedAt = nil
+				})
+
+				It("should set CreatedAt from config.createDate", func() {
+					Expect(vmCtx.VM.Status.CreatedAt).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.CreatedAt.Time).To(Equal(createDate.Time))
+				})
+			})
+
+			When("CreatedAt is already set in status", func() {
+				var existingDate *metav1.Time
+
+				BeforeEach(func() {
+					// set created at to 1 day ago.
+					t := metav1.NewTime(metav1.Now().Add(-24 * 3600 * 1000000000))
+					existingDate = &t
+					vmCtx.VM.Status.CreatedAt = existingDate
+				})
+
+				It("should not change CreatedAt because it is immutable", func() {
+					Expect(vmCtx.VM.Status.CreatedAt).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.CreatedAt.Time).To(Equal(existingDate.Time))
+					Expect(vmCtx.VM.Status.CreatedAt.Time).ToNot(Equal(createDate.Time))
+				})
+			})
+
+			When("config.createDate is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.CreateDate = nil
+					vmCtx.VM.Status.CreatedAt = nil
+				})
+
+				It("should not set CreatedAt", func() {
+					Expect(vmCtx.VM.Status.CreatedAt).To(BeNil())
+				})
+			})
+
+			When("config is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config = nil
+					vmCtx.VM.Status.CreatedAt = nil
+				})
+
+				It("should not set CreatedAt", func() {
+					Expect(vmCtx.VM.Status.CreatedAt).To(BeNil())
+				})
+			})
+		})
 	})
 
 	Context("Misc Status fields", func() {

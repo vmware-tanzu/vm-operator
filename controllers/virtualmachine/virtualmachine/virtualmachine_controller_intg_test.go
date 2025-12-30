@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -208,11 +209,13 @@ func intgTestsReconcile() {
 				}, "4s").Should(Succeed(), "waiting for expected InstanceUUID")
 			})
 
+			createdAtTime := metav1.Now()
 			By("Set Created condition in CreateOrUpdateVM", func() {
 				providerfake.SetCreateOrUpdateFunction(
 					ctx,
 					intgFakeVMProvider,
 					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						vm.Status.CreatedAt = ptr.To(createdAtTime)
 						vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
 						conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
 						return nil
@@ -225,6 +228,9 @@ func intgTestsReconcile() {
 				Eventually(func(g Gomega) {
 					vm := getVirtualMachine(ctx, vmKey)
 					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.CreatedAt).ToNot(BeNil())
+					g.Expect(vm.Status.CreatedAt.Time).To(
+						BeTemporally("~", createdAtTime.Time, time.Second))
 					g.Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
 				}, "4s").Should(Succeed(), "waiting for Created condition")
 			})

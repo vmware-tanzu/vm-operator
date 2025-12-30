@@ -3544,6 +3544,10 @@ func (in *VirtualMachineStatus) DeepCopyInto(out *VirtualMachineStatus) {
 		*out = new(VirtualMachineStorageStatus)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.CreatedAt != nil {
+		in, out := &in.CreatedAt, &out.CreatedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.CurrentSnapshot != nil {
 		in, out := &in.CurrentSnapshot, &out.CurrentSnapshot
 		*out = new(VirtualMachineSnapshotReference)

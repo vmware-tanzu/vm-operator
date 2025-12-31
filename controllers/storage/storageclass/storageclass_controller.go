@@ -71,7 +71,7 @@ type Reconciler struct {
 }
 
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
-// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=storagepolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=infra.vmware.com,resources=storagepolicies,verbs=get;list;watch;create;update;patch;delete
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,

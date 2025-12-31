@@ -53,7 +53,7 @@ func (v validator) validateControllers(
 		return nil
 	}
 
-	if err := vmopv1util.IsObjectSchemaUpgraded(ctx, vm); err != nil {
+	if err := vmopv1util.IsObjectUpgraded(ctx, vm); err != nil {
 		pkglog.FromContextOrDefault(ctx).Info(
 			"Skipping controller validation", "reason", err.Error())
 		return nil

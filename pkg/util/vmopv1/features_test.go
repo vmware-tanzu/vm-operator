@@ -61,7 +61,7 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 			}
 		}
 
-		err := vmopv1util.IsObjectSchemaUpgraded(ctx, &vm)
+		err := vmopv1util.IsObjectUpgraded(ctx, &vm)
 		if expectErr {
 			Ω(err).Should(MatchError(expectedErr))
 		} else {
@@ -85,7 +85,7 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		"1.2.3-test",
 		ptr.To("1.2.3-test"),
 		ptr.To(vmopv1.GroupVersion.Version),
-		ptr.To("3"),
+		ptr.To("7"),
 		false,
 		true,
 		false,
@@ -297,7 +297,7 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		vmopv1util.NotUpgradedErr{
 			Type:   "featureVersion",
 			Object: "1",
-			Target: "3",
+			Target: "7",
 		},
 	),
 	Entry(
@@ -478,7 +478,7 @@ var _ = Describe("ActivatedFeatureVersion", func() {
 			Ω(vmopv1util.ActivatedFeatureVersion(ctx)).Should(Equal(expected))
 		},
 		Entry("no features", false, false, vmopv1util.FeatureVersionBase),
-		Entry("VMSharedDisks only", true, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks),
+		Entry("VMSharedDisks only", true, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
 		Entry("AllDisksArePVCs only", false, true, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionAllDisksArePVCs),
 		Entry("both features", true, true, vmopv1util.FeatureVersionAll),
 	)

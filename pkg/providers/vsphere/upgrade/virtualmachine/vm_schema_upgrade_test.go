@@ -138,27 +138,50 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 	})
 
 	When("it should not panic", func() {
-		var expectedErr error
+		var (
+			expectedErr1 error
+			expectedErr2 error
+		)
 
 		BeforeEach(func() {
-			expectedErr = upgradevm.ErrUpgradeSchema
+			expectedErr1 = upgradevm.ErrUpgradeSchema
+			expectedErr2 = upgradevm.ErrUpgradeObject
+
 		})
 		JustBeforeEach(func() {
-			err := upgradevm.ReconcileSchemaUpgrade(
+			err1 := upgradevm.ReconcileSchemaUpgrade(
 				ctx,
 				k8sClient,
 				vm,
 				moVM)
-			if expectedErr == nil {
-				Expect(err).ToNot(HaveOccurred())
+			if expectedErr1 == nil {
+				Expect(err1).ToNot(HaveOccurred())
 			} else {
-				Expect(err).To(MatchError(expectedErr))
+				Expect(err1).To(MatchError(expectedErr1))
 			}
+
+			err2 := upgradevm.ReconcileSchemaUpgrade(
+				ctx,
+				k8sClient,
+				vm,
+				moVM)
+			if expectedErr2 == nil {
+				Expect(err2).ToNot(HaveOccurred())
+			} else {
+				Expect(err2).To(MatchError(expectedErr2))
+			}
+
+			Expect(upgradevm.ReconcileSchemaUpgrade(
+				ctx,
+				k8sClient,
+				vm,
+				moVM)).To(Succeed())
 		})
 
 		When("the object is already upgraded", func() {
 			BeforeEach(func() {
-				expectedErr = nil
+				expectedErr1 = nil
+				expectedErr2 = nil
 
 				vm.Annotations = map[string]string{
 					pkgconst.UpgradedToBuildVersionAnnotationKey:  pkgcfg.FromContext(ctx).BuildVersion,
@@ -179,12 +202,12 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 			When("feature version annotation is missing", func() {
 				BeforeEach(func() {
-					expectedErr = upgradevm.ErrUpgradeSchema
+					expectedErr1 = upgradevm.ErrUpgradeObject
 					// Remove feature version annotation to simulate upgrade
 					delete(vm.Annotations, pkgconst.UpgradedToFeatureVersionAnnotationKey)
 				})
 
-				It("should perform upgrade", func() {
+				It("should perform object upgrade", func() {
 					// Without feature version annotation, upgrade should still occur
 					// since the feature versioning is new
 					Expect(vm.Spec.InstanceUUID).To(Equal("123"))
@@ -194,7 +217,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 			When("feature version is outdated", func() {
 				BeforeEach(func() {
-					expectedErr = upgradevm.ErrUpgradeSchema
+					expectedErr1 = upgradevm.ErrUpgradeObject
 					// Set an old feature version (only base)
 					vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = "1"
 					// Enable a new feature that requires upgrade
@@ -210,7 +233,6 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 			When("all annotations match current versions", func() {
 				BeforeEach(func() {
-					expectedErr = nil
 					// Set feature version to match current activated features
 					vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = "1" // Base only
 				})
@@ -400,6 +422,9 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			Context("Incremental feature upgrade", func() {
 				When("VM has base feature version but VMSharedDisks is newly enabled", func() {
 					BeforeEach(func() {
+						expectedErr1 = upgradevm.ErrUpgradeObject
+						expectedErr2 = nil
+
 						// VM was previously upgraded with only base features
 						vm.Annotations = map[string]string{
 							pkgconst.UpgradedToBuildVersionAnnotationKey:   pkgcfg.FromContext(ctx).BuildVersion,
@@ -436,6 +461,9 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 				When("VM has base feature version but AllDisksArePVCs is newly enabled", func() {
 					BeforeEach(func() {
+						expectedErr1 = upgradevm.ErrUpgradeObject
+						expectedErr2 = nil
+
 						// VM was previously upgraded with only base features
 						vm.Annotations = map[string]string{
 							pkgconst.UpgradedToBuildVersionAnnotationKey:   pkgcfg.FromContext(ctx).BuildVersion,
@@ -457,6 +485,9 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 				When("VM has base+AllDisksArePVCs but VMSharedDisks is newly enabled", func() {
 					BeforeEach(func() {
+						expectedErr1 = upgradevm.ErrUpgradeObject
+						expectedErr2 = nil
+
 						// VM was previously upgraded with base and AllDisksArePVCs
 						vm.Annotations = map[string]string{
 							pkgconst.UpgradedToBuildVersionAnnotationKey:   pkgcfg.FromContext(ctx).BuildVersion,
@@ -858,16 +889,19 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 
 	Context("reconcileVirtualCDROMs", func() {
 		var (
-			cdromSpec   vmopv1.VirtualMachineCdromSpec
-			moVM        mo.VirtualMachine
-			expectedErr error
+			cdromSpec    vmopv1.VirtualMachineCdromSpec
+			moVM         mo.VirtualMachine
+			expectedErr1 error
+			expectedErr2 error
 		)
 
 		BeforeEach(func() {
+			expectedErr1 = upgradevm.ErrUpgradeSchema
+			expectedErr2 = upgradevm.ErrUpgradeObject
+
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = true
 			})
-			expectedErr = upgradevm.ErrUpgradeSchema
 			cdromSpec = vmopv1.VirtualMachineCdromSpec{
 				Image: vmopv1.VirtualMachineImageRef{
 					Kind: "VirtualMachineImage",
@@ -887,11 +921,18 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		})
 
 		JustBeforeEach(func() {
-			err := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
-			if expectedErr == nil {
-				Expect(err).ToNot(HaveOccurred())
+			err1 := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
+			if expectedErr1 == nil {
+				Expect(err1).ToNot(HaveOccurred())
 			} else {
-				Expect(err).To(MatchError(expectedErr))
+				Expect(err1).To(MatchError(expectedErr1))
+			}
+
+			err2 := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
+			if expectedErr2 == nil {
+				Expect(err2).ToNot(HaveOccurred())
+			} else {
+				Expect(err2).To(MatchError(expectedErr2))
 			}
 		})
 
@@ -1094,7 +1135,9 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 			scsiCtrl    *vimtypes.ParaVirtualSCSIController
 			attachment1 *cnsv1alpha1.CnsNodeVmAttachment
 			attachment2 *cnsv1alpha1.CnsNodeVmAttachment
-			expectedErr error
+
+			expectedErr1 error
+			expectedErr2 error
 		)
 
 		// Test helper functions for this Context
@@ -1146,10 +1189,12 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		}
 
 		BeforeEach(func() {
+			expectedErr1 = upgradevm.ErrUpgradeSchema
+			expectedErr2 = upgradevm.ErrUpgradeObject
+
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMSharedDisks = true
 			})
-			expectedErr = upgradevm.ErrUpgradeSchema
 
 			scsiCtrl = builder.DummyParaVirtualSCSIController(testControllerKey, 0)
 
@@ -1186,11 +1231,18 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 		})
 
 		JustBeforeEach(func() {
-			err := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
-			if expectedErr == nil {
-				Expect(err).ToNot(HaveOccurred())
+			err1 := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
+			if expectedErr1 == nil {
+				Expect(err1).ToNot(HaveOccurred())
 			} else {
-				Expect(err).To(MatchError(expectedErr))
+				Expect(err1).To(MatchError(expectedErr1))
+			}
+
+			err2 := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
+			if expectedErr2 == nil {
+				Expect(err2).ToNot(HaveOccurred())
+			} else {
+				Expect(err2).To(MatchError(expectedErr2))
 			}
 		})
 

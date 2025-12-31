@@ -1139,7 +1139,7 @@ func (v validator) validateVolumes(
 	}
 
 	if oldVM != nil {
-		if err := vmopv1util.IsObjectSchemaUpgraded(
+		if err := vmopv1util.IsObjectUpgraded(
 			ctx, oldVM); err != nil {
 
 			pkglog.FromContextOrDefault(ctx).Info(
@@ -1925,7 +1925,7 @@ func (v validator) validateSchemaUpgrade(
 			"key", pkgconst.UpgradedToFeatureVersionAnnotationKey)
 	}
 
-	if vmopv1util.IsObjectSchemaUpgraded(ctx, oldVM) != nil {
+	if vmopv1util.IsObjectUpgraded(ctx, oldVM) != nil {
 		// Prevent most users from modifying the VM spec fields,
 		// that are backfilled by the schema upgrade and mutable,
 		// before the schema upgrade is completed.
@@ -2378,7 +2378,7 @@ func (v validator) validateCdrom(
 				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
 			}
 		} else {
-			if err := vmopv1util.IsObjectSchemaUpgraded(ctx, newVM); err != nil {
+			if err := vmopv1util.IsObjectUpgraded(ctx, newVM); err != nil {
 				pkglog.FromContextOrDefault(ctx).Info(
 					"Skipping cd-rom controller validation",
 					"reason", err.Error())

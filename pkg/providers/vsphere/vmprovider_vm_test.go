@@ -1306,6 +1306,64 @@ func vmTests() {
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
+			When("vm is not schema or object upgraded", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+						config.Features.AllDisksArePVCs = false
+					})
+				})
+				JustBeforeEach(func() {
+					// Create the VM.
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
+					// Clear its annotations and update it in K8s.
+					vm.Annotations = nil
+					Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				})
+
+				It("should return ErrUpgradeSchema, then ErrUpgradeObject, then ErrBackup, then success", func() {
+					Expect(vm.Annotations).To(HaveLen(0))
+
+					// Update the VM and expect ErrUpgradeSchema.
+					Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+						MatchError(vsphere.ErrUpgradeSchema))
+
+					// Assert that the VM was schema upgraded.
+					Expect(vm.Annotations).To(HaveKeyWithValue(
+						pkgconst.UpgradedToBuildVersionAnnotationKey,
+						pkgcfg.FromContext(ctx).BuildVersion))
+					Expect(vm.Annotations).To(HaveKeyWithValue(
+						pkgconst.UpgradedToSchemaVersionAnnotationKey,
+						vmopv1.GroupVersion.Version))
+					Expect(vm.Annotations).ToNot(HaveKey(
+						pkgconst.UpgradedToFeatureVersionAnnotationKey))
+
+					// Update the VM again and expect ErrUpgradeObject.
+					Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+						MatchError(vsphere.ErrUpgradeObject))
+
+					// Assert that the VM was object upgraded.
+					Expect(vm.Annotations).To(HaveKeyWithValue(
+						pkgconst.UpgradedToBuildVersionAnnotationKey,
+						pkgcfg.FromContext(ctx).BuildVersion))
+					Expect(vm.Annotations).To(HaveKeyWithValue(
+						pkgconst.UpgradedToSchemaVersionAnnotationKey,
+						vmopv1.GroupVersion.Version))
+					Expect(vm.Annotations).To(HaveKeyWithValue(
+						pkgconst.UpgradedToFeatureVersionAnnotationKey,
+						vmopv1util.ActivatedFeatureVersion(ctx).String()))
+
+					// Update the VM again and expect ErrBackup.
+					Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+						MatchError(vsphere.ErrBackup))
+
+					// Update the VM again and expect no error.
+					Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+						Succeed())
+				})
+			})
+
 			Context("VirtualMachineGroup", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {

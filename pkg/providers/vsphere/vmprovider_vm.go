@@ -79,6 +79,7 @@ import (
 var (
 	ErrSetPowerState            = res.ErrSetPowerState
 	ErrUpgradeSchema            = upgradevm.ErrUpgradeSchema
+	ErrUpgradeObject            = upgradevm.ErrUpgradeObject
 	ErrBackup                   = virtualmachine.ErrBackingUp
 	ErrBootstrapReconfigure     = vmlifecycle.ErrBootstrapReconfigure
 	ErrBootstrapCustomize       = vmlifecycle.ErrBootstrapCustomize

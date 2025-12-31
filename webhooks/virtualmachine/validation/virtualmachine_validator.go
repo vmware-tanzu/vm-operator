@@ -99,6 +99,7 @@ const (
 	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
 	guestCustomizationVCDParityNotEnabled      = "VC guest customization VCD parity capability is not enabled"
 	bootstrapProviderTypeCannotBeChanged       = "bootstrap provider type cannot be changed"
+	forbiddenRemovableVolume                   = "cannot remove volume with removable=false"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -1152,14 +1153,33 @@ func (v validator) validateVolumes(
 		allErrs           field.ErrorList
 		volumesPath       = field.NewPath("spec", "volumes")
 		volumeNamesSet    = sets.New[string]()
-		oldVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
 		volumePVCNamesSet = sets.New[string]()
+		oldVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
+		newVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
 	)
 
+	for _, v := range vm.Spec.Volumes {
+		if v.Name != "" {
+			newVolumesMap[v.Name] = &v
+		}
+	}
 	if oldVM != nil {
-		for _, oldVol := range oldVM.Spec.Volumes {
-			if oldVol.Name != "" {
-				oldVolumesMap[oldVol.Name] = &oldVol
+		for _, v := range oldVM.Spec.Volumes {
+			if v.Name != "" {
+				oldVolumesMap[v.Name] = &v
+			}
+		}
+
+		// Prevent non-removable volumes from being removed.
+		for i, oldVol := range oldVM.Spec.Volumes {
+			volPath := volumesPath.Index(i)
+			if volName := oldVol.Name; volName != "" {
+				if _, ok := newVolumesMap[volName]; !ok {
+					if oldVol.Removable != nil && !*oldVol.Removable {
+						allErrs = append(allErrs,
+							field.Forbidden(volPath, forbiddenRemovableVolume))
+					}
+				}
 			}
 		}
 	}

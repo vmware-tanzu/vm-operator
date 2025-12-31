@@ -246,6 +246,7 @@ func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 			dstVol.DiskMode = srcVol.DiskMode
 			dstVol.SharingMode = srcVol.SharingMode
 			dstVol.UnitNumber = srcVol.UnitNumber
+			dstVol.Removable = srcVol.Removable
 		}
 	}
 }

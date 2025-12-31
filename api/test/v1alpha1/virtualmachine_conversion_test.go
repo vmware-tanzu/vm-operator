@@ -276,6 +276,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
 						SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
 						UnitNumber:          &[]int32{2}[0],
+						Removable:           ptrOf(true),
 					},
 					{
 						Name: "my-volume-2",
@@ -290,6 +291,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 							}),
 						},
+						Removable: ptrOf(false),
 					},
 					{
 						Name:                "my-volume-3",

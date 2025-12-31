@@ -810,16 +810,16 @@ func unitTestsValidateCreate() {
 						},
 					}
 					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-				// Fetch the class so we can set an ownerref.
-				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+					// Fetch the class so we can set an ownerref.
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-				// Create the instance without an OwnerRef that points to some other VM class
-				classInstance := &vmopv1.VirtualMachineClassInstance{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "new-class-instance",
-						Namespace: ctx.vm.Namespace,
-						OwnerReferences: []metav1.OwnerReference{
-							{
+					// Create the instance without an OwnerRef that points to some other VM class
+					classInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "new-class-instance",
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
 									Name: "random-vm-class",
 								},
 							},
@@ -7706,6 +7706,38 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						}
 					},
 					validate: doValidateWithMsg(`spec.affinity: Forbidden: updating Affinity is not allowed`),
+				},
+			),
+		)
+	})
+
+	Context("Removable volumes", func() {
+		DescribeTable("Updates", doTest,
+			Entry("should allow volume removal when nil",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].Removable = nil
+						ctx.vm.Spec.Volumes = nil
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow volume removal when true",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].Removable = ptr.To(true)
+						ctx.vm.Spec.Volumes = nil
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny volume removal when false",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].Removable = ptr.To(false)
+						ctx.vm.Spec.Volumes = nil
+					},
+					validate: doValidateWithMsg(`spec.volumes[0]: Forbidden: cannot remove volume with removable=false`),
 				},
 			),
 		)

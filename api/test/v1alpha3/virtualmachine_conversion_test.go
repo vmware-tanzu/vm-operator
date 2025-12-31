@@ -299,6 +299,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
 								SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
 								UnitNumber:          &[]int32{2}[0],
+								Removable:           ptrOf(true),
 							},
 							{
 								Name: "my-volume-2",
@@ -310,6 +311,17 @@ func TestVirtualMachineConversion(t *testing.T) {
 										InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
 											StorageClass: "instance-storage-class",
 											Size:         resource.MustParse("2048k"),
+										},
+									}),
+								},
+								Removable: ptrOf(false),
+							},
+							{
+								Name: "my-volume-3",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: ptrOf(vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "my-claim-3",
 										},
 									}),
 								},

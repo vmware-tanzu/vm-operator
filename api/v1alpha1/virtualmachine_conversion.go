@@ -1016,6 +1016,7 @@ func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 			v.DiskMode = srcVol.DiskMode
 			v.SharingMode = srcVol.SharingMode
 			v.UnitNumber = srcVol.UnitNumber
+			v.Removable = srcVol.Removable
 		}
 
 		// Filter out the boot-disk-size volume added on downgrade or any other

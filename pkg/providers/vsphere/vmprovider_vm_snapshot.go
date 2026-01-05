@@ -49,11 +49,10 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "deleteSnapshot")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "deleteSnapshot"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -93,11 +92,10 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "getSnapshotSize")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "getSnapshotSize"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -131,11 +129,10 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *v
 	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "syncVMSnapshotTreeStatus")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "syncVMSnapshotTreeStatus"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {

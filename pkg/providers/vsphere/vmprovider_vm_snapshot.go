@@ -49,14 +49,11 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 	removeChildren bool,
 	consolidate *bool) (bool, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
-
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "deleteSnapshot")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "deleteSnapshot"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -93,14 +90,11 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 	vmSnapshotName string,
 	vm *vmopv1.VirtualMachine) (int64, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
-
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "getSnapshotSize")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "getSnapshotSize"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -130,15 +124,15 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 }
 
 // SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
-func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
+func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) error {
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "syncVMSnapshotTreeStatus")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "syncVMSnapshotTreeStatus"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {

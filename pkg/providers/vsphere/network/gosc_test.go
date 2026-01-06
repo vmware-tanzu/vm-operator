@@ -186,5 +186,161 @@ var _ = Describe("GOSC", func() {
 				Expect(adapter.IpV6Spec).To(BeNil())
 			})
 		})
+
+		Context("TC-001: IPv4-Only Static", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "192.168.1.100/24",
+								IsIPv4:  true,
+								Gateway: "192.168.1.1",
+							},
+						},
+						MacAddress:  macAddr1,
+						Name:        "eth0",
+						DHCP4:       false,
+						DHCP6:       false,
+						MTU:         1500,
+						Nameservers: []string{dnsServer1},
+					},
+				}
+			})
+
+			It("returns success with IPv4-only configuration", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(adapterMappings).To(HaveLen(1))
+				mapping := adapterMappings[0]
+
+				adapter := mapping.Adapter
+				Expect(mapping.MacAddress).To(Equal(macAddr1))
+				Expect(adapter.Gateway).To(Equal([]string{"192.168.1.1"}))
+				Expect(adapter.SubnetMask).To(Equal("255.255.255.0"))
+				Expect(adapter.DnsServerList).To(Equal([]string{dnsServer1}))
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIp{}))
+				fixedIP := adapter.Ip.(*vimtypes.CustomizationFixedIp)
+				Expect(fixedIP.IpAddress).To(Equal("192.168.1.100"))
+				Expect(adapter.IpV6Spec).To(BeNil())
+			})
+		})
+
+		Context("TC-002: IPv6-Only Static with IPv6-Only Fix", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "2001:db8::100/64",
+								IsIPv4:  false,
+								Gateway: "2001:db8::1",
+							},
+						},
+						MacAddress:  macAddr1,
+						Name:        "eth0",
+						DHCP4:       false,
+						DHCP6:       false,
+						MTU:         1500,
+						Nameservers: []string{"2001:4860:4860::8888"},
+					},
+				}
+			})
+
+			It("returns success with IPv6-only fix applied", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(adapterMappings).To(HaveLen(1))
+				mapping := adapterMappings[0]
+
+				adapter := mapping.Adapter
+				Expect(mapping.MacAddress).To(Equal(macAddr1))
+				// IPv6-only fix: adapter.Ip should be set to DHCP even though no IPv4 needed
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationDhcpIpGenerator{}))
+				Expect(adapter.IpV6Spec).ToNot(BeNil())
+				Expect(adapter.IpV6Spec.Gateway).To(Equal([]string{"2001:db8::1"}))
+				Expect(adapter.IpV6Spec.Ip).To(HaveLen(1))
+				Expect(adapter.IpV6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIpV6{}))
+				addressSpec := adapter.IpV6Spec.Ip[0].(*vimtypes.CustomizationFixedIpV6)
+				Expect(addressSpec.IpAddress).To(Equal("2001:db8::100"))
+				Expect(addressSpec.SubnetMask).To(BeEquivalentTo(64))
+			})
+		})
+
+		Context("TC-021: DHCP4 + Static IPv6", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "2001:db8::100/64",
+								IsIPv4:  false,
+								Gateway: "2001:db8::1",
+							},
+						},
+						MacAddress:  macAddr1,
+						Name:        "eth0",
+						DHCP4:       true,
+						DHCP6:       false,
+						MTU:         1500,
+						Nameservers: []string{dnsServer1},
+					},
+				}
+			})
+
+			It("returns success with DHCP4 and static IPv6", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(adapterMappings).To(HaveLen(1))
+				mapping := adapterMappings[0]
+
+				adapter := mapping.Adapter
+				Expect(mapping.MacAddress).To(Equal(macAddr1))
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationDhcpIpGenerator{}))
+				Expect(adapter.IpV6Spec).ToNot(BeNil())
+				Expect(adapter.IpV6Spec.Gateway).To(Equal([]string{"2001:db8::1"}))
+				Expect(adapter.IpV6Spec.Ip).To(HaveLen(1))
+				Expect(adapter.IpV6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIpV6{}))
+				addressSpec := adapter.IpV6Spec.Ip[0].(*vimtypes.CustomizationFixedIpV6)
+				Expect(addressSpec.IpAddress).To(Equal("2001:db8::100"))
+				Expect(addressSpec.SubnetMask).To(BeEquivalentTo(64))
+			})
+		})
+
+		Context("TC-022: Static IPv4 + DHCP6", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "192.168.1.100/24",
+								IsIPv4:  true,
+								Gateway: "192.168.1.1",
+							},
+						},
+						MacAddress:  macAddr1,
+						Name:        "eth0",
+						DHCP4:       false,
+						DHCP6:       true,
+						MTU:         1500,
+						Nameservers: []string{dnsServer1},
+					},
+				}
+			})
+
+			It("returns success with static IPv4 and DHCP6", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(adapterMappings).To(HaveLen(1))
+				mapping := adapterMappings[0]
+
+				adapter := mapping.Adapter
+				Expect(mapping.MacAddress).To(Equal(macAddr1))
+				Expect(adapter.Gateway).To(Equal([]string{"192.168.1.1"}))
+				Expect(adapter.SubnetMask).To(Equal("255.255.255.0"))
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIp{}))
+				fixedIP := adapter.Ip.(*vimtypes.CustomizationFixedIp)
+				Expect(fixedIP.IpAddress).To(Equal("192.168.1.100"))
+				Expect(adapter.IpV6Spec).ToNot(BeNil())
+				Expect(adapter.IpV6Spec.Ip).To(HaveLen(1))
+				Expect(adapter.IpV6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationDhcpIpV6Generator{}))
+			})
+		})
 	})
 })

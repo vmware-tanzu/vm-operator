@@ -12349,6 +12349,16 @@ spec:
                   - type
                   type: object
                 type: array
+              createdAt:
+                description: |-
+                  CreatedAt describes the timestamp when the VirtualMachine was created
+                  in the downstream service. This value is retrieved from
+                  the VM's config.createDate field and is immutable once set.
+
+                  This field is only populated after the VM has been successfully created
+                  in vCenter and the creation timestamp is available.
+                format: date-time
+                type: string
               crypto:
                 description: |-
                   Crypto describes the observed state of the VirtualMachine's encryption

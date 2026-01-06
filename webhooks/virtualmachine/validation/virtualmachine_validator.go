@@ -2350,7 +2350,7 @@ func (v validator) validateCdrom(
 				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
 			}
 		} else {
-			if err := vmopv1util.IsObjectUpgraded(ctx, newVM); err != nil {
+			if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
 				pkglog.FromContextOrDefault(ctx).Info(
 					"Skipping cd-rom controller validation",
 					"reason", err.Error())
@@ -2420,7 +2420,13 @@ func (v validator) validateCdromWhenPoweredOn(
 		// the VM exists on the vSphere and we have gone through at least
 		// one loop of reconciling the VM.
 		if oldVM.Status.PowerState != "" {
-			allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+			if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
+				pkglog.FromContextOrDefault(ctx).Info(
+					"Skipping cd-rom controller powered-on validation",
+					"reason", err.Error())
+			} else {
+				allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+			}
 		}
 	}
 

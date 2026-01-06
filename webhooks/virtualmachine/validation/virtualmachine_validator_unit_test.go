@@ -5681,6 +5681,56 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				},
 			),
 
+			Entry("allow changing CD-ROM controller spec when object is not upgraded",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.oldVM.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
+						// Clear the upgrade annotations set by BeforeEach to simulate
+						// the schema upgrade scenario where CD-ROM placement is being backfilled.
+						// Both VMs should NOT have the upgrade annotations to avoid
+						// triggering the "modifying annotation is restricted" validation.
+						ctx.oldVM.Annotations = map[string]string{}
+						ctx.vm.Annotations = map[string]string{}
+					},
+					// Skip bypass upgrade check so that IsObjectUpgraded returns an error,
+					// simulating the schema upgrade scenario where CD-ROM placement is being backfilled.
+					skipBypassUpgradeCheck: true,
+					expectAllowed:          true,
+				},
+			),
+
+			Entry("disallow changing CD-ROM controller spec when VM is powered on and object is upgraded",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.oldVM.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom[0].controllerType: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].controllerBusNumber: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].unitNumber: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
 			Entry("allow changing CD-ROM connection when VM is powered off",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

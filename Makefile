@@ -831,7 +831,7 @@ ifeq (,$(strip $(GITHUB_RUN_ID)))
 	@[ -d "$(MKDOCS_VENV)" ] || python3 -m venv $(MKDOCS_VENV)
 	$(MKDOCS_VENV)/bin/pip3 install -r ./docs/requirements.txt
 endif
-	$(MKDOCS) serve
+	$(MKDOCS) serve -w ./docs --livereload
 
 .PHONY: docs-serve-docker
 docs-serve-docker: ## Serve docs w container

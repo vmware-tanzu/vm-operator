@@ -1397,7 +1397,7 @@ spec:
 ```
 
 The VM would be reverted to the snapshotted state if the revert operation
-is succesful. After a succesful revert operation, `spec.currentSnapshotName`
+is successful. After a successful revert operation, `spec.currentSnapshotName`
 would become unset.
 
 ### Further Information

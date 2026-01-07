@@ -54,7 +54,7 @@ spec:
   description: "Snapshot of my-vm with a consistent state of the guest filesystem"
   vmName: my-vm
   memory: true
-  queisce:
+  quiesce:
     timeout: 10min
 ```
 
@@ -73,7 +73,7 @@ spec:
   currentSnapshotName: snap-1
 ```
 
-Once the VM is reverted, `status.currentSnapshot` should refer to the snapshot set in `spec.currentSnapshotName` and `spec.currentSnapshotName` would be removed if the VM was succesfully reverted.
+Once the VM is reverted, `status.currentSnapshot` should refer to the snapshot set in `spec.currentSnapshotName` and `spec.currentSnapshotName` would be removed if the VM was successfully reverted.
 
 ```yaml
 status:
@@ -143,13 +143,13 @@ status:
 | --------------------------------- | ----------------------------------------- |
 | `VirtualMachineSnapshotCSISynced` | CSI volume has been synced                |
 | `VirtualMachineSnapshotCreated`   | Snapshot has been created on the provider |
-| `VirtualMachineSnapshotReady`     | Snapshot has been succesfully reconciled  |
+| `VirtualMachineSnapshotReady`     | Snapshot has been successfully reconciled  |
 
 #### VirtualMachine
 
 | Condition                               | Description                                                                                                                                                                 |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VirtualMachineSnapshotRevertSucceeded` | Snapshot is succesfully reverted. This condition can be seen only when the snapshot revert operation fails for some reason. Steady state is for the condition to not exist. |
+| `VirtualMachineSnapshotRevertSucceeded` | Snapshot is successfully reverted. This condition can be seen only when the snapshot revert operation fails for some reason. Steady state is for the condition to not exist. |
 
 ### Unmanaged Snapshots
 

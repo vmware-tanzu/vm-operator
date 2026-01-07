@@ -36,7 +36,7 @@ type VirtualMachineSnapshotSpec struct {
 	// When set to false, the power state of the snapshot is set to
 	// false.
 	// For a VM in suspended state, memory is always included
-	// in the snashot.
+	// in the snapshot.
 	Memory bool `json:"memory,omitempty"`
 
 	// +optional

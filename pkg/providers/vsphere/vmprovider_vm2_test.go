@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -22,6 +23,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -34,6 +36,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+)
+
+const (
+	subnetKind       = "Subnet"
+	subnetAPIVersion = "crd.nsx.vmware.com/v1alpha1"
 )
 
 type fakeNetworkProvider interface {
@@ -460,8 +467,8 @@ func vmE2ETests() {
 					}
 
 					if networkEnv == builder.NetworkEnvVPC {
-						vm.Spec.Network.Interfaces[0].Network.Kind = "Subnet"
-						vm.Spec.Network.Interfaces[0].Network.APIVersion = "crd.nsx.vmware.com/v1alpha1"
+						vm.Spec.Network.Interfaces[0].Network.Kind = subnetKind
+						vm.Spec.Network.Interfaces[0].Network.APIVersion = subnetAPIVersion
 					}
 				})
 
@@ -655,8 +662,8 @@ func vmE2ETests() {
 
 					if networkEnv == builder.NetworkEnvVPC {
 						for i := range vm.Spec.Network.Interfaces {
-							vm.Spec.Network.Interfaces[i].Network.Kind = "Subnet"
-							vm.Spec.Network.Interfaces[i].Network.APIVersion = "crd.nsx.vmware.com/v1alpha1"
+							vm.Spec.Network.Interfaces[i].Network.Kind = subnetKind
+							vm.Spec.Network.Interfaces[i].Network.APIVersion = subnetAPIVersion
 						}
 					}
 				})
@@ -747,7 +754,7 @@ func vmE2ETests() {
 						l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
 						Expect(l).To(HaveLen(2))
 
-						// Sometimes even an edit operation will vcsim to reorder the devices.
+						// Sometimes even an edit operation will cause vcsim to reorder the devices.
 						sort.Slice(l, func(i, j int) bool {
 							return l[i].GetVirtualDevice().Key < l[j].GetVirtualDevice().Key
 						})
@@ -845,5 +852,160 @@ func vmE2ETests() {
 			Entry("VDS with LinuxPrep", builder.NetworkEnvVDS, bsLinuxPrep),
 			Entry("NSX-T with Sysprep", builder.NetworkEnvNSXT, bsSysprep),
 		)
+
+		Describe("VPC Backup/Restore", func() {
+			DescribeTableSubtree("Simulate restore",
+				func(powerState vmopv1.VirtualMachinePowerState, newLSUUID bool) {
+					var np fakeNetworkProvider
+
+					BeforeEach(func() {
+						testConfig.WithNetworkEnv = builder.NetworkEnvVPC
+						np = vpcNetworkProvider{}
+
+						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: interfaceName0,
+									Network: &common.PartialObjectRef{
+										Name: networkName0,
+									},
+								},
+								{
+									Name: interfaceName1,
+									Network: &common.PartialObjectRef{
+										Name: networkName1,
+									},
+								},
+							},
+						}
+
+						for i := range vm.Spec.Network.Interfaces {
+							vm.Spec.Network.Interfaces[i].Network.Kind = subnetKind
+							vm.Spec.Network.Interfaces[i].Network.APIVersion = subnetAPIVersion
+						}
+					})
+
+					It("DoIt", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+						Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
+
+						By("simulate successful network provider reconcile", func() {
+							np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[0], 0)
+						})
+
+						{
+							// TODO: We should create all the interface CRs up front.
+							err := createOrUpdateVM(ctx, vmProvider, vm)
+							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+							Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
+						}
+
+						By("simulate successful network provider reconcile", func() {
+							np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[1], 1)
+						})
+
+						vm.Spec.PowerState = powerState
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
+						Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+						vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+
+						By("created with expected NIC device types and backings", func() {
+							devList, err := vcVM.Device(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+							Expect(l).To(HaveLen(2))
+
+							dev0 := l[0]
+							_, ok := dev0.(*vimtypes.VirtualVmxnet3)
+							Expect(ok).To(BeTrue())
+							np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], 0)
+
+							dev1 := l[1]
+							_, ok = dev1.(*vimtypes.VirtualVmxnet3)
+							Expect(ok).To(BeTrue())
+							np.assertEthernetCard(ctx, dev1, vm.Spec.Network.Interfaces[1], 1)
+						})
+
+						By("Verify VM power state", func() {
+							ps, err := vcVM.PowerState(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							if powerState == vmopv1.VirtualMachinePowerStateOff {
+								Expect(ps).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+							} else {
+								Expect(ps).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+							}
+						})
+
+						restoredNetworkIdx := 0
+						if newLSUUID {
+							// Restore can have two behaviors: if the network existed before the backup,
+							// then we expect just a new ExtID. If the network was created between backup
+							// and restore, we expect both a new ExtID and LSUUID. Use the third network
+							// to simulate the restore creating a new network.
+							restoredNetworkIdx = 2
+						}
+						restoredExtID := ""
+
+						By("simulate VPC restore", func() {
+							interfaceSpec := vm.Spec.Network.Interfaces[0]
+							interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+
+							subnetPort := &vpcv1alpha1.SubnetPort{}
+							objKey := client.ObjectKey{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							}
+							Expect(ctx.Client.Get(ctx, objKey, subnetPort)).To(Succeed())
+
+							subnetPort.Status.Attachment.ID += "-restored"
+							subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(restoredNetworkIdx)
+							Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+
+							restoredExtID = subnetPort.Status.Attachment.ID
+						})
+
+						vm.Annotations[network.VPCInterfaceRestoredAnnotation] = interfaceName0
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Annotations).ToNot(HaveKey(network.VPCInterfaceRestoredAnnotation))
+
+						By("restore NIC with expected device types and backings", func() {
+							devList, err := vcVM.Device(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+							Expect(l).To(HaveLen(2))
+
+							// Sometimes even an edit operation will cause vcsim to reorder the devices.
+							sort.Slice(l, func(i, j int) bool {
+								return l[i].GetVirtualDevice().Key < l[j].GetVirtualDevice().Key
+							})
+
+							dev0 := l[0]
+							ethCard, ok := dev0.(*vimtypes.VirtualVmxnet3)
+							Expect(ok).To(BeTrue())
+							{
+								// Assert here that the interface has its expected new ExtID, but then
+								// restore the original one so we can use assertEthernetCard() as-is.
+								Expect(ethCard.ExternalId).To(Equal(restoredExtID))
+								ethCard.ExternalId = strings.TrimSuffix(ethCard.ExternalId, "-restored")
+							}
+							np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], restoredNetworkIdx)
+
+							dev1 := l[1]
+							_, ok = dev1.(*vimtypes.VirtualVmxnet3)
+							Expect(ok).To(BeTrue())
+							np.assertEthernetCard(ctx, dev1, vm.Spec.Network.Interfaces[1], 1)
+						})
+					})
+				},
+				Entry("PoweredOn - Same Network", vmopv1.VirtualMachinePowerStateOn, false),
+				Entry("PoweredOn - New Network", vmopv1.VirtualMachinePowerStateOn, true),
+				Entry("PoweredOff - Same Network", vmopv1.VirtualMachinePowerStateOff, false),
+				Entry("PoweredOff - New Network", vmopv1.VirtualMachinePowerStateOff, true),
+			)
+		})
 	})
 }

@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 const (
@@ -547,16 +550,16 @@ func GetVMSetResourcePolicy(
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(
 	vmCtx pkgctx.VirtualMachineContext,
-	is vmopv1.InstanceStorage) bool {
+	is vmopv1.InstanceStorage) (bool, bool) {
 
 	if vmopv1util.IsInstanceStoragePresent(vmCtx.VM) {
 		// Instance storage disks are copied from the class to the VM only once, regardless
 		// if the class changes.
-		return true
+		return true, false
 	}
 
 	if len(is.Volumes) == 0 {
-		return false
+		return false, false
 	}
 
 	volumes := make([]vmopv1.VirtualMachineVolume, 0, len(is.Volumes))
@@ -583,7 +586,7 @@ func AddInstanceStorageVolumes(
 	}
 
 	vmCtx.VM.Spec.Volumes = append(vmCtx.VM.Spec.Volumes, volumes...)
-	return true
+	return true, true
 }
 
 func GetVMClassConfigSpec(
@@ -600,66 +603,68 @@ func GetVMClassConfigSpec(
 }
 
 // GetAttachedDiskUUIDToPVC returns a map of disk UUID to PVC object for all
-// attached disks by checking the VM's spec and status of volumes.
+// attached disks by checking for volumes that have a PersistentVolumeClaim.
 func GetAttachedDiskUUIDToPVC(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (map[string]corev1.PersistentVolumeClaim, error) {
 
-	if len(vmCtx.VM.Spec.Volumes) == 0 {
-		return nil, nil
+	var (
+		vm   = vmCtx.VM
+		moVM = vmCtx.MoVM
+	)
+
+	info, ok := pkgvol.FromContext(vmCtx)
+	if !ok {
+		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
 	}
 
-	vmVolNameToPVCName := map[string]string{}
-	for _, vol := range vmCtx.VM.Spec.Volumes {
-		if pvc := vol.PersistentVolumeClaim; pvc != nil {
-			vmVolNameToPVCName[vol.Name] = pvc.ClaimName
-		}
-	}
-
-	if len(vmVolNameToPVCName) == 0 {
-		return nil, nil
-	}
+	// Filter out disks with invalid paths.
+	info.Disks = slices.DeleteFunc(info.Disks, func(e pkgvol.VirtualDiskInfo) bool {
+		var diskPath object.DatastorePath
+		return !diskPath.FromString(e.FileName)
+	})
 
 	diskUUIDToPVC := map[string]corev1.PersistentVolumeClaim{}
-	for _, vol := range vmCtx.VM.Status.Volumes {
-		if !vol.Attached || vol.DiskUUID == "" {
-			continue
-		}
+	for _, disk := range info.Disks {
+		vol := info.Volumes[disk.Target.String()]
 
-		if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
-			if vol.Type == vmopv1.VolumeTypeClassic {
-				// Do not worry about classic volumes that are not fully converted
-				// to PVCs yet.
-				continue
+		if vol != nil && vol.PersistentVolumeClaim != nil {
+			pvcObj := corev1.PersistentVolumeClaim{}
+			objKey := ctrlclient.ObjectKey{Name: vol.PersistentVolumeClaim.ClaimName, Namespace: vmCtx.VM.Namespace}
+			if err := k8sClient.Get(vmCtx, objKey, &pvcObj); err != nil {
+				return nil, err
 			}
-		}
 
-		pvcName := vmVolNameToPVCName[vol.Name]
-		// This could happen if the volume was just removed from VM spec but not reconciled yet.
-		if pvcName == "" {
-			continue
+			diskUUIDToPVC[disk.UUID] = pvcObj
 		}
-
-		pvcObj := corev1.PersistentVolumeClaim{}
-		objKey := ctrlclient.ObjectKey{Name: pvcName, Namespace: vmCtx.VM.Namespace}
-		if err := k8sClient.Get(vmCtx, objKey, &pvcObj); err != nil {
-			return nil, err
-		}
-
-		diskUUIDToPVC[vol.DiskUUID] = pvcObj
 	}
 
 	return diskUUIDToPVC, nil
 }
 
 func GetAttachedClassicDiskUUIDs(vmCtx pkgctx.VirtualMachineContext) map[string]struct{} {
-	diskUUIDs := map[string]struct{}{}
+	var (
+		vm   = vmCtx.VM
+		moVM = vmCtx.MoVM
+	)
 
-	for _, vol := range vmCtx.VM.Status.Volumes {
-		if vol.Attached &&
-			vol.DiskUUID != "" &&
-			vol.Type == vmopv1.VolumeTypeClassic {
-			diskUUIDs[vol.DiskUUID] = struct{}{}
+	info, ok := pkgvol.FromContext(vmCtx)
+	if !ok {
+		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
+	}
+
+	// Filter out disks with invalid paths.
+	info.Disks = slices.DeleteFunc(info.Disks, func(e pkgvol.VirtualDiskInfo) bool {
+		var diskPath object.DatastorePath
+		return !diskPath.FromString(e.FileName)
+	})
+
+	diskUUIDs := map[string]struct{}{}
+	for _, disk := range info.Disks {
+		vol := info.Volumes[disk.Target.String()]
+
+		if vol != nil && vol.PersistentVolumeClaim == nil {
+			diskUUIDs[disk.UUID] = struct{}{}
 		}
 	}
 

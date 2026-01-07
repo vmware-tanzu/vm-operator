@@ -274,12 +274,14 @@ var _ = Describe("Reconcile", func() {
 					Expect(vol2).ToNot(BeNil())
 
 					// Verify volume 1 properties
+					Expect(vol1.Removable).To(Equal(ptr.To(false)))
 					Expect(vol1.PersistentVolumeClaim).To(BeNil())
 					Expect(vol1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
 					Expect(*vol1.ControllerBusNumber).To(Equal(int32(0)))
 					Expect(*vol1.UnitNumber).To(Equal(int32(0)))
 
 					// Verify volume 2 properties
+					Expect(vol2.Removable).To(Equal(ptr.To(false)))
 					Expect(vol2.PersistentVolumeClaim).To(BeNil())
 					Expect(vol2.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 					Expect(*vol2.ControllerBusNumber).To(Equal(int32(1)))

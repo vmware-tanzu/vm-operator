@@ -23,6 +23,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
+const (
+	storagePoliciesCRD = "storagepolicies.infra.vmware.com"
+)
+
 var (
 	basesNonGated = []string{
 		"clustervirtualmachineimages.vmoperator.vmware.com",
@@ -79,14 +83,23 @@ var (
 	externalAll = slices.Concat(
 		externalBYOK,
 		externalVSpherePolicy,
+		[]string{storagePoliciesCRD},
 	)
 )
+
+func init() {
+	slices.Sort(basesAll)
+	basesAll = slices.Compact(basesAll)
+}
 
 func assertCRDsConsistOf[T any](
 	crds []T,
 	expectedNames ...string) {
 
 	GinkgoHelper()
+
+	slices.Sort(expectedNames)
+	expectedNames = slices.Compact(expectedNames)
 
 	Expect(expectedNames).To(HaveLen(len(crds)))
 
@@ -254,7 +267,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalBYOK)...)
+				assertCRDsConsistOf(obj.Items, append(slices.Concat(basesNonGated, externalBYOK), storagePoliciesCRD)...)
 			})
 		})
 
@@ -392,7 +405,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, basesNonGated...)
+				assertCRDsConsistOf(obj.Items, append(basesNonGated, storagePoliciesCRD)...)
 			})
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
@@ -435,7 +448,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, basesNonGated...)
+				assertCRDsConsistOf(obj.Items, append(basesNonGated, storagePoliciesCRD)...)
 			})
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
@@ -478,7 +491,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesFastDeploy)...)
+				assertCRDsConsistOf(obj.Items, append(slices.Concat(basesNonGated, basesFastDeploy), storagePoliciesCRD)...)
 			})
 		})
 

@@ -99,6 +99,7 @@ const (
 	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
 	guestCustomizationVCDParityNotEnabled      = "VC guest customization VCD parity capability is not enabled"
 	bootstrapProviderTypeCannotBeChanged       = "bootstrap provider type cannot be changed"
+	forbiddenRemovableVolume                   = "cannot remove volume with removable=false"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -1139,7 +1140,7 @@ func (v validator) validateVolumes(
 	}
 
 	if oldVM != nil {
-		if err := vmopv1util.IsObjectSchemaUpgraded(
+		if err := vmopv1util.IsObjectUpgraded(
 			ctx, oldVM); err != nil {
 
 			pkglog.FromContextOrDefault(ctx).Info(
@@ -1149,16 +1150,36 @@ func (v validator) validateVolumes(
 	}
 
 	var (
-		allErrs       field.ErrorList
-		volumesPath   = field.NewPath("spec", "volumes")
-		volumeSpecMap = sets.New[string]()
-		oldVolumesMap = map[string]*vmopv1.VirtualMachineVolume{}
+		allErrs           field.ErrorList
+		volumesPath       = field.NewPath("spec", "volumes")
+		volumeNamesSet    = sets.New[string]()
+		volumePVCNamesSet = sets.New[string]()
+		oldVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
+		newVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
 	)
 
+	for _, v := range vm.Spec.Volumes {
+		if v.Name != "" {
+			newVolumesMap[v.Name] = &v
+		}
+	}
 	if oldVM != nil {
-		for _, oldVol := range oldVM.Spec.Volumes {
-			if oldVol.Name != "" {
-				oldVolumesMap[oldVol.Name] = &oldVol
+		for _, v := range oldVM.Spec.Volumes {
+			if v.Name != "" {
+				oldVolumesMap[v.Name] = &v
+			}
+		}
+
+		// Prevent non-removable volumes from being removed.
+		for i, oldVol := range oldVM.Spec.Volumes {
+			volPath := volumesPath.Index(i)
+			if volName := oldVol.Name; volName != "" {
+				if _, ok := newVolumesMap[volName]; !ok {
+					if oldVol.Removable != nil && !*oldVol.Removable {
+						allErrs = append(allErrs,
+							field.Forbidden(volPath, forbiddenRemovableVolume))
+					}
+				}
 			}
 		}
 	}
@@ -1167,11 +1188,11 @@ func (v validator) validateVolumes(
 		volPath := volumesPath.Index(i)
 
 		if vol.Name != "" {
-			if _, found := volumeSpecMap[vol.Name]; found {
+			if _, found := volumeNamesSet[vol.Name]; found {
 				allErrs = append(allErrs, field.Duplicate(
 					volPath.Child("name"), vol.Name))
 			} else {
-				volumeSpecMap.Insert(vol.Name)
+				volumeNamesSet.Insert(vol.Name)
 			}
 		} else {
 			allErrs = append(allErrs, field.Required(volPath.Child("name"), ""))
@@ -1186,6 +1207,20 @@ func (v validator) validateVolumes(
 			}
 		}
 
+		// Validate that no two volumes have the same PVC claim name.
+		if pvc := vol.PersistentVolumeClaim; pvc != nil {
+			if claimName := pvc.ClaimName; claimName != "" {
+				if volumePVCNamesSet.Has(claimName) {
+					allErrs = append(allErrs, field.Duplicate(
+						volPath.Child("persistentVolumeClaim", "claimName"),
+						claimName,
+					))
+				} else {
+					volumePVCNamesSet.Insert(claimName)
+				}
+			}
+		}
+
 		allErrs = append(allErrs,
 			v.validateVolume(
 				ctx,
@@ -1195,13 +1230,6 @@ func (v validator) validateVolumes(
 				vol,
 				volPath)...)
 
-		if pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
-			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-
-			allErrs = append(allErrs,
-				v.validateControllerFields(vol, oldVM, *volPath)...,
-			)
-		}
 	}
 
 	return allErrs
@@ -1327,35 +1355,9 @@ func (v validator) validateVolume(
 	}
 
 	if oldVol != nil && oldVol.Name == vol.Name {
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ApplicationType,
-			oldVol.ApplicationType,
-			volPath.Child("applicationType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ControllerBusNumber,
-			oldVol.ControllerBusNumber,
-			volPath.Child("controllerBusNumber"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ControllerType,
-			oldVol.ControllerType,
-			volPath.Child("controllerType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.DiskMode,
-			oldVol.DiskMode,
-			volPath.Child("diskMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.SharingMode,
-			oldVol.SharingMode,
-			volPath.Child("sharingMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.UnitNumber,
-			oldVol.UnitNumber,
-			volPath.Child("unitNumber"))...)
+		allErrs = append(allErrs,
+			v.validateVolumeImmutableFields(vol, oldVol, *volPath)...,
+		)
 	}
 
 	allErrs = append(allErrs,
@@ -1398,6 +1400,49 @@ func (v validator) validateVolume(
 			"hardwareChanged", hardwareChanged,
 		)
 	}
+
+	allErrs = append(allErrs,
+		v.validateControllerFields(vol, oldVM, *volPath)...,
+	)
+
+	return allErrs
+}
+
+func (v validator) validateVolumeImmutableFields(
+	vol vmopv1.VirtualMachineVolume,
+	oldVol *vmopv1.VirtualMachineVolume,
+	volPath field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ApplicationType,
+		oldVol.ApplicationType,
+		volPath.Child("applicationType"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ControllerBusNumber,
+		oldVol.ControllerBusNumber,
+		volPath.Child("controllerBusNumber"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ControllerType,
+		oldVol.ControllerType,
+		volPath.Child("controllerType"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.DiskMode,
+		oldVol.DiskMode,
+		volPath.Child("diskMode"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.SharingMode,
+		oldVol.SharingMode,
+		volPath.Child("sharingMode"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.UnitNumber,
+		oldVol.UnitNumber,
+		volPath.Child("unitNumber"))...)
 
 	return allErrs
 }
@@ -1854,11 +1899,11 @@ func (v validator) validateSchemaUpgrade(
 
 	var (
 		newUpBuildVer   = newVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		newUpSchemVer   = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		newUpSchemaVer  = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
 		newUpFeatureVer = newVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 
 		oldUpBuildVer   = oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		oldUpSchemVer   = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		oldUpSchemaVer  = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
 		oldUpFeatureVer = oldVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 	)
 
@@ -1875,13 +1920,13 @@ func (v validator) validateSchemaUpgrade(
 	}
 
 	switch {
-	case newUpSchemVer != "" && newUpSchemVer != oldUpSchemVer:
+	case newUpSchemaVer != "" && newUpSchemaVer != oldUpSchemaVer:
 		// Prevent most users from modifying these annotations.
 		allErrs = append(allErrs, field.Forbidden(
 			fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
 			modRestrictedAnnotation))
 
-	case oldUpSchemVer != "" && newUpSchemVer == "":
+	case oldUpSchemaVer != "" && newUpSchemaVer == "":
 		// Allow anyone to delete the annotation.
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
@@ -1900,7 +1945,7 @@ func (v validator) validateSchemaUpgrade(
 			"key", pkgconst.UpgradedToFeatureVersionAnnotationKey)
 	}
 
-	if vmopv1util.IsObjectSchemaUpgraded(ctx, oldVM) != nil {
+	if vmopv1util.IsObjectUpgraded(ctx, oldVM) != nil {
 		// Prevent most users from modifying the VM spec fields,
 		// that are backfilled by the schema upgrade and mutable,
 		// before the schema upgrade is completed.
@@ -2085,52 +2130,6 @@ func (v validator) validateAvailabilityZone(
 	return allErrs
 }
 
-// protectedAnnotationRegex matches annotations with keys matching the pattern:
-// ^.+\.protected(/.+)?$
-//
-// Examples that match:
-//   - fu.bar.protected
-//   - hello.world.protected/sub-key
-//   - vmoperator.vmware.com.protected/reconcile-priority
-//
-// Examples that do NOT match:
-//   - protected.fu.bar
-//   - hello.world.protected.against/sub-key
-var protectedAnnotationRegex = regexp.MustCompile(`^.+\.protected(/.*)?$`)
-
-// validateProtectedAnnotations validates that annotations matching the
-// protected annotation pattern can only be modified by privileged users.
-func (v validator) validateProtectedAnnotations(vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
-	var allErrs field.ErrorList
-	annotationPath := field.NewPath("metadata", "annotations")
-
-	// Collect all protected annotation keys from both old and new VMs
-	protectedKeys := make(map[string]struct{})
-
-	for k := range vm.Annotations {
-		if protectedAnnotationRegex.MatchString(k) {
-			protectedKeys[k] = struct{}{}
-		}
-	}
-
-	for k := range oldVM.Annotations {
-		if protectedAnnotationRegex.MatchString(k) {
-			protectedKeys[k] = struct{}{}
-		}
-	}
-
-	// Check if any protected annotations have been modified
-	for k := range protectedKeys {
-		if vm.Annotations[k] != oldVM.Annotations[k] {
-			allErrs = append(allErrs, field.Forbidden(
-				annotationPath.Key(k),
-				modifyAnnotationNotAllowedForNonAdmin))
-		}
-	}
-
-	return allErrs
-}
-
 func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
@@ -2154,8 +2153,6 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 	if create {
 		oldVM = &vmopv1.VirtualMachine{}
 	}
-
-	allErrs = append(allErrs, v.validateProtectedAnnotations(vm, oldVM)...)
 
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
@@ -2353,7 +2350,7 @@ func (v validator) validateCdrom(
 				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
 			}
 		} else {
-			if err := vmopv1util.IsObjectSchemaUpgraded(ctx, newVM); err != nil {
+			if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
 				pkglog.FromContextOrDefault(ctx).Info(
 					"Skipping cd-rom controller validation",
 					"reason", err.Error())
@@ -2423,7 +2420,13 @@ func (v validator) validateCdromWhenPoweredOn(
 		// the VM exists on the vSphere and we have gone through at least
 		// one loop of reconciling the VM.
 		if oldVM.Status.PowerState != "" {
-			allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+			if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
+				pkglog.FromContextOrDefault(ctx).Info(
+					"Skipping cd-rom controller powered-on validation",
+					"reason", err.Error())
+			} else {
+				allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+			}
 		}
 	}
 
@@ -2951,7 +2954,7 @@ func (v validator) validateImmutableVMAffinity(
 	return allErrs
 }
 
-// validateImmutableFieldsDuringSchemaUpgrade checks the fields tht are
+// validateImmutableFieldsDuringSchemaUpgrade checks the fields that are
 // backfilled by the schema upgrade are not been modified before the schema
 // upgrade has completed. Currently, the schema upgrade backfills fields below:
 // - vm.Spec.BiosUUID

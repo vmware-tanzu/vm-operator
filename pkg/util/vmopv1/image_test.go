@@ -642,7 +642,7 @@ var _ = Describe("GetImageDiskInfo", func() {
 		})
 	})
 
-	When("there is an error gettting disk URIs", func() {
+	When("there is an error getting disk URIs", func() {
 		BeforeEach(func() {
 			cli.Status.FileInfo = nil
 		})

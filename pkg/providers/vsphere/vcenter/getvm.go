@@ -79,7 +79,7 @@ func findVMByMoID(
 		if _, ok := fault.As(err, &f); ok {
 			return nil, errVMNotFound
 		}
-		return nil, fmt.Errorf("error retreiving VM via MoID %q: %w", moID, err)
+		return nil, fmt.Errorf("error retrieving VM via MoID %q: %w", moID, err)
 	}
 
 	vmCtx.Logger.V(4).Info("Found VM via MoID", "moID", moID)

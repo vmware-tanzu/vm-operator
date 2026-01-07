@@ -346,7 +346,7 @@ func diffSCSIControllerByBusNumber(
 }
 
 // editNVMEController edits the device to match the spec.
-// Modify the PCI slot number and ShareingMode if needed.
+// Modify the PCI slot number and SharingMode if needed.
 // Return bool to indicate that the device needs to be recreated.
 func editNVMEController(
 	ctx context.Context,
@@ -407,7 +407,7 @@ func SCSIControllerTypeMatch(dev vimtypes.BaseVirtualSCSIController, specType vm
 }
 
 // editSCSIController edits the device to match the spec.
-// Modify the PCI slot number and ShareingMode if needed.
+// Modify the PCI slot number and SharingMode if needed.
 // If the controller type does not match the spec, return true to indicate
 // that the device needs to be recreated.
 func editSCSIController(

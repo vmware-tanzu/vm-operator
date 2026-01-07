@@ -446,7 +446,6 @@ func fastDeployDirect(
 		ctx,
 		logger,
 		datacenter,
-		configSpec,
 		srcDiskPaths,
 		dstDiskPaths,
 		diskFormat); err != nil {
@@ -517,7 +516,6 @@ func fastDeployDirectCopyDisks(
 	ctx context.Context,
 	logger logr.Logger,
 	datacenter *object.Datacenter,
-	configSpec vimtypes.VirtualMachineConfigSpec,
 	srcDiskPaths,
 	dstDiskPaths []string,
 	diskFormat vimtypes.DatastoreSectorFormat) error {
@@ -532,7 +530,9 @@ func fastDeployDirectCopyDisks(
 				DiskType:    string(vimtypes.VirtualDiskTypeThin),
 			},
 			SectorFormat: string(diskFormat),
-			Profile:      configSpec.VmProfile,
+			// CopyVirtualDisk API simply ignores the Profile
+			// and Crypto parameters. We send neither until the
+			// API is enhanced to support both.
 		}
 		diskManager = object.NewVirtualDiskManager(datacenter.Client())
 	)

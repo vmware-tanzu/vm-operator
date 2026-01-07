@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -27,6 +28,10 @@ import (
 
 const (
 	webHookName = "default"
+)
+
+const (
+	errUnsupportedVMControllerSharingModeFmt = "controller type %s bus %d is using unsupported sharingMode for snapshot: %s"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachinesnapshot,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinesnapshots,versions=v1alpha5,name=default.validating.virtualmachinesnapshot.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -75,10 +80,13 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	if vmSnapshot.Spec.VMName == "" {
 		fieldErrs = append(fieldErrs, field.Required(vmNameField, "vmName must be provided"))
 	} else {
-		// Check if the referenced VM is a VKS/TKG node and prevent snapshot
-		if err := v.validateVMNotVKSNode(ctx, vmSnapshot.Spec.VMName, vmSnapshot.Namespace); err != nil {
-			fieldErrs = append(fieldErrs, field.Forbidden(vmNameField, err.Error()))
-		}
+		fieldErrs = append(fieldErrs,
+			v.validateVMFields(
+				ctx,
+				vmSnapshot.Spec.VMName,
+				vmSnapshot.Namespace,
+				vmNameField)...,
+		)
 	}
 
 	validationErrs := make([]string, 0)
@@ -127,7 +135,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 // of the snapshot resource. This validation is only applicable during
 // an update operation.
 func (v validator) validateImmutableVMNameLabel(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vmSnapshot, oldVMSnapshot *vmopv1.VirtualMachineSnapshot) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -142,28 +150,83 @@ func (v validator) validateImmutableVMNameLabel(
 		validation.ValidateImmutableField(newVMNameLabel, oldVMNameLabel, vmNameLabelPath)...)
 }
 
-// validateVMNotVKSNode checks if the referenced VM is a VKS/TKG node and returns an error if it is.
-func (v validator) validateVMNotVKSNode(ctx *pkgctx.WebhookRequestContext, vmName, namespace string) error {
-	// Get the referenced VM
-	vm := &vmopv1.VirtualMachine{}
-	vmKey := client.ObjectKey{
-		Name:      vmName,
-		Namespace: namespace,
-	}
+// validateVMNotVKSNode checks if the referenced VM is a VKS/TKG node and
+// returns an error if it is.
+func (v validator) validateVMNotVKSNode(
+	vm vmopv1.VirtualMachine) error {
 
-	if err := v.client.Get(ctx, vmKey, vm); err != nil {
-		// If we can't get the VM, let the snapshot creation proceed
-		// The actual snapshot process will handle missing VMs appropriately
-		ctx.Logger.V(4).Info("Unable to get VM for VKS validation, allowing snapshot", "vmName", vmName, "error", err)
-		return nil
-	}
-
-	// Check if the VM has CAPI labels indicating it's a VKS/TKG node
+	// Check if the VM has CAPI labels indicating it's a VKS/TKG node.
 	if kubeutil.HasCAPILabels(vm.Labels) {
 		return fmt.Errorf("snapshots are not allowed for VKS/TKG nodes")
 	}
 
 	return nil
+}
+
+// validateVMControllerSharingMode checks if the referenced VM has controller
+// with sharingMode that's not None.
+func (v validator) validateVMControllerSharingMode(
+	vm vmopv1.VirtualMachine,
+	vmNameField *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if vm.Spec.Hardware != nil {
+		for _, c := range vm.Spec.Hardware.SCSIControllers {
+			if c.SharingMode != vmopv1.VirtualControllerSharingModeNone {
+				allErrs = append(allErrs,
+					field.NotSupported(vmNameField,
+						fmt.Sprintf(errUnsupportedVMControllerSharingModeFmt,
+							"SCSIControllers",
+							c.BusNumber,
+							c.SharingMode), []string{string(vmopv1.VirtualControllerSharingModeNone)},
+					),
+				)
+			}
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateVMFields(
+	ctx *pkgctx.WebhookRequestContext,
+	vmName, namespace string,
+	vmNameField *field.Path) field.ErrorList {
+
+	// Get the referenced VM
+	vm := vmopv1.VirtualMachine{}
+	vmKey := client.ObjectKey{
+		Name:      vmName,
+		Namespace: namespace,
+	}
+
+	var fieldErrs field.ErrorList
+
+	if err := v.client.Get(ctx, vmKey, &vm); err != nil {
+		if apierrors.IsNotFound(err) {
+			// If we can't get the VM, let the snapshot creation proceed.
+			// The actual snapshot process will handle missing VMs appropriately.
+			ctx.Logger.V(4).Info("VM is not found for controller sharingMode validation, allowing snapshot",
+				"vmName", vmName)
+			return nil
+		}
+		fieldErrs = append(fieldErrs, field.Invalid(vmNameField, vmName, err.Error()))
+	}
+
+	// Check if the referenced VM is a VKS/TKG node and prevent snapshot.
+	if err := v.validateVMNotVKSNode(vm); err != nil {
+		fieldErrs = append(fieldErrs, field.Forbidden(vmNameField, err.Error()))
+	}
+
+	// Check if the reference VM has controllers with unsupported sharingMode.
+	fieldErrs = append(fieldErrs,
+		v.validateVMControllerSharingMode(
+			vm,
+			vmNameField)...,
+	)
+
+	return fieldErrs
 }
 
 // vmSnapshotFromUnstructured returns the VirtualMachineSnapshot from the unstructured object.

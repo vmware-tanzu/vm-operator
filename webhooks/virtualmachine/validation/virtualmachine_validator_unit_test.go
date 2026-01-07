@@ -84,52 +84,6 @@ type testParams struct {
 	skipSetControllerForPVC bool
 }
 
-type protectedAnnotationTestCase struct {
-	annotationKey string
-	oldValue      string
-	newValue      string
-}
-
-// When defining any new protected annotations, be sure to add them to this
-// list so they are covered via test cases. A protected condition is one whose
-// key matches the regex `^.+\.protected(/.+)?$`.
-//
-// Examples that match:
-//   - fu.bar.protected
-//   - hello.world.protected/sub-key
-//   - vmoperator.vmware.com.protected/reconcile-priority
-//
-// Examples that do NOT match:
-//   - protected.fu.bar
-//   - hello.world.protected.against/sub-key
-var protectedAnnotationTestCases = []protectedAnnotationTestCase{
-	{
-		annotationKey: pkgconst.ReconcilePriorityAnnotationKey,
-		oldValue:      "100",
-		newValue:      "200",
-	},
-	{
-		annotationKey: pkgconst.SkipDeletePlatformResourceKey,
-		oldValue:      "true",
-		newValue:      "false",
-	},
-	{
-		annotationKey: pkgconst.ApplyPowerStateTimeAnnotation,
-		oldValue:      time.Now().Format(time.RFC3339Nano),
-		newValue:      time.Now().Add(time.Hour).Format(time.RFC3339Nano),
-	},
-	{
-		annotationKey: "hello.world.protected/condition-status",
-		oldValue:      "red",
-		newValue:      "green",
-	},
-	{
-		annotationKey: "condition.vmware.vmoperator.com.protected/hello-world",
-		oldValue:      "True",
-		newValue:      "False",
-	},
-}
-
 func bypassUpgradeCheck(ctx *context.Context, objects ...metav1.Object) {
 	pkgcfg.SetContext(*ctx, func(config *pkgcfg.Config) {
 		config.BuildVersion = fake
@@ -293,6 +247,7 @@ func setControllerForPVCWithBusNumber(vm *vmopv1.VirtualMachine, defaultBusNum i
 	}
 }
 
+// Validate Create operations.
 func unitTestsValidateCreate() {
 
 	var (
@@ -774,7 +729,7 @@ func unitTestsValidateCreate() {
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -812,7 +767,7 @@ func unitTestsValidateCreate() {
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance without an OnwerRef that points to some other VM class
+					// Create the instance without an OwnerRef that points to some other VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -859,7 +814,7 @@ func unitTestsValidateCreate() {
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -1277,8 +1232,16 @@ func unitTestsValidateCreate() {
 		Entry("allow spec.crypto.encryptionClassName when FSS_WCP_VMSERVICE_BYOK is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
-					storageClass1 := builder.DummyStorageClass()
+					const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+					storageClass1 := builder.DummyStorageClassWithID(profileID)
 					Expect(ctx.Client.Create(ctx, storageClass1)).To(Succeed())
+
+					Expect(kubeutil.MarkEncryptedStorageClass(
+						ctx,
+						ctx.Client,
+						*storageClass1,
+						true)).To(Succeed())
 
 					rlName := storageClass1.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
 					resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
@@ -1295,11 +1258,6 @@ func unitTestsValidateCreate() {
 						ctx,
 						client.ObjectKey{Name: ctx.vm.Spec.StorageClass},
 						&storageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						storageClass,
-						true)).To(Succeed())
 
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.BringYourOwnEncryptionKey = true
@@ -1311,8 +1269,16 @@ func unitTestsValidateCreate() {
 		Entry("disallow spec.crypto.encryptionClassName for non-encryption storage class when FSS_WCP_VMSERVICE_BYOK is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
-					storageClass1 := builder.DummyStorageClass()
+					const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+					storageClass1 := builder.DummyStorageClassWithID(profileID)
 					Expect(ctx.Client.Create(ctx, storageClass1)).To(Succeed())
+
+					Expect(kubeutil.MarkEncryptedStorageClass(
+						ctx,
+						ctx.Client,
+						*storageClass1,
+						false)).To(Succeed())
 
 					rlName := storageClass1.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
 					resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
@@ -1323,17 +1289,6 @@ func unitTestsValidateCreate() {
 						EncryptionClassName: fake,
 					}
 					ctx.vm.Spec.Volumes = nil
-
-					var storageClass storagev1.StorageClass
-					Expect(ctx.Client.Get(
-						ctx,
-						client.ObjectKey{Name: ctx.vm.Spec.StorageClass},
-						&storageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						storageClass,
-						false)).To(Succeed())
 
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.BringYourOwnEncryptionKey = true
@@ -1346,8 +1301,16 @@ func unitTestsValidateCreate() {
 		Entry("allow volume when spec.crypto.encryptionClassName is non-empty when FSS_WCP_VMSERVICE_BYOK is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
-					storageClass1 := builder.DummyStorageClass()
+					const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+					storageClass1 := builder.DummyStorageClassWithID(profileID)
 					Expect(ctx.Client.Create(ctx, storageClass1)).To(Succeed())
+
+					Expect(kubeutil.MarkEncryptedStorageClass(
+						ctx,
+						ctx.Client,
+						*storageClass1,
+						true)).To(Succeed())
 
 					storageClass2 := builder.DummyStorageClass()
 					storageClass2.Name += "2"
@@ -1369,17 +1332,6 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
 						EncryptionClassName: fake,
 					}
-
-					var storageClass storagev1.StorageClass
-					Expect(ctx.Client.Get(
-						ctx,
-						client.ObjectKey{Name: ctx.vm.Spec.StorageClass},
-						&storageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						storageClass,
-						true)).To(Succeed())
 
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.BringYourOwnEncryptionKey = true
@@ -1476,56 +1428,6 @@ func unitTestsValidateCreate() {
 			),
 		)
 
-		getProtectedAnnotationTableAllowCreate := func() []any {
-			table := []any{
-				func(tc protectedAnnotationTestCase) {
-					doTest(testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.IsPrivilegedAccount = true
-							ctx.vm.Annotations[tc.annotationKey] = tc.newValue
-						},
-						expectAllowed: true,
-					})
-				},
-			}
-
-			for i := range protectedAnnotationTestCases {
-				tc := protectedAnnotationTestCases[i]
-				table = append(table, Entry("should allow create with "+tc.annotationKey, tc))
-			}
-
-			return table
-		}
-
-		getProtectedAnnotationTableDisallowCreate := func() []any {
-			table := []any{
-				func(tc protectedAnnotationTestCase) {
-					doTest(testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Annotations[tc.annotationKey] = tc.newValue
-						},
-						validate: doValidateWithMsg(
-							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						),
-					})
-				},
-			}
-
-			for i := range protectedAnnotationTestCases {
-				tc := protectedAnnotationTestCases[i]
-				table = append(table, Entry("should disallow create with "+tc.annotationKey, tc))
-			}
-
-			return table
-		}
-
-		DescribeTable("disallow create with protected annotations by non-privileged user",
-			getProtectedAnnotationTableDisallowCreate()...,
-		)
-
-		DescribeTable("allow create with protected annotations by non-privileged user",
-			getProtectedAnnotationTableAllowCreate()...,
-		)
 	})
 
 	Context("Label", func() {
@@ -3967,6 +3869,85 @@ func unitTestsValidateCreate() {
 		)
 	})
 
+	DescribeTable("Volume PVC Name conflicts with other volumes", doTest,
+		Entry("should deny volumes with duplicate ClaimName",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					// New VM adds volumes with duplicate ClaimName.
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "existing-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-1",
+									},
+								},
+							},
+						},
+						{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-1",
+									},
+								},
+							},
+						},
+					}
+				},
+				validate: doValidateWithMsg(
+					"spec.volumes[1].persistentVolumeClaim.claimName: Duplicate value: \"existing-pvc-1\"",
+				),
+			},
+		),
+		Entry("should allow volmes with different ClaimName",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					// New VM adds volumes with duplicate ClaimName.
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "existing-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-1",
+									},
+								},
+							},
+						},
+						{
+							Name: "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-2", // different from existing-pvc-1.
+									},
+								},
+							},
+						},
+					}
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should allow volmes without any PVC",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM = nil
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name:                       "new-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{},
+						},
+					}
+				},
+				expectAllowed: true,
+			},
+		),
+	)
+
 	commonCreateAndUpdateValidations(doTest)
 }
 
@@ -4095,6 +4076,7 @@ func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	setControllerForPVC(ctx.vm)
 }
 
+// Validate Update operations.
 func unitTestsValidateUpdate() { //nolint:gocyclo
 	var (
 		ctx *unitValidatingWebhookContext
@@ -4216,6 +4198,8 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 	)
 
 	doTest := func(args testParams) {
+
+		GinkgoHelper()
 
 		args.setup(ctx)
 
@@ -4362,7 +4346,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -4402,7 +4386,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance without an OnwerRef that points to some other VM class
+					// Create the instance without an OwnerRef that points to some other VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -4450,7 +4434,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					// Fetch the class so we can set an ownerref.
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
 
-					// Create the instance with the correct OnwerRef that points to the correct VM class
+					// Create the instance with the correct OwnerRef that points to the correct VM class
 					classInstance := &vmopv1.VirtualMachineClassInstance{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-class-instance",
@@ -4672,117 +4656,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			),
 		)
 
-		getProtectedAnnotationTableAllowUpdate := func() []any {
-			table := []any{
-				func(tc protectedAnnotationTestCase) {
-					doTest(testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.IsPrivilegedAccount = true
-							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
-							if tc.newValue != "" {
-								ctx.vm.Annotations[tc.annotationKey] = tc.newValue
-							}
-						},
-						expectAllowed: true,
-					})
-				},
-			}
-
-			for i := range protectedAnnotationTestCases {
-				tc := protectedAnnotationTestCases[i]
-				table = append(table, Entry("should allow update of "+tc.annotationKey, tc))
-			}
-
-			return table
-		}
-
-		getProtectedAnnotationTableAllowRemoval := func() []any {
-			table := []any{
-				func(tc protectedAnnotationTestCase) {
-					doTest(testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.IsPrivilegedAccount = true
-							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
-							delete(ctx.vm.Annotations, tc.annotationKey)
-						},
-						expectAllowed: true,
-					})
-				},
-			}
-
-			for i := range protectedAnnotationTestCases {
-				tc := protectedAnnotationTestCases[i]
-				table = append(table, Entry("should allow removal of "+tc.annotationKey, tc))
-			}
-
-			return table
-		}
-
-		getProtectedAnnotationTableDisallowUpdate := func() []any {
-			table := []any{
-				func(tc protectedAnnotationTestCase) {
-					doTest(testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
-							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
-							if tc.newValue != "" {
-								ctx.vm.Annotations[tc.annotationKey] = tc.newValue
-							}
-						},
-						validate: doValidateWithMsg(
-							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						),
-					})
-				},
-			}
-
-			for i := range protectedAnnotationTestCases {
-				tc := protectedAnnotationTestCases[i]
-				table = append(table, Entry("should disallow update of "+tc.annotationKey, tc))
-			}
-
-			return table
-		}
-
-		getProtectedAnnotationTableDisallowRemoval := func() []any {
-			table := []any{
-				func(tc protectedAnnotationTestCase) {
-					doTest(testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
-							ctx.oldVM.Annotations[tc.annotationKey] = tc.oldValue
-							delete(ctx.vm.Annotations, tc.annotationKey)
-						},
-						validate: doValidateWithMsg(
-							field.Forbidden(annotationPath.Key(tc.annotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						),
-					})
-				},
-			}
-
-			for i := range protectedAnnotationTestCases {
-				tc := protectedAnnotationTestCases[i]
-				table = append(table, Entry("should disallow removal of "+tc.annotationKey, tc))
-			}
-
-			return table
-		}
-
-		DescribeTable("disallow update of protected annotations by non-privileged user",
-			getProtectedAnnotationTableDisallowUpdate()...,
-		)
-
-		DescribeTable("disallow removal of protected annotations by non-privileged user",
-			getProtectedAnnotationTableDisallowRemoval()...,
-		)
-
-		DescribeTable("allow update of protected annotations by privileged user",
-			getProtectedAnnotationTableAllowUpdate()...,
-		)
-
-		DescribeTable("allow removal of protected annotations by privileged user",
-			getProtectedAnnotationTableAllowRemoval()...,
-		)
 	})
 
 	Context("Bootstrap", func() {
@@ -5805,6 +5678,56 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
 					},
 					expectAllowed: true,
+				},
+			),
+
+			Entry("allow changing CD-ROM controller spec when object is not upgraded",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.oldVM.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
+						// Clear the upgrade annotations set by BeforeEach to simulate
+						// the schema upgrade scenario where CD-ROM placement is being backfilled.
+						// Both VMs should NOT have the upgrade annotations to avoid
+						// triggering the "modifying annotation is restricted" validation.
+						ctx.oldVM.Annotations = map[string]string{}
+						ctx.vm.Annotations = map[string]string{}
+					},
+					// Skip bypass upgrade check so that IsObjectUpgraded returns an error,
+					// simulating the schema upgrade scenario where CD-ROM placement is being backfilled.
+					skipBypassUpgradeCheck: true,
+					expectAllowed:          true,
+				},
+			),
+
+			Entry("disallow changing CD-ROM controller spec when VM is powered on and object is upgraded",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = true
+						})
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.oldVM.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+						ctx.vm.Spec.Hardware.Cdrom[0].ControllerBusNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
+					},
+					validate: doValidateWithMsg(
+						`spec.hardware.cdrom[0].controllerType: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].controllerBusNumber: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].unitNumber: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+					expectAllowed: false,
 				},
 			),
 
@@ -7631,6 +7554,38 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		)
 	})
 
+	Context("Removable volumes", func() {
+		DescribeTable("Updates", doTest,
+			Entry("should allow volume removal when nil",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].Removable = nil
+						ctx.vm.Spec.Volumes = nil
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow volume removal when true",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].Removable = ptr.To(true)
+						ctx.vm.Spec.Volumes = nil
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny volume removal when false",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].Removable = ptr.To(false)
+						ctx.vm.Spec.Volumes = nil
+					},
+					validate: doValidateWithMsg(`spec.volumes[0]: Forbidden: cannot remove volume with removable=false`),
+				},
+			),
+		)
+	})
+
 	Context("Volume PVC immutable fields", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -8136,6 +8091,110 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		)
 	})
 
+	DescribeTable("Volume PVC Name conflicts with other volumes", doTest,
+		Entry("should deny new volume with same ClaimName",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					// Setup old VM with one volume.
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "existing-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-1",
+									},
+								},
+							},
+						},
+					}
+
+					// New VM adds a second volume with different ClaimName.
+					ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name: "new-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "existing-pvc-1",
+								},
+							},
+						},
+					})
+				},
+				validate: doValidateWithMsg(
+					"spec.volumes[1].persistentVolumeClaim.claimName: Duplicate value: \"existing-pvc-1\"",
+				),
+			},
+		),
+		Entry("should allow new volume with different ClaimName",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					// Setup old VM with one volume.
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "existing-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-1",
+									},
+								},
+							},
+						},
+					}
+
+					// New VM adds a second volume with different ClaimName.
+					ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name: "new-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "new-pvc-2",
+								},
+							},
+						},
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+
+		Entry("should allow new volume with empty PVC",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					// Setup old VM with one volume.
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "existing-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "existing-pvc-1",
+									},
+								},
+							},
+						},
+					}
+
+					// New VM adds a second volume without claim name
+					ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes,
+						vmopv1.VirtualMachineVolume{
+							Name: "vol-2",
+							// Controller info is required.
+							UnitNumber:          ptr.To(int32(10)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+						},
+					)
+				},
+				expectAllowed: true,
+			},
+		),
+	)
+
 	unitTestsValidateVolumeUnitNumber(doTest)
 
 	commonCreateAndUpdateValidations(doTest)
@@ -8568,7 +8627,7 @@ func commonCreateAndUpdateValidations(
 				},
 				Provisioner: "test-provisioner",
 				Parameters: map[string]string{
-					"storagePolicyID": "encrypted-policy-id",
+					"storagePolicyID": "eb0815ac-b281-4198-b27b-7be39035116b",
 				},
 			}
 			Expect(ctx.Client.Create(ctx, encSC)).To(Succeed())
@@ -8581,7 +8640,7 @@ func commonCreateAndUpdateValidations(
 				},
 				Provisioner: "test-provisioner",
 				Parameters: map[string]string{
-					"storagePolicyID": "non-encrypted-policy-id",
+					"storagePolicyID": "705e4a3e-8e09-4c65-bbd2-87dab8e8b4aa",
 				},
 			}
 			Expect(ctx.Client.Create(ctx, nonEncSC)).To(Succeed())

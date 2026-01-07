@@ -110,7 +110,7 @@ func (m mutator) mutateCreate(ctx *pkgctx.WebhookRequestContext) admission.Respo
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
 		if vmSet.Len() == 0 {
-			return admission.Errored(http.StatusBadRequest, fmt.Errorf("%q group does not have any memebers", groupPubReq.Spec.Source))
+			return admission.Errored(http.StatusBadRequest, fmt.Errorf("%q group does not have any members", groupPubReq.Spec.Source))
 		}
 
 		// ensure vms are unique and sorted when it is set by the mutator

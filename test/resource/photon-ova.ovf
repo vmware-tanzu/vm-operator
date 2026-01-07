@@ -126,18 +126,18 @@
             <FullVersion>3.0</FullVersion>
             <Property ovf:key="vmware-system.compatibilityoffering.version" ovf:type="string"
                       ovf:userConfigurable="true" ovf:value="v1alpha2">
-                <Label>Compatiblity offering version</Label>
-                <Description>Compatiblity offering version</Description>
+                <Label>Compatibility offering version</Label>
+                <Description>Compatibility offering version</Description>
             </Property>
             <Property ovf:key="vmware-system.compatibilityoffering.offers.pvc.version" ovf:type="string"
                       ovf:userConfigurable="true" ovf:value="v2">
-                <Label>Compatiblity offering pvc version</Label>
-                <Description>Compatiblity offering pvc version</Description>
+                <Label>Compatibility offering pvc version</Label>
+                <Description>Compatibility offering pvc version</Description>
             </Property>
             <Property ovf:key="vmware-system.compatibilityoffering.offers.kube-apiserver.version" ovf:type="string"
                       ovf:userConfigurable="true" ovf:value="1.14">
-                <Label>Compatiblity offering kubeapi server version</Label>
-                <Description>Compatiblity offering kubeapi server version</Description>
+                <Label>Compatibility offering kubeapi server version</Label>
+                <Description>Compatibility offering kubeapi server version</Description>
             </Property>
         </ProductSection>
 

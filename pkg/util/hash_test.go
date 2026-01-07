@@ -18,7 +18,7 @@ var _ = DescribeTable("SHA1Sum17",
 	Entry("empty string", "", "da39a3ee5e6b4b0d3"),
 	Entry("a", "a", "86f7e437faa5a7fce"),
 	Entry("b", "b", "e9d71f5ee7c92d6dc"),
-	Entry("c", "c", "84a516841ba77a5b4"),
+	Entry("c", "c", "84a516841ba77a5b4"), // spellchecker:disable-line
 	Entry("a/b/c", "a/b/c", "ee2be6da91ae87947"),
 )
 
@@ -29,6 +29,6 @@ var _ = DescribeTable("VMIName",
 	Entry("empty string", "", "vmi-da39a3ee5e6b4b0d3"),
 	Entry("a", "a", "vmi-86f7e437faa5a7fce"),
 	Entry("-b", "-b", "vmi-e9d71f5ee7c92d6dc"),
-	Entry("c-", "c-", "vmi-84a516841ba77a5b4"),
+	Entry("c-", "c-", "vmi-84a516841ba77a5b4"), // spellchecker:disable-line
 	Entry("a/--b/-c", "a/--b-/c", "vmi-ee2be6da91ae87947"),
 )

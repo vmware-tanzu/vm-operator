@@ -3728,6 +3728,11 @@ func (in *VirtualMachineTemplateSpec) DeepCopy() *VirtualMachineTemplateSpec {
 func (in *VirtualMachineVolume) DeepCopyInto(out *VirtualMachineVolume) {
 	*out = *in
 	in.VirtualMachineVolumeSource.DeepCopyInto(&out.VirtualMachineVolumeSource)
+	if in.Removable != nil {
+		in, out := &in.Removable, &out.Removable
+		*out = new(bool)
+		**out = **in
+	}
 	if in.ControllerBusNumber != nil {
 		in, out := &in.ControllerBusNumber, &out.ControllerBusNumber
 		*out = new(int32)

@@ -16,4 +16,5 @@ var Bases embed.FS
 //
 //go:embed external-crds/encryption.vmware.com_*.yaml
 //go:embed external-crds/vsphere.policy.vmware.com_*.yaml
+//go:embed external-crds/infra.vmware.com_*.yaml
 var External embed.FS

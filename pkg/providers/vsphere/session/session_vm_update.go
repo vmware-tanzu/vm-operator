@@ -299,7 +299,8 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		if err := s.poweredOnReconfigure(
 			vmCtx,
 			vcVM,
-			vmCtx.MoVM.Config); err != nil {
+			vmCtx.MoVM.Config,
+			networkResults); err != nil {
 
 			return err
 		}
@@ -347,12 +348,71 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		networkResults)
 }
 
+// handleRestoredVPCInterfaces handles network device reconciliation after a VM is
+// restored from backup in VPC environments. When a VM is restored, its network
+// devices retain their original MAC addresses, but the VPC SubnetPort CR is recreated
+// with a new Status.Attachment.ID (ExternalID). This function detects such mismatches
+// and reconfigures the devices to use the new ExternalID and backing.
+// This is bespoke to just VPC restore - eventually we'll just handle this generally as
+// a part of hot plug.
+func (s *Session) handleRestoredVPCInterfaces(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	networkResults network.NetworkInterfaceResults) error {
+
+	interfaces, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]
+	if !ok {
+		return nil
+	}
+
+	vmCtx.Logger.Info("VPC SubnetPorts needing to be restored", "interfaces", interfaces)
+
+	currentEthCards := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device).
+		SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+
+	deviceChanges, err := network.VPCPostRestoreBackingFixup(
+		vmCtx,
+		currentEthCards,
+		networkResults)
+	if err != nil {
+		return err
+	}
+
+	if len(deviceChanges) == 0 {
+		delete(vmCtx.VM.Annotations, network.VPCInterfaceRestoredAnnotation)
+		vmCtx.Logger.Info("Determined no VPC SubnetPorts needed to restored")
+		return nil
+	}
+
+	vmCtx.Logger.Info(
+		"Reconfiguring VM network devices for restored/failed-over VM",
+		"numDeviceChanges", len(deviceChanges))
+	configSpec := vimtypes.VirtualMachineConfigSpec{
+		DeviceChange: deviceChanges,
+	}
+
+	if _, err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, &configSpec); err != nil {
+		return fmt.Errorf("failed to reconfigure restored network devices: %w", err)
+	}
+
+	delete(vmCtx.VM.Annotations, network.VPCInterfaceRestoredAnnotation)
+	return ErrReconfigure
+}
+
 func (s *Session) poweredOnReconfigure(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	config *vimtypes.VirtualMachineConfigInfo) error {
+	config *vimtypes.VirtualMachineConfigInfo,
+	networkResults network.NetworkInterfaceResults) error {
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
+
+	if pkgcfg.FromContext(vmCtx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
+		err := s.handleRestoredVPCInterfaces(vmCtx, vcVM, networkResults)
+		if err != nil {
+			return err
+		}
+	}
 
 	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
 		vmCtx,
@@ -432,6 +492,16 @@ func (s *Session) poweredOffReconfigure(
 			APIVersion: vmopv1.GroupVersion.String(),
 			Kind:       "VirtualMachineClass",
 			Name:       updateArgs.VMClass.Name,
+		}
+	}
+
+	if reconfigErr == nil || errors.Is(reconfigErr, ErrReconfigure) {
+		if pkgcfg.FromContext(vmCtx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
+			if v, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]; ok {
+				vmCtx.Logger.Info("Removing VPC restore annotation after powered off reconfigure",
+					"interfaces", v)
+				delete(vmCtx.VM.Annotations, network.VPCInterfaceRestoredAnnotation)
+			}
 		}
 	}
 
@@ -933,6 +1003,14 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 
 	if reconfigErr != nil && !errors.Is(reconfigErr, ErrReconfigure) {
 		return err
+	}
+
+	if pkgcfg.FromContext(vmCtx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
+		if v, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]; ok {
+			vmCtx.Logger.Info("Removing VPC restore annotation after powered off reconfigure",
+				"interfaces", v)
+			delete(vmCtx.VM.Annotations, network.VPCInterfaceRestoredAnnotation)
+		}
 	}
 
 	if needsResize {

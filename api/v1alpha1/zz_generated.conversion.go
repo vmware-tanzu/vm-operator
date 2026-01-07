@@ -2267,6 +2267,7 @@ func autoConvert_v1alpha1_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(
 func autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(in *v1alpha5.VirtualMachineVolume, out *VirtualMachineVolume, s conversion.Scope) error {
 	out.Name = in.Name
 	// WARNING: in.VirtualMachineVolumeSource requires manual conversion: does not exist in peer-type
+	// WARNING: in.Removable requires manual conversion: does not exist in peer-type
 	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type

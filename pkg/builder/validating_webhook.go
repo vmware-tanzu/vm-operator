@@ -175,11 +175,6 @@ func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Req
 func (h *validatingWebhookHandler) HandleValidate(req admission.Request, ctx *pkgctx.WebhookRequestContext) admission.Response {
 
 	if _, ok := ctx.Obj.GetAnnotations()[pkgconst.SkipValidationAnnotationKey]; ok {
-		if !ctx.IsPrivilegedAccount {
-			// Only privileged users may set the skip validation annotation.
-			return webhook.Denied(SkipValidationDenied)
-		}
-
 		// The object has the skip validation annotation, so allow the object to
 		// bypass validation.
 		return webhook.Allowed(SkipValidationAllowed)

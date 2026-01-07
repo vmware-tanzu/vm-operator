@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -249,6 +250,87 @@ var _ = Describe("CreateResizeConfigSpec Devices", func() {
 				&vimtypes.VirtualUSBController{EhciEnabled: truePtr},
 				nil),
 		)
+	})
+
+	Context("Adding new devices when existing devices exist", func() {
+		It("Add the correct new devices", func() {
+			expectedDev1 := &vimtypes.VirtualSerialPort{}
+			expectedDev1.Key = -101
+			expectedDev1.Backing = &vimtypes.VirtualSerialPortDeviceBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+					DeviceName: "one",
+				},
+			}
+			expectedDev2 := &vimtypes.VirtualSerialPort{}
+			expectedDev2.Key = -102
+			expectedDev2.Backing = &vimtypes.VirtualSerialPortDeviceBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+					DeviceName: "two",
+				},
+			}
+			expectedDev3 := &vimtypes.VirtualSerialPort{}
+			expectedDev3.Key = -103
+			expectedDev3.Backing = &vimtypes.VirtualSerialPortDeviceBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+					DeviceName: "three",
+				},
+			}
+
+			currentDev := &vimtypes.VirtualSerialPort{}
+			currentDev.Key = 9000
+			currentDev.Backing = &vimtypes.VirtualSerialPortDeviceBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+					DeviceName: "one",
+				},
+			}
+
+			ci := vimtypes.VirtualMachineConfigInfo{}
+			ci.Hardware.Device = append(ci.Hardware.Device, currentDev)
+
+			devChanges, err := (object.VirtualDeviceList{expectedDev1, expectedDev2, expectedDev3}).ConfigSpec(AddOp)
+			Expect(err).ToNot(HaveOccurred())
+			cs := vimtypes.VirtualMachineConfigSpec{}
+			cs.DeviceChange = devChanges
+
+			actualCS, err := resize.CreateResizeConfigSpec(ctx, ci, cs)
+			Expect(err).ToNot(HaveOccurred())
+
+			// The first dev matches so should add just the two new devices.
+			Expect(actualCS.DeviceChange).To(HaveLen(2))
+			Expect(actualCS.DeviceChange).To(ConsistOf(devChanges[1:]))
+		})
+
+		It("should add correct devices when no current devices exist", func() {
+			expectedDev1 := &vimtypes.VirtualSerialPort{}
+			expectedDev1.Key = -201
+			expectedDev1.Backing = &vimtypes.VirtualSerialPortDeviceBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+					DeviceName: "one",
+				},
+			}
+			expectedDev2 := &vimtypes.VirtualSerialPort{}
+			expectedDev2.Key = -202
+			expectedDev2.Backing = &vimtypes.VirtualSerialPortDeviceBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+					DeviceName: "two",
+				},
+			}
+
+			// No current devices.
+			ci := vimtypes.VirtualMachineConfigInfo{}
+
+			devChanges, err := (object.VirtualDeviceList{expectedDev1, expectedDev2}).ConfigSpec(AddOp)
+			Expect(err).ToNot(HaveOccurred())
+			cs := vimtypes.VirtualMachineConfigSpec{}
+			cs.DeviceChange = devChanges
+
+			actualCS, err := resize.CreateResizeConfigSpec(ctx, ci, cs)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Should add the two new devices.
+			Expect(actualCS.DeviceChange).To(HaveLen(2))
+			Expect(actualCS.DeviceChange).To(ConsistOf(devChanges))
+		})
 	})
 })
 

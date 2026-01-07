@@ -239,6 +239,8 @@ func CreateConfigSpecForPlacement(
 		genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec)
 	}
 
+	cleanupConfigSpecForPlacement(&configSpec)
+
 	// TODO: Add more devices and fields
 	//  - storage profile/class
 	//  - PVC volumes
@@ -247,6 +249,24 @@ func CreateConfigSpecForPlacement(
 	//  - whatever else I'm forgetting
 
 	return configSpec, nil
+}
+
+// cleanupConfigSpecForPlacement removes fields from the placement
+// ConfigSpec that are unnecessary for placement.
+func cleanupConfigSpecForPlacement(configSpec *vimtypes.VirtualMachineConfigSpec) {
+
+	if configSpec.VAppConfig != nil {
+		if vmConfigSpec := configSpec.VAppConfig.GetVmConfigSpec(); vmConfigSpec != nil {
+			// VKS images have a huge vApp properties since it contains a bunch of config
+			// yaml and other metadata. This is a lot of log spam when logging the placement
+			// request and response.
+			if len(vmConfigSpec.Property) > 0 {
+				cs := *vmConfigSpec
+				cs.Property = nil
+				configSpec.VAppConfig = &cs
+			}
+		}
+	}
 }
 
 // ConfigSpecFromVMClassDevices creates a ConfigSpec that adds the standalone hardware devices from

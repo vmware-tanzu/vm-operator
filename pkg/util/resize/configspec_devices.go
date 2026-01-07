@@ -200,10 +200,10 @@ func zipVirtualDevicesOfType[T vimtypes.BaseVirtualDevice](
 	}
 
 	// Add new expected devices.
-	for idx := range expectedDevs[minLen:] {
+	for _, dev := range expectedDevs[minLen:] {
 		deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-			Device:    expectedDevs[idx],
+			Device:    dev,
 		})
 	}
 

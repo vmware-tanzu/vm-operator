@@ -55,7 +55,7 @@ func unitTests() {
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
-		unitTestVaildateTemplateObjectMetaAndSelectorMatching,
+		unitTestValidateTemplateObjectMetaAndSelectorMatching,
 	)
 }
 
@@ -89,7 +89,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 }
 
-func unitTestVaildateTemplateObjectMetaAndSelectorMatching() {
+func unitTestValidateTemplateObjectMetaAndSelectorMatching() {
 	var (
 		ctx *unitValidatingWebhookContext
 	)
@@ -115,7 +115,7 @@ func unitTestVaildateTemplateObjectMetaAndSelectorMatching() {
 			args.validate(ctx, response)
 		}
 
-		// Template metadata validations, and label matching has the same vaildation for create and update.
+		// Template metadata validations, and label matching has the same validation for create and update.
 		response = ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(args.expectAllowed))
 

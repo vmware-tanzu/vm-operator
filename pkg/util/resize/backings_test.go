@@ -121,7 +121,7 @@ var _ = Describe("Backings", func() {
 		),
 		Entry("#3",
 			vimtypes.VirtualDeviceURIBackingInfo{ServiceURI: "foo", Direction: "in", ProxyURI: "bar"},
-			vimtypes.VirtualDeviceURIBackingInfo{ServiceURI: "foX", Direction: "in", ProxyURI: "bar"},
+			vimtypes.VirtualDeviceURIBackingInfo{ServiceURI: "foX", Direction: "in", ProxyURI: "bar"}, // spellchecker:disable-line
 			false,
 		),
 		Entry("#4",
@@ -131,7 +131,7 @@ var _ = Describe("Backings", func() {
 		),
 		Entry("#5",
 			vimtypes.VirtualDeviceURIBackingInfo{ServiceURI: "foo", Direction: "in", ProxyURI: "bar"},
-			vimtypes.VirtualDeviceURIBackingInfo{ServiceURI: "foo", Direction: "in", ProxyURI: "baX"},
+			vimtypes.VirtualDeviceURIBackingInfo{ServiceURI: "foo", Direction: "in", ProxyURI: "baX"}, // spellchecker:disable-line
 			false,
 		),
 	)

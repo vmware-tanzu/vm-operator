@@ -29,7 +29,10 @@ import (
 	vmconfunmanagedvolsfill "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
 )
 
-var ErrUpgradeSchema = pkgerr.NoRequeueNoErr("upgraded vm schema")
+var (
+	ErrUpgradeSchema = pkgerr.NoRequeueNoErr("upgraded vm schema")
+	ErrUpgradeObject = pkgerr.NoRequeueNoErr("upgraded vm object")
+)
 
 // ReconcileSchemaUpgrade ensures the VM's spec is upgraded to match the current
 // expectations for the data that should be present on a VirtualMachine object.
@@ -37,9 +40,9 @@ var ErrUpgradeSchema = pkgerr.NoRequeueNoErr("upgraded vm schema")
 // API object's spec.
 //
 // Please note, each time VM Operator is upgraded, patch/update operations
-// against VirtualMachine objects by unprivileged users will be denied until
-// ReconcileSchemaUpgrade is executed. This ensures the objects are not changing
-// while the object is being back-filled.
+// against VirtualMachine objects for specific fields by unprivileged users will
+// be denied until ReconcileSchemaUpgrade is executed. This ensures the objects
+// are not changing while the object is being back-filled.
 func ReconcileSchemaUpgrade(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -66,7 +69,7 @@ func ReconcileSchemaUpgrade(
 
 	logger.V(4).Info("Reconciling schema upgrade for VM")
 
-	if err := vmopv1util.IsObjectSchemaUpgraded(ctx, vm); err != nil {
+	if err := vmopv1util.IsObjectUpgraded(ctx, vm); err != nil {
 		logger.Info("Upgrading VM", "reason", err.Error())
 	} else {
 		if features.AllDisksArePVCs || features.VMSharedDisks {
@@ -82,8 +85,7 @@ func ReconcileSchemaUpgrade(
 	}
 
 	var (
-		wasModified        bool
-		wasFeatureModified bool
+		wasSchemaModified bool
 
 		curBuildVersion  = pkgcfg.FromContext(ctx).BuildVersion
 		curSchemaVersion = vmopv1.GroupVersion.Version
@@ -98,14 +100,22 @@ func ReconcileSchemaUpgrade(
 		vm.SetAnnotation(
 			pkgconst.UpgradedToBuildVersionAnnotationKey,
 			curBuildVersion)
-		wasModified = true
+		wasSchemaModified = true
 	}
 
 	if vmSchemaVersion != curSchemaVersion {
 		vm.SetAnnotation(
 			pkgconst.UpgradedToSchemaVersionAnnotationKey,
 			curSchemaVersion)
-		wasModified = true
+		wasSchemaModified = true
+	}
+
+	if wasSchemaModified {
+		logger.Info("Upgraded VM schema",
+			"buildVersion", curBuildVersion,
+			"schemaVersion", curSchemaVersion,
+			"featureVersion", vmFeatureVersion)
+		return ErrUpgradeSchema
 	}
 
 	if f := vmopv1util.FeatureVersionBase; !vmFeatureVersion.Has(f) {
@@ -113,7 +123,6 @@ func ReconcileSchemaUpgrade(
 		reconcileInstanceUUID(ctx, vm, moVM)
 		reconcileCloudInitInstanceUUID(ctx, vm, moVM)
 
-		wasFeatureModified = true
 		vmFeatureVersion.Set(f)
 	}
 
@@ -127,6 +136,7 @@ func ReconcileSchemaUpgrade(
 	// This ensures any disks from the VM images are properly backfilled into
 	// the VM's spec so that the mutation webhook can make informed decisions
 	// about any new PVCs added by a user.
+	//
 	if features.AllDisksArePVCs || features.VMSharedDisks {
 		if f := vmopv1util.FeatureVersionAllDisksArePVCs; !vmFeatureVersion.Has(f) {
 			if err := vmconfunmanagedvolsfill.Reconcile(
@@ -143,7 +153,6 @@ func ReconcileSchemaUpgrade(
 				}
 			}
 
-			wasFeatureModified = true
 			vmFeatureVersion.Set(f)
 		}
 	}
@@ -153,33 +162,27 @@ func ReconcileSchemaUpgrade(
 			reconcileControllers(ctx, vm, moVM)
 			reconcileDevices(ctx, vm, moVM, k8sClient)
 
-			wasFeatureModified = true
 			vmFeatureVersion.Set(f)
 		}
 	}
 
-	if wasFeatureModified {
-		vm.SetAnnotation(
-			pkgconst.UpgradedToFeatureVersionAnnotationKey,
-			vmFeatureVersion.String())
-	}
+	vm.SetAnnotation(
+		pkgconst.UpgradedToFeatureVersionAnnotationKey,
+		vmFeatureVersion.String())
 
-	if wasModified || wasFeatureModified {
-		logger.V(4).Info("Upgraded VM schema version",
-			"buildVersion", curBuildVersion,
-			"schemaVersion", curSchemaVersion,
-			"featureVersion", vmFeatureVersion)
+	logger.Info("Upgraded VM object",
+		"buildVersion", curBuildVersion,
+		"schemaVersion", curSchemaVersion,
+		"featureVersion", vmFeatureVersion)
 
-		// Only cause the reconcile loop to exit early IFF there were any
-		// modifications. This is not just efficient, but it also ensures that
-		// a capability being disabled does not result in a circular reconcile
-		// loop due to the ActivatedFeatureVersion no longer ever able to match
-		// the one set on a VM that was upgraded when a now disabled feature was
-		// previously enabled.
-		return ErrUpgradeSchema
-	}
+	// Only cause the reconcile loop to exit early IFF there were any
+	// modifications. This is not just efficient, but it also ensures that
+	// a capability being disabled does not result in a circular reconcile
+	// loop due to the ActivatedFeatureVersion no longer ever able to match
+	// the one set on a VM that was upgraded when a now disabled feature was
+	// previously enabled.
+	return ErrUpgradeObject
 
-	return nil
 }
 
 func reconcileBIOSUUID(

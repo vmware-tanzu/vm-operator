@@ -792,7 +792,7 @@ type VirtualMachineSpec struct {
 
 	// +optional
 
-	// Class describes the VirtualMachineClassInsance resource that is
+	// Class describes the VirtualMachineClassInstance resource that is
 	// referenced by this virtual machine. This can be the
 	// VirtualMachineClassInstance that the virtual machine was
 	// created, or later resized with.

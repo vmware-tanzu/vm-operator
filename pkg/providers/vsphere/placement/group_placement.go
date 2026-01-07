@@ -6,6 +6,7 @@ package placement
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vim25"
@@ -23,30 +24,49 @@ func GroupPlacement(
 	namespace, childRPName string,
 	configSpecs []vimtypes.VirtualMachineConfigSpec) (map[string]Result, error) {
 
-	candidates, resourcePoolToZoneName, err := getPlacementCandidates(ctx, client, vcClient, "", namespace, childRPName)
+	candidates, err := getPlacementCandidates(ctx, client, vcClient, "", namespace, childRPName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get placement candidates: %w", err)
 	}
 
 	if len(candidates) == 0 {
 		return nil, ErrNoPlacementCandidates
 	}
 
-	recommendations, err := getGroupPlacementRecommendations(ctx, vcClient, finder, candidates, configSpecs)
+	needDatastorePlacement := pkgcfg.FromContext(ctx).Features.FastDeploy
+	recommendations, err := getGroupPlacementRecommendations(
+		ctx,
+		vcClient,
+		finder,
+		candidates,
+		configSpecs,
+		needDatastorePlacement)
 	if err != nil {
 		return nil, err
 	}
 
-	results := map[string]Result{}
+	resourcePoolToZoneName := make(map[string]string, len(candidates))
+	for zoneName, rpMoIDs := range candidates {
+		for _, rpMoID := range rpMoIDs {
+			resourcePoolToZoneName[rpMoID] = zoneName
+		}
+	}
+
+	results := make(map[string]Result, len(recommendations))
 	for vmName, recommendation := range recommendations {
-		if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if needDatastorePlacement {
 			// Get the name and type of the datastores.
 			if err := getDatastoreProperties(ctx, vcClient, &recommendation); err != nil {
 				return nil, err
 			}
 		}
 
-		zoneName := resourcePoolToZoneName[recommendation.PoolMoRef.Value]
+		zoneName, ok := resourcePoolToZoneName[recommendation.PoolMoRef.Value]
+		if !ok {
+			// This should never happen: placement returned a non-candidate RP.
+			return nil, fmt.Errorf("no zone assignment for ResourcePool %s",
+				recommendation.PoolMoRef.Value)
+		}
 
 		result := Result{
 			ZoneName:   zoneName,
@@ -66,7 +86,8 @@ func getGroupPlacementRecommendations(
 	vcClient *vim25.Client,
 	finder *find.Finder,
 	candidates map[string][]string,
-	configSpecs []vimtypes.VirtualMachineConfigSpec) (map[string]Recommendation, error) {
+	configSpecs []vimtypes.VirtualMachineConfigSpec,
+	needDatastorePlacement bool) (map[string]Recommendation, error) {
 
 	var candidateRPMoRefs []vimtypes.ManagedObjectReference
 
@@ -80,12 +101,11 @@ func getGroupPlacementRecommendations(
 		}
 	}
 
-	return ClusterPlaceVMForCreate(
+	return getClusterPlacementRecommendations(
 		ctx,
 		vcClient,
 		finder,
 		candidateRPMoRefs,
 		configSpecs,
-		false,
-		true)
+		needDatastorePlacement)
 }

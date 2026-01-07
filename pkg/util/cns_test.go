@@ -17,7 +17,7 @@ var _ = DescribeTable("SanitizeCNSErrorMessage",
 	},
 	Entry("leave empty message untouched", "", ""),
 	Entry("leave normal message with ':' untouched", "error: this is wrong", "error: this is wrong"),
-	Entry("sanitize aweful error message", `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
+	Entry("sanitize awful error message", `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
 [VirtualCenterHost: vc.vmware.com, UUID: 42080725-d6b0-c045-b24e-29c4dadca6f2, Datacenter: Datacenter
 [Datacenter: Datacenter:datacenter, VirtualCenterHost: vc.vmware.com]]\".
 fault: \"(*vimtypes.LocalizedMethodFault)(0xc003d9b9a0)({\\n DynamicData: (vimtypes.DynamicData)

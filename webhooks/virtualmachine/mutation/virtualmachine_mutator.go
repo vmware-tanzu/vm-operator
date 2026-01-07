@@ -355,7 +355,7 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		if pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
 			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 
-			if err := vmopv1util.IsObjectSchemaUpgraded(
+			if err := vmopv1util.IsObjectUpgraded(
 				ctx, modified); err != nil {
 
 				pkglog.FromContextOrDefault(ctx).Info(

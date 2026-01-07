@@ -223,18 +223,10 @@ var _ = Describe("NewValidatingWebhook", func() {
 							pkgconst.SkipValidationAnnotationKey: "",
 						})
 					})
-					When("privileged user", func() {
-						It("should return true", func() {
-							req := getAdmissionRequest(obj, admissionv1.Create)
-							req.UserInfo.Groups = []string{"system:masters"}
-							assertOkay(req, pkgbuilder.SkipValidationAllowed)
-						})
-					})
-					When("unprivileged user", func() {
-						It("should return false", func() {
-							req := getAdmissionRequest(obj, admissionv1.Create)
-							assertNotOkay(req, 403, pkgbuilder.SkipValidationDenied)
-						})
+
+					It("should return true", func() {
+						req := getAdmissionRequest(obj, admissionv1.Create)
+						assertOkay(req, pkgbuilder.SkipValidationAllowed)
 					})
 				})
 			})
@@ -282,18 +274,10 @@ var _ = Describe("NewValidatingWebhook", func() {
 							pkgconst.SkipValidationAnnotationKey: "",
 						})
 					})
-					When("privileged user", func() {
-						It("should return true", func() {
-							req := getAdmissionRequest(obj, admissionv1.Update)
-							req.UserInfo.Groups = []string{"system:masters"}
-							assertOkay(req, pkgbuilder.SkipValidationAllowed)
-						})
-					})
-					When("unprivileged user", func() {
-						It("should return false", func() {
-							req := getAdmissionRequest(obj, admissionv1.Update)
-							assertNotOkay(req, 403, pkgbuilder.SkipValidationDenied)
-						})
+
+					It("should return true", func() {
+						req := getAdmissionRequest(obj, admissionv1.Update)
+						assertOkay(req, pkgbuilder.SkipValidationAllowed)
 					})
 				})
 			})

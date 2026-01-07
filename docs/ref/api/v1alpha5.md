@@ -3478,7 +3478,7 @@ The virtual machine must support this capability.
 When set to false, the power state of the snapshot is set to
 false.
 For a VM in suspended state, memory is always included
-in the snashot. |
+in the snapshot. |
 | `quiesce` _[QuiesceSpec](#quiescespec)_ | Quiesce represents the spec used for granular control over
 quiesce details. If quiesceSpec is set and the virtual machine
 is powered on when the snapshot is taken, VMware Tools is used
@@ -3623,7 +3623,7 @@ VM class.
 
 If a VM is using a class, a different value in spec.className
 leads to the VM being resized. |
-| `class` _[LocalObjectRef](#localobjectref)_ | Class describes the VirtualMachineClassInsance resource that is
+| `class` _[LocalObjectRef](#localobjectref)_ | Class describes the VirtualMachineClassInstance resource that is
 referenced by this virtual machine. This can be the
 VirtualMachineClassInstance that the virtual machine was
 created, or later resized with.

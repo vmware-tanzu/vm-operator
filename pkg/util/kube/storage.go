@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
+	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -17,7 +19,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/cespare/xxhash/v2"
+	"github.com/google/uuid"
+
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
 
@@ -177,85 +184,6 @@ func SetStoragePolicyID(obj *storagev1.StorageClass, id string) {
 	obj.Parameters[internal.StoragePolicyIDParameter] = id
 }
 
-// MarkEncryptedStorageClass records the provided StorageClass as encrypted.
-func MarkEncryptedStorageClass(
-	ctx context.Context,
-	k8sClient ctrlclient.Client,
-	storageClass storagev1.StorageClass,
-	encrypted bool) error {
-
-	var (
-		obj = corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-				Name:      internal.EncryptedStorageClassNamesConfigMapName,
-			},
-		}
-		ownerRef = internal.GetOwnerRefForStorageClass(storageClass)
-	)
-
-	// Get the ConfigMap.
-	err := k8sClient.Get(ctx, ctrlclient.ObjectKeyFromObject(&obj), &obj)
-
-	if err != nil {
-		// Return any error other than 404.
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-
-		//
-		// The ConfigMap was not found.
-		//
-
-		if !encrypted {
-			// If the goal is to mark the StorageClass as not encrypted, then we
-			// do not need to actually create the underlying ConfigMap if it
-			// does not exist.
-			return nil
-		}
-
-		// The ConfigMap does not already exist and the goal is to mark the
-		// StorageClass as encrypted, so go ahead and create the ConfigMap and
-		// return early.
-		obj.OwnerReferences = []metav1.OwnerReference{ownerRef}
-		return k8sClient.Create(ctx, &obj)
-	}
-
-	//
-	// The ConfigMap already exists, so check if it needs to be updated.
-	//
-
-	storageClassIsOwner := slices.Contains(obj.OwnerReferences, ownerRef)
-
-	switch {
-	case encrypted && storageClassIsOwner:
-		// The StorageClass should be marked encrypted, which means it should
-		// be in the ConfigMap. Since the StorageClass is currently set in the
-		// ConfigMap, we can return early.
-		return nil
-	case !encrypted && !storageClassIsOwner:
-		// The StorageClass should be marked as not encrypted, which means it
-		// should not be in the ConfigMap. Since the StorageClass is not
-		// currently in the ConfigMap, we can return return early.
-		return nil
-	}
-
-	// Create the patch used to update the ConfigMap.
-	objPatch := ctrlclient.StrategicMergeFrom(obj.DeepCopyObject().(ctrlclient.Object))
-	if encrypted {
-		// Add the StorageClass as an owner of the ConfigMap.
-		obj.OwnerReferences = append(obj.OwnerReferences, ownerRef)
-	} else {
-		// Remove the StorageClass as an owner of the ConfigMap.
-		obj.OwnerReferences = slices.DeleteFunc(
-			obj.OwnerReferences,
-			func(o metav1.OwnerReference) bool { return o == ownerRef })
-	}
-
-	// Patch the ConfigMap with the change.
-	return k8sClient.Patch(ctx, &obj, objPatch)
-}
-
 // IsEncryptedStorageClass returns true if the provided StorageClass name was
 // marked as encrypted. If encryption is supported, the StorageClass's profile
 // ID is also returned.
@@ -273,7 +201,17 @@ func IsEncryptedStorageClass(
 		return false, "", ctrlclient.IgnoreNotFound(err)
 	}
 
-	return isEncryptedStorageClass(ctx, k8sClient, obj)
+	profileID, _ := GetStoragePolicyID(obj)
+	if profileID == "" {
+		return false, "", nil
+	}
+
+	ok, err := IsEncryptedStorageProfile(ctx, k8sClient, profileID)
+	if err != nil {
+		return false, "", err
+	}
+
+	return ok, profileID, nil
 }
 
 // IsEncryptedStorageProfile returns true if the provided storage profile ID was
@@ -290,39 +228,164 @@ func IsEncryptedStorageProfile(
 
 	for i := range obj.Items {
 		if pid, _ := GetStoragePolicyID(obj.Items[i]); pid == profileID {
-			ok, _, err := isEncryptedStorageClass(
-				ctx,
-				k8sClient,
-				obj.Items[i])
-			return ok, err
+			var (
+				obj infrav1.StoragePolicy
+				key = ctrlclient.ObjectKey{
+					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+					Name:      GetStoragePolicyObjectName(pid),
+				}
+			)
+			if key.Name != "" {
+				if err := k8sClient.Get(ctx, key, &obj); err != nil {
+					return false, ctrlclient.IgnoreNotFound(err)
+				}
+				return obj.Status.Encrypted, nil
+			}
 		}
 	}
 
 	return false, nil
 }
 
-func isEncryptedStorageClass(
+// GetStoragePolicyObjectName returns the expected name of a StoragePolicy
+// object based on the policy's profile ID.
+func GetStoragePolicyObjectName(profileID string) string {
+	if profileID == "" {
+		return ""
+	}
+
+	if _, err := uuid.Parse(profileID); err != nil {
+
+		if !testing.Testing() {
+			// If not used for testing then an invalid profile ID should
+			// return an empty string to indicate this is invalid.
+			return ""
+		}
+
+		logger := pkglog.FromContextOrDefault(context.Background()).
+			WithName("GetStoragePolicyObjectName").
+			V(0)
+		logger.Error(
+			nil,
+			"!!! GetStoragePolicyObjectName called with invalid profileID !!!",
+			"profileID", profileID)
+
+		// If the provided profileID is not a valid UUID, then just hash it to
+		// construct the StoragePolicy name. This is for testing.
+		h := xxhash.New()
+		if _, err := h.Write([]byte(profileID)); err != nil {
+			panic(err)
+		}
+		return fmt.Sprintf("pol-%x", h.Sum(nil))
+	}
+
+	s := strings.ReplaceAll(strings.ToLower(profileID), "-", "")
+	return fmt.Sprintf("pol-%s-%s", s[0:8], s[16:32])
+}
+
+// MarkEncryptedStorageClass records the provided StorageClass as encrypted.
+func MarkEncryptedStorageClass(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
-	storageClass storagev1.StorageClass) (bool, string, error) {
+	storageClass storagev1.StorageClass,
+	encrypted bool) error {
+
+	profileID, err := GetStoragePolicyID(storageClass)
+	if err != nil {
+		return err
+	}
 
 	var (
-		obj    corev1.ConfigMap
-		objKey = ctrlclient.ObjectKey{
-			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-			Name:      internal.EncryptedStorageClassNamesConfigMapName,
+		obj = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+				Name:      GetStoragePolicyObjectName(profileID),
+			},
 		}
 		ownerRef = internal.GetOwnerRefForStorageClass(storageClass)
 	)
 
-	if err := k8sClient.Get(ctx, objKey, &obj); err != nil {
-		return false, "", ctrlclient.IgnoreNotFound(err)
+	// Get the StoragePolicy.
+	if err := k8sClient.Get(
+		ctx,
+		ctrlclient.ObjectKeyFromObject(&obj),
+		&obj); err != nil {
+
+		// Return any error other than 404.
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+
+		//
+		// The StoragePolicy was not found.
+		//
+
+		// The StoragePolicy does not already exist, so go ahead and create the
+		// StoragePolicy and return early.
+		obj.OwnerReferences = []metav1.OwnerReference{ownerRef}
+		obj.Spec.ID = profileID
+		if err := k8sClient.Create(ctx, &obj); err != nil {
+			return fmt.Errorf("failed to create StoragePolicy \"%s/%s\" "+
+				"for StorageClass %q: %w",
+				obj.Namespace,
+				obj.Name,
+				storageClass.Name,
+				err)
+		}
+
+		obj.Status.Encrypted = encrypted
+		if err := k8sClient.Status().Update(ctx, &obj); err != nil {
+			return fmt.Errorf("failed to update StoragePolicy \"%s/%s\" "+
+				"for StorageClass %q: %w",
+				obj.Namespace,
+				obj.Name,
+				storageClass.Name,
+				err)
+		}
+
+		return nil
 	}
 
-	if slices.Contains(obj.OwnerReferences, ownerRef) {
-		profileID, err := GetStoragePolicyID(storageClass)
-		return true, profileID, err
+	//
+	// The StoragePolicy already exists, so check if it needs to be updated.
+	//
+
+	var (
+		alreadyEncrypted    = obj.Status.Encrypted
+		storageClassIsOwner = slices.Contains(obj.OwnerReferences, ownerRef)
+	)
+
+	if encrypted && alreadyEncrypted && storageClassIsOwner {
+		// The StorageClass should be marked encrypted, and the
+		// StoragePolicy already reflects that. There is nothing to do, so
+		// return early.
+		return nil
+
+	} else if !encrypted && !alreadyEncrypted && storageClassIsOwner {
+		// The StorageClass should NOT be marked encrypted, and the
+		// StoragePolicy already reflects that. There is nothing to do, so
+		// return early.
+		return nil
 	}
 
-	return false, "", nil
+	// Create the patch used to update the StoragePolicy.
+	objPatch := ctrlclient.StrategicMergeFrom(
+		obj.DeepCopyObject().(ctrlclient.Object))
+
+	if !storageClassIsOwner {
+		obj.OwnerReferences = append(obj.OwnerReferences, ownerRef)
+	}
+	obj.Status.Encrypted = encrypted
+
+	// Patch the StoragePolicy with the change.
+	if err := k8sClient.Patch(ctx, &obj, objPatch); err != nil {
+		return fmt.Errorf("failed to patch StoragePolicy \"%s/%s\" "+
+			"for StorageClass %q: %w",
+			obj.Namespace,
+			obj.Name,
+			storageClass.Name,
+			err)
+	}
+
+	return nil
 }

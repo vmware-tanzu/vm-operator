@@ -47,7 +47,7 @@ func MutateCdromControllerOnUpdate(
 
 	// Check the schema upgrade status on the new VM to ensure the mutation
 	// is applied immediately after the schema upgrade completes.
-	if err := vmopv1util.IsObjectSchemaUpgraded(ctx, vm); err != nil {
+	if err := vmopv1util.IsObjectUpgraded(ctx, vm); err != nil {
 		pkglog.FromContextOrDefault(ctx).Info(
 			"Skipping cd-rom controller mutation",
 			"reason", err.Error())

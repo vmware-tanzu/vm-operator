@@ -139,6 +139,7 @@ func updateSpecWithUnmanagedDisks(
 				ControllerBusNumber: ptr.To(info.Controllers[di.ControllerKey].Bus),
 				ControllerType:      info.Controllers[di.ControllerKey].Type,
 				UnitNumber:          di.UnitNumber,
+				Removable:           ptr.To(false),
 			}
 			logger.Info("Backfilled unmanaged volume to spec",
 				"volume", newVolSpec)

@@ -90,6 +90,7 @@ func unitTestsValidateCreate() {
 	type createArgs struct {
 		emptyVMName   bool
 		createVKSNode bool
+		hardware      *vmopv1.VirtualMachineHardwareSpec
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -97,12 +98,15 @@ func unitTestsValidateCreate() {
 			ctx.vmSnapshot.Spec.VMName = ""
 		}
 
-		if args.createVKSNode {
-			// Create a VM with CAPI labels to simulate a VKS/TKG node
+		// Create a VM with CAPI labels to simulate a VKS/TKG node
+		if args.hardware != nil || args.createVKSNode {
 			vm := builder.DummyBasicVirtualMachine(ctx.vmSnapshot.Spec.VMName, ctx.vmSnapshot.Namespace)
-			vm.Labels = map[string]string{
-				kubeutil.CAPWClusterRoleLabelKey: "worker",
+			if args.createVKSNode {
+				vm.Labels = map[string]string{
+					kubeutil.CAPWClusterRoleLabelKey: "worker",
+				}
 			}
+			vm.Spec.Hardware = args.hardware
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 		}
 
@@ -129,7 +133,7 @@ func unitTestsValidateCreate() {
 
 	vmNameField := field.NewPath("spec", "vmName")
 
-	DescribeTable("create table", validateCreate,
+	DescribeTable("Create VMSnapshot", validateCreate,
 		Entry("should allow valid",
 			createArgs{},
 			true,
@@ -146,6 +150,52 @@ func unitTestsValidateCreate() {
 			createArgs{createVKSNode: true},
 			false,
 			field.Forbidden(vmNameField, "snapshots are not allowed for VKS/TKG nodes").Error(),
+			nil,
+		),
+
+		Entry("should deny snapshot if controller has physical sharing mode",
+			createArgs{
+				hardware: &vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+						},
+					},
+				},
+			},
+			false,
+			field.NotSupported(vmNameField, "controller type SCSIControllers bus 0 is using unsupported sharingMode for snapshot: Physical", []string{string(vmopv1.VirtualControllerSharingModeNone)}).Error(),
+			nil,
+		),
+		Entry("should deny snapshot if controller has virtual sharing mode",
+			createArgs{
+				hardware: &vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModeVirtual,
+						},
+					},
+				},
+			},
+			false,
+			field.NotSupported(vmNameField, "controller type SCSIControllers bus 0 is using unsupported sharingMode for snapshot: Virtual", []string{string(vmopv1.VirtualControllerSharingModeNone)}).Error(),
+			nil,
+		),
+		Entry("should allow snapshot if controller has none sharing mode",
+			createArgs{
+				hardware: &vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:   0,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+						},
+					},
+				},
+			},
+			true,
+			nil,
 			nil,
 		),
 	)

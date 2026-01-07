@@ -1,0 +1,62 @@
+# Copyright (c) 2025 Broadcom. All Rights Reserved.
+# Broadcom Confidential. The term "Broadcom" refers to Broadcom Inc.
+# and/or its subsidiaries.
+
+# Check common typos using the https://github.com/crate-ci/typos tool in GitHub actions
+# Use "typos ." in that directory or "typos <your controller directory>" to check for typos locally.
+[files]
+extend-exclude = [
+    "go.mod",
+    "go.sum",
+    "artifacts",
+    "external/",
+    "api-docs/",
+    "**/config/crd/external-crds/*",
+    "**/*.json",
+    # There are typos in these directories but since they are pulled from external sources.
+    "**/pkg/util/netplan/**",
+    "**/pkg/util/cloudinit/**",
+]
+
+[default.extend-words]
+HashiCorp = "HashiCorp"
+Hashi = "Hashi"  # Part of HashiCorp
+exportfs = "exportfs"  # Linux NFS command
+unmarshaling = "unmarshaling"
+# Don't correct ANDed - flagged as Ded - as gateway API use it everywhere
+Ded = "Ded"
+DNE = "DNE" # Does Not Exist
+
+[default]
+extend-ignore-re = [
+    # Because we decided to call channel source a "cource"
+    "[cC]ource",
+    # VMIs
+    "vmi-.*",
+
+    # -- Taken from https://github.com/crate-ci/typos/blob/master/docs/reference.md
+    # Next-line ignore. Use // spellchecker:ignore-next-line
+    "(#|//)\\s*spellchecker:ignore-next-line\\n.*",
+    # Line ignore with trailing // spellchecker:disable-line
+    "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+    # Line block with // spellchecker:<on|off>:
+    "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on",
+    # -- Taken from https://github.com/sirwart/ripsecrets/blob/main/src/lib.rst
+
+    # Private keys
+    "-{5}BEGIN PRIVATE KEY-{5}(?:$|[^-]{63,}-{5}END)",
+    "-{5}BEGIN RSA PRIVATE KEY-{5}(?:$|[^-]{63,}-{5}END)",
+    "-{5}BEGIN OPENSSH PRIVATE KEY-{5}(?:$|[^-]{63,}-{5}END)",
+    # -- Our own
+    # Certificates
+    "-{5}BEGIN CERTIFICATE-{5}(?:$|[^-]{63,}-{5}END)",
+    # CSR
+    "-{5}BEGIN CERTIFICATE REQUEST-{5}(?:$|[^-]{63,}-{5}END)",
+    # IPv6 addresses (various formats including compressed notation with ::)
+    # Full format: 8 groups of 1-4 hex digits
+    "\\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){7}(?:/[0-9]{1,3})?\\b",
+    # Compressed format with :: (matches addresses like 2605:a601:a0ba:720:2ce6::1)
+    "\\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6}::[0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{1,4}){0,6}(?:/[0-9]{1,3})?\\b",
+    # Any sequence that looks like an IPv6 segment (at least 2 colon-separated hex groups)
+    "\\b[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){1,6}(?:/[0-9]{1,3})?\\b",
+]

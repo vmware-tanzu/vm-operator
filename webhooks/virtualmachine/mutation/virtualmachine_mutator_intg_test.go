@@ -19,6 +19,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -567,6 +568,7 @@ func intgTestsMutating() {
 	Context("Crypto", func() {
 		const (
 			fakeString    = "fake"
+			profileID     = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
 			encClassName  = "my-encryption-class"
 			keyProviderID = "my-key-provider-id"
 			keyID         = "my-key-id"
@@ -574,8 +576,9 @@ func intgTestsMutating() {
 		)
 
 		var (
-			encClass  byokv1.EncryptionClass
-			storClass storagev1.StorageClass
+			encClass   byokv1.EncryptionClass
+			storClass  storagev1.StorageClass
+			storPolicy infrav1.StoragePolicy
 		)
 
 		BeforeEach(func() {
@@ -603,25 +606,25 @@ func intgTestsMutating() {
 				},
 				Provisioner: fakeString,
 			}
-			kubeutil.SetStoragePolicyID(&storClass, fakeString)
-
+			kubeutil.SetStoragePolicyID(&storClass, profileID)
 			ctx.vm.Spec.StorageClass = storClass.Name
 
 			Expect(ctx.Client.Create(ctx, &encClass)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, &storClass)).To(Succeed())
+
 			Expect(kubeutil.MarkEncryptedStorageClass(
 				ctx,
 				ctx.Client,
 				storClass,
 				true)).To(Succeed())
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{
+				Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			}, &storPolicy)).To(Succeed())
 		})
 
 		AfterEach(func() {
-			Expect(kubeutil.MarkEncryptedStorageClass(
-				ctx,
-				ctx.Client,
-				storClass,
-				false)).To(Succeed())
+			Expect(ctx.Client.Delete(ctx, &storPolicy)).To(Succeed())
 			Expect(ctx.Client.Delete(ctx, &storClass)).To(Succeed())
 		})
 
@@ -644,11 +647,8 @@ func intgTestsMutating() {
 				})
 				When("spec.storageClass does not support encryption", func() {
 					BeforeEach(func() {
-						Expect(kubeutil.MarkEncryptedStorageClass(
-							ctx,
-							ctx.Client,
-							storClass,
-							false)).To(Succeed())
+						storPolicy.Status.Encrypted = false
+						Expect(ctx.Client.Status().Update(ctx, &storPolicy)).To(Succeed())
 					})
 					It("should not modify spec.crypto", func() {
 						Expect(ctx.vm.Spec.Crypto).To(BeNil())
@@ -836,16 +836,17 @@ func intgTestsMutating() {
 
 				})
 
-			It("should leave disk mode and sharing mode empty", func() {
-				vm := &vmopv1.VirtualMachine{}
-				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
-				Expect(vm.Spec.Volumes[0].DiskMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[1].DiskMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[1].SharingMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[2].DiskMode).To(BeEmpty())
-				Expect(vm.Spec.Volumes[2].SharingMode).To(BeEmpty())
-			})
+				It("should leave disk mode and sharing mode empty", func() {
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					Expect(vm.Spec.Volumes).To(HaveLen(3))
+					Expect(vm.Spec.Volumes[0].DiskMode).To(BeEmpty())
+					Expect(vm.Spec.Volumes[0].SharingMode).To(BeEmpty())
+					Expect(vm.Spec.Volumes[1].DiskMode).To(BeEmpty())
+					Expect(vm.Spec.Volumes[1].SharingMode).To(BeEmpty())
+					Expect(vm.Spec.Volumes[2].DiskMode).To(BeEmpty())
+					Expect(vm.Spec.Volumes[2].SharingMode).To(BeEmpty())
+				})
 			})
 		})
 	})

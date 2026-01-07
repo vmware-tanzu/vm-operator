@@ -352,8 +352,15 @@ func (r reconciler) reconcileUpdateDefaultKeyProvider(
 			// There is a default key provider.
 			//
 
-			// Encrypt the existing VM.
-			return true, doOp(ctx, args, doEncrypt)
+			if args.hasVTPM || args.addVTPM || args.isEncStorClass {
+
+				//
+				// The existing VM meets the requirements to be encrypted.
+				//
+
+				// Encrypt the existing VM.
+				return true, doOp(ctx, args, doEncrypt)
+			}
 		}
 
 	} else {

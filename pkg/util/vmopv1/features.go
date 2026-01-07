@@ -34,7 +34,7 @@ func (e NotUpgradedErr) Error() string {
 	return e.String()
 }
 
-// IsObjectSchemaUpgraded returns nil if below conditions are all met
+// IsObjectUpgraded returns nil if below conditions are all met
 // by checking the upgrade annotations:
 //
 //  1. The object's build version has been upgraded to the current build
@@ -43,7 +43,7 @@ func (e NotUpgradedErr) Error() string {
 //     version.
 //  3. The object's feature version has been upgraded to the current feature
 //     version.
-func IsObjectSchemaUpgraded(
+func IsObjectUpgraded(
 	ctx context.Context,
 	obj ctrlclient.Object) error {
 
@@ -225,7 +225,7 @@ func ActivatedFeatureVersion(ctx context.Context) FeatureVersion {
 	if f.VMSharedDisks {
 		v.Set(FeatureVersionVMSharedDisks)
 	}
-	if f.AllDisksArePVCs {
+	if f.AllDisksArePVCs || f.VMSharedDisks {
 		v.Set(FeatureVersionAllDisksArePVCs)
 	}
 	return v

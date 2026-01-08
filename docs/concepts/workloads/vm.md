@@ -1363,3 +1363,46 @@ Groups and their members report various conditions:
     - Keep nesting levels reasonable (2-3 levels max)
     - Use hierarchy to model real application relationships
     - Ensure parent groups account for child group dependencies
+
+## VirtualMachine Snapshots
+
+VirtualMachine Snapshots can be taken by creating a VirtualMachineSnapshot CR.
+This uses the provider APIs to take a snapshot of the VM
+
+### Creating a Snapshot
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachineSnapshot
+metadata:
+  name: snap-2
+spec:
+  description: "Snapshot of my-vm with memory"
+  vmName: my-vm
+  memory: true
+```
+
+### Reverting to a Snapshot
+
+Once a snapshot is created, the VM can be reverted to the snapshot by
+specifying `spec.currentSnapshotName` to the desired snapshot.
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: my-vm
+spec:
+  currentSnapshotName: snap-1
+```
+
+The VM would be reverted to the snapshotted state if the revert operation
+is successful. After a successful revert operation, `spec.currentSnapshotName`
+would become unset.
+
+### Further Information
+
+See more information about the VirtualMachineSnapshot resource:
+
+- [VirtualMachineSnapshot concept](./vm-snapshot.md) documentation
+- VirtualMachineSnapshot API reference

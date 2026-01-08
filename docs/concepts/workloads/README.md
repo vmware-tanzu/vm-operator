@@ -12,6 +12,7 @@ This section provides information about workload resources, such as:
 * [`VirtualMachine` controller](./vm-controller.md)
 * [`VirtualMachineClass`](./vm-class.md)
 * [`VirtualMachineGroup`](./vm-group.md)
+* [`VirtualMachineSnapshot`](./vm-snapshot.md)
 * [`WebConsoleRequest`](./vm-web-console.md)
 
 In addition to the workload resources themselves, there is documentation related to broader topics related to workloads:

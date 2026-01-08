@@ -33,10 +33,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -780,7 +782,7 @@ func (v validator) validateNetwork(
 		p := networkPath.Child("interfaces")
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
-			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec, vm.Name)...)
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p.Index(i), interfaceSpec, vm.Name)...)
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p.Index(i), interfaceSpec, vm)...)
 		}
 	}
@@ -849,20 +851,77 @@ var macAddressSupportNetworkGroups = []string{
 	vpcv1alpha1.GroupVersion.Group,
 }
 
+type networkProviderValidation struct {
+	group string
+	kinds []string
+}
+
+var networkProviderValidations = map[pkgcfg.NetworkProviderType]networkProviderValidation{
+	pkgcfg.NetworkProviderTypeNSXT: {
+		group: ncpv1alpha1.SchemeGroupVersion.Group,
+		kinds: []string{"VirtualNetwork"},
+	},
+	pkgcfg.NetworkProviderTypeVDS: {
+		group: netopv1alpha1.SchemeGroupVersion.Group,
+		kinds: []string{"Network"},
+	},
+	pkgcfg.NetworkProviderTypeVPC: {
+		group: vpcv1alpha1.GroupVersion.Group,
+		kinds: []string{"Subnet", "SubnetSet"},
+	},
+}
+
+func (v validator) validateNetworkInterfaceNetworkRef(
+	ctx *pkgctx.WebhookRequestContext,
+	interfacePath *field.Path,
+	networkGV schema.GroupVersion,
+	networkKind string) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	providerType := pkgcfg.FromContext(ctx).NetworkProviderType
+	supported, ok := networkProviderValidations[providerType]
+	if !ok {
+		// No supported for this provider type (e.g., Named network provider).
+		return allErrs
+	}
+
+	if networkGV.Group != "" && networkGV.Group != supported.group {
+		allErrs = append(allErrs, field.NotSupported(
+			interfacePath.Child("network", "apiVersion"),
+			networkGV.Group,
+			[]string{supported.group}))
+	}
+
+	if networkKind != "" && !slices.Contains(supported.kinds, networkKind) {
+		allErrs = append(allErrs, field.NotSupported(
+			interfacePath.Child("network", "kind"),
+			networkKind,
+			supported.kinds))
+	}
+
+	return allErrs
+}
+
 //nolint:gocyclo
 func (v validator) validateNetworkInterfaceSpec(
+	ctx *pkgctx.WebhookRequestContext,
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	vmName string) field.ErrorList {
 
-	var allErrs field.ErrorList
-	var networkIfCRName string
-	var networkAPIVersion string
-	var networkName string
+	var (
+		allErrs           field.ErrorList
+		networkIfCRName   string
+		networkAPIVersion string
+		networkName       string
+		networkKind       string
+	)
 
 	if interfaceSpec.Network != nil {
 		networkAPIVersion = interfaceSpec.Network.APIVersion
 		networkName = interfaceSpec.Network.Name
+		networkKind = interfaceSpec.Network.Kind
 	}
 
 	var networkGV schema.GroupVersion
@@ -874,6 +933,8 @@ func (v validator) validateNetworkInterfaceSpec(
 			networkGV = gv
 		}
 	}
+
+	allErrs = append(allErrs, v.validateNetworkInterfaceNetworkRef(ctx, interfacePath, networkGV, networkKind)...)
 
 	// The networkInterface CR name ("vmName-networkName-interfaceName" or "vmName-interfaceName") needs to be a DNS1123 Label
 	if networkName != "" {

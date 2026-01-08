@@ -70,6 +70,9 @@ const (
 	oldVMClass                     = "old-class"
 	invalidImageKindMsg            = "supported: " + vmiKind + "; " + cvmiKind
 	testBuildVersion               = "v1.0.0"
+	trueString                     = "true"
+	testItemID                     = "test-item-id"
+	testContentVersion             = "1.0.0"
 
 	invalidClassInstanceReference              = "must specify a valid reference to a VirtualMachineClassInstance object"
 	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
@@ -154,6 +157,23 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	vm.Name = "dummy-vm"
 	vm.Namespace = dummyNamespaceName
 
+	az := builder.DummyAvailabilityZone()
+	zone := builder.DummyZone(dummyNamespaceName)
+
+	// Create VM Class resource that the VM references.
+	vmClassName := "dummy-class-name"
+	vmClass := builder.DummyVirtualMachineClass(vmClassName)
+	vmClass.Namespace = vm.Namespace
+	vm.Spec.ClassName = vmClassName
+
+	// Create VM Image resource that the VM references.
+	// Always add it to initObjects - tests that need a different VM Image should
+	// create it themselves and it will override this one in the fake client.
+	vmImage := builder.DummyVirtualMachineImage(builder.DummyVMIName)
+	vmImage.Namespace = vm.Namespace
+
+	initObjects := []client.Object{az, zone, vmClass, vmImage}
+
 	var (
 		oldVM  *vmopv1.VirtualMachine
 		oldObj *unstructured.Unstructured
@@ -163,16 +183,14 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	if isUpdate {
 		setControllerForPVC(vm)
 		oldVM = vm.DeepCopy()
+		// Update oldVM to also reference the valid class name
+		oldVM.Spec.ClassName = vmClassName
 		oldObj, err = builder.ToUnstructured(oldVM)
 		Expect(err).ToNot(HaveOccurred())
 	}
 
 	obj, err := builder.ToUnstructured(vm)
 	Expect(err).ToNot(HaveOccurred())
-
-	az := builder.DummyAvailabilityZone()
-	zone := builder.DummyZone(dummyNamespaceName)
-	initObjects := []client.Object{az, zone}
 
 	return &unitValidatingWebhookContext{
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
@@ -1532,7 +1550,7 @@ func unitTestsValidateCreate() {
 							},
 							Data: make(map[string]string),
 						}
-						cm.Data["IsRestrictedNetwork"] = "true"
+						cm.Data["IsRestrictedNetwork"] = trueString
 
 						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
 
@@ -1556,7 +1574,7 @@ func unitTestsValidateCreate() {
 							},
 							Data: make(map[string]string),
 						}
-						cm.Data["IsRestrictedNetwork"] = "true"
+						cm.Data["IsRestrictedNetwork"] = trueString
 
 						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
 

@@ -131,7 +131,7 @@ func (r reconciler) Reconcile(
 		return errors.New("PCI Controller not presented")
 	}
 
-	initDeviceKey(&newDeviceKey, configSpec.DeviceChange)
+	InitDeviceKey(&newDeviceKey, configSpec.DeviceChange)
 
 	reconcileIDEControllers(
 		ctx,
@@ -199,9 +199,9 @@ func (r reconciler) Reconcile(
 	return nil
 }
 
-// initDeviceKey initialize newDeviceKey with lowest key value among all devices
-// in []deviceChange array.
-func initDeviceKey(newDeviceKey *int32, deviceChange []vimtypes.BaseVirtualDeviceConfigSpec) {
+// InitDeviceKey initializes newDeviceKey with lowest key value among all
+// devices in []deviceChange array.
+func InitDeviceKey(newDeviceKey *int32, deviceChange []vimtypes.BaseVirtualDeviceConfigSpec) {
 	for i := range deviceChange {
 		var (
 			bdc vimtypes.BaseVirtualDeviceConfigSpec
@@ -279,7 +279,7 @@ func reconcileIDEControllers(
 
 	for _, spec := range toAdd {
 		addDeviceChangeOp(configSpec,
-			newIDEController(spec, pciController, newDeviceKey),
+			NewIDEController(spec, pciController.Key, newDeviceKey),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 }
@@ -326,7 +326,7 @@ func reconcileNVMEControllers(
 
 	for _, spec := range toAdd {
 		addDeviceChangeOp(configSpec,
-			newNVMEController(ctx, spec, pciController, newDeviceKey),
+			NewNVMEController(ctx, spec, pciController.Key, newDeviceKey),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 
@@ -374,7 +374,7 @@ func reconcileSATAControllers(
 
 	for _, spec := range toAdd {
 		addDeviceChangeOp(configSpec,
-			newSATAController(spec, pciController, newDeviceKey),
+			NewSATAController(spec, pciController.Key, newDeviceKey),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 
@@ -422,7 +422,7 @@ func reconcileSCSIControllers(
 
 	for _, spec := range toAdd {
 		addDeviceChangeOp(configSpec,
-			newSCSIController(ctx, spec, pciController, newDeviceKey).(vimtypes.BaseVirtualDevice),
+			NewSCSIController(ctx, spec, pciController.Key, newDeviceKey).(vimtypes.BaseVirtualDevice),
 			vimtypes.VirtualDeviceConfigSpecOperationAdd)
 	}
 

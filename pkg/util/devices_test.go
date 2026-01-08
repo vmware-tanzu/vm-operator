@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -369,4 +370,81 @@ var _ = Describe("GetPreferredDiskFormat", func() {
 			vimtypes.DatastoreSectorFormatEmulated_512,
 		),
 	)
+})
+
+var _ = Describe("GetControllerIDFromDevice", func() {
+	When("device is a VirtualIDEController", func() {
+		It("returns ControllerID with IDE type and bus number", func() {
+			ctrl := &vimtypes.VirtualIDEController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{Key: 200},
+					BusNumber:     0,
+				},
+			}
+			controllerID, ok := util.GetControllerIDFromDevice(ctrl)
+			Expect(ok).To(BeTrue())
+			Expect(controllerID.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
+			Expect(controllerID.BusNumber).To(Equal(int32(0)))
+		})
+	})
+
+	When("device is a ParaVirtualSCSIController", func() {
+		It("returns ControllerID with SCSI type and bus number", func() {
+			ctrl := &vimtypes.ParaVirtualSCSIController{
+				VirtualSCSIController: vimtypes.VirtualSCSIController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{Key: 1000},
+						BusNumber:     1,
+					},
+				},
+			}
+			controllerID, ok := util.GetControllerIDFromDevice(ctrl)
+			Expect(ok).To(BeTrue())
+			Expect(controllerID.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
+			Expect(controllerID.BusNumber).To(Equal(int32(1)))
+		})
+	})
+
+	When("device is a VirtualAHCIController (SATA)", func() {
+		It("returns ControllerID with SATA type and bus number", func() {
+			ctrl := &vimtypes.VirtualAHCIController{
+				VirtualSATAController: vimtypes.VirtualSATAController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{Key: 15000},
+						BusNumber:     2,
+					},
+				},
+			}
+			controllerID, ok := util.GetControllerIDFromDevice(ctrl)
+			Expect(ok).To(BeTrue())
+			Expect(controllerID.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSATA))
+			Expect(controllerID.BusNumber).To(Equal(int32(2)))
+		})
+	})
+
+	When("device is a VirtualNVMEController", func() {
+		It("returns ControllerID with NVME type and bus number", func() {
+			ctrl := &vimtypes.VirtualNVMEController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{Key: 16000},
+					BusNumber:     3,
+				},
+			}
+			controllerID, ok := util.GetControllerIDFromDevice(ctrl)
+			Expect(ok).To(BeTrue())
+			Expect(controllerID.ControllerType).To(Equal(vmopv1.VirtualControllerTypeNVME))
+			Expect(controllerID.BusNumber).To(Equal(int32(3)))
+		})
+	})
+
+	When("device is not a controller", func() {
+		It("returns false", func() {
+			disk := &vimtypes.VirtualDisk{
+				VirtualDevice: vimtypes.VirtualDevice{Key: 2000},
+			}
+			controllerID, ok := util.GetControllerIDFromDevice(disk)
+			Expect(ok).To(BeFalse())
+			Expect(controllerID).To(Equal(util.ControllerID{}))
+		})
+	})
 })

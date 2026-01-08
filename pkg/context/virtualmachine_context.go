@@ -14,6 +14,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 type vmContextKey uint8
@@ -31,6 +32,20 @@ type VirtualMachineContext struct {
 	Logger logr.Logger
 	VM     *vmopv1.VirtualMachine
 	MoVM   mo.VirtualMachine
+}
+
+func NewVirtualMachineContext(ctx context.Context, vm *vmopv1.VirtualMachine) VirtualMachineContext {
+	logger := pkglog.FromContextOrDefault(ctx)
+	if vm.Status.UniqueID != "" {
+		logger = logger.WithValues("moID", vm.Status.UniqueID)
+		ctx = logr.NewContext(ctx, logger)
+	}
+
+	return VirtualMachineContext{
+		Context: ctx,
+		Logger:  logger,
+		VM:      vm,
+	}
 }
 
 func (v VirtualMachineContext) String() string {

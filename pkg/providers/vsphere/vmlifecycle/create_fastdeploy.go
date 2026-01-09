@@ -454,26 +454,12 @@ func fastDeployDirect(
 		return nil, err
 	}
 
-	_, isVMEncrypted := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
-
 	for i := range diskSpecs {
 		ds := diskSpecs[i]
 
 		// Set the file operation to an empty string since the disk already
 		// exists.
 		ds.FileOperation = ""
-
-		if isVMEncrypted {
-			// If the VM is to be encrypted, then the disks need to be updated
-			// so they are not marked as encrypted upon VM creation. This is
-			// because it is not possible to change the encryption state of VM
-			// disks when they are being attached. Instead the disks must be
-			// encrypted after they are attached to the VM.
-			ds.Profile = nil
-			if ds.Backing != nil {
-				ds.Backing.Crypto = nil
-			}
-		}
 	}
 
 	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)
@@ -533,6 +519,7 @@ func fastDeployDirectCopyDisks(
 			},
 			SectorFormat: string(diskFormat),
 			Profile:      configSpec.VmProfile,
+			Crypto:       configSpec.Crypto,
 		}
 		diskManager = object.NewVirtualDiskManager(datacenter.Client())
 	)

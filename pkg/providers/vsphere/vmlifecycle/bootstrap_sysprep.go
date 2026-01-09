@@ -73,7 +73,7 @@ func BootstrapSysPrep(
 		return nil, nil, nil, fmt.Errorf("no Sysprep data")
 	}
 
-	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)
+	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create GOSC adapter mappings: %w", err)
 	}

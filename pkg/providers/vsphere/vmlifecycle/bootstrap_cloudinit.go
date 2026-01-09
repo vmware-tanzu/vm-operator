@@ -15,10 +15,10 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
@@ -110,7 +110,7 @@ func BootStrapCloudInit(
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
 	logger := pkglog.FromContextOrDefault(vmCtx)
-	logger.V(4).Info("Reconciling Cloud-Init bootstrap state")
+	logger.Info("Reconciling Cloud-Init bootstrap state")
 
 	if bsArgs.NetworkResults.UpdatedEthCards {
 		// We're not yet doing hot-plug of ethernet devices for a powered on VM. Therefore, if this

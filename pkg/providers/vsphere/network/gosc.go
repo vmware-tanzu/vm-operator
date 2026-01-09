@@ -5,15 +5,18 @@
 package network
 
 import (
+	"fmt"
 	"net"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
-func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.CustomizationAdapterMapping, error) {
+func GuestOSCustomization(results NetworkInterfaceResults,
+	logger logr.Logger) ([]vimtypes.CustomizationAdapterMapping, error) {
 	mappings := make([]vimtypes.CustomizationAdapterMapping, 0, len(results.Results))
 
-	for _, r := range results.Results {
+	for i, r := range results.Results {
 		adapter := vimtypes.CustomizationIPSettings{
 			// Per-adapter is only supported on Windows. Linux only supports the global and ignores this field.
 			DnsServerList: r.Nameservers,
@@ -76,6 +79,46 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 				})
 				if ipConfig.Gateway != "" {
 					adapter.IpV6Spec.Gateway = append(adapter.IpV6Spec.Gateway, ipConfig.Gateway)
+				}
+			}
+		}
+
+		// When only IPv6 is configured (no IPv4 addresses, no DHCP4), the vSphere API
+		// requires adapter.Ip to be set. Set it to DHCP as a fallback.
+		conditionCheck := adapter.Ip == nil && !r.NoIPAM && (adapter.IpV6Spec != nil || r.DHCP6)
+		if logger.GetSink() != nil {
+			logger.V(4).Info("IPv6-only fix condition check",
+				"adapterIndex", i,
+				"adapterIpIsNil", adapter.Ip == nil,
+				"noIPAM", r.NoIPAM,
+				"hasIpV6Spec", adapter.IpV6Spec != nil,
+				"dhcp6", r.DHCP6,
+				"conditionMet", conditionCheck)
+		}
+
+		if conditionCheck {
+			adapter.Ip = &vimtypes.CustomizationDhcpIpGenerator{}
+			if logger.GetSink() != nil {
+				logger.Info("Applied IPv6-only fix: set adapter.Ip to DHCP generator",
+					"adapterIndex", i,
+					"macAddress", r.MacAddress)
+			}
+		}
+
+		if logger.GetSink() != nil {
+			logger.V(4).Info("Final adapter state",
+				"adapterIndex", i,
+				"macAddress", r.MacAddress,
+				"adapterIp", adapter.Ip,
+				"hasIpV6Spec", adapter.IpV6Spec != nil)
+			if adapter.Ip != nil {
+				switch v := adapter.Ip.(type) {
+				case *vimtypes.CustomizationDhcpIpGenerator:
+					logger.V(5).Info("Adapter IP type", "adapterIndex", i, "type", "CustomizationDhcpIpGenerator")
+				case *vimtypes.CustomizationFixedIp:
+					logger.V(5).Info("Adapter IP type", "adapterIndex", i, "type", "CustomizationFixedIp", "address", v.IpAddress)
+				default:
+					logger.V(5).Info("Adapter IP type", "adapterIndex", i, "type", fmt.Sprintf("%T", v))
 				}
 			}
 		}

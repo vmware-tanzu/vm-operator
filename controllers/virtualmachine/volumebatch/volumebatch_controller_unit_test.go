@@ -916,10 +916,16 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus, cnsv1alpha1.VolumeStatus{
 					Name: vmVol.Name,
 					PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
-						Attached:  true,
+						Conditions: []metav1.Condition{
+							{
+								Type:    cnsv1alpha1.ConditionAttached,
+								Status:  metav1.ConditionFalse,
+								Reason:  cnsv1alpha1.ReasonAttachFailed,
+								Message: awfulErrMsg,
+							},
+						},
 						DiskUUID:  dummyDiskUUID,
 						ClaimName: claimName1,
-						Error:     awfulErrMsg,
 					},
 				})
 				initObjects = append(initObjects, attachment)
@@ -938,7 +944,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 					Expect(vm.Status.Volumes).To(HaveLen(1))
 					Expect(attachment.Status.VolumeStatus).To(HaveLen(1))
-					attachment.Status.VolumeStatus[0].PersistentVolumeClaim.Error = "failed to attach cns volume"
+					attachment.Status.VolumeStatus[0].PersistentVolumeClaim.Conditions[0].Message = "failed to attach cns volume"
 					assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0, false)
 				})
 			})
@@ -986,16 +992,30 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: vmVol1.Name,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  true,
-								DiskUUID:  dummyDiskUUID1,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: dummyDiskUUID1,
 							},
 						},
 						cnsv1alpha1.VolumeStatus{
 							Name: vmVol2.Name,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName2,
-								Attached:  true,
-								DiskUUID:  dummyDiskUUID2,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: dummyDiskUUID2,
 							},
 						},
 					)
@@ -1406,7 +1426,14 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: vmVol1.Name,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  true,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
 							},
 						},
 					)
@@ -1443,8 +1470,15 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: volumeName1 + detachingVolumeSuffix,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  true,
-								DiskUUID:  dummyDiskUUID,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: dummyDiskUUID,
 							},
 						},
 					)
@@ -1473,16 +1507,30 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: volumeName1 + detachingVolumeSuffix,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  false,
-								DiskUUID:  "diskuuid1",
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionFalse,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: "diskuuid1",
 							},
 						},
 						cnsv1alpha1.VolumeStatus{
 							Name: volumeName2,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName2,
-								Attached:  true,
-								DiskUUID:  "diskuuid2",
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: "diskuuid2",
 							},
 						},
 					)
@@ -1595,9 +1643,9 @@ func assertVMVolStatusFromBatchAttachmentStatus(
 	}
 	Expect(vmVolStatus.Name).To(Equal(volName), "volume name should match")
 	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")
-	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Attached), "attached should match")
+	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Conditions[0].Status == metav1.ConditionTrue), "attached should match")
 	Expect(vmVolStatus.DiskUUID).To(Equal(attachmentVolStatus.PersistentVolumeClaim.DiskUUID), "diskuuid should match")
-	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Error), "error should match")
+	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Conditions[0].Message), "error should match")
 }
 
 func assertVMVolStatusFromBatchAttachmentSpec(

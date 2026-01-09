@@ -70,8 +70,8 @@ func intgTestsReconcile() {
 
 		dummyBiosUUID = uuid.New().String()
 		dummyInstanceUUID = uuid.New().String()
-		dummyDiskUUID1 = uuid.New().String()
-		dummyDiskUUID2 = uuid.New().String()
+		dummyDiskUUID1 = "uuid1"
+		dummyDiskUUID2 = "uuid2"
 
 		vmVolume1 = vmopv1.VirtualMachineVolume{
 			Name: "cns-volume-1",
@@ -299,10 +299,17 @@ func intgTestsReconcile() {
 					cnsv1alpha1.VolumeStatus{
 						Name: vmVolume1.Name,
 						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
-							Attached:  true,
+							Conditions: []metav1.Condition{
+								{
+									Type:               cnsv1alpha1.ConditionAttached,
+									Status:             metav1.ConditionFalse,
+									Reason:             cnsv1alpha1.ReasonAttachFailed,
+									Message:            errMsg,
+									LastTransitionTime: metav1.Now(),
+								},
+							},
 							DiskUUID:  dummyDiskUUID1,
 							ClaimName: vmVolume1.PersistentVolumeClaim.ClaimName,
-							Error:     errMsg,
 						},
 					},
 				)
@@ -316,13 +323,13 @@ func intgTestsReconcile() {
 					vm = getVirtualMachine(vmKey)
 					g.Expect(vm).ToNot(BeNil())
 					g.Expect(vm.Status.Volumes).To(HaveLen(1))
-					g.Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
-				}).Should(Succeed())
 
-				volStatus := vm.Status.Volumes[0]
-				Expect(volStatus.Name).To(Equal(vmVolume1.Name))
-				Expect(volStatus.DiskUUID).To(Equal(dummyDiskUUID1))
-				Expect(volStatus.Error).To(Equal(errMsg))
+					volStatus := vm.Status.Volumes[0]
+					g.Expect(volStatus.Attached).To(BeFalse())
+					g.Expect(volStatus.Name).To(Equal(vmVolume1.Name))
+					g.Expect(volStatus.DiskUUID).To(Equal(dummyDiskUUID1))
+					g.Expect(volStatus.Error).To(Equal(errMsg))
+				}).Should(Succeed())
 			})
 		})
 
@@ -394,7 +401,15 @@ func intgTestsReconcile() {
 					cnsv1alpha1.VolumeStatus{
 						Name: vmVolume1.Name,
 						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
-							Attached:  true,
+							Conditions: []metav1.Condition{
+								{
+									Type:               cnsv1alpha1.ConditionAttached,
+									Status:             metav1.ConditionTrue,
+									Reason:             "True",
+									Message:            "",
+									LastTransitionTime: metav1.Now(),
+								},
+							},
 							DiskUUID:  dummyDiskUUID1,
 							ClaimName: vmVolume1.PersistentVolumeClaim.ClaimName,
 						},
@@ -412,7 +427,15 @@ func intgTestsReconcile() {
 					cnsv1alpha1.VolumeStatus{
 						Name: vmVolume2.Name,
 						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
-							Attached:  true,
+							Conditions: []metav1.Condition{
+								{
+									Type:               cnsv1alpha1.ConditionAttached,
+									Status:             metav1.ConditionTrue,
+									Reason:             "True",
+									Message:            "",
+									LastTransitionTime: metav1.Now(),
+								},
+							},
 							DiskUUID:  dummyDiskUUID2,
 							ClaimName: vmVolume2.PersistentVolumeClaim.ClaimName,
 						},
@@ -446,6 +469,66 @@ func intgTestsReconcile() {
 					g.Expect(vm).ToNot(BeNil())
 					g.Expect(vm.Status.Volumes).To(HaveLen(2))
 				}, "3s").Should(Succeed())
+			})
+
+			By("Simulate CNS attachment for detaching volume1 with failure", func() {
+				Eventually(func(g Gomega) {
+					attachment := getCnsNodeVMBatchAttachment(vm)
+					g.Expect(attachment).ToNot(BeNil())
+					attachment.Status.VolumeStatus = []cnsv1alpha1.VolumeStatus{
+						{
+							Name: vmVolume1.Name + ":detaching",
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								Conditions: []metav1.Condition{
+									{
+										Type:               cnsv1alpha1.ConditionAttached,
+										Status:             metav1.ConditionTrue,
+										Reason:             "True",
+										Message:            "",
+										LastTransitionTime: metav1.Now(),
+									},
+									{
+										Type:               cnsv1alpha1.ConditionDetached,
+										Status:             metav1.ConditionFalse,
+										Reason:             cnsv1alpha1.ReasonDetachFailed,
+										Message:            "failed to detach volume", // failed to detach volume
+										LastTransitionTime: metav1.Now(),
+									},
+								},
+								DiskUUID:  dummyDiskUUID1,
+								ClaimName: vmVolume1.PersistentVolumeClaim.ClaimName,
+							},
+						},
+						{
+							Name: vmVolume2.Name,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								Conditions: []metav1.Condition{
+									{
+										Type:               cnsv1alpha1.ConditionAttached,
+										Status:             metav1.ConditionTrue,
+										Reason:             "True",
+										Message:            "",
+										LastTransitionTime: metav1.Now(),
+									},
+								},
+								DiskUUID:  dummyDiskUUID2,
+								ClaimName: vmVolume2.PersistentVolumeClaim.ClaimName,
+							},
+						},
+					}
+					g.Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				}).Should(Succeed())
+			})
+
+			By("VM Status.Volume should reflect attached volumes", func() {
+				Eventually(func(g Gomega) {
+					vm = getVirtualMachine(vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(2))
+					g.Expect(vm.Status.Volumes[0].Name).To(Equal(vmVolume1.Name+":detaching"), "first volume should be volume1:detaching")
+					g.Expect(vm.Status.Volumes[0].Attached).To(BeTrue(), "first volume should be attached")
+					g.Expect(vm.Status.Volumes[0].Error).To(Equal("failed to detach volume"))
+				}).Should(Succeed(), "Waiting VM Status.Volumes to show error of volume1")
 			})
 		})
 	})

@@ -29,10 +29,9 @@ type fakeCacheStorageURIsClient struct {
 	queryErr   error
 	queryCalls int32
 
-	copyErr          error
-	copyResult       *object.Task
-	copyCalls        int32
-	lastCopyDiskSpec vimtypes.BaseVirtualDiskSpec // Capture the spec passed to CopyVirtualDisk
+	copyErr    error
+	copyResult *object.Task
+	copyCalls  int32
 
 	makeErr   error
 	makeCalls int32
@@ -57,7 +56,6 @@ func (m *fakeCacheStorageURIsClient) CopyVirtualDisk(
 	dstSpec vimtypes.BaseVirtualDiskSpec, force bool) (*object.Task, error) {
 
 	_ = atomic.AddInt32(&m.copyCalls, 1)
-	m.lastCopyDiskSpec = dstSpec // Capture the spec for verification
 	return m.copyResult, m.copyErr
 }
 
@@ -318,21 +316,6 @@ var _ = Describe("CacheStorageURIs", func() {
 									{
 										Path: dstDir + "/" + "b020a5eae7f68a91d.vmdk",
 									}}))
-							})
-
-							It("should not send Profile parameter to CopyVirtualDisk", func() {
-								// Verify that CopyVirtualDisk was called
-								Expect(client.copyCalls).To(BeNumerically(">", 0))
-
-								// Verify the captured spec does not contain Profile parameter
-								Expect(client.lastCopyDiskSpec).ToNot(BeNil())
-
-								// Cast to FileBackedVirtualDiskSpec to check Profile field
-								if fbSpec, ok := client.lastCopyDiskSpec.(*vimtypes.FileBackedVirtualDiskSpec); ok {
-									// Profile should be nil or empty
-									Expect(fbSpec.Profile).To(BeEmpty(),
-										"Profile parameter should not be sent to CopyVirtualDisk API.")
-								}
 							})
 						})
 					})

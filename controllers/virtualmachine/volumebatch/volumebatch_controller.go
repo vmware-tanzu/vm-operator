@@ -1118,11 +1118,31 @@ func attachmentStatusToVolumeStatus(
 	volName string,
 	volStatus cnsv1alpha1.VolumeStatus) vmopv1.VirtualMachineVolumeStatus {
 
+	attached := false
+	messages := []string{}
+
+	for _, condition := range volStatus.PersistentVolumeClaim.Conditions {
+		switch condition.Type {
+		case cnsv1alpha1.ConditionAttached:
+			if condition.Status == metav1.ConditionTrue {
+				attached = true
+			} else if condition.Message != "" {
+				messages = append(messages, pkgutil.SanitizeCNSErrorMessage(condition.Message))
+			}
+		case cnsv1alpha1.ConditionDetached:
+			if condition.Status == metav1.ConditionFalse {
+				if condition.Message != "" {
+					messages = append(messages, pkgutil.SanitizeCNSErrorMessage(condition.Message))
+				}
+			}
+		}
+	}
+
 	return vmopv1.VirtualMachineVolumeStatus{
 		Name:     volName,
-		Attached: volStatus.PersistentVolumeClaim.Attached,
+		Attached: attached,
 		DiskUUID: volStatus.PersistentVolumeClaim.DiskUUID,
-		Error:    pkgutil.SanitizeCNSErrorMessage(volStatus.PersistentVolumeClaim.Error),
+		Error:    strings.Join(messages, "."),
 		Type:     vmopv1.VolumeTypeManaged,
 	}
 }

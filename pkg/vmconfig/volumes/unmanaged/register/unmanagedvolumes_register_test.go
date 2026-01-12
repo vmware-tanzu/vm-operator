@@ -550,6 +550,125 @@ var _ = Describe("Reconcile", func() {
 				})
 			})
 
+			When("VM has unmanaged disk with storage profile different from VM storage class", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(Succeed())
+				})
+
+				BeforeEach(func() {
+					// Add a second storage class with a different profile
+					withObjs = append(withObjs,
+						&storagev1.StorageClass{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "my-storage-class-2",
+							},
+							Parameters: map[string]string{
+								"storagePolicyID": "profile-456",
+							},
+						})
+
+					// Override mock profile results to return profile-456 for the disk
+					// which is different from the VM's storage class (my-storage-class-1 -> profile-123)
+					mockProfileResults = []pbmtypes.PbmQueryProfileResult{
+						{
+							Object: pbmtypes.PbmServerObjectRef{
+								Key: "vm-1:300",
+							},
+							ProfileId: []pbmtypes.PbmProfileId{
+								{
+									UniqueId: "profile-456", // Different from VM's profile-123
+								},
+							},
+						},
+					}
+
+					// Start with empty volumes - let Reconcile add them
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+					disk := &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key:           300,
+							ControllerKey: 200,
+							UnitNumber:    ptr.To(int32(0)),
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									FileName: "[LocalDS_0] vm1/different-policy-disk.vmdk",
+								},
+								Uuid: "disk-uuid-different-policy",
+							},
+						},
+						CapacityInBytes: 2 * 1024 * 1024 * 1024,
+					}
+
+					scsiController := &vimtypes.VirtualSCSIController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 200,
+							},
+							BusNumber: 1,
+						},
+					}
+
+					moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								scsiController,
+								disk,
+							},
+						},
+					}
+				})
+
+				It("should create PVC with storage class matching disk's actual profile, not VM's storage class", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI,
+						1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+					var pvc corev1.PersistentVolumeClaim
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      claimName,
+					}, &pvc)).To(Succeed())
+
+					// Verify PVC has storage class matching the disk's actual profile (profile-456 -> my-storage-class-2)
+					// NOT the VM's storage class (my-storage-class-1)
+					Expect(pvc.Spec.StorageClassName).ToNot(BeNil())
+					Expect(*pvc.Spec.StorageClassName).To(Equal("my-storage-class-2"))
+
+					// Verify other PVC properties
+					Expect(pvc.Spec.VolumeMode).ToNot(BeNil())
+					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeBlock))
+					Expect(pvc.Spec.DataSourceRef).ToNot(BeNil())
+					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
+					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))
+				})
+			})
+
 			When("PVC exists and is bound", func() {
 				BeforeEach(func() {
 					// Set up VM with volumes already in spec

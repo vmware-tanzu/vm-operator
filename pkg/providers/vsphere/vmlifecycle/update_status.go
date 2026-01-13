@@ -361,14 +361,16 @@ func reconcileStatusZone(
 
 	var errs []error
 
-	zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]
-	if zoneName == "" {
+	zoneLabel := vmCtx.VM.Labels[corev1.LabelTopologyZone]
+	zoneStatus := vmCtx.VM.Status.Zone
+
+	if zoneLabel == "" || zoneLabel != zoneStatus {
 		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
 			vmCtx, vcVM.Client(), vmCtx.MoVM.ResourcePool.Value)
 		if err != nil {
 			errs = append(errs, err)
 		} else {
-			zoneName, err = topology.LookupZoneForClusterMoID(
+			zoneName, err := topology.LookupZoneForClusterMoID(
 				vmCtx, k8sClient, clusterMoRef.Value)
 			if err != nil {
 				errs = append(errs, err)
@@ -377,12 +379,9 @@ func reconcileStatusZone(
 					vmCtx.VM.Labels = map[string]string{}
 				}
 				vmCtx.VM.Labels[corev1.LabelTopologyZone] = zoneName
+				vmCtx.VM.Status.Zone = zoneName
 			}
 		}
-	}
-
-	if zoneName != "" {
-		vmCtx.VM.Status.Zone = zoneName
 	}
 
 	return errs

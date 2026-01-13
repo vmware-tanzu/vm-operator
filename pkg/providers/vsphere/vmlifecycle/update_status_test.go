@@ -54,8 +54,11 @@ var _ = Describe("UpdateStatus", func() {
 	BeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 
+		nsInfo := ctx.CreateWorkloadNamespace()
+
 		vm := builder.DummyVirtualMachine()
 		vm.Name = "update-status-test"
+		vm.Namespace = nsInfo.Namespace
 
 		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
@@ -66,6 +69,14 @@ var _ = Describe("UpdateStatus", func() {
 		var err error
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
+
+		nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
+		task, err := vcVM.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+			Folder: ptr.To(nsInfo.Folder.Reference()),
+			Pool:   ptr.To(nsRP.Reference()),
+		}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(task.Wait(ctx)).To(Succeed())
 
 		// Initialize with the expected properties. Tests can overwrite this if needed.
 		Expect(vcVM.Properties(
@@ -2467,6 +2478,79 @@ var _ = Describe("UpdateStatus", func() {
 					})
 				})
 			})
+		})
+	})
+
+	Context("Zone", func() {
+		var zoneName string
+
+		BeforeEach(func() {
+			delete(vmCtx.VM.Labels, corev1.LabelTopologyZone)
+			vmCtx.VM.Status.Zone = ""
+
+			zoneName = ctx.GetFirstZoneName()
+		})
+
+		assertZones := func() {
+			GinkgoHelper()
+			Expect(vmCtx.VM.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
+			Expect(vmCtx.VM.Status.Zone).To(Equal(zoneName))
+		}
+
+		Context("Neither label and status are set", func() {
+			It("Sets Zone", assertZones)
+		})
+
+		Context("Label and status are both set", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Labels[corev1.LabelTopologyZone] = zoneName
+				vmCtx.VM.Status.Zone = zoneName
+			})
+			It("Zone still set", assertZones)
+		})
+
+		Context("Label is set but status is not", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Labels[corev1.LabelTopologyZone] = zoneName
+			})
+			It("Sets Zone", assertZones)
+		})
+
+		Context("Label is not set but status is", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Status.Zone = zoneName
+			})
+			It("Sets Zone", assertZones)
+		})
+
+		Context("Label is not set but status is", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Status.Zone = zoneName
+			})
+			It("Sets Zone", assertZones)
+		})
+
+		Context("Label is not set but status is", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Status.Zone = zoneName
+			})
+			It("Sets Zone", assertZones)
+		})
+
+		Context("Label is set to incorrect value", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Labels[corev1.LabelTopologyZone] = "bogus"
+				vmCtx.VM.Status.Zone = zoneName
+			})
+			It("Sets Zone", assertZones)
+		})
+
+		Context("Status is set to incorrect value", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Labels[corev1.LabelTopologyZone] = zoneName
+				vmCtx.VM.Status.Zone = "bogus"
+			})
+			It("Sets Zone", assertZones)
 		})
 	})
 

@@ -1640,8 +1640,8 @@ func (v validator) validateInstanceStorageVolumes(
 	return allErrs
 }
 
-// validateBackfilledVolumesNotRemoved checks if any volumes backfilled from classic
-// disks have been removed from the spec when the AllDisksArePVCs feature is disabled.
+// validateBackfilledVolumesNotRemoved checks if any volumes backfilled from
+// classic disks have been removed or modified.
 func (v validator) validateBackfilledVolumesNotRemoved(
 	_ *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine,
@@ -1670,18 +1670,12 @@ func (v validator) validateBackfilledVolumesNotRemoved(
 			continue
 		}
 
-		newVol, exists := newVolumesMap[oldVol.Name]
+		// No need to validate immutable fields since they are validated in validateVolume.
+		_, exists := newVolumesMap[oldVol.Name]
 		if !exists {
 			allErrs = append(allErrs, field.Forbidden(
 				volumesPath,
 				fmt.Sprintf("%s: %s", oldVol.Name, removingBackfilledVolumeNotAllowed)))
-			continue
-		}
-
-		if !equality.Semantic.DeepEqual(*newVol, oldVol) {
-			allErrs = append(allErrs, field.Forbidden(
-				volumesPath,
-				fmt.Sprintf("%s: %s", oldVol.Name, modifyingBackfilledVolumeNotAllowed)))
 		}
 	}
 

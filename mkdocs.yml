@@ -87,6 +87,8 @@ markdown_extensions:
 - admonition
 - pymdownx.snippets:
     check_paths: true
+- pymdownx.tasklist:
+    custom_checkbox: true
 - pymdownx.emoji:
     emoji_index: !!python/name:material.extensions.emoji.twemoji
     emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -166,6 +168,9 @@ nav:
     - VM Deployment: tutorials/troubleshooting/deploy-vm.md
     - IP Assignment: tutorials/troubleshooting/ip-assignment.md
     - VM Publish: tutorials/troubleshooting/publish-vm.md
+- Guides:
+  - guides/README.md
+  - Backup and Restore: guides/backup-restore/README.md
 - Reference:
   - ref/README.md
   - API:

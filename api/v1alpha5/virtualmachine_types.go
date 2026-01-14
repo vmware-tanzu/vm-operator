@@ -1220,6 +1220,20 @@ type VirtualMachineGuestStatus struct {
 	GuestFullName string `json:"guestFullName,omitempty"`
 }
 
+// VirtualMachineProviderStatus describes the observed state of the
+// VirtualMachine from the underlying infrastructure provider (vSphere/vCenter).
+type VirtualMachineProviderStatus struct {
+	// +optional
+
+	// CreationTimestamp describes the timestamp when the VirtualMachine was
+	// created in the infrastructure provider. This value is retrieved
+	// from the VM's config.createDate field and is immutable once set.
+	//
+	// This field is only populated after the VM has been successfully created
+	// in vCenter and the creation timestamp is available.
+	CreationTimestamp *metav1.Time `json:"creationTimestamp,omitempty"`
+}
+
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
 	// +optional
@@ -1317,6 +1331,12 @@ type VirtualMachineStatus struct {
 
 	// Storage describes the observed state of the VirtualMachine's storage.
 	Storage *VirtualMachineStorageStatus `json:"storage,omitempty"`
+
+	// +optional
+
+	// Provider describes the observed state of the VirtualMachine from
+	// the underlying infrastructure provider (vSphere/vCenter).
+	Provider *VirtualMachineProviderStatus `json:"provider,omitempty"`
 
 	// +optional
 

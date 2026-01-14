@@ -13225,6 +13225,22 @@ spec:
                 - PoweredOn
                 - Suspended
                 type: string
+              provider:
+                description: |-
+                  Provider describes the observed state of the VirtualMachine from
+                  the underlying infrastructure provider (vSphere/vCenter).
+                properties:
+                  creationTimestamp:
+                    description: |-
+                      CreationTimestamp describes the timestamp when the VirtualMachine was
+                      created in the infrastructure provider. This value is retrieved
+                      from the VM's config.createDate field and is immutable once set.
+
+                      This field is only populated after the VM has been successfully created
+                      in vCenter and the creation timestamp is available.
+                    format: date-time
+                    type: string
+                type: object
               rootSnapshots:
                 description: |-
                   RootSnapshots represents the observed list of root snapshots of

@@ -133,25 +133,10 @@ func (r reconciler) Reconcile(
 		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
 	}
 
-	// Filter out disks that:
-	// 1. Have empty UUID or filename (cannot be registered)
-	// 2. Are linked clones (should be promoted first via disk promotion)
-	// 3. Are snapshots (ephemeral delta files, not from OVF image)
-	//
-	// Note: We intentionally do NOT filter out FCDs here. A disk might be an
-	// FCD but still have an unbound PVC (e.g., if the CnsRegisterVolume was
-	// deleted before CSI could process it).
-	// This is handled by:
-	// - Skipping disks that have a corresponding bound PVC
-	// - Re-creating CnsRegisterVolume for disks with unbound PVCs
-	//
-	// We can skip snapshot disks because we are only registering base disks
-	// that are created from the OVF -- and that is not expected to have snapshot
-	// (delta) disks.  Additionally, the snapshot disks will never have an
-	// entry in spec.volumes anyway since the backfill explicitly skips them.
-	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
+	// Filter any linked clones / FCDs from registration.
+	info.Disks = pkgvol.FilterOutFCDs(info.Disks...)
 	info.Disks = pkgvol.FilterOutLinkedClones(info.Disks...)
-	info.Disks = pkgvol.FilterOutSnapshots(info.Disks...)
+	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
 
 	hasConfigSpecChanges, err := ensureUnmanagedDisksConfigsAreUpdated(
 		ctx,
@@ -200,8 +185,8 @@ func (r reconciler) Reconcile(
 		return ErrPendingRegister
 	}
 
-	// Clean up CnsRegisterVolume objects that are complete (PVC is bound).
-	if err := cleanupCompletedCnsRegisterVolumesForVM(
+	// Clean up any remaining CnsRegisterVolume objects for this VM.
+	if err := cleanupAllCnsRegisterVolumesForVM(
 		ctx,
 		k8sClient,
 		vm); err != nil {
@@ -520,7 +505,11 @@ func registerUnmanagedDisks(
 	for _, di := range info.Disks {
 		// Step 1: Look for the volume entry from spec.volumes.
 		if volume, ok := info.Volumes[di.Target.String()]; ok {
-			// Step 2: Check if a PVC already exists for this volume.
+
+			logger.Info("Processing unmanaged disk",
+				"disk", di, "volume", volume)
+
+			// Step 2: Ensure PVC exists.
 			pvcName := volume.Name
 			if pvc := volume.PersistentVolumeClaim; pvc != nil {
 				if pvc.ClaimName != "" {
@@ -528,10 +517,6 @@ func registerUnmanagedDisks(
 				}
 			}
 
-			logger.Info("Processing unmanaged disk",
-				"disk", di, "volume", volume, "isFCD", di.FCD)
-
-			// Step 3: Ensure PVC exists (create if needed).
 			pvc, err := ensurePVCForUnmanagedDisk(
 				ctx,
 				k8sClient,
@@ -544,7 +529,7 @@ func registerUnmanagedDisks(
 					pvcName, di.UUID, err)
 			}
 
-			// Step 4: Write the name of the PVC back to the entry in
+			// Step 3: Write the name of the PVC back to the entry in
 			//         spec.volumes.
 			if volume.PersistentVolumeClaim == nil {
 				volume.PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{}
@@ -553,13 +538,8 @@ func registerUnmanagedDisks(
 
 			switch pvc.Status.Phase {
 			case "", corev1.ClaimPending:
-				// Step 5a: PVC is not bound - ensure CnsRegisterVolume exists.
-				// This ensures that if the CnsRegisterVolume was deleted prematurely,
-				// it will be re-created.
-				logger.V(4).Info("PVC is pending, ensuring CnsRegisterVolume exists",
-					"pvc", pvc.Name,
-					"isFCD", di.FCD)
-
+				// Step 4: Check if PVC is bound and create CnsRegisterVolume if
+				//         needed.
 				if _, err := ensureCnsRegisterVolumeForDisk(
 					ctx,
 					k8sClient,
@@ -575,12 +555,7 @@ func registerUnmanagedDisks(
 				hasPending = true
 
 			case corev1.ClaimBound:
-				// Step 5b: PVC is bound - clean up CnsRegisterVolume if it exists.
-				// The disk is now fully managed by the PVC.
-				logger.Info("PVC is bound, cleaning up CnsRegisterVolume",
-					"pvc", pvc.Name,
-					"isFCD", di.FCD)
-
+				// Step 4: Clean up completed CnsRegisterVolume objects.
 				if err := cleanupCnsRegisterVolumeForVM(
 					ctx,
 					k8sClient,
@@ -889,63 +864,27 @@ func cleanupCnsRegisterVolumeForVM(
 	return nil
 }
 
-// cleanupCompletedCnsRegisterVolumesForVM cleans up CnsRegisterVolume objects
-// for a VM where the CnsRegisterVolume has been successfully registered.
-func cleanupCompletedCnsRegisterVolumesForVM(
+// cleanupAllCnsRegisterVolumesForVM cleans up all CnsRegisterVolume objects for
+// a VM.
+func cleanupAllCnsRegisterVolumesForVM(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) error {
 
-	// List all CnsRegisterVolume objects for this VM.
-	crvList := &cnsv1alpha1.CnsRegisterVolumeList{}
-	if err := k8sClient.List(
+	if err := k8sClient.DeleteAllOf(
 		ctx,
-		crvList,
+		&cnsv1alpha1.CnsRegisterVolume{},
 		ctrlclient.InNamespace(vm.Namespace),
 		ctrlclient.MatchingLabels{
 			pkgconst.CreatedByLabel: vm.Name,
 		}); err != nil {
 
 		return fmt.Errorf(
-			"failed to list CnsRegisterVolume objects for VM %s: %w",
+			"failed to delete CnsRegisterVolume objects for VM %s: %w",
 			vm.NamespacedName(), err)
 	}
 
-	logger := pkglog.FromContextOrDefault(ctx).
-		WithName("cleanupCompletedCnsRegisterVolumesForVM")
-
-	// Only delete CnsRegisterVolume objects where Status.Registered is true.
-	// The CRV controller in CSI sets Status.Registered = true once the PVC is
-	// bound and the registration is complete.
-
-	// Note: there is one more case where we would end up leaking
-	// CNSRegisterVolumes when somehow there is another
-	// CnsRegisterVolume resource with a different PVC name. In that
-	// case, CSI marks the status as error with "duplicate request".
-	// In that case, the CRV never gets to registered, and we will
-	// never clean that up. However, that is an extremely rare case
-	// for which we would want the reconcile to fail.
-	var errs []error
-	for _, crv := range crvList.Items {
-		if !crv.Status.Registered {
-			logger.V(4).Info("Skipping deletion of CnsRegisterVolume - not yet registered",
-				"crv", crv.Name, "crvStatusError", crv.Status.Error)
-			continue
-		}
-
-		logger.V(4).Info("Deleting completed CnsRegisterVolume",
-			"crv", crv.Name)
-
-		if err := k8sClient.Delete(ctx, &crv); err != nil {
-			if !apierrors.IsNotFound(err) {
-				errs = append(errs, fmt.Errorf(
-					"failed to delete CnsRegisterVolume %s: %w",
-					crv.Name, err))
-			}
-		}
-	}
-
-	return errors.Join(errs...)
+	return nil
 }
 
 // cleanupVolumeStatus remove any status entries for classic disks that have

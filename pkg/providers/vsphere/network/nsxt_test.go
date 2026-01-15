@@ -23,8 +23,9 @@ import (
 var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 
 	const (
-		macAddress1 = "01:02:03:04:05:06"
-		macAddress2 = "01:02:03:04:05:07"
+		macAddress1   = "01:02:03:04:05:06"
+		macAddress2   = "01:02:03:04:05:07"
+		dummySubnetID = "/projects/project-quality/vpcs/foo"
 	)
 
 	var (
@@ -71,6 +72,7 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 			dev.Backing = backing
 			dev.MacAddress = macAddress1
 			dev.ExternalId = builder.GetVPCTLogicalSwitchUUID(idx)
+			dev.SubnetId = dummySubnetID
 			return dev
 		}
 
@@ -132,5 +134,6 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 		Expect(ok).To(BeTrue())
 		Expect(ethCard.ExternalId).To(Equal(dev1Restored.ExternalId))
 		Expect(ethCard.MacAddress).To(Equal(dev1Restored.MacAddress))
+		Expect(ethCard.SubnetId).To(BeEmpty())
 	})
 })

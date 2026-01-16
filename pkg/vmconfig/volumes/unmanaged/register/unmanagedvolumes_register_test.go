@@ -33,6 +33,7 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
@@ -602,7 +603,8 @@ var _ = Describe("Reconcile", func() {
 						},
 					}
 
-					// Create existing CnsRegisterVolume to be cleaned up
+					// Create existing CnsRegisterVolume to be cleaned up.
+					// Status.Registered must be true for cleanup to happen.
 					existingCRV := &cnsv1alpha1.CnsRegisterVolume{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "my-vm-134e95b6",
@@ -624,6 +626,9 @@ var _ = Describe("Reconcile", func() {
 							PvcName:     "my-vm-134e95b6",
 							DiskURLPath: "[LocalDS_0] vm1/disk.vmdk",
 							AccessMode:  corev1.ReadWriteOnce,
+						},
+						Status: cnsv1alpha1.CnsRegisterVolumeStatus{
+							Registered: true,
 						},
 					}
 
@@ -1215,6 +1220,15 @@ var _ = Describe("Reconcile", func() {
 					pvc.Status.Phase = corev1.ClaimBound
 					Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
 
+					// Simulate CSI marking CRV as registered (this happens after PVC is bound)
+					// Re-fetch the CRV to get the latest version before updating status
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      claimName,
+					}, crv)).To(Succeed())
+					crv.Status.Registered = true
+					Expect(k8sClient.Update(ctx, crv)).To(Succeed())
+
 					// Verify the status was not yet pruned.
 					Expect(vm.Status.Volumes).To(HaveLen(1))
 					Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeClassic))
@@ -1225,7 +1239,7 @@ var _ = Describe("Reconcile", func() {
 							DiskUUID: "disk-uuid-cycle",
 						})
 
-					// Second reconciliation: should clean up CnsRegisterVolume
+					// Second reconciliation: should clean up CnsRegisterVolume (Status.Registered = true)
 					Expect(unmanagedvolsreg.Reconcile(
 						ctx,
 						k8sClient,
@@ -1666,6 +1680,7 @@ var _ = Describe("Reconcile", func() {
 					}
 
 					// Create existing CnsRegisterVolume to be cleaned up
+					// Status.Registered must be true for cleanup to happen
 					existingCRV := &cnsv1alpha1.CnsRegisterVolume{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "my-vm-9eb41331",
@@ -1687,6 +1702,9 @@ var _ = Describe("Reconcile", func() {
 							PvcName:     "my-vm-9eb41331",
 							DiskURLPath: "[LocalDS_0] vm1/disk.vmdk",
 							AccessMode:  corev1.ReadWriteOnce,
+						},
+						Status: cnsv1alpha1.CnsRegisterVolumeStatus{
+							Registered: true,
 						},
 					}
 
@@ -1743,12 +1761,12 @@ var _ = Describe("Reconcile", func() {
 				})
 			})
 
-			When("k8sClient.DeleteAllOf fails for CnsRegisterVolume cleanup", func() {
+			When("k8sClient.Delete fails for CnsRegisterVolume cleanup", func() {
 				BeforeEach(func() {
 					// Set up VM with bound PVC
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
-							Name: "disk-uuid-delete-all-error",
+							Name: "disk-uuid-delete-error",
 							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
@@ -1797,6 +1815,25 @@ var _ = Describe("Reconcile", func() {
 
 					withObjs = append(withObjs, boundPVC)
 
+					// Create a CnsRegisterVolume that will be cleaned up
+					// Status.Registered must be true for cleanup to happen
+					crv := &cnsv1alpha1.CnsRegisterVolume{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "my-vm-1aeeec80",
+							Namespace: vm.Namespace,
+							Labels: map[string]string{
+								pkgconst.CreatedByLabel: vm.Name,
+							},
+						},
+						Spec: cnsv1alpha1.CnsRegisterVolumeSpec{
+							PvcName: "my-vm-1aeeec80",
+						},
+						Status: cnsv1alpha1.CnsRegisterVolumeStatus{
+							Registered: true,
+						},
+					}
+					withObjs = append(withObjs, crv)
+
 					disk := &vimtypes.VirtualDisk{
 						VirtualDevice: vimtypes.VirtualDevice{
 							Key:           300,
@@ -1806,7 +1843,7 @@ var _ = Describe("Reconcile", func() {
 								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 									FileName: "[LocalDS_0] vm1/disk.vmdk",
 								},
-								Uuid: "disk-uuid-delete-all-error",
+								Uuid: "disk-uuid-delete-error",
 							},
 						},
 						CapacityInBytes: 1024 * 1024 * 1024,
@@ -1830,13 +1867,13 @@ var _ = Describe("Reconcile", func() {
 						},
 					}
 
-					// Set up interceptor to return error on DeleteAllOf
+					// Set up interceptor to return error on Delete for CnsRegisterVolume
 					withFuncs = interceptor.Funcs{
-						DeleteAllOf: func(ctx context.Context, client ctrlclient.WithWatch, obj ctrlclient.Object, opts ...ctrlclient.DeleteAllOfOption) error {
+						Delete: func(ctx context.Context, client ctrlclient.WithWatch, obj ctrlclient.Object, opts ...ctrlclient.DeleteOption) error {
 							if _, ok := obj.(*cnsv1alpha1.CnsRegisterVolume); ok {
-								return fmt.Errorf("simulated delete all error")
+								return fmt.Errorf("simulated delete error")
 							}
-							return client.DeleteAllOf(ctx, obj, opts...)
+							return client.Delete(ctx, obj, opts...)
 						},
 					}
 				})
@@ -2649,6 +2686,226 @@ var _ = Describe("Reconcile", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get pvc"))
 				Expect(err.Error()).To(ContainSubstring("simulated general error"))
+			})
+		})
+
+		Context("Steady state CnsRegisterVolume handling for unmamaged disks", func() {
+
+			When("FCD disk is present (already managed by CNS/CSI)", func() {
+				BeforeEach(func() {
+					// Set up VM with FCD disk that has a volume entry
+					// FCD disks are filtered out early because:
+					// - Greenfield VMs can't have classic/unmanaged disks as FCDs
+					// - Imported VMs can't have any disks as FCDs
+					// - Registered VMs (VADP) have FCDs already registered as PVCs by RegisterVM
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "fcd-disk-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "fcd-pvc",
+									},
+								},
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
+						},
+					}
+
+					// Create a pending PVC
+					pendingPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "fcd-pvc",
+							Namespace: vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: vmopv1.GroupVersion.String(),
+									Kind:       "VirtualMachine",
+									Name:       vm.Name,
+									UID:        vm.UID,
+								},
+							},
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							DataSourceRef: &corev1.TypedObjectReference{
+								APIGroup: &vmopv1.GroupVersion.Group,
+								Kind:     "VirtualMachine",
+								Name:     vm.Name,
+							},
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: *kubeutil.BytesToResource(1024 * 1024 * 1024),
+								},
+							},
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: corev1.ClaimPending,
+						},
+					}
+					withObjs = append(withObjs, pendingPVC)
+
+					// Create FCD disk (has VDiskId set)
+					fcdDisk := &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key:           300,
+							ControllerKey: 100,
+							UnitNumber:    ptr.To(int32(0)),
+							Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									FileName: "[LocalDS_0] vm1/fcd-disk.vmdk",
+								},
+								Uuid: "fcd-disk-uuid",
+							},
+						},
+						CapacityInBytes: 1024 * 1024 * 1024,
+						VDiskId:         &vimtypes.ID{Id: "fcd-12345"}, // FCD disk
+					}
+
+					ideController := &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 100,
+							},
+							BusNumber: 0,
+						},
+					}
+
+					moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								ideController,
+								fcdDisk,
+							},
+						},
+					}
+				})
+
+				It("should skip FCD disk (filtered out early)", func() {
+					// FCD disks are filtered out at the beginning of Reconcile
+					// because they are already managed by CNS/CSI
+					err := unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify no CRV was created for the FCD disk
+					crv := &cnsv1alpha1.CnsRegisterVolume{}
+					err = k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      "fcd-pvc",
+					}, crv)
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				})
+			})
+
+			When("CnsRegisterVolume is prematurely deleted and disk is still present", func() {
+				BeforeEach(func() {
+					// Set up VM with regular disk that has a volume entry and pending PVC
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "regular-disk-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "regular-pvc",
+									},
+								},
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
+						},
+					}
+
+					// Create a pending PVC (simulates CRV was deleted)
+					pendingPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "regular-pvc",
+							Namespace: vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: vmopv1.GroupVersion.String(),
+									Kind:       "VirtualMachine",
+									Name:       vm.Name,
+									UID:        vm.UID,
+								},
+							},
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							DataSourceRef: &corev1.TypedObjectReference{
+								APIGroup: &vmopv1.GroupVersion.Group,
+								Kind:     "VirtualMachine",
+								Name:     vm.Name,
+							},
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: *kubeutil.BytesToResource(1024 * 1024 * 1024),
+								},
+							},
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: corev1.ClaimPending,
+						},
+					}
+					withObjs = append(withObjs, pendingPVC)
+
+					// Create regular disk
+					regularDisk := &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key:           300,
+							ControllerKey: 100,
+							UnitNumber:    ptr.To(int32(0)),
+							Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									FileName: "[LocalDS_0] vm1/regular-disk.vmdk",
+								},
+								Uuid: "regular-disk-uuid",
+							},
+						},
+						CapacityInBytes: 1024 * 1024 * 1024,
+					}
+
+					ideController := &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 100,
+							},
+							BusNumber: 0,
+						},
+					}
+
+					moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								ideController,
+								regularDisk,
+							},
+						},
+					}
+				})
+
+				It("should re-create CnsRegisterVolume (self-healing)", func() {
+					// First verify no CRV exists
+					crv := &cnsv1alpha1.CnsRegisterVolume{}
+					err := k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      "regular-pvc",
+					}, crv)
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+					// Reconcile should create the CRV
+					err = unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+					Expect(err).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					// Verify CRV was created
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      "regular-pvc",
+					}, crv)).To(Succeed())
+					Expect(crv.Spec.PvcName).To(Equal("regular-pvc"))
+				})
 			})
 		})
 	})

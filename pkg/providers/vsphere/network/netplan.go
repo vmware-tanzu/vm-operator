@@ -7,12 +7,13 @@ package network
 import (
 	"strings"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, error) {
+func NetPlanCustomization(result NetworkInterfaceResults, vlans map[string]vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
 	netPlan := &netplan.Network{
 		Version:   constants.NetPlanVersion,
 		Ethernets: make(map[string]netplan.Ethernet),
@@ -96,6 +97,19 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, err
 		}
 
 		netPlan.Ethernets[r.Name] = npEth
+	}
+
+	// Add VLANs
+	if len(vlans) > 0 {
+		netPlan.Vlans = make(map[string]netplan.VLAN)
+		for vlanName, vlan := range vlans {
+			npVlan := netplan.VLAN{
+				ID:   ptr.To(vlan.ID),
+				Link: ptr.To(vlan.Link),
+			}
+
+			netPlan.Vlans[vlanName] = npVlan
+		}
 	}
 
 	return netPlan, nil

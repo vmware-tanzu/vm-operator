@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
@@ -36,17 +37,19 @@ var _ = Describe("Netplan", func() {
 
 		var (
 			results network.NetworkInterfaceResults
+			vlans   map[string]vmopv1.VirtualMachineNetworkVLANSpec
 			config  *netplan.Network
 			err     error
 		)
 
 		BeforeEach(func() {
 			results = network.NetworkInterfaceResults{}
+			vlans = nil
 			config = nil
 		})
 
 		JustBeforeEach(func() {
-			config, err = network.NetPlanCustomization(results)
+			config, err = network.NetPlanCustomization(results, vlans)
 		})
 
 		Context("IPv4/6 Static adapter", func() {
@@ -243,6 +246,112 @@ var _ = Describe("Netplan", func() {
 				Expect(np.Dhcp4).To(HaveValue(BeFalse()))
 				Expect(np.Dhcp6).To(HaveValue(BeFalse()))
 				Expect(np.AcceptRa).To(HaveValue(BeFalse()))
+			})
+		})
+
+		Context("VLANs", func() {
+			const (
+				vlanName1 = "vlan100"
+				vlanID1   = int64(100)
+				vlanName2 = "vlan200"
+				vlanID2   = int64(200)
+			)
+
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP4:           true,
+						DHCP6:           false,
+					},
+				}
+			})
+
+			Context("Single VLAN", func() {
+				BeforeEach(func() {
+					vlans = map[string]vmopv1.VirtualMachineNetworkVLANSpec{
+						vlanName1: {
+							ID:   vlanID1,
+							Link: guestDevName,
+						},
+					}
+				})
+
+				It("returns success with VLAN configured", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(config).ToNot(BeNil())
+					Expect(config.Version).To(Equal(constants.NetPlanVersion))
+
+					Expect(config.Ethernets).To(HaveLen(1))
+					Expect(config.Ethernets).To(HaveKey(ifName))
+
+					Expect(config.Vlans).To(HaveLen(1))
+					Expect(config.Vlans).To(HaveKey(vlanName1))
+
+					vlan := config.Vlans[vlanName1]
+					Expect(vlan.ID).To(HaveValue(Equal(vlanID1)))
+					Expect(vlan.Link).To(HaveValue(Equal(guestDevName)))
+				})
+			})
+
+			Context("Multiple VLANs", func() {
+				BeforeEach(func() {
+					vlans = map[string]vmopv1.VirtualMachineNetworkVLANSpec{
+						vlanName1: {
+							ID:   vlanID1,
+							Link: guestDevName,
+						},
+						vlanName2: {
+							ID:   vlanID2,
+							Link: guestDevName,
+						},
+					}
+				})
+
+				It("returns success with multiple VLANs configured", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(config).ToNot(BeNil())
+					Expect(config.Version).To(Equal(constants.NetPlanVersion))
+
+					Expect(config.Ethernets).To(HaveLen(1))
+					Expect(config.Vlans).To(HaveLen(2))
+
+					Expect(config.Vlans).To(HaveKey(vlanName1))
+					vlan1 := config.Vlans[vlanName1]
+					Expect(vlan1.ID).To(HaveValue(Equal(vlanID1)))
+					Expect(vlan1.Link).To(HaveValue(Equal(guestDevName)))
+
+					Expect(config.Vlans).To(HaveKey(vlanName2))
+					vlan2 := config.Vlans[vlanName2]
+					Expect(vlan2.ID).To(HaveValue(Equal(vlanID2)))
+					Expect(vlan2.Link).To(HaveValue(Equal(guestDevName)))
+				})
+			})
+
+			Context("No VLANs", func() {
+				BeforeEach(func() {
+					vlans = nil
+				})
+
+				It("returns success without VLANs", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(config).ToNot(BeNil())
+					Expect(config.Vlans).To(BeNil())
+				})
+			})
+
+			Context("Empty VLANs map", func() {
+				BeforeEach(func() {
+					vlans = map[string]vmopv1.VirtualMachineNetworkVLANSpec{}
+				})
+
+				It("returns success without VLANs", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(config).ToNot(BeNil())
+					Expect(config.Vlans).To(BeNil())
+				})
 			})
 		})
 	})

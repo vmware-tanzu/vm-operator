@@ -151,10 +151,10 @@ SCSI controllers support different adapter types, each with varying capacity:
 
 #### Controller Sharing Modes
 
-Controllers support different sharing modes for specialized workloads:
+Controllers support different controller sharing modes for specialized workloads:
 
-| Sharing Mode | Supported Controllers | Description |
-|--------------|----------------------|-------------|
+| Controller Sharing Mode | Supported Controllers | Description |
+|-------------------------|----------------------|-------------|
 | None | SCSI, NVME | No sharing (default for most controllers) |
 | Physical | SCSI, NVME | Physical bus sharing for cluster workloads (e.g., Microsoft WSFC) |
 | Virtual | SCSI | Virtual bus sharing for multi-writer scenarios |
@@ -262,7 +262,7 @@ For VMs deployed before enhanced storage APIs were available:
 3. Each discovered disk is added to `spec.volumes` with:
     - A generated name (e.g., `disk-<uuid>`)
     - The current controller placement (`controllerType`, `controllerBusNumber`, `unitNumber`)
-    - The disk's current configuration (disk mode, sharing mode)
+    - The disk's current configuration (disk mode, volume sharing mode)
 4. PVCs are automatically created for these disks through the [registration process](#automatic-pvc-creation-for-image-disks)
 
 This upgrade is tracked with the `VirtualMachineUnmanagedVolumesBackfilled` condition in `vm.status.conditions`.
@@ -480,7 +480,7 @@ spec:
 
 ### Rekeying a VM
 
-Users can rekey VMs and their [classic disks](#volume-type) by:
+Users can rekey VMs and their [unmanaged disks](#volume-type) by:
 
 * Using the default key provider, if one exists, by removing `spec.crypto.encryptionClassName`.
 * Switching to a different `EncryptionClass` by changing the value of `spec.crypto.encryptionClassName`.
@@ -526,7 +526,7 @@ Users can rekey VMs and their [classic disks](#volume-type) by:
 
     Even though the lack of an explicit key ID means one will be generated, the logic to rekey a VM depends on comparing the key ID from the `EncryptionClass` with the one currently used by the VM. If the one from the `EncryptionClass` is empty, i.e. use a generated key, then it does not cause a rekey to occur since the VM already has a key.
 
-Either change results in the VM and its [classic disks](#volume-type) being rekeyed using the new key provider.
+Either change results in the VM and its [unmanaged disks](#volume-type) being rekeyed using the new key provider.
 
 ### Decrypting a VM
 
@@ -862,13 +862,16 @@ A `VirtualMachine` resource's disks are referred to as _volumes_.
 
 #### Volume Type
 
-There are two types of volumes: _Managed_ and _Classic_:
+There are two types of volumes: _Managed_ and _Unmanaged_:
 
 * **Managed** volumes refer to storage that is provided by [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes).
-* **Classic** volumes refer to the disk(s) that came from the `VirtualMachineImage` or `ClusterVirtualMachineImage` from which the `VirtualMachine` was deployed.
+* **Unmanaged** volumes refer to the disk(s) that came from the `VirtualMachineImage` or `ClusterVirtualMachineImage` from which the `VirtualMachine` was deployed.
+
+!!! note "API Terminology"
+    In the API, unmanaged volumes appear with `type: Classic` in `status.volumes`. This documentation uses "unmanaged" to describe these disks for clarity, but the API value remains `Classic`.
 
 !!! note "Automatic PVC Creation for Image Disks"
-    When a `VirtualMachine` is deployed from a VM image, the system automatically creates PersistentVolumeClaims (PVCs) for the disks that come from the image. This process, called _disk registration_, converts classic disks into managed volumes, providing:
+    When a `VirtualMachine` is deployed from a VM image, the system automatically creates PersistentVolumeClaims (PVCs) for the disks that come from the image. This process, called _disk registration_, converts unmanaged disks into managed volumes, providing:
     
     - Consistent storage lifecycle management through Kubernetes
     - Integration with Kubernetes storage quotas and resource management
@@ -886,7 +889,7 @@ There are two types of volumes: _Managed_ and _Classic_:
     3. **Volume Registration**: A `CnsRegisterVolume` custom resource is created to register the existing disk with the CSI storage provider, allowing the PVC to bind to the underlying disk without copying data.
     4. **Spec Update**: Once the PVC is bound, the `spec.volumes` entry is updated with the PVC claim name.
     
-    This automatic conversion happens transparently during VM reconciliation. Disks from VM images transition from classic volumes to managed volumes without requiring user intervention or data migration.
+    This automatic conversion happens transparently during VM reconciliation. Disks from VM images transition from unmanaged volumes to managed volumes without requiring user intervention or data migration.
     
     **Note**: You can provide your own PVC references for image disks by pre-populating `spec.volumes` with entries that have matching controller placement values. See [Mapping spec.volumes to Image Disks](#mapping-specvolumes-to-image-disks) for details.
 
@@ -902,10 +905,10 @@ A volume in the `spec.volumes` field supports the following properties:
 | `controllerBusNumber` | int32 | The bus number of the controller (references `spec.hardware.<controllerType>Controllers`) |
 | `unitNumber` | int32 | The unit number on the controller (must be unique per controller and cannot be 7 for SCSI) |
 | `diskMode` | enum | The disk attachment mode (see [Disk Modes](#disk-modes)) |
-| `sharingMode` | enum | The disk sharing mode: `None` or `MultiWriter` (see [Sharing Modes](#sharing-modes)) |
+| `sharingMode` | enum | The volume sharing mode: `None` or `MultiWriter` (see [Volume Sharing Modes](#volume-sharing-modes)) |
 | `applicationType` | enum | Application-specific volume configuration: `OracleRAC` or `MicrosoftWSFC` (see [Application Types](#application-types)) |
 
-All placement-related fields (`controllerType`, `controllerBusNumber`, `unitNumber`) are immutable once set. The `diskMode`, `sharingMode`, and `applicationType` fields are also immutable.
+All placement-related fields (`controllerType`, `controllerBusNumber`, `unitNumber`) are immutable once set. The `diskMode`, `sharingMode` (volume sharing mode), and `applicationType` fields are also immutable.
 
 ##### Disk Modes
 
@@ -921,28 +924,28 @@ The `diskMode` field controls how changes to the disk are persisted:
 !!! warning
     Any data written to volumes attached as `IndependentNonPersistent` or `NonPersistent` will be discarded when the VM is powered off.
 
-##### Sharing Modes
+##### Volume Sharing Modes
 
 The `sharingMode` field controls whether the volume can be shared across multiple VMs:
 
-| Sharing Mode | Description |
-|--------------|-------------|
+| Volume Sharing Mode | Description |
+|---------------------|-------------|
 | `None` | Volume is not shared (default for most volumes, and for MicrosoftWSFC) |
 | `MultiWriter` | Volume can be shared across multiple VMs for multi-writer scenarios (default for OracleRAC) |
 
-For `MultiWriter` volumes, the PersistentVolumeClaim must have `ReadWriteMany` access mode.
+For volumes with sharing mode `MultiWriter`, the PersistentVolumeClaim must have `ReadWriteMany` access mode.
 
 ##### Application Types
 
 The `applicationType` field provides application-specific defaults for specialized workloads:
 
-| Application Type | Default Disk Mode | Default Sharing Mode | Controller Selection |
-|------------------|-------------------|----------------------|---------------------|
+| Application Type | Default Disk Mode | Default Volume Sharing Mode | Controller Selection |
+|------------------|-------------------|----------------------------|---------------------|
 | `OracleRAC` | `IndependentPersistent` | `MultiWriter` | First SCSI controller with `sharingMode: None` and available slot. If none exists, creates a new ParaVirtual SCSI controller with `sharingMode: None` (if fewer than 4 SCSI controllers exist). |
 | `MicrosoftWSFC` | `IndependentPersistent` | `None` | First SCSI controller with `sharingMode: Physical` and available slot. If none exists, creates a new ParaVirtual SCSI controller with `sharingMode: Physical` (if fewer than 4 SCSI controllers exist). |
 
 !!! note "Application-Based Defaults"
-    When an `applicationType` is specified, the corresponding `diskMode` and `sharingMode` values are automatically set by the mutation webhook if not explicitly provided. The validation webhook ensures these values are correct and will reject requests with invalid combinations.
+    When an `applicationType` is specified, the corresponding `diskMode` and volume `sharingMode` values are automatically set by the mutation webhook if not explicitly provided. The validation webhook ensures these values are correct and will reject requests with invalid combinations.
     
     The `applicationType` field is immutable and cannot be changed after the volume is created.
 
@@ -973,7 +976,7 @@ When a VM is deployed from an image or migrated from another environment, the sy
 
 Disks included in VM images are automatically converted to PVC-backed volumes:
 
-1. **Initial Deployment**: When deploying from a `VirtualMachineImage` or `ClusterVirtualMachineImage`, the boot disk and any additional disks from the image are initially attached as classic volumes.
+1. **Initial Deployment**: When deploying from a `VirtualMachineImage` or `ClusterVirtualMachineImage`, the boot disk and any additional disks from the image are initially attached as unmanaged volumes.
 
 2. **Disk Identification**: The system identifies image disks by comparing the VM's attached disks against entries in `spec.volumes`:
     - Each disk from the image has specific placement: controller type, bus number, and unit number
@@ -984,6 +987,7 @@ Disks included in VM images are automatically converted to PVC-backed volumes:
     - Detects any unmanaged (non-PVC) disks attached to the VM
     - Creates a PVC for each disk with appropriate metadata
     - Registers the existing disk with the CNS storage provider
+    - Waits for the PVC to be bound before proceeding
     - Updates `spec.volumes` to reference the newly created PVC
 
 4. **No Data Movement**: The registration process does not copy or move data. The PVC is bound to the existing disk in place through the `CnsRegisterVolume` mechanism.
@@ -1026,7 +1030,7 @@ The automatic disk conversion process works with both OVF and VM type images:
 OVF (Open Virtualization Format) images contain disk definitions in the OVF descriptor:
 
 - Disks are deployed as new virtual disks in the target datastore
-- Each disk starts as a classic volume
+- Each disk starts as an unmanaged volume
 - Automatic registration converts them to PVCs during first reconciliation
 - The process respects any storage policies defined in the OVF
 
@@ -1149,9 +1153,9 @@ This explicit mapping allows you to:
 - Control which storage class is used (via the PVC's `storageClassName`)
 - Set up volume configurations before deployment
 
-##### Adding Classic Volumes
+##### Adding Unmanaged Volumes
 
-There is no support for adding classic vSphere disks directly to `VirtualMachine` resources. Additional storage _must_ be provided by managed volumes, i.e. [PersistentVolumeClaims](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims).
+There is no support for adding unmanaged vSphere disks directly to `VirtualMachine` resources. Additional storage _must_ be provided by managed volumes, i.e. [PersistentVolumeClaims](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims).
 
 ##### Adding Managed Volumes
 
@@ -1316,14 +1320,14 @@ The field `status.volumes` described the observed state of a `VirtualMachine` re
 
     | Name | Description |
     |------|-------------|
-    | `name` | The name of the volume. For managed disks this is the name from `spec.volumes` and for classic disks this is the name of the underlying disk. |
-    | `type` | The [type](#volume-type) of the attached volume, i.e. either `Classic` or `Managed` |
+    | `name` | The name of the volume. For managed disks this is the name from `spec.volumes` and for unmanaged disks this is the name of the underlying disk. |
+    | `type` | The [type](#volume-type) of the attached volume, i.e. either `Classic` (unmanaged) or `Managed` |
     | `attached` | Whether or not the volume has been successfully attached to the `VirtualMachine`. |
     | `controllerType` | The observed controller type to which the volume is attached (`IDE`, `NVME`, `SATA`, or `SCSI`). |
     | `controllerBusNumber` | The observed bus number of the controller to which the volume is attached. |
     | `unitNumber` | The observed unit number of the volume on its controller. |
     | `diskMode` | The observed disk mode (`Persistent`, `IndependentPersistent`, `NonPersistent`, or `IndependentNonPersistent`). |
-    | `sharingMode` | The observed sharing mode (`None` or `MultiWriter`). |
+    | `sharingMode` | The observed volume sharing mode (`None` or `MultiWriter`). |
     | `diskUUID` | The unique identifier of the volume's underlying disk. |
     | `limit` | The maximum amount of space that may be used by this volume. |
     | `requested` | The minimum amount of space that may be used by this volume. |
@@ -1343,7 +1347,7 @@ The field `status.volumes` described the observed state of a `VirtualMachine` re
 !!! note "Volume Type in Status"
     During the automatic disk registration process, volumes from VM images will initially appear with `type: Classic` in the status. Once the PVC is created and bound, and the registration process is complete, these volumes remain as `type: Classic` in the status even though they are backed by PVCs. The `type` field in status indicates the origin of the disk (from an image) rather than the current storage implementation.
     
-    To determine if a classic volume has been converted to use a PVC, check if the corresponding entry in `spec.volumes` has a `persistentVolumeClaim` field populated.
+    To determine if an unmanaged volume has been converted to use a PVC, check if the corresponding entry in `spec.volumes` has a `persistentVolumeClaim` field populated.
 
 The following example shows the status for a single, encrypted volume that originated from a VM image:
 
@@ -2143,7 +2147,7 @@ The feature version is a bitmask that tracks feature-specific schema upgrades:
 |-------------|:-----:|-------------|
 | `Base` | 1 | Basic upgrade including BIOS UUID, Instance UUID, and Cloud-Init instance UUID reconciliation |
 | `VMSharedDisks` | 2 | Adds controller and device information to support shared disks and advanced placement |
-| `AllDisksArePVCs` | 4 | Backfills unmanaged (classic) volumes into `spec.volumes` to enable PVC-based management |
+| `AllDisksArePVCs` | 4 | Backfills unmanaged volumes into `spec.volumes` to enable PVC-based management |
 
 The feature version is computed by OR'ing together all activated feature bits. For example, if both `VMSharedDisks` and `AllDisksArePVCs` are enabled, the feature version would be `7` (1 | 2 | 4).
 
@@ -2161,7 +2165,7 @@ When a VM's feature version doesn't include the `Base` bit, the following fields
 
 #### Volume Backfill
 
-When the `AllDisksArePVCs` feature is enabled and the VM's feature version doesn't include this bit, unmanaged volumes (classic disks from the VM image) are backfilled into `spec.volumes`. This process:
+When the `AllDisksArePVCs` feature is enabled and the VM's feature version doesn't include this bit, unmanaged volumes (disks from the VM image) are backfilled into `spec.volumes`. This process:
 
 1. Identifies all virtual disks attached to the VM in vSphere
 2. Filters out First Class Disks (FCDs) and linked clones
@@ -2173,7 +2177,7 @@ When the `AllDisksArePVCs` feature is enabled and the VM's feature version doesn
 The backfill operation sets a condition `VirtualMachineUnmanagedVolumesBackfilled` and temporarily pauses reconciliation to allow the spec update to be persisted.
 
 !!! note
-    Volume backfill does not create PersistentVolumeClaim references for classic disks. It only adds the volume metadata to enable consistent volume management.
+    Volume backfill does not create PersistentVolumeClaim references for unmanaged disks. It only adds the volume metadata to enable consistent volume management.
 
 #### Controller Reconciliation
 
@@ -2210,12 +2214,12 @@ The `VirtualMachine` mutation webhook sets default values for volumes and contro
 When a volume with a PersistentVolumeClaim is added:
 
 1. **Application-Based Defaults**: If `applicationType` is specified:
-    * `OracleRAC`: Sets `diskMode: IndependentPersistent` and `sharingMode: MultiWriter`
-    * `MicrosoftWSFC`: Sets `diskMode: IndependentPersistent` and `sharingMode: None`
+    * `OracleRAC`: Sets `diskMode: IndependentPersistent` and volume `sharingMode: MultiWriter`
+    * `MicrosoftWSFC`: Sets `diskMode: IndependentPersistent` and volume `sharingMode: None`
 
 2. **Standard Defaults**: If no `applicationType` is specified:
     * `diskMode`: Defaults to `Persistent`
-    * `sharingMode`: Defaults to `None`
+    * Volume `sharingMode`: Defaults to `None`
 
 #### Controller Creation
 
@@ -2251,7 +2255,7 @@ These requirements ensure that once a volume is placed, its location is explicit
 When `applicationType` is specified, the validator ensures:
 
 * **OracleRAC volumes**:
-    * `sharingMode` must be `MultiWriter`
+    * Volume `sharingMode` must be `MultiWriter`
     * `diskMode` must be `IndependentPersistent`
 
 * **MicrosoftWSFC volumes**:
@@ -2263,7 +2267,7 @@ If these constraints are violated, the validation webhook rejects the request wi
 
 Consider a VM originally created before `VMSharedDisks` support was added:
 
-1. **Initial State**: VM has a classic disk from the image, no annotations
+1. **Initial State**: VM has an unmanaged disk from the image, no annotations
 2. **Build Version Upgrade**: `upgraded-to-build-version` and `upgraded-to-schema-version` are set
 3. **Base Feature Upgrade**: BIOS and instance UUIDs are reconciled, `upgraded-to-feature-version: "1"` is set
 4. **AllDisksArePVCs Enabled**: Unmanaged volumes are backfilled into `spec.volumes`, feature version becomes `"5"` (1 | 4)

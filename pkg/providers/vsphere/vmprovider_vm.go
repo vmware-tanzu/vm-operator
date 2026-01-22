@@ -183,15 +183,10 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		return nil, providers.ErrReconcileInProgress
 	}
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(
-			ctx,
-			vimtypes.ID{},
-			vs.getOpID(ctx, vm, "createOrUpdateVM"),
-		),
-		Logger: logger,
-		VM:     vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "createOrUpdateVM"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -329,11 +324,10 @@ func (vs *vSphereVMProvider) CleanupVirtualMachine(
 		return providers.ErrReconcileInProgress
 	}
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "cleanupVM")),
-		Logger:  pkglog.FromContextOrDefault(ctx),
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "cleanupVM"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -372,11 +366,10 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		return providers.ErrReconcileInProgress
 	}
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "deleteVM")),
-		Logger:  pkglog.FromContextOrDefault(ctx),
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "deleteVM"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -464,11 +457,10 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 		"vmName", vm.NamespacedName(), "clName", fmt.Sprintf("%s/%s", cl.Namespace, cl.Name))
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, fmt.Sprintf("%s-%s", vs.getOpID(ctx, vm, "publishVM"), actID)),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "publishVM-"+actID),
+		vm,
+	)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -521,11 +513,10 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "heartbeat")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "heartbeat"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -553,11 +544,10 @@ func (vs *vSphereVMProvider) GetVirtualMachineProperties(
 	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "properties")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "properties"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -616,11 +606,10 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "webconsole")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "webconsole"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -647,11 +636,10 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "hardware-version")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "hardware-version"),
+		vm,
+	)
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {

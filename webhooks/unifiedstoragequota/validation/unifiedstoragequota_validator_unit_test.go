@@ -2080,9 +2080,22 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				vmSnapshot.Spec.Memory = true
 			})
 
-			When("virtual machine class is not found", func() {
+			When("VM does not have status.hardware set", func() {
 				BeforeEach(func() {
-					vm.Spec.ClassName = "non-existent-vm-class"
+					withObjects = []ctrlclient.Object{vm}
+				})
+
+				It("should write StatusInternalServerError code to the response object", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+					Expect(resp.RequestedCapacities).To(HaveLen(0))
+					Expect(resp.Result.Message).To(ContainSubstring("failed to calculate reserved storage capacity for snapshot since VM does not have memory usage set"))
+				})
+			})
+
+			When("VM does not have status.hardware.memory set", func() {
+				BeforeEach(func() {
+					vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 					withObjects = []ctrlclient.Object{vmSnapshot, vm}
 				})
 
@@ -2090,7 +2103,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 					Expect(resp.Allowed).To(BeFalse())
 					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
 					Expect(resp.RequestedCapacities).To(HaveLen(0))
-					Expect(resp.Result.Message).To(ContainSubstring("failed to get VMClass"))
+					Expect(resp.Result.Message).To(ContainSubstring("failed to calculate reserved storage capacity for snapshot since VM does not have memory usage set"))
 				})
 			})
 		})

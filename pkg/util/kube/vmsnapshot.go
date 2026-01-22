@@ -44,18 +44,18 @@ func CalculateReservedForSnapshotPerStorageClass(
 
 	// Add the VM's memory to the total reserved capacity.
 	if vmSnapshot.Spec.Memory {
-		// TODO(lubron): Fetch the requested memory size from the VM.status.hardware.memory.reservation.
-		vmClass := &vmopv1.VirtualMachineClass{}
-		if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vm.Spec.ClassName}, vmClass); err != nil {
-			return nil, fmt.Errorf("failed to get VMClass %s: %w", vm.Spec.ClassName, err)
+		if vm.Status.Hardware == nil || vm.Status.Hardware.Memory == nil {
+			return nil, fmt.Errorf("failed to calculate reserved storage capacity for snapshot since VM does not have memory usage set")
 		}
 
 		if _, ok := requestedMap[vm.Spec.StorageClass]; !ok {
 			requestedMap[vm.Spec.StorageClass] = resource.NewQuantity(0, resource.BinarySI)
 		}
 
-		logger.V(4).Info("adding memory size to the total reserved capacity", "memory", vmClass.Spec.Hardware.Memory, "storageClass", vm.Spec.StorageClass)
-		requestedMap[vm.Spec.StorageClass].Add(vmClass.Spec.Hardware.Memory)
+		logger.V(4).Info("adding VM's memory size to the total reserved capacity",
+			"memory", vm.Status.Hardware.Memory.Total,
+			"storageClass", vm.Spec.StorageClass)
+		requestedMap[vm.Spec.StorageClass].Add(*vm.Status.Hardware.Memory.Total)
 	}
 
 	volumePVCMap := make(map[string]*vmopv1.PersistentVolumeClaimVolumeSource)

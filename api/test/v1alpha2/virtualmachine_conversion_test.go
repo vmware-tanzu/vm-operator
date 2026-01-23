@@ -679,6 +679,36 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub2, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine hub-spoke-hub with bootstrap disabled", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					Disabled: true,
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with CloudInit and bootstrap disabled ", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						RawCloudConfig: &vmopv1common.SecretKeySelector{
+							Name: "my-secret",
+							Key:  "user-data",
+						},
+					},
+					Disabled: true,
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine and spec.network.domainName", func(t *testing.T) {
 
 		const (

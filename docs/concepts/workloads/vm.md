@@ -120,9 +120,81 @@ Virtual machines deployed and managed by VM Operator support _all_ the same hard
 
 As long as they are specified in the VM class, features such as virtual GPUs, device groups, and SR-IOV NICs are all supported.
 
+### Controllers
+
+A `VirtualMachine` supports multiple types of storage controllers, each with specific capabilities and limitations. Controllers can be explicitly configured in the `spec.hardware` section or automatically provisioned when attaching volumes and CD-ROMs.
+
+#### Controller Types
+
+The following controller types are supported:
+
+| Type | Max Controllers | Max Slots per Controller | Reserved Unit | Notes |
+|------|:---------------:|:------------------------:|:-------------:|-------|
+| IDE | 2 | 2 | N/A | Typically used for CD-ROM devices |
+| NVME | 4 | 64 | N/A | High-performance storage option |
+| SATA | 4 | 30 | N/A | Also used for CD-ROM devices |
+| SCSI | 4 | Varies by type | 7 | See SCSI Controller Types below |
+
+#### SCSI Controller Types
+
+SCSI controllers support different adapter types, each with varying capacity:
+
+| SCSI Type | Max Slots | Available Slots |
+|-----------|:---------:|:---------------:|
+| ParaVirtual | 65 | 64 |
+| BusLogic | 16 | 15 |
+| LsiLogic | 16 | 15 |
+| LsiLogicSAS | 16 | 15 |
+
+!!! note
+    SCSI controllers occupy unit number 7 on their own bus, reducing the available slots by one.
+
+#### Controller Sharing Modes
+
+Controllers support different controller sharing modes for specialized workloads:
+
+| Controller Sharing Mode | Supported Controllers | Description |
+|-------------------------|----------------------|-------------|
+| None | SCSI, NVME | No sharing (default for most controllers) |
+| Physical | SCSI, NVME | Physical bus sharing for cluster workloads (e.g., Microsoft WSFC) |
+| Virtual | SCSI | Virtual bus sharing for multi-writer scenarios |
+
+#### Configuring Controllers
+
+Controllers can be explicitly configured in the `spec.hardware` section:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: my-vm
+spec:
+  hardware:
+    scsiControllers:
+    - busNumber: 0
+      sharingMode: None
+      type: ParaVirtual
+    - busNumber: 1
+      sharingMode: Physical
+      type: ParaVirtual
+    sataControllers:
+    - busNumber: 0
+    nvmeControllers:
+    - busNumber: 0
+      sharingMode: None
+```
+
+When controllers are not explicitly specified, they are automatically created as needed when volumes or CD-ROMs are attached. For example, when adding a volume without specifying a controller, a ParaVirtual SCSI controller with `sharingMode: None` will be created if no SCSI controller with available slots exists (and the maximum of 4 SCSI controllers has not been reached).
+
+The mutation webhook applies the following logic when creating controllers automatically:
+
+* **Default volumes**: Creates a ParaVirtual SCSI controller with `sharingMode: None`
+* **OracleRAC volumes**: Creates a ParaVirtual SCSI controller with `sharingMode: None` (note: the volume itself has `sharingMode: MultiWriter`)
+* **MicrosoftWSFC volumes**: Creates a ParaVirtual SCSI controller with `sharingMode: Physical`
+
 ### Status
 
-Information about the hardware being used (ex. CPU, memory, vGPUs, etc.) can be gleamed from the VM's status, ex.:
+Information about the hardware being used (ex. CPU, memory, vGPUs, controllers, etc.) can be gleamed from the VM's status, ex.:
 
 ```yaml
 status:
@@ -140,9 +212,94 @@ status:
     - migrationType: Enhanced
       profile: grid_p40-2q
       type: Nvidia
+    controllers:
+    - busNumber: 0
+      deviceKey: 1000
+      type: SCSI
+      devices:
+      - type: Disk
+        unitNumber: 0
+      - type: Disk
+        unitNumber: 1
+    - busNumber: 1
+      deviceKey: 1001
+      type: IDE
+      devices:
+      - type: CDROM
+        unitNumber: 0
 ```
 
+The `status.hardware.controllers` field provides visibility into the actual controller configuration on the VM, including:
+
+* The controller's bus number and type
+* The vSphere device key for the controller
+* A list of devices (disks and CD-ROMs) attached to each controller with their unit numbers
+
 Examples of other hardware (ex. storage, vTPMs, etc.) in the status are illustrated throughout this page.
+
+## Schema Upgrades
+
+When VM Operator is upgraded with new capabilities, existing VMs are automatically upgraded to support new features through a schema upgrade process. This process ensures that VMs created with older versions of VM Operator can take advantage of new functionality.
+
+### Upgrade Annotations
+
+The system tracks schema upgrades using annotations on the VM:
+
+- `vmoperator.vmware.com/upgraded-to-build-version`: The VM Operator build version the VM has been upgraded to
+- `vmoperator.vmware.com/upgraded-to-schema-version`: The API schema version the VM has been upgraded to  
+- `vmoperator.vmware.com/upgraded-to-feature-version`: A bitmask indicating which feature-specific upgrades have been applied
+
+### Storage-Related Upgrades
+
+When storage management capabilities are enhanced, existing VMs undergo automatic upgrades:
+
+#### Unmanaged Disk Discovery
+
+For VMs deployed before enhanced storage APIs were available:
+
+1. The system scans the VM's hardware configuration to discover any disks not currently represented in `spec.volumes`
+2. A disk is considered "unmanaged" if there's no `spec.volumes` entry with matching `controllerType`, `controllerBusNumber`, and `unitNumber`
+3. Each discovered disk is added to `spec.volumes` with:
+    - A generated name (e.g., `disk-<uuid>`)
+    - The current controller placement (`controllerType`, `controllerBusNumber`, `unitNumber`)
+    - The disk's current configuration (disk mode, volume sharing mode)
+4. PVCs are automatically created for these disks through the [registration process](#automatic-pvc-creation-for-image-disks)
+
+This upgrade is tracked with the `VirtualMachineUnmanagedVolumesBackfilled` condition in `vm.status.conditions`.
+
+#### Linked Clone Promotion
+
+For VMs deployed as linked clones (common with instant clone deployments or when deploying from Content Library templates):
+
+1. The system detects linked clone relationships by examining disk backing information
+2. Linked clone disks can be promoted to independent disks, breaking the dependency on the parent
+3. This promotion happens automatically during the registration process for environments where independent disk management is preferred
+
+### Monitoring Upgrades
+
+To check if a VM has been upgraded:
+
+```bash
+kubectl get vm <vm-name> -n <namespace> -o jsonpath='{.metadata.annotations}' | jq
+```
+
+Look for the upgrade-related annotations to see the current upgrade status.
+
+### Upgrade Conditions
+
+The following conditions indicate the status of storage-related upgrades:
+
+| Condition | Meaning |
+|-----------|---------|
+| `VirtualMachineUnmanagedVolumesBackfilled` | Indicates whether unmanaged disks have been added to `spec.volumes` |
+| `VirtualMachineUnmanagedVolumesRegistered` | Indicates whether PVCs have been created for all unmanaged disks |
+
+Check these conditions to monitor the progress of automatic disk registration:
+
+```bash
+kubectl get vm <vm-name> -n <namespace> -o jsonpath='{.status.conditions[?(@.type=="VirtualMachineUnmanagedVolumesBackfilled")]}' | jq
+kubectl get vm <vm-name> -n <namespace> -o jsonpath='{.status.conditions[?(@.type=="VirtualMachineUnmanagedVolumesRegistered")]}' | jq
+```
 
 ## Updating a VM
 
@@ -323,7 +480,7 @@ spec:
 
 ### Rekeying a VM
 
-Users can rekey VMs and their [classic disks](#volume-type) by:
+Users can rekey VMs and their [unmanaged disks](#volume-type) by:
 
 * Using the default key provider, if one exists, by removing `spec.crypto.encryptionClassName`.
 * Switching to a different `EncryptionClass` by changing the value of `spec.crypto.encryptionClassName`.
@@ -369,7 +526,7 @@ Users can rekey VMs and their [classic disks](#volume-type) by:
 
     Even though the lack of an explicit key ID means one will be generated, the logic to rekey a VM depends on comparing the key ID from the `EncryptionClass` with the one currently used by the VM. If the one from the `EncryptionClass` is empty, i.e. use a generated key, then it does not cause a rekey to occur since the VM already has a key.
 
-Either change results in the VM and its [classic disks](#volume-type) being rekeyed using the new key provider.
+Either change results in the VM and its [unmanaged disks](#volume-type) being rekeyed using the new key provider.
 
 ### Decrypting a VM
 
@@ -705,16 +862,300 @@ A `VirtualMachine` resource's disks are referred to as _volumes_.
 
 #### Volume Type
 
-There are two types of volumes: _Managed_ and _Classic_:
+There are two types of volumes: _Managed_ and _Unmanaged_:
 
 * **Managed** volumes refer to storage that is provided by [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes).
-* **Classic** volumes refer to the disk(s) that came from the `VirtualMachineImage` or `ClusterVirtualMachineImage` from which the `VirtualMachine` was deployed.
+* **Unmanaged** volumes refer to the disk(s) that came from the `VirtualMachineImage` or `ClusterVirtualMachineImage` from which the `VirtualMachine` was deployed.
+
+!!! note "API Terminology"
+    In the API, unmanaged volumes appear with `type: Classic` in `status.volumes`. This documentation uses "unmanaged" to describe these disks for clarity, but the API value remains `Classic`.
+
+!!! note "Automatic PVC Creation for Image Disks"
+    When a `VirtualMachine` is deployed from a VM image, the system automatically creates PersistentVolumeClaims (PVCs) for the disks that come from the image. This process, called _disk registration_, converts unmanaged disks into managed volumes, providing:
+    
+    - Consistent storage lifecycle management through Kubernetes
+    - Integration with Kubernetes storage quotas and resource management
+    - Ability to track and manage all VM storage through the PVC API
+    
+    The registration process:
+    
+    1. **Backfill**: When the VM is first created or upgraded, any unmanaged disks are automatically added to `spec.volumes` with their current placement information (controller type, bus number, and unit number). A disk is identified as unmanaged if no `spec.volumes` entry exists with matching `controllerType`, `controllerBusNumber`, and `unitNumber` values.
+    2. **PVC Creation**: For each unmanaged disk, a PVC is created with:
+        - An owner reference pointing to the VM
+        - A `dataSourceRef` pointing back to the VM
+        - The storage class from `vm.spec.storageClass`
+        - The current disk capacity as the requested size
+        - Appropriate access modes based on the disk's sharing configuration
+    3. **Volume Registration**: A `CnsRegisterVolume` custom resource is created to register the existing disk with the CSI storage provider, allowing the PVC to bind to the underlying disk without copying data.
+    4. **Spec Update**: Once the PVC is bound, the `spec.volumes` entry is updated with the PVC claim name.
+    
+    This automatic conversion happens transparently during VM reconciliation. Disks from VM images transition from unmanaged volumes to managed volumes without requiring user intervention or data migration.
+    
+    **Note**: You can provide your own PVC references for image disks by pre-populating `spec.volumes` with entries that have matching controller placement values. See [Mapping spec.volumes to Image Disks](#mapping-specvolumes-to-image-disks) for details.
+
+#### Volume Specification
+
+A volume in the `spec.volumes` field supports the following properties:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | The volume's name (must be a DNS_LABEL and unique within the VM) |
+| `persistentVolumeClaim` | object | Reference to a PersistentVolumeClaim |
+| `controllerType` | enum | Controller type: `IDE`, `NVME`, `SATA`, or `SCSI` (defaults to `SCSI` if not specified) |
+| `controllerBusNumber` | int32 | The bus number of the controller (references `spec.hardware.<controllerType>Controllers`) |
+| `unitNumber` | int32 | The unit number on the controller (must be unique per controller and cannot be 7 for SCSI) |
+| `diskMode` | enum | The disk attachment mode (see [Disk Modes](#disk-modes)) |
+| `sharingMode` | enum | The volume sharing mode: `None` or `MultiWriter` (see [Volume Sharing Modes](#volume-sharing-modes)) |
+| `applicationType` | enum | Application-specific volume configuration: `OracleRAC` or `MicrosoftWSFC` (see [Application Types](#application-types)) |
+
+All placement-related fields (`controllerType`, `controllerBusNumber`, `unitNumber`) are immutable once set. The `diskMode`, `sharingMode` (volume sharing mode), and `applicationType` fields are also immutable.
+
+##### Disk Modes
+
+The `diskMode` field controls how changes to the disk are persisted:
+
+| Disk Mode | Persistent | Independent | Included in Snapshots | Notes |
+|-----------|:----------:|:-----------:|:---------------------:|-------|
+| `Persistent` | Yes | No | Yes | Default mode for standard volumes |
+| `IndependentPersistent` | Yes | Yes | No | Changes persist but disk not included in snapshots/backups; default for OracleRAC and MicrosoftWSFC |
+| `NonPersistent` | No | No | Yes | Changes discarded on power-off |
+| `IndependentNonPersistent` | No | Yes | No | Changes discarded on power-off, not included in snapshots |
+
+!!! warning
+    Any data written to volumes attached as `IndependentNonPersistent` or `NonPersistent` will be discarded when the VM is powered off.
+
+##### Volume Sharing Modes
+
+The `sharingMode` field controls whether the volume can be shared across multiple VMs:
+
+| Volume Sharing Mode | Description |
+|---------------------|-------------|
+| `None` | Volume is not shared (default for most volumes, and for MicrosoftWSFC) |
+| `MultiWriter` | Volume can be shared across multiple VMs for multi-writer scenarios (default for OracleRAC) |
+
+For volumes with sharing mode `MultiWriter`, the PersistentVolumeClaim must have `ReadWriteMany` access mode.
+
+##### Application Types
+
+The `applicationType` field provides application-specific defaults for specialized workloads:
+
+| Application Type | Default Disk Mode | Default Volume Sharing Mode | Controller Selection |
+|------------------|-------------------|----------------------------|---------------------|
+| `OracleRAC` | `IndependentPersistent` | `MultiWriter` | First SCSI controller with `sharingMode: None` and available slot. If none exists, creates a new ParaVirtual SCSI controller with `sharingMode: None` (if fewer than 4 SCSI controllers exist). |
+| `MicrosoftWSFC` | `IndependentPersistent` | `None` | First SCSI controller with `sharingMode: Physical` and available slot. If none exists, creates a new ParaVirtual SCSI controller with `sharingMode: Physical` (if fewer than 4 SCSI controllers exist). |
+
+!!! note "Application-Based Defaults"
+    When an `applicationType` is specified, the corresponding `diskMode` and volume `sharingMode` values are automatically set by the mutation webhook if not explicitly provided. The validation webhook ensures these values are correct and will reject requests with invalid combinations.
+    
+    The `applicationType` field is immutable and cannot be changed after the volume is created.
+
+#### Volume Placement
+
+When adding a volume, VM Operator determines the appropriate controller and unit number using the following logic:
+
+1. **Explicit Placement**: If `controllerType`, `controllerBusNumber`, and `unitNumber` are all specified, the volume is attached to that exact location. The request will fail if:
+    * The specified controller doesn't exist
+    * The specified unit number is already in use
+    * The specified unit number is invalid (e.g., 7 for SCSI controllers)
+
+2. **Partial Placement**: If only `controllerType` and/or `controllerBusNumber` are specified, VM Operator selects an available unit number on the specified or first matching controller.
+
+3. **Application-Based Placement**: If `applicationType` is specified, the controller is selected based on the application's requirements (see [Application Types](#application-types)).
+
+4. **Automatic Placement** (default): If no placement fields are specified, the volume is attached to:
+    * The first SCSI controller with an available slot
+    * If no SCSI controller has available slots, a new ParaVirtual SCSI controller is created (if fewer than 4 SCSI controllers exist)
+
+The chosen placement is reflected in `status.volumes` with the actual `controllerType`, `controllerBusNumber`, and `unitNumber` values.
+
+#### Automatic Volume Management
+
+When a VM is deployed from an image or migrated from another environment, the system automatically manages disk lifecycle through the following process:
+
+##### Image Disk Conversion
+
+Disks included in VM images are automatically converted to PVC-backed volumes:
+
+1. **Initial Deployment**: When deploying from a `VirtualMachineImage` or `ClusterVirtualMachineImage`, the boot disk and any additional disks from the image are initially attached as unmanaged volumes.
+
+2. **Disk Identification**: The system identifies image disks by comparing the VM's attached disks against entries in `spec.volumes`:
+    - Each disk from the image has specific placement: controller type, bus number, and unit number
+    - If a `spec.volumes` entry has matching `controllerType`, `controllerBusNumber`, and `unitNumber`, it's mapped to that image disk
+    - If no matching entry exists in `spec.volumes`, the disk is identified as unmanaged and needs backfilling
+
+3. **Automatic Registration**: During the first reconciliation after deployment, the system:
+    - Detects any unmanaged (non-PVC) disks attached to the VM
+    - Creates a PVC for each disk with appropriate metadata
+    - Registers the existing disk with the CNS storage provider
+    - Waits for the PVC to be bound before proceeding
+    - Updates `spec.volumes` to reference the newly created PVC
+
+4. **No Data Movement**: The registration process does not copy or move data. The PVC is bound to the existing disk in place through the `CnsRegisterVolume` mechanism.
+
+The generated PVC names follow the pattern `disk-<uuid>` where `<uuid>` is a unique identifier. These PVCs are owned by the VM and will be deleted when the VM is deleted.
+
+!!! tip "Pre-mapping Image Disks"
+    To control the PVC names or storage classes for image disks, create `spec.volumes` entries before deploying the VM with `controllerType`, `controllerBusNumber`, and `unitNumber` values matching the disks in the image's `status.disks`. See [Mapping spec.volumes to Image Disks](#mapping-specvolumes-to-image-disks) for details.
+
+##### Linked Clone Promotion
+
+For VMs deployed as linked clones (sharing base disks with the parent image), the system can promote linked clone disks to independent disks as part of the registration process. This ensures each VM has fully independent storage that can be managed separately.
+
+Linked clones are commonly created when:
+
+- Using instant clone deployments
+- Deploying from Content Library templates with delta disk support
+- Using VM images with linked clone optimization enabled
+
+During registration, linked clone disks are:
+
+1. **Detected**: The system identifies disks with parent/backing relationships
+2. **Promoted**: The linked clone disk is converted to a fully independent disk (promoting all deltas)
+3. **Registered**: The now-independent disk is registered as a PVC
+
+!!! info "Promotion Behavior"
+    Disk promotion consolidates the linked clone delta disk and its parent into a single, independent disk. This process:
+    
+    - Happens automatically during the first reconciliation after deployment
+    - Requires sufficient datastore space for the full disk size
+    - Cannot be reversed once completed
+    - Is tracked by monitoring for disk promotion tasks in vCenter
+
+##### Image Type Considerations
+
+The automatic disk conversion process works with both OVF and VM type images:
+
+###### OVF Images
+
+OVF (Open Virtualization Format) images contain disk definitions in the OVF descriptor:
+
+- Disks are deployed as new virtual disks in the target datastore
+- Each disk starts as an unmanaged volume
+- Automatic registration converts them to PVCs during first reconciliation
+- The process respects any storage policies defined in the OVF
+
+###### VM Images
+
+VM images reference existing VMs in vCenter as templates:
+
+- Disks are typically deployed as linked clones (if supported)
+- The system inherits disk configurations from the source VM
+- Linked clone disks are promoted before registration
+- Storage policies from the source VM can be mapped to storage classes
+
+!!! note "DataSourceRef and Image Disks"
+    When PVCs are created for image disks, they include a `dataSourceRef` field pointing to the VM. This indicates:
+    
+    - The PVC was created through automatic registration, not user action
+    - The underlying disk came from a VM image, not from a new PVC request
+    - The CSI provisioner should use the `CnsRegisterVolume` workflow instead of creating a new disk
 
 #### Adding Volumes
 
-##### Adding Classic Volumes
+##### Adding Volumes from VM Images
 
-There is no support for adding classic vSphere disks directly to `VirtualMachine` resources. Additional storage _must_ be provided by managed volumes, i.e. [PersistentVolumeClaims](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims).
+When deploying a VM from an image, volumes are automatically created and registered as described in [Image Disk Conversion](#image-disk-conversion). No manual intervention is required.
+
+###### Mapping spec.volumes to Image Disks
+
+To customize how image disks are managed or to provide explicit PVC references for image disks, you can pre-populate `spec.volumes` entries that map to the disks from the image. VM Operator uses the controller placement information to match `spec.volumes` entries to image disks.
+
+**Important**: To correctly map a `spec.volumes` entry to a disk from the image, you must specify matching placement values:
+
+- `controllerType` - must match the disk's controller type from the image
+- `controllerBusNumber` - must match the controller's bus number from the image  
+- `unitNumber` - must match the disk's unit number from the image
+
+These values can be found in the VM image's status:
+
+```bash
+kubectl get vmimage <image-name> -o jsonpath='{.status.disks}' | jq
+# or for cluster-scoped images:
+kubectl get clustervmimage <image-name> -o jsonpath='{.status.disks}' | jq
+```
+
+**Example**: If an image has the following disk in its status:
+
+```yaml
+status:
+  disks:
+  - controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 0
+    capacity: 20Gi
+```
+
+To map a `spec.volumes` entry to this disk, specify:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: my-vm
+spec:
+  imageName: my-image
+  volumes:
+  - name: boot-disk
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 0
+    # Optionally provide a PVC reference
+    persistentVolumeClaim:
+      claimName: my-custom-boot-pvc
+```
+
+**Key Points**:
+
+1. **All three placement fields are required** for mapping: If you specify `controllerType`, `controllerBusNumber`, and `unitNumber` that match an image disk, VM Operator knows this `spec.volumes` entry is intended for that specific image disk.
+
+2. **Automatic generation if not specified**: If you don't pre-populate `spec.volumes` for image disks, VM Operator automatically creates entries during the backfill process.
+
+3. **PVC reference is optional**: You can provide a `persistentVolumeClaim.claimName` to use a specific PVC for the image disk. If omitted, a PVC will be automatically created with a generated name.
+
+4. **Mismatched placement creates new volumes**: If the placement values don't match any disk from the image, VM Operator treats it as a request for a new volume attachment (which will fail if no PVC is provided).
+
+**Multi-Disk Image Example**:
+
+For an image with multiple disks:
+
+```yaml
+# Image status shows:
+# - Disk 0: SCSI 0:0 (20Gi boot disk)
+# - Disk 1: SCSI 0:1 (50Gi data disk)
+
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: my-vm
+spec:
+  imageName: multi-disk-image
+  volumes:
+  # Map to boot disk (SCSI 0:0)
+  - name: os-disk
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 0
+    persistentVolumeClaim:
+      claimName: my-os-pvc
+  # Map to data disk (SCSI 0:1)  
+  - name: data-disk
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 1
+    persistentVolumeClaim:
+      claimName: my-data-pvc
+```
+
+This explicit mapping allows you to:
+
+- Use specific, pre-created PVCs for image disks
+- Choose meaningful names for the volumes
+- Control which storage class is used (via the PVC's `storageClassName`)
+- Set up volume configurations before deployment
+
+##### Adding Unmanaged Volumes
+
+There is no support for adding unmanaged vSphere disks directly to `VirtualMachine` resources. Additional storage _must_ be provided by managed volumes, i.e. [PersistentVolumeClaims](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims).
 
 ##### Adding Managed Volumes
 
@@ -755,6 +1196,32 @@ The following steps describe how to provide additional storage with [PersistentV
           claimName: my-pvc
     ```
 
+    For more control over placement, you can specify additional fields:
+
+    ```yaml
+    spec:
+      volumes:
+      - name: my-disk-1
+        persistentVolumeClaim:
+          claimName: my-pvc
+        controllerType: SCSI
+        controllerBusNumber: 0
+        unitNumber: 2
+        diskMode: Persistent
+        sharingMode: None
+    ```
+
+    For specialized workloads like Oracle RAC, use the `applicationType`:
+
+    ```yaml
+    spec:
+      volumes:
+      - name: oracle-data
+        persistentVolumeClaim:
+          claimName: oracle-data-pvc
+        applicationType: OracleRAC
+    ```
+
 3. Wait for the new volume to be provisioned and attached to the VM.
 
 4. SSH into the guest.
@@ -763,23 +1230,110 @@ The following steps describe how to provide additional storage with [PersistentV
 
 6. Mount the disk and begin using it.
 
+#### Removing Volumes
+
+Volumes can be removed from a VM by deleting the corresponding entry from `spec.volumes`. The behavior depends on the volume type and how it was created:
+
+##### Removing User-Added Managed Volumes
+
+For volumes that were explicitly added by users (PVCs created manually):
+
+1. Remove the volume entry from `spec.volumes`:
+   ```bash
+   kubectl patch vm <vm-name> -n <namespace> --type=json -p='[{"op": "remove", "path": "/spec/volumes/<index>"}]'
+   ```
+
+2. The disk will be detached from the VM during the next reconciliation.
+
+3. The PVC will **not** be automatically deleted. You must manually delete the PVC if you no longer need the data:
+   ```bash
+   kubectl delete pvc <pvc-name> -n <namespace>
+   ```
+
+!!! warning "Data Preservation"
+    Always ensure you have backups before deleting PVCs. Once deleted, the data cannot be recovered unless you have snapshots or backups.
+
+##### Removing Image-Based Volumes
+
+For volumes that were automatically created from VM images:
+
+1. **Cannot Remove Boot Disks**: The boot disk (typically the first disk from the image) should not be removed as it contains the operating system.
+
+2. **Removing Additional Image Disks**: Additional disks from the image can be removed from `spec.volumes`, but:
+    - The automatically created PVC has an owner reference to the VM
+    - When the VM is deleted, all owned PVCs are automatically deleted
+    - If you remove the volume from `spec.volumes` but keep the VM, the PVC remains but is no longer attached
+
+3. **Reclaiming Storage**: To properly clean up a removed image-based volume:
+   ```bash
+   # First, remove from spec.volumes (as shown above)
+   # Then delete the PVC
+   kubectl delete pvc disk-<uuid> -n <namespace>
+   ```
+
+!!! note "PVC Ownership"
+    PVCs created automatically for image disks have `ownerReferences` pointing to the VM. This means:
+    
+    - Deleting the VM will cascade delete all owned PVCs
+    - Removing the volume from `spec.volumes` does NOT delete the PVC automatically
+    - To prevent accidental data loss, you must explicitly delete the PVC
+
+##### Detach vs. Delete
+
+The system provides two operations:
+
+| Operation | Action | PVC Status | Data Status |
+|-----------|--------|------------|-------------|
+| Remove from `spec.volumes` | Detaches disk from VM | Remains in namespace | Data preserved |
+| Delete PVC | Deletes PVC and underlying disk | Deleted | Data lost (unless snapshotted) |
+
+To detach a volume temporarily (keeping the data for potential reattachment):
+
+1. Remove the volume from `spec.volumes`
+2. Keep the PVC in the namespace
+3. Later, add the volume back to `spec.volumes` with the same PVC claim name
+
+##### Volume Removal Prerequisites
+
+Before removing a volume:
+
+1. **Power State**: The VM should be powered off unless the volume is not critical
+2. **Guest OS**: Unmount the volume from within the guest OS if it's currently mounted
+3. **Data Backup**: Ensure you have backups of any important data
+4. **Dependencies**: Check that no applications depend on the data in the volume
+
+##### Monitoring Volume Removal
+
+After removing a volume, monitor the VM's status:
+
+```bash
+kubectl get vm <vm-name> -n <namespace> -o jsonpath='{.status.volumes}' | jq
+```
+
+The removed volume should no longer appear in `status.volumes` once the detachment is complete.
+
 #### Volume Status
 
-The field `status.volumes` described the observed state of a `VirtualMachine` resource's volumes, including information about the volume's usage and encryption properties:
+The field `status.volumes` described the observed state of a `VirtualMachine` resource's volumes, including information about the volume's usage, placement, and encryption properties:
 
 === "Volume Properties"
 
     | Name | Description |
     |------|-------------|
+    | `name` | The name of the volume. For managed disks this is the name from `spec.volumes` and for unmanaged disks this is the name of the underlying disk. |
+    | `type` | The [type](#volume-type) of the attached volume, i.e. either `Classic` (unmanaged) or `Managed` |
     | `attached` | Whether or not the volume has been successfully attached to the `VirtualMachine`. |
-    | `crypto` | An optional field set only if the volume is encrypted. |
+    | `controllerType` | The observed controller type to which the volume is attached (`IDE`, `NVME`, `SATA`, or `SCSI`). |
+    | `controllerBusNumber` | The observed bus number of the controller to which the volume is attached. |
+    | `unitNumber` | The observed unit number of the volume on its controller. |
+    | `diskMode` | The observed disk mode (`Persistent`, `IndependentPersistent`, `NonPersistent`, or `IndependentNonPersistent`). |
+    | `sharingMode` | The observed volume sharing mode (`None` or `MultiWriter`). |
     | `diskUUID` | The unique identifier of the volume's underlying disk. |
-    | `error` | The last observed error that may have occurred when attaching/detaching the disk. |
-    | `name` | The name of the volume. For managed disks this is the name from `spec.volumes` and for classic disks this is the name of the underlying disk. |
-    | `type` | The [type](#volume-type) of the attached volume, i.e. either `Classic` or `Managed` |
     | `limit` | The maximum amount of space that may be used by this volume. |
     | `requested` | The minimum amount of space that may be used by this volume. |
     | `used` | The total storage space occupied by the volume on disk. |
+    | `crypto` | An optional field set only if the volume is encrypted. |
+    | `error` | The last observed error that may have occurred when attaching/detaching the disk. |
 
 === "Encryption Properties"
 
@@ -790,43 +1344,240 @@ The field `status.volumes` described the observed state of a `VirtualMachine` re
     | `keyID` | The identifier of the key used to encrypt the volume.  |
     | `providerID` | The identifier of the provider used to encrypt the volume. |
 
-The following example shows the status for a single, classic, encrypted volume:
+!!! note "Volume Type in Status"
+    During the automatic disk registration process, volumes from VM images will initially appear with `type: Classic` in the status. Once the PVC is created and bound, and the registration process is complete, these volumes remain as `type: Classic` in the status even though they are backed by PVCs. The `type` field in status indicates the origin of the disk (from an image) rather than the current storage implementation.
+    
+    To determine if an unmanaged volume has been converted to use a PVC, check if the corresponding entry in `spec.volumes` has a `persistentVolumeClaim` field populated.
+
+The following example shows the status for a single, encrypted volume that originated from a VM image:
 
 ```yaml
 status:
   volumes:
-  - attached: true
+  - name: my-vm
+    type: Classic
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 0
+    diskMode: Persistent
+    sharingMode: None
+    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
+    limit: 10Gi
+    used: 2Gi
     crypto:
       keyID: "19"
       providerID: gce2e-standard
-    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
-    limit: 10Gi
-    name: my-vm
-    type: Classic
-    used: 2Gi
 ```
 
-The status may also reflect multiple volumes, both classic and managed:
+The status may also reflect multiple volumes, with disks from images and user-added managed volumes:
 
 ```yaml
 status:
   volumes:
-  - attached: true
+  - name: my-vm
+    type: Classic
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 0
+    diskMode: Persistent
+    sharingMode: None
+    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
+    limit: 10Gi
+    used: 2Gi
     crypto:
       keyID: "19"
       providerID: gce2e-standard
-    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
-    limit: 10Gi
-    name: my-vm
-    type: Classic
-    used: 2Gi
-  - attached: true
+  - name: my-disk-1
+    type: Managed
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 1
+    diskMode: Persistent
+    sharingMode: None
     diskUUID: 6000C299-8a21-f2ad-7084-2195c255f905
     limit: 1Gi
-    name: my-disk-1
-    type: Managed
     used: "0"
 ```
+
+For Oracle RAC volumes with multi-writer support, the status would show:
+
+```yaml
+status:
+  volumes:
+  - name: oracle-data
+    type: Managed
+    attached: true
+    controllerType: SCSI
+    controllerBusNumber: 0
+    unitNumber: 2
+    diskMode: IndependentPersistent
+    sharingMode: MultiWriter
+    diskUUID: 6000C299-1234-5678-9abc-def012345678
+    limit: 100Gi
+    used: 45Gi
+```
+
+#### Managing PVCs for Image Disks
+
+When the system automatically creates PVCs for disks that come from VM images, these PVCs have special characteristics:
+
+##### Ownership and Lifecycle
+
+- **Owner References**: Automatically created PVCs have an owner reference pointing to the `VirtualMachine`. When the VM is deleted, the PVCs are automatically deleted as well.
+- **Naming Convention**: PVCs are created with generated names following the pattern `disk-<uuid>`. This ensures uniqueness across the namespace.
+- **DataSource Reference**: Each PVC includes a `dataSourceRef` field pointing back to the VM, indicating the PVC was created through the automatic registration process.
+
+##### Storage Class and Policies
+
+The storage class for automatically created PVCs is determined by:
+
+1. **VM Storage Class**: By default, PVCs use the storage class specified in `vm.spec.storageClass`.
+2. **Storage Policy Inheritance**: If the original disk has an associated vSphere storage policy, the system attempts to map it to an equivalent Kubernetes storage class.
+3. **Existing PVC**: If a PVC already exists for a disk (from a previous reconciliation), its existing storage class is preserved.
+
+##### PVC Annotations
+
+Automatically created PVCs include the following annotation:
+
+- `cns.vmware.com.protected/disk-backing`: Specifies the backing type of the disk (e.g., FlatVer2, RDM, etc.), used by the CSI driver during volume attachment.
+
+##### Volume Modes and Access Modes
+
+- **Volume Mode**: Set to `Block` for environments with shared disk support, otherwise `Filesystem`.
+- **Access Modes**: 
+    - `ReadWriteOnce` for standard disks
+    - `ReadWriteMany` for disks with `sharingMode: MultiWriter`
+
+##### Resizing PVCs
+
+After registration, you can expand PVC-backed disks by updating the PVC's requested storage size, provided:
+
+- The storage class supports volume expansion (`allowVolumeExpansion: true`)
+- The new size is larger than the current size
+- The VM's storage quota has sufficient capacity
+
+The system will automatically update the underlying virtual disk to match the PVC's requested size during subsequent reconciliations.
+
+##### Viewing Registered PVCs
+
+To view PVCs created for a VM's image disks:
+
+```bash
+kubectl get pvc -n <namespace> -l vm.vmoperator.vmware.com/name=<vm-name>
+```
+
+To see the relationship between volumes and PVCs:
+
+```bash
+kubectl get vm <vm-name> -n <namespace> -o jsonpath='{.spec.volumes[*].persistentVolumeClaim.claimName}' | tr ' ' '\n'
+```
+
+##### CNS Volume Registration
+
+The automatic PVC creation process uses vSphere's Container Native Storage (CNS) to register existing virtual disks as Kubernetes persistent volumes. This process involves several components:
+
+###### CnsRegisterVolume Custom Resource
+
+For each unmanaged disk being converted to a PVC, the system creates a `CnsRegisterVolume` (CRV) custom resource:
+
+```yaml
+apiVersion: cns.vmware.com/v1alpha1
+kind: CnsRegisterVolume
+metadata:
+  name: disk-<uuid>
+  namespace: <vm-namespace>
+  ownerReferences:
+  - apiVersion: vmoperator.vmware.com/v1alpha5
+    blockOwnerDeletion: true
+    controller: true
+    kind: VirtualMachine
+    name: <vm-name>
+    uid: <vm-uid>
+  labels:
+    vmoperator.vmware.com/created-by: <vm-name>
+spec:
+  pvcName: disk-<uuid>
+  volumeID: <datastore-url>/<disk-path>
+  accessMode: ReadWriteOnce  # or ReadWriteMany for shared disks
+  diskURLPath: <datastore-url>/<disk-path>
+```
+
+The vSphere CSI driver watches for `CnsRegisterVolume` resources and:
+
+1. Registers the existing disk with the CNS service in vCenter
+2. Creates a PersistentVolume (PV) pointing to the registered disk
+3. Binds the PV to the PVC specified in the CRV
+
+###### Registration Workflow
+
+The complete registration workflow:
+
+1. **Detection**: VM Operator detects unmanaged disks during reconciliation
+2. **Backfill**: Disks are added to `spec.volumes` with placement information
+3. **PVC Creation**: A PVC is created for each disk with `dataSourceRef` pointing to the VM
+4. **CRV Creation**: A `CnsRegisterVolume` is created with details about the disk location
+5. **CNS Registration**: The CSI driver registers the disk with CNS
+6. **PV Creation**: The CSI driver creates a PV and binds it to the PVC
+7. **Cleanup**: Once the PVC is bound, the CRV is deleted
+8. **Completion**: The `VirtualMachineUnmanagedVolumesRegistered` condition is set to `True`
+
+###### Registration Status
+
+During registration, PVCs go through the following phases:
+
+| PVC Phase | CRV Status | Description |
+|-----------|------------|-------------|
+| `Pending` | Exists | Waiting for CSI driver to process CRV |
+| `Pending` | Processing | CSI driver is registering the disk with CNS |
+| `Bound` | Deleted | Registration complete, PVC is bound to PV |
+
+###### Troubleshooting Registration
+
+If automatic PVC creation fails, check:
+
+1. **VM Conditions**: Look for the `VirtualMachineUnmanagedVolumesBackfilled` and `VirtualMachineUnmanagedVolumesRegistered` conditions in `vm.status.conditions`:
+   ```bash
+   kubectl get vm <vm-name> -n <namespace> -o jsonpath='{.status.conditions[?(@.type=="VirtualMachineUnmanagedVolumesRegistered")]}'
+   ```
+
+2. **CnsRegisterVolume Resources**: Check for `CnsRegisterVolume` custom resources in the VM's namespace that may be stuck:
+   ```bash
+   kubectl get cnsregistervolume -n <namespace>
+   kubectl describe cnsregistervolume <crv-name> -n <namespace>
+   ```
+
+3. **PVC Status**: Check the PVC's events and status:
+   ```bash
+   kubectl describe pvc disk-<uuid> -n <namespace>
+   ```
+
+4. **Storage Quota**: Ensure the namespace has sufficient storage quota for the PVCs:
+   ```bash
+   kubectl get resourcequota -n <namespace>
+   ```
+
+5. **Storage Class**: Verify the storage class specified in `vm.spec.storageClass` exists and is available:
+   ```bash
+   kubectl get storageclass <storage-class-name>
+   ```
+
+6. **CSI Driver**: Check the vSphere CSI driver logs for errors:
+   ```bash
+   kubectl logs -n vmware-system-csi -l app=vsphere-csi-controller
+   ```
+
+###### Common Registration Issues
+
+| Issue | Symptoms | Resolution |
+|-------|----------|------------|
+| Storage quota exceeded | PVC stuck in `Pending`, quota error in events | Increase namespace storage quota |
+| Datastore not accessible | CRV exists, no PV created | Verify datastore permissions and accessibility |
+| CNS not enabled | CRV exists, CSI driver errors | Enable CNS in vCenter (vSphere 7.0+) |
+| Disk already registered | Registration fails with conflict | Check for existing PV with same disk UUID |
+| Storage policy mismatch | PVC pending, policy error in events | Ensure storage class maps to valid vSphere storage policy |
 
 
 ## Power Management
@@ -1364,6 +2115,184 @@ Groups and their members report various conditions:
     - Use hierarchy to model real application relationships
     - Ensure parent groups account for child group dependencies
 
+## Schema Upgrade
+
+VM Operator automatically upgrades `VirtualMachine` resources to match the current schema, build version, and activated features. This process ensures existing VMs benefit from new capabilities without manual intervention.
+
+### Overview
+
+When VM Operator is upgraded or new capabilities are activated, existing `VirtualMachine` resources may need their specifications enriched with data from the underlying vSphere VM. This process, called _schema upgrade_, happens automatically during VM reconciliation and ensures that:
+
+1. The VM's spec reflects the actual state in vSphere
+2. New features can operate on existing VMs
+3. Users can modify VMs using the latest API fields
+
+### Upgrade Tracking
+
+Schema upgrades are tracked using three annotations on each `VirtualMachine`:
+
+| Annotation | Description |
+|------------|-------------|
+| `vmoperator.vmware.com/upgraded-to-build-version` | The build version of VM Operator when the VM was last upgraded |
+| `vmoperator.vmware.com/upgraded-to-schema-version` | The API schema version when the VM was last upgraded (e.g., `v1alpha5`) |
+| `vmoperator.vmware.com/upgraded-to-feature-version` | A bitmask tracking which feature-specific upgrades have been applied |
+
+A VM is considered fully upgraded when all three annotations match the current runtime values. Until then, certain operations may be skipped or restricted.
+
+### Feature Versions
+
+The feature version is a bitmask that tracks feature-specific schema upgrades:
+
+| Feature Bit | Value | Description |
+|-------------|:-----:|-------------|
+| `Base` | 1 | Basic upgrade including BIOS UUID, Instance UUID, and Cloud-Init instance UUID reconciliation |
+| `VMSharedDisks` | 2 | Adds controller and device information to support shared disks and advanced placement |
+| `AllDisksArePVCs` | 4 | Backfills unmanaged volumes into `spec.volumes` to enable PVC-based management |
+
+The feature version is computed by OR'ing together all activated feature bits. For example, if both `VMSharedDisks` and `AllDisksArePVCs` are enabled, the feature version would be `7` (1 | 2 | 4).
+
+### Upgrade Process
+
+The schema upgrade process runs during VM reconciliation and consists of several stages:
+
+#### Base Upgrade
+
+When a VM's feature version doesn't include the `Base` bit, the following fields are reconciled from vSphere:
+
+* `spec.biosUUID` - The VM's BIOS UUID
+* `spec.instanceUUID` - The VM's instance UUID
+* `metadata.annotations["vmoperator.vmware.com/instance-id"]` - Cloud-Init instance UUID
+
+#### Volume Backfill
+
+When the `AllDisksArePVCs` feature is enabled and the VM's feature version doesn't include this bit, unmanaged volumes (disks from the VM image) are backfilled into `spec.volumes`. This process:
+
+1. Identifies all virtual disks attached to the VM in vSphere
+2. Filters out First Class Disks (FCDs) and linked clones
+3. For each unmanaged disk not already in `spec.volumes`, creates a new volume entry with:
+    * A generated name
+    * Controller placement information (`controllerType`, `controllerBusNumber`)
+    * Unit number
+
+The backfill operation sets a condition `VirtualMachineUnmanagedVolumesBackfilled` and temporarily pauses reconciliation to allow the spec update to be persisted.
+
+!!! note
+    Volume backfill does not create PersistentVolumeClaim references for unmanaged disks. It only adds the volume metadata to enable consistent volume management.
+
+#### Controller Reconciliation
+
+For each controller present in vSphere but missing from `spec.hardware`, a new controller entry is created:
+
+* **IDE Controllers**: Added to `spec.hardware.ideControllers` with bus number
+* **NVME Controllers**: Added to `spec.hardware.nvmeControllers` with bus number and sharing mode
+* **SATA Controllers**: Added to `spec.hardware.sataControllers` with bus number
+* **SCSI Controllers**: Added to `spec.hardware.scsiControllers` with:
+    * Bus number
+    * Controller type (ParaVirtual, BusLogic, LsiLogic, LsiLogicSAS)
+    * Sharing mode (None, Physical, Virtual)
+
+#### Device Reconciliation
+
+For disks and CD-ROMs already defined in `spec.volumes` or `spec.hardware.cdrom`, placement information is backfilled:
+
+* **Disk Placement**: For each PVC volume, the schema upgrade process:
+    1. Queries `CnsNodeVmAttachment` resources to map PVC names to disk UUIDs
+    2. Matches disk UUIDs to virtual disks in vSphere
+    3. Backfills `unitNumber`, `controllerType`, and `controllerBusNumber` if missing
+    4. Skips backfill if any existing placement field conflicts with vSphere state
+
+* **CD-ROM Placement**: For each CD-ROM device, placement fields are similarly backfilled based on the actual device configuration in vSphere.
+
+The backfill is atomic - either all three placement fields (`unitNumber`, `controllerType`, `controllerBusNumber`) are set together, or none are modified. This prevents partial state that could lead to validation errors.
+
+### Mutation Webhook Behavior
+
+The `VirtualMachine` mutation webhook sets default values for volumes and controllers during create and update operations:
+
+#### Volume Defaults
+
+When a volume with a PersistentVolumeClaim is added:
+
+1. **Application-Based Defaults**: If `applicationType` is specified:
+    * `OracleRAC`: Sets `diskMode: IndependentPersistent` and volume `sharingMode: MultiWriter`
+    * `MicrosoftWSFC`: Sets `diskMode: IndependentPersistent` and volume `sharingMode: None`
+
+2. **Standard Defaults**: If no `applicationType` is specified:
+    * `diskMode`: Defaults to `Persistent`
+    * Volume `sharingMode`: Defaults to `None`
+
+#### Controller Creation
+
+When a volume is added and no suitable controller exists (only if the VM is already schema-upgraded):
+
+1. The webhook identifies the required controller based on `applicationType` or default logic
+2. If no matching controller exists with available slots, a new controller is added:
+    * `OracleRAC`: Creates a ParaVirtual SCSI controller with `sharingMode: None`
+    * `MicrosoftWSFC`: Creates a ParaVirtual SCSI controller with `sharingMode: Physical`
+    * Default: Creates a ParaVirtual SCSI controller with `sharingMode: None`
+
+3. Controller creation is skipped if 4 controllers of that type already exist
+
+!!! note
+    Controller creation and volume defaults are only applied during update operations if the VM's schema upgrade annotations indicate it is fully upgraded. This prevents conflicts during the upgrade process.
+
+### Validation Webhook Behavior
+
+The `VirtualMachine` validation webhook enforces placement and application-specific constraints:
+
+#### Placement Validation
+
+For VMs that have been schema-upgraded, volume placement fields are validated:
+
+* `unitNumber`: Required for existing VMs (not required when first creating a VM)
+* `controllerType`: Required for existing VMs (not required when first creating a VM)
+* `controllerBusNumber`: Required for existing VMs (not required when first creating a VM)
+
+These requirements ensure that once a volume is placed, its location is explicitly tracked and cannot be inadvertently changed.
+
+#### Application Type Validation
+
+When `applicationType` is specified, the validator ensures:
+
+* **OracleRAC volumes**:
+    * Volume `sharingMode` must be `MultiWriter`
+    * `diskMode` must be `IndependentPersistent`
+
+* **MicrosoftWSFC volumes**:
+    * `diskMode` must be `IndependentPersistent`
+
+If these constraints are violated, the validation webhook rejects the request with a detailed error message.
+
+### Upgrade Lifecycle Example
+
+Consider a VM originally created before `VMSharedDisks` support was added:
+
+1. **Initial State**: VM has an unmanaged disk from the image, no annotations
+2. **Build Version Upgrade**: `upgraded-to-build-version` and `upgraded-to-schema-version` are set
+3. **Base Feature Upgrade**: BIOS and instance UUIDs are reconciled, `upgraded-to-feature-version: "1"` is set
+4. **AllDisksArePVCs Enabled**: Unmanaged volumes are backfilled into `spec.volumes`, feature version becomes `"5"` (1 | 4)
+5. **VMSharedDisks Enabled**: Controllers are added to `spec.hardware.scsiControllers`, placement info is backfilled for all volumes, feature version becomes `"7"` (1 | 2 | 4)
+6. **Fully Upgraded**: VM can now be modified with full placement control and application-specific volume configurations
+
+### Checking Upgrade Status
+
+You can check if a VM has been fully upgraded by examining its annotations:
+
+```bash
+kubectl get vm my-vm -o jsonpath='{.metadata.annotations}' | jq
+```
+
+Example output for a fully upgraded VM:
+
+```json
+{
+  "vmoperator.vmware.com/upgraded-to-build-version": "v1.2.3",
+  "vmoperator.vmware.com/upgraded-to-schema-version": "v1alpha5",
+  "vmoperator.vmware.com/upgraded-to-feature-version": "7"
+}
+```
+
+If the `upgraded-to-feature-version` value is less than the expected value for all enabled features, the VM is still undergoing schema upgrade. The upgrade will complete automatically during the next reconciliation.
 ## VirtualMachine Snapshots
 
 VirtualMachine Snapshots can be taken by creating a VirtualMachineSnapshot CR.

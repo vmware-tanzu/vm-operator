@@ -309,11 +309,39 @@ var _ = Describe("DoBootstrap", func() {
 		bsArgs = vmlifecycle.BootstrapArgs{}
 	})
 
+	Context("CloudInit", func() {
+		BeforeEach(func() {
+			vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+			}
+		})
+
+		When("Disabled is true", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.Disabled = true
+			})
+
+			It("Noop", func() {
+				Expect(bsErr).ToNot(HaveOccurred())
+			})
+		})
+	})
+
 	Context("LinuxPrep", func() {
 		BeforeEach(func() {
 			vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 				LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
 			}
+		})
+
+		When("Disabled is true", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.Disabled = true
+			})
+
+			It("Noop", func() {
+				Expect(bsErr).ToNot(HaveOccurred())
+			})
 		})
 
 		It("Customizes", func() {
@@ -352,6 +380,16 @@ var _ = Describe("DoBootstrap", func() {
 			}
 		})
 
+		When("Disabled is true", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.Disabled = true
+			})
+
+			It("Noop", func() {
+				Expect(bsErr).ToNot(HaveOccurred())
+			})
+		})
+
 		It("Customizes", func() {
 			Expect(bsErr).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
 		})
@@ -375,6 +413,24 @@ var _ = Describe("DoBootstrap", func() {
 			It("Customizes and toggles", func() {
 				Expect(bsErr).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
 				Expect(vmCtx.VM.Spec.Bootstrap.Sysprep.CustomizeAtNextPowerOn).To(HaveValue(BeFalse()))
+			})
+		})
+	})
+
+	Context("vAppConfig", func() {
+		BeforeEach(func() {
+			vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+			}
+		})
+
+		When("Disabled is true", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap.Disabled = true
+			})
+
+			It("Noop", func() {
+				Expect(bsErr).ToNot(HaveOccurred())
 			})
 		})
 	})

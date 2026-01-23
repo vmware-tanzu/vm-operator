@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/controllers/storagepolicyquota"
+	"github.com/vmware-tanzu/vm-operator/controllers/storage/storagepolicyquota"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -274,7 +274,8 @@ func unitTestsReconcile() {
 						It("returns an error", func() {
 							Expect(err).To(HaveOccurred())
 							Expect(err).To(MatchError(fmt.Sprintf(
-								"Object %s/%s is already owned by another %s controller %s",
+								"failed to CreateOrPatch SPU %s: Object %s/%s is already owned by another %s controller %s",
+								dst.Name,
 								dst.Namespace,
 								dst.Name,
 								spqutil.VirtualMachineKind,
@@ -301,6 +302,48 @@ func unitTestsReconcile() {
 				})
 			})
 
+			When("a VMSnapshot StoragePolicyUsage resource does exist but with wrong extension name", func() {
+				var dst *spqv1.StoragePolicyUsage
+				BeforeEach(func() {
+					By("VMSnapshot feature flag is enabled")
+					enableFeatureFunc = func(ctx *builder.UnitTestContextForController) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSnapshots = true
+						})
+					}
+
+					By("Create SPU for snapshot with wrong extension name")
+					dst = &spqv1.StoragePolicyUsage{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespace,
+							Name:      spqutil.StoragePolicyUsageNameForVMSnapshot(storageClassName),
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion:         spqv1.GroupVersion.String(),
+									Kind:               spqutil.StoragePolicyQuotaKind,
+									Name:               storageQuotaName,
+									UID:                storagePolicyQuota.UID,
+									Controller:         ptr.To(true),
+									BlockOwnerDeletion: ptr.To(true),
+								},
+							},
+						},
+						Spec: spqv1.StoragePolicyUsageSpec{
+							StoragePolicyId:       storagePolicyID,
+							ResourceExtensionName: spqutil.StoragePolicyQuotaVMExtensionName, // Wrong extension name.
+						},
+					}
+					withObjects = append(withObjects, dst)
+				})
+
+				JustBeforeEach(func() {
+					Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeTrue())
+				})
+
+				It("recreates VirtualMachineSnapshot with correct resourceExtensionName", func() {
+					assertStoragePolicyUsage(err)
+				})
+			})
 		})
 
 		When("Object not found", func() {

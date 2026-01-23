@@ -77,22 +77,24 @@ import (
 )
 
 var (
-	ErrSetPowerState          = res.ErrSetPowerState
-	ErrUpgradeSchema          = upgradevm.ErrUpgradeSchema
-	ErrBackup                 = virtualmachine.ErrBackingUp
-	ErrBootstrapReconfigure   = vmlifecycle.ErrBootstrapReconfigure
-	ErrBootstrapCustomize     = vmlifecycle.ErrBootstrapCustomize
-	ErrReconfigure            = session.ErrReconfigure
-	ErrRestart                = pkgerr.NoRequeueNoErr("restarted vm")
-	ErrUpgradeHardwareVersion = session.ErrUpgradeHardwareVersion
-	ErrIsPaused               = pkgerr.NoRequeueNoErr("is paused")
-	ErrHasTask                = pkgerr.NoRequeueNoErr("has outstanding task")
-	ErrPromoteDisks           = vmconfdiskpromo.ErrPromoteDisks
-	ErrCreate                 = pkgerr.NoRequeueNoErr("created vm")
-	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
-	ErrSnapshotRevert         = pkgerr.NoRequeueNoErr("reverted snapshot")
-	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
-	ErrRegisterVolumes        = vmconfunmanagedvolsreg.ErrPendingRegister
+	ErrSetPowerState            = res.ErrSetPowerState
+	ErrUpgradeSchema            = upgradevm.ErrUpgradeSchema
+	ErrUpgradeObject            = upgradevm.ErrUpgradeObject
+	ErrBackup                   = virtualmachine.ErrBackingUp
+	ErrBootstrapReconfigure     = vmlifecycle.ErrBootstrapReconfigure
+	ErrBootstrapCustomize       = vmlifecycle.ErrBootstrapCustomize
+	ErrReconfigure              = session.ErrReconfigure
+	ErrRestart                  = pkgerr.NoRequeueNoErr("restarted vm")
+	ErrUpgradeHardwareVersion   = session.ErrUpgradeHardwareVersion
+	ErrIsPaused                 = pkgerr.NoRequeueNoErr("is paused")
+	ErrHasTask                  = pkgerr.NoRequeueNoErr("has outstanding task")
+	ErrPromoteDisks             = vmconfdiskpromo.ErrPromoteDisks
+	ErrCreate                   = pkgerr.NoRequeueNoErr("created vm")
+	ErrUpdate                   = pkgerr.NoRequeueNoErr("updated vm")
+	ErrSnapshotRevert           = pkgerr.NoRequeueNoErr("reverted snapshot")
+	ErrPolicyNotReady           = vmconfpolicy.ErrPolicyNotReady
+	ErrRegisterVolumes          = vmconfunmanagedvolsreg.ErrPendingRegister
+	ErrAddedInstanceStorageVols = pkgerr.NoRequeueNoErr("added instance storage volumes")
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -308,6 +310,54 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	// Return with the error channel. The VM will be re-enqueued once the create
 	// completes with success or failure.
 	return chanErr, nil
+}
+
+// CleanupVirtualMachine cleans and sanitizes the vSphere VM before it
+// is unregistered from Supervisor. This is used when a VM custom
+// resource with
+// "vmoperator.vmware.com.protected/skip-delete-platform-resource"
+// annotation is deleted.
+func (vs *vSphereVMProvider) CleanupVirtualMachine(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) error {
+
+	vmNamespacedName := vm.NamespacedName()
+
+	if _, ok := currentlyReconciling.Load(vmNamespacedName); ok {
+		// If the VM is already being reconciled in a goroutine then it cannot
+		// be cleaned up yet.  Return and requeue.
+		return providers.ErrReconcileInProgress
+	}
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "cleanupVM")),
+		Logger:  pkglog.FromContextOrDefault(ctx),
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, false)
+	if err != nil {
+		return err
+	} else if vcVM == nil {
+		// VM does not exist, nothing to clean up.
+		vmCtx.Logger.Info("VM does not exist in vCenter, skipping cleanup")
+		return nil
+	}
+
+	// Clean up all VM Operator modifications from the vCenter VM.
+	if err := virtualmachine.CleanupVMServiceState(
+		vmCtx,
+		vcVM); err != nil {
+
+		return fmt.Errorf("failed to cleanup VM service state: %w", err)
+	}
+
+	return nil
 }
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(
@@ -826,14 +876,6 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 			vmopv1.VirtualMachineConditionCreated,
 			"Error",
 			vimErr)
-
-		if pkgcfg.FromContext(ctx).Features.FastDeploy {
-			pkgcnd.MarkError(
-				ctx.VM,
-				vmopv1.VirtualMachineConditionPlacementReady,
-				"Error",
-				vimErr)
-		}
 	} else {
 		if pkgcfg.FromContext(ctx).Features.FastDeploy {
 			if zoneName := args.ZoneName; zoneName != "" {
@@ -1419,6 +1461,15 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	return nil
 }
 
+func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling current snapshot")
+
+	return ReconcileCurrentSnapshot(vmCtx, vs.k8sClient, vcVM)
+}
+
 func verifyConfigInfo(vmCtx pkgctx.VirtualMachineContext) error {
 	if vmCtx.MoVM.Config == nil {
 		return pkgerr.NoRequeueError{
@@ -1568,7 +1619,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 
 	// Should never happen when this function is called, check just in case.
 	if vmCtx.VM.Spec.GroupName == "" {
-		return fmt.Errorf("VM.Spec.GroupName is empty")
+		return pkgerr.NoRequeueError{Message: "VM.Spec.GroupName is empty"}
 	}
 
 	var vmg vmopv1.VirtualMachineGroup
@@ -1595,7 +1646,9 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		&memberStatus,
 		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 	) {
-		return fmt.Errorf("VM Group placement is not ready")
+		return pkgerr.NoRequeueError{
+			Message: "VM Group placement is not ready",
+		}
 	}
 
 	placementStatus := memberStatus.Placement
@@ -1611,11 +1664,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 
 	// Create a placement result from the group's placement status.
 	var result placement.Result
-
-	if placementStatus.Zone != "" {
-		result.ZonePlacement = true
-		result.ZoneName = placementStatus.Zone
-	}
+	result.ZoneName = placementStatus.Zone
 
 	if placementStatus.Node != "" {
 		result.HostMoRef = &vimtypes.ManagedObjectReference{
@@ -1670,6 +1719,19 @@ func processPlacementResult(
 	createArgs *VMCreateArgs,
 	result placement.Result) error {
 
+	if result.ZoneName != "" {
+		if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+			createArgs.ZoneName = result.ZoneName
+		} else {
+			if vmCtx.VM.Labels == nil {
+				vmCtx.VM.Labels = map[string]string{}
+			}
+			// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
+			// then this is the pre-assigned zone on later create attempts.
+			vmCtx.VM.Labels[corev1.LabelTopologyZone] = result.ZoneName
+		}
+	}
+
 	if result.PoolMoRef.Value != "" {
 		createArgs.ResourcePoolMoID = result.PoolMoRef.Value
 	}
@@ -1694,7 +1756,6 @@ func processPlacementResult(
 
 	if result.InstanceStoragePlacement {
 		hostMoID := createArgs.HostMoID
-
 		if hostMoID == "" {
 			return fmt.Errorf("placement result missing host required for instance storage")
 		}
@@ -1709,19 +1770,6 @@ func processPlacementResult(
 		}
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = hostFQDN
-	}
-
-	if result.ZonePlacement {
-		if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
-			createArgs.ZoneName = result.ZoneName
-		} else {
-			if vmCtx.VM.Labels == nil {
-				vmCtx.VM.Labels = map[string]string{}
-			}
-			// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
-			// then this is the pre-assigned zone on later create attempts.
-			vmCtx.VM.Labels[corev1.LabelTopologyZone] = result.ZoneName
-		}
 	}
 
 	return nil
@@ -2150,9 +2198,16 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		// Add the class's instance storage disks - if any - to the VM.Spec.
 		// Once the instance storage disks are added to the VM, they are set in
 		// stone even if the class itself or the VM's assigned class changes.
-		createArgs.HasInstanceStorage = AddInstanceStorageVolumes(
+		var addedVolumes bool
+		createArgs.HasInstanceStorage, addedVolumes = AddInstanceStorageVolumes(
 			vmCtx,
 			createArgs.VMClass.Spec.Hardware.InstanceStorage)
+		if addedVolumes {
+			// Return to update the VM Spec with the just added volumes. This is so
+			// that the VM controller will see the VM has instance storage volumes
+			// and will disable the fast deploy feature in this VM's context.
+			return ErrAddedInstanceStorageVols
+		}
 	}
 
 	vmStorageClass := vmCtx.VM.Spec.StorageClass

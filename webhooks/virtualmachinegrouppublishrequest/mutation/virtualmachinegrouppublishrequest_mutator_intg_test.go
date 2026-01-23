@@ -218,23 +218,23 @@ func setupVMGroups(g Gomega, ctx *builder.IntegrationTestContext, name, namespac
 	parentVMGroup := &vmopv1.VirtualMachineGroup{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
 	}
-	childVMGrop := &vmopv1.VirtualMachineGroup{
+	childVMGroup := &vmopv1.VirtualMachineGroup{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name + "-child"},
 	}
 
 	g.Expect(ctx.Client.Create(ctx, parentVMGroup)).To(Succeed())
-	g.Expect(ctx.Client.Create(ctx, childVMGrop)).To(Succeed())
+	g.Expect(ctx.Client.Create(ctx, childVMGroup)).To(Succeed())
 
-	childVMGrop.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
+	childVMGroup.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
 		{Name: vmNames[2], Kind: "VirtualMachine"},
 		{Name: vmNames[0], Kind: "VirtualMachine"}}
-	conditions.MarkTrue(&childVMGrop.Status.Members[0], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-	conditions.MarkTrue(&childVMGrop.Status.Members[1], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-	g.Expect(ctx.Client.Status().Update(ctx, childVMGrop)).To(Succeed())
+	conditions.MarkTrue(&childVMGroup.Status.Members[0], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+	conditions.MarkTrue(&childVMGroup.Status.Members[1], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+	g.Expect(ctx.Client.Status().Update(ctx, childVMGroup)).To(Succeed())
 	parentVMGroup.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
 		{Name: vmNames[1], Kind: "VirtualMachine"},
 		{Name: vmNames[3], Kind: "VirtualMachine"},
-		{Name: childVMGrop.Name, Kind: "VirtualMachineGroup"}}
+		{Name: childVMGroup.Name, Kind: "VirtualMachineGroup"}}
 	conditions.MarkTrue(&parentVMGroup.Status.Members[0], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
 	conditions.MarkTrue(&parentVMGroup.Status.Members[1], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
 	conditions.MarkTrue(&parentVMGroup.Status.Members[2], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)

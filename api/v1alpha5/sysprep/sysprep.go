@@ -114,6 +114,7 @@ type GUIUnattended struct {
 	// `password`.
 	Password *PasswordSecretKeySelector `json:"password,omitempty"`
 
+	// +optional
 	// +kubebuilder:default=85
 	// +kubebuilder:validation:Minimum=0
 
@@ -123,7 +124,7 @@ type GUIUnattended struct {
 	// https://bit.ly/3Rzv8oL.
 	//
 	// Defaults to UTC.
-	TimeZone int32 `json:"timeZone"`
+	TimeZone int32 `json:"timeZone,omitempty"`
 }
 
 // PasswordSecretKeySelector references the password value from a Secret resource.

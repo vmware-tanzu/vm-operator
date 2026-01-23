@@ -7,7 +7,6 @@ package virtualmachine
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
@@ -48,12 +47,7 @@ func genConfigSpecTagSpecsFromVMLabels(
 		})
 	}
 
-	// Sort the tags to maintain consistent ordering.
-	slices.SortFunc(tagsToAdd, func(a, b vimtypes.TagSpec) int {
-		return strings.Compare(a.Id.NameId.Tag, b.Id.NameId.Tag)
-	})
-
-	configSpec.TagSpecs = tagsToAdd
+	configSpec.TagSpecs = append(configSpec.TagSpecs, tagsToAdd...)
 }
 
 // genConfigSpecAffinityPolicies generates placement policies from VM's

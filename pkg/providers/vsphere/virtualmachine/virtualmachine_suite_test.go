@@ -22,6 +22,7 @@ func vcSimTests() {
 	Describe("CD-ROM", Label(testlabels.VCSim), cdromTests)
 	Describe("Snapshot", Label(testlabels.VCSim), snapShotTests)
 	Describe("ExtraConfig", Label(testlabels.VCSim), extraConfigTests)
+	Describe("CleanupOnDelete", Label(testlabels.VCSim), cleanupOnDeleteTests)
 }
 
 var suite = builder.NewTestSuite()

@@ -78,6 +78,23 @@ type VirtualMachineVolume struct {
 	VirtualMachineVolumeSource `json:",inline"`
 
 	// +optional
+	// +kubebuilder:default=true
+
+	// Removable describes whether or not this volume may be removed from
+	// spec.volumes. This is a safety measure that allows users to prevent the
+	// accidental removal of disks from a VM that should not be removed, such as
+	// the VM's boot disk(s).
+	//
+	// Users may change this value at any time.
+	//
+	// When deploying a VM, disks from the VM image are automatically marked as
+	// removable=false in order to prevent the accidental removal of the disks
+	// needed to boot the VM.
+	//
+	// Defaults to true.
+	Removable *bool `json:"removable,omitempty"`
+
+	// +optional
 
 	// ApplicationType describes the type of application for which this volume
 	// is intended to be used.
@@ -340,6 +357,23 @@ type VirtualMachineVolumeStatus struct {
 	// Error represents the last error seen when attaching or detaching a
 	// volume.  Error will be empty if attachment succeeds.
 	Error string `json:"error,omitempty"`
+}
+
+// GetControllerType returns the type of controller to which the disk is
+// attached.
+func (v VirtualMachineVolumeStatus) GetControllerType() VirtualControllerType {
+	return v.ControllerType
+}
+
+// GetControllerBusNumber returns the bus number of the controller to which the
+// disk is connected.
+func (v VirtualMachineVolumeStatus) GetControllerBusNumber() *int32 {
+	return v.ControllerBusNumber
+}
+
+// GetUnitNumber returns the disk's unit number.
+func (v VirtualMachineVolumeStatus) GetUnitNumber() *int32 {
+	return v.UnitNumber
 }
 
 // SortVirtualMachineVolumeStatuses sorts the provided list of

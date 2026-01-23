@@ -79,7 +79,9 @@ var _ = Describe("Reconcile", func() {
 		tagMgr = tags.NewManager(vcSimCtx.RestClient)
 
 		moVM = mo.VirtualMachine{
-			Config: &vimtypes.VirtualMachineConfigInfo{},
+			Config: &vimtypes.VirtualMachineConfigInfo{
+				GuestId: "ubuntu64Guest",
+			},
 			Guest: &vimtypes.GuestInfo{
 				GuestId:     "ubuntu64Guest",
 				GuestFamily: string(vimtypes.VirtualMachineGuestOsFamilyLinuxGuest),
@@ -313,6 +315,7 @@ var _ = Describe("Reconcile", func() {
 						Spec: vspherepolv1.PolicyEvaluationSpec{
 							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+									GuestID:     "ubuntu64Guest",
 									GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
 								},
 							},
@@ -511,6 +514,7 @@ var _ = Describe("Reconcile", func() {
 					Summary: simVM.Summary,
 					Runtime: simVM.Runtime,
 				}
+				// Note: simVM.Config.GuestId is "otherGuest" in the simulator
 			})
 
 			When("a vm has existing tags", func() {
@@ -557,7 +561,8 @@ var _ = Describe("Reconcile", func() {
 								Spec: vspherepolv1.PolicyEvaluationSpec{
 									Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 										Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-											GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+											GuestID:     "otherGuest",
+											GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 										},
 									},
 								},
@@ -628,7 +633,8 @@ var _ = Describe("Reconcile", func() {
 									Spec: vspherepolv1.PolicyEvaluationSpec{
 										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-												GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+												GuestID:     "otherGuest",
+												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 											},
 										},
 									},
@@ -699,7 +705,8 @@ var _ = Describe("Reconcile", func() {
 									Spec: vspherepolv1.PolicyEvaluationSpec{
 										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-												GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+												GuestID:     "otherGuest",
+												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 											},
 										},
 									},
@@ -780,7 +787,8 @@ var _ = Describe("Reconcile", func() {
 									Spec: vspherepolv1.PolicyEvaluationSpec{
 										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-												GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+												GuestID:     "otherGuest",
+												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 											},
 										},
 									},
@@ -856,7 +864,8 @@ var _ = Describe("Reconcile", func() {
 									Spec: vspherepolv1.PolicyEvaluationSpec{
 										Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 											Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-												GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+												GuestID:     "otherGuest",
+												GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 											},
 										},
 									},
@@ -937,7 +946,8 @@ var _ = Describe("Reconcile", func() {
 							Spec: vspherepolv1.PolicyEvaluationSpec{
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestID:     "otherGuest",
+										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 									},
 								},
 							},
@@ -1000,7 +1010,8 @@ var _ = Describe("Reconcile", func() {
 							Spec: vspherepolv1.PolicyEvaluationSpec{
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestID:     "otherGuest",
+										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 									},
 								},
 							},
@@ -1099,7 +1110,8 @@ var _ = Describe("Reconcile", func() {
 							Spec: vspherepolv1.PolicyEvaluationSpec{
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestID:     "otherGuest",
+										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 									},
 								},
 							},
@@ -1245,7 +1257,8 @@ var _ = Describe("Reconcile", func() {
 								},
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestID:     "otherGuest",
+										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 									},
 								},
 							},
@@ -1313,7 +1326,8 @@ var _ = Describe("Reconcile", func() {
 							Spec: vspherepolv1.PolicyEvaluationSpec{
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestID:     "otherGuest",
+										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 									},
 								},
 							},
@@ -1376,7 +1390,8 @@ var _ = Describe("Reconcile", func() {
 								},
 								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+										GuestID:     "otherGuest",
+										GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 									},
 								},
 							},
@@ -1445,7 +1460,8 @@ var _ = Describe("Reconcile", func() {
 							},
 							Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
 								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-									GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									GuestID:     "otherGuest",
+									GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 								},
 							},
 						},
@@ -1497,7 +1513,8 @@ var _ = Describe("Reconcile", func() {
 									"tier": "frontend",
 								},
 								Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
-									GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									GuestID:     "otherGuest",
+									GuestFamily: vspherepolv1.GuestFamilyTypeOther,
 								},
 							},
 						},
@@ -1523,6 +1540,7 @@ var _ = Describe("Reconcile", func() {
 					// Clear guestFamily but keep guestID
 					moVM.Guest.GuestFamily = ""
 					moVM.Guest.GuestId = "windows9_64Guest"
+					moVM.Config.GuestId = "windows9_64Guest"
 
 					// Create a ready PolicyEvaluation with derived guest family
 					policyEval := &vspherepolv1.PolicyEvaluation{
@@ -1569,6 +1587,7 @@ var _ = Describe("Reconcile", func() {
 			When("VM has no guest info", func() {
 				BeforeEach(func() {
 					// Create a moVM without any guest info configured
+					moVM.Config.GuestId = ""
 					moVM.Guest = &vimtypes.GuestInfo{
 						GuestId:     "",
 						GuestFamily: "",

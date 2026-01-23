@@ -17,7 +17,7 @@ if [ "${exit_code:-0}" -ne 0 ]; then
   # Please note the following heredoc uses leading tabs to allow
   # the contents to be indented with the if/fi statement. For
   # more information on indenting heredocs, please see the section
-  # entitled "Mutli-line message, with tabs suppressed" from The
+  # entitled "Multi-line message, with tabs suppressed" from The
   # Linux Documentation Project (TLDP) at
   # https://tldp.org/LDP/abs/html/here-docs.html.
   cat <<-EOF
@@ -40,7 +40,7 @@ else
   # Please note the following heredoc uses leading tabs to allow
   # the contents to be indented with the if/fi statement. For
   # more information on indenting heredocs, please see the section
-  # entitled "Mutli-line message, with tabs suppressed" from The
+  # entitled "Multi-line message, with tabs suppressed" from The
   # Linux Documentation Project (TLDP) at
   # https://tldp.org/LDP/abs/html/here-docs.html.
   cat <<-EOF

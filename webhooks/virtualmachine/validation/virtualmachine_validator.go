@@ -68,6 +68,8 @@ const (
 	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
 	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
+	removingBackfilledVolumeNotAllowed         = "removing volume backfilled from classic disk is not allowed"
+	modifyingBackfilledVolumeNotAllowed        = "modifying backfilled volume is not allowed"
 	storageClassNotFoundFmt                    = "Storage policy %s does not exist"
 	storageClassNotAssignedFmt                 = "Storage policy is not associated with the namespace %s"
 	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
@@ -99,6 +101,7 @@ const (
 	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
 	guestCustomizationVCDParityNotEnabled      = "VC guest customization VCD parity capability is not enabled"
 	bootstrapProviderTypeCannotBeChanged       = "bootstrap provider type cannot be changed"
+	forbiddenRemovableVolume                   = "cannot remove volume with removable=false"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -1139,7 +1142,7 @@ func (v validator) validateVolumes(
 	}
 
 	if oldVM != nil {
-		if err := vmopv1util.IsObjectSchemaUpgraded(
+		if err := vmopv1util.IsObjectUpgraded(
 			ctx, oldVM); err != nil {
 
 			pkglog.FromContextOrDefault(ctx).Info(
@@ -1149,16 +1152,36 @@ func (v validator) validateVolumes(
 	}
 
 	var (
-		allErrs       field.ErrorList
-		volumesPath   = field.NewPath("spec", "volumes")
-		volumeSpecMap = sets.New[string]()
-		oldVolumesMap = map[string]*vmopv1.VirtualMachineVolume{}
+		allErrs           field.ErrorList
+		volumesPath       = field.NewPath("spec", "volumes")
+		volumeNamesSet    = sets.New[string]()
+		volumePVCNamesSet = sets.New[string]()
+		oldVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
+		newVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
 	)
 
+	for _, v := range vm.Spec.Volumes {
+		if v.Name != "" {
+			newVolumesMap[v.Name] = &v
+		}
+	}
 	if oldVM != nil {
-		for _, oldVol := range oldVM.Spec.Volumes {
-			if oldVol.Name != "" {
-				oldVolumesMap[oldVol.Name] = &oldVol
+		for _, v := range oldVM.Spec.Volumes {
+			if v.Name != "" {
+				oldVolumesMap[v.Name] = &v
+			}
+		}
+
+		// Prevent non-removable volumes from being removed.
+		for i, oldVol := range oldVM.Spec.Volumes {
+			volPath := volumesPath.Index(i)
+			if volName := oldVol.Name; volName != "" {
+				if _, ok := newVolumesMap[volName]; !ok {
+					if oldVol.Removable != nil && !*oldVol.Removable {
+						allErrs = append(allErrs,
+							field.Forbidden(volPath, forbiddenRemovableVolume))
+					}
+				}
 			}
 		}
 	}
@@ -1167,11 +1190,11 @@ func (v validator) validateVolumes(
 		volPath := volumesPath.Index(i)
 
 		if vol.Name != "" {
-			if _, found := volumeSpecMap[vol.Name]; found {
+			if _, found := volumeNamesSet[vol.Name]; found {
 				allErrs = append(allErrs, field.Duplicate(
 					volPath.Child("name"), vol.Name))
 			} else {
-				volumeSpecMap.Insert(vol.Name)
+				volumeNamesSet.Insert(vol.Name)
 			}
 		} else {
 			allErrs = append(allErrs, field.Required(volPath.Child("name"), ""))
@@ -1186,6 +1209,20 @@ func (v validator) validateVolumes(
 			}
 		}
 
+		// Validate that no two volumes have the same PVC claim name.
+		if pvc := vol.PersistentVolumeClaim; pvc != nil {
+			if claimName := pvc.ClaimName; claimName != "" {
+				if volumePVCNamesSet.Has(claimName) {
+					allErrs = append(allErrs, field.Duplicate(
+						volPath.Child("persistentVolumeClaim", "claimName"),
+						claimName,
+					))
+				} else {
+					volumePVCNamesSet.Insert(claimName)
+				}
+			}
+		}
+
 		allErrs = append(allErrs,
 			v.validateVolume(
 				ctx,
@@ -1195,14 +1232,10 @@ func (v validator) validateVolumes(
 				vol,
 				volPath)...)
 
-		if pkgcfg.FromContext(ctx).Features.VMSharedDisks ||
-			pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-
-			allErrs = append(allErrs,
-				v.validateControllerFields(vol, oldVM, *volPath)...,
-			)
-		}
 	}
+
+	allErrs = append(allErrs,
+		v.validateBackfilledVolumesNotRemoved(ctx, vm, oldVM, volumesPath)...)
 
 	return allErrs
 }
@@ -1246,6 +1279,7 @@ func (v validator) validateControllerFields(
 }
 
 func (v validator) validateApplicationFields(
+	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath field.Path,
 ) field.ErrorList {
@@ -1275,6 +1309,21 @@ func (v validator) validateApplicationFields(
 				vol.DiskMode,
 				"DiskMode must be IndependentPersistent for MicrosoftWSFC volumes",
 			))
+		}
+
+		// Validate that the controller sharing mode is Physical for MicrosoftWSFC volumes
+		// if a controller is specified.
+		if vol.ControllerBusNumber != nil && vol.ControllerType != "" {
+			controllerSpecs := vmopv1util.NewControllerSpecs(*vm)
+			if controller, ok := controllerSpecs.Get(vol.ControllerType, *vol.ControllerBusNumber); ok {
+				if vmopv1util.GetControllerSharingMode(controller) != vmopv1util.MicrosoftWSFCControllerSharingMode {
+					allErrs = append(allErrs, field.Invalid(
+						volPath.Child("applicationType"),
+						vol.ApplicationType,
+						fmt.Sprintf("Controller sharing mode must be %s for a MicrosoftWSFC volume", vmopv1util.MicrosoftWSFCControllerSharingMode),
+					))
+				}
+			}
 		}
 	}
 
@@ -1311,39 +1360,13 @@ func (v validator) validateVolume(
 	}
 
 	if oldVol != nil && oldVol.Name == vol.Name {
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ApplicationType,
-			oldVol.ApplicationType,
-			volPath.Child("applicationType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ControllerBusNumber,
-			oldVol.ControllerBusNumber,
-			volPath.Child("controllerBusNumber"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.ControllerType,
-			oldVol.ControllerType,
-			volPath.Child("controllerType"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.DiskMode,
-			oldVol.DiskMode,
-			volPath.Child("diskMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.SharingMode,
-			oldVol.SharingMode,
-			volPath.Child("sharingMode"))...)
-
-		allErrs = append(allErrs, validation.ValidateImmutableField(
-			vol.UnitNumber,
-			oldVol.UnitNumber,
-			volPath.Child("unitNumber"))...)
+		allErrs = append(allErrs,
+			v.validateVolumeImmutableFields(vol, oldVol, *volPath)...,
+		)
 	}
 
 	allErrs = append(allErrs,
-		v.validateApplicationFields(vol, *volPath)...,
+		v.validateApplicationFields(vm, vol, *volPath)...,
 	)
 
 	// Validate access mode, sharing mode, and controller combinations if VM is
@@ -1359,8 +1382,7 @@ func (v validator) validateVolume(
 		volumeChanged = true
 	}
 
-	if oldVol == nil ||
-		vm == nil ||
+	if oldVol == nil || vm == nil ||
 		!equality.Semantic.DeepEqual(oldVM.Spec.Hardware, vm.Spec.Hardware) {
 
 		hardwareChanged = true
@@ -1368,9 +1390,9 @@ func (v validator) validateVolume(
 
 	if volumeChanged || hardwareChanged {
 		allErrs = append(allErrs,
-			v.validateVolumeAccessModeAndSharingModeCombinations(
+			v.validateSharedVolumesOrControllers(
 				ctx,
-				vm,
+				*vm,
 				vol,
 				volPath, pvcPath,
 			)...,
@@ -1384,15 +1406,59 @@ func (v validator) validateVolume(
 		)
 	}
 
+	allErrs = append(allErrs,
+		v.validateControllerFields(vol, oldVM, *volPath)...,
+	)
+
 	return allErrs
 }
 
-// validateVolumeAccessModeAndSharingModeCombinations validates the combinations
-// of PVC access mode, volume sharing mode, and controller sharing mode
-// according to the business rules.
-func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
+func (v validator) validateVolumeImmutableFields(
+	vol vmopv1.VirtualMachineVolume,
+	oldVol *vmopv1.VirtualMachineVolume,
+	volPath field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ApplicationType,
+		oldVol.ApplicationType,
+		volPath.Child("applicationType"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ControllerBusNumber,
+		oldVol.ControllerBusNumber,
+		volPath.Child("controllerBusNumber"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.ControllerType,
+		oldVol.ControllerType,
+		volPath.Child("controllerType"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.DiskMode,
+		oldVol.DiskMode,
+		volPath.Child("diskMode"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.SharingMode,
+		oldVol.SharingMode,
+		volPath.Child("sharingMode"))...)
+
+	allErrs = append(allErrs, validation.ValidateImmutableField(
+		vol.UnitNumber,
+		oldVol.UnitNumber,
+		volPath.Child("unitNumber"))...)
+
+	return allErrs
+}
+
+// validateSharedVolumesOrControllers validates:
+// - That a RWX PVC can only be used with a MultiWriter volume or a shared controller.
+// - That a RWO PVC can only be used with a MultiWriter volume.
+// - That a disk cannot be encrypted if it is shared or if the controller is shared.
+func (v validator) validateSharedVolumesOrControllers(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine,
+	vm vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath, pvcPath *field.Path) field.ErrorList {
 
@@ -1400,16 +1466,9 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 		allErrs          field.ErrorList
 		volShared        bool
 		pvcShared        bool
+		pvcEncrypted     bool
 		controllerShared bool
 	)
-
-	// TODO(Faisal A): Remove this once we validate all the combinations that
-	// are allowed, but for now we will only perform validation for OracleRAC
-	// and MicrosoftWSFC volumes.
-	if vol.ApplicationType != vmopv1.VolumeApplicationTypeOracleRAC &&
-		vol.ApplicationType != vmopv1.VolumeApplicationTypeMicrosoftWSFC {
-		return allErrs
-	}
 
 	if vol.SharingMode != "" {
 		volShared = vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter
@@ -1440,16 +1499,60 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 			return allErrs
 		}
 		pvcShared = slices.Contains(obj.Spec.AccessModes, corev1.ReadWriteMany)
+
+		pvcStorageClassName := obj.Spec.StorageClassName
+		if pvcStorageClassName != nil {
+			var err error
+			pvcEncrypted, _, err = kubeutil.IsEncryptedStorageClass(
+				ctx,
+				v.client,
+				*pvcStorageClassName)
+			if err != nil {
+				ctx.Logger.Error(err,
+					"failed to check PVC encryption. Assuming PVC is not encrypted.",
+					"volume", vol.Name,
+					"claimName", vol.PersistentVolumeClaim.ClaimName,
+					"namespace", ctx.Namespace,
+					"storageClassName", *pvcStorageClassName,
+				)
+			}
+		}
 	}
 
 	// Get the controller sharing mode for the specified controller
 	controllerSharingMode := v.getControllerSharingMode(
-		ctx,
 		vm,
-		vol.ControllerType,
-		vol.ControllerBusNumber,
+		vol,
 	)
-	controllerShared = controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical
+	controllerShared = vol.ControllerType == vmopv1.VirtualControllerTypeSCSI &&
+		(controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical ||
+			controllerSharingMode == vmopv1.VirtualControllerSharingModeVirtual)
+
+	// MultiWriter volumes or shared controllers (Physical/Virtual) cannot be encrypted.
+	if pvcEncrypted {
+		if volShared {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("sharingMode"),
+				vol.SharingMode,
+				"MultiWriter disk sharing is not supported for encrypted volumes"))
+		}
+
+		if controllerShared {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("controllerBusNumber"),
+				fmt.Sprintf("%s:%d", vol.ControllerType, *vol.ControllerBusNumber),
+				fmt.Sprintf("Controller with sharing mode %s is not supported for encrypted volumes",
+					controllerSharingMode)))
+		}
+	}
+
+	// TODO(Faisal A): Remove this once we validate all the combinations that
+	// are allowed, but for now we will only perform the PVC access mode and
+	// volume/controller sharing modes for OracleRAC and MicrosoftWSFC volumes.
+	if vol.ApplicationType != vmopv1.VolumeApplicationTypeOracleRAC &&
+		vol.ApplicationType != vmopv1.VolumeApplicationTypeMicrosoftWSFC {
+		return allErrs
+	}
 
 	// Rule 1 -- If the PVC is not shared, the volume and controller must not
 	//           be shared.
@@ -1467,9 +1570,10 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 		if controllerShared {
 			allErrs = append(allErrs,
 				field.Invalid(
-					volPath.Child("controllerType"),
-					vol.ControllerType,
-					"Physical controller sharing mode is not allowed for ReadWriteOnce volume",
+					volPath.Child("controllerBusNumber"),
+					fmt.Sprintf("%s:%d", vol.ControllerType, *vol.ControllerBusNumber),
+					fmt.Sprintf("Controller with sharing mode %s is not allowed for ReadWriteOnce volume",
+						controllerSharingMode),
 				),
 			)
 		}
@@ -1482,7 +1586,7 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 			field.Invalid(
 				volPath.Child("sharingMode"),
 				vol.SharingMode,
-				"ReadWriteMany PVC must have a MultiWriter volume or Physical controller sharing mode",
+				"ReadWriteMany PVC must have a shared volume or controller",
 			),
 		)
 	}
@@ -1493,36 +1597,24 @@ func (v validator) validateVolumeAccessModeAndSharingModeCombinations(
 // getControllerSharingMode gets the sharing mode of the specified controller
 // from the VM hardware spec.
 // Returns the sharing mode if the controller was found and it supports
-// sharing mode, otherwise returns None.
+// sharing mode, otherwise returns the default sharing mode for the volume
+// based on the application type.
 func (v validator) getControllerSharingMode(
-	_ *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine,
-	controllerType vmopv1.VirtualControllerType,
-	controllerBusNumber *int32) vmopv1.VirtualControllerSharingMode {
+	vm vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+) vmopv1.VirtualControllerSharingMode {
 
-	if vm.Spec.Hardware == nil ||
-		controllerType == "" ||
-		controllerBusNumber == nil {
-		return vmopv1.VirtualControllerSharingModeNone
-	}
+	controllerType := vol.ControllerType
+	controllerBusNumber := vol.ControllerBusNumber
 
-	// Find the controller with the specified type and bus number
-	switch controllerType {
-	case vmopv1.VirtualControllerTypeSCSI:
-		for _, controller := range vm.Spec.Hardware.SCSIControllers {
-			if controller.BusNumber == *controllerBusNumber {
-				return controller.SharingMode
-			}
-		}
-	case vmopv1.VirtualControllerTypeNVME:
-		for _, controller := range vm.Spec.Hardware.NVMEControllers {
-			if controller.BusNumber == *controllerBusNumber {
-				return controller.SharingMode
-			}
+	if controllerType != "" && controllerBusNumber != nil {
+		controllerSpecs := vmopv1util.NewControllerSpecs(vm)
+		if controller, ok := controllerSpecs.Get(controllerType, *controllerBusNumber); ok {
+			return vmopv1util.GetControllerSharingMode(controller)
 		}
 	}
 
-	return vmopv1.VirtualControllerSharingModeNone
+	return vmopv1util.DefaultControllerSharingMode(vol)
 }
 
 // validateInstanceStorageVolumes validates if instance storage volumes are added/modified.
@@ -1546,6 +1638,58 @@ func (v validator) validateInstanceStorageVolumes(
 	}
 
 	return allErrs
+}
+
+// validateBackfilledVolumesNotRemoved checks if any volumes backfilled from
+// classic disks have been removed or modified.
+func (v validator) validateBackfilledVolumesNotRemoved(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine,
+	volumesPath *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if oldVM == nil {
+		return allErrs
+	}
+
+	newVolumesMap := make(map[string]*vmopv1.VirtualMachineVolume)
+	for i := range vm.Spec.Volumes {
+		vol := &vm.Spec.Volumes[i]
+		if vol.Name != "" {
+			newVolumesMap[vol.Name] = vol
+		}
+	}
+
+	for _, oldVol := range oldVM.Spec.Volumes {
+		if oldVol.Name == "" {
+			continue
+		}
+
+		if !isBackfilledVolume(&oldVol) {
+			continue
+		}
+
+		// No need to validate immutable fields since they are validated in validateVolume.
+		_, exists := newVolumesMap[oldVol.Name]
+		if !exists {
+			allErrs = append(allErrs, field.Forbidden(
+				volumesPath,
+				fmt.Sprintf("%s: %s", oldVol.Name, removingBackfilledVolumeNotAllowed)))
+		}
+	}
+
+	return allErrs
+}
+
+// isBackfilledVolume checks if a volume is a backfilled volume from a classic disk.
+// Backfilled volumes have no PersistentVolumeClaim but have a target ID.
+func isBackfilledVolume(vol *vmopv1.VirtualMachineVolume) bool {
+	if vol.PersistentVolumeClaim != nil {
+		return false
+	}
+
+	return vmopv1util.GetTargetID(vol) != ""
 }
 
 func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookRequestContext) (bool, error) {
@@ -1812,11 +1956,11 @@ func (v validator) validateSchemaUpgrade(
 
 	var (
 		newUpBuildVer   = newVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		newUpSchemVer   = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		newUpSchemaVer  = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
 		newUpFeatureVer = newVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 
 		oldUpBuildVer   = oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
-		oldUpSchemVer   = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+		oldUpSchemaVer  = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
 		oldUpFeatureVer = oldVM.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey]
 	)
 
@@ -1833,13 +1977,13 @@ func (v validator) validateSchemaUpgrade(
 	}
 
 	switch {
-	case newUpSchemVer != "" && newUpSchemVer != oldUpSchemVer:
+	case newUpSchemaVer != "" && newUpSchemaVer != oldUpSchemaVer:
 		// Prevent most users from modifying these annotations.
 		allErrs = append(allErrs, field.Forbidden(
 			fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
 			modRestrictedAnnotation))
 
-	case oldUpSchemVer != "" && newUpSchemVer == "":
+	case oldUpSchemaVer != "" && newUpSchemaVer == "":
 		// Allow anyone to delete the annotation.
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
@@ -1858,7 +2002,7 @@ func (v validator) validateSchemaUpgrade(
 			"key", pkgconst.UpgradedToFeatureVersionAnnotationKey)
 	}
 
-	if vmopv1util.IsObjectSchemaUpgraded(ctx, oldVM) != nil {
+	if vmopv1util.IsObjectUpgraded(ctx, oldVM) != nil {
 		// Prevent most users from modifying the VM spec fields,
 		// that are backfilled by the schema upgrade and mutable,
 		// before the schema upgrade is completed.
@@ -2043,52 +2187,6 @@ func (v validator) validateAvailabilityZone(
 	return allErrs
 }
 
-// protectedAnnotationRegex matches annotations with keys matching the pattern:
-// ^.+\.protected(/.+)?$
-//
-// Examples that match:
-//   - fu.bar.protected
-//   - hello.world.protected/sub-key
-//   - vmoperator.vmware.com.protected/reconcile-priority
-//
-// Examples that do NOT match:
-//   - protected.fu.bar
-//   - hello.world.protected.against/sub-key
-var protectedAnnotationRegex = regexp.MustCompile(`^.+\.protected(/.*)?$`)
-
-// validateProtectedAnnotations validates that annotations matching the
-// protected annotation pattern can only be modified by privileged users.
-func (v validator) validateProtectedAnnotations(vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
-	var allErrs field.ErrorList
-	annotationPath := field.NewPath("metadata", "annotations")
-
-	// Collect all protected annotation keys from both old and new VMs
-	protectedKeys := make(map[string]struct{})
-
-	for k := range vm.Annotations {
-		if protectedAnnotationRegex.MatchString(k) {
-			protectedKeys[k] = struct{}{}
-		}
-	}
-
-	for k := range oldVM.Annotations {
-		if protectedAnnotationRegex.MatchString(k) {
-			protectedKeys[k] = struct{}{}
-		}
-	}
-
-	// Check if any protected annotations have been modified
-	for k := range protectedKeys {
-		if vm.Annotations[k] != oldVM.Annotations[k] {
-			allErrs = append(allErrs, field.Forbidden(
-				annotationPath.Key(k),
-				modifyAnnotationNotAllowedForNonAdmin))
-		}
-	}
-
-	return allErrs
-}
-
 func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
@@ -2112,8 +2210,6 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 	if create {
 		oldVM = &vmopv1.VirtualMachine{}
 	}
-
-	allErrs = append(allErrs, v.validateProtectedAnnotations(vm, oldVM)...)
 
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
@@ -2311,7 +2407,7 @@ func (v validator) validateCdrom(
 				allErrs = append(allErrs, v.validateCdromControllerSpecsOnCreate(newCD, f)...)
 			}
 		} else {
-			if err := vmopv1util.IsObjectSchemaUpgraded(ctx, newVM); err != nil {
+			if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
 				pkglog.FromContextOrDefault(ctx).Info(
 					"Skipping cd-rom controller validation",
 					"reason", err.Error())
@@ -2381,7 +2477,13 @@ func (v validator) validateCdromWhenPoweredOn(
 		// the VM exists on the vSphere and we have gone through at least
 		// one loop of reconciling the VM.
 		if oldVM.Status.PowerState != "" {
-			allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+			if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
+				pkglog.FromContextOrDefault(ctx).Info(
+					"Skipping cd-rom controller powered-on validation",
+					"reason", err.Error())
+			} else {
+				allErrs = append(allErrs, v.validateCdromControllerSpecWhenPoweredOn(newCD, oldCD, f)...)
+			}
 		}
 	}
 
@@ -2909,7 +3011,7 @@ func (v validator) validateImmutableVMAffinity(
 	return allErrs
 }
 
-// validateImmutableFieldsDuringSchemaUpgrade checks the fields tht are
+// validateImmutableFieldsDuringSchemaUpgrade checks the fields that are
 // backfilled by the schema upgrade are not been modified before the schema
 // upgrade has completed. Currently, the schema upgrade backfills fields below:
 // - vm.Spec.BiosUUID

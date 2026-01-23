@@ -7,6 +7,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,15 @@ import (
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+)
+
+const (
+	// VPCInterfaceRestoredAnnotation is the annotation that NSX puts on the VM
+	// when an interface is restored. The value of the annotation is the interface
+	// names of the restored interfaces, like "eth0, eth2".
+	VPCInterfaceRestoredAnnotation = "nsx/reconfigure-nic"
 )
 
 type nsxOpaqueBacking struct {
@@ -143,4 +153,52 @@ func getDVPGsForCCR(
 	}
 
 	return uuidToDPVG, nil
+}
+
+func VPCPostRestoreBackingFixup(
+	vmCtx pkgctx.VirtualMachineContext,
+	currentEthCards []vimtypes.BaseVirtualDevice,
+	networkResults NetworkInterfaceResults) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
+
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+
+	// Post a VPC restore, the SubnetPort will be updated with a new ExternalID and
+	// LogicalSwitchUUID (NetworkID) but the MAC is supposed to stay the same. Use that
+	// do an edit on existing device that have changed.
+	for _, result := range networkResults.Results {
+		if result.MacAddress == "" || result.ExternalID == "" {
+			continue
+		}
+
+		// Find device by MAC address.
+		for _, dev := range currentEthCards {
+			ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+
+			if !strings.EqualFold(ethCard.MacAddress, result.MacAddress) {
+				continue
+			}
+
+			if ethCard.ExternalId != result.ExternalID {
+				vmCtx.Logger.Info(
+					"Updating network device ExternalID for restored/failed-over VM",
+					"name", result.Name,
+					"macAddress", result.MacAddress,
+					"oldExternalID", ethCard.ExternalId,
+					"newExternalID", result.ExternalID,
+					"oldSubnetID", ethCard.SubnetId)
+
+				ethCard.ExternalId = result.ExternalID
+				ethCard.Backing = result.Device.GetVirtualDevice().Backing
+				ethCard.SubnetId = ""
+
+				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+					Device:    dev,
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+				})
+			}
+			break
+		}
+	}
+
+	return deviceChanges, nil
 }

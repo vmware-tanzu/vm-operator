@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -24,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -640,7 +642,7 @@ var _ = Describe("GetImageDiskInfo", func() {
 		})
 	})
 
-	When("there is an error gettting disk URIs", func() {
+	When("there is an error getting disk URIs", func() {
 		BeforeEach(func() {
 			cli.Status.FileInfo = nil
 		})
@@ -677,7 +679,6 @@ var _ = Describe("GetImage", func() {
 		withFuncs interceptor.Funcs
 		vmi       *vmopv1.VirtualMachineImage
 		cvmi      *vmopv1.ClusterVirtualMachineImage
-		expOut    vmopv1.VirtualMachineImage
 		expErr    error
 	)
 
@@ -729,15 +730,39 @@ var _ = Describe("GetImage", func() {
 	})
 
 	When("panic is not expected", func() {
+		When("image kind is unknown", func() {
+			BeforeEach(func() {
+				imgRef = vmopv1.VirtualMachineImageRef{
+					Kind: "bogus",
+					Name: cvmiName,
+				}
+			})
+
+			It("should return an error", func() {
+				_, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+				Expect(err).To(MatchError(`unsupported image kind: "bogus"`))
+			})
+		})
+
 		When("image kind is VirtualMachineImage", func() {
 			It("should return the correct object", func() {
 				var obj vmopv1.VirtualMachineImage
 				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: vmi.Name, Namespace: vmi.Namespace}, &obj)).To(Succeed())
-				expOut = obj
+				expOut := obj
 
 				img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(img).To(Equal(expOut))
+			})
+			When("image does not exist", func() {
+				BeforeEach(func() {
+					imgRef.Name = "vmi-bogus"
+				})
+				It("should return error", func() {
+					_, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+					Expect(err).To(HaveOccurred())
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				})
 			})
 			When("there is an error getting image", func() {
 				BeforeEach(func() {
@@ -771,12 +796,24 @@ var _ = Describe("GetImage", func() {
 			It("should return the correct object", func() {
 				var obj vmopv1.ClusterVirtualMachineImage
 				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: cvmi.Name, Namespace: cvmi.Namespace}, &obj)).To(Succeed())
-				expOut = vmopv1.VirtualMachineImage(obj)
+				expOut := vmopv1.VirtualMachineImage(obj)
 
 				img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(img).To(Equal(expOut))
 			})
+
+			When("image does not exist", func() {
+				BeforeEach(func() {
+					imgRef.Name = "vmi-bogus"
+				})
+				It("should return error", func() {
+					_, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+					Expect(err).To(HaveOccurred())
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				})
+			})
+
 			When("there is an error getting image", func() {
 				BeforeEach(func() {
 					expErr = errors.New("fake error")
@@ -795,6 +832,58 @@ var _ = Describe("GetImage", func() {
 					Expect(err).Should(HaveOccurred())
 					Expect(err.Error()).To(Equal(expErr.Error()))
 					Expect(img).To(Equal(vmopv1.VirtualMachineImage{}))
+				})
+			})
+		})
+
+		When("image kind is unset", func() {
+			Context("image name resolves to ClusterVirtualMachineImage", func() {
+				BeforeEach(func() {
+					imgRef = vmopv1.VirtualMachineImageRef{
+						Kind: "",
+						Name: cvmiName,
+					}
+				})
+				It("should return the correct object", func() {
+					var obj vmopv1.ClusterVirtualMachineImage
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: imgRef.Name}, &obj)).To(Succeed())
+					expOut := vmopv1.VirtualMachineImage(obj)
+
+					img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+					Expect(err).ShouldNot(HaveOccurred())
+					Expect(img).To(Equal(expOut))
+				})
+			})
+
+			Context("image name resolves to VirtualMachineImage", func() {
+				BeforeEach(func() {
+					imgRef = vmopv1.VirtualMachineImageRef{
+						Kind: "",
+						Name: vmiName,
+					}
+				})
+				It("should return the correct object", func() {
+					var obj vmopv1.VirtualMachineImage
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: imgRef.Name, Namespace: vmi.Namespace}, &obj)).To(Succeed())
+					expOut := obj
+
+					img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+					Expect(err).ShouldNot(HaveOccurred())
+					Expect(img).To(Equal(expOut))
+				})
+			})
+
+			Context("image name does not resolve to an image", func() {
+				BeforeEach(func() {
+					imgRef = vmopv1.VirtualMachineImageRef{
+						Kind: "",
+						Name: "vmi-bogus",
+					}
+				})
+				It("should return error", func() {
+					_, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+					Expect(err).To(HaveOccurred())
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				})
 			})
 		})

@@ -11,6 +11,10 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
+const (
+	MicrosoftWSFCControllerSharingMode = vmopv1.VirtualControllerSharingModePhysical
+)
+
 // ControllerSpec is an interface describing a controller specification.
 type ControllerSpec interface {
 	// MaxSlots returns the maximum number of slots per controller type.
@@ -129,6 +133,18 @@ func CreateNewController(
 	default:
 		return nil
 	}
+}
+
+// DefaultControllerSharingMode returns the default controller sharing mode for
+// the specified volume.
+func DefaultControllerSharingMode(
+	vol vmopv1.VirtualMachineVolume,
+) vmopv1.VirtualControllerSharingMode {
+
+	if vol.ApplicationType == vmopv1.VolumeApplicationTypeMicrosoftWSFC {
+		return MicrosoftWSFCControllerSharingMode
+	}
+	return vmopv1.VirtualControllerSharingModeNone
 }
 
 // ControllerSpecs is a collection of controller specifications.

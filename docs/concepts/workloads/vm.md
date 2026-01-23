@@ -20,7 +20,7 @@ The following is an example of a `VirtualMachine` resource that bootstraps a Pho
 
 !!! note "Customizing a Guest"
 
-    Please see [this section](./guest.md) for more information on the available bootstrap providers tha may be used to bootstrap a guest's host name, network, and further customize the operating system.
+    Please see [this section](./guest.md) for more information on the available bootstrap providers that may be used to bootstrap a guest's host name, network, and further customize the operating system.
 
 To create the VM shown above, run the following command (replacing `<NAMESPACE>` with the name of the [`Namespace`](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) in which to create the VM):
 
@@ -2293,3 +2293,45 @@ Example output for a fully upgraded VM:
 ```
 
 If the `upgraded-to-feature-version` value is less than the expected value for all enabled features, the VM is still undergoing schema upgrade. The upgrade will complete automatically during the next reconciliation.
+## VirtualMachine Snapshots
+
+VirtualMachine Snapshots can be taken by creating a VirtualMachineSnapshot CR.
+This uses the provider APIs to take a snapshot of the VM
+
+### Creating a Snapshot
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachineSnapshot
+metadata:
+  name: snap-2
+spec:
+  description: "Snapshot of my-vm with memory"
+  vmName: my-vm
+  memory: true
+```
+
+### Reverting to a Snapshot
+
+Once a snapshot is created, the VM can be reverted to the snapshot by
+specifying `spec.currentSnapshotName` to the desired snapshot.
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: my-vm
+spec:
+  currentSnapshotName: snap-1
+```
+
+The VM would be reverted to the snapshotted state if the revert operation
+is successful. After a successful revert operation, `spec.currentSnapshotName`
+would become unset.
+
+### Further Information
+
+See more information about the VirtualMachineSnapshot resource:
+
+- [VirtualMachineSnapshot concept](./vm-snapshot.md) documentation
+- VirtualMachineSnapshot API reference

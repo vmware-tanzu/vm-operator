@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/vmware/govmomi/fault"
@@ -93,7 +92,8 @@ func DoBootstrap(
 		// Now, try to just do that on Linux VMs.
 		// Skip if the VM has a CD-ROM as the Linux ISO-type image may not have
 		// the necessary tools to do the default LinuxPrep bootstrap.
-		if !isLinuxGuest(config.GuestId) || len(cdRomSpecs) > 0 {
+		if len(cdRomSpecs) > 0 ||
+			vimtypes.GuestIDToFamily(config.GuestId) != vimtypes.VirtualMachineGuestOsFamilyLinuxGuest {
 			vmCtx.Logger.V(6).Info("no bootstrap provider specified")
 			return nil
 		}
@@ -394,39 +394,6 @@ func IsCustomizationPendingExtraConfig(extraConfig []vimtypes.BaseOptionValue) b
 		}
 	}
 	return false
-}
-
-// linuxGuestIDPrefixes is derived from the vimtypes.VirtualMachineGuestOsIdentifier values.
-var linuxGuestIDPrefixes = [...]string{
-	"redhat",
-	"rhel",
-	"centos",
-	"oracle",
-	"suse",
-	"sles",
-	"mandrake",
-	"mandriva",
-	"ubuntu",
-	"debian",
-	"asianux",
-	"opensuse",
-	"fedora",
-	"coreos64",
-	"vmwarePhoton",
-}
-
-func isLinuxGuest(guestID string) bool {
-	if guestID == "" {
-		return false
-	}
-
-	for _, p := range linuxGuestIDPrefixes {
-		if strings.HasPrefix(guestID, p) {
-			return true
-		}
-	}
-
-	return strings.Contains(guestID, "Linux") || strings.Contains(guestID, "linux")
 }
 
 func logConfigSpec(

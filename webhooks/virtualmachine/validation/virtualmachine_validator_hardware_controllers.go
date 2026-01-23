@@ -26,7 +26,6 @@ const (
 	invalidUnitNumberRangeFmt              = "unit number must be between 0 and %d for %s controller"
 	invalidControllerCapacityFmt           = "controller %s:%d full, maxDevices: %d"
 	invalidUnitNumberInUse                 = "controller unit number %s:%d:%d is already in use"
-	invalidControllerBusNumberZero         = "bus number 0 is reserved for the default controller"
 	invalidControllersCountFmt             = "must have exactly %d controllers"
 )
 
@@ -54,7 +53,7 @@ func (v validator) validateControllers(
 		return nil
 	}
 
-	if err := vmopv1util.IsObjectSchemaUpgraded(ctx, vm); err != nil {
+	if err := vmopv1util.IsObjectUpgraded(ctx, vm); err != nil {
 		pkglog.FromContextOrDefault(ctx).Info(
 			"Skipping controller validation", "reason", err.Error())
 		return nil
@@ -85,9 +84,9 @@ func (v validator) validateControllers(
 }
 
 // validateControllerWhenPowernedOn validates that when VM is poweredOn, disallow
-// editting existing controllers, can only add/remove controllers.
+// editing existing controllers, can only add/remove controllers.
 func (v validator) validateControllerWhenPoweredOn(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine,
 	hwPath *field.Path) field.ErrorList {
 
@@ -147,6 +146,63 @@ func (v validator) validateControllerWhenPoweredOn(
 					)
 				}
 			}
+		}
+
+		allErrs = append(allErrs,
+			v.validateHotAddedControllers(ctx, vm, oldVM, hwPath)...)
+	}
+
+	return allErrs
+}
+
+// validateHotAddedControllers validates if a SCSI controller was added hot,
+// when FSR is not supported.
+// One of the FSR conditions we check for is if the VM has a shared SCSI
+// controller with an attached disk.
+func (v validator) validateHotAddedControllers(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine,
+	hwPath *field.Path,
+) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if oldVM == nil || oldVM.Spec.Hardware == nil ||
+		vm == nil || vm.Spec.Hardware == nil {
+		return allErrs
+	}
+
+	// We skip the validation if the old VM is not schema upgraded because of
+	// the use-case for when the user attaches volumes to non-zero SCSI
+	// controller and the VM Image has a disk which will be attached to SCSI
+	// controller 0. The mutation webhook will try to add SCSI controller 0,
+	// which will be rejected without this.
+	// We check the old VM instead of the new VM because the patch on schema
+	// upgrade will contain the annotation along with any backfilled controllers.
+	if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
+		ctx.Logger.V(4).Info(
+			"Skipping hot-added controller validation because VM is not schema upgraded",
+			"reason", err.Error(),
+		)
+		return allErrs
+	}
+
+	// We check if FSR is supported by checking the old VM.
+	if vmopv1util.IsFSRSupported(*oldVM) {
+		return allErrs
+	}
+
+	// Check if a new SCSI controller is being added.
+	existingControllers := make(sets.Set[int32])
+	for _, c := range oldVM.Spec.Hardware.SCSIControllers {
+		existingControllers.Insert(c.BusNumber)
+	}
+
+	for i, newC := range vm.Spec.Hardware.SCSIControllers {
+		if !existingControllers.Has(newC.BusNumber) {
+			allErrs = append(allErrs, field.Forbidden(
+				hwPath.Child("scsiControllers").Index(i),
+				"Hot-adding a new SCSI controller is not allowed when FSR is not supported"))
 		}
 	}
 

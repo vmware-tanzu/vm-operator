@@ -522,7 +522,7 @@ func reconcileStatusProbe(
 			vmopv1.ReadyConditionType, probeReasonUnknown, "%s", resultMsg)
 	}
 
-	// Emit event whe the condition is added or its status changes.
+	// Emit event when the condition is added or its status changes.
 	if c := conditions.Get(vmCtx.VM, cond.Type); c == nil || c.Status != cond.Status {
 		recorder := vmoprecord.FromContext(vmCtx)
 		if cond.Status == metav1.ConditionTrue {
@@ -1317,17 +1317,29 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			existingDisksInStatus[vol.DiskUUID] = i
 		}
 	}
+	// Collect indices to delete first.
+	indicesToDelete := []int{}
 	for _, di := range info.Disks {
 		if volSpec, ok := info.Volumes[di.Target.String()]; ok {
 			if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
 				if volSpec.Name != vm.Status.Volumes[diskIndex].Name {
-					vmCtx.VM.Status.Volumes = slices.Delete(
-						vmCtx.VM.Status.Volumes, diskIndex, diskIndex+1)
+					indicesToDelete = append(indicesToDelete, diskIndex)
 					delete(existingDisksInStatus, di.UUID)
 				}
 			}
 		}
 	}
+	// Delete in reverse order so that we don't shift indices before deleting
+	// next one.
+	slices.Sort(indicesToDelete)
+	for i := len(indicesToDelete) - 1; i >= 0; i-- {
+		vm.Status.Volumes = slices.Delete(
+			vm.Status.Volumes,
+			indicesToDelete[i],
+			indicesToDelete[i]+1,
+		)
+	}
+	// Update existingDisksInStatus with new indexes.
 	for i := range vm.Status.Volumes {
 		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
 			existingDisksInStatus[vol.DiskUUID] = i
@@ -1372,6 +1384,13 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				if c, ok := info.Controllers[di.ControllerKey]; ok {
 					vm.Status.Volumes[diskIndex].ControllerBusNumber = &c.Bus
 					vm.Status.Volumes[diskIndex].ControllerType = c.Type
+				}
+			}
+
+			// Classic disk should be converted to PVC in the end.
+			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+				if di.FCD && vm.Status.Volumes[diskIndex].Type == vmopv1.VolumeTypeClassic {
+					vm.Status.Volumes[diskIndex].Type = vmopv1.VolumeTypeManaged
 				}
 			}
 

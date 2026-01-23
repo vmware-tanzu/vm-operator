@@ -6,7 +6,6 @@ package virtualmachine_test
 
 import (
 	"fmt"
-	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -615,6 +614,51 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		})
 	})
 
+	Context("vAppConfig Cleanup", func() {
+		Context("ConfigSpec has VAppConfig", func() {
+			BeforeEach(func() {
+				baseConfigSpec.VAppConfig = &vimtypes.VmConfigSpec{
+					Property: []vimtypes.VAppPropertySpec{
+						{
+							Info: &vimtypes.VAppPropertyInfo{
+								Key:   0,
+								Id:    "prop1",
+								Value: "value1",
+							},
+						},
+						{
+							Info: &vimtypes.VAppPropertyInfo{
+								Key:   1,
+								Id:    "prop2",
+								Value: "some-large-config-yaml-content",
+							},
+						},
+					},
+					OvfEnvironmentTransport: []string{"foobar"},
+				}
+			})
+
+			It("should clear the Property field", func() {
+				Expect(configSpec.VAppConfig).ToNot(BeNil())
+				vmConfigSpec := configSpec.VAppConfig.GetVmConfigSpec()
+				Expect(vmConfigSpec).ToNot(BeNil())
+				Expect(vmConfigSpec.Property).To(BeNil())
+				Expect(vmConfigSpec.OvfEnvironmentTransport).To(ContainElement("foobar"))
+			})
+		})
+
+		Context("ConfigSpec does not have VAppConfig", func() {
+			BeforeEach(func() {
+				baseConfigSpec.VAppConfig = nil
+			})
+
+			It("should not panic", func() {
+				// The configSpec was created successfully without panic
+				Expect(configSpec).ToNot(BeNil())
+			})
+		})
+	})
+
 	Context("When InstanceStorage is configured", func() {
 		const storagePolicyID = "storage-id-42"
 
@@ -679,7 +723,6 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 				})
 
 				It("config spec should have the expected affinity policy", func() {
-					Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
 					Expect(configSpec.VmPlacementPolicies).To(HaveLen(3))
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
@@ -715,7 +758,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						},
 					}
 
-					Expect(configSpec.VmPlacementPolicies).To(ContainElements(pols))
+					Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
 					assertVMTags(configSpec, []string{"env:prod", "app:db", "zone:us-west"}, vmCtx.VM.Namespace)
 				})
 			})
@@ -758,7 +801,6 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 				})
 
 				It("config spec should have the expected affinity policy", func() {
-					Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
 					Expect(configSpec.VmPlacementPolicies).To(HaveLen(3))
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
@@ -794,8 +836,31 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						},
 					}
 
-					Expect(configSpec.VmPlacementPolicies).To(ContainElements(pols))
+					Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
 					assertVMTags(configSpec, []string{"env:prod", "app:db", "zone:us-east"}, vmCtx.VM.Namespace)
+				})
+
+				Context("base config spec has TagSpecs from vsphere policies", func() {
+					ts := vimtypes.TagSpec{
+						ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+							Operation: vimtypes.ArrayUpdateOperationAdd,
+						},
+						Id: vimtypes.TagId{
+							Uuid: "urn:vmomi:InventoryServiceTag:foo-bar:GLOBAL",
+						},
+					}
+
+					BeforeEach(func() {
+						baseConfigSpec.TagSpecs = []vimtypes.TagSpec{ts}
+					})
+
+					It("config spec should still have existing TagSpec", func() {
+						assertVMTags(
+							configSpec,
+							[]string{"env:prod", "app:db", "zone:us-east"},
+							vmCtx.VM.Namespace,
+							ts)
+					})
 				})
 			})
 		})
@@ -1240,9 +1305,12 @@ func assertInstanceStorageDeviceChange(
 	Expect(profile.ProfileId).To(Equal(expectedStoragePolicyID))
 }
 
-func assertVMTags(configSpec vimtypes.VirtualMachineConfigSpec, expectedTagNames []string, vmNamespace string) {
-	slices.Sort(expectedTagNames)
-	tagSpecs := []vimtypes.TagSpec{}
+func assertVMTags(
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	expectedTagNames []string,
+	vmNamespace string,
+	tagSpecs ...vimtypes.TagSpec) {
+
 	for _, tagName := range expectedTagNames {
 		tagSpecs = append(tagSpecs, vimtypes.TagSpec{
 			ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{

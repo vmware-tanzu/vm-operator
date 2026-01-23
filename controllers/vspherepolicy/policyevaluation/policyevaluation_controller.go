@@ -615,7 +615,7 @@ func (r *Reconciler) addComputePolicy(
 	return nil
 }
 
-// virtualMachineToPolicyEvaluationMapperFn returns a mapper functon that returns
+// virtualMachineToPolicyEvaluationMapperFn returns a mapper function that returns
 // the PolicyEvaluation that needs to be reconciled for a VirtualMachine event,
 // such as labels change, or explicit policy change in the VM Spec.Policies.
 func virtualMachineToPolicyEvaluationMapperFn(

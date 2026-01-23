@@ -21,12 +21,12 @@ func Deref[T any](t *T) T {
 }
 
 // DerefWithDefault returns the value referenced by t if not nil, otherwise
-// defaulT is returned.
-func DerefWithDefault[T any](t *T, defaulT T) T {
+// defaultT is returned.
+func DerefWithDefault[T any](t *T, defaultT T) T {
 	if t != nil {
 		return *t
 	}
-	return defaulT
+	return defaultT
 }
 
 // Equal returns true if both arguments are nil or both arguments

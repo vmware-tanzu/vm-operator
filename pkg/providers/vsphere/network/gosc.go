@@ -22,8 +22,8 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 		switch {
 		case r.DHCP4:
 			adapter.Ip = &vimtypes.CustomizationDhcpIpGenerator{}
-		case r.NoIPAM: //nolint:revive
-			// adapter.Ip = &vimtypes.CustomizationDisableIpV4{} // TODO
+		case r.NoIPAM:
+			adapter.Ip = &vimtypes.CustomizationDisableIpV4{}
 		default:
 			// GOSC doesn't support multiple IPv4 address per interface so use the first one.
 			// Old code only ever set one gateway so do the same here too.

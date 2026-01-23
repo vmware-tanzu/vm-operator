@@ -8,7 +8,6 @@ data:
   VcPNID: <vc_pnid>
   VcCredsSecretName: wcp-vmop-sa-vc-auth
   Datacenter: <datacenter>
-  Cluster: <cluster>
   StorageClassRequired: "true"
   ContentSource: <content_source>
   UseInventoryAsContentSource: "false"

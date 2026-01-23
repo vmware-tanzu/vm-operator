@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/storage/v1"
@@ -33,6 +34,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/unifiedstoragequota/validation"
@@ -697,8 +699,35 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 		})
 
 		Context("storage class is present", func() {
+			var (
+				vmClass         *vmopv1.VirtualMachineClass
+				classConfigSpec vimtypes.VirtualMachineConfigSpec
+				rawConfigSpec   json.RawMessage
+				err             error
+			)
 			BeforeEach(func() {
-				withObjects = append(withObjects, builder.DummyStorageClass())
+				vmClass = &vmopv1.VirtualMachineClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      builder.DummyClassName,
+						Namespace: dummyNamespaceName,
+					},
+					Spec: vmopv1.VirtualMachineClassSpec{
+						Hardware: vmopv1.VirtualMachineClassHardware{
+							Cpus:   int64(2),
+							Memory: resource.MustParse("4Gi"),
+						},
+					},
+				}
+				classConfigSpec = vimtypes.VirtualMachineConfigSpec{
+					Name:     builder.DummyClassName,
+					NumCPUs:  int32(vmClass.Spec.Hardware.Cpus),
+					MemoryMB: virtualmachine.MemoryQuantityToMb(vmClass.Spec.Hardware.Memory),
+				}
+				rawConfigSpec, err = json.Marshal(classConfigSpec)
+				Expect(err).NotTo(HaveOccurred())
+
+				vmClass.Spec.ConfigSpec = rawConfigSpec
+				withObjects = append(withObjects, builder.DummyStorageClass(), vmClass)
 			})
 
 			When("there is an error getting storage class", func() {
@@ -832,7 +861,7 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					})
 				})
 
-				When("when boot disk capacity is non-empty", func() {
+				When("boot disk capacity is non-empty", func() {
 					BeforeEach(func() {
 						vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
@@ -903,6 +932,212 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 						Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(expected.RequestedCapacities[0].Capacity.String()))
 						Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal(expected.RequestedCapacities[0].StoragePolicyID))
 						Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(expected.RequestedCapacities[0].StorageClassName))
+					})
+				})
+
+				Context("Swap file", func() {
+					When("memory reservation is present and less than total memory", func() {
+						BeforeEach(func() {
+							vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+								{
+									Name:  disk0,
+									Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								},
+							}
+
+							expected = validation.CapacityResponse{
+								RequestedCapacities: []*validation.RequestedCapacity{
+									{
+										Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+										StoragePolicyID:  "id42",
+										StorageClassName: "dummy-storage-class",
+									},
+								},
+							}
+
+							reservedMemory := virtualmachine.MemoryQuantityToMb(resource.MustParse("2Gi"))
+							classConfigSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+								Reservation: &reservedMemory,
+							}
+							rawConfigSpec, err = json.Marshal(classConfigSpec)
+							Expect(err).NotTo(HaveOccurred())
+
+							vmClass.Spec.ConfigSpec = rawConfigSpec
+
+							expected = validation.CapacityResponse{
+								RequestedCapacities: []*validation.RequestedCapacity{
+									{
+										Capacity:         *resource.NewQuantity(12*1024*1024*1024, resource.BinarySI),
+										StoragePolicyID:  "id42",
+										StorageClassName: "dummy-storage-class",
+									},
+								},
+							}
+						})
+
+						It("should add swap space to RequestedCapacity", func() {
+							Expect(resp.Allowed).To(BeTrue())
+							Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+							Expect(resp.RequestedCapacities).To(HaveLen(1))
+							Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(expected.RequestedCapacities[0].Capacity.String()))
+							Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal(expected.RequestedCapacities[0].StoragePolicyID))
+							Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(expected.RequestedCapacities[0].StorageClassName))
+						})
+					})
+
+					When("memory reservation is present and equal to reserved memory", func() {
+						BeforeEach(func() {
+							vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+								{
+									Name:  disk0,
+									Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								},
+							}
+
+							reservedMemory := virtualmachine.MemoryQuantityToMb(resource.MustParse("4Gi"))
+							classConfigSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+								Reservation: &reservedMemory,
+							}
+							rawConfigSpec, err = json.Marshal(classConfigSpec)
+							Expect(err).NotTo(HaveOccurred())
+
+							vmClass.Spec.ConfigSpec = rawConfigSpec
+
+							expected = validation.CapacityResponse{
+								RequestedCapacities: []*validation.RequestedCapacity{
+									{
+										Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+										StoragePolicyID:  "id42",
+										StorageClassName: "dummy-storage-class",
+									},
+								},
+							}
+						})
+
+						It("should not add swap space to RequestedCapacity", func() {
+							Expect(resp.Allowed).To(BeTrue())
+							Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+							Expect(resp.RequestedCapacities).To(HaveLen(1))
+							Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(expected.RequestedCapacities[0].Capacity.String()))
+							Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal(expected.RequestedCapacities[0].StoragePolicyID))
+							Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(expected.RequestedCapacities[0].StorageClassName))
+						})
+					})
+
+					When("there is an error unmarshalling config spec from VM class", func() {
+						BeforeEach(func() {
+							vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+								{
+									Name:  disk0,
+									Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								},
+							}
+
+							reservedMemory := virtualmachine.MemoryQuantityToMb(resource.MustParse("4Gi"))
+							classConfigSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+								Reservation: &reservedMemory,
+							}
+							rawConfigSpec, err = json.Marshal([]vimtypes.VirtualMachineConfigSpec{classConfigSpec})
+							Expect(err).NotTo(HaveOccurred())
+
+							vmClass.Spec.ConfigSpec = rawConfigSpec
+
+							expected = validation.CapacityResponse{
+								RequestedCapacities: []*validation.RequestedCapacity{
+									{
+										Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+										StoragePolicyID:  "id42",
+										StorageClassName: "dummy-storage-class",
+									},
+								},
+							}
+						})
+
+						It("should allow the request and not add swap space to RequestedCapacity", func() {
+							Expect(resp.Allowed).To(BeTrue())
+							Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+							Expect(resp.RequestedCapacities).To(HaveLen(1))
+							Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(expected.RequestedCapacities[0].Capacity.String()))
+							Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal(expected.RequestedCapacities[0].StoragePolicyID))
+							Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(expected.RequestedCapacities[0].StorageClassName))
+						})
+					})
+
+					When("config spec is empty in VM class", func() {
+						BeforeEach(func() {
+							vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+								{
+									Name:  disk0,
+									Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								},
+							}
+
+							rawConfigSpec = []byte{}
+							vmClass.Spec.ConfigSpec = rawConfigSpec
+
+							expected = validation.CapacityResponse{
+								RequestedCapacities: []*validation.RequestedCapacity{
+									{
+										Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+										StoragePolicyID:  "id42",
+										StorageClassName: "dummy-storage-class",
+									},
+								},
+							}
+						})
+
+						It("should allow the request and not add swap space to RequestedCapacity", func() {
+							Expect(resp.Allowed).To(BeTrue())
+							Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+							Expect(resp.RequestedCapacities).To(HaveLen(1))
+							Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(expected.RequestedCapacities[0].Capacity.String()))
+							Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal(expected.RequestedCapacities[0].StoragePolicyID))
+							Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(expected.RequestedCapacities[0].StorageClassName))
+						})
+					})
+
+					When("VM class does not exist", func() {
+						BeforeEach(func() {
+							vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+								{
+									Name:  disk0,
+									Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								},
+							}
+
+							reservedMemory := virtualmachine.MemoryQuantityToMb(resource.MustParse("4Gi"))
+							classConfigSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+								Reservation: &reservedMemory,
+							}
+							rawConfigSpec, err = json.Marshal(classConfigSpec)
+							Expect(err).NotTo(HaveOccurred())
+
+							vm.Spec.ClassName = "does-not-exist"
+
+							expected = validation.CapacityResponse{
+								RequestedCapacities: []*validation.RequestedCapacity{
+									{
+										Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+										StoragePolicyID:  "id42",
+										StorageClassName: "dummy-storage-class",
+									},
+								},
+							}
+						})
+
+						It("should allow the request and not add swap space to RequestedCapacity", func() {
+							Expect(resp.Allowed).To(BeTrue())
+							Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+							Expect(resp.RequestedCapacities).To(HaveLen(1))
+							Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(expected.RequestedCapacities[0].Capacity.String()))
+							Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal(expected.RequestedCapacities[0].StoragePolicyID))
+							Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(expected.RequestedCapacities[0].StorageClassName))
+						})
 					})
 				})
 			})
@@ -981,7 +1216,6 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 								Limit: nil,
 							},
 						}
-						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
 
 						expected = validation.CapacityResponse{
 							RequestedCapacities: []*validation.RequestedCapacity{
@@ -1005,7 +1239,7 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					})
 				})
 
-				When("when boot disk capacity is non-empty", func() {
+				When("boot disk capacity is non-empty", func() {
 					BeforeEach(func() {
 						cvmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
@@ -1013,7 +1247,6 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 						}
-						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
 
 						expected = validation.CapacityResponse{
 							RequestedCapacities: []*validation.RequestedCapacity{
@@ -1053,7 +1286,6 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 						}
-						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
 
 						expected = validation.CapacityResponse{
 							RequestedCapacities: []*validation.RequestedCapacity{
@@ -1848,9 +2080,22 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				vmSnapshot.Spec.Memory = true
 			})
 
-			When("virtual machine class is not found", func() {
+			When("VM does not have status.hardware set", func() {
 				BeforeEach(func() {
-					vm.Spec.ClassName = "non-existent-vm-class"
+					withObjects = []ctrlclient.Object{vm}
+				})
+
+				It("should write StatusInternalServerError code to the response object", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+					Expect(resp.RequestedCapacities).To(HaveLen(0))
+					Expect(resp.Result.Message).To(ContainSubstring("failed to calculate reserved storage capacity for snapshot since VM does not have memory usage set"))
+				})
+			})
+
+			When("VM does not have status.hardware.memory set", func() {
+				BeforeEach(func() {
+					vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 					withObjects = []ctrlclient.Object{vmSnapshot, vm}
 				})
 
@@ -1858,7 +2103,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 					Expect(resp.Allowed).To(BeFalse())
 					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
 					Expect(resp.RequestedCapacities).To(HaveLen(0))
-					Expect(resp.Result.Message).To(ContainSubstring("failed to get VMClass"))
+					Expect(resp.Result.Message).To(ContainSubstring("failed to calculate reserved storage capacity for snapshot since VM does not have memory usage set"))
 				})
 			})
 		})

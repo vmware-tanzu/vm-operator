@@ -90,7 +90,7 @@ func unitTestsReconcile() {
 				Hardware: &vmopv1.VirtualMachineHardwareStatus{
 					Controllers: []vmopv1.VirtualControllerStatus{
 						{
-							Type:      "SCSI",
+							Type:      vmopv1.VirtualControllerTypeSCSI,
 							BusNumber: 0,
 							DeviceKey: 1000,
 						},
@@ -108,7 +108,7 @@ func unitTestsReconcile() {
 					},
 				},
 			},
-			ControllerType:      "SCSI",
+			ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 			ControllerBusNumber: ptr.To(int32(0)),
 			UnitNumber:          ptr.To(int32(0)),
 			DiskMode:            vmopv1.VolumeDiskModePersistent,
@@ -134,7 +134,7 @@ func unitTestsReconcile() {
 					},
 				},
 			},
-			ControllerType:      "SCSI",
+			ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 			ControllerBusNumber: ptr.To(int32(0)),
 			UnitNumber:          ptr.To(int32(1)),
 			DiskMode:            vmopv1.VolumeDiskModePersistent,
@@ -404,6 +404,59 @@ func unitTestsReconcile() {
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(BeEmpty())
+				})
+			})
+
+			When("classic volume in VM status", func() {
+				const classicVolumeName = "classic-volume-1"
+
+				BeforeEach(func() {
+					Expect(vm.Spec.Volumes).To(HaveLen(1))
+					Expect(vm.Spec.Volumes[0].ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
+					Expect(vm.Spec.Volumes[0].ControllerBusNumber).To(Equal(ptr.To(int32(0))))
+					Expect(vm.Spec.Volumes[0].UnitNumber).To(Equal(ptr.To(int32(0))))
+
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:                classicVolumeName,
+							Type:                vmopv1.VolumeTypeClassic,
+							DiskUUID:            "100",
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
+						},
+					}
+				})
+
+				When("with same Target ID as the volume in vm.spec.volumes", func() {
+					It("should not add the volume to VM Status.Volumes with Managed type", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(classicVolumeName))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeClassic))
+					})
+				})
+
+				When("with different Target ID as the volume in vm.spec.volumes", func() {
+					BeforeEach(func() {
+						Expect(vm.Spec.Volumes).To(HaveLen(1))
+						// Change the unit number to make the Target ID
+						// different from the classic volume in vm.status.volumes.
+						vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(1))
+					})
+
+					It("should add the volume to VM Status.Volumes with Managed type", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						Expect(vm.Status.Volumes[0].Name).To(Equal(volumeName1))
+						Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+						Expect(vm.Status.Volumes[1].Name).To(Equal(classicVolumeName))
+						Expect(vm.Status.Volumes[1].Type).To(Equal(vmopv1.VolumeTypeClassic))
+					})
 				})
 			})
 		})
@@ -842,55 +895,6 @@ func unitTestsReconcile() {
 			})
 		})
 
-		When("VM Spec.Volumes has CNS volume with a SOAP error", func() {
-			awfulErrMsg := `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
-[VirtualCenterHost: vc.vmware.com, UUID: 42080725-d6b0-c045-b24e-29c4dadca6f2, Datacenter: Datacenter
-[Datacenter: Datacenter:datacenter, VirtualCenterHost: vc.vmware.com]]\".
-fault: \"(*vimtypes.LocalizedMethodFault)(0xc003d9b9a0)({\\n DynamicData: (vimtypes.DynamicData)
-{\\n },\\n Fault: (*vimtypes.ResourceInUse)(0xc002e69080)({\\n VimFault: (vimtypes.VimFault)
-{\\n MethodFault: (vimtypes.MethodFault) {\\n FaultCause: (*vimtypes.LocalizedMethodFault)(\u003cnil\u003e),\\n
-FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (string) \\\"\\\",\\n Name:
-(string) (len=6) \\\"volume\\\"\\n }),\\n LocalizedMessage: (string) (len=32)
-\\\"The resource 'volume' is in use.\\\"\\n})\\n\". opId: \"67d69c68\""
-`
-
-			BeforeEach(func() {
-				vmVol = vmVolumeWithPVC1
-				vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVol)
-				initObjects = append(initObjects, boundPVC1)
-
-				attachment := cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{*vmVol})
-				attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus, cnsv1alpha1.VolumeStatus{
-					Name: vmVol.Name,
-					PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
-						Attached:  true,
-						DiskUUID:  dummyDiskUUID,
-						ClaimName: claimName1,
-						Error:     awfulErrMsg,
-					},
-				})
-				initObjects = append(initObjects, attachment)
-			})
-
-			It("returns success", func() {
-				err := reconciler.ReconcileNormal(volCtx)
-				Expect(err).ToNot(HaveOccurred())
-
-				By("Expected VM Status.Volumes with sanitized error", func() {
-					Expect(vm.Status.Volumes).To(HaveLen(1))
-
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-					Expect(attachment).ToNot(BeNil())
-					assertBatchAttachmentSpec(vm, attachment)
-
-					Expect(vm.Status.Volumes).To(HaveLen(1))
-					Expect(attachment.Status.VolumeStatus).To(HaveLen(1))
-					attachment.Status.VolumeStatus[0].PersistentVolumeClaim.Error = "failed to attach cns volume"
-					assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0, false)
-				})
-			})
-		})
-
 		When("VM Status.Volumes is sorted as expected", func() {
 			var vmVol1 vmopv1.VirtualMachineVolume
 			var vmVol2 vmopv1.VirtualMachineVolume
@@ -933,16 +937,30 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: vmVol1.Name,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  true,
-								DiskUUID:  dummyDiskUUID1,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: dummyDiskUUID1,
 							},
 						},
 						cnsv1alpha1.VolumeStatus{
 							Name: vmVol2.Name,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName2,
-								Attached:  true,
-								DiskUUID:  dummyDiskUUID2,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: dummyDiskUUID2,
 							},
 						},
 					)
@@ -1245,7 +1263,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				It("returns error", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("cannot get StorageClass for PVC"))
+					Expect(err.Error()).To(ContainSubstring("cannot get StorageClass"))
 				})
 			})
 
@@ -1353,7 +1371,14 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: vmVol1.Name,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  true,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
 							},
 						},
 					)
@@ -1390,8 +1415,15 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: volumeName1 + detachingVolumeSuffix,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  true,
-								DiskUUID:  dummyDiskUUID,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: dummyDiskUUID,
 							},
 						},
 					)
@@ -1413,28 +1445,43 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 			})
 
-			When("Volumes are just being detached and CnsNodeVMBatchAttachment's status has been cleared by CSI yet", func() {
+			When("Volumes are just being detached and CnsNodeVMBatchAttachment's status has not been cleared by CSI yet", func() {
 				BeforeEach(func() {
 					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
 						cnsv1alpha1.VolumeStatus{
 							Name: volumeName1 + detachingVolumeSuffix,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Attached:  false,
-								DiskUUID:  "diskuuid1",
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionFalse,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: "diskuuid1",
 							},
 						},
 						cnsv1alpha1.VolumeStatus{
 							Name: volumeName2,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName2,
-								Attached:  true,
-								DiskUUID:  "diskuuid2",
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+								DiskUUID: "diskuuid2",
 							},
 						},
 					)
 					initObjects = append(initObjects, attachment)
 				})
+
 				It("returns success and refresh the vm volume status", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
@@ -1466,22 +1513,6 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 			})
 		})
 	})
-}
-
-func assertBatchAttachmentSpec(
-	vm *vmopv1.VirtualMachine,
-	attachment *cnsv1alpha1.CnsNodeVMBatchAttachment) {
-
-	GinkgoHelper()
-
-	Expect(attachment.Spec.InstanceUUID).To(Equal(vm.Status.InstanceUUID))
-
-	ownerRefs := attachment.GetOwnerReferences()
-	Expect(ownerRefs).To(HaveLen(1))
-	ownerRef := ownerRefs[0]
-	Expect(ownerRef.Name).To(Equal(vm.Name))
-	Expect(ownerRef.Controller).ToNot(BeNil())
-	Expect(*ownerRef.Controller).To(BeTrue())
 }
 
 func cnsBatchAttachmentForVMVolume(
@@ -1541,9 +1572,9 @@ func assertVMVolStatusFromBatchAttachmentStatus(
 	}
 	Expect(vmVolStatus.Name).To(Equal(volName), "volume name should match")
 	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")
-	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Attached), "attached should match")
+	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Conditions[0].Status == metav1.ConditionTrue), "attached should match")
 	Expect(vmVolStatus.DiskUUID).To(Equal(attachmentVolStatus.PersistentVolumeClaim.DiskUUID), "diskuuid should match")
-	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Error), "error shouuld match")
+	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Conditions[0].Message), "error should match")
 }
 
 func assertVMVolStatusFromBatchAttachmentSpec(

@@ -82,7 +82,7 @@ func ReconcileNetworkInterfaces(
 	return append(removeDeviceChanges, deviceChanges...), nil
 }
 
-// findExistingEthCardForOrphanedCR trys to an orphaned interface and if it has
+// findExistingEthCardForOrphanedCR tries to an orphaned interface and if it has
 // a matching current ethernet card, so the existing device can be edited as to
 // keep the device type (ie, E1000) the same.
 func findExistingEthCardForOrphanedCR(

@@ -35,6 +35,8 @@ const (
 // watch.
 func DefaultWatchedPropertyPaths() []string {
 	return []string{
+		"config.annotation",
+
 		"config.extraConfig",
 		"config.hardware.device",
 		"config.keyId",
@@ -95,9 +97,16 @@ var defaultIgnoredExtraConfigKeys = []string{
 	extraConfigNamespacedNameKey,
 
 	"hpet0.present",
-	"disk.enableUUID",
-	"vmware.tools.gosc.ignoretoolscheck",
 	"vmprov.keepDisks",
+
+	//
+	// Do not ignore these, or they break imported VMs due to the way
+	// vpxd has changed with respect to CD-ROMs and the
+	// config.annotation property.
+	//
+
+	// "disk.enableUUID",
+	// "vmware.tools.gosc.ignoretoolscheck",
 
 	"guestinfo.vmservice.defer-cloud-init",
 

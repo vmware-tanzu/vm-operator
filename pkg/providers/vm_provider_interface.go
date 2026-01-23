@@ -16,6 +16,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
@@ -41,6 +42,10 @@ type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	CreateOrUpdateVirtualMachineAsync(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error)
 	DeleteVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	// CleanupVirtualMachine removes all VM Operator modifications from a vCenter VM
+	// without deleting it. This is used when a VM has the skip-delete-platform-resource
+	// annotation to ensure the vCenter VM is left in a clean state.
+	CleanupVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	PublishVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
@@ -70,6 +75,10 @@ type VirtualMachineProviderInterface interface {
 	// supports encryption by checking whether or not the underlying policy
 	// contains any IOFILTERs.
 	DoesProfileSupportEncryption(ctx context.Context, profileID string) (bool, error)
+
+	// GetStoragePolicyStatus returns the status information for a given
+	// storage policy.
+	GetStoragePolicyStatus(ctx context.Context, profileID string) (infrav1.StoragePolicyStatus, error)
 
 	// VSphereClient returns the provider's vSphere client.
 	VSphereClient(context.Context) (*client.Client, error)

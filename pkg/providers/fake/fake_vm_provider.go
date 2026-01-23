@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -34,6 +35,7 @@ type funcs struct {
 	CreateOrUpdateVirtualMachineFn      func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	CreateOrUpdateVirtualMachineAsyncFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error)
 	DeleteVirtualMachineFn              func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	CleanupVirtualMachineFn             func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	PublishVirtualMachineFn             func(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
@@ -58,10 +60,12 @@ type funcs struct {
 	GetTasksByActIDFn func(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
 
 	DoesProfileSupportEncryptionFn func(ctx context.Context, profileID string) (bool, error)
-	VSphereClientFn                func(context.Context) (*vsclient.Client, error)
-	DeleteSnapshotFn               func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
-	GetSnapshotSizeFn              func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
-	SyncVMSnapshotTreeStatusFn     func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	GetStoragePolicyStatusFn       func(ctx context.Context, profileID string) (infrav1.StoragePolicyStatus, error)
+
+	VSphereClientFn            func(context.Context) (*vsclient.Client, error)
+	DeleteSnapshotFn           func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
+	GetSnapshotSizeFn          func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
+	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 }
 
 type VMProvider struct {
@@ -118,6 +122,18 @@ func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *vmopv1.Virtua
 		return s.DeleteVirtualMachineFn(ctx, vm)
 	}
 	s.deleteFromVMMap(vm)
+	return nil
+}
+
+func (s *VMProvider) CleanupVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if s.CleanupVirtualMachineFn != nil {
+		return s.CleanupVirtualMachineFn(ctx, vm)
+	}
+	// Fake implementation does nothing - real cleanup happens in the vsphere provider
 	return nil
 }
 
@@ -389,6 +405,19 @@ func (s *VMProvider) DoesProfileSupportEncryption(
 		return fn(ctx, profileID)
 	}
 	return false, nil
+}
+
+// GetStoragePolicyStatus returns the status information for a given
+// storage policy.
+func (s *VMProvider) GetStoragePolicyStatus(
+	ctx context.Context, profileID string) (infrav1.StoragePolicyStatus, error) {
+
+	s.Lock()
+	defer s.Unlock()
+	if fn := s.GetStoragePolicyStatusFn; fn != nil {
+		return fn(ctx, profileID)
+	}
+	return infrav1.StoragePolicyStatus{}, nil
 }
 
 func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error) {

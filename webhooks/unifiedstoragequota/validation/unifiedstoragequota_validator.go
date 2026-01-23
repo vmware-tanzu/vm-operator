@@ -32,6 +32,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
@@ -146,7 +147,10 @@ func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityRespo
 	if req.Operation == v1.Create || req.Operation == v1.Update {
 		obj = &unstructured.Unstructured{}
 		if err := h.DecodeRaw(req.Object, obj); err != nil {
-			return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+			return CapacityResponse{
+				Response: webhook.Errored(http.StatusBadRequest,
+					fmt.Errorf("failed to decode raw Request.Object: %w", err),
+				)}
 		}
 	}
 
@@ -163,7 +167,10 @@ func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityRespo
 	if req.Operation == v1.Update {
 		oldObj = &unstructured.Unstructured{}
 		if err := h.DecodeRaw(req.OldObject, oldObj); err != nil {
-			return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+			return CapacityResponse{
+				Response: webhook.Errored(http.StatusBadRequest,
+					fmt.Errorf("failed to decode raw Request.OldObject: %w", err),
+				)}
 		}
 		handleRequest = h.HandleUpdate
 	}
@@ -188,7 +195,10 @@ func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityRespo
 func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
 	vm := &vmopv1.VirtualMachine{}
 	if err := h.Converter.FromUnstructured(ctx.Obj.UnstructuredContent(), vm); err != nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusBadRequest,
+				fmt.Errorf("failed to convert unstructured Object to VirtualMachine: %w", err),
+			)}
 	}
 
 	scName := vm.Spec.StorageClass
@@ -198,7 +208,10 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 		if apierrors.IsNotFound(err) {
 			return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
 		}
-		return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusInternalServerError,
+				fmt.Errorf("failed to get storage class %q: %w", scName, err),
+			)}
 	}
 
 	// This webhook will not be called if vm.Spec.Image is not set. This is done in order to ensure that imageless VMs
@@ -216,7 +229,10 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 			if apierrors.IsNotFound(err) {
 				return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
 			}
-			return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+			return CapacityResponse{
+				Response: webhook.Errored(http.StatusInternalServerError,
+					fmt.Errorf("failed to get VirtualMachineImage %q: %w", vmiName, err),
+				)}
 		}
 		imageStatus = vmi.Status
 	case "ClusterVirtualMachineImage":
@@ -225,11 +241,17 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 			if apierrors.IsNotFound(err) {
 				return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
 			}
-			return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+			return CapacityResponse{
+				Response: webhook.Errored(http.StatusInternalServerError,
+					fmt.Errorf("failed to get ClusterVirtualMachineImage %q: %w", vmiName, err),
+				)}
 		}
 		imageStatus = cvmi.Status
 	default:
-		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, fmt.Errorf("unsupported image kind %s", vm.Spec.Image.Kind))}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusBadRequest,
+				fmt.Errorf("unsupported image kind %s", vm.Spec.Image.Kind),
+			)}
 	}
 
 	// Skip ISO images as they don't have boot disks.
@@ -238,7 +260,10 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 	}
 
 	if len(imageStatus.Disks) < 1 {
-		return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, errors.New("no disks found in image status"))}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusNotFound,
+				fmt.Errorf("no disks found in image %q status.disks", vm.Spec.Image.Name),
+			)}
 	}
 
 	capacity := resource.NewQuantity(0, resource.BinarySI)
@@ -251,6 +276,19 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 		} else {
 			capacity.Add(*disk.Limit)
 		}
+	}
+
+	// Account for potential swap space, which is the difference in total memory and reserved memory.
+	// This is *only* done on create.
+	swapCapacity, err := getSwapCapacity(ctx, h.Client, vm)
+	if err != nil {
+		// Don't block validation and creation of VM if there was an error getting VM class or its
+		// ConfigSpec
+		h.Logger.Error(err, "failed to check for swap file size")
+	}
+
+	if swapCapacity != nil {
+		capacity.Add(*swapCapacity)
 	}
 
 	return CapacityResponse{
@@ -279,12 +317,18 @@ func (h *VMRequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestCont
 	}
 	vm := &vmopv1.VirtualMachine{}
 	if err := h.Converter.FromUnstructured(ctx.Obj.UnstructuredContent(), vm); err != nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusBadRequest,
+				fmt.Errorf("failed to convert unstructured Object to VirtualMachine: %w", err),
+			)}
 	}
 
 	oldVM := &vmopv1.VirtualMachine{}
 	if err := h.Converter.FromUnstructured(ctx.OldObj.UnstructuredContent(), oldVM); err != nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusBadRequest,
+				fmt.Errorf("failed to convert unstructured OldObject to VirtualMachine: %w", err),
+			)}
 	}
 
 	var capacity, oldCapacity *resource.Quantity
@@ -318,7 +362,10 @@ func (h *VMRequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestCont
 		if apierrors.IsNotFound(err) {
 			return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
 		}
-		return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusInternalServerError,
+				fmt.Errorf("failed to get StorageClass %q: %w", scName, err),
+			)}
 	}
 	return CapacityResponse{
 		RequestedCapacities: []*RequestedCapacity{
@@ -394,11 +441,15 @@ func init() {
 	utilruntime.Must(v1.AddToScheme(admissionScheme))
 	utilruntime.Must(v1beta1.AddToScheme(admissionScheme))
 }
+
 func (h *VMRequestedCapacityHandler) WriteResponse(w http.ResponseWriter, response CapacityResponse) {
 	if !response.Response.Allowed {
 		h.WebhookContext.Logger.Error(errors.New(response.Response.Result.Message), "admission denied")
+		// Prepend the webhook path to facilitate identifying the source of the failure.
+		message := fmt.Sprintf("%s: %s", vmWebhookPath, response.Response.Result.Message)
 		// Write error and return early.
-		http.Error(w, response.Response.Result.Message, int(response.Response.Result.Code))
+		http.Error(w, message, int(response.Response.Result.Code))
+
 		return
 	}
 
@@ -446,7 +497,10 @@ func (h *VMSnapshotRequestedCapacityHandler) Handle(req admission.Request) Capac
 
 	obj := &unstructured.Unstructured{}
 	if err := h.DecodeRaw(req.Object, obj); err != nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusBadRequest,
+				fmt.Errorf("unable to decode object: %w", err),
+			)}
 	}
 
 	if _, ok := obj.GetAnnotations()[pkgconst.SkipValidationAnnotationKey]; ok {
@@ -474,28 +528,39 @@ func (h *VMSnapshotRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookReq
 
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
 	if err := h.Converter.FromUnstructured(ctx.Obj.UnstructuredContent(), vmSnapshot); err != nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusBadRequest,
+				fmt.Errorf("unable to convert unstructured to VirtualMachineSnapshot: %w", err),
+			)}
 	}
 
-	requested, err := kubeutil.CalculateReservedForSnapshotPerStorageClass(ctx, h.Client, h.WebhookContext.Logger, *vmSnapshot)
+	requestedPerStorageClass, err := kubeutil.CalculateReservedForSnapshotPerStorageClass(ctx, h.Client, h.WebhookContext.Logger, *vmSnapshot)
 	if err != nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+		return CapacityResponse{
+			Response: webhook.Errored(http.StatusInternalServerError,
+				fmt.Errorf("unable to calculate reserved capacity for snapshot %q: %w", vmSnapshot.Name, err),
+			)}
 	}
 
-	requestedCapacities := make([]*RequestedCapacity, len(requested))
-	for i, requested := range requested {
+	requestedCapacities := make([]*RequestedCapacity, len(requestedPerStorageClass))
+	for i, requested := range requestedPerStorageClass {
+		scName := requested.StorageClass
 		cur := RequestedCapacity{
 			Capacity:         *requested.Total,
-			StorageClassName: requested.StorageClass,
+			StorageClassName: scName,
 		}
 		// Fetch the storage class to get the storage policy ID.
 		sc := &storagev1.StorageClass{}
-		if err := h.Client.Get(ctx, client.ObjectKey{Name: requested.StorageClass}, sc); err != nil {
+		if err := h.Client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
 			if apierrors.IsNotFound(err) {
-				h.WebhookContext.Logger.Error(err, "storage class not found", "storageClass", requested.StorageClass)
+				h.WebhookContext.Logger.Error(err, "storage class not found", "storageClass", scName)
 				return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
 			}
-			return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+
+			return CapacityResponse{
+				Response: webhook.Errored(http.StatusInternalServerError,
+					fmt.Errorf("failed to get storage class %q: %w", scName, err),
+				)}
 		}
 		cur.StoragePolicyID = sc.Parameters[scParamStoragePolicyID]
 		requestedCapacities[i] = &cur
@@ -565,9 +630,10 @@ func serveHTTP(w http.ResponseWriter, r *http.Request, h WebhookHandler, logger 
 func (h *VMSnapshotRequestedCapacityHandler) WriteResponse(w http.ResponseWriter, response CapacityResponse) {
 	if !response.Response.Allowed {
 		h.WebhookContext.Logger.Error(errors.New(response.Response.Result.Message), "admission denied")
+		// Prepend the webhook path to facilitate identifying the source of the failure.
+		message := fmt.Sprintf("%s: %s", vmSnapshotWebhookPath, response.Response.Result.Message)
 		// Write error and return early.
-		http.Error(w, response.Response.Result.Message, int(response.Response.Result.Code))
-		return
+		http.Error(w, message, int(response.Response.Result.Code))
 	}
 
 	// Only encode the RequestedCapacities since SPQ webhook only expects []*RequestedCapacity.
@@ -587,3 +653,25 @@ type unversionedAdmissionReview struct {
 }
 
 var _ runtime.Object = &unversionedAdmissionReview{}
+
+func getSwapCapacity(ctx *pkgctx.WebhookRequestContext, k8sClient client.Client, vm *vmopv1.VirtualMachine) (*resource.Quantity, error) {
+	vmClass := &vmopv1.VirtualMachineClass{}
+	if err := k8sClient.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName, Namespace: vm.Namespace}, vmClass); err != nil {
+		return nil, fmt.Errorf("failed to get VM class: %w", err)
+	}
+
+	configSpec, err := util.UnmarshalConfigSpecFromJSON(vmClass.Spec.ConfigSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ConfigSpec for VM class %s with error: %w; raw spec.configSpec: %s", vm.Spec.ClassName, err, vmClass.Spec.ConfigSpec)
+	}
+	util.SanitizeVMClassConfigSpec(ctx, &configSpec)
+
+	if configSpec.MemoryAllocation != nil && configSpec.MemoryAllocation.Reservation != nil {
+		swap := (configSpec.MemoryMB - *configSpec.MemoryAllocation.Reservation) * int64(1024*1024)
+
+		return resource.NewQuantity(swap, resource.BinarySI), nil
+	}
+
+	// No memory reservation, so no swap file to account for
+	return nil, nil
+}

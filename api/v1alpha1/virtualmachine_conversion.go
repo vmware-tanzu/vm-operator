@@ -51,7 +51,7 @@ func Convert_v1alpha1_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(
 		}
 	}
 
-	// NOTE: in.VsphereVolume is dropped in nextver. See filter_out_VirtualMachineVolumes_VsphereVolumes().
+	// NOTE: in.VsphereVolume is dropped in nextver. See restore_v1alpha5_VirtualMachineVolumes.
 
 	return autoConvert_v1alpha1_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(in, out, s)
 }
@@ -274,23 +274,22 @@ func convert_v1alpha1_NetworkInterface_To_v1alpha5_NetworkInterfaceSpec(
 
 	if in.NetworkName != "" || in.NetworkType != "" {
 		out.Network = &vmopv1common.PartialObjectRef{}
-	}
+		out.Network.Name = in.NetworkName
 
-	out.Network.Name = in.NetworkName
-
-	switch in.NetworkType {
-	case "vsphere-distributed":
-		out.Network.TypeMeta.APIVersion = "netoperator.vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "Network"
-	case "nsx-t":
-		out.Network.TypeMeta.APIVersion = "vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "VirtualNetwork"
-	case "nsx-t-subnet":
-		out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "Subnet"
-	case "nsx-t-subnetset":
-		out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
-		out.Network.TypeMeta.Kind = "SubnetSet"
+		switch in.NetworkType {
+		case "vsphere-distributed":
+			out.Network.TypeMeta.APIVersion = "netoperator.vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "Network"
+		case "nsx-t":
+			out.Network.TypeMeta.APIVersion = "vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "VirtualNetwork"
+		case "nsx-t-subnet":
+			out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "Subnet"
+		case "nsx-t-subnetset":
+			out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
+			out.Network.TypeMeta.Kind = "SubnetSet"
+		}
 	}
 
 	return out
@@ -568,30 +567,6 @@ func convert_v1alpha5_NetworkStatus_To_v1alpha1_Network(
 	return vmIP, out
 }
 
-// In nextver we've dropped the v1a1 VsphereVolumes, and in its place we have a single field for the boot
-// disk size. The Convert_v1alpha1_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume() stub does not
-// allow us to not return something so filter those volumes - without a PersistentVolumeClaim set - here.
-func filter_out_VirtualMachineVolumes_VsphereVolumes(in []vmopv1.VirtualMachineVolume) []vmopv1.VirtualMachineVolume {
-
-	if len(in) == 0 {
-		return nil
-	}
-
-	out := make([]vmopv1.VirtualMachineVolume, 0, len(in))
-
-	for _, v := range in {
-		if v.PersistentVolumeClaim != nil {
-			out = append(out, v)
-		}
-	}
-
-	if len(out) == 0 {
-		return nil
-	}
-
-	return out
-}
-
 func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(
 	in *VirtualMachineSpec, out *vmopv1.VirtualMachineSpec, s apiconversion.Scope) error {
 
@@ -607,7 +582,6 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(
 	out.NextRestartTime = in.NextRestartTime
 	out.RestartMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha5_VirtualMachinePowerOpMode(in.RestartMode)
 	out.Bootstrap = convert_v1alpha1_VmMetadata_To_v1alpha5_BootstrapSpec(in.VmMetadata)
-	out.Volumes = filter_out_VirtualMachineVolumes_VsphereVolumes(out.Volumes)
 
 	if len(in.NetworkInterfaces) > 0 {
 		out.Network = &vmopv1.VirtualMachineNetworkSpec{}
@@ -1032,17 +1006,34 @@ func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 		vol := &src.Spec.Volumes[i]
 		srcVolMap[vol.Name] = vol
 	}
-	for i := range dst.Spec.Volumes {
-		dstVol := &dst.Spec.Volumes[i]
-		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
-			dstVol.ApplicationType = srcVol.ApplicationType
-			dstVol.ControllerBusNumber = srcVol.ControllerBusNumber
-			dstVol.ControllerType = srcVol.ControllerType
-			dstVol.DiskMode = srcVol.DiskMode
-			dstVol.SharingMode = srcVol.SharingMode
-			dstVol.UnitNumber = srcVol.UnitNumber
+
+	var vols []vmopv1.VirtualMachineVolume
+	for _, v := range dst.Spec.Volumes {
+		if srcVol, ok := srcVolMap[v.Name]; ok {
+			v.ApplicationType = srcVol.ApplicationType
+			v.ControllerBusNumber = srcVol.ControllerBusNumber
+			v.ControllerType = srcVol.ControllerType
+			v.DiskMode = srcVol.DiskMode
+			v.SharingMode = srcVol.SharingMode
+			v.UnitNumber = srcVol.UnitNumber
+			v.Removable = srcVol.Removable
+		}
+
+		// Filter out the boot-disk-size volume added on downgrade or any other
+		// volume that was not a PVC or did not have the target ID in spec.
+		if v.PersistentVolumeClaim != nil ||
+			(v.ControllerType != "" &&
+				v.ControllerBusNumber != nil &&
+				v.UnitNumber != nil) {
+			vols = append(vols, v)
 		}
 	}
+
+	if len(vols) == 0 {
+		vols = nil
+	}
+
+	dst.Spec.Volumes = vols
 }
 
 func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {

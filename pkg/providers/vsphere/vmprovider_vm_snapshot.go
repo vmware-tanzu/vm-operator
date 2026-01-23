@@ -26,6 +26,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
@@ -35,6 +36,8 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	vmconfunmanagedvolsfil "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
+	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
 // DeleteSnapshot deletes the snapshot from the VM.
@@ -157,8 +160,9 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *v
 }
 
 // markSnapshotInProgress marks a snapshot as currently being processed.
-func (vs *vSphereVMProvider) markSnapshotInProgress(
+func markSnapshotInProgress(
 	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
 	vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	// Create a patch to set the InProgress condition
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
@@ -171,7 +175,7 @@ func (vs *vSphereVMProvider) markSnapshotInProgress(
 		"snapshot in progress")
 
 	// Use Patch instead of Update to avoid conflicts with snapshot controller
-	if err := vs.k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); err != nil {
+	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); err != nil {
 		return fmt.Errorf("failed to mark snapshot as in progress: %w", err)
 	}
 
@@ -180,7 +184,8 @@ func (vs *vSphereVMProvider) markSnapshotInProgress(
 }
 
 // markSnapshotFailed marks a snapshot as failed and clears the in-progress status.
-func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineContext,
+func markSnapshotFailed(vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
 	vmSnapshot *vmopv1.VirtualMachineSnapshot, err error) error {
 	// Create a patch to update the snapshot status.
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
@@ -193,7 +198,7 @@ func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineConte
 		err)
 
 	// Use Patch instead of Update to avoid conflicts with snapshot controller (best effort)
-	if updateErr := vs.k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); updateErr != nil {
+	if updateErr := k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); updateErr != nil {
 		return fmt.Errorf("failed to update snapshot status after failure: %w", updateErr)
 	}
 
@@ -202,12 +207,13 @@ func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineConte
 }
 
 // getVirtualMachineSnapshotsForVM finds all VirtualMachineSnapshot objects that reference this VM.
-func (vs *vSphereVMProvider) getVirtualMachineSnapshotsForVM(
-	vmCtx pkgctx.VirtualMachineContext) ([]vmopv1.VirtualMachineSnapshot, error) {
+func getVirtualMachineSnapshotsForVM(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) ([]vmopv1.VirtualMachineSnapshot, error) {
 
 	// List all VirtualMachineSnapshot objects in the VM's namespace
 	var snapshotList vmopv1.VirtualMachineSnapshotList
-	if err := vs.k8sClient.List(vmCtx, &snapshotList, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
+	if err := k8sClient.List(vmCtx, &snapshotList, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list VirtualMachineSnapshot objects: %w", err)
 	}
 
@@ -799,14 +805,16 @@ func synthesizeVMSpecForSnapshot(
 	}
 }
 
-func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
+// ReconcileCurrentSnapshot reconciles the current snapshot owned by the VM.
+func ReconcileCurrentSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
 	vcVM *object.VirtualMachine) error {
 
 	logger := pkglog.FromContextOrDefault(vmCtx)
 
 	// Find all VirtualMachineSnapshot objects that reference this VM
-	vmSnapshots, err := vs.getVirtualMachineSnapshotsForVM(vmCtx)
+	vmSnapshots, err := getVirtualMachineSnapshotsForVM(vmCtx, k8sClient)
 	if err != nil {
 		return err
 	}
@@ -820,6 +828,36 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
 		logger.V(4).Info("Skipping snapshot for VKS node")
 		return nil
+	}
+
+	// When FastDeploy is enabled, wait for disk promotion sync to be ready.
+	// This is prerequisite for the VM disk registration checked in next step.
+	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+
+		if vmCtx.VM.Spec.PromoteDisksMode != vmopv1.VirtualMachinePromoteDisksModeDisabled &&
+			!pkgcnd.IsTrue(vmCtx.VM, vmopv1.VirtualMachineDiskPromotionSynced) {
+			logger.Info("Skipping snapshot as required condition is not ready",
+				"condition", vmopv1.VirtualMachineDiskPromotionSynced)
+			return nil
+		}
+	}
+
+	// When AllDisksArePVCs is enabled, wait for VM's disks to be registered.
+	// This is because vSphere cannot register disks as PVCs if there's disk
+	// delta caused by snapshot creation.
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+
+		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsfil.Condition) {
+			logger.Info("Skipping snapshot as required condition is not ready",
+				"condition", vmconfunmanagedvolsfil.Condition)
+			return nil
+		}
+
+		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
+			logger.Info("Skipping snapshot as required condition is not ready",
+				"condition", vmconfunmanagedvolsreg.Condition)
+			return nil
+		}
 	}
 
 	// Sort snapshots by creation timestamp to ensure consistent ordering
@@ -875,7 +913,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	owner, err := controllerutil.HasOwnerReference(
 		snapshotToProcess.OwnerReferences,
 		vmCtx.VM,
-		vs.k8sClient.Scheme())
+		k8sClient.Scheme())
 	if err != nil {
 		return fmt.Errorf("failed to check if snapshot %q is owned by vm: %w",
 			snapshotToProcess.Name, err)
@@ -899,7 +937,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 
 	// Mark the snapshot as in progress before starting the operation to
 	// prevent concurrent snapshots.
-	if err := vs.markSnapshotInProgress(vmCtx, snapshotToProcess); err != nil {
+	if err := markSnapshotInProgress(vmCtx, k8sClient, snapshotToProcess); err != nil {
 		return fmt.Errorf("failed to mark snapshot %q in progress: %w",
 			snapshotToProcess.Name, err)
 	}
@@ -918,7 +956,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 		// taking a snapshot. So, if we are unable to clear the
 		// in-progress condition because status patching fails, we
 		// will forever be waiting.
-		if err := vs.markSnapshotFailed(vmCtx, snapshotToProcess, err); err != nil {
+		if err := markSnapshotFailed(vmCtx, k8sClient, snapshotToProcess, err); err != nil {
 			return fmt.Errorf("failed to mark snapshot as failed: %w", err)
 		}
 		return fmt.Errorf("failed to create snapshot %q: %w",
@@ -929,7 +967,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	if err = kubeutil.PatchSnapshotSuccessStatus(
 		vmCtx,
 		logger,
-		vs.k8sClient,
+		k8sClient,
 		snapshotToProcess,
 		snapNode,
 		vmCtx.VM.Spec.PowerState); err != nil {

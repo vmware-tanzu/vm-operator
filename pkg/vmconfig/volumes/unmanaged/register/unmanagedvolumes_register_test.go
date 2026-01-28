@@ -315,6 +315,26 @@ var _ = Describe("Reconcile", func() {
 						configSpec)).To(Succeed())
 				})
 			})
+
+			When("VM has NoUnmanagedVolumesRegisterAnnotationKey annotation", func() {
+				BeforeEach(func() {
+					vm.Annotations[pkgconst.NoUnmanagedVolumesRegisterAnnotationKey] = ""
+				})
+
+				It("should return nil without error and update condition", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(Succeed())
+					cond := pkgcond.Get(vm, unmanagedvolsreg.Condition)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal("NoUnmanagedVolumesRegisterAnnotation"))
+				})
+			})
 		})
 
 		Context("PVC creation and management", func() {

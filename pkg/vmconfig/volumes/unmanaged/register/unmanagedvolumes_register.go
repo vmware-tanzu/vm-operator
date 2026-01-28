@@ -117,6 +117,16 @@ func (r reconciler) Reconcile(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 
+	if _, ok := vm.Annotations[pkgconst.NoUnmanagedVolumesRegisterAnnotationKey]; ok {
+		logger.Info("Skipping register unmanaged volumes because of annotation")
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			"NoUnmanagedVolumesRegisterAnnotation",
+			"")
+		return nil
+	}
+
 	// Check if the VM is in the middle of promoting linked cloned disks.
 	for _, t := range pkgctx.GetVMRecentTasks(ctx) {
 		// If so, then return early.

@@ -141,6 +141,14 @@ func updateSpecWithUnmanagedDisks(
 				UnitNumber:          di.UnitNumber,
 				Removable:           ptr.To(false),
 			}
+
+			switch di.Sharing {
+			case vimtypes.VirtualDiskSharingSharingMultiWriter:
+				newVolSpec.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+			case vimtypes.VirtualDiskSharingSharingNone:
+				newVolSpec.SharingMode = vmopv1.VolumeSharingModeNone
+			}
+
 			logger.Info("Backfilled unmanaged volume to spec",
 				"volume", newVolSpec)
 			vm.Spec.Volumes = append(vm.Spec.Volumes, newVolSpec)

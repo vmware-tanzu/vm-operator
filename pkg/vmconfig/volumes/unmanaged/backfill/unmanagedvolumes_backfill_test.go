@@ -279,6 +279,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(vol1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
 					Expect(*vol1.ControllerBusNumber).To(Equal(int32(0)))
 					Expect(*vol1.UnitNumber).To(Equal(int32(0)))
+					Expect(vol1.SharingMode).To(BeEmpty())
 
 					// Verify volume 2 properties
 					Expect(vol2.Removable).To(Equal(ptr.To(false)))
@@ -286,6 +287,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(vol2.ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
 					Expect(*vol2.ControllerBusNumber).To(Equal(int32(1)))
 					Expect(*vol2.UnitNumber).To(Equal(int32(0)))
+					Expect(vol2.SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
 				})
 			})
 

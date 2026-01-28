@@ -656,7 +656,7 @@ func (r *Reconciler) buildVolumeSpecs(
 		// volume with incorrect spec unless the spec is fixed.
 		if vol.ControllerBusNumber == nil {
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
-				"%s volume %q is missing controller bus number", buildErrMsg, vol.Name)})
+				"%s volume %s is missing controller bus number", buildErrMsg, vol.Name)})
 			continue
 		}
 
@@ -666,7 +666,7 @@ func (r *Reconciler) buildVolumeSpecs(
 		}]
 		if !ok {
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
-				"%s waiting for the device controller %q %q to be created for volume %q",
+				"%s waiting for the device controller %s:%d to be created for volume %s",
 				buildErrMsg, vol.ControllerType, *vol.ControllerBusNumber, vol.Name)})
 			continue
 		}
@@ -687,11 +687,9 @@ func (r *Reconciler) buildVolumeSpecs(
 		// Apply application type presets first
 		// Ideally, this would already have been mutated by the webhook, but just handle that here anyway.
 		if err := r.applyApplicationTypePresets(&vol, &cnsVolumeSpec); err != nil {
-
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Errorf(
 				"%s failed to apply application type presets for volume %s: %w",
 				buildErrMsg, vol.Name, err).Error()})
-
 			continue
 		}
 
@@ -703,7 +701,7 @@ func (r *Reconciler) buildVolumeSpecs(
 			cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.IndependentPersistent
 		default:
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("%s unsupported disk mode: %s for volume %s",
+				Message: fmt.Sprintf("%s unsupported disk mode %q for volume %s",
 					buildErrMsg, vol.DiskMode, vol.Name)})
 			continue
 		}
@@ -716,7 +714,7 @@ func (r *Reconciler) buildVolumeSpecs(
 			cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingMultiWriter
 		default:
 			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("%s unsupported sharing mode: %s for volume %s",
+				Message: fmt.Sprintf("%s unsupported sharing mode %q for volume %s",
 					buildErrMsg, vol.SharingMode, vol.Name)})
 			continue
 		}

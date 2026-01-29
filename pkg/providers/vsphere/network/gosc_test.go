@@ -185,5 +185,79 @@ var _ = Describe("GOSC", func() {
 				Expect(adapter.IpV6Spec).To(BeNil())
 			})
 		})
+
+		Context("Unconfigured interface", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						MacAddress:  macAddr1,
+						Name:        "eth0",
+						IPConfigs:   []network.NetworkInterfaceIPConfig{},
+						DHCP4:       false,
+						DHCP6:       false,
+						NoIPAM:      false,
+						MTU:         1500,
+						Nameservers: []string{dnsServer1},
+					},
+				}
+			})
+
+			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(adapterMappings).To(HaveLen(1))
+				mapping := adapterMappings[0]
+
+				adapter := mapping.Adapter
+				Expect(mapping.MacAddress).To(Equal(macAddr1))
+				// Unconfigured interface fix: adapter.Ip should be set to disable IPv4
+				// This matches Linux behavior where an interface can exist without an IP address
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationDisableIpV4{}))
+				Expect(adapter.IpV6Spec).To(BeNil())
+				Expect(adapter.Gateway).To(BeEmpty())
+				Expect(adapter.SubnetMask).To(BeEmpty())
+				Expect(adapter.DnsServerList).To(Equal([]string{dnsServer1}))
+			})
+		})
+
+		Context("IPv6-Only Static", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "2001:db8::100/64",
+								IsIPv4:  false,
+								Gateway: "2001:db8::1",
+							},
+						},
+						MacAddress:  macAddr1,
+						Name:        "eth0",
+						DHCP4:       false,
+						DHCP6:       false,
+						MTU:         1500,
+						Nameservers: []string{"2001:4860:4860::8888"},
+					},
+				}
+			})
+
+			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(adapterMappings).To(HaveLen(1))
+				mapping := adapterMappings[0]
+
+				adapter := mapping.Adapter
+				Expect(mapping.MacAddress).To(Equal(macAddr1))
+				// IPv6-only fix: adapter.Ip should be set to disable IPv4
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationDisableIpV4{}))
+				Expect(adapter.IpV6Spec).ToNot(BeNil())
+				Expect(adapter.IpV6Spec.Gateway).To(Equal([]string{"2001:db8::1"}))
+				Expect(adapter.IpV6Spec.Ip).To(HaveLen(1))
+				Expect(adapter.IpV6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIpV6{}))
+				addressSpec := adapter.IpV6Spec.Ip[0].(*vimtypes.CustomizationFixedIpV6)
+				Expect(addressSpec.IpAddress).To(Equal("2001:db8::100"))
+				Expect(addressSpec.SubnetMask).To(BeEquivalentTo(64))
+			})
+		})
+
 	})
 })

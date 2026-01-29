@@ -46,6 +46,11 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 				break
 			}
 
+			// When adapter.Ip is nil, the vSphere API requires it to be set.
+			// Set it to disable IPv4, which handles both IPv6-only and completely unconfigured cases.
+			if adapter.Ip == nil {
+				adapter.Ip = &vimtypes.CustomizationDisableIpV4{}
+			}
 		}
 
 		switch {

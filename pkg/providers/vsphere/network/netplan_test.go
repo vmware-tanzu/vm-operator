@@ -245,5 +245,164 @@ var _ = Describe("Netplan", func() {
 				Expect(np.AcceptRa).To(HaveValue(BeFalse()))
 			})
 		})
+
+		Context("IPv4-Only Static", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "192.168.1.100/24",
+								IsIPv4:  true,
+								Gateway: "192.168.1.1",
+							},
+						},
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP4:           false,
+						DHCP6:           false,
+						MTU:             1500,
+						Nameservers:     []string{dnsServer1},
+					},
+				}
+			})
+
+			It("returns success with IPv4-only configuration", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(config).ToNot(BeNil())
+
+				np := config.Ethernets[ifName]
+				Expect(np.Addresses).To(HaveLen(1))
+				Expect(np.Addresses[0]).To(Equal(netplan.Address{String: ptr.To("192.168.1.100/24")}))
+				Expect(np.Gateway4).To(HaveValue(Equal("192.168.1.1")))
+				Expect(np.Gateway6).To(BeNil())
+				Expect(np.Dhcp4).To(HaveValue(BeFalse()))
+				Expect(np.Dhcp6).To(HaveValue(BeFalse()))
+			})
+		})
+
+		Context("IPv6-Only Static", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "2001:db8::100/64",
+								IsIPv4:  false,
+								Gateway: "2001:db8::1",
+							},
+						},
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP4:           false,
+						DHCP6:           false,
+						MTU:             1500,
+						Nameservers:     []string{"2001:4860:4860::8888"},
+					},
+				}
+			})
+
+			It("returns success with IPv6-only configuration", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(config).ToNot(BeNil())
+
+				np := config.Ethernets[ifName]
+				Expect(np.Addresses).To(HaveLen(1))
+				Expect(np.Addresses[0]).To(Equal(netplan.Address{String: ptr.To("2001:db8::100/64")}))
+				Expect(np.Gateway4).To(BeNil())
+				Expect(np.Gateway6).To(HaveValue(Equal("2001:db8::1")))
+				Expect(np.Dhcp4).To(HaveValue(BeFalse()))
+				Expect(np.Dhcp6).To(HaveValue(BeFalse()))
+			})
+		})
+
+		Context("Multiple IPv6 Addresses", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "2001:db8::100/64",
+								IsIPv4:  false,
+								Gateway: "2001:db8::1",
+							},
+							{
+								IPCIDR:  "2001:db8::101/64",
+								IsIPv4:  false,
+								Gateway: "2001:db8::1",
+							},
+						},
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP4:           false,
+						DHCP6:           false,
+						MTU:             1500,
+						Nameservers:     []string{"2001:4860:4860::8888"},
+					},
+				}
+			})
+
+			It("returns success with multiple IPv6 addresses", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(config).ToNot(BeNil())
+				Expect(config.Version).To(Equal(constants.NetPlanVersion))
+
+				Expect(config.Ethernets).To(HaveLen(1))
+				Expect(config.Ethernets).To(HaveKey(ifName))
+
+				np := config.Ethernets[ifName]
+				Expect(np.Addresses).To(HaveLen(2))
+				Expect(np.Addresses[0]).To(Equal(netplan.Address{String: ptr.To("2001:db8::100/64")}))
+				Expect(np.Addresses[1]).To(Equal(netplan.Address{String: ptr.To("2001:db8::101/64")}))
+				Expect(np.Gateway6).To(HaveValue(Equal("2001:db8::1")))
+			})
+		})
+
+		Context("Multiple IPv4 Addresses", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						IPConfigs: []network.NetworkInterfaceIPConfig{
+							{
+								IPCIDR:  "192.168.1.100/24",
+								IsIPv4:  true,
+								Gateway: "192.168.1.1",
+							},
+							{
+								IPCIDR:  "192.168.1.101/24",
+								IsIPv4:  true,
+								Gateway: "192.168.1.1",
+							},
+						},
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP4:           false,
+						DHCP6:           false,
+						MTU:             1500,
+						Nameservers:     []string{dnsServer1},
+					},
+				}
+			})
+
+			It("returns success with multiple IPv4 addresses", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(config).ToNot(BeNil())
+				Expect(config.Version).To(Equal(constants.NetPlanVersion))
+
+				Expect(config.Ethernets).To(HaveLen(1))
+				Expect(config.Ethernets).To(HaveKey(ifName))
+
+				np := config.Ethernets[ifName]
+				Expect(np.Addresses).To(HaveLen(2))
+				Expect(np.Addresses[0]).To(Equal(netplan.Address{String: ptr.To("192.168.1.100/24")}))
+				Expect(np.Addresses[1]).To(Equal(netplan.Address{String: ptr.To("192.168.1.101/24")}))
+				Expect(np.Gateway4).To(HaveValue(Equal("192.168.1.1")))
+			})
+		})
+
 	})
 })

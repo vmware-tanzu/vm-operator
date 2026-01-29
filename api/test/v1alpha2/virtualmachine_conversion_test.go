@@ -956,4 +956,106 @@ func TestVirtualMachineConversion(t *testing.T) {
 			g.Expect(anno).ShouldNot(HaveKey(vmopv1.PauseAnnotation))
 		})
 	})
+
+	t.Run("VirtualMachine network VLANs", func(t *testing.T) {
+		t.Run("VirtualMachine hub-spoke-hub with VLANs preserves VLANs", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create a hub VM with VLANs configuration
+			hub := vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-vm-with-vlans",
+					Namespace: "default",
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					ImageName: "ubuntu-2004",
+					ClassName: "best-effort-small",
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+							},
+							{
+								Name: "eth1",
+							},
+						},
+						VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
+							"vlan100": {
+								ID:   100,
+								Link: "eth1",
+							},
+							"vlan200": {
+								ID:   200,
+								Link: "eth1",
+							},
+						},
+					},
+				},
+			}
+
+			hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+		})
+
+		t.Run("VirtualMachine hub-spoke-hub with VLANs verifies round-trip", func(t *testing.T) {
+			g := NewWithT(t)
+
+			hubBefore := vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-vm-with-vlans",
+					Namespace: "default",
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					ImageName: "ubuntu-2004",
+					ClassName: "best-effort-small",
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+							},
+							{
+								Name: "eth1",
+							},
+						},
+						VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
+							"vlan100": {
+								ID:   100,
+								Link: "eth1",
+							},
+							"vlan200": {
+								ID:   200,
+								Link: "eth1",
+							},
+						},
+					},
+				},
+			}
+
+			// Convert hub -> spoke
+			var spoke vmopv1a2.VirtualMachine
+			g.Expect(spoke.ConvertFrom(&hubBefore)).To(Succeed())
+
+			// Verify spoke does not have VLANs field (it was removed from v1alpha2)
+			g.Expect(spoke.Spec.Network).ToNot(BeNil())
+			g.Expect(spoke.Spec.Network.Interfaces).To(HaveLen(2))
+
+			// Convert spoke -> hub
+			var hubAfter vmopv1.VirtualMachine
+			g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+
+			// Verify VLANs are restored in hub
+			g.Expect(hubAfter.Spec.Network).ToNot(BeNil())
+			g.Expect(hubAfter.Spec.Network.VLANs).To(HaveLen(2))
+			g.Expect(hubAfter.Spec.Network.VLANs).To(HaveKey("vlan100"))
+			g.Expect(hubAfter.Spec.Network.VLANs).To(HaveKey("vlan200"))
+
+			g.Expect(hubAfter.Spec.Network.VLANs["vlan100"].ID).To(Equal(int64(100)))
+			g.Expect(hubAfter.Spec.Network.VLANs["vlan100"].Link).To(Equal("eth1"))
+			g.Expect(hubAfter.Spec.Network.VLANs["vlan200"].ID).To(Equal(int64(200)))
+			g.Expect(hubAfter.Spec.Network.VLANs["vlan200"].Link).To(Equal("eth1"))
+
+			// Verify full round-trip equality
+			g.Expect(apiequality.Semantic.DeepEqual(hubBefore.Spec.Network.VLANs, hubAfter.Spec.Network.VLANs)).To(BeTrue(),
+				cmp.Diff(hubBefore.Spec.Network.VLANs, hubAfter.Spec.Network.VLANs))
+		})
+	})
 }

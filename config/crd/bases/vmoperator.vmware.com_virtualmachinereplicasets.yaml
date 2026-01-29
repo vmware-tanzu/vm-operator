@@ -7073,6 +7073,38 @@ spec:
                             items:
                               type: string
                             type: array
+                          vlans:
+                            additionalProperties:
+                              description: VirtualMachineNetworkVLANSpec describes
+                                a VLAN interface configuration.
+                              properties:
+                                id:
+                                  description: ID is the VLAN ID, a number between
+                                    0 and 4094.
+                                  format: int64
+                                  maximum: 4094
+                                  minimum: 0
+                                  type: integer
+                                link:
+                                  description: |-
+                                    Link is the name of the parent interface on which this VLAN is created.
+                                    This must reference an interface name from the Interfaces list.
+                                  type: string
+                              required:
+                              - id
+                              - link
+                              type: object
+                            description: |-
+                              VLANs is a map of VLAN interfaces to be configured on top of the physical
+                              network interfaces. The key is the VLAN interface name.
+
+                              VLAN interfaces are virtual network interfaces that tag traffic with a
+                              VLAN ID. Each VLAN must reference a parent interface from the Interfaces
+                              list via the Link field.
+
+                              Please note this feature is available only with the following bootstrap
+                              providers: CloudInit.
+                            type: object
                         type: object
                       nextRestartTime:
                         description: |-

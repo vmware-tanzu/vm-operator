@@ -576,6 +576,49 @@ func unitTestsReconcile() {
 				}
 			})
 
+			When("legacy attachment exists but is not attached because deprecated", func() {
+				BeforeEach(func() {
+					// legacy volume 1 is in VM spec
+					legacyAttachment1.Spec.VolumeName = legacyPVCName1
+					// Add a volume that matches legacy attachment
+					legacyAttachment1.Status.Attached = false
+					legacyAttachment1.Status.Error = volumebatch.CNSNodeVMAttachmentDeprecatedErrorMsg
+
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy1)
+					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, legacyPVC1)
+				})
+
+				It("should delete unattached deprecated legacy attachments", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify legacy attachment was deleted.
+					legacyKey1 := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					err1 := ctx.Client.Get(ctx, legacyKey1, attachment1)
+					Expect(apierrors.IsNotFound(err1)).To(BeTrue(), "Unattached legacy attachment should be deleted")
+
+					// Just expect that the error has been reflected in the status. This situation is
+					// a little different in that it kind of is :detaching, but it is still in the spec.
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					Expect(vm.Status.Volumes[0].Error).To(Equal(volumebatch.CNSNodeVMAttachmentDeprecatedErrorMsg))
+
+					err = reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					Expect(batchAttachment).ToNot(BeNil())
+
+					By("BatchAttach should have legacy volume", func() {
+						Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
+						vol := batchAttachment.Spec.Volumes[0]
+						Expect(vol.Name).To(Equal(legacyVolumeName1))
+						Expect(vol.PersistentVolumeClaim).ToNot(BeNil())
+						Expect(vol.PersistentVolumeClaim.ClaimName).To(Equal(legacyPVCName1))
+					})
+				})
+			})
+
 			When("legacy attachments exist but volumes are not in VM spec", func() {
 				BeforeEach(func() {
 					// Add legacy attachments but no corresponding volumes in VM spec
@@ -635,7 +678,7 @@ func unitTestsReconcile() {
 					err2 := ctx.Client.Get(ctx, legacyKey2, attachment2)
 					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Orphaned legacy attachment should be deleted")
 
-					// batch attachment should would be created still.
+					// Batch attachment should be created still.
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
 					Expect(batchAttachment.Spec.Volumes).To(HaveLen(0))

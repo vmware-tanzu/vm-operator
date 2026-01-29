@@ -181,13 +181,15 @@ func VPCPostRestoreBackingFixup(
 			if ethCard.ExternalId != result.ExternalID {
 				vmCtx.Logger.Info(
 					"Updating network device ExternalID for restored/failed-over VM",
+					"name", result.Name,
 					"macAddress", result.MacAddress,
 					"oldExternalID", ethCard.ExternalId,
-					"newExternalID", result.ExternalID)
+					"newExternalID", result.ExternalID,
+					"oldSubnetID", ethCard.SubnetId)
 
-				// Update the device's ExternalID.
 				ethCard.ExternalId = result.ExternalID
 				ethCard.Backing = result.Device.GetVirtualDevice().Backing
+				ethCard.SubnetId = ""
 
 				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 					Device:    dev,

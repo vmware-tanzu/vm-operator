@@ -139,16 +139,21 @@ func CloneVM(
 		TpmProvisionPolicy: string(vimtypes.VirtualMachineCloneSpecTpmProvisionPolicyCopy),
 	}
 
+	virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+	ethCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+
+	deviceChanges, err := ethCards.ConfigSpec(vimtypes.VirtualDeviceConfigSpecOperationRemove)
+	if err != nil {
+		return "", err
+	}
+
 	if storagePolicyID != "" {
 		cloneSpec.Location.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
 			&vimtypes.VirtualMachineDefinedProfileSpec{ProfileId: storagePolicyID},
 		}
 
 		if vmCtx.VM.Status.Crypto != nil {
-			virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 			currentDisks := virtualDevices.SelectByType((*vimtypes.VirtualDisk)(nil))
-
-			var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
 			for _, vmDevice := range currentDisks {
 				vmDisk, ok := vmDevice.(*vimtypes.VirtualDisk)
@@ -164,10 +169,9 @@ func CloneVM(
 					},
 				})
 			}
-
-			cloneSpec.Config.DeviceChange = deviceChanges
 		}
 	}
+	cloneSpec.Config.DeviceChange = deviceChanges
 
 	vmCtx.Logger.Info("Publishing VM as template",
 		"targetName", targetName,

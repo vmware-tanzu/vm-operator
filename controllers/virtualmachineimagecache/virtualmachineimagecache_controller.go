@@ -433,8 +433,6 @@ func (r *reconciler) getStorageProfileCrypto(
 		return nil, err
 	}
 
-	// TODO: We don't have an EncryptionClass but the default provider is
-	// optional, so what is the proper fallback?
 	m := crypto.NewManagerKmip(vimClient)
 	providerID, err := m.GetDefaultKmsClusterID(ctx, nil, true)
 	if err != nil {

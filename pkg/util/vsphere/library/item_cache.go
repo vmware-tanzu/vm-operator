@@ -175,8 +175,6 @@ func copyFile(
 	)
 
 	if isDisk {
-		logger.Info("Caching disk")
-
 		ds := &vimtypes.FileBackedVirtualDiskSpec{
 			VirtualDiskSpec: vimtypes.VirtualDiskSpec{
 				AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
@@ -194,15 +192,16 @@ func copyFile(
 			if id := cs.CryptoKeyId.ProviderId; id != nil && id.Id != "" {
 				ds.Crypto = cs
 			} else {
-				// TODO: The storage profile is encrypted but there is no
-				// default key provider configured. CopyVirtualDisk used
-				// to just ignore the Profile and Crypto fields, but now it
-				// actually honors them, an encrypted profile needs crypto.
-				// For now, effectively revert to that prior behavior by not
-				// specifying the profile.
+				// This is an encrypted storage profile but there is no
+				// default key provider available so there not a way to
+				// encrypted it. Clear the profile so it can still be
+				// copied. The VM will encrypt its disks after the copy
+				// from the cache.
 				ds.Profile = nil
 			}
 		}
+
+		logger.Info("Caching disk", "diskSpec", ds)
 
 		copyTask, err = client.CopyVirtualDisk(
 			ctx,

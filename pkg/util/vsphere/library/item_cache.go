@@ -185,9 +185,11 @@ func copyFile(
 					DiskType:    string(vimtypes.VirtualDiskTypeThin),
 				},
 				SectorFormat: string(srcFile.DstDiskFormat),
-				// CopyVirtualDisk API simply ignores the Profile
-				// and Crypto parameters. We send neither until the
-				// API is enhanced to support both.
+				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+					&vimtypes.VirtualMachineDefinedProfileSpec{
+						ProfileId: srcFile.DstProfileID,
+					},
+				},
 			},
 			false)
 	} else {

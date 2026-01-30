@@ -446,6 +446,7 @@ func fastDeployDirect(
 		ctx,
 		logger,
 		datacenter,
+		configSpec,
 		srcDiskPaths,
 		dstDiskPaths,
 		diskFormat); err != nil {
@@ -453,26 +454,12 @@ func fastDeployDirect(
 		return nil, err
 	}
 
-	_, isVMEncrypted := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
-
 	for i := range diskSpecs {
 		ds := diskSpecs[i]
 
 		// Set the file operation to an empty string since the disk already
 		// exists.
 		ds.FileOperation = ""
-
-		if isVMEncrypted {
-			// If the VM is to be encrypted, then the disks need to be updated
-			// so they are not marked as encrypted upon VM creation. This is
-			// because it is not possible to change the encryption state of VM
-			// disks when they are being attached. Instead the disks must be
-			// encrypted after they are attached to the VM.
-			ds.Profile = nil
-			if ds.Backing != nil {
-				ds.Backing.Crypto = nil
-			}
-		}
 	}
 
 	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)
@@ -516,6 +503,7 @@ func fastDeployDirectCopyDisks(
 	ctx context.Context,
 	logger logr.Logger,
 	datacenter *object.Datacenter,
+	configSpec vimtypes.VirtualMachineConfigSpec,
 	srcDiskPaths,
 	dstDiskPaths []string,
 	diskFormat vimtypes.DatastoreSectorFormat) error {
@@ -530,9 +518,8 @@ func fastDeployDirectCopyDisks(
 				DiskType:    string(vimtypes.VirtualDiskTypeThin),
 			},
 			SectorFormat: string(diskFormat),
-			// CopyVirtualDisk API simply ignores the Profile
-			// and Crypto parameters. We send neither until the
-			// API is enhanced to support both.
+			Profile:      configSpec.VmProfile,
+			Crypto:       configSpec.Crypto,
 		}
 		diskManager = object.NewVirtualDiskManager(datacenter.Client())
 	)

@@ -11,12 +11,17 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -33,6 +38,22 @@ func controllerTests() {
 		),
 		controllerValidationTests,
 	)
+}
+
+func ensureVMClassExists(ctx *unitValidatingWebhookContext) *vmopv1.VirtualMachineClass {
+	vmClass := &vmopv1.VirtualMachineClass{}
+	err := ctx.Client.Get(ctx, client.ObjectKey{
+		Name:      ctx.vm.Spec.ClassName,
+		Namespace: ctx.vm.Namespace,
+	}, vmClass)
+	if apierrors.IsNotFound(err) {
+		vmClass = builder.DummyVirtualMachineClass(ctx.vm.Spec.ClassName)
+		vmClass.Namespace = ctx.vm.Namespace
+		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+	} else {
+		Expect(err).ToNot(HaveOccurred())
+	}
+	return vmClass
 }
 
 func controllerValidationTests() {
@@ -1463,6 +1484,392 @@ func controllerValidationTests() {
 				Expect(err).ToNot(HaveOccurred())
 
 				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+	})
+
+	Context("validateControllerConflictsOnCreate", func() {
+		const ovfYAMLTemplate = `diskSection:
+  disk:
+  - capacity: "30"
+    capacityAllocationUnits: byte * 2^20
+    diskId: vmdisk1
+    fileRef: file1
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 18743296
+  info: Virtual disk information
+references:
+- href: test-disk.vmdk
+  id: file1
+  size: 10595840
+virtualSystem:
+  id: vm
+  info: A virtual machine
+  name: test-vm
+  virtualHardwareSection:
+  - item:
+    - allocationUnits: hertz * 10^6
+      description: Number of Virtual CPUs
+      elementName: 1 virtual CPU(s)
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 1
+    - allocationUnits: byte * 2^20
+      description: Memory Size
+      elementName: 2048MB of memory
+      instanceID: "2"
+      resourceType: 4
+      virtualQuantity: 2048
+    - address: "0"
+      description: SCSI Controller
+      elementName: scsiController0
+      instanceID: "3"
+      resourceType: 6
+    - addressOnParent: "0"
+      elementName: disk0
+      hostResource:
+      - ovf:/disk/vmdisk1
+      instanceID: "4"
+      parent: "3"
+      resourceType: 17
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemIdentifier: test-vm
+      virtualSystemType: vmx-09`
+
+		// Helper function to create VM Image with OVF
+		createVMImageWithOVF := func(itemID, version string) {
+			// Use a unique name based on itemID to avoid conflicts with base setup
+			vmImageName := fmt.Sprintf("test-ovf-image-%s", itemID)
+			vmImage := builder.DummyVirtualMachineImage(vmImageName)
+			vmImage.Namespace = ctx.vm.Namespace
+			vmImage.Status.Type = "ovf"
+			vmImage.Status.ProviderItemID = itemID
+			vmImage.Status.ProviderContentVersion = version
+			ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+				Name: vmImage.Name,
+				Kind: "VirtualMachineImage",
+			}
+			Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
+
+			configMapName := fmt.Sprintf("test-ovf-configmap-%s", itemID)
+			vmiCache := &vmopv1.VirtualMachineImageCache{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pkgutil.VMIName(itemID), // Use VMIName helper to match lookup logic
+					Namespace: pkgcfg.FromContext(&ctx.WebhookRequestContext).PodNamespace,
+				},
+				Status: vmopv1.VirtualMachineImageCacheStatus{
+					OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+						ProviderVersion: version,
+						ConfigMapName:   configMapName,
+					},
+				},
+			}
+			// Mark HardwareReady condition as true
+			vmiCache.Status.Conditions = []metav1.Condition{
+				{
+					Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+					Status: metav1.ConditionTrue,
+					Reason: "Ready",
+				},
+			}
+			Expect(ctx.Client.Create(ctx, vmiCache)).To(Succeed())
+
+			ovfConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      configMapName,
+					Namespace: vmiCache.Namespace,
+				},
+				Data: map[string]string{
+					"value": ovfYAMLTemplate,
+				},
+			}
+			Expect(ctx.Client.Create(ctx, ovfConfigMap)).To(Succeed())
+		}
+
+		BeforeEach(func() {
+			ctx.oldVM = nil
+			// Enable VMSharedDisks feature flag for these tests
+			pkgcfg.SetContext(&ctx.WebhookRequestContext, func(config *pkgcfg.Config) {
+				config.Features.VMSharedDisks = true
+				config.BuildVersion = testBuildVersion
+			})
+		})
+
+		When("VM Class does not exist", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.ClassName = "non-existent-class"
+			})
+
+			It("should allow creation (verification skipped, reconciler will handle)", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				// When VM Class is not found, we skip verification and allow creation.
+				// The reconciler will handle verification later.
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+
+		When("VM Image does not exist", func() {
+			BeforeEach(func() {
+				// Set VM to reference a non-existent image
+				ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+					Name: "non-existent-image",
+					Kind: "VirtualMachineImage",
+				}
+			})
+
+			It("should allow creation (verification skipped, reconciler will handle)", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				// When VM Image is not found, we skip verification and allow creation.
+				// The reconciler will handle verification later.
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+
+		When("VM Class and VM Image have no conflicts", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware = nil
+				// Set up VM Class with LsiLogic SCSI controller at bus 0 to match
+				// what the OVF creates (OVF resourceType: 6 defaults to LsiLogic)
+				vmClass := ensureVMClassExists(ctx)
+				configSpecJSON, err := pkgutil.MarshalConfigSpecToJSON(vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualLsiLogicController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: -100,
+										},
+										BusNumber: 0,
+									},
+									SharedBus: "noSharing",
+								},
+							},
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				vmClass.Spec.ConfigSpec = configSpecJSON
+				Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
+
+				// Create VM Image with OVF that has LsiLogic SCSI controller at bus 0
+				// (same type and compatible sharing mode, so no conflict)
+				createVMImageWithOVF("test-item-id-no-conflict", "1.0.0")
+			})
+
+			It("should allow creation", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+
+		When("VM Class and VM Image have controller type conflict", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware = nil
+				// Create VM Class with ParaVirtual SCSI controller
+				vmClass := builder.DummyVirtualMachineClass("test-vm-class-type-conflict")
+				vmClass.Namespace = ctx.vm.Namespace
+				configSpecJSON, err := pkgutil.MarshalConfigSpecToJSON(vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{Key: -1},
+										BusNumber:     0,
+									},
+									SharedBus: vimtypes.VirtualSCSISharingNoSharing,
+								},
+							},
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				vmClass.Spec.ConfigSpec = configSpecJSON
+				Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+				ctx.vm.Spec.ClassName = vmClass.Name
+
+				// Create VM Image with OVF that defaults to VirtualLsiLogicController
+				// OVF envelope's ToConfigSpec() defaults to LsiLogic when resourceType: 6
+				// without resourceSubType, so this will create a type conflict:
+				// VM Class: ParaVirtual vs VM Image: LsiLogic
+				createVMImageWithOVF("test-item-id-type-conflict", "1.0.0")
+			})
+
+			It("should reject with controller conflict error", func() {
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(string(response.Result.Reason)).To(Equal("spec.hardware: Invalid value: null: Controller conflict between VM Class and VM Image: SCSI controller at bus 0: type conflict (\"ParaVirtual\" vs \"LsiLogic\")"))
+			})
+		})
+
+		When("user-defined controllers conflict with VM Class", func() {
+			BeforeEach(func() {
+				vmClass := ensureVMClassExists(ctx)
+
+				// Create a ConfigSpec with ParaVirtual SCSI controller
+				configSpecJSON, err := pkgutil.MarshalConfigSpecToJSON(vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: -100,
+										},
+										BusNumber: 0,
+									},
+									SharedBus: "noSharing",
+								},
+							},
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				vmClass.Spec.ConfigSpec = configSpecJSON
+
+				// Update the VM Class in the client
+				err = ctx.Client.Update(ctx, vmClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Set user-defined controller with different type (BusLogic) at same bus
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeBusLogic,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+			})
+
+			It("should reject with controller conflict error", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(string(response.Result.Reason)).To(Equal("spec.hardware: Invalid value: null: Controller conflict between VM Class/Image and user-specified controllers: SCSI controller at bus 0: type conflict (\"BusLogic\" vs \"ParaVirtual\")"))
+			})
+		})
+
+		When("user-defined controllers have shared bus mismatch with VM Class", func() {
+			BeforeEach(func() {
+				vmClass := ensureVMClassExists(ctx)
+
+				configSpecJSON, err := pkgutil.MarshalConfigSpecToJSON(vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: -100,
+										},
+										BusNumber: 0,
+									},
+									SharedBus: "physicalSharing",
+								},
+							},
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				vmClass.Spec.ConfigSpec = configSpecJSON
+
+				err = ctx.Client.Update(ctx, vmClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Set user-defined controller with None sharing at same bus
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+			})
+
+			It("should reject with shared bus mismatch error", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(string(response.Result.Reason)).To(Equal("spec.hardware: Invalid value: null: Controller conflict between VM Class/Image and user-specified controllers: SCSI controller at bus 0: sharing mode conflict (\"noSharing\" vs \"physicalSharing\")"))
+			})
+		})
+
+		When("user-defined controllers match VM Class", func() {
+			BeforeEach(func() {
+				vmClass := ensureVMClassExists(ctx)
+
+				configSpecJSON, err := pkgutil.MarshalConfigSpecToJSON(vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: -100,
+										},
+										BusNumber: 0,
+									},
+									SharedBus: "noSharing",
+								},
+							},
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				vmClass.Spec.ConfigSpec = configSpecJSON
+
+				err = ctx.Client.Update(ctx, vmClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Set user-defined controller matching VM Class
+				ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					},
+				}
+			})
+
+			It("should allow creation", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj = nil
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
 			})
 		})

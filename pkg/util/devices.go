@@ -398,6 +398,41 @@ type ControllerID struct {
 	BusNumber      int32
 }
 
+// GetControllerIDFromDevice extracts ControllerID from a controller device.
+// Returns the ControllerID and true if the device is a controller, false
+// otherwise.
+func GetControllerIDFromDevice(
+	device vimtypes.BaseVirtualDevice) (ControllerID, bool) {
+
+	switch ctrl := device.(type) {
+	case *vimtypes.VirtualIDEController:
+		return ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeIDE,
+			BusNumber:      ctrl.BusNumber,
+		}, true
+	case vimtypes.BaseVirtualSCSIController:
+		scsiCtrl := ctrl.GetVirtualSCSIController()
+		return ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSCSI,
+			BusNumber:      scsiCtrl.BusNumber,
+		}, true
+	case vimtypes.BaseVirtualSATAController:
+		sataCtrl := ctrl.GetVirtualSATAController()
+		return ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeSATA,
+			BusNumber:      sataCtrl.BusNumber,
+		}, true
+	case *vimtypes.VirtualNVMEController:
+		return ControllerID{
+			ControllerType: vmopv1.VirtualControllerTypeNVME,
+			BusNumber:      ctrl.BusNumber,
+		}, true
+	default:
+		return ControllerID{}, false
+	}
+
+}
+
 // String returns a string representation of the ControllerID in the format
 // "controllerType:BusNumber".
 func (c ControllerID) String() string {
@@ -509,31 +544,8 @@ func BuildHardwareInfo(moVM mo.VirtualMachine) HardwareInfo {
 			continue
 		}
 
-		var controllerID ControllerID
-		switch ctrl := device.(type) {
-		case *vimtypes.VirtualIDEController:
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeIDE,
-				BusNumber:      ctrl.BusNumber,
-			}
-		case vimtypes.BaseVirtualSCSIController:
-			scsiCtrl := ctrl.GetVirtualSCSIController()
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeSCSI,
-				BusNumber:      scsiCtrl.BusNumber,
-			}
-		case vimtypes.BaseVirtualSATAController:
-			sataCtrl := ctrl.GetVirtualSATAController()
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeSATA,
-				BusNumber:      sataCtrl.BusNumber,
-			}
-		case *vimtypes.VirtualNVMEController:
-			controllerID = ControllerID{
-				ControllerType: vmopv1.VirtualControllerTypeNVME,
-				BusNumber:      ctrl.BusNumber,
-			}
-		default:
+		controllerID, ok := GetControllerIDFromDevice(device)
+		if !ok {
 			continue
 		}
 

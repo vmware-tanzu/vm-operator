@@ -2019,6 +2019,11 @@ func (v validator) validateHardware(
 
 	var allErrs field.ErrorList
 
+	// Validate controller conflicts during VM creation.
+	if oldVM == nil && pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		allErrs = append(allErrs, v.validateControllerConflictsOnCreate(ctx, newVM)...)
+	}
+
 	allErrs = append(allErrs, v.validateCdrom(ctx, newVM, oldVM)...)
 	allErrs = append(allErrs, v.validateControllers(ctx, newVM, oldVM)...)
 

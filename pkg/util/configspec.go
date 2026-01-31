@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"reflect"
@@ -19,7 +20,18 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
+)
+
+const (
+	scsiControllerSharedBusMismatchFmt = "SCSI controller at bus %d: sharing mode conflict (%q vs %q)"
+	scsiControllerSubtypeMismatchFmt   = "SCSI controller at bus %d: type conflict (%q vs %q)"
+	scsiControllerUnsupportedTypeFmt   = "SCSI controller at bus %d: unsupported controller type"
+	nvmeControllerSharedBusMismatchFmt = "NVME controller at bus %d: sharing mode conflict (%q vs %q)"
+	ControllerConflictVMClassImage     = "Controller conflict between VM Class and VM Image"
+	ControllerConflictVMClassImageUser = "Controller conflict between VM Class/Image and user-specified controllers"
 )
 
 // MarshalConfigSpecToXML returns a byte slice of the provided ConfigSpec
@@ -170,6 +182,11 @@ func RemoveDevicesFromConfigSpec(configSpec *vimtypes.VirtualMachineConfigSpec, 
 	var targetDevChanges []vimtypes.BaseVirtualDeviceConfigSpec
 	for _, devChange := range configSpec.DeviceChange {
 		dSpec := devChange.GetVirtualDeviceConfigSpec()
+		if dSpec == nil || dSpec.Device == nil {
+			targetDevChanges = append(targetDevChanges, devChange)
+			continue
+		}
+
 		if !fn(dSpec.Device) {
 			targetDevChanges = append(targetDevChanges, devChange)
 		}
@@ -209,6 +226,23 @@ func SafeConfigSpecToString(
 	in *vimtypes.VirtualMachineConfigSpec) (s string) {
 
 	return vimtypes.ToString(in)
+}
+
+// SafeDeviceChangesToString returns the string-ified version of the provided
+// DeviceChange array by creating a minimal ConfigSpec with only the DeviceChange
+// field populated. This is useful for logging when you only need to see the
+// device changes rather than the entire config spec.
+func SafeDeviceChangesToString(
+	deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec) (s string) {
+
+	if len(deviceChanges) == 0 {
+		return "[]"
+	}
+
+	configSpec := vimtypes.VirtualMachineConfigSpec{
+		DeviceChange: deviceChanges,
+	}
+	return SafeConfigSpecToString(&configSpec)
 }
 
 var dsNameRX = regexp.MustCompile(`^\[([^\]].+)\].*$`)
@@ -322,4 +356,331 @@ func CopyStorageControllersAndDisks(
 		}
 		return false
 	})
+}
+
+// getAddDevice extracts the device from a device config spec if it's an Add
+// operation and the device is not nil. Returns the device, or nil if the spec
+// is invalid or not an Add operation.
+func getAddDevice(
+	devChange vimtypes.BaseVirtualDeviceConfigSpec,
+) vimtypes.BaseVirtualDevice {
+	spec := devChange.GetVirtualDeviceConfigSpec()
+	if spec == nil ||
+		spec.Operation != vimtypes.VirtualDeviceConfigSpecOperationAdd {
+		return nil
+	}
+	return spec.Device
+}
+
+// ValidateStorageControllerCompatibility validates that storage controllers
+// from the source ConfigSpec are compatible with controllers in the
+// destination ConfigSpec. It returns a mapping from destination controller
+// keys to source controller keys for controllers that exist in both, and a
+// set of controller IDs that should be removed from destination (controllers
+// that have matches in source).
+//
+// Returns an error if incompatible controllers are found (e.g., mismatched
+// SharedBus settings or controller subtypes).
+func ValidateStorageControllerCompatibility(
+	dst vimtypes.VirtualMachineConfigSpec,
+	src vimtypes.VirtualMachineConfigSpec,
+) (map[int32]int32, map[ControllerID]struct{}, error) {
+	dstCtrls := make(map[ControllerID]vimtypes.BaseVirtualDevice)
+	for _, devChange := range dst.DeviceChange {
+		dev := getAddDevice(devChange)
+		if dev == nil {
+			continue
+		}
+
+		if key, isCtrl := GetControllerIDFromDevice(dev); isCtrl {
+			dstCtrls[key] = dev
+		}
+	}
+
+	dstKeyToSrcKey := make(map[int32]int32)
+	controllersToRemove := make(map[ControllerID]struct{})
+
+	for _, devChange := range src.DeviceChange {
+		dev := getAddDevice(devChange)
+		if dev == nil {
+			continue
+		}
+
+		var ctrlKey *ControllerID
+
+		switch d := dev.(type) {
+		case vimtypes.BaseVirtualSCSIController:
+			srcCtrl := d.GetVirtualSCSIController()
+			ctrlKey = &ControllerID{
+				ControllerType: vmopv1.VirtualControllerTypeSCSI,
+				BusNumber:      srcCtrl.BusNumber,
+			}
+			if ctrl, exists := dstCtrls[*ctrlKey]; exists {
+				dstSCSIController := ctrl.(vimtypes.BaseVirtualSCSIController)
+				scsiCtrl := dstSCSIController.GetVirtualSCSIController()
+
+				if scsiCtrl.SharedBus != srcCtrl.SharedBus {
+					return nil, nil, fmt.Errorf(
+						scsiControllerSharedBusMismatchFmt,
+						srcCtrl.BusNumber,
+						scsiCtrl.SharedBus,
+						srcCtrl.SharedBus)
+				}
+
+				// Check if controller types match
+				dstCtrlType := scsiControllerTypeToVMOPType(dstSCSIController)
+				srcCtrlType := scsiControllerTypeToVMOPType(d)
+				if dstCtrlType == "" || srcCtrlType == "" {
+					return nil, nil, fmt.Errorf(
+						scsiControllerUnsupportedTypeFmt,
+						srcCtrl.BusNumber)
+				}
+				if dstCtrlType != srcCtrlType {
+					return nil, nil, fmt.Errorf(
+						scsiControllerSubtypeMismatchFmt,
+						srcCtrl.BusNumber,
+						dstCtrlType,
+						srcCtrlType)
+				}
+			}
+
+		case *vimtypes.VirtualNVMEController:
+			ctrlKey = &ControllerID{
+				ControllerType: vmopv1.VirtualControllerTypeNVME,
+				BusNumber:      d.BusNumber,
+			}
+			if ctrl, exists := dstCtrls[*ctrlKey]; exists {
+				nvmeCtrl := ctrl.(*vimtypes.VirtualNVMEController)
+				if nvmeCtrl.SharedBus != d.SharedBus {
+					return nil, nil, fmt.Errorf(
+						nvmeControllerSharedBusMismatchFmt,
+						d.BusNumber,
+						nvmeCtrl.SharedBus,
+						d.SharedBus)
+				}
+			}
+
+		case vimtypes.BaseVirtualSATAController:
+			ctrlKey = &ControllerID{
+				ControllerType: vmopv1.VirtualControllerTypeSATA,
+				BusNumber:      d.GetVirtualSATAController().BusNumber,
+			}
+
+		case *vimtypes.VirtualIDEController:
+			ctrlKey = &ControllerID{
+				ControllerType: vmopv1.VirtualControllerTypeIDE,
+				BusNumber:      d.BusNumber,
+			}
+		}
+
+		if ctrlKey != nil {
+			if ctrl, exists := dstCtrls[*ctrlKey]; exists {
+				dstKey := ctrl.GetVirtualDevice().Key
+				srcKey := dev.GetVirtualDevice().Key
+				dstKeyToSrcKey[dstKey] = srcKey
+				controllersToRemove[*ctrlKey] = struct{}{}
+			}
+		}
+	}
+
+	return dstKeyToSrcKey, controllersToRemove, nil
+}
+
+// MergeStorageControllersAndDisks performs the merging of storage
+// controllers and disks from source into destination. It removes duplicate
+// controllers, remaps disk controller keys, and copies controllers and disks.
+func MergeStorageControllersAndDisks(
+	dst *vimtypes.VirtualMachineConfigSpec,
+	src vimtypes.VirtualMachineConfigSpec,
+	dstKeyToSrcKey map[int32]int32,
+	controllersToRemove map[ControllerID]struct{},
+	storagePolicyID string,
+) {
+	// Remove any controllers from dst that have duplicated controllers in
+	// src.
+	RemoveDevicesFromConfigSpec(dst, func(bvd vimtypes.BaseVirtualDevice) bool {
+		if ctrlKey, isCtrl := GetControllerIDFromDevice(bvd); isCtrl {
+			if _, exists := controllersToRemove[ctrlKey]; exists {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Update disk controller keys using dstKeyToSrcKey mapping
+	for _, devChange := range dst.DeviceChange {
+		spec := devChange.GetVirtualDeviceConfigSpec()
+		if spec == nil || spec.Device == nil {
+			continue
+		}
+
+		if spec.Operation != vimtypes.VirtualDeviceConfigSpecOperationAdd {
+			continue
+		}
+
+		if disk, ok := spec.Device.(*vimtypes.VirtualDisk); ok {
+			if srcCtrlKey, exists := dstKeyToSrcKey[disk.ControllerKey]; exists {
+				disk.ControllerKey = srcCtrlKey
+			}
+		}
+	}
+
+	CopyStorageControllersAndDisks(dst, src, storagePolicyID)
+}
+
+// findPCIController finds the PCI controller from deviceSpecs.
+// A VM always has exactly one VirtualPCIController, which is the root
+// controller that all other controllers attach to.
+func findPCIController(
+	deviceSpecs []vimtypes.BaseVirtualDeviceConfigSpec,
+) *vimtypes.VirtualPCIController {
+
+	for _, devChange := range deviceSpecs {
+		dev := getAddDevice(devChange)
+		if dev == nil {
+			continue
+		}
+
+		if pciCtrl, ok := dev.(*vimtypes.VirtualPCIController); ok {
+			return pciCtrl
+		}
+	}
+	return nil
+}
+
+// CreateUserStorageControllersConfigSpec creates a VirtualMachineConfigSpec
+// from user-specified storage controllers in the vm.spec.hardware.
+// It processes SCSI, SATA, NVME, and IDE controllers, but only includes
+// controllers that are fully defined: SCSI controllers require both Type and
+// SharingMode to be set, while NVME controllers require SharingMode to be set.
+func CreateUserStorageControllersConfigSpec(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	configSpec vimtypes.VirtualMachineConfigSpec,
+) vimtypes.VirtualMachineConfigSpec {
+
+	if vm == nil || vm.Spec.Hardware == nil {
+		return vimtypes.VirtualMachineConfigSpec{}
+	}
+
+	hardware := vm.Spec.Hardware
+	var newDeviceKey int32
+	var userSpecControllers []vimtypes.BaseVirtualDeviceConfigSpec
+	var pciKey int32 // default to 0 so it will be auto-assigned by vSphere
+
+	virtualcontroller.InitDeviceKey(&newDeviceKey, configSpec.DeviceChange)
+	if pciController := findPCIController(configSpec.DeviceChange); pciController != nil {
+		pciKey = pciController.Key
+	}
+
+	// Process all controller types
+	// For SCSI controllers, only add if both Type and SharingMode
+	// are explicitly set.
+	for _, spec := range hardware.SCSIControllers {
+		if spec.Type == "" || spec.SharingMode == "" {
+			continue
+		}
+		// Validate Type
+		switch spec.Type {
+		case vmopv1.SCSIControllerTypeParaVirtualSCSI,
+			vmopv1.SCSIControllerTypeBusLogic,
+			vmopv1.SCSIControllerTypeLsiLogic,
+			vmopv1.SCSIControllerTypeLsiLogicSAS:
+			// Valid type
+		default:
+			continue
+		}
+		// Validate SharingMode
+		switch spec.SharingMode {
+		case vmopv1.VirtualControllerSharingModeNone,
+			vmopv1.VirtualControllerSharingModePhysical,
+			vmopv1.VirtualControllerSharingModeVirtual:
+			// Valid sharing mode
+		default:
+			continue
+		}
+		if ctrl := virtualcontroller.NewSCSIController(
+			ctx, spec, pciKey, &newDeviceKey); ctrl != nil {
+
+			userSpecControllers = append(userSpecControllers,
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.
+						VirtualDeviceConfigSpecOperationAdd,
+					Device: ctrl.(vimtypes.BaseVirtualDevice),
+				})
+		}
+	}
+
+	for _, spec := range hardware.SATAControllers {
+		if ctrl := virtualcontroller.NewSATAController(
+			spec, pciKey, &newDeviceKey); ctrl != nil {
+
+			userSpecControllers = append(userSpecControllers,
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.
+						VirtualDeviceConfigSpecOperationAdd,
+					Device: ctrl,
+				})
+		}
+	}
+
+	// For NVME controllers, only add if SharingMode is explicitly set.
+	for _, spec := range hardware.NVMEControllers {
+		if spec.SharingMode == "" {
+			continue
+		}
+		// Validate SharingMode
+		switch spec.SharingMode {
+		case vmopv1.VirtualControllerSharingModeNone,
+			vmopv1.VirtualControllerSharingModePhysical:
+			// Valid sharing mode
+		default:
+			continue
+		}
+		if ctrl := virtualcontroller.NewNVMEController(
+			ctx, spec, pciKey, &newDeviceKey); ctrl != nil {
+
+			userSpecControllers = append(userSpecControllers,
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.
+						VirtualDeviceConfigSpecOperationAdd,
+					Device: ctrl,
+				})
+		}
+	}
+
+	for _, spec := range hardware.IDEControllers {
+		if ctrl := virtualcontroller.NewIDEController(
+			spec, pciKey, &newDeviceKey); ctrl != nil {
+
+			userSpecControllers = append(userSpecControllers,
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.
+						VirtualDeviceConfigSpecOperationAdd,
+					Device: ctrl,
+				})
+		}
+	}
+
+	return vimtypes.VirtualMachineConfigSpec{DeviceChange: userSpecControllers}
+}
+
+// scsiControllerTypeToVMOPType converts a vSphere SCSI controller type to the
+// corresponding Kubernetes API SCSIControllerType. Returns an empty string if
+// the controller type is not recognized.
+func scsiControllerTypeToVMOPType(
+	dev vimtypes.BaseVirtualSCSIController) vmopv1.SCSIControllerType {
+
+	switch dev.(type) {
+	case *vimtypes.ParaVirtualSCSIController:
+		return vmopv1.SCSIControllerTypeParaVirtualSCSI
+	case *vimtypes.VirtualBusLogicController:
+		return vmopv1.SCSIControllerTypeBusLogic
+	case *vimtypes.VirtualLsiLogicController:
+		return vmopv1.SCSIControllerTypeLsiLogic
+	case *vimtypes.VirtualLsiLogicSASController:
+		return vmopv1.SCSIControllerTypeLsiLogicSAS
+	default:
+		return ""
+	}
 }

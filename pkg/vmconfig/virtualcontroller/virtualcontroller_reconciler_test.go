@@ -1075,3 +1075,260 @@ func assertSCSIControllerDeviceChange(
 	Expect(devSCSIController.GetVirtualSCSIController().BusNumber).To(Equal(busNumber), "bus number doesn't match")
 	Expect(devSCSIController.SharedBus).To(Equal(sharingMode), "sharing mode doesn't match")
 }
+
+var _ = Describe("NewIDEController", func() {
+	var (
+		spec             vmopv1.IDEControllerSpec
+		pciControllerKey int32
+		newDeviceKey     *int32
+	)
+
+	BeforeEach(func() {
+		spec = vmopv1.IDEControllerSpec{
+			BusNumber: 0,
+		}
+		pciControllerKey = 0
+		key := int32(-1)
+		newDeviceKey = &key
+	})
+
+	It("should return a new IDE controller", func() {
+		controller := virtualcontroller.NewIDEController(spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		Expect(controller.BusNumber).To(Equal(int32(0)))
+		Expect(controller.ControllerKey).To(Equal(pciControllerKey))
+		Expect(controller.Key).To(Equal(int32(-2)))
+		Expect(*newDeviceKey).To(Equal(int32(-2)))
+	})
+
+	It("should return nil when newDeviceKey is nil", func() {
+		controller := virtualcontroller.NewIDEController(spec, pciControllerKey, nil)
+		Expect(controller).To(BeNil())
+	})
+})
+
+var _ = Describe("NewNVMEController", func() {
+	var (
+		ctx              context.Context
+		spec             vmopv1.NVMEControllerSpec
+		pciControllerKey int32
+		newDeviceKey     *int32
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		spec = vmopv1.NVMEControllerSpec{
+			BusNumber:   0,
+			SharingMode: vmopv1.VirtualControllerSharingModeNone,
+		}
+		pciControllerKey = 0
+		key := int32(-1)
+		newDeviceKey = &key
+	})
+
+	It("should return a new NVME controller", func() {
+		controller := virtualcontroller.NewNVMEController(ctx, spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		Expect(controller.BusNumber).To(Equal(int32(0)))
+		Expect(controller.ControllerKey).To(Equal(pciControllerKey))
+		Expect(controller.Key).To(Equal(int32(-2)))
+		Expect(controller.SharedBus).To(Equal(string(vimtypes.VirtualNVMEControllerSharingNoSharing)))
+		Expect(*newDeviceKey).To(Equal(int32(-2)))
+	})
+
+	It("should return nil when newDeviceKey is nil", func() {
+		controller := virtualcontroller.NewNVMEController(ctx, spec, pciControllerKey, nil)
+		Expect(controller).To(BeNil())
+	})
+
+	It("should handle physical sharing mode", func() {
+		spec.SharingMode = vmopv1.VirtualControllerSharingModePhysical
+		controller := virtualcontroller.NewNVMEController(ctx, spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		Expect(controller.SharedBus).To(Equal(string(vimtypes.VirtualNVMEControllerSharingPhysicalSharing)))
+	})
+})
+
+var _ = Describe("NewSATAController", func() {
+	var (
+		spec             vmopv1.SATAControllerSpec
+		pciControllerKey int32
+		newDeviceKey     *int32
+	)
+
+	BeforeEach(func() {
+		spec = vmopv1.SATAControllerSpec{
+			BusNumber: 0,
+		}
+		pciControllerKey = 0
+		key := int32(-1)
+		newDeviceKey = &key
+	})
+
+	It("should return a new SATA controller", func() {
+		controller := virtualcontroller.NewSATAController(spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		Expect(controller.BusNumber).To(Equal(int32(0)))
+		Expect(controller.ControllerKey).To(Equal(pciControllerKey))
+		Expect(controller.Key).To(Equal(int32(-2)))
+		Expect(*newDeviceKey).To(Equal(int32(-2)))
+	})
+
+	It("should return nil when newDeviceKey is nil", func() {
+		controller := virtualcontroller.NewSATAController(spec, pciControllerKey, nil)
+		Expect(controller).To(BeNil())
+	})
+})
+
+var _ = Describe("NewSCSIController", func() {
+	var (
+		ctx              context.Context
+		spec             vmopv1.SCSIControllerSpec
+		pciControllerKey int32
+		newDeviceKey     *int32
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		spec = vmopv1.SCSIControllerSpec{
+			BusNumber:   0,
+			Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+			SharingMode: vmopv1.VirtualControllerSharingModeNone,
+		}
+		pciControllerKey = 0
+		key := int32(-1)
+		newDeviceKey = &key
+	})
+
+	It("should return a ParaVirtual SCSI controller", func() {
+		controller := virtualcontroller.NewSCSIController(ctx, spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		Expect(controller.GetVirtualSCSIController().BusNumber).To(Equal(int32(0)))
+		Expect(controller.GetVirtualSCSIController().ControllerKey).To(Equal(pciControllerKey))
+		Expect(controller.GetVirtualSCSIController().Key).To(Equal(int32(-2)))
+		Expect(controller.GetVirtualSCSIController().SharedBus).To(Equal(vimtypes.VirtualSCSISharingNoSharing))
+		Expect(*newDeviceKey).To(Equal(int32(-2)))
+		_, ok := controller.(*vimtypes.ParaVirtualSCSIController)
+		Expect(ok).To(BeTrue())
+	})
+
+	It("should return a BusLogic SCSI controller", func() {
+		spec.Type = vmopv1.SCSIControllerTypeBusLogic
+		controller := virtualcontroller.NewSCSIController(ctx, spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		_, ok := controller.(*vimtypes.VirtualBusLogicController)
+		Expect(ok).To(BeTrue())
+	})
+
+	It("should return a LsiLogic SCSI controller", func() {
+		spec.Type = vmopv1.SCSIControllerTypeLsiLogic
+		controller := virtualcontroller.NewSCSIController(ctx, spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		_, ok := controller.(*vimtypes.VirtualLsiLogicController)
+		Expect(ok).To(BeTrue())
+	})
+
+	It("should return a LsiLogicSAS SCSI controller", func() {
+		spec.Type = vmopv1.SCSIControllerTypeLsiLogicSAS
+		controller := virtualcontroller.NewSCSIController(ctx, spec, pciControllerKey, newDeviceKey)
+		Expect(controller).ToNot(BeNil())
+		_, ok := controller.(*vimtypes.VirtualLsiLogicSASController)
+		Expect(ok).To(BeTrue())
+	})
+
+	It("should return nil when newDeviceKey is nil", func() {
+		controller := virtualcontroller.NewSCSIController(ctx, spec, pciControllerKey, nil)
+		Expect(controller).To(BeNil())
+	})
+})
+
+var _ = Describe("SCSIControllerTypeMatch", func() {
+	It("should match ParaVirtualSCSI controller", func() {
+		controller := &vimtypes.ParaVirtualSCSIController{}
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeParaVirtualSCSI)).To(BeTrue())
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeBusLogic)).To(BeFalse())
+	})
+
+	It("should match BusLogic controller", func() {
+		controller := &vimtypes.VirtualBusLogicController{}
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeBusLogic)).To(BeTrue())
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeParaVirtualSCSI)).To(BeFalse())
+	})
+
+	It("should match LsiLogic controller", func() {
+		controller := &vimtypes.VirtualLsiLogicController{}
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeLsiLogic)).To(BeTrue())
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeLsiLogicSAS)).To(BeFalse())
+	})
+
+	It("should match LsiLogicSAS controller", func() {
+		controller := &vimtypes.VirtualLsiLogicSASController{}
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeLsiLogicSAS)).To(BeTrue())
+		Expect(virtualcontroller.SCSIControllerTypeMatch(controller, vmopv1.SCSIControllerTypeLsiLogic)).To(BeFalse())
+	})
+})
+
+var _ = Describe("InitDeviceKey", func() {
+	It("should initialize with the smallest key from device changes", func() {
+		var newDeviceKey int32 = 0
+		deviceChange := []vimtypes.BaseVirtualDeviceConfigSpec{
+			&vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				Device: &vimtypes.VirtualIDEController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -5,
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				Device: &vimtypes.VirtualIDEController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -3,
+						},
+					},
+				},
+			},
+		}
+		virtualcontroller.InitDeviceKey(&newDeviceKey, deviceChange)
+		Expect(newDeviceKey).To(Equal(int32(-5)))
+	})
+
+	It("should ignore remove operations", func() {
+		var newDeviceKey int32 = 0
+		deviceChange := []vimtypes.BaseVirtualDeviceConfigSpec{
+			&vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+				Device: &vimtypes.VirtualIDEController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -10,
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				Device: &vimtypes.VirtualIDEController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -3,
+						},
+					},
+				},
+			},
+		}
+		virtualcontroller.InitDeviceKey(&newDeviceKey, deviceChange)
+		Expect(newDeviceKey).To(Equal(int32(-3)))
+	})
+
+	It("should handle empty device changes", func() {
+		var newDeviceKey int32 = 0
+		deviceChange := []vimtypes.BaseVirtualDeviceConfigSpec{}
+		virtualcontroller.InitDeviceKey(&newDeviceKey, deviceChange)
+		Expect(newDeviceKey).To(Equal(int32(0)))
+	})
+})

@@ -7,7 +7,10 @@ package validation
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -15,6 +18,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -353,4 +357,159 @@ func (v validator) validateControllerSlots(
 	}
 
 	return allErrs
+}
+
+func (v validator) validateControllerConflictsOnCreate(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	vmClassConfigSpec, err := vsphere.GetVMClassConfigSpecFromClassName(
+		ctx,
+		v.client,
+		vm.Spec.ClassName,
+		vm.Namespace)
+	if err != nil {
+		// If VM Class is not found, skip verification for VM Class controllers
+		// and let the reconciler handle it.
+		if apierrors.IsNotFound(err) {
+			vmClassConfigSpec = vimtypes.VirtualMachineConfigSpec{}
+		} else {
+			allErrs = append(allErrs, field.Invalid(
+				field.NewPath("spec", "className"),
+				vm.Spec.ClassName,
+				fmt.Sprintf("failed to get VM Class: %v", err)))
+		}
+	}
+
+	vmImageConfigSpec, err := v.getVMImageConfigSpec(ctx, vm)
+	if err != nil {
+		// If VM Image is not found, skip verification for VM Image controllers
+		// and let the reconciler handle it.
+		if apierrors.IsNotFound(err) {
+			vmImageConfigSpec = vimtypes.VirtualMachineConfigSpec{}
+		} else {
+			allErrs = append(allErrs, field.Invalid(
+				field.NewPath("spec", "image"),
+				vm.Spec.Image,
+				fmt.Sprintf("failed to get VM Image config spec: %v", err)))
+		}
+	}
+
+	dstKeyToSrcKey, controllersToRemove, err :=
+		pkgutil.ValidateStorageControllerCompatibility(
+			vmClassConfigSpec,
+			vmImageConfigSpec)
+
+	if err != nil {
+
+		ctx.Logger.Info(pkgutil.ControllerConflictVMClassImage,
+			"error",
+			err.Error(),
+			"vmClassDeviceChanges",
+			pkgutil.SafeDeviceChangesToString(vmClassConfigSpec.DeviceChange),
+			"vmImageDeviceChanges",
+			pkgutil.SafeDeviceChangesToString(vmImageConfigSpec.DeviceChange),
+		)
+
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "hardware"),
+			nil,
+			fmt.Sprintf("%s: %v", pkgutil.ControllerConflictVMClassImage, err),
+		))
+		return allErrs
+	}
+
+	pkgutil.MergeStorageControllersAndDisks(
+		&vmClassConfigSpec,
+		vmImageConfigSpec,
+		dstKeyToSrcKey,
+		controllersToRemove,
+		"", // storagePolicyID not needed for validation
+	)
+
+	specControllersConfigSpec := pkgutil.CreateUserStorageControllersConfigSpec(
+		ctx,
+		vm,
+		vmClassConfigSpec,
+	)
+
+	if _, _, err := pkgutil.ValidateStorageControllerCompatibility(
+		specControllersConfigSpec,
+		vmClassConfigSpec); err != nil {
+
+		ctx.Logger.Info(pkgutil.ControllerConflictVMClassImageUser,
+			"error",
+			err.Error(),
+			"vmClassImageConfigSpec",
+			pkgutil.SafeDeviceChangesToString(vmClassConfigSpec.DeviceChange),
+			"specControllersConfigSpec",
+			pkgutil.SafeDeviceChangesToString(specControllersConfigSpec.DeviceChange),
+		)
+
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "hardware"),
+			nil,
+			fmt.Sprintf("%s: %v", pkgutil.ControllerConflictVMClassImageUser, err),
+		))
+		return allErrs
+	}
+
+	return allErrs
+}
+
+func (v validator) getVMImageConfigSpec(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) (
+	vimtypes.VirtualMachineConfigSpec, error) {
+
+	if vmopv1util.IsImagelessVM(*vm) {
+		return vimtypes.VirtualMachineConfigSpec{}, nil
+	}
+
+	if vm.Spec.Image == nil {
+		return vimtypes.VirtualMachineConfigSpec{},
+			fmt.Errorf("VM is not imageless but spec.image is nil")
+	}
+
+	img, err := vmopv1util.GetImage(ctx, v.client, *vm.Spec.Image, vm.Namespace)
+	if err != nil {
+		return vimtypes.VirtualMachineConfigSpec{},
+			fmt.Errorf("failed to get VM Image: %w", err)
+	}
+
+	var (
+		imageType   = strings.ToLower(img.Status.Type)
+		itemID      = img.Status.ProviderItemID
+		itemVersion = img.Status.ProviderContentVersion
+	)
+
+	// Only handle OVF images in webhook context.
+	// VM-backed images will be validated in the reconciler.
+	if imageType != "ovf" {
+		return vimtypes.VirtualMachineConfigSpec{}, nil
+	}
+
+	if itemID == "" {
+		return vimtypes.VirtualMachineConfigSpec{},
+			fmt.Errorf("empty image provider item id")
+	}
+	if itemVersion == "" {
+		return vimtypes.VirtualMachineConfigSpec{},
+			fmt.Errorf("empty image provider content version")
+	}
+
+	vmiCache, err := vsphere.GetVirtualMachineImageCache(
+		ctx,
+		v.client,
+		itemID,
+		itemVersion,
+		imageType,
+		pkgcfg.FromContext(ctx).PodNamespace)
+	if err != nil {
+		return vimtypes.VirtualMachineConfigSpec{}, err
+	}
+
+	return vsphere.GetConfigSpecFromOVFCache(ctx, v.client, vmiCache)
 }

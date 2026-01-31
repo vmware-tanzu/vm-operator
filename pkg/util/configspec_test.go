@@ -18,6 +18,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -1299,3 +1300,1445 @@ var _ = DescribeTable(
 		},
 	),
 )
+
+var _ = Describe("SafeDeviceChangesToString", func() {
+	When("deviceChanges is empty", func() {
+		It("returns empty array string", func() {
+			result := pkgutil.SafeDeviceChangesToString([]vimtypes.BaseVirtualDeviceConfigSpec{})
+			Expect(result).To(Equal("[]"))
+		})
+	})
+
+	When("deviceChanges is nil", func() {
+		It("returns empty array string", func() {
+			result := pkgutil.SafeDeviceChangesToString(nil)
+			Expect(result).To(Equal("[]"))
+		})
+	})
+
+	When("deviceChanges has controllers", func() {
+		It("returns string representation of device changes", func() {
+			deviceChanges := []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -2,
+							},
+							BusNumber: 0,
+						},
+					},
+				},
+			}
+			result := pkgutil.SafeDeviceChangesToString(deviceChanges)
+			Expect(result).To(Equal(`{"_typeName":"VirtualMachineConfigSpec","deviceChange":[{"_typeName":"VirtualDeviceConfigSpec","operation":"add","device":{"_typeName":"ParaVirtualSCSIController","key":-1,"busNumber":0,"sharedBus":"noSharing"}},{"_typeName":"VirtualDeviceConfigSpec","operation":"add","device":{"_typeName":"VirtualIDEController","key":-2,"busNumber":0}}]}`))
+		})
+	})
+})
+
+var _ = Describe("MergeStorageControllersAndDisks", func() {
+	var (
+		dst *vimtypes.VirtualMachineConfigSpec
+		src vimtypes.VirtualMachineConfigSpec
+	)
+
+	BeforeEach(func() {
+		dst = &vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{},
+		}
+		src = vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{},
+		}
+	})
+
+	When("both src and dst are empty", func() {
+		It("succeeds with no changes", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+			Expect(dst.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("src has controllers and disks", func() {
+		BeforeEach(func() {
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+								ThinProvisioned:              ptr.To(true),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+		})
+
+		It("copies controllers and disks to dst", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+			Expect(dst.DeviceChange).To(HaveLen(2))
+		})
+
+		It("applies storage policy to disks", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "test-policy-id")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(dst.DeviceChange).To(HaveLen(2))
+
+			diskSpec := dst.DeviceChange[1].GetVirtualDeviceConfigSpec()
+			Expect(diskSpec).ToNot(BeNil())
+			Expect(diskSpec.Profile).To(HaveLen(1))
+			profileSpec := diskSpec.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
+			Expect(profileSpec.ProfileId).To(Equal("test-policy-id"))
+		})
+	})
+
+	When("dst has a controller with same bus number and type as src", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+		})
+
+		It("replaces dst controller with src controller", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+			// Should have 2 items: controller and disk from src
+			Expect(dst.DeviceChange).To(HaveLen(2))
+			// Find the controller
+			var controllerSpec *vimtypes.VirtualDeviceConfigSpec
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					if _, ok := spec.Device.(vimtypes.BaseVirtualSCSIController); ok {
+						controllerSpec = spec
+						break
+					}
+				}
+			}
+			Expect(controllerSpec).ToNot(BeNil())
+			Expect(controllerSpec.Device.GetVirtualDevice().Key).To(Equal(int32(-100)))
+		})
+	})
+
+	When("dst has SCSI controller with different SharedBus than src", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "physicalSharing",
+						},
+					},
+				},
+			}
+		})
+
+		It("returns error for SharedBus mismatch", func() {
+			_, _, err := pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("SCSI controller at bus 0: sharing mode conflict (\"noSharing\" vs \"physicalSharing\")"))
+		})
+	})
+
+	When("dst has SCSI controller with different subtype than src", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualBusLogicController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+		})
+
+		It("returns error for type conflict", func() {
+			_, _, err := pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("SCSI controller at bus 0: type conflict (\"ParaVirtual\" vs \"BusLogic\")"))
+		})
+	})
+
+	When("dst has NVME controller with different SharedBus than src", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualNVMEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -1,
+							},
+							BusNumber: 0,
+						},
+						SharedBus: "noSharing",
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualNVMEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -100,
+							},
+							BusNumber: 0,
+						},
+						SharedBus: "physicalSharing",
+					},
+				},
+			}
+		})
+
+		It("returns error for SharedBus mismatch", func() {
+			_, _, err := pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("NVME controller at bus 0: sharing mode conflict (\"noSharing\" vs \"physicalSharing\")"))
+		})
+	})
+
+	When("dst has disk with controller key that needs remapping", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+								ThinProvisioned:              ptr.To(true),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+		})
+
+		It("remaps disk controller key to src controller key", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+
+			// Find the disk in dst
+			var disk *vimtypes.VirtualDisk
+			var diskSpec *vimtypes.VirtualDeviceConfigSpec
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					if d, ok := spec.Device.(*vimtypes.VirtualDisk); ok {
+						disk = d
+						diskSpec = spec
+						break
+					}
+				}
+			}
+			Expect(disk).ToNot(BeNil())
+			Expect(disk.ControllerKey).To(Equal(int32(-100)))
+			Expect(diskSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
+			Expect(diskSpec.FileOperation).To(Equal(vimtypes.VirtualDeviceConfigSpecFileOperationCreate))
+		})
+	})
+
+	When("src has all controller types", func() {
+		BeforeEach(func() {
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualAHCIController{
+						VirtualSATAController: vimtypes.VirtualSATAController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -101,
+								},
+								BusNumber: 0,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -101,
+							Key:           -201,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 20 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualNVMEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -102,
+							},
+							BusNumber: 0,
+						},
+						SharedBus: "noSharing",
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -102,
+							Key:           -202,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 30 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -103,
+							},
+							BusNumber: 0,
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -103,
+							Key:           -203,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 40 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+		})
+
+		It("copies all controller types", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+			// Should have 8 items: 4 controllers + 4 disks
+			Expect(dst.DeviceChange).To(HaveLen(8))
+			// Verify all controller types are present
+			var controllers []vimtypes.BaseVirtualDevice
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					switch spec.Device.(type) {
+					case vimtypes.BaseVirtualSCSIController,
+						vimtypes.BaseVirtualSATAController,
+						*vimtypes.VirtualIDEController,
+						*vimtypes.VirtualNVMEController:
+						controllers = append(controllers, spec.Device)
+					}
+				}
+			}
+			Expect(controllers).To(HaveLen(4))
+		})
+	})
+
+	When("dst has multiple disks on different controllers that need remapping", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -2,
+								},
+								BusNumber: 1,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -2,
+							Key:           -201,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 20 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -200,
+								},
+								BusNumber: 1,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+		})
+
+		It("remaps all disk controller keys correctly", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+
+			var disks []*vimtypes.VirtualDisk
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					if d, ok := spec.Device.(*vimtypes.VirtualDisk); ok {
+						disks = append(disks, d)
+					}
+				}
+			}
+			Expect(disks).To(HaveLen(2))
+			// First disk should be remapped to -100 (bus 0 controller)
+			Expect(disks[0].ControllerKey).To(Equal(int32(-100)))
+			// Second disk should be remapped to -200 (bus 1 controller)
+			Expect(disks[1].ControllerKey).To(Equal(int32(-200)))
+		})
+	})
+
+	When("dst has disk with non-Add operation", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+		})
+
+		It("does not remap disk controller key for non-Add operations", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+
+			var disk *vimtypes.VirtualDisk
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					if d, ok := spec.Device.(*vimtypes.VirtualDisk); ok {
+						disk = d
+						break
+					}
+				}
+			}
+			Expect(disk).ToNot(BeNil())
+			// ControllerKey should remain -1 because operation is Edit, not Add
+			Expect(disk.ControllerKey).To(Equal(int32(-1)))
+		})
+	})
+
+	When("dst has controllers not present in src and src has no disks", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -2,
+								},
+								BusNumber: 1,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+		})
+
+		It("preserves controllers in dst that are not duplicated in src, even when src has no disks", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+
+			var controllers []vimtypes.BaseVirtualSCSIController
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					if ctrl, ok := spec.Device.(vimtypes.BaseVirtualSCSIController); ok {
+						controllers = append(controllers, ctrl)
+					}
+				}
+			}
+			// Bus 0 controller from dst is removed (duplicated in src).
+			// Bus 0 controller from src is added then removed (no disks in src).
+			// Bus 1 controller from dst is preserved (not duplicated in src).
+			Expect(controllers).To(HaveLen(1))
+			ctrl := controllers[0]
+			Expect(ctrl.GetVirtualSCSIController().BusNumber).To(Equal(int32(1)))
+			Expect(ctrl.GetVirtualSCSIController().GetVirtualController().GetVirtualDevice().Key).To(Equal(int32(-2)))
+		})
+	})
+
+	When("dst has multiple disks on the same controller", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -201,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 20 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -202,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 30 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+			}
+		})
+
+		It("remaps all disks to the new controller key", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+
+			var disks []*vimtypes.VirtualDisk
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					if d, ok := spec.Device.(*vimtypes.VirtualDisk); ok {
+						disks = append(disks, d)
+					}
+				}
+			}
+			Expect(disks).To(HaveLen(3))
+			// All disks should be remapped to -100
+			for _, disk := range disks {
+				Expect(disk.ControllerKey).To(Equal(int32(-100)))
+			}
+		})
+	})
+
+	When("complex scenario with multiple controllers and disks", func() {
+		BeforeEach(func() {
+			dst.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -2,
+								},
+								BusNumber: 1,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -1,
+							Key:           -201,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 20 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -2,
+							Key:           -202,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 30 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+			src.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+								BusNumber: 0,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -200,
+								},
+								BusNumber: 1,
+							},
+							SharedBus: "noSharing",
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -300,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 40 * 1024 * 1024 * 1024,
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -200,
+							Key:           -301,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+							},
+						},
+						CapacityInBytes: 50 * 1024 * 1024 * 1024,
+					},
+				},
+			}
+		})
+
+		It("merges multiple controllers and disks from both dst and src, remaps disk controller keys, and preserves all disks", func() {
+			dstKeyToSrcKey, controllersToRemove, err :=
+				pkgutil.ValidateStorageControllerCompatibility(*dst, src)
+			Expect(err).ToNot(HaveOccurred())
+			pkgutil.MergeStorageControllersAndDisks(
+				dst, src, dstKeyToSrcKey, controllersToRemove, "")
+
+			var controllers []vimtypes.BaseVirtualSCSIController
+			var disks []*vimtypes.VirtualDisk
+			for _, devChange := range dst.DeviceChange {
+				spec := devChange.GetVirtualDeviceConfigSpec()
+				if spec != nil && spec.Device != nil {
+					if ctrl, ok := spec.Device.(vimtypes.BaseVirtualSCSIController); ok {
+						controllers = append(controllers, ctrl)
+					}
+					if d, ok := spec.Device.(*vimtypes.VirtualDisk); ok {
+						disks = append(disks, d)
+					}
+				}
+			}
+
+			// Should have 2 controllers (both from src, replacing dst controllers)
+			// Both controllers have disks in src, so both should be kept
+			Expect(controllers).To(HaveLen(2), "Should have 2 controllers from src")
+			// Should have 5 disks total (3 from dst + 2 from src)
+			Expect(disks).To(HaveLen(5), "Should have 5 disks total")
+
+			// Find controllers by bus number
+			var bus0Ctrl, bus1Ctrl vimtypes.BaseVirtualSCSIController
+			for _, ctrl := range controllers {
+				if ctrl.GetVirtualSCSIController().BusNumber == 0 {
+					bus0Ctrl = ctrl
+				} else if ctrl.GetVirtualSCSIController().BusNumber == 1 {
+					bus1Ctrl = ctrl
+				}
+			}
+			Expect(bus0Ctrl).ToNot(BeNil(), "Should have bus 0 controller")
+			Expect(bus1Ctrl).ToNot(BeNil(), "Should have bus 1 controller")
+			Expect(bus0Ctrl.GetVirtualSCSIController().GetVirtualController().GetVirtualDevice().Key).To(Equal(int32(-100)))
+			Expect(bus1Ctrl.GetVirtualSCSIController().GetVirtualController().GetVirtualDevice().Key).To(Equal(int32(-200)))
+
+			// Verify disk remapping: disks on bus 0 should point to -100, disks on bus 1 should point to -200
+			for _, disk := range disks {
+				switch disk.Key {
+				case -200, -201:
+					Expect(disk.ControllerKey).To(Equal(int32(-100)), "Disks on bus 0 should be remapped to controller -100")
+				case -202:
+					Expect(disk.ControllerKey).To(Equal(int32(-200)), "Disk on bus 1 should be remapped to controller -200")
+				case -300:
+					Expect(disk.ControllerKey).To(Equal(int32(-100)), "Disk from src should have controller -100")
+				case -301:
+					Expect(disk.ControllerKey).To(Equal(int32(-200)), "Disk from src should have controller -200")
+				}
+			}
+		})
+	})
+})
+
+var _ = Describe("CreateUserStorageControllersConfigSpec", func() {
+	var (
+		ctx        context.Context
+		vm         *vmopv1.VirtualMachine
+		configSpec vimtypes.VirtualMachineConfigSpec
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContext()
+		vm = &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Hardware: &vmopv1.VirtualMachineHardwareSpec{},
+			},
+		}
+		configSpec = vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{},
+		}
+	})
+
+	When("vm is nil", func() {
+		It("returns empty config spec", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, nil, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("vm.Spec.Hardware is nil", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware = nil
+		})
+
+		It("returns empty config spec", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("SCSI controller has Type but no SharingMode", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber: 0,
+					Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
+				},
+			}
+		})
+
+		It("skips the controller", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("SCSI controller has SharingMode but no Type", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber:   0,
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+		})
+
+		It("skips the controller", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("SCSI controller has invalid Type", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber:   0,
+					Type:        "InvalidType",
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+		})
+
+		It("skips the controller", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("SCSI controller has invalid SharingMode", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber:   0,
+					Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+					SharingMode: "InvalidSharingMode",
+				},
+			}
+		})
+
+		It("skips the controller", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("SCSI controller is fully defined", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber:   0,
+					Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+		})
+
+		It("creates controller config spec", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(HaveLen(1))
+			spec := result.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			Expect(spec).ToNot(BeNil())
+			Expect(spec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
+			_, ok := spec.Device.(vimtypes.BaseVirtualSCSIController)
+			Expect(ok).To(BeTrue())
+		})
+	})
+
+	When("NVME controller has no SharingMode", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
+				{
+					BusNumber: 0,
+				},
+			}
+		})
+
+		It("skips the controller", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("NVME controller has invalid SharingMode", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
+				{
+					BusNumber:   0,
+					SharingMode: "InvalidSharingMode",
+				},
+			}
+		})
+
+		It("skips the controller", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(BeEmpty())
+		})
+	})
+
+	When("NVME controller is fully defined", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
+				{
+					BusNumber:   0,
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+		})
+
+		It("creates controller config spec", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(HaveLen(1))
+			spec := result.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			Expect(spec).ToNot(BeNil())
+			Expect(spec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
+			_, ok := spec.Device.(*vimtypes.VirtualNVMEController)
+			Expect(ok).To(BeTrue())
+		})
+	})
+
+	When("SATA controller is defined", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+				{
+					BusNumber: 0,
+				},
+			}
+		})
+
+		It("creates controller config spec", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(HaveLen(1))
+			spec := result.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			Expect(spec).ToNot(BeNil())
+			Expect(spec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
+			_, ok := spec.Device.(*vimtypes.VirtualAHCIController)
+			Expect(ok).To(BeTrue())
+		})
+	})
+
+	When("IDE controller is defined", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+				{
+					BusNumber: 0,
+				},
+			}
+		})
+
+		It("creates controller config spec", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(HaveLen(1))
+			spec := result.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			Expect(spec).ToNot(BeNil())
+			Expect(spec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
+			_, ok := spec.Device.(*vimtypes.VirtualIDEController)
+			Expect(ok).To(BeTrue())
+		})
+	})
+
+	When("all controller types are defined", func() {
+		BeforeEach(func() {
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber:   0,
+					Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+			vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+				{
+					BusNumber: 0,
+				},
+			}
+			vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
+				{
+					BusNumber:   0,
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+			vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+				{
+					BusNumber: 0,
+				},
+			}
+		})
+
+		It("creates config specs for all controllers", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(HaveLen(4))
+		})
+	})
+
+	When("configSpec has PCI controller", func() {
+		BeforeEach(func() {
+			configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualPCIController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 100,
+							},
+						},
+					},
+				},
+			}
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber:   0,
+					Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+		})
+
+		It("uses PCI controller key from configSpec", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(HaveLen(1))
+			spec := result.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			Expect(spec.Device.GetVirtualDevice().ControllerKey).To(Equal(int32(100)))
+		})
+	})
+
+	When("configSpec has existing device changes", func() {
+		BeforeEach(func() {
+			configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualE1000{
+						VirtualEthernetCard: vimtypes.VirtualEthernetCard{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -1,
+							},
+						},
+					},
+				},
+			}
+			vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+				{
+					BusNumber:   0,
+					Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+					SharingMode: vmopv1.VirtualControllerSharingModeNone,
+				},
+			}
+		})
+
+		It("initializes device key from existing changes", func() {
+			result := pkgutil.CreateUserStorageControllersConfigSpec(ctx, vm, configSpec)
+			Expect(result.DeviceChange).To(HaveLen(1))
+			spec := result.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			Expect(spec.Device.GetVirtualDevice().Key).To(Equal(int32(-2)))
+		})
+	})
+})

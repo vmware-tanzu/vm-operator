@@ -12,6 +12,7 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -1478,6 +1479,253 @@ func vmUtilTests() {
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-vapp-config-config-map"))
 				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("ConfigMap")))
+			})
+		})
+	})
+
+	Context("GetVMClassConfigSpecFromClassName", func() {
+		var (
+			vmClass *vmopv1.VirtualMachineClass
+		)
+
+		BeforeEach(func() {
+			vmClass = builder.DummyVirtualMachineClass("test-vm-class")
+			vmClass.Namespace = vmCtx.VM.Namespace
+		})
+
+		When("className is empty", func() {
+			It("returns empty config spec", func() {
+				configSpec, err := vsphere.GetVMClassConfigSpecFromClassName(
+					vmCtx, k8sClient, "", vmCtx.VM.Namespace)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
+			})
+		})
+
+		When("VM Class does not exist", func() {
+			It("returns an error", func() {
+				configSpec, err := vsphere.GetVMClassConfigSpecFromClassName(
+					vmCtx, k8sClient, "non-existent-class", vmCtx.VM.Namespace)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to get VM Class"))
+				Expect(configSpec).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
+			})
+		})
+
+		When("VM Class exists with ConfigSpec", func() {
+			BeforeEach(func() {
+				configSpecJSON, err := util.MarshalConfigSpecToJSON(vimtypes.VirtualMachineConfigSpec{
+					Name:     "test-vm",
+					NumCPUs:  2,
+					MemoryMB: 2048,
+				})
+				Expect(err).ToNot(HaveOccurred())
+				vmClass.Spec.ConfigSpec = configSpecJSON
+				initObjects = append(initObjects, vmClass)
+			})
+
+			It("returns config spec from ConfigSpec field", func() {
+				configSpec, err := vsphere.GetVMClassConfigSpecFromClassName(
+					vmCtx, k8sClient, vmClass.Name, vmCtx.VM.Namespace)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec.Name).To(Equal("test-vm"))
+				Expect(configSpec.NumCPUs).To(Equal(int32(2)))
+				Expect(configSpec.MemoryMB).To(Equal(int64(2048)))
+			})
+		})
+
+		When("VM Class exists without ConfigSpec", func() {
+			BeforeEach(func() {
+				vmClass.Spec.ConfigSpec = nil
+				vmClass.Spec.Hardware = vmopv1.VirtualMachineClassHardware{
+					Cpus:   int64(4),
+					Memory: resource.MustParse("4Gi"),
+				}
+				initObjects = append(initObjects, vmClass)
+			})
+
+			It("returns config spec from hardware devices", func() {
+				configSpec, err := vsphere.GetVMClassConfigSpecFromClassName(
+					vmCtx, k8sClient, vmClass.Name, vmCtx.VM.Namespace)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec).ToNot(BeNil())
+			})
+		})
+	})
+
+	Context("GetConfigSpecFromOVFCache", func() {
+		var (
+			vmiCache     *vmopv1.VirtualMachineImageCache
+			ovfConfigMap *corev1.ConfigMap
+		)
+
+		BeforeEach(func() {
+			vmiCache = &vmopv1.VirtualMachineImageCache{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-vmi-cache",
+					Namespace: vmCtx.VM.Namespace,
+				},
+				Status: vmopv1.VirtualMachineImageCacheStatus{
+					OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+						ConfigMapName: "test-ovf-configmap",
+					},
+				},
+			}
+
+			ovfConfigMap = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ovf-configmap",
+					Namespace: vmCtx.VM.Namespace,
+				},
+				Data: map[string]string{
+					"value": `virtualSystem:
+  id: vm
+  name: test-vm
+  virtualHardwareSection:
+  - item:
+    - allocationUnits: hertz * 10^6
+      description: Number of Virtual CPUs
+      elementName: 2 virtual CPU(s)
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 2
+    - allocationUnits: byte * 2^20
+      description: Memory Size
+      elementName: 2048MB of memory
+      instanceID: "2"
+      resourceType: 4
+      virtualQuantity: 2048
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemIdentifier: test-vm
+      virtualSystemType: vmx-13`,
+				},
+			}
+		})
+
+		When("OVF ConfigMap does not exist", func() {
+			It("returns an error", func() {
+				configSpec, err := vsphere.GetConfigSpecFromOVFCache(
+					vmCtx, k8sClient, *vmiCache)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to get ovf configmap"))
+				Expect(configSpec).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
+			})
+		})
+
+		When("OVF ConfigMap exists with valid data", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, ovfConfigMap)
+			})
+
+			It("returns config spec from OVF", func() {
+				configSpec, err := vsphere.GetConfigSpecFromOVFCache(
+					vmCtx, k8sClient, *vmiCache)
+				// Verify the function successfully parses the OVF ConfigMap
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec).ToNot(BeNil())
+			})
+		})
+	})
+
+	Context("GetVirtualMachineImageCache", func() {
+		var (
+			vmiCache     *vmopv1.VirtualMachineImageCache
+			itemID       string
+			itemVersion  string
+			imageType    string
+			podNamespace string
+		)
+
+		BeforeEach(func() {
+			itemID = "test-item-id"
+			itemVersion = "1.0.0"
+			imageType = "ovf"
+			podNamespace = vmCtx.VM.Namespace
+
+			vmiCache = &vmopv1.VirtualMachineImageCache{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      util.VMIName(itemID),
+					Namespace: podNamespace,
+				},
+				Status: vmopv1.VirtualMachineImageCacheStatus{
+					OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+						ProviderVersion: itemVersion,
+					},
+				},
+			}
+		})
+
+		When("VirtualMachineImageCache does not exist", func() {
+			It("returns an error", func() {
+				cache, err := vsphere.GetVirtualMachineImageCache(
+					vmCtx, k8sClient, itemID, itemVersion, imageType, podNamespace)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to get vmi cache object"))
+				Expect(cache).To(Equal(vmopv1.VirtualMachineImageCache{}))
+			})
+		})
+
+		When("VirtualMachineImageCache exists with hardware ready", func() {
+			BeforeEach(func() {
+				conditions.MarkTrue(vmiCache, vmopv1.VirtualMachineImageCacheConditionHardwareReady)
+				initObjects = append(initObjects, vmiCache)
+			})
+
+			It("returns the cache", func() {
+				cache, err := vsphere.GetVirtualMachineImageCache(
+					vmCtx, k8sClient, itemID, itemVersion, imageType, podNamespace)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(cache.Name).To(Equal(util.VMIName(itemID)))
+			})
+		})
+
+		When("VirtualMachineImageCache has hardware not ready condition", func() {
+			BeforeEach(func() {
+				conditions.MarkFalse(vmiCache,
+					vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+					"NotReady",
+					"hardware not ready")
+				initObjects = append(initObjects, vmiCache)
+			})
+
+			It("returns an error", func() {
+				cache, err := vsphere.GetVirtualMachineImageCache(
+					vmCtx, k8sClient, itemID, itemVersion, imageType, podNamespace)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to get hardware"))
+				Expect(cache).To(Equal(vmopv1.VirtualMachineImageCache{}))
+			})
+		})
+
+		When("VirtualMachineImageCache has no hardware ready condition", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, vmiCache)
+			})
+
+			It("returns an error", func() {
+				cache, err := vsphere.GetVirtualMachineImageCache(
+					vmCtx, k8sClient, itemID, itemVersion, imageType, podNamespace)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("hardware not ready"))
+				Expect(cache).To(Equal(vmopv1.VirtualMachineImageCache{}))
+			})
+		})
+
+		When("OVF image type with mismatched version", func() {
+			BeforeEach(func() {
+				conditions.MarkTrue(vmiCache, vmopv1.VirtualMachineImageCacheConditionHardwareReady)
+				vmiCache.Status.OVF.ProviderVersion = "2.0.0" // Different version
+				initObjects = append(initObjects, vmiCache)
+			})
+
+			It("returns an error", func() {
+				cache, err := vsphere.GetVirtualMachineImageCache(
+					vmCtx, k8sClient, itemID, itemVersion, imageType, podNamespace)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("hardware not ready"))
+				Expect(cache).To(Equal(vmopv1.VirtualMachineImageCache{}))
 			})
 		})
 	})

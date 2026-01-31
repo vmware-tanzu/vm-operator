@@ -19,22 +19,26 @@ var (
 	errInvalidSharingMode = errors.New("invalid sharing mode")
 )
 
-// newIDEController returns a new IDE controller.
+// NewIDEController returns a new IDE controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newIDEController(
+func NewIDEController(
 	spec vmopv1.IDEControllerSpec,
-	pciController *vimtypes.VirtualPCIController,
+	pciControllerKey int32,
 	newDeviceKey *int32,
 ) *vimtypes.VirtualIDEController {
+
+	if newDeviceKey == nil {
+		return nil
+	}
 
 	*newDeviceKey--
 
 	return &vimtypes.VirtualIDEController{
 		VirtualController: vimtypes.VirtualController{
 			VirtualDevice: vimtypes.VirtualDevice{
-				ControllerKey: pciController.Key,
+				ControllerKey: pciControllerKey,
 				Key:           *newDeviceKey,
 			},
 			BusNumber: spec.BusNumber,
@@ -52,23 +56,27 @@ func validateNVMEController(spec vmopv1.NVMEControllerSpec) error {
 	}
 }
 
-// newNVMEController returns a new NVME controller.
+// NewNVMEController returns a new NVME controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newNVMEController(
+func NewNVMEController(
 	ctx context.Context,
 	spec vmopv1.NVMEControllerSpec,
-	pciController *vimtypes.VirtualPCIController,
+	pciControllerKey int32,
 	newDeviceKey *int32,
 ) *vimtypes.VirtualNVMEController {
+
+	if newDeviceKey == nil {
+		return nil
+	}
 
 	*newDeviceKey--
 
 	controller := &vimtypes.VirtualNVMEController{
 		VirtualController: vimtypes.VirtualController{
 			VirtualDevice: vimtypes.VirtualDevice{
-				ControllerKey: pciController.Key,
+				ControllerKey: pciControllerKey,
 				Key:           *newDeviceKey,
 			},
 			BusNumber: spec.BusNumber,
@@ -79,15 +87,19 @@ func newNVMEController(
 	return controller
 }
 
-// newSATAController returns a new SATA controller.
+// NewSATAController returns a new SATA controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newSATAController(
+func NewSATAController(
 	spec vmopv1.SATAControllerSpec,
-	pciController *vimtypes.VirtualPCIController,
+	pciControllerKey int32,
 	newDeviceKey *int32,
 ) *vimtypes.VirtualAHCIController {
+
+	if newDeviceKey == nil {
+		return nil
+	}
 
 	*newDeviceKey--
 
@@ -95,7 +107,7 @@ func newSATAController(
 		VirtualSATAController: vimtypes.VirtualSATAController{
 			VirtualController: vimtypes.VirtualController{
 				VirtualDevice: vimtypes.VirtualDevice{
-					ControllerKey: pciController.Key,
+					ControllerKey: pciControllerKey,
 					Key:           *newDeviceKey,
 				},
 				BusNumber: spec.BusNumber,
@@ -106,16 +118,20 @@ func newSATAController(
 	return controller
 }
 
-// newSCSIController returns a new SCSI controller.
+// NewSCSIController returns a new SCSI controller.
 // It assigns the current value of newDeviceKey to the controller, then
 // decrements newDeviceKey to ensure the next assigned controller gets a
 // unique temporary key.
-func newSCSIController(
+func NewSCSIController(
 	ctx context.Context,
 	spec vmopv1.SCSIControllerSpec,
-	pciController *vimtypes.VirtualPCIController,
+	pciControllerKey int32,
 	newDeviceKey *int32,
 ) vimtypes.BaseVirtualSCSIController {
+
+	if newDeviceKey == nil {
+		return nil
+	}
 
 	*newDeviceKey--
 
@@ -126,7 +142,7 @@ func newSCSIController(
 			VirtualSCSIController: vimtypes.VirtualSCSIController{
 				VirtualController: vimtypes.VirtualController{
 					VirtualDevice: vimtypes.VirtualDevice{
-						ControllerKey: pciController.Key,
+						ControllerKey: pciControllerKey,
 						Key:           *newDeviceKey,
 					},
 					BusNumber: spec.BusNumber,
@@ -139,7 +155,7 @@ func newSCSIController(
 			VirtualSCSIController: vimtypes.VirtualSCSIController{
 				VirtualController: vimtypes.VirtualController{
 					VirtualDevice: vimtypes.VirtualDevice{
-						ControllerKey: pciController.Key,
+						ControllerKey: pciControllerKey,
 						Key:           *newDeviceKey,
 					},
 					BusNumber: spec.BusNumber,
@@ -152,7 +168,7 @@ func newSCSIController(
 			VirtualSCSIController: vimtypes.VirtualSCSIController{
 				VirtualController: vimtypes.VirtualController{
 					VirtualDevice: vimtypes.VirtualDevice{
-						ControllerKey: pciController.Key,
+						ControllerKey: pciControllerKey,
 						Key:           *newDeviceKey,
 					},
 					BusNumber: spec.BusNumber,
@@ -165,7 +181,7 @@ func newSCSIController(
 			VirtualSCSIController: vimtypes.VirtualSCSIController{
 				VirtualController: vimtypes.VirtualController{
 					VirtualDevice: vimtypes.VirtualDevice{
-						ControllerKey: pciController.Key,
+						ControllerKey: pciControllerKey,
 						Key:           *newDeviceKey,
 					},
 					BusNumber: spec.BusNumber,
@@ -199,8 +215,8 @@ func sharingModeToSCSIVimTypes(
 	}
 }
 
-// sharingModeToNVMEControllerSharing converts the vmopv1 sharing mode to the
-// vimtypes VirtualNVMEControllerSharing enum.
+// sharingModeToNVMEControllerSharing converts the vmopv1 sharing mode to
+// the vimtypes VirtualNVMEControllerSharing enum.
 func sharingModeToNVMEControllerSharing(
 	ctx context.Context,
 	sharingMode vmopv1.VirtualControllerSharingMode,

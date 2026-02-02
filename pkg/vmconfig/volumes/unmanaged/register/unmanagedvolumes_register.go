@@ -327,6 +327,9 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 	var (
 		pbmRefToDeviceKey = map[string]int32{}
 		pbmRefs           = make([]pbmtypes.PbmServerObjectRef, len(info.Disks))
+		// Track disk indices that need their storage class determined from
+		// their actual storage profile (i.e., disks without an existing PVC).
+		disksNeedingStorageClassFromProfile = map[int]struct{}{}
 	)
 
 	// Get the storage profile IDs used by the VM and disks (if any).
@@ -344,7 +347,9 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 			}
 		}
 		if key.Name == "" {
-			info.Disks[i].StorageClass = vm.Spec.StorageClass
+			// No PVC exists for this disk. We'll determine the storage class
+			// from the disk's actual storage profile after querying it.
+			disksNeedingStorageClassFromProfile[i] = struct{}{}
 		} else {
 			if err := k8sClient.Get(ctx, key, obj); err != nil {
 				return nil, nil, fmt.Errorf(
@@ -357,9 +362,9 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 				info.Disks[i].StorageClass = *scn
 			} else {
 				// Could not find a PVC with an existing storage class for the
-				// unmanaged disk, so default the VM to using the VM's storage
-				// class.
-				info.Disks[i].StorageClass = vm.Spec.StorageClass
+				// unmanaged disk, so we'll determine it from the disk's actual
+				// storage profile.
+				disksNeedingStorageClassFromProfile[i] = struct{}{}
 			}
 		}
 
@@ -417,6 +422,25 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 			pid := i.Parameters["storagePolicyID"]
 			storageClassToPolicyID[i.Name] = pid
 			policyIDToStorageClass[pid] = i.Name
+		}
+	}
+
+	// For disks that need their storage class determined from their actual
+	// storage profile (i.e., disks without an existing PVC or with a PVC that
+	// has no storage class), set the storage class based on the disk's profile.
+	for i := range disksNeedingStorageClassFromProfile {
+		storageClassSet := false
+		for _, pid := range info.Disks[i].ProfileIDs {
+			if className := policyIDToStorageClass[pid]; className != "" {
+				info.Disks[i].StorageClass = className
+				storageClassSet = true
+				break
+			}
+		}
+		// Only fall back to VM's storage class if the disk has no profile or
+		// no matching storage class was found.
+		if !storageClassSet {
+			info.Disks[i].StorageClass = vm.Spec.StorageClass
 		}
 	}
 

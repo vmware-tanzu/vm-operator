@@ -606,6 +606,42 @@ func (vs *vSphereVMProvider) GetVirtualMachineProperties(
 	return result, nil
 }
 
+func (vs *vSphereVMProvider) GetVirtualMachineFiles(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) ([]vimtypes.VirtualMachineFileLayoutExFileInfo, error) {
+
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "virtualmachine-files")),
+		Logger:  logger,
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return nil, err
+	}
+
+	var o mo.VirtualMachine
+	err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"layoutEx"}, &o)
+	if err != nil {
+		return nil, err
+	}
+
+	if o.LayoutEx != nil {
+		return o.LayoutEx.File, nil
+	}
+
+	return nil, nil
+}
+
 func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,

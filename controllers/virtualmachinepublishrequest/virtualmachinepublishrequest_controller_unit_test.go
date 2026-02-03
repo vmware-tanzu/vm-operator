@@ -37,6 +37,7 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -297,7 +298,10 @@ func unitTestsReconcile() {
 		})
 
 		When("target is subject to quota validation", func() {
-			expectedCapacityValue := resource.NewQuantity(5*1024*1024*1024, resource.BinarySI)
+			var (
+				files, diskFiles, configFiles []vimtypes.VirtualMachineFileLayoutExFileInfo
+				expectedCapacityValue         *resource.Quantity
+			)
 
 			BeforeEach(func() {
 				clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
@@ -306,18 +310,156 @@ func unitTestsReconcile() {
 				}
 				initObjects = append(initObjects, clv1a2)
 
-				vm.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
-					Requested: &vmopv1.VirtualMachineStorageStatusRequested{
-						Disks: resource.NewQuantity(16*1024*1024*1024, resource.BinarySI),
+				files = []vimtypes.VirtualMachineFileLayoutExFileInfo{
+					{
+						Key:        int32(2),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn.vmsd",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotList),
+						Size:       int64(707),
+						UniqueSize: int64(707),
+						Accessible: ptr.To(true),
 					},
-					Total: resource.NewQuantity(21*1024*1024*1024, resource.BinarySI),
-					Used: &vmopv1.VirtualMachineStorageStatusUsed{
-						Disks: resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
-						Snapshots: &vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{
-							VM:     resource.NewQuantity(64*1024*1024, resource.BinarySI),
-							Volume: resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
-						},
-						Other: resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+					{
+						Key:        int32(16),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn-Snapshot6.vmem",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotMemory),
+						Size:       int64(4294967296),
+						UniqueSize: int64(4294967296),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(17),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn-Snapshot6.vmsn",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotData),
+						Size:       int64(7736308),
+						UniqueSize: int64(7736308),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(7),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn-b811bf60.vswp",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSwap),
+						Size:       int64(4294967296),
+						UniqueSize: int64(4294967296),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(8),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/vmx-common-photon-vm-l1b-ef380a048d163f9f18f90ba77eaf46a6e209f6092176f51309ee7177a5358b15-2.vswp",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSwap),
+						Size:       int64(85983232),
+						UniqueSize: int64(85983232),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(9),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/vmware-1.log",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeLog),
+						Size:       int64(515080),
+						UniqueSize: int64(515080),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(10),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/vmware.log",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeLog),
+						Size:       int64(257172),
+						UniqueSize: int64(257172),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(11),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn-aux.xml",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotManifestList),
+						Size:       int64(14),
+						UniqueSize: int64(14),
+						Accessible: ptr.To(true),
+					},
+				}
+
+				configFiles = []vimtypes.VirtualMachineFileLayoutExFileInfo{
+					{
+						Key:        int32(0),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn.vmx",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeConfig),
+						Size:       int64(6678),
+						UniqueSize: int64(6678),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(1),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn.nvram",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeNvram),
+						Size:       int64(270840),
+						UniqueSize: int64(270840),
+						Accessible: ptr.To(true),
+					},
+				}
+
+				diskFiles = []vimtypes.VirtualMachineFileLayoutExFileInfo{
+					{
+						Key:        int32(3),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn_3.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor),
+						Size:       int64(976),
+						UniqueSize: int64(500), // To simulate a scenario where blocks are deduplicated on the storage layer.
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(4),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn_3-flat.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent),
+						Size:       int64(930086912),
+						UniqueSize: int64(930086912),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(12),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn_3-000001.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor),
+						Size:       int64(448),
+						UniqueSize: int64(448),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(13),
+						Name:       "[sharedVmfs-0] 1e276b88-65a8-4351-a400-3c42ffaec9d8/common-photon-vm-l1bn_3-000001-sesparse.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent),
+						Size:       int64(24117248),
+						UniqueSize: int64(24117248),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(5),
+						Name:       "[sharedVmfs-0] fcd/06e101194d1f4dd4a58473d5bbf464da.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor),
+						Size:       int64(895),
+						UniqueSize: int64(895),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(6),
+						Name:       "[sharedVmfs-0] fcd/06e101194d1f4dd4a58473d5bbf464da-flat.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent),
+						Size:       int64(0),
+						UniqueSize: int64(0),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(14),
+						Name:       "[sharedVmfs-0] fcd/06e101194d1f4dd4a58473d5bbf464da-000001.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor),
+						Size:       int64(475),
+						UniqueSize: int64(475),
+						Accessible: ptr.To(true),
+					},
+					{
+						Key:        int32(15),
+						Name:       "[sharedVmfs-0] fcd/06e101194d1f4dd4a58473d5bbf464da-000001-sesparse.vmdk",
+						Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent),
+						Size:       int64(1048576),
+						UniqueSize: int64(1048576),
+						Accessible: ptr.To(true),
 					},
 				}
 			})
@@ -325,11 +467,29 @@ func unitTestsReconcile() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 					config.Features.InventoryContentLibrary = true
 				})
+
+				files = append(files, diskFiles...)
+				files = append(files, configFiles...)
+
+				expected := int64(0)
+				for _, f := range diskFiles {
+					expected += f.Size
+				}
+
+				for _, f := range configFiles {
+					expected += f.Size
+				}
+
+				expectedCapacityValue = resource.NewQuantity(expected, resource.BinarySI)
 			})
 			When("validation has not been initiated", func() {
-				When("vm status.storage is empty", func() {
-					BeforeEach(func() {
-						vm.Status.Storage = nil
+				When("there is an error getting VM files", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.GetVirtualMachineFilesFn = func(ctx context.Context,
+							vm *vmopv1.VirtualMachine) ([]vimtypes.VirtualMachineFileLayoutExFileInfo, error) {
+
+							return nil, errors.New("fake error")
+						}
 					})
 					It("should leave the request untouched and return an error", func() {
 						_, err := reconciler.ReconcileNormal(vmpubCtx)
@@ -338,40 +498,38 @@ func unitTestsReconcile() {
 					})
 				})
 
-				When("vm status.storage is not empty", func() {
-					When("vm status.storage.used is empty", func() {
-						BeforeEach(func() {
-							vm.Status.Storage.Used = nil
-						})
-						It("should leave the request untouched and return an error", func() {
-							_, err := reconciler.ReconcileNormal(vmpubCtx)
-							Expect(err).To(HaveOccurred())
-							Expect(vmpub.Annotations).To(BeEmpty())
-						})
+				When("no files are returned", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.GetVirtualMachineFilesFn = func(ctx context.Context,
+							vm *vmopv1.VirtualMachine) ([]vimtypes.VirtualMachineFileLayoutExFileInfo, error) {
+
+							return nil, nil
+						}
 					})
-
-					When("vm status.storage.used contains only empty values", func() {
-						BeforeEach(func() {
-							vm.Status.Storage.Used = &vmopv1.VirtualMachineStorageStatusUsed{}
-						})
-						It("should leave the request untouched and return an error", func() {
-							_, err := reconciler.ReconcileNormal(vmpubCtx)
-							Expect(err).To(HaveOccurred())
-							Expect(vmpub.Annotations).To(BeEmpty())
-						})
+					It("should leave the request untouched and return an error", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).To(HaveOccurred())
+						Expect(vmpub.Annotations).To(BeEmpty())
 					})
+				})
 
-					When("vm status.storage.used is not empty", func() {
-						It("should apply the correct annotations and not return an error", func() {
-							_, err := reconciler.ReconcileNormal(vmpubCtx)
-							Expect(err).NotTo(HaveOccurred())
-							Expect(vmpub.Annotations).NotTo(BeEmpty())
+				When("there is no error getting VM files", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.GetVirtualMachineFilesFn = func(ctx context.Context,
+							vm *vmopv1.VirtualMachine) ([]vimtypes.VirtualMachineFileLayoutExFileInfo, error) {
 
-							Expect(vmpub.Annotations).To(HaveKeyWithValue(
-								pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
-							Expect(vmpub.Annotations).To(HaveKeyWithValue(
-								pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
-						})
+							return files, nil
+						}
+					})
+					It("should apply the correct annotations and not return an error", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(vmpub.Annotations).NotTo(BeEmpty())
+
+						Expect(vmpub.Annotations).To(HaveKeyWithValue(
+							pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
+						Expect(vmpub.Annotations).To(HaveKeyWithValue(
+							pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
 					})
 				})
 			})

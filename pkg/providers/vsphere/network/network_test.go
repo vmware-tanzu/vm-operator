@@ -462,7 +462,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(results.Results).To(HaveLen(1))
 					result := results.Results[0]
 					Expect(result.DHCP4).To(BeTrue())
-					Expect(result.DHCP6).To(BeFalse())
+					Expect(result.DHCP6).To(BeTrue()) // Both should be set when NetOP indicates DHCP
 					Expect(result.NoIPAM).To(BeFalse())
 					Expect(result.IPConfigs).To(BeEmpty())
 				})
@@ -601,6 +601,543 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ipConfig.IsIPv4).To(BeFalse())
 					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 				})
+			})
+		})
+
+		Context("Multiple IPv6 Addresses StaticPool from NetOP", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+					},
+				}
+			})
+
+			It("returns success with multiple IPv6 addresses", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile with multiple IPv6", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "2001:db8::100",
+							IPFamily:   corev1.IPv6Protocol,
+							Gateway:    "2001:db8::1",
+							SubnetMask: "ffff:ffff:ffff:ffff::",
+						},
+						{
+							IP:         "2001:db8::101",
+							IPFamily:   corev1.IPv6Protocol,
+							Gateway:    "2001:db8::1",
+							SubnetMask: "ffff:ffff:ffff:ffff::",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.IPConfigs).To(HaveLen(2))
+				Expect(result.IPConfigs[0].IPCIDR).To(Equal("2001:db8::100/64"))
+				Expect(result.IPConfigs[1].IPCIDR).To(Equal("2001:db8::101/64"))
+			})
+		})
+
+		Context("Multiple IPv4 Addresses StaticPool from NetOP", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+					},
+				}
+			})
+
+			It("returns success with multiple IPv4 addresses", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile with multiple IPv4", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "192.168.1.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+						{
+							IP:         "192.168.1.101",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.IPConfigs).To(HaveLen(2))
+				Expect(result.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
+				Expect(result.IPConfigs[1].IPCIDR).To(Equal("192.168.1.101/24"))
+			})
+		})
+
+		Context("User Addresses Override NetOP StaticPool", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+						Addresses: []string{"192.168.1.100/24", "2001:db8::100/64"},
+					},
+				}
+			})
+
+			It("returns success with user addresses overriding NetOP", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "10.0.0.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "10.0.0.1",
+							SubnetMask: "255.255.255.0",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.IPConfigs).To(HaveLen(2))
+				// User addresses should override NetOP addresses
+				Expect(result.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
+				Expect(result.IPConfigs[1].IPCIDR).To(Equal("2001:db8::100/64"))
+				// Gateway4 should be backfilled from NetOP
+				Expect(result.IPConfigs[0].Gateway).To(Equal("10.0.0.1"))
+			})
+		})
+
+		Context("User Gateways Override NetOP Gateways", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+						Addresses: []string{"192.168.1.100/24", "2001:db8::100/64"},
+						Gateway4:  "172.16.1.1",
+						Gateway6:  "2001:db8::2",
+					},
+				}
+			})
+
+			It("returns success with user gateways overriding NetOP", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "192.168.1.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+						{
+							IP:         "2001:db8::100",
+							IPFamily:   corev1.IPv6Protocol,
+							Gateway:    "2001:db8::1",
+							SubnetMask: "ffff:ffff:ffff:ffff::",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.IPConfigs[0].Gateway).To(Equal("172.16.1.1"))
+				Expect(result.IPConfigs[1].Gateway).To(Equal("2001:db8::2"))
+			})
+		})
+
+		Context("User Gateways 'None' Clears NetOP Gateways", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+						Addresses: []string{"192.168.1.100/24", "2001:db8::100/64"},
+						Gateway4:  "None",
+						Gateway6:  "None",
+					},
+				}
+			})
+
+			It("returns success with gateways cleared", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "192.168.1.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+						{
+							IP:         "2001:db8::100",
+							IPFamily:   corev1.IPv6Protocol,
+							Gateway:    "2001:db8::1",
+							SubnetMask: "ffff:ffff:ffff:ffff::",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.IPConfigs[0].Gateway).To(BeEmpty())
+				Expect(result.IPConfigs[1].Gateway).To(BeEmpty())
+			})
+		})
+
+		Context("User DHCP4 Overrides NetOP StaticPool", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+						Addresses: []string{"2001:db8::100/64"},
+						DHCP4:     true,
+					},
+				}
+			})
+
+			It("returns success with DHCP4 enabled and static IPv6", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "192.168.1.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+						{
+							IP:         "2001:db8::100",
+							IPFamily:   corev1.IPv6Protocol,
+							Gateway:    "2001:db8::1",
+							SubnetMask: "ffff:ffff:ffff:ffff::",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.DHCP4).To(BeTrue())
+				Expect(result.DHCP6).To(BeFalse())
+				Expect(result.IPConfigs).To(HaveLen(1))
+				Expect(result.IPConfigs[0].IPCIDR).To(Equal("2001:db8::100/64"))
+			})
+		})
+
+		Context("User DHCP6 Overrides NetOP StaticPool", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+						Addresses: []string{"192.168.1.100/24"},
+						DHCP6:     true,
+					},
+				}
+			})
+
+			It("returns success with static IPv4 and DHCP6 enabled", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "192.168.1.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+						{
+							IP:         "2001:db8::100",
+							IPFamily:   corev1.IPv6Protocol,
+							Gateway:    "2001:db8::1",
+							SubnetMask: "ffff:ffff:ffff:ffff::",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.DHCP4).To(BeFalse())
+				Expect(result.DHCP6).To(BeTrue())
+				Expect(result.IPConfigs).To(HaveLen(1))
+				Expect(result.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
+			})
+		})
+
+		Context("NetOP Addresses with User Gateways", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+						Gateway4: "172.16.1.1",
+						Gateway6: "2001:db8::2",
+					},
+				}
+			})
+
+			It("returns success with user gateways overriding NetOP", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "192.168.1.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+						{
+							IP:         "2001:db8::100",
+							IPFamily:   corev1.IPv6Protocol,
+							Gateway:    "2001:db8::1",
+							SubnetMask: "ffff:ffff:ffff:ffff::",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.IPConfigs[0].Gateway).To(Equal("172.16.1.1"))
+				Expect(result.IPConfigs[1].Gateway).To(Equal("2001:db8::2"))
 			})
 		})
 	})

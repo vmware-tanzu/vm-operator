@@ -842,12 +842,13 @@ func restore_v1alpha5_VirtualMachineBootstrapSpec(
 
 	dstBootstrap := dst.Spec.Bootstrap
 	if dstBootstrap == nil {
-		// v1a1 doesn't have a way to represent standalone LinuxPrep. If we didn't do a
-		// conversion in convert_v1alpha1_VmMetadata_To_v1alpha5_BootstrapSpec() but we
-		// saved a LinuxPrep in the conversion annotation, restore that here.
-		if srcBootstrap.LinuxPrep != nil {
+		// v1a1 doesn't have a way to represent standalone LinuxPrep or Disabled.
+		// If we didn't do a conversion in convert_v1alpha1_VmMetadata_To_v1alpha5_BootstrapSpec()
+		// but we saved a LinuxPrep or Disabled in the conversion annotation, restore that here.
+		if srcBootstrap.LinuxPrep != nil || srcBootstrap.Disabled {
 			dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 				LinuxPrep: srcBootstrap.LinuxPrep,
+				Disabled:  srcBootstrap.Disabled,
 			}
 		}
 		return
@@ -907,6 +908,8 @@ func restore_v1alpha5_VirtualMachineBootstrapSpec(
 			dstVAppConfig.RawProperties = srcVAppConfig.RawProperties
 		}
 	}
+
+	dstBootstrap.Disabled = srcBootstrap.Disabled
 }
 
 func restore_v1alpha5_VirtualMachineNetworkSpec(

@@ -10389,6 +10389,15 @@ spec:
                           check network status, and repeat until an IPv6 address is available.
                         type: boolean
                     type: object
+                  disabled:
+                    description: |-
+                      Disabled is a flag that indicates whether or not to disable bootstrap
+                      for this VM.
+
+                      When set to true, the bootstrap customization is not applied to the VM,
+                      even if a bootstrap provider such as CloudInit, LinuxPrep, Sysprep, or
+                      VAppConfig is specified.
+                    type: boolean
                   linuxPrep:
                     description: |-
                       LinuxPrep may be used to bootstrap Linux guests.

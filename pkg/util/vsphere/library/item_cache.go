@@ -30,9 +30,11 @@ type SourceFile struct {
 	DstProfileID  string
 	DstDiskFormat vimtypes.DatastoreSectorFormat
 
+	CryptoSpec *vimtypes.CryptoSpecEncrypt
+
 	// TODO(akutz) In the future there may be additional information about the
-	//             disk, such as its sector format (512 vs 4k), is encrypted,
-	//             thin-provisioned, adapter type, etc.
+	//             disk, such as its sector format (512 vs 4k), thin-provisioned,
+	//             adapter type, etc.
 }
 
 // CachedFile refers to file that has been cached.
@@ -75,7 +77,7 @@ type CacheStorageURIsClient interface {
 }
 
 // CacheStorageURIs copies the file(s) from srcFiles to dstDir and returns the
-// the information about the copied file(s).
+// information about the copied file(s).
 func CacheStorageURIs(
 	ctx context.Context,
 	client CacheStorageURIsClient,
@@ -131,6 +133,7 @@ func copyFile(
 	logger = logger.WithValues(
 		"srcFilePath", srcFile.Path,
 		"dstFilePath", dstFilePath,
+		"dstProfileID", srcFile.DstProfileID,
 		"dstDatacenter", dstDatacenter.Reference().Value,
 		"srcDatacenter", srcDatacenter.Reference().Value)
 	if isDisk {
@@ -173,22 +176,41 @@ func copyFile(
 
 	if isDisk {
 		logger.Info("Caching disk")
+
+		ds := &vimtypes.FileBackedVirtualDiskSpec{
+			VirtualDiskSpec: vimtypes.VirtualDiskSpec{
+				AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
+				DiskType:    string(vimtypes.VirtualDiskTypeThin),
+			},
+			SectorFormat: string(srcFile.DstDiskFormat),
+			Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+				&vimtypes.VirtualMachineDefinedProfileSpec{
+					ProfileId: srcFile.DstProfileID,
+				},
+			},
+		}
+
+		if cs := srcFile.CryptoSpec; cs != nil {
+			if id := cs.CryptoKeyId.ProviderId; id != nil && id.Id != "" {
+				ds.Crypto = cs
+			} else {
+				// TODO: The storage profile is encrypted but there is no
+				// default key provider configured. CopyVirtualDisk used
+				// to just ignore the Profile and Crypto fields, but now it
+				// actually honors them, an encrypted profile needs crypto.
+				// For now, effectively revert to that prior behavior by not
+				// specifying the profile.
+				ds.Profile = nil
+			}
+		}
+
 		copyTask, err = client.CopyVirtualDisk(
 			ctx,
 			srcFile.Path,
 			srcDatacenter,
 			dstFilePath,
 			dstDatacenter,
-			&vimtypes.FileBackedVirtualDiskSpec{
-				VirtualDiskSpec: vimtypes.VirtualDiskSpec{
-					AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
-					DiskType:    string(vimtypes.VirtualDiskTypeThin),
-				},
-				SectorFormat: string(srcFile.DstDiskFormat),
-				// CopyVirtualDisk API simply ignores the Profile
-				// and Crypto parameters. We send neither until the
-				// API is enhanced to support both.
-			},
+			ds,
 			false)
 	} else {
 		logger.Info("Caching non-disk file")

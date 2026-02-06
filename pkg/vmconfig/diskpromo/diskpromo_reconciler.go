@@ -227,6 +227,12 @@ func (r reconciler) Reconcile(
 		} else {
 			logger.V(4).Info(
 				"Skipping disk promotion for VM with no disks to promote")
+			// Mark the condition as True so that downstream consumers
+			// (e.g. snapshot reconciliation) are not blocked waiting for
+			// promotion that will never occur.
+			pkgcond.MarkTrue(
+				vm,
+				vmopv1.VirtualMachineDiskPromotionSynced)
 		}
 		return nil
 	}

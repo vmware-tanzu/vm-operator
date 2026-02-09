@@ -393,10 +393,11 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 							moVM.Config.Hardware.Device = nil
 						})
 
-						It("should skip disk promotion without setting condition", func() {
+						It("should mark disk promotion synced as true", func() {
 							Expect(err).ToNot(HaveOccurred())
 							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
-							Expect(c).To(BeNil())
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
 						})
 					})
 				})
@@ -500,10 +501,11 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 							moVM.Config.Hardware.Device = nil
 						})
 
-						It("should skip disk promotion without setting condition", func() {
+						It("should mark disk promotion synced as true", func() {
 							Expect(err).ToNot(HaveOccurred())
 							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
-							Expect(c).To(BeNil())
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
 						})
 					})
 
@@ -572,6 +574,33 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 							Expect(c).ToNot(BeNil())
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
 							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+						})
+					})
+
+					When("imported VM has all disks participating in snapshots", func() {
+						BeforeEach(func() {
+							devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+							allDisks := devices.SelectByType(&vimtypes.VirtualDisk{})
+							var snapshotDisks []vimtypes.VirtualMachineFileLayoutExDiskLayout
+							for _, d := range allDisks {
+								snapshotDisks = append(snapshotDisks, vimtypes.VirtualMachineFileLayoutExDiskLayout{
+									Key: d.GetVirtualDevice().Key,
+								})
+							}
+							moVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+								Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+									{
+										Disk: snapshotDisks,
+									},
+								},
+							}
+						})
+
+						It("should mark disk promotion synced as true", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
 						})
 					})
 
@@ -838,10 +867,11 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						moVM.Config.Hardware.Device = nil
 					})
 
-					It("should skip disk promotion without setting condition", func() {
+					It("should mark disk promotion synced as true", func() {
 						Expect(err).ToNot(HaveOccurred())
 						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
-						Expect(c).To(BeNil())
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionTrue))
 					})
 				})
 			})

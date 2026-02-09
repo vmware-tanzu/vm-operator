@@ -73,7 +73,7 @@ var (
 	ErrBootstrapCustomize   = pkgerr.NoRequeueNoErr("bootstrap customized vm")
 )
 
-func DoBootstrap(
+func DoBootstrap( //nolint:gocyclo
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	config *vimtypes.VirtualMachineConfigInfo,
@@ -103,6 +103,11 @@ func DoBootstrap(
 				HardwareClockIsUTC: vimtypes.NewBool(true),
 			},
 		}
+	}
+
+	if bootstrap.Disabled {
+		vmCtx.Logger.V(4).Info("Skipping bootstrap since disabled")
+		return nil
 	}
 
 	var (

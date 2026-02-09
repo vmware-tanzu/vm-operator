@@ -120,6 +120,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 								RawProperties: "my-secret",
 							},
+							Disabled: true,
 						},
 						Network: &vmopv1.VirtualMachineNetworkSpec{
 							DomainName:    "my-domain.com",
@@ -382,12 +383,34 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
+				name: "spec.bootstrap.disabled",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+							Disabled: true,
+						},
+					},
+				},
+			},
+			{
 				name: "spec.bootstrap.cloudInit.waitOnNetwork4",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
 						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 								WaitOnNetwork4: ptrOf(true),
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.bootstrap.cloudInit.waitOnNetwork6",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+								WaitOnNetwork6: ptrOf(true),
 							},
 						},
 					},
@@ -402,36 +425,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.bootstrap.cloudInit.waitOnNetwork6",
+				name: "spec.affinity",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
-						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
-							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-								WaitOnNetwork6: ptrOf(true),
-							},
-						},
-						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
-						BootOptions: &vmopv1.VirtualMachineBootOptions{
-							Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
-							BootDelay: &metav1.Duration{Duration: time.Second * 10},
-							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
-								{
-									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
-									Name: "disk-0",
-								},
-								{
-									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
-									Name: "eth0",
-								},
-								{
-									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
-								},
-							},
-							BootRetry:           vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
-							BootRetryDelay:      &metav1.Duration{Duration: time.Second * 10},
-							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
-							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
-						},
 						Affinity: &vmopv1.AffinitySpec{
 							VMAffinity: &vmopv1.VMAffinitySpec{
 								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{

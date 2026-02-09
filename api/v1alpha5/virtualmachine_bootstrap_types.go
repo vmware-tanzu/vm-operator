@@ -81,6 +81,16 @@ type VirtualMachineBootstrapSpec struct {
 	// This bootstrap provider may not be used in conjunction with the CloudInit
 	// bootstrap provider.
 	VAppConfig *VirtualMachineBootstrapVAppConfigSpec `json:"vAppConfig,omitempty"`
+
+	// +optional
+
+	// Disabled is a flag that indicates whether or not to disable bootstrap
+	// for this VM.
+	//
+	// When set to true, the bootstrap customization is not applied to the VM,
+	// even if a bootstrap provider such as CloudInit, LinuxPrep, Sysprep, or
+	// VAppConfig is specified.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // VirtualMachineBootstrapCloudInitSpec describes the CloudInit configuration

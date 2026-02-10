@@ -631,6 +631,19 @@ func ensurePVCForUnmanagedDisk(
 			DiskBackingAnnotation: string(diskInfo.BackingType),
 		}
 
+		// BMV: Make the registration of the disk match that of the VM's. This is a
+		// workaround for when the VM encryption class's provider  is not the same
+		// type as the default provider.
+		// Ultimately though, similar to the processing that is done in
+		// vmCreateGenConfigSpecImagePVCDataSourceRefs(), the crypto reconciler
+		// on create, should check if there is a placeholder PVC for an image's disk
+		// and use that - not the VM's - encryption class for the disk's crypto. This
+		// isn't ideal since we'll always use the VM's class here, but for the
+		// short term after registration the PVC's encryption class can be updated.
+		if c := vm.Spec.Crypto; c != nil && c.EncryptionClassName != "" {
+			obj.Annotations[pkgconst.PVCEncryptionClassNameAnnotation] = c.EncryptionClassName
+		}
+
 		// Any disks already attached to the VM should be assumed as Block if
 		// RAC is enabled.
 		volumeMode := corev1.PersistentVolumeBlock

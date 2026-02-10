@@ -7,21 +7,26 @@ package crypto
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto/internal"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -78,6 +83,9 @@ var (
 	// ErrInvalidKeyID is returned if the key id specified by an
 	// EncryptionClass is invalid.
 	ErrInvalidKeyID = errors.New("invalid key id")
+
+	// ErrPVCNotFound is returned if the PVC is not found.
+	ErrPVCNotFound = errors.New("PVC not found")
 )
 
 func (r reconciler) Reconcile(
@@ -121,11 +129,7 @@ func (r reconciler) Reconcile(
 		args.useDefaultKeyProvider = true
 	} else {
 		args.encryptionClassName = c.EncryptionClassName
-		if c.UseDefaultKeyProvider == nil {
-			args.useDefaultKeyProvider = true
-		} else {
-			args.useDefaultKeyProvider = *c.UseDefaultKeyProvider
-		}
+		args.useDefaultKeyProvider = ptr.DerefWithDefault(c.UseDefaultKeyProvider, true)
 	}
 
 	// Check to if the VM is currently encrypted and record the current provider
@@ -174,7 +178,7 @@ func (r reconciler) reconcileCreate(
 		//
 
 		// Get the provider and key from the EncryptionClass.
-		args.newKey, err = getCryptoKeyFromEncryptionClass(ctx, args)
+		args.newKey, err = getCryptoKeyFromEncryptionClass(ctx, args, args.encryptionClassName)
 		if err != nil {
 			return setConditionAndReturnErr(args, err, ReasonInternalError)
 		}
@@ -235,25 +239,30 @@ func (r reconciler) reconcileUpdate(
 	args reconcileArgs) error {
 
 	var (
-		err     error
-		changed bool
+		err       error
+		vmChanged bool
 	)
 
 	if args.encryptionClassName != "" {
 		// The existing VM specifies an EncryptionClass.
-		changed, err = r.reconcileUpdateEncryptionClass(ctx, args)
+		vmChanged, err = r.reconcileUpdateEncryptionClass(ctx, args)
 
 	} else if args.useDefaultKeyProvider {
 		// The existing VM indicates the default key provider should be used in
 		// absence of the EncryptionClass.
-		changed, err = r.reconcileUpdateDefaultKeyProvider(ctx, args)
+		vmChanged, err = r.reconcileUpdateDefaultKeyProvider(ctx, args)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	if changed {
+	fcdChanged, err := r.reconcileUpdateFCDs(ctx, args)
+	if err != nil {
+		return err
+	}
+
+	if vmChanged || fcdChanged {
 		// A change was made to the existing VM to update its encryption state.
 		return nil
 	}
@@ -274,7 +283,7 @@ func (r reconciler) reconcileUpdateEncryptionClass(
 	var err error
 
 	// Get the provider and key from the EncryptionClass.
-	args.newKey, err = getCryptoKeyFromEncryptionClass(ctx, args)
+	args.newKey, err = getCryptoKeyFromEncryptionClass(ctx, args, args.encryptionClassName)
 	if err != nil {
 		return false, setConditionAndReturnErr(args, err, ReasonInternalError)
 	}
@@ -394,6 +403,171 @@ func (r reconciler) reconcileUpdateDefaultKeyProvider(
 	}
 
 	return false, nil
+}
+
+func (r reconciler) reconcileUpdateFCDs(
+	ctx context.Context,
+	args reconcileArgs) (bool, error) {
+
+	// TODO: This isn't necessarily wrong - no disks so nothing to do - but it really
+	// here to limit having to update all the existing tests, so GetVolumeInfoFromVM()
+	// won't panic. In real situations, this won't hardly be empty.
+	if len(args.vm.Spec.Volumes) == 0 {
+		return false, nil
+	}
+
+	info, ok := pkgvol.FromContext(ctx)
+	if !ok {
+		info = pkgvol.GetVolumeInfoFromVM(args.vm, args.moVM)
+	}
+
+	// This is very much a bolted on change but it is mostly self-contained
+	// so it is easier to crossport and less likely to cause any other issues
+	// elsewhere. There are many improvements possible, both in this code and
+	// within the larger reconcile like not repeatability looking up the same
+	// storage class and key provider, and not fetching the PVCs multiple times.
+	// We should also better report errors here on the individual volumes via
+	// its conditions.
+
+	logger := pkglog.FromContextOrDefault(ctx)
+	var changed bool
+
+	for _, diskInfo := range info.Disks {
+		if !diskInfo.FCD {
+			// Any non-FCDs are handled earlier in onRecryptDisks().
+			continue
+		}
+
+		volume := info.Volumes[diskInfo.Target.String()]
+		if volume == nil || volume.PersistentVolumeClaim == nil {
+			continue
+		}
+
+		logger := logger.WithValues("volName", volume.Name,
+			"pvcName", volume.PersistentVolumeClaim.ClaimName,
+			"diskUUID", diskInfo.UUID)
+
+		pvc := &corev1.PersistentVolumeClaim{}
+		pvcKey := ctrlclient.ObjectKey{
+			Namespace: args.vm.Namespace,
+			Name:      volume.PersistentVolumeClaim.ClaimName,
+		}
+		if err := args.k8sClient.Get(ctx, pvcKey, pvc); err != nil {
+			// NOTE: I don't think we'll even get here if PVC is missing.
+			return false, setConditionAndReturnErr(
+				args,
+				ErrPVCNotFound,
+				ReasonInternalError) // TODO: better reason if reachable.
+		}
+
+		// TODO: We're using the target ID to match disks/volumes between the VM Spec and
+		// the VM's current HW config. I think this gives us a possible race: if the PVC
+		// at a target ID is changed, the detach of old, attach of new happens async from
+		// us via CNS. I think this may just be a general issue of how we're using this
+		// even elsewhere, but the effects may be limited because we're generally read-only
+		// only so things will clear up on a later reconcile. Here that is different because
+		// we're doing a reconfigure.
+		// This might not be a huge issue in practice, because once the old PVC stops being
+		// reference in a VM Spec, CSI will take over the encryption of the PVC.
+		// If we need to handle that here, I think what we'll have to do is to check the VM
+		// status and match the disk UUID and target ID here with the diskInfo.UUID.
+
+		storageClassName := ptr.Deref(pvc.Spec.StorageClassName)
+		if storageClassName == "" {
+			// NB: Elsewhere we don't support the k8s default StorageClass label.
+			logger.V(4).Info("PVC has no storage class name, skipping")
+			continue
+		}
+
+		isEncStorClass, profileID, err := kubeutil.IsEncryptedStorageClass(
+			ctx,
+			args.k8sClient,
+			storageClassName)
+		if err != nil {
+			logger.Error(err, "Failed to get encrypted storage class", "storageClassName", storageClassName)
+			return false, err
+		}
+		if !isEncStorClass {
+			logger.V(4).Info("Storage class is not encrypted, skipping", "storageClassName", storageClassName)
+			continue
+		}
+
+		// If PVC has encryption class annotation, use it; otherwise use default provider.
+		var desiredKey cryptoKey
+		desiredEncClassName := pvc.Annotations[pkgconst.PVCEncryptionClassNameAnnotation]
+		if desiredEncClassName != "" {
+			// Use the specified encryption class.
+			desiredKey, err = getCryptoKeyFromEncryptionClass(ctx, args, desiredEncClassName)
+			if err != nil {
+				logger.Error(err, "Failed to get crypto key from encryption class",
+					"encryptionClassName", desiredEncClassName)
+				return false, setConditionAndReturnErr(args, err, ReasonInternalError)
+			}
+		} else {
+			desiredKey = getCryptoKeyFromDefaultProvider(ctx, args)
+			if desiredKey.provider == "" {
+				// There is no default key provider.
+				return false, setConditionAndReturnErr(
+					args,
+					ErrNoDefaultKeyProvider,
+					ReasonNoDefaultKeyProvider)
+			}
+		}
+
+		currentKey := diskInfo.CryptoKey
+		disk := diskInfo.Device
+
+		logger.Info("PVC encrypted",
+			"pvcName", pvc.Name, "currentKey", currentKey,
+			"desiredKey", fmt.Sprintf("%+v", desiredKey)) // NB: Keep diff small - fields aren't public.
+
+		if currentKey == nil {
+			// BMV: PVC StorageClass is immutable so I don't think this should happen.
+			// Note though there is similar code for encrypting an existing VM.
+
+			// FCD is not encrypted but should be -> encrypt.
+			if updateFCDBackingForEncrypt(args, disk, desiredKey, profileID) {
+				logger.Info(
+					"Encrypt FCD",
+					"disk", diskInfo.FileName,
+					"providerID", desiredKey.provider,
+					"keyID", desiredKey.id,
+					"isDefaultProvider", desiredKey.isDefaultProvider)
+				changed = true
+			}
+		} else {
+			// FCD is encrypted -> check if recrypt needed
+			needsRecrypt := false
+
+			// Provider comparison
+			if currentKey.ProviderId != nil && currentKey.ProviderId.Id != desiredKey.provider {
+				needsRecrypt = true
+			}
+
+			// For default provider, key ID comparison is skipped (keys are generated on-demand)
+			if !desiredKey.isDefaultProvider && desiredKey.id != "" {
+				if currentKey.KeyId != desiredKey.id {
+					needsRecrypt = true
+				}
+			}
+
+			if needsRecrypt {
+				if updateFCDBackingForRecrypt(args, disk, desiredKey) {
+					logger.Info(
+						"Recrypt FCD",
+						"disk", diskInfo.FileName,
+						"currentProviderID", currentKey.ProviderId.Id,
+						"currentKeyID", currentKey.KeyId,
+						"newProviderID", desiredKey.provider,
+						"newKeyID", desiredKey.id,
+						"isDefaultProvider", desiredKey.isDefaultProvider)
+					changed = true
+				}
+			}
+		}
+	}
+
+	return changed, nil
 }
 
 func setConditionAndReturnErr(args reconcileArgs, err error, r Reason) error {
@@ -544,19 +718,19 @@ func getCurCryptoKey(moVM mo.VirtualMachine) cryptoKey {
 
 func getCryptoKeyFromEncryptionClass(
 	ctx context.Context,
-	args reconcileArgs) (cryptoKey, error) {
+	args reconcileArgs,
+	encryptionClassName string) (cryptoKey, error) {
 
 	var (
 		obj    byokv1.EncryptionClass
 		objKey = ctrlclient.ObjectKey{
 			Namespace: args.vm.Namespace,
-			Name:      args.vm.Spec.Crypto.EncryptionClassName,
+			Name:      encryptionClassName,
 		}
 	)
 
 	if err := args.k8sClient.Get(ctx, objKey, &obj); err != nil {
 		return cryptoKey{}, err
-
 	}
 
 	m := crypto.NewManagerKmip(args.vimClient)
@@ -791,6 +965,73 @@ func updateDiskBackingForEncrypt(
 			KeyId: args.curKey.id,
 			ProviderId: &vimtypes.KeyProviderId{
 				Id: args.curKey.provider,
+			},
+		},
+	}
+
+	return true
+}
+
+// updateFCDBackingForEncrypt encrypts an unencrypted FCD with the given key
+// and profile. This is used for FCD encryption which is independent of VM
+// encryption.
+func updateFCDBackingForEncrypt(
+	args reconcileArgs,
+	disk *vimtypes.VirtualDisk,
+	key cryptoKey,
+	profileID string) bool {
+
+	devSpec := getOrCreateDeviceChangeForDisk(args, disk)
+	if devSpec == nil {
+		return false
+	}
+
+	if devSpec.Backing == nil {
+		devSpec.Backing = &vimtypes.VirtualDeviceConfigSpecBackingSpec{}
+	}
+
+	// Update the device change's profile to use the encryption storage profile.
+	devSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+		&vimtypes.VirtualMachineDefinedProfileSpec{
+			ProfileId: profileID,
+		},
+	}
+
+	// Set the device change's crypto spec to encrypt with the specified key.
+	devSpec.Backing.Crypto = &vimtypes.CryptoSpecEncrypt{
+		CryptoKeyId: vimtypes.CryptoKeyId{
+			KeyId: key.id,
+			ProviderId: &vimtypes.KeyProviderId{
+				Id: key.provider,
+			},
+		},
+	}
+
+	return true
+}
+
+// updateFCDBackingForRecrypt recrypts an encrypted FCD with a new key.
+// This is used for FCD recryption which is independent of VM recryption.
+func updateFCDBackingForRecrypt(
+	args reconcileArgs,
+	disk *vimtypes.VirtualDisk,
+	newKey cryptoKey) bool {
+
+	devSpec := getOrCreateDeviceChangeForDisk(args, disk)
+	if devSpec == nil {
+		return false
+	}
+
+	if devSpec.Backing == nil {
+		devSpec.Backing = &vimtypes.VirtualDeviceConfigSpecBackingSpec{}
+	}
+
+	// Set the device change's crypto spec to recrypt with the new key.
+	devSpec.Backing.Crypto = &vimtypes.CryptoSpecShallowRecrypt{
+		NewKeyId: vimtypes.CryptoKeyId{
+			KeyId: newKey.id,
+			ProviderId: &vimtypes.KeyProviderId{
+				Id: newKey.provider,
 			},
 		},
 	}
@@ -1073,7 +1314,7 @@ func isAddEditDeviceSpecEncryptedSansPolicy(
 						}
 					}
 
-					// encrypt/deepRecrypt with policy
+					// encrypt/deepRecrypt without policy
 					return true, nil
 				}
 			}

@@ -20,6 +20,7 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -529,6 +530,93 @@ func intgTestsReconcile() {
 					g.Expect(vm.Status.Volumes[0].Attached).To(BeTrue(), "first volume should be attached")
 					g.Expect(vm.Status.Volumes[0].Error).To(Equal("failed to detach volume"))
 				}).Should(Succeed(), "Waiting VM Status.Volumes to show error of volume1")
+			})
+		})
+
+		It("Deletes pending legacy CnsNodeVmAttachment and re-attaches via batch", func() {
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+			By("Assign VM BiosUUID and InstanceUUID", func() {
+				vm.Status.BiosUUID = dummyBiosUUID
+				vm.Status.InstanceUUID = dummyInstanceUUID
+				vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							Type:      "SCSI",
+							BusNumber: 0,
+							DeviceKey: 1000,
+						},
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+			})
+
+			By("Create PVC and Bind", func() {
+				Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+				pvc1.Status.Phase = corev1.ClaimBound
+				Expect(ctx.Client.Status().Update(ctx, pvc1)).To(Succeed())
+			})
+
+			By("Create a legacy CnsNodeVmAttachment that is pending (not attached) with the deprecated error", func() {
+				legacyAttachmentName := util.CNSAttachmentNameForVolume(vm.Name, vmVolume1.Name)
+				legacyAttachment := &cnsv1alpha1.CnsNodeVmAttachment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      legacyAttachmentName,
+						Namespace: vm.Namespace,
+					},
+					Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
+						NodeUUID:   dummyBiosUUID,
+						VolumeName: vmVolume1.PersistentVolumeClaim.ClaimName,
+					},
+				}
+				Expect(ctx.Client.Create(ctx, legacyAttachment)).To(Succeed())
+
+				// Update status to simulate CSI marking it as deprecated (not attached).
+				legacyAttachment.Status.Attached = false
+				legacyAttachment.Status.Error = volumebatch.CNSNodeVMAttachmentDeprecatedErrorMsg
+				Expect(ctx.Client.Status().Update(ctx, legacyAttachment)).To(Succeed())
+			})
+
+			By("Add volume to VM spec that matches the pending legacy attachment", func() {
+				vm = getVirtualMachine(vmKey)
+				Expect(vm).ToNot(BeNil())
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVolume1)
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+			})
+
+			By("The pending legacy CnsNodeVmAttachment should be deleted", func() {
+				legacyAttachmentName := util.CNSAttachmentNameForVolume(vm.Name, vmVolume1.Name)
+				Eventually(func(g Gomega) {
+					attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
+					err := ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      legacyAttachmentName,
+						Namespace: vm.Namespace,
+					}, attachment)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+						"Pending legacy CnsNodeVmAttachment should be deleted")
+				}).Should(Succeed())
+			})
+
+			By("CnsNodeVMBatchAttachment should be created with the volume", func() {
+				Eventually(func(g Gomega) {
+					attachment := getCnsNodeVMBatchAttachment(vm)
+					g.Expect(attachment).ToNot(BeNil())
+					g.Expect(attachment.Spec.InstanceUUID).To(Equal(dummyInstanceUUID))
+					g.Expect(attachment.Spec.Volumes).To(HaveLen(1))
+					g.Expect(attachment.Spec.Volumes[0].Name).To(Equal(vmVolume1.Name))
+					g.Expect(attachment.Spec.Volumes[0].PersistentVolumeClaim.ClaimName).To(
+						Equal(vmVolume1.PersistentVolumeClaim.ClaimName))
+				}).Should(Succeed())
+			})
+
+			By("VM Status.Volumes should have the volume tracked by batch attachment", func() {
+				Eventually(func(g Gomega) {
+					vm = getVirtualMachine(vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(1))
+					g.Expect(vm.Status.Volumes[0].Name).To(Equal(vmVolume1.Name))
+					g.Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1.VolumeTypeManaged))
+				}).Should(Succeed())
 			})
 		})
 	})

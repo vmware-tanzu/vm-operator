@@ -337,6 +337,7 @@ func unmanagedVolumesTests() {
 				{
 					DatacenterID: ctx.Datacenter.Reference().Value,
 					DatastoreID:  ctx.Datastore.Reference().Value,
+					ProfileID:    ctx.StorageProfileID,
 					Files: []vmopv1.VirtualMachineImageCacheFileStatus{
 						{
 							ID:       ctx.ContentLibraryItemDiskPath,

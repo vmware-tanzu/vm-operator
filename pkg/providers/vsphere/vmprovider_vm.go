@@ -1884,7 +1884,10 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 	// Check if the files are cached.
 	for i := range obj.Status.Locations {
 		l := obj.Status.Locations[i]
-		if l.DatacenterID == datacenterID && l.DatastoreID == datastoreID {
+		if l.DatacenterID == datacenterID &&
+			l.DatastoreID == datastoreID &&
+			l.ProfileID == createArgs.StorageProfileID {
+
 			if c := pkgcnd.Get(l, vmopv1.ReadyConditionType); c != nil {
 				switch c.Status {
 				case metav1.ConditionTrue:

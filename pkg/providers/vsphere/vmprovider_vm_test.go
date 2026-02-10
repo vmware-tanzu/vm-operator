@@ -1906,21 +1906,36 @@ func vmTests() {
 							conditions.MarkTrue(
 								&vmic,
 								vmopv1.VirtualMachineImageCacheConditionFilesReady)
+							cachedFiles := []vmopv1.VirtualMachineImageCacheFileStatus{
+								{
+									ID:       ctx.ContentLibraryItemDiskPath,
+									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+									DiskType: vmopv1.VolumeTypeClassic,
+								},
+								{
+									ID:   ctx.ContentLibraryItemNVRAMPath,
+									Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
+								},
+							}
+
 							vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
 								{
 									DatacenterID: ctx.Datacenter.Reference().Value,
 									DatastoreID:  ctx.Datastore.Reference().Value,
-									Files: []vmopv1.VirtualMachineImageCacheFileStatus{
+									ProfileID:    ctx.StorageProfileID,
+									Files:        cachedFiles,
+									Conditions: []metav1.Condition{
 										{
-											ID:       ctx.ContentLibraryItemDiskPath,
-											Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
-											DiskType: vmopv1.VolumeTypeClassic,
-										},
-										{
-											ID:   ctx.ContentLibraryItemNVRAMPath,
-											Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
+											Type:   vmopv1.ReadyConditionType,
+											Status: metav1.ConditionTrue,
 										},
 									},
+								},
+								{
+									DatacenterID: ctx.Datacenter.Reference().Value,
+									DatastoreID:  ctx.Datastore.Reference().Value,
+									ProfileID:    ctx.EncryptedStorageProfileID,
+									Files:        cachedFiles,
 									Conditions: []metav1.Condition{
 										{
 											Type:   vmopv1.ReadyConditionType,
@@ -4538,6 +4553,7 @@ func vmTests() {
 							{
 								DatacenterID: ctx.Datacenter.Reference().Value,
 								DatastoreID:  ctx.Datastore.Reference().Value,
+								ProfileID:    ctx.StorageProfileID,
 								Files:        []vmopv1.VirtualMachineImageCacheFileStatus{},
 								Conditions: []metav1.Condition{
 									{

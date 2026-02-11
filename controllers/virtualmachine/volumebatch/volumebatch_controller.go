@@ -58,6 +58,11 @@ const (
 	// keep track of both old volume and new volume at the same time in vm status.
 	// Then we would need a distinct volume name for these two disks.
 	volumeNameDetachSuffix = ":detaching"
+
+	// CNSNodeVMAttachmentDeprecatedErrorMsg is the error message in the legacy
+	// CnsNodeVmAttachment when batch is enabled and the legacy attachment is
+	// attached.
+	CNSNodeVMAttachmentDeprecatedErrorMsg = "CnsNodeVMAttachment CR is deprecated. Please detach this PVC from the VM and then reattach it."
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -1040,6 +1045,14 @@ func (r *Reconciler) attachmentsToDelete(
 	var attachmentsToDelete []cnsv1alpha1.CnsNodeVmAttachment
 	for _, attachment := range attachments {
 		if claimName, exists := expectedAttachments[attachment.Name]; !exists || claimName != attachment.Spec.VolumeName {
+			attachmentsToDelete = append(attachmentsToDelete, attachment)
+			continue
+		}
+
+		if !attachment.Status.Attached && attachment.Status.Error == CNSNodeVMAttachmentDeprecatedErrorMsg {
+			// This legacy attachment was created but did not get attached before
+			// the flip to batch so CNS will not attach it. We need to delete it,
+			// so that - once it is deleted - we'll include this volume in the batch.
 			attachmentsToDelete = append(attachmentsToDelete, attachment)
 		}
 	}

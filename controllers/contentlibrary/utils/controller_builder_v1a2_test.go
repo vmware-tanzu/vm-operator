@@ -339,7 +339,7 @@ var _ = XDescribe("Reconcile",
 									pkgerr.VMICacheNotReadyError{Name: vmicName})
 							}
 						})
-						It("should place a label on the library item resource", func() {
+						It("should place a label on the library item resource and mark image condition as not synced", func() {
 							_, err := reconciler.Reconcile(context.Background(), req)
 
 							var e pkgerr.VMICacheNotReadyError
@@ -352,7 +352,10 @@ var _ = XDescribe("Reconcile",
 
 							_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
 							condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
-							Expect(condition).To(BeNil())
+							Expect(condition).ToNot(BeNil())
+							Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+							Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageNotSyncedReason))
+							Expect(condition.Message).To(ContainSubstring(err.Error()))
 						})
 					})
 				})

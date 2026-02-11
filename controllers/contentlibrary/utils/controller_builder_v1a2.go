@@ -327,6 +327,17 @@ func (r *ReconcilerV1A2) ReconcileNormal(
 				vmiStatus); syncErr == nil {
 
 				pkgcnd.MarkTrue(vmiStatus, vmopv1.ReadyConditionType)
+			} else {
+
+				// If the sync error is due to the VMI Cache not being ready,
+				// watch VMI Cache for updates to trigger reconciliation.
+				pkgerr.WatchVMICacheIfNotReady(syncErr, cliObj)
+
+				pkgcnd.MarkError(
+					vmiStatus,
+					vmopv1.ReadyConditionType,
+					vmopv1.VirtualMachineImageNotSyncedReason,
+					syncErr)
 			}
 
 			didSync = true
@@ -500,15 +511,7 @@ func (r *ReconcilerV1A2) syncImageContent(
 	}
 
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, cliObj, vmiObj)
-	if err != nil {
-		if !pkgerr.WatchVMICacheIfNotReady(err, cliObj) {
-			pkgcnd.MarkFalse(
-				vmiStatus,
-				vmopv1.ReadyConditionType,
-				vmopv1.VirtualMachineImageNotSyncedReason,
-				"Failed to sync to the latest content version from provider")
-		}
-	} else {
+	if err == nil {
 		vmiStatus.ProviderContentVersion = latestVersion
 
 		// Now that the VMI is synced, the CLI no longer needs to be reconciled

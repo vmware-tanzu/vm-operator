@@ -254,6 +254,7 @@ type VirtualDiskInfo struct {
 	DeviceKey       int32
 	CryptoKey       *vimtypes.CryptoKeyId
 	Sharing         vimtypes.VirtualDiskSharing
+	DiskMode        vimtypes.VirtualDiskMode
 	HasParent       bool
 	ControllerKey   int32
 	UnitNumber      *int32
@@ -291,20 +292,24 @@ func GetVirtualDiskInfo(
 		vdi.CryptoKey = tb.KeyId
 		vdi.HasParent = tb.Parent != nil
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeSeSparseBackingInfo
+		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
 	case *vimtypes.VirtualDiskSparseVer1BackingInfo: // No UUID or Crypto
 		vdi.FileName = tb.FileName
 		vdi.HasParent = tb.Parent != nil
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeSparseVer1BackingInfo
+		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
 	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
 		vdi.HasParent = tb.Parent != nil
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeSparseVer2BackingInfo
+		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
 	case *vimtypes.VirtualDiskFlatVer1BackingInfo: // No UUID or Crypto
 		vdi.FileName = tb.FileName
 		vdi.HasParent = tb.Parent != nil
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeFlatVer1BackingInfo
+		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
 	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
@@ -312,15 +317,18 @@ func GetVirtualDiskInfo(
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
 		vdi.HasParent = tb.Parent != nil
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeFlatVer2BackingInfo
+		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
 	case *vimtypes.VirtualDiskLocalPMemBackingInfo: // No Crypto
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeLocalPMemBackingInfo
+		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
 	case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo: // No Crypto
 		vdi.FileName = tb.FileName
 		vdi.UUID = tb.Uuid
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeRawDiskMappingVer1BackingInfo
+		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
 	case *vimtypes.VirtualDiskRawDiskVer2BackingInfo: // No Crypto
 		vdi.FileName = tb.DescriptorFileName
 		vdi.UUID = tb.Uuid
@@ -388,6 +396,37 @@ func GetVirtualCdromInfo(
 // a negative number if a < b, 0 if a == b, or a positive number if a > b.
 type Sortable[T any] interface {
 	Compare(T) int
+}
+
+// GetVolumeDiskModeFromDiskMode maps a disk mode to Volume disk mode.
+// Returns the converted disk mode or an an error if not supported.
+func GetVolumeDiskModeFromDiskMode(diskMode vimtypes.VirtualDiskMode) (vmopv1.VolumeDiskMode, error) {
+	switch diskMode {
+	case vimtypes.VirtualDiskModeIndependent_persistent:
+		return vmopv1.VolumeDiskModeIndependentPersistent, nil
+	case vimtypes.VirtualDiskModeIndependent_nonpersistent:
+		return vmopv1.VolumeDiskModeIndependentNonPersistent, nil
+	case vimtypes.VirtualDiskModeNonpersistent:
+		return vmopv1.VolumeDiskModeNonPersistent, nil
+	case vimtypes.VirtualDiskModePersistent, "":
+		return vmopv1.VolumeDiskModePersistent, nil
+	default:
+		return "", fmt.Errorf("unsupported disk mode: %s", diskMode)
+	}
+}
+
+// GetVolumeSharingModeFromDiskSharing maps a disk sharing mode to Volume
+// sharing mode.
+// Returns the converted sharing mode or an an error if not supported.
+func GetVolumeSharingModeFromDiskSharing(diskSharing vimtypes.VirtualDiskSharing) (vmopv1.VolumeSharingMode, error) {
+	switch diskSharing {
+	case vimtypes.VirtualDiskSharingSharingMultiWriter:
+		return vmopv1.VolumeSharingModeMultiWriter, nil
+	case vimtypes.VirtualDiskSharingSharingNone, "":
+		return vmopv1.VolumeSharingModeNone, nil
+	default:
+		return "", fmt.Errorf("unsupported sharing mode: %s", diskSharing)
+	}
 }
 
 // ControllerID represents a unique identifier for a virtual controller in a VM.

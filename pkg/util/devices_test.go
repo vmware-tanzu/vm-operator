@@ -11,6 +11,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 func newPCIPassthroughDevice(profile string) *vimtypes.VirtualPCIPassthrough {
@@ -372,6 +373,193 @@ var _ = Describe("GetPreferredDiskFormat", func() {
 	)
 })
 
+var _ = Describe("GetVirtualDiskInfo", func() {
+	Context("DiskMode extraction", func() {
+		When("disk has FlatVer2 backing with persistent mode", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/disk.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModePersistent),
+							Uuid:     "disk-uuid-123",
+						},
+						DeviceInfo: &vimtypes.Description{
+							Label: "Hard disk 1",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModePersistent))
+				Expect(info.UUID).To(Equal("disk-uuid-123"))
+				Expect(info.Label).To(Equal("Hard disk 1"))
+			})
+		})
+
+		When("disk has FlatVer2 backing with independent_persistent mode", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/disk.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModeIndependent_persistent),
+							Uuid:     "disk-uuid-456",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModeIndependent_persistent))
+			})
+		})
+
+		When("disk has SparseVer2 backing with nonpersistent mode", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/disk.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModeNonpersistent),
+							Uuid:     "disk-uuid-789",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModeNonpersistent))
+			})
+		})
+
+		When("disk has SeSparse backing with undoable mode", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/disk.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModeUndoable),
+							Uuid:     "disk-uuid-abc",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModeUndoable))
+			})
+		})
+
+		When("disk has FlatVer2 backing with append mode", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/disk.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModeAppend),
+							Uuid:     "disk-uuid-def",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModeAppend))
+			})
+		})
+
+		When("disk has FlatVer2 backing with MultiWriter sharing", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/disk.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModeIndependent_persistent),
+							Sharing:  string(vimtypes.VirtualDiskSharingSharingMultiWriter),
+							Uuid:     "disk-uuid-ghi",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModeIndependent_persistent))
+				Expect(info.Sharing).To(Equal(vimtypes.VirtualDiskSharingSharingMultiWriter))
+			})
+		})
+
+		When("disk has RawDiskMappingVer1 backing with DiskMode", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/rdm.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModePersistent),
+							Uuid:     "rdm-uuid-123",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModePersistent))
+			})
+		})
+
+		When("disk has LocalPMem backing with DiskMode", func() {
+			It("should extract info correctly", func() {
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskLocalPMemBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore1] vm/pmem.vmdk",
+							},
+							DiskMode: string(vimtypes.VirtualDiskModePersistent),
+							Uuid:     "pmem-uuid-123",
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+				info := util.GetVirtualDiskInfo(disk)
+				Expect(info.DiskMode).To(Equal(vimtypes.VirtualDiskModePersistent))
+			})
+		})
+	})
+})
+
 var _ = Describe("GetControllerIDFromDevice", func() {
 	When("device is a VirtualIDEController", func() {
 		It("returns ControllerID with IDE type and bus number", func() {
@@ -447,4 +635,94 @@ var _ = Describe("GetControllerIDFromDevice", func() {
 			Expect(controllerID).To(Equal(util.ControllerID{}))
 		})
 	})
+})
+
+var _ = Describe("GetVolumeDiskModeFromDiskMode", func() {
+	DescribeTable("disk mode conversion",
+		func(diskMode vimtypes.VirtualDiskMode, expectedDiskMode vmopv1.VolumeDiskMode, expectError bool) {
+			volumeDiskMode, err := util.GetVolumeDiskModeFromDiskMode(diskMode)
+			if expectError {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unsupported disk mode"))
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(volumeDiskMode).To(Equal(expectedDiskMode))
+			}
+		},
+		Entry("persistent mode",
+			vimtypes.VirtualDiskModePersistent,
+			vmopv1.VolumeDiskModePersistent,
+			false,
+		),
+		Entry("independent_persistent mode",
+			vimtypes.VirtualDiskModeIndependent_persistent,
+			vmopv1.VolumeDiskModeIndependentPersistent,
+			false,
+		),
+		Entry("nonpersistent mode",
+			vimtypes.VirtualDiskModeNonpersistent,
+			vmopv1.VolumeDiskModeNonPersistent,
+			false,
+		),
+		Entry("independent_nonpersistent mode",
+			vimtypes.VirtualDiskModeIndependent_nonpersistent,
+			vmopv1.VolumeDiskModeIndependentNonPersistent,
+			false,
+		),
+		Entry("empty disk mode defaults to Persistent",
+			vimtypes.VirtualDiskMode(""),
+			vmopv1.VolumeDiskModePersistent,
+			false,
+		),
+		Entry("undoable mode is unsupported",
+			vimtypes.VirtualDiskModeUndoable,
+			vmopv1.VolumeDiskMode(""),
+			true,
+		),
+		Entry("append mode is unsupported",
+			vimtypes.VirtualDiskModeAppend,
+			vmopv1.VolumeDiskMode(""),
+			true,
+		),
+		Entry("unknown mode is unsupported",
+			vimtypes.VirtualDiskMode("unknown_mode"),
+			vmopv1.VolumeDiskMode(""),
+			true,
+		),
+	)
+})
+
+var _ = Describe("GetVolumeSharingModeFromDiskSharing", func() {
+	DescribeTable("sharing mode conversion",
+		func(diskSharing vimtypes.VirtualDiskSharing, expectedSharingMode vmopv1.VolumeSharingMode, expectError bool) {
+			volumeSharingMode, err := util.GetVolumeSharingModeFromDiskSharing(diskSharing)
+			if expectError {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unsupported sharing mode"))
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(volumeSharingMode).To(Equal(expectedSharingMode))
+			}
+		},
+		Entry("sharingNone mode",
+			vimtypes.VirtualDiskSharingSharingNone,
+			vmopv1.VolumeSharingModeNone,
+			false,
+		),
+		Entry("sharingMultiWriter mode",
+			vimtypes.VirtualDiskSharingSharingMultiWriter,
+			vmopv1.VolumeSharingModeMultiWriter,
+			false,
+		),
+		Entry("empty sharing mode defaults to None",
+			vimtypes.VirtualDiskSharing(""),
+			vmopv1.VolumeSharingModeNone,
+			false,
+		),
+		Entry("unknown sharing mode is unsupported",
+			vimtypes.VirtualDiskSharing("unknown_sharing"),
+			vmopv1.VolumeSharingMode(""),
+			true,
+		),
+	)
 })

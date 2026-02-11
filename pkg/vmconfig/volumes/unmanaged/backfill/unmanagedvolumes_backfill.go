@@ -6,6 +6,8 @@ package backfill
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi/vim25"
@@ -97,10 +99,19 @@ func (r reconciler) Reconcile(
 	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
 
 	// Process each unmanaged disk.
-	updatedSpec := updateSpecWithUnmanagedDisks(
+	updatedSpec, err := updateSpecWithUnmanagedDisks(
 		ctx,
 		vm,
 		info)
+
+	if err != nil {
+		pkgcond.MarkError(
+			vm,
+			Condition,
+			"Failed",
+			err)
+		return err
+	}
 
 	if updatedSpec {
 		pkgcond.MarkFalse(
@@ -118,11 +129,12 @@ func (r reconciler) Reconcile(
 func updateSpecWithUnmanagedDisks(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	info pkgvol.VolumeInfo) bool {
+	info pkgvol.VolumeInfo) (bool, error) {
 
 	var (
-		addedToSpec bool
-		logger      = pkglog.FromContextOrDefault(ctx)
+		errors     []string
+		logger     = pkglog.FromContextOrDefault(ctx)
+		newVolumes []vmopv1.VirtualMachineVolume
 	)
 
 	logger.Info("Get unmanaged volume info",
@@ -131,30 +143,54 @@ func updateSpecWithUnmanagedDisks(
 	for _, di := range info.Disks {
 		// Step 1: Look for existing volume entry with the disk target ID.
 		if _, exists := info.Volumes[di.Target.String()]; !exists {
+			var errMessages []string
 			diskName := pkgutil.GeneratePVCName(vm.Name, uuid.NewString())
 
-			// Step 2: If no such entry exists, add one.
+			// Convert vSphere disk mode to VM Operator disk mode
+			diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode)
+			if err != nil {
+				errMessages = append(errMessages,
+					fmt.Sprintf("%s for volume: %s", err.Error(), diskName))
+			}
+
+			// Convert vSphere sharing mode to VM Operator sharing mode
+			sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing)
+			if err != nil {
+				errMessages = append(errMessages,
+					fmt.Sprintf("%s for volume: %s", err.Error(), diskName))
+			}
+
+			if len(errMessages) > 0 {
+				errors = append(errors, errMessages...)
+				continue
+			}
+
+			// Step 2: If no such entry exists, prepare to add one.
 			newVolSpec := vmopv1.VirtualMachineVolume{
 				Name:                diskName,
 				ControllerBusNumber: ptr.To(info.Controllers[di.ControllerKey].Bus),
 				ControllerType:      info.Controllers[di.ControllerKey].Type,
 				UnitNumber:          di.UnitNumber,
 				Removable:           ptr.To(false),
+				DiskMode:            diskMode,
+				SharingMode:         sharingMode,
 			}
 
-			switch di.Sharing {
-			case vimtypes.VirtualDiskSharingSharingMultiWriter:
-				newVolSpec.SharingMode = vmopv1.VolumeSharingModeMultiWriter
-			case vimtypes.VirtualDiskSharingSharingNone:
-				newVolSpec.SharingMode = vmopv1.VolumeSharingModeNone
-			}
-
+			newVolumes = append(newVolumes, newVolSpec)
 			logger.Info("Backfilled unmanaged volume to spec",
 				"volume", newVolSpec)
-			vm.Spec.Volumes = append(vm.Spec.Volumes, newVolSpec)
-			addedToSpec = true
 		}
 	}
 
-	return addedToSpec
+	if len(errors) > 0 {
+		return false, fmt.Errorf("failed to backfill unmanaged volumes: %s",
+			strings.Join(errors, ". "))
+	}
+
+	if len(newVolumes) > 0 {
+		vm.Spec.Volumes = append(vm.Spec.Volumes, newVolumes...)
+		return true, nil
+	}
+
+	return false, nil
 }

@@ -7467,7 +7467,6 @@ spec:
                               - IndependentPersistent
                               - NonPersistent
                               - Persistent
-                              - Dependent
                               type: string
                             name:
                               description: |-

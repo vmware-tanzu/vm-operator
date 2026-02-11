@@ -94,3 +94,33 @@ func GetCnsNodeVMAttachmentsForVM(
 
 	return attachments, nil
 }
+
+// GetCnsDiskModeFromDiskMode maps a volume disk mode to CNS disk mode.
+// Returns the converted disk mode or an an error if not supported.
+func GetCnsDiskModeFromDiskMode(diskMode vmopv1.VolumeDiskMode) (cnsv1alpha1.DiskMode, error) {
+	switch diskMode {
+	case vmopv1.VolumeDiskModePersistent:
+		return cnsv1alpha1.Persistent, nil
+	case vmopv1.VolumeDiskModeIndependentPersistent:
+		return cnsv1alpha1.IndependentPersistent, nil
+	case vmopv1.VolumeDiskModeIndependentNonPersistent:
+		return cnsv1alpha1.IndependentNonPersistent, nil
+	case vmopv1.VolumeDiskModeNonPersistent:
+		return cnsv1alpha1.NonPersistent, nil
+	default:
+		return "", fmt.Errorf("unsupported disk mode: %s", diskMode)
+	}
+}
+
+// GetCnsSharingModeFromSharingMode maps a volume sharing mode to CNS sharing mode.
+// Returns the converted sharing mode or an an error if not supported.
+func GetCnsSharingModeFromSharingMode(sharingMode vmopv1.VolumeSharingMode) (cnsv1alpha1.SharingMode, error) {
+	switch sharingMode {
+	case vmopv1.VolumeSharingModeNone:
+		return cnsv1alpha1.SharingNone, nil
+	case vmopv1.VolumeSharingModeMultiWriter:
+		return cnsv1alpha1.SharingMultiWriter, nil
+	default:
+		return "", fmt.Errorf("unsupported sharing mode: %s", sharingMode)
+	}
+}

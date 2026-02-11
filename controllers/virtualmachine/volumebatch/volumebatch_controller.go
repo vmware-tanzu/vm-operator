@@ -640,7 +640,6 @@ func (r *Reconciler) buildVolumeSpecs(
 		buildErrMsg   = "failed to build volume specs:"
 		volumeSpecs   = make([]cnsv1alpha1.VolumeSpec, 0, len(volumes))
 		ctrlDevKeyMap = make(map[pkgutil.ControllerID]int32)
-		retErr        error
 	)
 
 	for _, ctrlStatus := range hardware.Controllers {
@@ -655,9 +654,8 @@ func (r *Reconciler) buildVolumeSpecs(
 		// It returns NoRequeueError because we do not want to keep reconciling
 		// volume with incorrect spec unless the spec is fixed.
 		if vol.ControllerBusNumber == nil {
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
-				"%s volume %q is missing controller bus number", buildErrMsg, vol.Name)})
-			continue
+			return nil, pkgerr.NoRequeueError{Message: fmt.Sprintf(
+				"%s volume %q is missing controller bus number", buildErrMsg, vol.Name)}
 		}
 
 		ctrlDevKey, ok := ctrlDevKeyMap[pkgutil.ControllerID{
@@ -665,10 +663,9 @@ func (r *Reconciler) buildVolumeSpecs(
 			BusNumber:      *vol.ControllerBusNumber,
 		}]
 		if !ok {
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Sprintf(
+			return nil, pkgerr.NoRequeueError{Message: fmt.Sprintf(
 				"%s waiting for the device controller %q %q to be created for volume %q",
-				buildErrMsg, vol.ControllerType, *vol.ControllerBusNumber, vol.Name)})
-			continue
+				buildErrMsg, vol.ControllerType, *vol.ControllerBusNumber, vol.Name)}
 		}
 
 		// Map VM volume spec to CNS batch attachment spec
@@ -687,44 +684,33 @@ func (r *Reconciler) buildVolumeSpecs(
 		// Apply application type presets first
 		// Ideally, this would already have been mutated by the webhook, but just handle that here anyway.
 		if err := r.applyApplicationTypePresets(&vol, &cnsVolumeSpec); err != nil {
-
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{Message: fmt.Errorf(
+			return nil, pkgerr.NoRequeueError{Message: fmt.Errorf(
 				"%s failed to apply application type presets for volume %s: %w",
-				buildErrMsg, vol.Name, err).Error()})
-
-			continue
+				buildErrMsg, vol.Name, err).Error()}
 		}
 
 		// Map disk mode (can override application type presets)
-		switch vol.DiskMode {
-		case vmopv1.VolumeDiskModePersistent:
-			cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.Persistent
-		case vmopv1.VolumeDiskModeIndependentPersistent:
-			cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.IndependentPersistent
-		default:
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("%s unsupported disk mode: %s for volume %s",
-					buildErrMsg, vol.DiskMode, vol.Name)})
-			continue
+		diskMode, err := pkgutil.GetCnsDiskModeFromDiskMode(vol.DiskMode)
+		if err != nil {
+			return nil, pkgerr.NoRequeueError{Message: fmt.Errorf(
+				"%s failed to get CNS disk mode for volume %s: %w",
+				buildErrMsg, vol.Name, err).Error()}
 		}
+		cnsVolumeSpec.PersistentVolumeClaim.DiskMode = diskMode
 
 		// Map sharing mode (can override application type presets)
-		switch vol.SharingMode {
-		case vmopv1.VolumeSharingModeNone:
-			cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingNone
-		case vmopv1.VolumeSharingModeMultiWriter:
-			cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingMultiWriter
-		default:
-			retErr = errOrNoRequeueErr(retErr, pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("%s unsupported sharing mode: %s for volume %s",
-					buildErrMsg, vol.SharingMode, vol.Name)})
-			continue
+		sharingMode, err := pkgutil.GetCnsSharingModeFromSharingMode(vol.SharingMode)
+		if err != nil {
+			return nil, pkgerr.NoRequeueError{Message: fmt.Errorf(
+				"%s failed to get CNS sharing mode for volume %s: %w",
+				buildErrMsg, vol.Name, err).Error()}
 		}
+		cnsVolumeSpec.PersistentVolumeClaim.SharingMode = sharingMode
 
 		volumeSpecs = append(volumeSpecs, cnsVolumeSpec)
 	}
 
-	return volumeSpecs, retErr
+	return volumeSpecs, nil
 }
 
 func (r *Reconciler) applyApplicationTypePresets(

@@ -279,7 +279,7 @@ var _ = Describe("Reconcile", func() {
 					Expect(vol1.ControllerType).To(Equal(vmopv1.VirtualControllerTypeIDE))
 					Expect(*vol1.ControllerBusNumber).To(Equal(int32(0)))
 					Expect(*vol1.UnitNumber).To(Equal(int32(0)))
-					Expect(vol1.SharingMode).To(BeEmpty())
+					Expect(vol1.SharingMode).To(Equal(vmopv1.VolumeSharingModeNone))
 
 					// Verify volume 2 properties
 					Expect(vol2.Removable).To(Equal(ptr.To(false)))
@@ -591,6 +591,148 @@ var _ = Describe("Reconcile", func() {
 					Expect(vol).ToNot(BeNil())
 				})
 			})
+		})
+
+		Context("disk mode and sharing mode backfill", func() {
+			type diskModeTestCase struct {
+				vsphereDiskMode     vimtypes.VirtualDiskMode
+				vsphereSharingMode  vimtypes.VirtualDiskSharing
+				expectedDiskMode    vmopv1.VolumeDiskMode
+				expectedSharingMode vmopv1.VolumeSharingMode
+				expectError         bool
+				errorSubstring      string
+			}
+
+			createDiskWithModes := func(diskMode vimtypes.VirtualDiskMode, sharingMode vimtypes.VirtualDiskSharing) {
+				scsiController := &vimtypes.VirtualSCSIController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 1000,
+						},
+						BusNumber: 0,
+					},
+				}
+
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           2000,
+						ControllerKey: 1000,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/test-disk.vmdk",
+							},
+							Uuid:     "test-disk-uuid",
+							DiskMode: string(diskMode),
+							Sharing:  string(sharingMode),
+						},
+					},
+					CapacityInBytes: 10737418240,
+				}
+
+				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							scsiController,
+							disk,
+						},
+					},
+				}
+			}
+
+			DescribeTable("disk mode mapping",
+				func(tc diskModeTestCase) {
+					createDiskWithModes(tc.vsphereDiskMode, tc.vsphereSharingMode)
+
+					err := r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+
+					if tc.expectError {
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring(tc.errorSubstring))
+
+						// Verify condition is set to Failed
+						cond := pkgcond.Get(vm, unmanagedvolsfill.Condition)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal("Failed"))
+						Expect(cond.Message).To(ContainSubstring("unsupported"))
+					} else {
+						Expect(err).To(Equal(unmanagedvolsfill.ErrPendingBackfill))
+						Expect(vm.Spec.Volumes).To(HaveLen(1))
+
+						vol := vmopv1util.FindByTargetID(
+							vmopv1.VirtualControllerTypeSCSI, 0, 0,
+							vm.Spec.Volumes...)
+						Expect(vol).ToNot(BeNil())
+						Expect(vol.DiskMode).To(Equal(tc.expectedDiskMode))
+						Expect(vol.SharingMode).To(Equal(tc.expectedSharingMode))
+					}
+				},
+				Entry("persistent mode with no sharing",
+					diskModeTestCase{
+						vsphereDiskMode:     vimtypes.VirtualDiskModePersistent,
+						vsphereSharingMode:  vimtypes.VirtualDiskSharingSharingNone,
+						expectedDiskMode:    vmopv1.VolumeDiskModePersistent,
+						expectedSharingMode: vmopv1.VolumeSharingModeNone,
+					},
+				),
+				Entry("independent_persistent mode with no sharing",
+					diskModeTestCase{
+						vsphereDiskMode:     vimtypes.VirtualDiskModeIndependent_persistent,
+						vsphereSharingMode:  vimtypes.VirtualDiskSharingSharingNone,
+						expectedDiskMode:    vmopv1.VolumeDiskModeIndependentPersistent,
+						expectedSharingMode: vmopv1.VolumeSharingModeNone,
+					},
+				),
+				Entry("nonpersistent mode",
+					diskModeTestCase{
+						vsphereDiskMode:     vimtypes.VirtualDiskModeNonpersistent,
+						vsphereSharingMode:  vimtypes.VirtualDiskSharingSharingNone,
+						expectedDiskMode:    vmopv1.VolumeDiskModeNonPersistent,
+						expectedSharingMode: vmopv1.VolumeSharingModeNone,
+					},
+				),
+				Entry("independent_nonpersistent mode",
+					diskModeTestCase{
+						vsphereDiskMode:     vimtypes.VirtualDiskModeIndependent_nonpersistent,
+						vsphereSharingMode:  vimtypes.VirtualDiskSharingSharingNone,
+						expectedDiskMode:    vmopv1.VolumeDiskModeIndependentNonPersistent,
+						expectedSharingMode: vmopv1.VolumeSharingModeNone,
+					},
+				),
+				Entry("independent_persistent with MultiWriter sharing",
+					diskModeTestCase{
+						vsphereDiskMode:     vimtypes.VirtualDiskModeIndependent_persistent,
+						vsphereSharingMode:  vimtypes.VirtualDiskSharingSharingMultiWriter,
+						expectedDiskMode:    vmopv1.VolumeDiskModeIndependentPersistent,
+						expectedSharingMode: vmopv1.VolumeSharingModeMultiWriter,
+					},
+				),
+				Entry("empty disk mode defaults to Persistent",
+					diskModeTestCase{
+						vsphereDiskMode:     "",
+						vsphereSharingMode:  vimtypes.VirtualDiskSharingSharingNone,
+						expectedDiskMode:    vmopv1.VolumeDiskModePersistent,
+						expectedSharingMode: vmopv1.VolumeSharingModeNone,
+					},
+				),
+				Entry("undoable mode (legacy) is unsupported",
+					diskModeTestCase{
+						vsphereDiskMode:    vimtypes.VirtualDiskModeUndoable,
+						vsphereSharingMode: vimtypes.VirtualDiskSharingSharingNone,
+						expectError:        true,
+						errorSubstring:     "unsupported disk mode: undoable",
+					},
+				),
+				Entry("append mode (legacy) is unsupported",
+					diskModeTestCase{
+						vsphereDiskMode:    vimtypes.VirtualDiskModeAppend,
+						vsphereSharingMode: vimtypes.VirtualDiskSharingSharingNone,
+						expectError:        true,
+						errorSubstring:     "unsupported disk mode: append",
+					},
+				),
+			)
 		})
 
 		Context("controller types", func() {

@@ -12158,7 +12158,6 @@ spec:
                       - IndependentPersistent
                       - NonPersistent
                       - Persistent
-                      - Dependent
                       type: string
                     name:
                       description: |-
@@ -13414,7 +13413,6 @@ spec:
                       - IndependentPersistent
                       - NonPersistent
                       - Persistent
-                      - Dependent
                       type: string
                     diskUUID:
                       description: |-

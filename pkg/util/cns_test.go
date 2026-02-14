@@ -8,6 +8,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -28,3 +30,83 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 \\\"The resource 'volume' is in use.\\\"\\n})\\n\". opId: \"67d69c68\""
 `, "failed to attach cns volume"),
 )
+
+var _ = Describe("GetCnsDiskModeFromDiskMode", func() {
+	DescribeTable("disk mode conversion",
+		func(volumeDiskMode vmopv1.VolumeDiskMode, expectedCnsDiskMode cnsv1alpha1.DiskMode, expectError bool) {
+			cnsDiskMode, err := util.GetCnsDiskModeFromDiskMode(volumeDiskMode)
+			if expectError {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unsupported disk mode"))
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(cnsDiskMode).To(Equal(expectedCnsDiskMode))
+			}
+		},
+		Entry("Persistent mode",
+			vmopv1.VolumeDiskModePersistent,
+			cnsv1alpha1.Persistent,
+			false,
+		),
+		Entry("IndependentPersistent mode",
+			vmopv1.VolumeDiskModeIndependentPersistent,
+			cnsv1alpha1.IndependentPersistent,
+			false,
+		),
+		Entry("NonPersistent mode",
+			vmopv1.VolumeDiskModeNonPersistent,
+			cnsv1alpha1.DiskMode(cnsv1alpha1.NonPersistent),
+			false,
+		),
+		Entry("IndependentNonPersistent mode",
+			vmopv1.VolumeDiskModeIndependentNonPersistent,
+			cnsv1alpha1.DiskMode(cnsv1alpha1.IndependentNonPersistent),
+			false,
+		),
+		Entry("empty mode is unsupported",
+			vmopv1.VolumeDiskMode(""),
+			cnsv1alpha1.DiskMode(""),
+			true,
+		),
+		Entry("unknown mode is unsupported",
+			vmopv1.VolumeDiskMode("unknown_mode"),
+			cnsv1alpha1.DiskMode(""),
+			true,
+		),
+	)
+})
+
+var _ = Describe("GetCnsSharingModeFromSharingMode", func() {
+	DescribeTable("sharing mode conversion",
+		func(volumeSharingMode vmopv1.VolumeSharingMode, expectedCnsSharingMode cnsv1alpha1.SharingMode, expectError bool) {
+			cnsSharingMode, err := util.GetCnsSharingModeFromSharingMode(volumeSharingMode)
+			if expectError {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unsupported sharing mode"))
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(cnsSharingMode).To(Equal(expectedCnsSharingMode))
+			}
+		},
+		Entry("None mode",
+			vmopv1.VolumeSharingModeNone,
+			cnsv1alpha1.SharingNone,
+			false,
+		),
+		Entry("MultiWriter mode",
+			vmopv1.VolumeSharingModeMultiWriter,
+			cnsv1alpha1.SharingMultiWriter,
+			false,
+		),
+		Entry("empty mode is unsupported",
+			vmopv1.VolumeSharingMode(""),
+			cnsv1alpha1.SharingMode(""),
+			true,
+		),
+		Entry("unknown mode is unsupported",
+			vmopv1.VolumeSharingMode("unknown_sharing"),
+			cnsv1alpha1.SharingMode(""),
+			true,
+		),
+	)
+})

@@ -38,7 +38,7 @@ const (
 	VolumeProvisioningModeThickEagerZero VolumeProvisioningMode = "ThickEagerZero"
 )
 
-// +kubebuilder:validation:Enum=IndependentNonPersistent;IndependentPersistent;NonPersistent;Persistent;Dependent
+// +kubebuilder:validation:Enum=IndependentNonPersistent;IndependentPersistent;NonPersistent;Persistent
 
 type VolumeDiskMode string
 

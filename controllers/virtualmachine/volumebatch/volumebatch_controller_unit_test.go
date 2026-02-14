@@ -363,6 +363,50 @@ func unitTestsReconcile() {
 				})
 			})
 
+			When("volume has unsupported disk mode", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes[0].DiskMode = "UnsupportedDiskMode"
+				})
+
+				It("returns NoRequeueError and batch attachment has no volumes", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unsupported disk mode"))
+					Expect(err.Error()).To(ContainSubstring("UnsupportedDiskMode"))
+					Expect(err.Error()).To(ContainSubstring(volumeName1))
+
+					// Verify batch attachment exists but has no volumes
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					Expect(attachment).NotTo(BeNil())
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
+
+					// Verify VM status volumes is empty
+					Expect(vm.Status.Volumes).To(BeEmpty())
+				})
+			})
+
+			When("volume has unsupported sharing mode", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes[0].SharingMode = "UnsupportedSharingMode"
+				})
+
+				It("returns NoRequeueError and batch attachment has no volumes", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unsupported sharing mode"))
+					Expect(err.Error()).To(ContainSubstring("UnsupportedSharingMode"))
+					Expect(err.Error()).To(ContainSubstring(volumeName1))
+
+					// Verify batch attachment exists but has no volumes
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					Expect(attachment).NotTo(BeNil())
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
+
+					// Verify VM status volumes is empty
+					Expect(vm.Status.Volumes).To(BeEmpty())
+				})
+			})
+
 			When("controller type and bus number are set", func() {
 				BeforeEach(func() {
 					vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI

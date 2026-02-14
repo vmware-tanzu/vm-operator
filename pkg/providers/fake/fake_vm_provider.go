@@ -40,6 +40,7 @@ type funcs struct {
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
 	GetVirtualMachinePropertiesFn      func(ctx context.Context, vm *vmopv1.VirtualMachine, propertyPaths []string) (map[string]any, error)
+	GetVirtualMachineFilesFn           func(ctx context.Context, vm *vmopv1.VirtualMachine) ([]vimtypes.VirtualMachineFileLayoutExFileInfo, error)
 	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error)
 	PlaceVirtualMachineGroupFn         func(ctx context.Context, group *vmopv1.VirtualMachineGroup, groupPlacement []providers.VMGroupPlacement) error
@@ -177,6 +178,20 @@ func (s *VMProvider) GetVirtualMachineProperties(
 	defer s.Unlock()
 	if s.GetVirtualMachinePropertiesFn != nil {
 		return s.GetVirtualMachinePropertiesFn(ctx, vm, propertyPaths)
+	}
+	return nil, nil
+}
+
+func (s *VMProvider) GetVirtualMachineFiles(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) ([]vimtypes.VirtualMachineFileLayoutExFileInfo, error) {
+
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if s.GetVirtualMachineFilesFn != nil {
+		return s.GetVirtualMachineFilesFn(ctx, vm)
 	}
 	return nil, nil
 }

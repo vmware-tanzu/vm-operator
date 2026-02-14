@@ -555,27 +555,42 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 	// validation. We need to apply this annotation along with the requested capacity annotation
 	// and await processing.
 	if !metav1.HasAnnotation(vmPubReq.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
-		if ctx.VM.Status.Storage != nil && ctx.VM.Status.Storage.Used != nil {
-			storageUsed := ctx.VM.Status.Storage.Used
+		vmFiles, err := r.VMProvider.GetVirtualMachineFiles(ctx, ctx.VM)
+		if err != nil {
+			return fmt.Errorf("error getting VM files to calculate template size estimation: %w", err)
+		}
 
-			used := resource.NewQuantity(0, resource.BinarySI)
-			if disksUsed := storageUsed.Disks; disksUsed != nil {
-				used.Add(*disksUsed)
+		var reqTemplateStorage int64
+		// We are doing a best-effort estimation of the storage that would be
+		// consumed by the template that would result from cloning the src VM.
+		// Sum the VM's config files (.vmx and .nvram) and disk files (.vmdk) to
+		// get the approximate size of the template. This reasonably accurate when
+		// the src VM has no snapshots. However, when the src VM has snapshots,
+		// then we will be overestimating. The amount which we are overestimating
+		// depends on the number of snapshots and delta disks. There isn't a reliable
+		// way for us to know what the disk consolidation will look like beforehand.
+		for i := range vmFiles {
+			f := vmFiles[i]
+			switch vimtypes.VirtualMachineFileLayoutExFileType(f.Type) {
+			case vimtypes.VirtualMachineFileLayoutExFileTypeConfig,
+				vimtypes.VirtualMachineFileLayoutExFileTypeNvram,
+				vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor,
+				vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent:
+
+				reqTemplateStorage += f.Size
+			default:
 			}
+		}
+		requestedCapacity := resource.NewQuantity(reqTemplateStorage, resource.BinarySI)
 
-			if otherUsed := storageUsed.Other; otherUsed != nil {
-				used.Add(*otherUsed)
+		if !requestedCapacity.Equal(*resource.NewQuantity(0, resource.BinarySI)) {
+			if vmPubReq.Annotations == nil {
+				vmPubReq.Annotations = make(map[string]string)
 			}
+			vmPubReq.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
+			vmPubReq.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] = requestedCapacity.String()
 
-			if !used.Equal(*resource.NewQuantity(0, resource.BinarySI)) {
-				if vmPubReq.Annotations == nil {
-					vmPubReq.Annotations = make(map[string]string)
-				}
-				vmPubReq.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
-				vmPubReq.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] = used.String()
-
-				return pkgerr.NoRequeueNoErr("quota validation is needed for this request")
-			}
+			return pkgerr.NoRequeueNoErr("quota validation is needed for this request")
 		}
 		return fmt.Errorf("unable get storage used for VM %q for quota validation", ctx.VM.NamespacedName())
 	}

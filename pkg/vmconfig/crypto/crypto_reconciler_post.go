@@ -136,6 +136,8 @@ func (r reconciler) OnResult(
 						msgs = append(msgs, "be encrypted")
 					case "msg.hostd.configSpec.enc.mismatch":
 						msgs = append(msgs, "have vm and disks with different encryption states")
+					case "msg.hostd.configSpec.enc.mixedKeys":
+						msgs = append(msgs, "have vm and disks with different key provider types")
 					}
 				}
 			}

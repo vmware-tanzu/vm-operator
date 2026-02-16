@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +29,7 @@ import (
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
@@ -1416,6 +1418,441 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 						})
 					})
 
+				})
+			})
+
+			When("reconciling FCDs", func() {
+				var (
+					pvc           *corev1.PersistentVolumeClaim
+					fcdEncClass   *byokv1.EncryptionClass
+					scsiCtrlKey   int32 = 100
+					fcdDiskKey    int32 = 2000
+					fcdUnitNumber int32 = 1
+				)
+
+				BeforeEach(func() {
+					// Set up a VM with an FCD disk
+					moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+						&vimtypes.ParaVirtualSCSIController{
+							VirtualSCSIController: vimtypes.VirtualSCSIController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: scsiCtrlKey,
+									},
+									BusNumber: 0,
+								},
+							},
+						},
+						&vimtypes.VirtualDisk{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key:           fcdDiskKey,
+								ControllerKey: scsiCtrlKey,
+								UnitNumber:    &fcdUnitNumber,
+								Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+										FileName: "[datastore1] my-vm/my-fcd.vmdk",
+									},
+									Uuid: "fcd-uuid-1",
+								},
+							},
+							VDiskId: &vimtypes.ID{Id: "fcd-id-1"}, // This makes it an FCD
+						},
+					}
+
+					// Set up the VM spec with a volume that references the FCD
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "my-fcd-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "my-fcd-pvc",
+									},
+								},
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To(fcdUnitNumber),
+						},
+					}
+
+					// Create the PVC with encrypted storage class
+					pvc = &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: vm.Namespace,
+							Name:      "my-fcd-pvc",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							StorageClassName: ptr.To(storageClass2.Name),
+						},
+					}
+
+					// Create a separate encryption class for FCDs
+					fcdEncClass = &byokv1.EncryptionClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: vm.Namespace,
+							Name:      "my-fcd-encryption-class",
+						},
+						Spec: byokv1.EncryptionClassSpec{
+							KeyProvider: provider2ID,
+							KeyID:       provider2Key1ID,
+						},
+					}
+
+					withObjs = append(withObjs, pvc, fcdEncClass)
+				})
+
+				When("FCD has encryption class annotation", func() {
+					BeforeEach(func() {
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+						}
+					})
+
+					When("FCD is not encrypted", func() {
+						It("should encrypt the FCD", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.DeviceChange).To(HaveLen(1))
+							devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+							Expect(devSpec).ToNot(BeNil())
+							Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+							Expect(devSpec.Backing).ToNot(BeNil())
+							cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecEncrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider2Key1ID))
+							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider2ID))
+						})
+					})
+
+					When("FCD is already encrypted with same key", func() {
+						BeforeEach(func() {
+							// Set the FCD as already encrypted with the same key
+							disk := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+							disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = &vimtypes.CryptoKeyId{
+								KeyId: provider2Key1ID,
+								ProviderId: &vimtypes.KeyProviderId{
+									Id: provider2ID,
+								},
+							}
+						})
+
+						It("should not add device changes", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.DeviceChange).To(BeEmpty())
+						})
+					})
+
+					When("FCD is encrypted with different key", func() {
+						BeforeEach(func() {
+							// Set the FCD as encrypted with a different key
+							disk := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+							disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = &vimtypes.CryptoKeyId{
+								KeyId: provider1Key1ID,
+								ProviderId: &vimtypes.KeyProviderId{
+									Id: provider1ID,
+								},
+							}
+						})
+
+						It("should recrypt the FCD", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.DeviceChange).To(HaveLen(1))
+							devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+							Expect(devSpec).ToNot(BeNil())
+							Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+							Expect(devSpec.Backing).ToNot(BeNil())
+							cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider2Key1ID))
+							Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider2ID))
+						})
+					})
+				})
+
+				When("FCD has no encryption class annotation", func() {
+					When("there is a default key provider", func() {
+						BeforeEach(func() {
+							Expect(cryptoManager.MarkDefault(ctx, provider3ID)).To(Succeed())
+						})
+
+						When("FCD is not encrypted", func() {
+							It("should encrypt the FCD with default provider", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(HaveLen(1))
+								devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+								Expect(devSpec).ToNot(BeNil())
+								Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+								Expect(devSpec.Backing).ToNot(BeNil())
+								cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecEncrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty()) // Default provider generates keys on-demand
+								Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider3ID))
+							})
+						})
+
+						When("FCD is already encrypted with default provider", func() {
+							BeforeEach(func() {
+								// Set the FCD as already encrypted with the default provider
+								disk := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+								disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = &vimtypes.CryptoKeyId{
+									KeyId: "some-generated-key",
+									ProviderId: &vimtypes.KeyProviderId{
+										Id: provider3ID,
+									},
+								}
+							})
+
+							It("should not add device changes", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(BeEmpty())
+							})
+						})
+					})
+
+					When("there is no default key provider", func() {
+						It("should return an error", func() {
+							Expect(err).To(MatchError(pkgcrypto.ErrNoDefaultKeyProvider))
+						})
+					})
+				})
+
+				When("FCD storage class does not support encryption", func() {
+					BeforeEach(func() {
+						pvc.Spec.StorageClassName = ptr.To(storageClass1.Name)
+						pvc.Annotations = map[string]string{
+							"encryption.vmware.com/encryption-class-name": fcdEncClass.Name,
+						}
+					})
+
+					It("should not encrypt the FCD", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.DeviceChange).To(BeEmpty())
+					})
+				})
+
+				When("PVC has no storage class name", func() {
+					BeforeEach(func() {
+						pvc.Spec.StorageClassName = nil
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+						}
+					})
+
+					It("should skip the FCD", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.DeviceChange).To(BeEmpty())
+					})
+				})
+
+				When("PVC has empty storage class name", func() {
+					BeforeEach(func() {
+						pvc.Spec.StorageClassName = ptr.To("")
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+						}
+					})
+
+					It("should skip the FCD", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.DeviceChange).To(BeEmpty())
+					})
+				})
+
+				When("PVC is not found", func() {
+					BeforeEach(func() {
+						// Remove the PVC from withObjs so it won't be created.
+						// We need to rebuild withObjs without the pvc.
+						newObjs := make([]ctrlclient.Object, 0)
+						for _, o := range withObjs {
+							if o != pvc {
+								newObjs = append(newObjs, o)
+							}
+						}
+						withObjs = newObjs
+					})
+
+					It("should return ErrPVCNotFound", func() {
+						Expect(err).To(MatchError(pkgcrypto.ErrPVCNotFound))
+					})
+				})
+
+				When("FCD encryption class annotation refers to non-existent EncryptionClass", func() {
+					BeforeEach(func() {
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: "non-existent-enc-class",
+						}
+					})
+
+					It("should return a not-found error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					})
+				})
+
+				When("volume has no PersistentVolumeClaim", func() {
+					BeforeEach(func() {
+						// Replace the VM's volume with one that has no PVC
+						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:                       "my-fcd-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									// No PersistentVolumeClaim set
+								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To[int32](0),
+								UnitNumber:          ptr.To(fcdUnitNumber),
+							},
+						}
+					})
+
+					It("should skip the FCD without error", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.DeviceChange).To(BeEmpty())
+					})
+				})
+
+				When("there are multiple FCDs with mixed encryption states", func() {
+					var (
+						pvc2           *corev1.PersistentVolumeClaim
+						fcdDiskKey2    int32 = 2001
+						fcdUnitNumber2 int32 = 2
+					)
+
+					BeforeEach(func() {
+						// Add a second FCD disk
+						moVM.Config.Hardware.Device = append(
+							moVM.Config.Hardware.Device,
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key:           fcdDiskKey2,
+									ControllerKey: scsiCtrlKey,
+									UnitNumber:    &fcdUnitNumber2,
+									Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore1] my-vm/my-fcd-2.vmdk",
+										},
+										Uuid: "fcd-uuid-2",
+									},
+								},
+								VDiskId: &vimtypes.ID{Id: "fcd-id-2"},
+							},
+						)
+
+						// Add a second volume
+						vm.Spec.Volumes = append(vm.Spec.Volumes,
+							vmopv1.VirtualMachineVolume{
+								Name: "my-fcd-volume-2",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "my-fcd-pvc-2",
+										},
+									},
+								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To[int32](0),
+								UnitNumber:          ptr.To(fcdUnitNumber2),
+							},
+						)
+
+						// First PVC has encryption class annotation
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+						}
+
+						// Second PVC also has encrypted storage class but no encryption
+						// class annotation and no default provider - should trigger error
+						pvc2 = &corev1.PersistentVolumeClaim{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: vm.Namespace,
+								Name:      "my-fcd-pvc-2",
+							},
+							Spec: corev1.PersistentVolumeClaimSpec{
+								StorageClassName: ptr.To(storageClass2.Name),
+							},
+						}
+						withObjs = append(withObjs, pvc2)
+					})
+
+					When("second FCD has no enc class and no default provider", func() {
+						It("should return ErrNoDefaultKeyProvider", func() {
+							Expect(err).To(MatchError(pkgcrypto.ErrNoDefaultKeyProvider))
+						})
+					})
+
+					When("second FCD has encryption class annotation too", func() {
+						BeforeEach(func() {
+							pvc2.Annotations = map[string]string{
+								pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+							}
+						})
+
+						When("both FCDs are not encrypted", func() {
+							It("should encrypt both FCDs", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(HaveLen(2))
+								for _, dc := range configSpec.DeviceChange {
+									devSpec := dc.GetVirtualDeviceConfigSpec()
+									Expect(devSpec).ToNot(BeNil())
+									Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+									Expect(devSpec.Backing).ToNot(BeNil())
+									cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecEncrypt)
+									Expect(ok).To(BeTrue())
+									Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider2Key1ID))
+									Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider2ID))
+								}
+							})
+						})
+
+						When("first FCD is already encrypted, second is not", func() {
+							BeforeEach(func() {
+								disk := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+								disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = &vimtypes.CryptoKeyId{
+									KeyId: provider2Key1ID,
+									ProviderId: &vimtypes.KeyProviderId{
+										Id: provider2ID,
+									},
+								}
+							})
+
+							It("should only encrypt the second FCD", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(HaveLen(1))
+								devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+								Expect(devSpec).ToNot(BeNil())
+								Expect(devSpec.Device.GetVirtualDevice().Key).To(Equal(fcdDiskKey2))
+							})
+						})
+					})
+				})
+
+				When("FCD is encrypted with same provider but different key", func() {
+					BeforeEach(func() {
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+						}
+						// Set the FCD as encrypted with the same provider but different key
+						disk := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+						disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = &vimtypes.CryptoKeyId{
+							KeyId: "some-other-key-id",
+							ProviderId: &vimtypes.KeyProviderId{
+								Id: provider2ID, // Same provider as fcdEncClass
+							},
+						}
+					})
+
+					It("should recrypt the FCD with the correct key", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.DeviceChange).To(HaveLen(1))
+						devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+						Expect(devSpec).ToNot(BeNil())
+						Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+						Expect(devSpec.Backing).ToNot(BeNil())
+						cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+						Expect(ok).To(BeTrue())
+						Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider2Key1ID))
+						Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider2ID))
+					})
 				})
 			})
 		})

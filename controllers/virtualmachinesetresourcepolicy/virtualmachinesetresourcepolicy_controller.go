@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -50,7 +51,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Watches(
 			&topologyv1.Zone{},
 			handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient()))).
-		WithLogConstructor(pkglog.ControllerLogConstructor(controlledTypeName, controlledType, mgr.GetScheme())).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			LogConstructor:          pkglog.ControllerLogConstructor(controlledTypeName, controlledType, mgr.GetScheme()),
+		}).
 		Complete(r)
 }
 

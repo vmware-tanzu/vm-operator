@@ -1,0 +1,165 @@
+---
+description: VM Operator project structure, naming conventions, import organization, and Go style guidelines
+globs: **/*.go
+alwaysApply: false
+---
+
+# VM Operator Architectural Standards
+
+## Project Structure
+
+```
+vm-operator/
+├── api/              # CRD type definitions (v1alpha1 through v1alpha5)
+│   └── v1alpha5/     # Current API version
+├── controllers/      # Reconciliation logic for each CRD
+├── webhooks/         # Admission webhooks (validation/ and mutation/ subdirs)
+├── pkg/              # Reusable packages (business logic, utilities)
+│   ├── conditions/   # Kubernetes condition management (Getter/Setter)
+│   ├── config/       # Feature flags and configuration (pkgcfg)
+│   ├── context/      # Typed context structs per resource
+│   ├── constants/    # Shared constants and test labels
+│   ├── log/          # Structured logging helpers
+│   ├── patch/        # Strategic merge patch helpers for status updates
+│   ├── providers/    # Provider interface + vsphere implementation
+│   ├── record/       # Event recording helpers
+│   ├── util/         # General-purpose utilities (kube, ptr, vmopv1)
+│   └── vmconfig/     # VM configuration reconcilers (crypto, bootoptions, diskpromo)
+├── external/         # Vendored external API types (byok, ncp, capabilities, etc.)
+├── test/             # Test utilities
+│   └── builder/      # Test context builders (unit, intg, vcsim)
+├── config/           # Kubernetes manifests and RBAC
+└── hack/             # Build and development scripts
+```
+
+## Package Organization Principles
+
+### Keep Controllers Thin
+- Controllers MUST delegate business logic to `pkg/` packages
+- Controllers handle: reconcile loop, patch helpers, finalizers, watches
+- Controllers MUST NOT contain complex validation, vSphere API calls, or state computation
+- Example: `controllers/virtualmachine/` delegates to `pkg/providers/vsphere/`, `pkg/vmconfig/`
+
+### Package Alias Conventions
+
+The codebase uses consistent import aliases. Always follow these:
+
+```go
+vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+vimtypes "github.com/vmware/govmomi/vim25/types"
+```
+
+## Naming Conventions
+
+### Files
+- Controller files: `<resource>_controller.go`
+- Test files: `<resource>_controller_unit_test.go`, `<resource>_controller_intg_test.go`
+- Suite files: `<resource>_controller_suite_test.go`
+- Webhook validators: `<resource>_validator.go`
+- Webhook mutators: `<resource>_mutator.go`
+- Typed contexts: `<resource>_context.go` in `pkg/context/`
+
+### Types
+- Reconciler structs: `type Reconciler struct`
+- Context types: `<Resource>Context` (e.g., `VirtualMachineContext`, `VirtualMachineSetResourcePolicyContext`)
+- Webhook validators: `type validator struct`
+
+### Receiver Names
+- Use single-letter receivers: `func (r *Reconciler)`, `func (v *validator)`
+
+### Constants
+- Finalizer names: `vmoperator.vmware.com/<resource>` (e.g., `vmoperator.vmware.com/virtualmachine`)
+- Label keys: `<domain>/<key>` format
+
+## Import Organization
+
+Imports MUST be organized in this order with blank lines separating groups:
+
+```go
+import (
+    // 1. Standard library
+    "context"
+    "fmt"
+
+    // 2. Third-party packages (govmomi, logr, etc.)
+    "github.com/go-logr/logr"
+    vimtypes "github.com/vmware/govmomi/vim25/types"
+
+    // 3. Kubernetes packages
+    corev1 "k8s.io/api/core/v1"
+    apierrors "k8s.io/apimachinery/pkg/api/errors"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    ctrl "sigs.k8s.io/controller-runtime"
+    ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+    // 4. External vendored APIs (nsx, byok, etc.)
+    vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
+    // 5. Internal packages - API types first, then pkg/
+    vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+    pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+    pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+)
+```
+
+## Error Handling
+
+### Error Wrapping
+Always wrap errors with context using `fmt.Errorf`:
+
+```go
+// Good
+return fmt.Errorf("failed to get VM properties for %s: %w", vmID, err)
+
+// Bad - no context
+return err
+```
+
+### Condition-Based Errors
+Use `conditions.MarkFalse()` to record failure reasons with constants from the API package:
+
+```go
+if err != nil {
+    conditions.MarkFalse(ctx.VM,
+        vmopv1.VirtualMachineConditionCreated,
+        "CreateError",
+        "%v", err)
+    return err
+}
+```
+
+## Context Usage
+
+- Always pass `context.Context` as the first parameter
+- Use typed context structs from `pkg/context/` for domain-specific data
+- Never store `context.Context` in structs (except the long-lived controller-manager context)
+- Access logger via `ctx.Logger`
+- Feature flags via `pkgcfg.FromContext(ctx)`
+
+## Copyright Header
+
+All Go files MUST have this header:
+
+```go
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+```
+
+## Anti-Patterns to Avoid
+
+1. **Leaking business logic into controllers** - Controllers orchestrate; `pkg/` computes
+2. **Using raw strings for condition types/reasons** - Use constants from `api/v1alpha5/`
+3. **Creating circular imports** - Keep `pkg/` independent of `controllers/`
+4. **Skipping error wrapping** - Always add context to errors
+5. **Using `interface{}` without type assertion** - Prefer generics or typed interfaces
+6. **Ignoring feature flags** - Check `pkgcfg.FromContext(ctx).Features.*` before feature-gated logic

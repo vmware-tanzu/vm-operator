@@ -10,7 +10,7 @@ SHELL := /usr/bin/env bash
 export GO111MODULE := on
 
 # Versions.
-K8S_VERSION=1.29.1
+K8S_VERSION=1.32.0
 
 # Get the information about the platform on which the tools are built/run.
 GOHOSTOS := $(shell go env GOHOSTOS)

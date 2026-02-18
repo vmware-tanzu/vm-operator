@@ -581,9 +581,9 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 			default:
 			}
 		}
-		requestedCapacity := resource.NewQuantity(reqTemplateStorage, resource.BinarySI)
 
-		if !requestedCapacity.Equal(*resource.NewQuantity(0, resource.BinarySI)) {
+		requestedCapacity := resource.NewQuantity(reqTemplateStorage, resource.BinarySI)
+		if !requestedCapacity.IsZero() {
 			if vmPubReq.Annotations == nil {
 				vmPubReq.Annotations = make(map[string]string)
 			}

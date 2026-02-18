@@ -1874,6 +1874,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 		datastoreID  = createArgs.Datastores[0].MoRef.Value
 		itemID       = createArgs.ImageStatus.ProviderItemID
 		itemVersion  = createArgs.ImageStatus.ProviderContentVersion
+		profileID    = createArgs.StorageProfileID
 	)
 
 	// Create/patch/get the VirtualMachineImageCache resource.
@@ -1893,7 +1894,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 			obj.AddLocation(
 				datacenterID,
 				datastoreID,
-				createArgs.StorageProfileID)
+				profileID)
 			return nil
 		}); err != nil {
 		return fmt.Errorf(
@@ -1905,7 +1906,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 		l := obj.Status.Locations[i]
 		if l.DatacenterID == datacenterID &&
 			l.DatastoreID == datastoreID &&
-			l.ProfileID == createArgs.StorageProfileID {
+			l.ProfileID == profileID {
 
 			if c := pkgcnd.Get(l, vmopv1.ReadyConditionType); c != nil {
 				switch c.Status {
@@ -1956,6 +1957,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 		Name:         obj.Name,
 		DatacenterID: datacenterID,
 		DatastoreID:  datastoreID,
+		ProfileID:    profileID,
 	}
 }
 

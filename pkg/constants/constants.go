@@ -84,7 +84,8 @@ const (
 	// VirtualMachineImageCache's disks to be available at the specified
 	// location.
 	// The value of this annotation is a comma-delimited string that specifies
-	// the datacenter ID and datastore ID, ex. datacenter-50,datastore-42.
+	// the datacenter ID, datastore ID, and storage profile ID, ex.
+	//   datacenter-50,datastore-42,e3f9a5b3-c2cb-41fb-b8f1-073bb52e232b
 	VMICacheLocationAnnotationKey = "vmicache.vmoperator.vmware.com/location"
 
 	// FastDeployAnnotationKey is applied to VirtualMachine resources that want

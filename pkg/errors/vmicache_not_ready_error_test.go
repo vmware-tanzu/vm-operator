@@ -128,11 +128,12 @@ var _ = Describe("VMICacheNotReadyError", func() {
 				Name:         "vmi-123",
 				DatacenterID: "dc-123",
 				DatastoreID:  "ds-123",
+				ProfileID:    "p-123",
 			}),
 			&corev1.ConfigMap{},
 			true,
 			"vmi-123",
-			"dc-123,ds-123",
+			"dc-123,ds-123,p-123",
 		),
 
 		Entry(
@@ -145,13 +146,14 @@ var _ = Describe("VMICacheNotReadyError", func() {
 						Name:         "vmi-123",
 						DatacenterID: "dc-123",
 						DatastoreID:  "ds-123",
+						ProfileID:    "p-123",
 					},
 				),
 			),
 			&corev1.ConfigMap{},
 			true,
 			"vmi-123",
-			"dc-123,ds-123",
+			"dc-123,ds-123,p-123",
 		),
 	)
 })

@@ -36,6 +36,12 @@ type VMICacheNotReadyError struct {
 	// This field is only non-empty when the error is returned when waiting on
 	// disks to be cached.
 	DatastoreID string
+
+	// ProfileID describes the ID of the storage profile that does not have the
+	// cached disks.
+	// This field is only non-empty when the error is returned when waiting on
+	// disks to be cached.
+	ProfileID string
 }
 
 func (e VMICacheNotReadyError) Error() string {
@@ -46,9 +52,9 @@ func (e VMICacheNotReadyError) Error() string {
 }
 
 // WatchVMICacheIfNotReady checks if the provided error contains an
-// ErrVMICacheNotReady error. If so, a label, and optionally two annotations,
-// are added to the provided object that allow it to be reconciled when the
-// VMI Cache object is updated.
+// ErrVMICacheNotReady error. If so, a label, and optionally an annotation
+// indicating the cache location, are added to the provided object that
+// allow it to be reconciled when the VMI Cache object is updated.
 // This function returns true if the specified error contains an
 // ErrVMICacheNotReady error, otherwise false is returned.
 func WatchVMICacheIfNotReady(err error, obj metav1.Object) bool {
@@ -76,13 +82,14 @@ func WatchVMICacheIfNotReady(err error, obj metav1.Object) bool {
 			"%s", e.Error())
 	}
 
-	if dcID, dsID := e.DatacenterID, e.DatastoreID; dcID != "" || dsID != "" {
+	dcID, dsID, pID := e.DatacenterID, e.DatastoreID, e.ProfileID
+	if dcID != "" || dsID != "" || pID != "" {
 		annos := obj.GetAnnotations()
 		if annos == nil {
 			annos = map[string]string{}
 		}
 		annos[pkgconst.VMICacheLocationAnnotationKey] = fmt.Sprintf(
-			"%s,%s", dcID, dsID)
+			"%s,%s,%s", dcID, dsID, pID)
 		obj.SetAnnotations(annos)
 	}
 

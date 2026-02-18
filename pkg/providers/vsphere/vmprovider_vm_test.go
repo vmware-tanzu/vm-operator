@@ -1852,13 +1852,14 @@ func vmTests() {
 					Expect(ctx.Client.Create(ctx, &vmicm2)).To(Succeed())
 				})
 
-				assertVMICNotReady := func(err error, msg, name, dcID, dsID string) {
+				assertVMICNotReady := func(err error, msg, name, dcID, dsID, pID string) {
 					var e pkgerr.VMICacheNotReadyError
 					ExpectWithOffset(1, errors.As(err, &e)).To(BeTrue())
 					ExpectWithOffset(1, e.Message).To(Equal(msg))
 					ExpectWithOffset(1, e.Name).To(Equal(name))
 					ExpectWithOffset(1, e.DatacenterID).To(Equal(dcID))
 					ExpectWithOffset(1, e.DatastoreID).To(Equal(dsID))
+					ExpectWithOffset(1, e.ProfileID).To(Equal(pID))
 				}
 
 				When("ovf ttylinux is not ready", func() {
@@ -1868,6 +1869,7 @@ func vmTests() {
 							err,
 							"hardware not ready",
 							vmic1.Name,
+							"",
 							"",
 							"")
 					})
@@ -1899,7 +1901,8 @@ func vmTests() {
 								"cached files not ready",
 								vmic1.Name,
 								ctx.Datacenter.Reference().Value,
-								ctx.Datastore.Reference().Value)
+								ctx.Datastore.Reference().Value,
+								ctx.StorageProfileID)
 						})
 					})
 

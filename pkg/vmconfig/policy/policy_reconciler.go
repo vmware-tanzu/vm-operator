@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -89,10 +88,6 @@ func (r reconciler) Reconcile(
 	if configSpec == nil {
 		panic("configSpec is nil")
 	}
-	restClient := pkgctx.GetRestClient(ctx)
-	if restClient == nil {
-		panic("restClient is nil")
-	}
 
 	results, err := getPolicyEvaluationResults(
 		ctx,
@@ -148,7 +143,18 @@ func (r reconciler) Reconcile(
 		"toAdd", toAdd,
 		"toRem", toRem)
 
-	if moVM.Config == nil {
+	if len(toAdd) > 0 || len(toRem) > 0 {
+		for _, tag := range toRem {
+			configSpec.TagSpecs = append(configSpec.TagSpecs, vimtypes.TagSpec{
+				ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+					Operation: vimtypes.ArrayUpdateOperationRemove,
+				},
+				Id: vimtypes.TagId{
+					Uuid: tag,
+				},
+			})
+		}
+
 		for _, tag := range toAdd {
 			configSpec.TagSpecs = append(configSpec.TagSpecs, vimtypes.TagSpec{
 				ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
@@ -160,39 +166,17 @@ func (r reconciler) Reconcile(
 			})
 		}
 
-		configSpec.ExtraConfig = append(configSpec.ExtraConfig,
-			&vimtypes.OptionValue{
-				Key:   ExtraConfigPolicyTagsKey,
-				Value: strings.Join(toAdd, ","),
-			},
-		)
-	} else {
-		mgr := tags.NewManager(restClient)
-
-		if len(toRem) > 0 {
-			if err := mgr.DetachMultipleTagsFromObject(
-				ctx,
-				toRem,
-				moVM.Reference()); err != nil {
-
-				return fmt.Errorf("failed to detach tags from vm: %w", err)
-			}
-		}
-
-		if len(toAdd) > 0 {
-			if err := mgr.AttachMultipleTagsToObject(
-				ctx,
-				toAdd,
-				moVM.Reference()); err != nil {
-
-				return fmt.Errorf("failed to attach tags to vm: %w", err)
-			}
-		}
-
-		if len(toAdd) > 0 || len(toRem) > 0 {
+		ev := strings.Join(shouldBe, ",")
+		if moVM.Config == nil {
+			configSpec.ExtraConfig = append(configSpec.ExtraConfig,
+				&vimtypes.OptionValue{
+					Key:   ExtraConfigPolicyTagsKey,
+					Value: ev,
+				},
+			)
+		} else {
 			var (
 				ec    = object.OptionValueList(moVM.Config.ExtraConfig)
-				ev    = strings.Join(shouldBe, ",")
 				av, _ = ec.GetString(ExtraConfigPolicyTagsKey)
 			)
 
@@ -204,15 +188,15 @@ func (r reconciler) Reconcile(
 					},
 				)
 			}
-		} else {
-			// Only update the status if there are no changes.
-			vm.Status.Policies = make([]vmopv1.PolicyStatus, len(results))
-			for i := range results {
-				vm.Status.Policies[i].APIVersion = results[i].APIVersion
-				vm.Status.Policies[i].Kind = results[i].Kind
-				vm.Status.Policies[i].Generation = results[i].Generation
-				vm.Status.Policies[i].Name = results[i].Name
-			}
+		}
+	} else {
+		// Only update the status if there are no changes.
+		vm.Status.Policies = make([]vmopv1.PolicyStatus, len(results))
+		for i := range results {
+			vm.Status.Policies[i].APIVersion = results[i].APIVersion
+			vm.Status.Policies[i].Kind = results[i].Kind
+			vm.Status.Policies[i].Generation = results[i].Generation
+			vm.Status.Policies[i].Name = results[i].Name
 		}
 	}
 

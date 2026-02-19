@@ -549,3 +549,110 @@ virtualSystem:
       instanceID: "0"
       virtualSystemIdentifier: ttylinux-pc_i486-16.1
       virtualSystemType: vmx-09`
+
+// ovfEnvelopeWithVAppConfigYAML is an OVF envelope with boolean vAppConfig
+// properties covering all normalization cases for the VIM CreateVM API.
+const ovfEnvelopeWithVAppConfigYAML = `
+diskSection:
+  disk:
+  - capacity: "30"
+    capacityAllocationUnits: byte * 2^20
+    diskId: vmdisk1
+    fileRef: file1
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 18743296
+  info: Virtual disk information
+networkSection:
+  info: The list of logical networks
+  network:
+  - description: The nat network
+    name: nat
+references:
+- href: ttylinux-pc_i486-16.1-disk1.vmdk
+  id: file1
+  size: 10595840
+- href: ttylinux-pc_i486-16.1.nvram
+  id: file2
+  size: 8684
+virtualSystem:
+  id: vm
+  info: A virtual machine
+  name: ttylinux-pc_i486-16.1
+  operatingSystemSection:
+    id: 36
+    info: The kind of installed guest operating system
+    osType: otherLinuxGuest
+  productSection:
+  - info: Product info
+    property:
+    - key: bool_no_default
+      label: No Default
+      type: boolean
+      userConfigurable: true
+    - key: bool_true
+      label: Bool True
+      type: boolean
+      userConfigurable: true
+      default: "true"
+    - key: bool_false
+      label: Bool False
+      type: boolean
+      userConfigurable: true
+      default: "false"
+    - key: bool_True
+      label: Bool True Already Correct
+      type: boolean
+      userConfigurable: true
+      default: "True"
+    - key: nsx_hostname
+      label: Hostname
+      type: string
+      userConfigurable: true
+  virtualHardwareSection:
+  - extraConfig:
+    - key: hello
+      required: false
+      value: world
+    - key: nvram
+      value: ovf:/file/file2
+    id: null
+    info: Virtual hardware requirements
+    item:
+    - allocationUnits: hertz * 10^6
+      description: Number of Virtual CPUs
+      elementName: 1 virtual CPU(s)
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 1
+    - allocationUnits: byte * 2^20
+      description: Memory Size
+      elementName: 32MB of memory
+      instanceID: "2"
+      resourceType: 4
+      virtualQuantity: 32
+    - address: "0"
+      description: IDE Controller
+      elementName: ideController0
+      instanceID: "3"
+      resourceType: 5
+    - addressOnParent: "0"
+      elementName: disk0
+      hostResource:
+      - ovf:/disk/vmdisk1
+      instanceID: "4"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "1"
+      automaticAllocation: true
+      connection:
+      - nat
+      description: E1000 ethernet adapter on "nat"
+      elementName: ethernet0
+      instanceID: "5"
+      resourceSubType: E1000
+      resourceType: 10
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemIdentifier: ttylinux-pc_i486-16.1
+      virtualSystemType: vmx-09`

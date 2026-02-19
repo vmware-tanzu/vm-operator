@@ -1627,6 +1627,147 @@ func vmUtilTests() {
 				Expect(configSpec).ToNot(BeNil())
 			})
 		})
+
+		When("OVF ConfigMap contains vAppConfig properties", func() {
+			BeforeEach(func() {
+				ovfConfigMap.Data["value"] = `virtualSystem:
+  id: vm
+  name: test-vm
+  productSection:
+  - info: Product info
+    property:
+    - key: bool_true
+      label: Bool True
+      type: boolean
+      userConfigurable: true
+      default: "true"
+    - key: bool_false
+      label: Bool False
+      type: boolean
+      userConfigurable: true
+      default: "false"
+    - key: nsx_hostname
+      label: Hostname
+      type: string
+      userConfigurable: true
+  virtualHardwareSection:
+  - item:
+    - allocationUnits: hertz * 10^6
+      description: Number of Virtual CPUs
+      elementName: 1 virtual CPU(s)
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 1
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemIdentifier: test-vm
+      virtualSystemType: vmx-13`
+				initObjects = append(initObjects, ovfConfigMap)
+			})
+
+			It("returns config spec with VAppConfig set, boolean DefaultValue lowercase and Value empty", func() {
+				// govmomi's toVAppConfig sets DefaultValue from the OVF default
+				// attribute (lowercase) and leaves Value as "". vSphere's CreateVM
+				// API requires boolean values to be "" or exactly "True"/"False".
+				configSpec, err := vsphere.GetConfigSpecFromOVFCache(
+					vmCtx, k8sClient, *vmiCache)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec.VAppConfig).ToNot(BeNil())
+				vmConfigSpec := configSpec.VAppConfig.GetVmConfigSpec()
+				Expect(vmConfigSpec).ToNot(BeNil())
+				Expect(vmConfigSpec.Property).To(HaveLen(3))
+
+				propsByID := map[string]*vimtypes.VAppPropertySpec{}
+				for i := range vmConfigSpec.Property {
+					p := &vmConfigSpec.Property[i]
+					if p.Info != nil {
+						propsByID[p.Info.Id] = p
+					}
+				}
+
+				trueProp := propsByID["bool_true"]
+				Expect(trueProp).ToNot(BeNil())
+				Expect(trueProp.Info.Type).To(Equal("boolean"))
+				Expect(trueProp.Info.DefaultValue).To(Equal("true"),
+					"toVAppConfig produces lowercase DefaultValue — must be normalized before CreateVM")
+				Expect(trueProp.Info.Value).To(BeEmpty())
+
+				falseProp := propsByID["bool_false"]
+				Expect(falseProp).ToNot(BeNil())
+				Expect(falseProp.Info.Type).To(Equal("boolean"))
+				Expect(falseProp.Info.DefaultValue).To(Equal("false"),
+					"toVAppConfig produces lowercase DefaultValue — must be normalized before CreateVM")
+				Expect(falseProp.Info.Value).To(BeEmpty())
+			})
+		})
+	})
+
+	Context("normalizeVAppConfigBooleans", func() {
+		makeProp := func(id, typ, defaultVal, val string) vimtypes.VAppPropertySpec {
+			return vimtypes.VAppPropertySpec{
+				Info: &vimtypes.VAppPropertyInfo{
+					Id:           id,
+					Type:         typ,
+					DefaultValue: defaultVal,
+					Value:        val,
+				},
+			}
+		}
+
+		It("normalizes non-empty boolean Value and DefaultValue to True/False", func() {
+			cfg := &vimtypes.VmConfigSpec{
+				Property: []vimtypes.VAppPropertySpec{
+					// empty — must stay empty
+					makeProp("b_empty", "boolean", "", ""),
+					// lowercase true → "True"
+					makeProp("b_true_lower", "boolean", "true", "true"),
+					// lowercase false → "False"
+					makeProp("b_false_lower", "boolean", "false", "false"),
+					// already correct — unchanged
+					makeProp("b_True", "boolean", "True", "True"),
+					makeProp("b_False", "boolean", "False", "False"),
+					// non-boolean — must not be touched
+					makeProp("s_str", "string", "true", "false"),
+				},
+			}
+
+			vsphere.NormalizeVAppConfigBooleans(cfg)
+
+			propsByID := map[string]*vimtypes.VAppPropertySpec{}
+			for i := range cfg.Property {
+				p := &cfg.Property[i]
+				propsByID[p.Info.Id] = p
+			}
+
+			p := propsByID["b_empty"]
+			Expect(p.Info.DefaultValue).To(BeEmpty())
+			Expect(p.Info.Value).To(BeEmpty())
+
+			p = propsByID["b_true_lower"]
+			Expect(p.Info.DefaultValue).To(Equal("True"))
+			Expect(p.Info.Value).To(Equal("True"))
+
+			p = propsByID["b_false_lower"]
+			Expect(p.Info.DefaultValue).To(Equal("False"))
+			Expect(p.Info.Value).To(Equal("False"))
+
+			p = propsByID["b_True"]
+			Expect(p.Info.DefaultValue).To(Equal("True"))
+			Expect(p.Info.Value).To(Equal("True"))
+
+			p = propsByID["b_False"]
+			Expect(p.Info.DefaultValue).To(Equal("False"))
+			Expect(p.Info.Value).To(Equal("False"))
+
+			p = propsByID["s_str"]
+			Expect(p.Info.DefaultValue).To(Equal("true"), "non-boolean must not be modified")
+			Expect(p.Info.Value).To(Equal("false"), "non-boolean must not be modified")
+		})
+
+		It("is a no-op for nil vAppConfig", func() {
+			Expect(func() { vsphere.NormalizeVAppConfigBooleans(nil) }).ToNot(Panic())
+		})
 	})
 
 	Context("GetVirtualMachineImageCache", func() {

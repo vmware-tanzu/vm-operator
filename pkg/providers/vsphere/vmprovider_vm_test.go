@@ -1971,6 +1971,40 @@ func vmTests() {
 							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
 						})
 
+						When("OVF image has vAppConfig properties with boolean defaults", func() {
+							// Regression test: vSphere rejects CreateVM when the ConfigSpec
+							// includes boolean vAppConfig properties whose Value or DefaultValue
+							// is non-empty but not exactly "True" or "False" (case-sensitive).
+							// govmomi's toVAppConfig produces lowercase values from the OVF
+							// default attribute which must be normalized before CreateVM.
+							JustBeforeEach(func() {
+								vmicm := corev1.ConfigMap{}
+								vmicm.Name = pkgutil.VMIName(ctx.ContentLibraryItemID)
+								vmicm.Namespace = pkgcfg.FromContext(parentCtx).PodNamespace
+								vmicm.Data = map[string]string{
+									"value": ovfEnvelopeWithVAppConfigYAML,
+								}
+								Expect(ctx.Client.Update(ctx, &vmicm)).To(Succeed())
+							})
+
+						It("should succeed with vAppConfig boolean properties accepted by vSphere", func() {
+							// Normalization correctness is covered by the NormalizeVAppConfigBooleans
+							// unit test. This test confirms CreateVM does not fail with
+							// InvalidPropertyValue when the OVF has boolean vAppConfig properties.
+							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+							Expect(err).ToNot(HaveOccurred())
+
+							var moVM mo.VirtualMachine
+							Expect(vcVM.Properties(
+								ctx,
+								vcVM.Reference(),
+								[]string{"config.vAppConfig"},
+								&moVM)).To(Succeed())
+							Expect(moVM.Config.VAppConfig).ToNot(BeNil())
+							Expect(moVM.Config.VAppConfig.GetVmConfigInfo()).ToNot(BeNil())
+						})
+						})
+
 						When("global default is direct mode", func() {
 							JustBeforeEach(func() {
 								pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {

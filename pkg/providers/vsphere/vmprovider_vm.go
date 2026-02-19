@@ -2486,8 +2486,15 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		createArgs.ConfigSpec.GuestId = imgConfigSpec.GuestId
 	}
 
-	// Inherit the image's vAppConfig.
-	createArgs.ConfigSpec.VAppConfig = imgConfigSpec.VAppConfig
+	// Inherit the image's vAppConfig. Unlike DeployLibraryItem, the VIM
+	// CreateVM API requires the schema to be explicit in the ConfigSpec.
+	// Both Value and DefaultValue for boolean properties must be "" or exactly
+	// "True"/"False" — govmomi's toVAppConfig produces lowercase values from
+	// the OVF which vSphere rejects. This should ideally be fixed in govmomi.
+	if vAppConfig := imgConfigSpec.VAppConfig; vAppConfig != nil {
+		NormalizeVAppConfigBooleans(vAppConfig)
+		createArgs.ConfigSpec.VAppConfig = vAppConfig
+	}
 
 	if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
 		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {

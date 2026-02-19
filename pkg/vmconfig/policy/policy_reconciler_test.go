@@ -172,17 +172,6 @@ var _ = Describe("Reconcile", func() {
 				Expect(fn).To(PanicWith("configSpec is nil"))
 			})
 		})
-		When("restClient is nil", func() {
-			JustBeforeEach(func() {
-				ctx = context.Background()
-			})
-			It("should panic", func() {
-				fn := func() {
-					_ = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
-				}
-				Expect(fn).To(PanicWith("restClient is nil"))
-			})
-		})
 	})
 
 	When("no panic is expected", func() {
@@ -590,19 +579,10 @@ var _ = Describe("Reconcile", func() {
 							err := vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 							Expect(err).ToNot(HaveOccurred())
 
-							// Verify that the policy tag was detached
-							attachedTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-							Expect(err).ToNot(HaveOccurred())
-							tagIDs := make([]string, len(attachedTags))
-							for i, tag := range attachedTags {
-								tagIDs[i] = tag.ID
-							}
-							// Should only have the non-policy tag
-							Expect(tagIDs).To(ContainElement(vcSimCtx.TagID))
-							Expect(tagIDs).ToNot(ContainElement(policyTag3ID))
+							// Verify configSpec has a remove TagSpec for the policy tag
+							Expect(configSpec.TagSpecs).To(ConsistOf(
+								tagSpec(vimtypes.ArrayUpdateOperationRemove, policyTag3ID)))
 
-							// BMV: I think the test setup for this is a little funky: policyTag3ID
-							// does not look to have a PolicyEval for it, so that's why it isn't here.
 							ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
 								GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
 							Expect(ok).To(BeTrue())
@@ -659,27 +639,11 @@ var _ = Describe("Reconcile", func() {
 							})
 
 							It("should not modify the VM's tag associations", func() {
-								// Record initial state
-								initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								initialTagCount := len(initialTags)
-
-								err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+								err := vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 								Expect(err).ToNot(HaveOccurred())
 
-								// Verify no changes were made
-								finalTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								Expect(len(finalTags)).To(Equal(initialTagCount))
-
-								// Verify specific tags still exist
-								finalTagIDs := make([]string, len(finalTags))
-								for i, tag := range finalTags {
-									finalTagIDs[i] = tag.ID
-								}
-								Expect(finalTagIDs).To(ContainElement(vcSimCtx.TagID))
-								Expect(finalTagIDs).To(ContainElement(policyTag3ID))
-
+								// No tag changes needed
+								Expect(configSpec.TagSpecs).To(BeEmpty())
 								Expect(configSpec.ExtraConfig).To(BeEmpty())
 							})
 						})
@@ -727,34 +691,14 @@ var _ = Describe("Reconcile", func() {
 							})
 
 							It("should associate the policy's tags with the vm", func() {
-								// Record initial tags
-								initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								initialTagIDs := make([]string, len(initialTags))
-								for i, tag := range initialTags {
-									initialTagIDs[i] = tag.ID
-								}
-
-								err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+								err := vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 								Expect(err).ToNot(HaveOccurred())
 
-								// Verify policy tags were attached
-								finalTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								finalTagIDs := make([]string, len(finalTags))
-								for i, tag := range finalTags {
-									finalTagIDs[i] = tag.ID
-								}
+								// Verify configSpec has add TagSpecs for policy tags
+								Expect(configSpec.TagSpecs).To(ConsistOf(
+									tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag1ID),
+									tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag2ID)))
 
-								// Should have all original tags plus new policy tags
-								for _, tagID := range initialTagIDs {
-									Expect(finalTagIDs).To(ContainElement(tagID))
-								}
-								// Should have the new policy tags
-								Expect(finalTagIDs).To(ContainElement(policyTag1ID))
-								Expect(finalTagIDs).To(ContainElement(policyTag2ID))
-
-								// Should have new policy tags added
 								ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
 									GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
 								Expect(ok).To(BeTrue())
@@ -807,34 +751,14 @@ var _ = Describe("Reconcile", func() {
 							})
 
 							It("should associate the policies' tags with the vm", func() {
-								// VM currently has policyTag3ID and vcSimCtx.TagID
-								// But policies require policyTag1ID and policyTag2ID (from computePolicy1)
-								// So it should add the required tags
-
-								initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								initialCount := len(initialTags)
-
-								err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+								err := vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 								Expect(err).ToNot(HaveOccurred())
 
-								finalTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								finalTagIDs := make([]string, len(finalTags))
-								for i, tag := range finalTags {
-									finalTagIDs[i] = tag.ID
-								}
+								// Verify configSpec has add TagSpecs for the missing policy tags
+								Expect(configSpec.TagSpecs).To(ConsistOf(
+									tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag1ID),
+									tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag2ID)))
 
-								// Should have more tags than initially (new policy tags added)
-								Expect(len(finalTags)).To(BeNumerically(">=", initialCount))
-								// Should contain non-policy tag
-								Expect(finalTagIDs).To(ContainElement(vcSimCtx.TagID))
-								// Should contain all required policy tags
-								Expect(finalTagIDs).To(ContainElement(policyTag1ID))
-								Expect(finalTagIDs).To(ContainElement(policyTag2ID))
-								Expect(finalTagIDs).To(ContainElement(policyTag3ID))
-
-								// Should have new policy tags added
 								ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
 									GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
 								Expect(ok).To(BeTrue())
@@ -888,30 +812,13 @@ var _ = Describe("Reconcile", func() {
 							})
 
 							It("should associate the missing tags with the vm", func() {
-								initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								initialCount := len(initialTags)
-
-								err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+								err := vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 								Expect(err).ToNot(HaveOccurred())
 
-								finalTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-								Expect(err).ToNot(HaveOccurred())
-								finalTagIDs := make([]string, len(finalTags))
-								for i, tag := range finalTags {
-									finalTagIDs[i] = tag.ID
-								}
+								// Only missing tags should be added via TagSpecs
+								Expect(configSpec.TagSpecs).To(ConsistOf(
+									tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag2ID)))
 
-								// Should have all original tags plus missing policy tags
-								Expect(len(finalTags)).To(BeNumerically(">=", initialCount))
-								// Should still have the original policy tag
-								Expect(finalTagIDs).To(ContainElement(policyTag1ID))
-								// Should have the missing policy tags
-								Expect(finalTagIDs).To(ContainElement(policyTag2ID))
-								Expect(finalTagIDs).To(ContainElement(policyTag3ID))
-
-								// Should have existing policyTag1ID, and the two newly added
-								// policyTag2ID and policyTag3ID policies
 								ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
 									GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
 								Expect(ok).To(BeTrue())
@@ -1035,36 +942,25 @@ var _ = Describe("Reconcile", func() {
 					})
 
 					It("should associate the policy's tags with the vm", func() {
-						// Ensure VM starts with no tags
-						initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(initialTags).To(BeEmpty())
-
-						err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+						err := vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 						Expect(err).ToNot(HaveOccurred())
 
-						finalTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-						Expect(err).ToNot(HaveOccurred())
-						finalTagIDs := make([]string, len(finalTags))
-						for i, tag := range finalTags {
-							finalTagIDs[i] = tag.ID
-						}
+						// Verify configSpec has add TagSpecs for policy tags
+						Expect(configSpec.TagSpecs).To(ConsistOf(
+							tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag1ID)))
 
 						ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
 							GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
 						Expect(ok).To(BeTrue())
 						Expect(strings.Split(ecTags, ",")).To(ConsistOf(policyTag1ID))
 
-						// Should now have policy tags
-						Expect(len(finalTags)).To(BeNumerically(">", 0))
-						Expect(finalTagIDs).To(ContainElement(policyTag1ID))
-
 						// Ensure the VM status was not updated yet.
 						Expect(vm.Status.Policies).To(HaveLen(0))
 
 						// Reconcile again so the VM status is updated.
+						configSpec = &vimtypes.VirtualMachineConfigSpec{}
 						err = vmconfpolicy.Reconcile(
-							pkgctx.WithVMTags(ctx, finalTagIDs),
+							pkgctx.WithVMTags(ctx, []string{policyTag1ID}),
 							k8sClient,
 							vimClient,
 							vm,
@@ -1142,26 +1038,14 @@ var _ = Describe("Reconcile", func() {
 					})
 
 					It("should associate the policies' tags with the vm", func() {
-						// Ensure VM starts with no tags
-						initialTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(initialTags).To(BeEmpty())
-
-						err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+						err := vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 						Expect(err).ToNot(HaveOccurred())
 
-						finalTags, err := tagMgr.GetAttachedTags(ctx, moVM.Self)
-						Expect(err).ToNot(HaveOccurred())
-						finalTagIDs := make([]string, len(finalTags))
-						for i, tag := range finalTags {
-							finalTagIDs[i] = tag.ID
-						}
-
-						// Should have tags from multiple policies
-						Expect(len(finalTags)).To(BeNumerically(">", 0))
-						Expect(finalTagIDs).To(ContainElement(policyTag1ID))
-						Expect(finalTagIDs).To(ContainElement(policyTag2ID))
-						Expect(finalTagIDs).To(ContainElement(policyTag3ID))
+						// Verify configSpec has add TagSpecs for all policy tags
+						Expect(configSpec.TagSpecs).To(ConsistOf(
+							tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag1ID),
+							tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag2ID),
+							tagSpec(vimtypes.ArrayUpdateOperationAdd, policyTag3ID)))
 
 						ecTags, ok := object.OptionValueList(configSpec.ExtraConfig).
 							GetString(vmconfpolicy.ExtraConfigPolicyTagsKey)
@@ -1173,8 +1057,9 @@ var _ = Describe("Reconcile", func() {
 						Expect(vm.Status.Policies).To(HaveLen(0))
 
 						// Reconcile again so the VM status is updated.
+						configSpec = &vimtypes.VirtualMachineConfigSpec{}
 						err = vmconfpolicy.Reconcile(
-							pkgctx.WithVMTags(ctx, finalTagIDs),
+							pkgctx.WithVMTags(ctx, []string{policyTag1ID, policyTag2ID, policyTag3ID}),
 							k8sClient,
 							vimClient,
 							vm,

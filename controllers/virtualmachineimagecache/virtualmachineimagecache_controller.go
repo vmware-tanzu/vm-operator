@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	"github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -375,10 +374,7 @@ func (r *reconciler) reconcileLocations(
 			dstDatastores[spec.DatastoreID].mo.Info.
 				GetDatastoreInfo().SupportedVDiskFormats...)
 
-		cryptoSpec, err := r.getStorageProfileCrypto(
-			ctx,
-			vimClient,
-			spec.ProfileID)
+		isEnc, err := kubeutil.IsEncryptedStorageProfile(ctx, r.Client, spec.ProfileID)
 		if err != nil {
 			conditions = conditions.MarkError(
 				vmopv1.ReadyConditionType,
@@ -392,7 +388,7 @@ func (r *reconciler) reconcileLocations(
 		for i := range srcFiles {
 			srcFiles[i].DstProfileID = spec.ProfileID
 			srcFiles[i].DstDiskFormat = dstDiskFormat
-			srcFiles[i].CryptoSpec = cryptoSpec
+			srcFiles[i].IsDstProfileEncrypted = isEnc
 		}
 
 		cachedFiles, err := r.cacheFiles(
@@ -416,38 +412,6 @@ func (r *reconciler) reconcileLocations(
 
 		status.Conditions = conditions
 	}
-}
-
-func (r *reconciler) getStorageProfileCrypto(
-	ctx context.Context,
-	vimClient *vim25.Client,
-	profileID string) (*vimtypes.CryptoSpecEncrypt, error) {
-
-	if profileID == "" {
-		return nil, nil
-	}
-
-	isEnc, err := kubeutil.IsEncryptedStorageProfile(ctx, r.Client, profileID)
-	if err != nil || !isEnc {
-		return nil, err
-	}
-
-	// TODO: We don't have an EncryptionClass but the default provider is
-	// optional, so what is the proper fallback?
-	m := crypto.NewManagerKmip(vimClient)
-	providerID, err := m.GetDefaultKmsClusterID(ctx, nil, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default key provider: %w", err)
-	}
-
-	return &vimtypes.CryptoSpecEncrypt{
-		CryptoKeyId: vimtypes.CryptoKeyId{
-			ProviderId: &vimtypes.KeyProviderId{
-				Id: providerID,
-			},
-			KeyId: "",
-		},
-	}, nil
 }
 
 func (r *reconciler) cacheFiles(

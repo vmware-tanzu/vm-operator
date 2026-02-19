@@ -26,11 +26,10 @@ type SourceFile struct {
 	Path    string
 	VDiskID string
 
-	DstDir        string
-	DstProfileID  string
-	DstDiskFormat vimtypes.DatastoreSectorFormat
-
-	CryptoSpec *vimtypes.CryptoSpecEncrypt
+	DstDir                string
+	DstProfileID          string
+	DstDiskFormat         vimtypes.DatastoreSectorFormat
+	IsDstProfileEncrypted bool
 
 	// TODO(akutz) In the future there may be additional information about the
 	//             disk, such as its sector format (512 vs 4k), thin-provisioned,
@@ -175,8 +174,6 @@ func copyFile(
 	)
 
 	if isDisk {
-		logger.Info("Caching disk")
-
 		ds := &vimtypes.FileBackedVirtualDiskSpec{
 			VirtualDiskSpec: vimtypes.VirtualDiskSpec{
 				AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
@@ -190,19 +187,16 @@ func copyFile(
 			},
 		}
 
-		if cs := srcFile.CryptoSpec; cs != nil {
-			if id := cs.CryptoKeyId.ProviderId; id != nil && id.Id != "" {
-				ds.Crypto = cs
-			} else {
-				// TODO: The storage profile is encrypted but there is no
-				// default key provider configured. CopyVirtualDisk used
-				// to just ignore the Profile and Crypto fields, but now it
-				// actually honors them, an encrypted profile needs crypto.
-				// For now, effectively revert to that prior behavior by not
-				// specifying the profile.
-				ds.Profile = nil
-			}
+		if srcFile.IsDstProfileEncrypted {
+			// When later deploying a VM from this VMIC disk, CopyVirtualDisk
+			// won't send the source crypto key to the host doing the copy, so
+			// it won't be able to read it. Clear the profile so we can still
+			// copy the disk. CL does not support encryption, and disk will be
+			// encrypted during the VM deployment.
+			ds.Profile = nil
 		}
+
+		logger.Info("Caching disk", "diskSpec", ds)
 
 		copyTask, err = client.CopyVirtualDisk(
 			ctx,

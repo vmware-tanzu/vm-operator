@@ -457,9 +457,6 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
-
-Please note, most of the time this field should be empty so the system
-can pick an available slot. |
 | `sharingMode` _[VirtualControllerSharingMode](#virtualcontrollersharingmode)_ | SharingMode describes the sharing mode for the controller.
 
 Defaults to None. |
@@ -533,90 +530,6 @@ More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persis
 | `readOnly` _boolean_ | readOnly Will force the ReadOnly setting in VolumeMounts.
 Default false. |
 | `instanceVolumeClaim` _[InstanceVolumeClaimVolumeSource](#instancevolumeclaimvolumesource)_ | InstanceVolumeClaim is set if the PVC is backed by instance storage. |
-| `applicationType` _[VolumeApplicationType](#volumeapplicationtype)_ | ApplicationType describes the type of application for which this volume
-is intended to be used.
-
-  - OracleRAC      -- The volume is configured with
-                      diskMode=IndependentPersistent and
-                      sharingMode=MultiWriter and attached to the first
-                      SCSI controller with an available slot and
-                      sharingMode=None. If no such controller exists,
-                      a new ParaVirtual SCSI controller will be created
-                      with sharingMode=None long as there are currently
-                      three or fewer SCSI controllers.
-  - MicrosoftWSFC  -- The volume is configured with
-                      diskMode=IndependentPersistent and attached to a
-                      SCSI controller with sharingMode=Physical.
-                      If no such controller exists, a new ParaVirtual
-                      SCSI controller will be created with
-                      sharingMode=Physical as long as there are currently
-                      three or fewer SCSI controllers. |
-| `controllerBusNumber` _integer_ | ControllerBusNumber describes the bus number of the controller to which
-this volume should be attached.
-
-The bus number specifies a controller based on the value of the
-controllerType field:
-
-  - IDE  -- spec.hardware.ideControllers
-  - NVME -- spec.hardware.nvmeControllers
-  - SATA -- spec.hardware.sataControllers
-  - SCSI -- spec.hardware.scsiControllers
-
-If this and controllerType are both omitted, the volume will be attached
-to the first available SCSI controller. If there is no SCSI controller
-with an available slot, a new ParaVirtual SCSI controller will be added
-as long as there are currently three or fewer SCSI controllers.
-
-If the specified controller has no available slots, the request will be
-denied. |
-| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes the type of the controller to which this volume
-should be attached.
-
-Please keep in mind the number of volumes supported by the different
-types of controllers:
-
-  - IDE                -- 4 total (2 per controller)
-  - NVME               -- 256 total (64 per controller)
-  - SATA               -- 120 total (30 per controller)
-  - SCSI (ParaVirtual) -- 252 total (63 per controller)
-  - SCSI (BusLogic)    -- 60 total (15 per controller)
-  - SCSI (LsiLogic)    -- 60 total (15 per controller)
-  - SCSI (LsiLogicSAS) -- 60 total (15 per controller)
-
-Please note, the number of supported volumes per SCSI controller may seem
-off, but remember that a SCSI controller occupies a slot on its own bus.
-Thus even though a ParaVirtual SCSI controller supports 64 targets and
-the other types of SCSI controllers support 16 targets, one of the
-targets is occupied by the controller itself.
-
-Defaults to SCSI when controllerBusNumber is also omitted; otherwise the
-default value is determined by the logic outlined in the description of
-the controllerBusNumber field. |
-| `diskMode` _[VolumeDiskMode](#volumediskmode)_ | DiskMode describes the desired mode to use when attaching the volume.
-
-Please note, volumes attached as IndependentNonPersistent or
-IndependentPersistent are not included in a VM's snapshots or backups.
-
-Also, any data written to volumes attached as IndependentNonPersistent or
-NonPersistent will be discarded when the VM is powered off.
-
-Defaults to Persistent. |
-| `sharingMode` _[VolumeSharingMode](#volumesharingmode)_ | SharingMode describes the volume's desired sharing mode.
-
-When applicationType=OracleRAC, the field defaults to MultiWriter.
-Otherwise, defaults to None. |
-| `unitNumber` _integer_ | UnitNumber describes the desired unit number for attaching the volume to
-a storage controller.
-
-When omitted, the next available unit number of the selected controller
-is used.
-
-This value must be unique for the controller referenced by the
-controllerBusNumber and controllerType properties. If the value is
-already used by another device, this volume will not be attached.
-
-Please note the value 7 is invalid if controllerType=SCSI as 7 is the
-unit number of the SCSI controller on its own bus. |
 
 ### PolicySpec
 
@@ -716,9 +629,6 @@ _Appears in:_
 | --- | --- |
 | `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
 
-Please note, most of the time this field should be empty so the system
-can pick an available slot. |
-
 ### SCSIControllerSpec
 
 
@@ -731,9 +641,6 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
-
-Please note, most of the time this field should be empty so the system
-can pick an available slot. |
 | `sharingMode` _[VirtualControllerSharingMode](#virtualcontrollersharingmode)_ | SharingMode describes the sharing mode for the controller.
 
 Defaults to None. |
@@ -915,6 +822,7 @@ _Appears in:_
 | --- | --- |
 | `busNumber` _integer_ | BusNumber describes the observed bus number of the controller. |
 | `type` _[VirtualControllerType](#virtualcontrollertype)_ | Type describes the observed type of the controller. |
+| `deviceKey` _integer_ | DeviceKey describes the observed device key of the controller. |
 | `devices` _[VirtualDeviceStatus](#virtualdevicestatus) array_ | Devices describes the observed devices connected to the controller. |
 
 ### VirtualControllerType
@@ -924,9 +832,10 @@ _Underlying type:_ `string`
 
 
 _Appears in:_
-- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
 - [VirtualControllerStatus](#virtualcontrollerstatus)
 - [VirtualMachineCdromSpec](#virtualmachinecdromspec)
+- [VirtualMachineImageDiskInfo](#virtualmachineimagediskinfo)
+- [VirtualMachineVolume](#virtualmachinevolume)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 
@@ -941,7 +850,6 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name describes the name of the virtual device. |
 | `type` _[VirtualDeviceType](#virtualdevicetype)_ | Type describes the type of the virtual device. |
 | `unitNumber` _integer_ | UnitNumber describes the observed unit number of the device. |
 
@@ -1024,8 +932,8 @@ ignored. Setting will happen in the following manner:
 
 The available values of this field are:
 
-- BIOS
-- EFI |
+- bios
+- efi |
 | `bootDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | BootDelay is the delay before starting the boot sequence. The boot delay
 specifies a time interval between virtual machine power on or restart and
 the beginning of the boot sequence. |
@@ -1035,14 +943,7 @@ in the list is important: device listed first is used for boot first, if that on
 fails second entry is used, and so on. Platform may have some internal limit on the
 number of devices it supports. If bootable device is not reached before platform's limit
 is hit, boot will fail. At least single entry is supported by all products supporting
-boot order settings.
-
-The available devices are:
-
-- Disk    -- If there are classic and managed disks, the first classic disk is selected.
-             If there are only managed disks, the first disk is selected.
-- Network -- The first interface listed in spec.network.interfaces.
-- CDRom   -- The first bootable CD-ROM device. |
+boot order settings. |
 | `bootRetry` _[VirtualMachineBootOptionsBootRetry](#virtualmachinebootoptionsbootretry)_ | BootRetry specifies whether a virtual machine that fails to boot
 will try again. The available values are:
 
@@ -1053,13 +954,6 @@ will try again. The available values are:
 | `bootRetryDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | BootRetryDelay specifies a time interval between virtual machine boot failure
 and the subsequent attempt to boot again. The virtual machine uses this value
 only if BootRetry is Enabled. |
-| `enterBootSetup` _[VirtualMachineBootOptionsForceBootEntry](#virtualmachinebootoptionsforcebootentry)_ | EnterBootSetup specifies whether to automatically enter BIOS/EFI setup the next
-time the virtual machine boots. The virtual machine resets this flag to false
-so that subsequent boots proceed normally. The available values are:
-
-- Enabled -- The virtual machine will automatically enter BIOS/EFI setup the next
-             time the virtual machine boots.
-- Disabled -- The virtual machine will boot normaally. |
 | `efiSecureBoot` _[VirtualMachineBootOptionsEFISecureBoot](#virtualmachinebootoptionsefisecureboot)_ | EFISecureBoot specifies whether the virtual machine's firmware will
 perform signature checks of any EFI images loaded during startup. If set to
 true, signature checks will be performed and the virtual machine's firmware
@@ -1090,13 +984,35 @@ _Appears in:_
 
 ### VirtualMachineBootOptionsBootableDevice
 
-_Underlying type:_ `string`
 
-VirtualMachineBootOptionsBootableDevice represents the type of bootable device
+
+VirtualMachineBootOptionsBootableDevice represents a bootable device
 that a VM may be booted from.
 
 _Appears in:_
 - [VirtualMachineBootOptions](#virtualmachinebootoptions)
+
+| Field | Description |
+| --- | --- |
+| `type` _[VirtualMachineBootOptionsBootableDeviceType](#virtualmachinebootoptionsbootabledevicetype)_ | Type represents the type of bootable device.
+
+The available device types are:
+
+- Disk
+- Network
+- CDRom |
+| `name` _string_ | Name represents the name of the bootable device. It is
+required for Disk and Network device types, while ignored
+for CDRom device types. |
+
+### VirtualMachineBootOptionsBootableDeviceType
+
+_Underlying type:_ `string`
+
+VirtualMachineBootOptionsBootableDeviceType represents the type of bootable device.
+
+_Appears in:_
+- [VirtualMachineBootOptionsBootableDevice](#virtualmachinebootoptionsbootabledevice)
 
 
 ### VirtualMachineBootOptionsEFISecureBoot
@@ -1119,16 +1035,6 @@ VirtualMachineBootOptionsFirmwareType represents the firmware to use.
 _Appears in:_
 - [VirtualMachineBootOptions](#virtualmachinebootoptions)
 
-
-### VirtualMachineBootOptionsForceBootEntry
-
-_Underlying type:_ `string`
-
-VirtualMachineBootOptionsForceBootEntry represents whether to force the virtual machine
-to enter BIOS/EFI setup the next time the virtual machine boots.
-
-_Appears in:_
-- [VirtualMachineBootOptions](#virtualmachinebootoptions)
 
 
 ### VirtualMachineBootOptionsNetworkBootProtocol
@@ -1299,6 +1205,12 @@ VM metadata transport to "OvfEnv".
 
 This bootstrap provider may not be used in conjunction with the CloudInit
 bootstrap provider. |
+| `disabled` _boolean_ | Disabled is a flag that indicates whether or not to disable bootstrap
+for this VM.
+
+When set to true, the bootstrap customization is not applied to the VM,
+even if a bootstrap provider such as CloudInit, LinuxPrep, Sysprep, or
+VAppConfig is specified. |
 
 ### VirtualMachineBootstrapSysprepSpec
 
@@ -1674,6 +1586,16 @@ When an explicit EncryptionClass is not provided and this value is false:
   cannot be powered on.
 
 Defaults to true if omitted. |
+| `vTPMMode` _[VirtualMachineCryptoVTPMMode](#virtualmachinecryptovtpmmode)_ | VTPMMode describes the desired behavior when deploying a VirtualMachine
+using a VirtualMachine-backed image which created from an encrypted
+VirtualMachine with a vTPM.
+
+The possible values for this field are:
+
+- Clone - The vTPM will be preserved from the VirtualMachineImage.
+- New - The vTPM will not be preserved.
+
+The default value of this field is New. |
 
 ### VirtualMachineCryptoStatus
 
@@ -1701,6 +1623,17 @@ encrypted. |
 Please note, this field will be empty if the VirtualMachine is not
 encrypted. |
 | `hasVTPM` _boolean_ | HasVTPM indicates whether or not the VM has a vTPM. |
+
+### VirtualMachineCryptoVTPMMode
+
+_Underlying type:_ `string`
+
+VirtualMachineCryptoVTPMMode represents whether to preserve the vTPM
+from an encrypted VirtualMachine-backed image when deploying a VirtualMachine.
+
+_Appears in:_
+- [VirtualMachineCryptoSpec](#virtualmachinecryptospec)
+
 
 
 ### VirtualMachineEncryptionType
@@ -1749,6 +1682,7 @@ _Appears in:_
 | `name` _string_ | Name is the name of this member. |
 | `kind` _string_ | Kind is the kind of this member, which can be either VirtualMachine or
 VirtualMachineGroup. |
+| `uid` _[UID](#uid)_ | UID is the K8s metadata UID of this current member object. |
 | `placement` _[VirtualMachinePlacementStatus](#virtualmachineplacementstatus)_ | Placement describes the placement results for this member.
 
 Please note this field is only set for VirtualMachine members. |
@@ -1784,6 +1718,9 @@ _Appears in:_
 datastore. |
 | `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
 When omitted, this recommendation is for the VM's home directory. |
+| `topLevelDirectoryCreateSupported` _boolean_ | TopLevelDirectoryCreateSupported indicates whether or not the datastore
+supports creating a top-level directory or requires the use of the
+namespace manager (i.e. vSAN). |
 
 ### VirtualMachineGroupPublishRequestImageStatus
 
@@ -2197,8 +2134,14 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `capacity` _[Quantity](#quantity)_ | Capacity is the virtual disk capacity in bytes. |
-| `size` _[Quantity](#quantity)_ | Size is the estimated populated size of the virtual disk in bytes. |
+| `name` _string_ | Name is the unique identifier for the virtual disk. |
+| `limit` _[Quantity](#quantity)_ | Limit is the total virtual disk capacity. |
+| `requested` _[Quantity](#quantity)_ | Requested is the minimum storage requirements for the virtual disk. |
+| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes the type of controller to which this disk is
+attached. |
+| `controllerBusNumber` _integer_ | ControllerBusNumber describes bus number of the controller to which this
+disk is attached. |
+| `unitNumber` _integer_ | UnitNumber describes the unit number for this disk. |
 
 ### VirtualMachineImageOSInfo
 
@@ -2946,7 +2889,6 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name is the name of VirtualMachine member of this group. |
 | `zoneID` _string_ | Zone describes the recommended zone for this VM. |
 | `node` _string_ | Node describes the recommended node for this VM. |
 | `pool` _string_ | Pool describes the recommended resource pool for this VM. |
@@ -2990,6 +2932,24 @@ child disks to full clones.
 _Appears in:_
 - [VirtualMachineSpec](#virtualmachinespec)
 
+
+### VirtualMachineProviderStatus
+
+
+
+VirtualMachineProviderStatus describes the observed state of the
+VirtualMachine from the underlying infrastructure provider (vSphere/vCenter).
+
+_Appears in:_
+- [VirtualMachineStatus](#virtualmachinestatus)
+
+| Field | Description |
+| --- | --- |
+| `creationTimestamp` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | CreationTimestamp describes the timestamp the underlying
+hypervisor reports when the VM is successfully created.
+
+This value should be immutable, but ultimately it is up to the
+provider as to whether or not the value ever changes. |
 
 ### VirtualMachinePublishRequestSource
 
@@ -3892,6 +3852,8 @@ hardware version.
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
 | `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
+| `provider` _[VirtualMachineProviderStatus](#virtualmachineproviderstatus)_ | Provider describes the observed state of the VirtualMachine from
+the underlying infrastructure provider (vSphere/vCenter). |
 | `currentSnapshot` _[VirtualMachineSnapshotReference](#virtualmachinesnapshotreference)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
 This field contains the name of the current snapshot. |
 | `rootSnapshots` _[VirtualMachineSnapshotReference](#virtualmachinesnapshotreference) array_ | RootSnapshots represents the observed list of root snapshots of
@@ -3934,7 +3896,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `disks` _[Quantity](#quantity)_ | Disks describes the total storage space requested by a VirtualMachine's
-non-PVC disks. |
+disks. |
 
 ### VirtualMachineStorageStatusUsed
 
@@ -3948,10 +3910,29 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `disks` _[Quantity](#quantity)_ | Disks describes the total storage space used by a VirtualMachine's
-non-PVC disks. |
+disks. |
+| `snapshots` _[VirtualMachineStorageStatusUsedSnapshotDetails](#virtualmachinestoragestatususedsnapshotdetails)_ | Snapshots describes the total storage space used by a VirtualMachine's
+snapshots. |
 | `other` _[Quantity](#quantity)_ | Other describes the total storage space used by the VirtualMachine's
-non disk files, ex. the configuration file, swap space, logs, snapshots,
-etc. |
+non disk files, ex. the configuration file, swap space, logs, etc. |
+
+### VirtualMachineStorageStatusUsedSnapshotDetails
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineStorageStatusUsed](#virtualmachinestoragestatusused)
+
+| Field | Description |
+| --- | --- |
+| `vm` _[Quantity](#quantity)_ | VM describes the total storage space used by the VirtualMachine's
+VirtualMachineSnapshot, including the space for snapshot's metadata,
+memory file, delta disks, etc. |
+| `volume` _[Quantity](#quantity)_ | Volume describes the total storage space used by the VirtualMachine's
+VolumeSnapshot, including the space for first class disk(FCD)'s
+delta disks. |
 
 
 ### VirtualMachineTemplateSpec
@@ -4007,6 +3988,104 @@ in the same namespace.
 
 More information is available at
 https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims. |
+| `removable` _boolean_ | Removable describes whether or not this volume may be removed from
+spec.volumes. This is a safety measure that allows users to prevent the
+accidental removal of disks from a VM that should not be removed, such as
+the VM's boot disk(s).
+
+Users may change this value at any time.
+
+When deploying a VM, disks from the VM image are automatically marked as
+removable=false in order to prevent the accidental removal of the disks
+needed to boot the VM.
+
+Defaults to true. |
+| `applicationType` _[VolumeApplicationType](#volumeapplicationtype)_ | ApplicationType describes the type of application for which this volume
+is intended to be used.
+
+  - OracleRAC      -- The volume is configured with
+                      diskMode=IndependentPersistent and
+                      sharingMode=MultiWriter and attached to the first
+                      SCSI controller with an available slot and
+                      sharingMode=None. If no such controller exists,
+                      a new ParaVirtual SCSI controller will be created
+                      with sharingMode=None long as there are currently
+                      three or fewer SCSI controllers.
+  - MicrosoftWSFC  -- The volume is configured with
+                      diskMode=IndependentPersistent and attached to a
+                      SCSI controller with sharingMode=Physical.
+                      If no such controller exists, a new ParaVirtual
+                      SCSI controller will be created with
+                      sharingMode=Physical as long as there are currently
+                      three or fewer SCSI controllers. |
+| `controllerBusNumber` _integer_ | ControllerBusNumber describes the bus number of the controller to which
+this volume should be attached.
+
+The bus number specifies a controller based on the value of the
+controllerType field:
+
+  - IDE  -- spec.hardware.ideControllers
+  - NVME -- spec.hardware.nvmeControllers
+  - SATA -- spec.hardware.sataControllers
+  - SCSI -- spec.hardware.scsiControllers
+
+If this and controllerType are both omitted, the volume will be attached
+to the first available SCSI controller. If there is no SCSI controller
+with an available slot, a new ParaVirtual SCSI controller will be added
+as long as there are currently three or fewer SCSI controllers.
+
+If the specified controller has no available slots, the request will be
+denied. |
+| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes the type of the controller to which this volume
+should be attached.
+
+Please keep in mind the number of volumes supported by the different
+types of controllers:
+
+  - IDE                -- 4 total (2 per controller)
+  - NVME               -- 256 total (64 per controller)
+  - SATA               -- 120 total (30 per controller)
+  - SCSI (ParaVirtual) -- 256 total (64 per controller)
+  - SCSI (BusLogic)    -- 60 total (15 per controller)
+  - SCSI (LsiLogic)    -- 60 total (15 per controller)
+  - SCSI (LsiLogicSAS) -- 60 total (15 per controller)
+
+Please note, the number of supported volumes per SCSI controller may seem
+off, but remember that a SCSI controller occupies a slot on its own bus.
+Thus even though a ParaVirtual SCSI controller supports 65 targets and
+the other types of SCSI controllers support 16 targets, one of the
+targets is occupied by the controller itself.
+
+Defaults to SCSI when controllerBusNumber is also omitted; otherwise the
+default value is determined by the logic outlined in the description of
+the controllerBusNumber field. |
+| `diskMode` _[VolumeDiskMode](#volumediskmode)_ | DiskMode describes the desired mode to use when attaching the volume.
+
+Please note, volumes attached as IndependentNonPersistent or
+IndependentPersistent are not included in a VM's snapshots or backups.
+
+Also, any data written to volumes attached as IndependentNonPersistent or
+NonPersistent will be discarded when the VM is powered off.
+
+When applicationType=OracleRAC or applicationType=MicrosoftWSFC, this
+field defaults to IndependentPersistent.
+Otherwise, defaults to Persistent. |
+| `sharingMode` _[VolumeSharingMode](#volumesharingmode)_ | SharingMode describes the volume's desired sharing mode.
+
+When applicationType=OracleRAC, this field defaults to MultiWriter.
+Otherwise, defaults to None. |
+| `unitNumber` _integer_ | UnitNumber describes the desired unit number for attaching the volume to
+a storage controller.
+
+When omitted, the next available unit number of the selected controller
+is used.
+
+This value must be unique for the controller referenced by the
+controllerBusNumber and controllerType properties. If the value is
+already used by another device, this volume will not be attached.
+
+Please note the value 7 is invalid if controllerType=SCSI as 7 is the
+unit number of the SCSI controller on its own bus. |
 
 ### VirtualMachineVolumeCryptoStatus
 
@@ -4056,9 +4135,11 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name is the name of the attached volume. |
-| `controllerBusNumber` _integer_ | ControllerBusNumber describes volume's observed controller's bus number. |
-| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes volume's observed controller's type. |
+| `name` _string_ | Name describes the name of the volume. |
+| `controllerBusNumber` _integer_ | ControllerBusNumber describes the volume's observed controller bus
+number. |
+| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes the volume's observed controller type. |
+| `unitNumber` _integer_ | UnitNumber describes the volume's observed unit number. |
 | `type` _[VolumeType](#volumetype)_ | Type is the type of the attached volume. |
 | `diskMode` _[VolumeDiskMode](#volumediskmode)_ | DiskMode describes the volume's observed disk mode. |
 | `sharingMode` _[VolumeSharingMode](#volumesharingmode)_ | SharingMode describes the volume's observed sharing mode. |
@@ -4145,7 +4226,7 @@ _Underlying type:_ `string`
 
 
 _Appears in:_
-- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
+- [VirtualMachineVolume](#virtualmachinevolume)
 
 
 ### VolumeDiskMode
@@ -4155,7 +4236,7 @@ _Underlying type:_ `string`
 
 
 _Appears in:_
-- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
+- [VirtualMachineVolume](#virtualmachinevolume)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 
@@ -4177,7 +4258,7 @@ _Underlying type:_ `string`
 
 
 _Appears in:_
-- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
+- [VirtualMachineVolume](#virtualmachinevolume)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 
@@ -4190,3 +4271,4 @@ VolumeType describes the type of a VirtualMachine volume.
 _Appears in:_
 - [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
+

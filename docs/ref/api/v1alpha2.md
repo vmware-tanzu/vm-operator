@@ -903,6 +903,70 @@ _Appears in:_
 - [VirtualMachineClass](#virtualmachineclass)
 
 
+### VirtualMachineCryptoSpec
+
+
+
+VirtualMachineCryptoSpec defines the desired state of a VirtualMachine's
+encryption state.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `encryptionClassName` _string_ | EncryptionClassName describes the name of the EncryptionClass resource
+used to encrypt this VM.
+
+Please note, this field is not required to encrypt the VM. If the
+underlying platform has a default key provider, the VM may still be fully
+or partially encrypted depending on the specified storage and VM classes.
+
+If there is a default key provider and an encryption storage class is
+selected, the files in the VM's home directory and non-PVC virtual disks
+will be encrypted
+
+If there is a default key provider and a VM Class with a virtual, trusted
+platform module (vTPM) is selected, the files in the VM's home directory,
+minus any virtual disks, will be encrypted.
+
+If the underlying vSphere platform does not have a default key provider,
+then this field is required when specifying an encryption storage class
+and/or a VM Class with a vTPM.
+
+If this field is set, spec.storageClass must use an encryption-enabled
+storage class. |
+| `useDefaultKeyProvider` _boolean_ | UseDefaultKeyProvider describes the desired behavior for when an explicit
+EncryptionClass is not provided.
+
+When an explicit EncryptionClass is not provided and this value is true:
+
+- Deploying a VirtualMachine with an encryption storage policy or vTPM
+  will be encrypted using the default key provider.
+
+- If a VirtualMachine is not encrypted, uses an encryption storage
+  policy or has a virtual, trusted platform module (vTPM), there is a
+  default key provider, the VM will be encrypted using the default key
+  provider.
+
+- If a VirtualMachine is encrypted with a provider other than the default
+  key provider, the VM will be rekeyed using the default key provider.
+
+When an explicit EncryptionClass is not provided and this value is false:
+
+- Deploying a VirtualMachine with an encryption storage policy or vTPM
+  will fail.
+
+- If a VirtualMachine is encrypted with a provider other than the default
+  key provider, the VM will be not be rekeyed.
+
+  Please note, this could result in a VirtualMachine that cannot be
+  powered on since it is encrypted using a provider or key that may have
+  been removed. Without the key, the VM cannot be decrypted and thus
+  cannot be powered on.
+
+Defaults to true if omitted. |
+
 ### VirtualMachineGroupBootOrderGroup
 
 
@@ -939,6 +1003,7 @@ _Appears in:_
 | `name` _string_ | Name is the name of this member. |
 | `kind` _string_ | Kind is the kind of this member, which can be either VirtualMachine or
 VirtualMachineGroup. |
+| `uid` _[UID](#uid)_ | UID is the K8s metadata UID of this current member object. |
 | `placement` _[VirtualMachinePlacementStatus](#virtualmachineplacementstatus)_ | Placement describes the placement results for this member.
 
 Please note this field is only set for VirtualMachine members. |
@@ -974,6 +1039,9 @@ _Appears in:_
 datastore. |
 | `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
 When omitted, this recommendation is for the VM's home directory. |
+| `topLevelDirectoryCreateSupported` _boolean_ | TopLevelDirectoryCreateSupported indicates whether or not the datastore
+supports creating a top-level directory or requires the use of the
+namespace manager (i.e. vSAN). |
 
 ### VirtualMachineGroupSpec
 
@@ -1720,7 +1788,6 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name is the name of VirtualMachine member of this group. |
 | `zoneID` _string_ | Zone describes the recommended zone for this VM. |
 | `node` _string_ | Node describes the recommended node for this VM. |
 | `pool` _string_ | Pool describes the recommended resource pool for this VM. |
@@ -2175,6 +2242,7 @@ an error message accordingly. |
 | `className` _string_ | ClassName describes the name of the VirtualMachineClass resource used to
 deploy this VM. |
 | `affinity` _[AffinitySpec](#affinityspec)_ | Affinity describes the VM's scheduling constraints. |
+| `crypto` _[VirtualMachineCryptoSpec](#virtualmachinecryptospec)_ | Crypto describes the desired encryption state of the VirtualMachine. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
 used to configure this VM's storage-related attributes.
 

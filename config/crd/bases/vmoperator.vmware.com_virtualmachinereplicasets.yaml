@@ -6058,10 +6058,13 @@ spec:
                                     properties:
                                       fullName:
                                         description: FullName is the user's full name.
+                                          Must be non-empty.
+                                        minLength: 1
                                         type: string
                                       orgName:
                                         description: OrgName is the name of the user's
-                                          organization.
+                                          organization. Must be non-empty.
+                                        minLength: 1
                                         type: string
                                       productID:
                                         description: |-

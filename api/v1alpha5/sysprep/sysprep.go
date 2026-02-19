@@ -223,10 +223,14 @@ type LicenseFilePrintData struct {
 // personal data pertaining to the owner of the virtual machine.
 type UserData struct {
 
-	// FullName is the user's full name.
+	// +kubebuilder:validation:MinLength=1
+
+	// FullName is the user's full name. Must be non-empty.
 	FullName string `json:"fullName"`
 
-	// OrgName is the name of the user's organization.
+	// +kubebuilder:validation:MinLength=1
+
+	// OrgName is the name of the user's organization. Must be non-empty.
 	OrgName string `json:"orgName"`
 
 	// +optional

@@ -181,17 +181,14 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		return nil, providers.ErrReconcileInProgress
 	}
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(
-			ctx,
-			vimtypes.ID{},
-			vs.getOpID(ctx, vm, "createOrUpdateVM"),
-		),
-		Logger: logger,
-		VM:     vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "createOrUpdateVM"),
+		vm,
+		true,
+	)
+	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -327,13 +324,13 @@ func (vs *vSphereVMProvider) CleanupVirtualMachine(
 		return providers.ErrReconcileInProgress
 	}
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "cleanupVM")),
-		Logger:  pkglog.FromContextOrDefault(ctx),
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "cleanupVM"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -370,13 +367,14 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		return providers.ErrReconcileInProgress
 	}
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "deleteVM")),
-		Logger:  pkglog.FromContextOrDefault(ctx),
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "deleteVM"),
+		vm,
+		true,
+	)
+	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -459,14 +457,14 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 	actID string) (string, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx).WithValues(
-		"vmName", vm.NamespacedName(), "clName", fmt.Sprintf("%s/%s", cl.Namespace, cl.Name))
+		"clName", cl.Namespace+"/"+cl.Name)
 	ctx = logr.NewContext(ctx, logger)
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, fmt.Sprintf("%s-%s", vs.getOpID(ctx, vm, "publishVM"), actID)),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "publishVM-"+actID),
+		vm,
+	)
+	ctx = vmCtx.Context
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -516,16 +514,13 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "heartbeat"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "heartbeat")),
-		Logger:  logger,
-		VM:      vm,
-	}
-
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -548,14 +543,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineProperties(
 	vm *vmopv1.VirtualMachine,
 	propertyPaths []string) (map[string]any, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
-
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "properties")),
-		Logger:  logger,
-		VM:      vm,
-	}
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "properties"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
 	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
@@ -610,16 +602,13 @@ func (vs *vSphereVMProvider) GetVirtualMachineFiles(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) ([]vimtypes.VirtualMachineFileLayoutExFileInfo, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "vmFiles"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "virtualmachine-files")),
-		Logger:  logger,
-		VM:      vm,
-	}
-
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -647,16 +636,13 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	vm *vmopv1.VirtualMachine,
 	pubKey string) (string, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "webconsole"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "webconsole")),
-		Logger:  logger,
-		VM:      vm,
-	}
-
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -678,16 +664,13 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
-	ctx = logr.NewContext(ctx, logger)
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "hwVersion"),
+		vm,
+	)
+	ctx = vmCtx.Context
 
-	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "hardware-version")),
-		Logger:  logger,
-		VM:      vm,
-	}
-
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return 0, err
 	}

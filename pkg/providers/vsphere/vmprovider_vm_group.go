@@ -45,7 +45,7 @@ func (vs *vSphereVMProvider) PlaceVirtualMachineGroup(
 	group *vmopv1.VirtualMachineGroup,
 	groupPlacements []providers.VMGroupPlacement) error {
 
-	ctx = context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, group, "groupPlacement"))
+	ctx = pkgctx.WithVCOpID(ctx, group, "groupPlacement")
 
 	vcClient, err := vs.getVcClient(ctx)
 	if err != nil {

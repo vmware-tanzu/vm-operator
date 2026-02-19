@@ -14,6 +14,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 type vmContextKey uint8
@@ -31,6 +32,40 @@ type VirtualMachineContext struct {
 	Logger logr.Logger
 	VM     *vmopv1.VirtualMachine
 	MoVM   mo.VirtualMachine
+}
+
+// NewVirtualMachineContext returns a VirtualMachineContext based on existing
+// context and VM. When skipVMName is true, the "vmName" value won't be added
+// to the logger.
+func NewVirtualMachineContext(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	skipVMName ...bool) VirtualMachineContext {
+
+	logger := pkglog.FromContextOrDefault(ctx)
+	updatedLogger := false
+
+	// When coming from the VirtualMachine controller, this info is already there
+	// so to keep lines shorter don't add it again.
+	if len(skipVMName) == 0 || !skipVMName[0] {
+		logger = logger.WithValues("vmName", vm.NamespacedName())
+		updatedLogger = true
+	}
+
+	if vm.Status.UniqueID != "" {
+		logger = logger.WithValues("moID", vm.Status.UniqueID)
+		updatedLogger = true
+	}
+
+	if updatedLogger {
+		ctx = logr.NewContext(ctx, logger)
+	}
+
+	return VirtualMachineContext{
+		Context: ctx,
+		Logger:  logger,
+		VM:      vm,
+	}
 }
 
 func (v VirtualMachineContext) String() string {

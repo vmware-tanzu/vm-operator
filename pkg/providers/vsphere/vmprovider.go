@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
 
@@ -509,25 +507,6 @@ func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemI
 	return contentLibraryProvider.UpdateLibraryItem(ctx, itemID, newName, newDescription)
 }
 
-func (vs *vSphereVMProvider) getOpID(ctx context.Context, obj ctrlclient.Object, operation string) string {
-	var id string
-
-	if recID := controller.ReconcileIDFromContext(ctx); recID != "" {
-		id = string(recID[:8])
-	} else {
-		const charset = "0123456789abcdef"
-		buf := make([]byte, 8)
-		for i := range buf {
-			idx := rand.Intn(len(charset)) //nolint:gosec
-			buf[i] = charset[idx]
-		}
-		id = string(buf)
-		// TODO: Add this id as our own reconcile ID type?
-	}
-
-	return strings.Join([]string{"vmoperator", obj.GetName(), operation, id}, "-")
-}
-
 func (vs *vSphereVMProvider) getVM(
 	vmCtx pkgctx.VirtualMachineContext,
 	client *vcclient.Client,
@@ -617,6 +596,7 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx context.Context) (uint64
 }
 
 func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (_ []vimtypes.TaskInfo, retErr error) {
+	ctx = pkgctx.WithVCOpID(ctx, vm, "getTasksByActID")
 	logger := pkglog.FromContextOrDefault(ctx)
 
 	vcClient, err := vs.getVcClient(ctx)
@@ -627,16 +607,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, vm *vmopv1.Vir
 	taskManager := task.NewManager(vcClient.VimClient())
 	filterSpec := vimtypes.TaskFilterSpec{}
 	if vm != nil {
-		vmCtx := pkgctx.VirtualMachineContext{
-			Context: context.WithValue(
-				ctx,
-				vimtypes.ID{},
-				vs.getOpID(ctx, vm, "GetCloneTasksForVM"),
-			),
-			Logger: logger,
-			VM:     vm,
-		}
-
+		vmCtx := pkgctx.NewVirtualMachineContext(ctx, vm)
 		vcVM, err := vs.getVM(vmCtx, vcClient, true)
 		if err != nil {
 			return nil, fmt.Errorf("error fetching VM from VC: %w", err)

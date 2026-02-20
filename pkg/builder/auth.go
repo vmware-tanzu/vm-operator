@@ -8,6 +8,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,11 +17,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	authv1 "k8s.io/api/authentication/v1"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 type contextKey uint8
@@ -33,7 +37,7 @@ const (
 	apiserverCN = "apiserver-webhook-client"
 )
 
-var caCertPool *x509.CertPool
+var caCertPool atomic.Pointer[x509.CertPool]
 
 func IsPrivilegedAccount(
 	ctx *pkgctx.WebhookContext,
@@ -182,58 +186,73 @@ func verifyPeerCertificate(
 	ctx context.Context,
 	connState *tls.ConnectionState) error {
 
-	certDir := pkgcfg.FromContext(ctx).WebhookSecretVolumeMountPath
-	if certDir == "" {
-		certDir = pkgcfg.Default().WebhookSecretVolumeMountPath
-	}
-	caFilePath := filepath.Join(certDir, "client-ca", "ca.crt")
-
-	if err := loadCACert(caFilePath); err != nil {
-		return err
-	}
-
 	if connState == nil || len(connState.PeerCertificates) == 0 {
 		return fmt.Errorf("no client certificate provided")
 	}
 
 	// The first certificate is the leaf certificate.
 	cert := connState.PeerCertificates[0]
-
 	if cert.Subject.CommonName != apiserverCN {
+		// TODO: Check this after Verify()?
 		return fmt.Errorf("unauthorized client CN: %s", cert.Subject.CommonName)
 	}
 
-	opts := x509.VerifyOptions{
-		Roots:         caCertPool,
-		Intermediates: x509.NewCertPool(),
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-	}
-
-	// Add intermediate if present
-	for _, intermediate := range connState.PeerCertificates[1:] {
-		opts.Intermediates.AddCert(intermediate)
-	}
-
-	_, err := cert.Verify(opts)
-	return err
-}
-
-func loadCACert(path string) error {
-	if caCertPool != nil {
-		return nil
-	}
-
-	caCertPEM, err := os.ReadFile(filepath.Clean(path))
+	pool, err := getCACertPool(ctx)
 	if err != nil {
 		return err
 	}
 
-	caCertPool = x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(caCertPEM); !ok {
-		return errors.New("failed to append CA certificate")
+	opts := x509.VerifyOptions{
+		Roots:     pool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	// Add intermediates if present.
+	if len(connState.PeerCertificates) > 1 {
+		opts.Intermediates = x509.NewCertPool()
+		for _, intermediate := range connState.PeerCertificates[1:] {
+			opts.Intermediates.AddCert(intermediate)
+		}
+	}
+
+	if _, err = cert.Verify(opts); err != nil {
+		pemBlock := &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
+		pemBytes := pem.EncodeToMemory(pemBlock)
+		pkglog.FromContextOrDefault(ctx).Error(err, "error verifying client certificate",
+			"clientCert", base64.StdEncoding.EncodeToString(pemBytes),
+			"peerCertCnt", len(connState.PeerCertificates))
+		return err
 	}
 
 	return nil
+}
+
+func getCACertPool(ctx context.Context) (*x509.CertPool, error) {
+	if certPool := caCertPool.Load(); certPool != nil {
+		return certPool, nil
+	}
+
+	certDir := pkgcfg.FromContext(ctx).WebhookSecretVolumeMountPath
+	if certDir == "" {
+		certDir = pkgcfg.Default().WebhookSecretVolumeMountPath
+	}
+	caFilePath := filepath.Clean(filepath.Join(certDir, "client-ca", "ca.crt"))
+
+	caCertPEM, err := os.ReadFile(caFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	certPool := x509.NewCertPool()
+	if ok := certPool.AppendCertsFromPEM(caCertPEM); !ok {
+		return nil, errors.New("failed to append CA certificate")
+	}
+
+	if caCertPool.CompareAndSwap(nil, certPool) {
+		return certPool, nil
+	}
+
+	return caCertPool.Load(), nil
 }
 
 // contextWithClientCert augments the given context with the request's client certs.

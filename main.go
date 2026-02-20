@@ -107,9 +107,9 @@ func main() {
 }
 
 // initFeatures updates our enabled/disabled features based on the capabilities.
-// The inability to get the capabilities should not prevent the container from
-// starting as the features will be processed later by the capabilities
-// controller.
+// The pod will exit if capabilities cannot be loaded, as running with incorrect
+// capabilities causes the controller to process requests incorrectly and
+// trigger unnecessary restarts.
 func initFeatures() {
 	setupLog.Info("Initial features from environment",
 		"features", pkgcfg.FromContext(ctx).Features)
@@ -120,9 +120,13 @@ func initFeatures() {
 
 	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
 	if err != nil {
-		setupLog.Error(err, "Failed to create client for updating capabilities")
-	} else if _, err := capabilities.UpdateCapabilities(logr.NewContext(ctx, setupLog), c); err != nil {
-		setupLog.Error(err, "Failed to update capabilities")
+		setupLog.Error(err, "Failed to create client for updating capabilities, exiting")
+		os.Exit(1)
+	}
+
+	if _, err := capabilities.UpdateCapabilities(logr.NewContext(ctx, setupLog), c); err != nil {
+		setupLog.Error(err, "Failed to update capabilities, exiting")
+		os.Exit(1)
 	}
 
 	setupLog.Info("Initial features from capabilities",

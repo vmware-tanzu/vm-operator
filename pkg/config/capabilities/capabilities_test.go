@@ -906,3 +906,51 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 		})
 	})
 })
+
+var _ = Describe("UpdateCapabilities error scenarios that cause initFeatures to exit", func() {
+	var (
+		ctx     context.Context
+		client  ctrlclient.Client
+		err     error
+		changed bool
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContext()
+		ctx = logr.NewContext(ctx, logf.Log)
+		client = builder.NewFakeClient()
+	})
+
+	JustBeforeEach(func() {
+		changed, err = capabilities.UpdateCapabilities(ctx, client)
+	})
+
+	Context("when ConfigMap does not exist", func() {
+		It("should return an error that would cause initFeatures to exit", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(changed).To(BeFalse())
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+	})
+
+	Context("when Capabilities CRD does not exist", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.SVAsyncUpgrade = true
+			})
+		})
+
+		It("should return an error that would cause initFeatures to exit", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(changed).To(BeFalse())
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+	})
+
+	Context("when both ConfigMap and Capabilities CRD do not exist", func() {
+		It("should return an error that would cause initFeatures to exit", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(changed).To(BeFalse())
+		})
+	})
+})

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -981,4 +982,37 @@ func ensureValidvTPMConfig(
 	}
 
 	return nil
+}
+
+// NormalizeVAppConfigBooleans normalizes boolean vAppConfig property values
+// to the case-sensitive strings required by the VIM CreateVM API: non-empty
+// Value and DefaultValue must be exactly "True" or "False".
+func NormalizeVAppConfigBooleans(vAppConfig vimtypes.BaseVmConfigSpec) {
+	if vAppConfig == nil {
+		return
+	}
+	vmConfigSpec := vAppConfig.GetVmConfigSpec()
+	if vmConfigSpec == nil {
+		return
+	}
+	for i := range vmConfigSpec.Property {
+		prop := &vmConfigSpec.Property[i]
+		if prop.Info == nil || prop.Info.Type != "boolean" {
+			continue
+		}
+		if prop.Info.DefaultValue != "" {
+			if ok, _ := strconv.ParseBool(prop.Info.DefaultValue); ok {
+				prop.Info.DefaultValue = "True"
+			} else {
+				prop.Info.DefaultValue = "False"
+			}
+		}
+		if prop.Info.Value != "" {
+			if ok, _ := strconv.ParseBool(prop.Info.Value); ok {
+				prop.Info.Value = "True"
+			} else {
+				prop.Info.Value = "False"
+			}
+		}
+	}
 }

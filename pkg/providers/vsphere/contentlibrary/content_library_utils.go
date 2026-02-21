@@ -32,6 +32,12 @@ func UpdateVmiWithOvfEnvelope(
 	obj client.Object,
 	ovfEnvelope ovf.Envelope) error {
 
+	// VM Operator does not support OVF files with VirtualSystemCollection.
+	if ovfEnvelope.VirtualSystemCollection != nil {
+		return fmt.Errorf(
+			"OVF files with VirtualSystemCollection are not supported")
+	}
+
 	var status *vmopv1.VirtualMachineImageStatus
 
 	switch vmi := obj.(type) {

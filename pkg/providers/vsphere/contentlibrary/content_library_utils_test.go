@@ -122,6 +122,31 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 	})
 })
 
+var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func() {
+	var (
+		ovfEnvelope *ovf.Envelope
+		image       *vmopv1.VirtualMachineImage
+	)
+
+	BeforeEach(func() {
+		image = builder.DummyVirtualMachineImage("dummy-image")
+		ovfEnvelope = &ovf.Envelope{
+			VirtualSystemCollection: &ovf.VirtualSystemCollection{
+				VirtualSystem: []ovf.VirtualSystem{
+					{},
+				},
+			},
+		}
+	})
+
+	It("should return error", func() {
+		err := contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring(
+			"OVF files with VirtualSystemCollection are not supported"))
+	})
+})
+
 var _ = Describe("UpdateVmiWithVirtualMachine", func() {
 
 	const diskUUID = "552e3da8-c1c9-415c-af24-cb60d7c450fa"

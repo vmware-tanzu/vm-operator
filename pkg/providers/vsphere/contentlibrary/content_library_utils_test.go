@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -119,6 +120,45 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		It("V1Alpha1Compatible condition is true", func() {
 			Expect(conditions.IsTrue(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeTrue())
 		})
+	})
+})
+
+var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func() {
+	var (
+		ovfEnvelope *ovf.Envelope
+	)
+
+	BeforeEach(func() {
+		ovfEnvelope = &ovf.Envelope{
+			VirtualSystemCollection: &ovf.VirtualSystemCollection{
+				VirtualSystem: []ovf.VirtualSystem{
+					{},
+				},
+			},
+		}
+	})
+
+	It("should return error", func() {
+		testCases := []struct {
+			name  string
+			image client.Object
+		}{
+			{
+				name:  "VirtualMachineImage",
+				image: builder.DummyVirtualMachineImage("dummy-image"),
+			},
+			{
+				name:  "ClusterVirtualMachineImage",
+				image: builder.DummyClusterVirtualMachineImage("dummy-image"),
+			},
+		}
+
+		for _, tc := range testCases {
+			err := contentlibrary.UpdateVmiWithOvfEnvelope(tc.image, *ovfEnvelope)
+			Expect(err).To(HaveOccurred(), "should return error for %s", tc.name)
+			Expect(err.Error()).To(ContainSubstring(
+				"OVF with VirtualSystemCollection is not supported"))
+		}
 	})
 })
 

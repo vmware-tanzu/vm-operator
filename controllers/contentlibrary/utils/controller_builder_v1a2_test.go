@@ -86,7 +86,7 @@ var _ = XDescribe("AddToManagerV1A2",
 		})
 	})
 
-var _ = XDescribe("Reconcile",
+var _ = Describe("Reconcile",
 	Label(
 		testlabels.Controller,
 		testlabels.API,
@@ -349,6 +349,31 @@ var _ = XDescribe("Reconcile",
 							cliObj, _, _ = getV1A2CLI(ctx, req.Namespace, req.Name)
 							ExpectWithOffset(1, cliObj.GetLabels()).To(HaveKeyWithValue(
 								pkgconst.VMICacheLabelKey, vmicName))
+
+							_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+							condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+							Expect(condition).ToNot(BeNil())
+							Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+							Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageNotSyncedReason))
+							Expect(condition.Message).To(ContainSubstring(err.Error()))
+						})
+					})
+
+					When("error is VirtualSystemCollection not supported", func() {
+						JustBeforeEach(func() {
+							fakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context, _, _ client.Object) error {
+								// Verify ovfcache is in context and does not panic.
+								_, _ = ovfcache.GetOVFEnvelope(ctx, "", "")
+
+								return fmt.Errorf("failed to update vmi from ovf: %w",
+									fmt.Errorf("OVF with VirtualSystemCollection is not supported"))
+							}
+						})
+						It("should mark image condition as not synced with correct message", func() {
+							_, err := reconciler.Reconcile(context.Background(), req)
+							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring(
+								"failed to update vmi from ovf: OVF with VirtualSystemCollection is not supported"))
 
 							_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
 							condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)

@@ -32,6 +32,10 @@ func UpdateVmiWithOvfEnvelope(
 	obj client.Object,
 	ovfEnvelope ovf.Envelope) error {
 
+	if ovfEnvelope.VirtualSystemCollection != nil {
+		return fmt.Errorf("OVF with VirtualSystemCollection is not supported")
+	}
+
 	var status *vmopv1.VirtualMachineImageStatus
 
 	switch vmi := obj.(type) {

@@ -79,6 +79,25 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		return err
 	}
 
+	// Set up field index for VirtualMachine by ClaimName to efficiently query VMs
+	// referencing a PVC.
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&vmopv1.VirtualMachine{},
+		"spec.volumes.persistentVolumeClaim.claimName",
+		func(rawObj client.Object) []string {
+			vm := rawObj.(*vmopv1.VirtualMachine)
+			pvcs := make([]string, 0, len(vm.Spec.Volumes))
+			for _, volume := range vm.Spec.Volumes {
+				if pvc := volume.PersistentVolumeClaim; pvc != nil && pvc.ClaimName != "" {
+					pvcs = append(pvcs, pvc.ClaimName)
+				}
+			}
+			return pvcs
+		}); err != nil {
+		return err
+	}
+
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
@@ -157,6 +176,22 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		)); err != nil {
 			return fmt.Errorf(
 				"failed to start VirtualMachine watch "+
+					"for PersistentVolumeClaim: %w", err)
+		}
+
+		// Watch for changes for PersistentVolumeClaim, and enqueue
+		// VirtualMachine that reference the PVC in their Spec.Volumes.
+		//
+		// TODO(BMV): This should cover every case that the above OwnerRef
+		// mapper does, and that can be removed later.
+		if err := c.Watch(source.Kind(
+			mgr.GetCache(),
+			&corev1.PersistentVolumeClaim{},
+			handler.TypedEnqueueRequestsFromMapFunc(
+				vmopv1util.PVCToVirtualMachineVolumeClaimNameMapper(ctx, r.Client)),
+		)); err != nil {
+			return fmt.Errorf(
+				"failed to start VirtualMachine claim names watch "+
 					"for PersistentVolumeClaim: %w", err)
 		}
 	}

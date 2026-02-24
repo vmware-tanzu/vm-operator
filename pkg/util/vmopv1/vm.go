@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -436,6 +437,53 @@ func CnsRegisterVolumeToVirtualMachineMapper(
 		if len(requests) > 0 {
 			logger.V(4).Info(
 				"Reconciling VMs due to CnsRegisterVolume watch",
+				"requests", requests)
+		}
+
+		return requests
+	}
+}
+
+// PVCToVirtualMachineVolumeClaimNameMapper returns a mapper function used to enqueue
+// reconcile requests for VirtualMachines that reference the Spec.Volumes.
+func PVCToVirtualMachineVolumeClaimNameMapper(
+	_ context.Context,
+	k8sClient client.Client) handler.TypedMapFunc[*corev1.PersistentVolumeClaim, reconcile.Request] {
+
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
+
+	return func(ctx context.Context, pvc *corev1.PersistentVolumeClaim) []reconcile.Request {
+		logger := pkglog.FromContextOrDefault(ctx).
+			WithName("PVCToVirtualMachineVolumeClaimNameMapper").
+			WithValues("name", pvc.Name, "namespace", pvc.Namespace)
+		logger.V(4).Info("Reconciling VMs by ClaimName due to PVC event")
+
+		list := &vmopv1.VirtualMachineList{}
+		err := k8sClient.List(
+			ctx,
+			list,
+			client.InNamespace(pvc.Namespace),
+			client.MatchingFields{"spec.volumes.persistentVolumeClaim.claimName": pvc.Name})
+		if err != nil {
+			logger.Error(err, "Failed to list VirtualMachines by ClaimName for PVC")
+			return nil
+		}
+
+		requests := make([]reconcile.Request, 0, len(list.Items))
+		for _, vm := range list.Items {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      vm.Name,
+				},
+			})
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling VMs due to PVC watch",
 				"requests", requests)
 		}
 

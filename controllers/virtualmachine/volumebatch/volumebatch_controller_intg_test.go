@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -226,6 +227,97 @@ func intgTestsReconcile() {
 						g.Expect(getCnsNodeVMBatchAttachment(vm)).To(BeNil())
 					}, "3s").Should(Succeed())
 				})
+			})
+		})
+
+		It("Reconciles VirtualMachine Spec.Volumes when PVC is updated", func() {
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+			vm = getVirtualMachine(vmKey)
+			Expect(vm).ToNot(BeNil())
+
+			By("VM has no volumes", func() {
+				Expect(vm.Spec.Volumes).To(BeEmpty())
+				Expect(vm.Status.Volumes).To(BeEmpty())
+			})
+
+			By("Assign VM BiosUUID and InstanceUUID", func() {
+				vm.Status.BiosUUID = dummyBiosUUID
+				vm.Status.InstanceUUID = dummyInstanceUUID
+				vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							Type:      "SCSI",
+							BusNumber: 0,
+							DeviceKey: 1000,
+						},
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+			})
+
+			By("Add CNS volume to Spec.Volumes", func() {
+				sc := &storagev1.StorageClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "storage-class-1",
+					},
+					Provisioner: "kubernetes.io/dummy-volume-driver",
+				}
+
+				// Unbound PVC needs a storage class assigned so doesn't fail the
+				// WFFC check.
+				By("Create Immediate StorageClass", func() {
+					Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+				})
+
+				By("Create PVC and Pending", func() {
+					pvc1.Spec.StorageClassName = ptr.To(sc.Name)
+					Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+					pvc1.Status.Phase = corev1.ClaimPending
+					Expect(ctx.Client.Status().Update(ctx, pvc1)).To(Succeed())
+				})
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVolume1)
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+			})
+
+			By("CnsNodeVMBatchAttachment should be created but empty", func() {
+				Eventually(func(g Gomega) {
+					attachment := getCnsNodeVMBatchAttachment(vm)
+					g.Expect(attachment).ToNot(BeNil())
+					g.Expect(attachment.Spec.InstanceUUID).To(Equal(dummyInstanceUUID))
+					g.Expect(attachment.Spec.Volumes).To(BeEmpty())
+				}).Should(Succeed())
+			})
+
+			// Ideally we'd have a way to assert that the batch controller quiesced here.
+			By("Mark PVC as Bound", func() {
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(pvc1), pvc1)).To(Succeed())
+				pvc1.Status.Phase = corev1.ClaimBound
+				Expect(ctx.Client.Status().Update(ctx, pvc1)).To(Succeed())
+			})
+
+			By("CnsNodeVMBatchAttachment should be updated with volume", func() {
+				var attachment *cnsv1alpha1.CnsNodeVMBatchAttachment
+				Eventually(func(g Gomega) {
+					attachment = getCnsNodeVMBatchAttachment(vm)
+					g.Expect(attachment).ToNot(BeNil())
+					g.Expect(attachment.Spec.InstanceUUID).To(Equal(dummyInstanceUUID))
+					g.Expect(attachment.Spec.Volumes).To(HaveLen(1))
+				}).Should(Succeed())
+				Expect(attachment.Spec.Volumes[0].Name).To(Equal(vmVolume1.Name))
+			})
+
+			By("VM Status.Volume should have entry for volume", func() {
+				var vm *vmopv1.VirtualMachine
+				Eventually(func(g Gomega) {
+					vm = getVirtualMachine(vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(1))
+				}).Should(Succeed())
+
+				volStatus := vm.Status.Volumes[0]
+				Expect(volStatus.Name).To(Equal(vmVolume1.Name))
+				Expect(volStatus.Attached).To(BeFalse())
 			})
 		})
 

@@ -77,7 +77,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Watches(&corev1.Service{},

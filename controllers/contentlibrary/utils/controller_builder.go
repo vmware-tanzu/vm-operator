@@ -69,7 +69,7 @@ func AddToManager(
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledItemType).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			SkipNameValidation:      SkipNameValidation,
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledItemType, mgr.GetScheme()),
 		})

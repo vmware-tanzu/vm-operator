@@ -63,7 +63,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		Owns(&vmopv1.VirtualMachinePublishRequest{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			LogConstructor: pkglog.ControllerLogConstructor(
 				controllerNameShort,
 				controlledType,

@@ -54,7 +54,7 @@ func addToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 1,
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, 1),
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)

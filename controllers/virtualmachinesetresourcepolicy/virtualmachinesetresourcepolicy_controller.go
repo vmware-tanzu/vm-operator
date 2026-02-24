@@ -55,7 +55,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			&topologyv1.Zone{},
 			handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient()))).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)

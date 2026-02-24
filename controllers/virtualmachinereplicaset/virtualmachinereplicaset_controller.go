@@ -94,7 +94,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestsFromMapFunc(r.VMToReplicaSets(ctx)),
 		).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)

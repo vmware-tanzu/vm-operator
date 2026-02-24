@@ -216,7 +216,7 @@ func (r *Reconciler) getVMPublishRequests(
 		reqs,
 		client.InNamespace(ctx.VMGroupPublishRequest.Namespace),
 		client.MatchingLabels{
-			vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ctx.VMGroupPublishRequest.Name,
+			vmopv1.VirtualMachinePublishRequestManagedByLabelKey: string(ctx.VMGroupPublishRequest.UID),
 		}); err != nil {
 		ctx.Logger.Error(err, "failed to list VirtualMachinePublishRequest")
 		return nil, nil, nil, err
@@ -293,7 +293,7 @@ func (r *Reconciler) reconcileNewPublishRequests(
 					*metav1.NewControllerRef(ctx.VMGroupPublishRequest, vmGroupPubReqGvk),
 				},
 				Labels: map[string]string{
-					vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ctx.VMGroupPublishRequest.Name,
+					vmopv1.VirtualMachinePublishRequestManagedByLabelKey: string(ctx.VMGroupPublishRequest.UID),
 				},
 			},
 			Spec: vmopv1.VirtualMachinePublishRequestSpec{

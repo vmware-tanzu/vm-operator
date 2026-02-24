@@ -65,6 +65,11 @@ type Options struct {
 	// Defaults to the eponymous constant in this package.
 	MaxConcurrentReconciles int
 
+	// ControllerMaxConcurrentReconciles maps controller short names to their
+	// max concurrent reconciles. If a controller is not in this map, it uses
+	// its own default value.
+	ControllerMaxConcurrentReconciles map[string]int
+
 	// MetricsAddr is the net.Addr string for the metrics server.
 	MetricsAddr string
 

@@ -658,6 +658,7 @@ var virtualMachineConfigInfoForTests vimtypes.VirtualMachineConfigInfo = vimtype
 								Type:  "Datastore",
 								Value: "datastore-21",
 							},
+							BackingObjectId: ptr.To(""),
 						},
 						DiskMode:               "persistent",
 						Split:                  addrOfBool(false),

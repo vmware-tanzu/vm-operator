@@ -427,7 +427,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
 										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 											FileName:        "[LocalDS_0] vm1/disk-child.vmdk",
-											BackingObjectId: "parent-disk-id",
+											BackingObjectId: ptr.To("parent-disk-id"),
 										},
 										Uuid: "disk-uuid-child",
 										Parent: &vimtypes.VirtualDiskSeSparseBackingInfo{ // Indicates it has a parent
@@ -469,7 +469,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
 										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 											FileName:        "[LocalDS_0] vm1/disk-child.vmdk",
-											BackingObjectId: "parent-disk-id",
+											BackingObjectId: ptr.To("parent-disk-id"),
 										},
 										Uuid: "disk-uuid-child",
 										Parent: &vimtypes.VirtualDiskSeSparseBackingInfo{ // Indicates it has a parent

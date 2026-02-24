@@ -113,6 +113,26 @@ VirtualMachineImage is the schema for the virtualmachineimages API.
 | `spec` _[VirtualMachineImageSpec](#virtualmachineimagespec)_ |  |
 | `status` _[VirtualMachineImageStatus](#virtualmachineimagestatus)_ |  |
 
+### VirtualMachineImageCache
+
+
+
+VirtualMachineImageCache is the schema for the
+virtualmachineimagecaches API.
+
+Deprecated: This type is deprecated and will be removed in a future release.
+Please use v1alpha5.VirtualMachineImageCache instead.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
+| `kind` _string_ | `VirtualMachineImageCache`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineImageCacheSpec](#virtualmachineimagecachespec)_ |  |
+| `status` _[VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)_ |  |
+
 ### VirtualMachinePublishRequest
 
 
@@ -129,6 +149,25 @@ VirtualMachine as a VirtualMachineImage to an image registry.
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachinePublishRequestSpec](#virtualmachinepublishrequestspec)_ |  |
 | `status` _[VirtualMachinePublishRequestStatus](#virtualmachinepublishrequeststatus)_ |  |
+
+### VirtualMachineReplicaSet
+
+
+
+VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API.
+
+Deprecated: This type is deprecated and will be removed in a future release.
+Please use v1alpha5.VirtualMachineReplicaSet instead.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
+| `kind` _string_ | `VirtualMachineReplicaSet`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineReplicaSetSpec](#virtualmachinereplicasetspec)_ |  |
+| `status` _[VirtualMachineReplicaSetStatus](#virtualmachinereplicasetstatus)_ |  |
 
 ### VirtualMachineService
 
@@ -1164,6 +1203,7 @@ _Appears in:_
 | `name` _string_ | Name is the name of this member. |
 | `kind` _string_ | Kind is the kind of this member, which can be either VirtualMachine or
 VirtualMachineGroup. |
+| `uid` _[UID](#uid)_ | UID is the K8s metadata UID of this current member object. |
 | `placement` _[VirtualMachinePlacementStatus](#virtualmachineplacementstatus)_ | Placement describes the placement results for this member.
 
 Please note this field is only set for VirtualMachine members. |
@@ -1199,6 +1239,9 @@ _Appears in:_
 datastore. |
 | `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
 When omitted, this recommendation is for the VM's home directory. |
+| `topLevelDirectoryCreateSupported` _boolean_ | TopLevelDirectoryCreateSupported indicates whether or not the datastore
+supports creating a top-level directory or requires the use of the
+namespace manager (i.e. vSAN). |
 
 ### VirtualMachineGroupSpec
 
@@ -1278,6 +1321,141 @@ state of the group was last updated. |
 - The ReadyType condition is True when all of the group members have
   all of their expected conditions set to True. |
 
+
+### VirtualMachineImageCacheFileStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheLocationStatus](#virtualmachineimagecachelocationstatus)
+
+| Field | Description |
+| --- | --- |
+| `id` _string_ | ID describes the value used to locate the file.
+The value of this field depends on the type of file:
+
+- Type=Other                  -- The ID value describes a datastore path,
+                                 ex. "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk"
+- Type=Disk, DiskType=Classic -- The ID value describes a datastore
+                                 path.
+- Type=Disk, DiskType=Managed -- The ID value describes a First Class
+                                 Disk (FCD). |
+| `type` _[VirtualMachineImageCacheFileType](#virtualmachineimagecachefiletype)_ | Type describes the type of file. |
+| `diskType` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | DiskType describes the type of disk.
+This field is only non-empty when Type=Disk. |
+
+### VirtualMachineImageCacheFileType
+
+_Underlying type:_ `string`
+
+VirtualMachineImageCacheFileType describes the types of files that may be
+cached.
+
+_Appears in:_
+- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
+
+
+### VirtualMachineImageCacheLocationSpec
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheSpec](#virtualmachineimagecachespec)
+
+| Field | Description |
+| --- | --- |
+| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter to which the image should
+be cached. |
+| `profileID` _string_ | ProfileID describes the ID of the storage profile used to cache the
+image.
+Please note, this profile *must* include the datastore specified by the
+datastoreID field. |
+| `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
+be cached. |
+
+### VirtualMachineImageCacheLocationStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)
+
+| Field | Description |
+| --- | --- |
+| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter where the image is
+cached. |
+| `datastoreID` _string_ | DatastoreID describes the ID of the datastore where the image is cached. |
+| `profileID` _string_ | ProfileID describes the ID of the storage profile used to cache the
+image. |
+| `files` _[VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus) array_ | Files describes the image's files cached on this datastore. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cache location.
+
+Generally this should just include the ReadyType condition. |
+
+### VirtualMachineImageCacheOVFStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)
+
+| Field | Description |
+| --- | --- |
+| `configMapName` _string_ | ConfigMapName describes the name of the ConfigMap resource that contains
+the image's OVF envelope encoded as YAML. The data is located in the
+ConfigMap key "value". |
+| `providerVersion` _string_ | ProviderVersion describes the observed provider version at which the OVF
+is cached.
+The provider is Content Library, the version is the content version. |
+
+### VirtualMachineImageCacheSpec
+
+
+
+VirtualMachineImageCacheSpec defines the desired state of
+VirtualMachineImageCache.
+
+_Appears in:_
+- [VirtualMachineImageCache](#virtualmachineimagecache)
+
+| Field | Description |
+| --- | --- |
+| `providerID` _string_ | ProviderID describes the ID of the provider item to which the image
+corresponds.
+If the provider is Content Library, the ID refers to a Content Library
+item. |
+| `providerVersion` _string_ | ProviderVersion describes the version of the provider item to which the
+image corresponds.
+The provider is Content Library, the version is the content version. |
+| `locations` _[VirtualMachineImageCacheLocationSpec](#virtualmachineimagecachelocationspec) array_ | Locations describes the locations where the image should be cached. |
+
+### VirtualMachineImageCacheStatus
+
+
+
+VirtualMachineImageCacheStatus defines the observed state of
+VirtualMachineImageCache.
+
+_Appears in:_
+- [VirtualMachineImageCache](#virtualmachineimagecache)
+
+| Field | Description |
+| --- | --- |
+| `locations` _[VirtualMachineImageCacheLocationStatus](#virtualmachineimagecachelocationstatus) array_ | Locations describe the observed locations where the image is cached. |
+| `ovf` _[VirtualMachineImageCacheOVFStatus](#virtualmachineimagecacheovfstatus)_ | OVF describes the observed status of the cached OVF content. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cached image.
+
+Generally this should just include the ReadyType condition, which will
+only be True if all of the cached locations also have True ReadyType
+condition. |
 
 ### VirtualMachineImageDiskInfo
 
@@ -2026,7 +2204,6 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name is the name of VirtualMachine member of this group. |
 | `zoneID` _string_ | Zone describes the recommended zone for this VM. |
 | `node` _string_ | Node describes the recommended node for this VM. |
 | `pool` _string_ | Pool describes the recommended resource pool for this VM. |
@@ -2303,6 +2480,54 @@ Defaults to 10 seconds. Minimum value is 1. |
 | `periodSeconds` _integer_ | PeriodSeconds specifics how often (in seconds) to perform the probe.
 Defaults to 10 seconds. Minimum value is 1. |
 
+### VirtualMachineReplicaSetSpec
+
+
+
+VirtualMachineReplicaSetSpec is the specification of a VirtualMachineReplicaSet.
+
+_Appears in:_
+- [VirtualMachineReplicaSet](#virtualmachinereplicaset)
+
+| Field | Description |
+| --- | --- |
+| `replicas` _integer_ | Replicas is the number of desired replicas.
+This is a pointer to distinguish between explicit zero and unspecified.
+Defaults to 1. |
+| `deletePolicy` _string_ | DeletePolicy defines the policy used to identify nodes to delete when downscaling.
+Only supported deletion policy is "Random". |
+| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#labelselector-v1-meta)_ | Selector is a label to query over virtual machines that should match the
+replica count. A virtual machine's label keys and values must match in order
+to be controlled by this VirtualMachineReplicaSet.
+
+It must match the VirtualMachine template's labels.
+More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors |
+| `template` _[VirtualMachineTemplateSpec](#virtualmachinetemplatespec)_ | Template is the object that describes the virtual machine that will be
+created if insufficient replicas are detected. |
+
+### VirtualMachineReplicaSetStatus
+
+
+
+VirtualMachineReplicaSetStatus represents the observed state of a
+VirtualMachineReplicaSet resource.
+
+_Appears in:_
+- [VirtualMachineReplicaSet](#virtualmachinereplicaset)
+
+| Field | Description |
+| --- | --- |
+| `replicas` _integer_ | Replicas is the most recently observed number of replicas. |
+| `fullyLabeledReplicas` _integer_ | FullyLabeledReplicas is the number of replicas that have labels matching the
+labels of the virtual machine template of the VirtualMachineReplicaSet. |
+| `readyReplicas` _integer_ | ReadyReplicas is the number of ready replicas for this VirtualMachineReplicaSet. A
+virtual machine is considered ready when it's "Ready" condition is marked as
+true. |
+| `observedGeneration` _integer_ | ObservedGeneration reflects the generation of the most recently observed
+VirtualMachineReplicaSet. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions represents the latest available observations of a
+VirtualMachineReplicaSet's current state. |
+
 ### VirtualMachineReservedSpec
 
 
@@ -2466,6 +2691,7 @@ VirtualMachineSpec defines the desired state of a VirtualMachine.
 
 _Appears in:_
 - [VirtualMachine](#virtualmachine)
+- [VirtualMachineTemplateSpec](#virtualmachinetemplatespec)
 
 | Field | Description |
 | --- | --- |
@@ -2760,7 +2986,7 @@ _Appears in:_
 | --- | --- |
 | `total` _[Quantity](#quantity)_ | Total describes the total storage space used by a VirtualMachine that
 counts against the Namespace's storage quota.
-This value is a sum of requested.disks + used.other. |
+This value is a sum of requested.disks and used.other. |
 | `requested` _[VirtualMachineStorageStatusRequested](#virtualmachinestoragestatusrequested)_ | Requested describes the observed amount of storage requested by a
 VirtualMachine. |
 | `usage` _[VirtualMachineStorageStatusUsed](#virtualmachinestoragestatusused)_ | Used describes the observed amount of storage used by a VirtualMachine. |
@@ -2798,6 +3024,21 @@ non-disk files, ex. the configuration file, swap space, logs, etc.
 This does not include the non-disk files created for snapshots,
 ex. snapshot data, list, and memory files. |
 
+
+### VirtualMachineTemplateSpec
+
+
+
+VirtualMachineTemplateSpec describes the data needed to create a VirtualMachine
+from a template.
+
+_Appears in:_
+- [VirtualMachineReplicaSetSpec](#virtualmachinereplicasetspec)
+
+| Field | Description |
+| --- | --- |
+| `metadata` _[ObjectMeta](#objectmeta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineSpec](#virtualmachinespec)_ | Specification of the desired behavior of each replica virtual machine. |
 
 ### VirtualMachineVolume
 
@@ -2907,6 +3148,7 @@ _Underlying type:_ `string`
 VirtualMachineVolumeType describes the type of a VirtualMachine volume.
 
 _Appears in:_
+- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 

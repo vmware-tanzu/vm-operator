@@ -286,14 +286,6 @@ func restore_v1alpha5_VirtualMachineBootstrapDisabled(dst, src *vmopv1.VirtualMa
 	}
 }
 
-func restore_v1alpha5_VirtualMachineAffinity(dst, src *vmopv1.VirtualMachine) {
-	if src.Spec.Affinity == nil {
-		dst.Spec.Affinity = nil
-	} else {
-		dst.Spec.Affinity = src.Spec.Affinity.DeepCopy()
-	}
-}
-
 func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
 	for i := range src.Spec.Volumes {
@@ -337,7 +329,6 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapDisabled(dst, restored)
-	restore_v1alpha5_VirtualMachineAffinity(dst, restored)
 	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
 
 	// END RESTORE

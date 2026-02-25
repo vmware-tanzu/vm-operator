@@ -55,8 +55,6 @@ func unmanagedVolumesTests() {
 		vmProvider  providers.VirtualMachineProviderInterface
 		nsInfo      builder.WorkloadNamespaceInfo
 
-		mockProfileResults []pbmtypes.PbmQueryProfileResult
-
 		vm      *vmopv1.VirtualMachine
 		vmClass *vmopv1.VirtualMachineClass
 	)
@@ -109,29 +107,31 @@ func unmanagedVolumesTests() {
 		}
 		initObjects = append(initObjects, storageClass)
 
-		// Update profile results to include the new disk
-		mockProfileResults = append(mockProfileResults,
-			pbmtypes.PbmQueryProfileResult{
-				Object: pbmtypes.PbmServerObjectRef{
-					Key: "vm-108:203",
-				},
-				ProfileId: []pbmtypes.PbmProfileId{
-					{
-						UniqueId: ctx.StorageProfileID,
-					},
-				},
-			},
-		)
-
-		// Mock PBM service
+		// Mock PBM service: return the storage profile for every queried disk key.
+		// The mock echoes back the queried keys so it is not sensitive to
+		// vcsim-internal device key values, which can change across govmomi
+		// versions.
 		ctx.SimulatorContext().For("/pbm").Map.Handler = func(
 			simCtx *simulator.Context,
 			m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
 
 			if m.Name == "PbmQueryAssociatedProfiles" {
+				req, ok := m.Body.(*pbmtypes.PbmQueryAssociatedProfiles)
+				if !ok {
+					return nil, nil
+				}
+				var results []pbmtypes.PbmQueryProfileResult
+				for _, ref := range req.Entities {
+					results = append(results, pbmtypes.PbmQueryProfileResult{
+						Object: ref,
+						ProfileId: []pbmtypes.PbmProfileId{
+							{UniqueId: ctx.StorageProfileID},
+						},
+					})
+				}
 				return &fakeProfileManager{
 					ProfileManager: &pbmsim.ProfileManager{},
-					Result:         mockProfileResults,
+					Result:         results,
 				}, nil
 			}
 
@@ -165,7 +165,6 @@ func unmanagedVolumesTests() {
 		initObjects = nil
 		vmProvider = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
-		mockProfileResults = nil
 	})
 
 	When("VM has unmanaged disks from vSphere", func() {

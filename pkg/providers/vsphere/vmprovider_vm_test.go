@@ -1960,7 +1960,7 @@ func vmTests() {
 							Expect(vcVM.Properties(
 								ctx,
 								vcVM.Reference(),
-								[]string{"config.extraConfig"},
+								[]string{"config.extraConfig", "config.vAppConfig"},
 								&moVM)).To(Succeed())
 							ec := object.OptionValueList(moVM.Config.ExtraConfig)
 							v1, _ := ec.GetString("hello")
@@ -1969,6 +1969,18 @@ func vmTests() {
 							Expect(v2).To(Equal("bar"))
 							v3, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
 							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+
+							// Check vAppConfig is not present in the CreateVM ConfigSpec
+							Expect(moVM.Config.VAppConfig).ToNot(BeNil())
+							Expect(moVM.Config.VAppConfig.GetVmConfigInfo()).ToNot(BeNil())
+							props := moVM.Config.VAppConfig.GetVmConfigInfo().Property
+							Expect(props).To(HaveLen(2))
+							// VCSim does not behave as real VC.
+							// Ids are not returned. So, checking labels.
+							Expect(props[0].Label).To(Equal("Is Replacement"))
+							Expect(props[0].DefaultValue).To(Equal("False"))
+							Expect(props[1].Label).To(Equal("Hostname"))
+							Expect(props[1].Value).To(Equal(""))
 						})
 
 						When("global default is direct mode", func() {

@@ -6,7 +6,6 @@ package virtualmachinegrouppublishrequest_test
 
 import (
 	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,6 +50,7 @@ func unitTestsReconcile() {
 			builder.DummyNamespaceName,
 			[]string{builder.DummyVirtualMachineName + "-0", builder.DummyVirtualMachineName + "-1"})
 		controllerutil.AddFinalizer(vmGroupPubReq, finalizerName)
+		vmGroupPubReq.UID = "test-vm-group-pubreq-uid"
 	})
 
 	JustBeforeEach(func() {
@@ -197,7 +197,7 @@ func getVMPublishRequests(
 		reqs,
 		client.InNamespace(vmGroupPubReq.Namespace),
 		client.MatchingLabels{
-			vmopv1.VirtualMachinePublishRequestManagedByLabelKey: vmGroupPubReq.Name,
+			vmopv1.VirtualMachinePublishRequestManagedByLabelKey: string(vmGroupPubReq.UID),
 		})).NotTo(HaveOccurred())
 	Expect(reqs.Items).To(HaveLen(expectedPendingCnt))
 	return reqs.Items
@@ -206,7 +206,7 @@ func getVMPublishRequests(
 func verifyRequest(req vmopv1.VirtualMachinePublishRequest, vmGroupPub *vmopv1.VirtualMachineGroupPublishRequest) {
 	Expect(req.Name).To(ContainSubstring(vmGroupPub.Name))
 	Expect(metav1.HasLabel(req.ObjectMeta, vmopv1.VirtualMachinePublishRequestManagedByLabelKey)).To(BeTrue())
-	Expect(req.Labels).To(HaveKeyWithValue(vmopv1.VirtualMachinePublishRequestManagedByLabelKey, vmGroupPub.Name))
+	Expect(req.Labels).To(HaveKeyWithValue(vmopv1.VirtualMachinePublishRequestManagedByLabelKey, string(vmGroupPub.UID)))
 	Expect(metav1.IsControlledBy(&req, vmGroupPub)).To(BeTrue())
 	Expect(req.Spec.Source.Kind).To(Equal("VirtualMachine"))
 	Expect(req.Spec.Source.Name).To(ContainSubstring("dummy-vm"))

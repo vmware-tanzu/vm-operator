@@ -27,6 +27,12 @@ func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVo
 	return autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVolumeClaimVolumeSource(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineBootstrapSpec_To_v1alpha2_VirtualMachineBootstrapSpec(
+	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapSpec_To_v1alpha2_VirtualMachineBootstrapSpec(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(
 	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
 
@@ -347,6 +353,17 @@ func restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, src *vmopv1.VirtualMac
 	}
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapDisabled(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if bs.Disabled {
+			if dst.Spec.Bootstrap == nil {
+				dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+			}
+			dst.Spec.Bootstrap.Disabled = true
+		}
+	}
+}
+
 func restore_v1alpha5_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
@@ -427,6 +444,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapDisabled(dst, restored)
 	restore_v1alpha5_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha5_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)

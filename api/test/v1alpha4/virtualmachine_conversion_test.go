@@ -120,6 +120,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 								RawProperties: "my-secret",
 							},
+							Disabled: true,
 						},
 						Network: &vmopv1.VirtualMachineNetworkSpec{
 							DomainName:    "my-domain.com",
@@ -323,6 +324,16 @@ func TestVirtualMachineConversion(t *testing.T) {
 								Kind:       "ComputePolicy",
 								Name:       "my-compute-policy-1",
 							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.bootstrap.disabled",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+							Disabled: true,
 						},
 					},
 				},

@@ -59,6 +59,12 @@ func Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpe
 	return autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachineBootstrapSpec(
+	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachineBootstrapSpec(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha4_VirtualMachineBootstrapLinuxPrepSpec(
 	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec, out *VirtualMachineBootstrapLinuxPrepSpec, s apiconversion.Scope) error {
 
@@ -269,6 +275,17 @@ func restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, src *vmopv1.VirtualMac
 	}
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapDisabled(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if bs.Disabled {
+			if dst.Spec.Bootstrap == nil {
+				dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+			}
+			dst.Spec.Bootstrap.Disabled = true
+		}
+	}
+}
+
 func restore_v1alpha5_VirtualMachineAffinity(dst, src *vmopv1.VirtualMachine) {
 	if src.Spec.Affinity == nil {
 		dst.Spec.Affinity = nil
@@ -319,6 +336,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapDisabled(dst, restored)
 	restore_v1alpha5_VirtualMachineAffinity(dst, restored)
 	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
 

@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,6 +30,7 @@ import (
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -35,8 +38,8 @@ import (
 )
 
 const (
-	webHookName                  = "default"
-	supervisorProviderAdminGroup = "sso:SupervisorProviderAdministrators@vsphere.local"
+	webHookName                        = "default"
+	supervisorProviderAdminGroupFmtStr = "sso:SupervisorProviderAdministrators@%s"
 
 	modifyAnnotationNotAllowedForNonAdmin = "modifying this annotation is not allowed for non-admin users"
 )
@@ -213,7 +216,7 @@ func (v validator) validateUpdateVMGroupPublishRequestOwnership(oldVMPub, vmPub 
 		return nil
 	}
 
-	if slices.Contains(ctx.UserInfo.Groups, supervisorProviderAdminGroup) {
+	if v.validateUserGroupMembership(ctx) {
 		return nil
 	}
 
@@ -249,7 +252,7 @@ func (v validator) validateAsyncQuotaAnnotations(ctx *pkgctx.WebhookRequestConte
 		return allErrs
 	}
 
-	if slices.Contains(ctx.UserInfo.Groups, supervisorProviderAdminGroup) {
+	if v.validateUserGroupMembership(ctx) {
 		return allErrs
 	}
 
@@ -284,4 +287,34 @@ func (v validator) vmPublishRequestFromUnstructured(obj runtime.Unstructured) (*
 		return nil, err
 	}
 	return vmPubReq, nil
+}
+
+func (v validator) validateUserGroupMembership(ctx *pkgctx.WebhookRequestContext) bool {
+	// Get wcp-cluster-config ConfigMap which contains the "system domain", i.e.
+	// sso_domain which is needed to correctly validate the User's group against
+	// the expected group.
+	wcpClusterConfigConfigMap := corev1.ConfigMap{}
+	if err := v.client.Get(
+		ctx,
+		client.ObjectKey{
+			Namespace: configmap.WcpClusterConfigMapNamespace,
+			Name:      configmap.WcpClusterConfigMapName,
+		},
+		&wcpClusterConfigConfigMap); err != nil {
+
+		ctx.Logger.Error(err, "unable to get ConfigMap for wcp-cluster-config")
+		return false
+	}
+
+	wcpClusterConfig, err := configmap.ParseWcpClusterConfig(wcpClusterConfigConfigMap.Data)
+	if err != nil {
+		ctx.Logger.Error(err, "unable to parse wcp-cluster-config ConfigMap: %w", err)
+		return false
+	}
+
+	supervisorProviderAdminGroup := fmt.Sprintf(supervisorProviderAdminGroupFmtStr, wcpClusterConfig.SSODomain)
+
+	return slices.ContainsFunc(ctx.UserInfo.Groups, func(group string) bool {
+		return strings.EqualFold(group, supervisorProviderAdminGroup)
+	})
 }

@@ -13,9 +13,6 @@ import (
 	"path/filepath"
 	"time"
 
-	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
-
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
@@ -23,8 +20,11 @@ import (
 	"github.com/vmware/govmomi/vapi/library/finder"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -83,7 +83,7 @@ func NewProviderWithWaitSec(restClient *rest.Client, waitSeconds int) Provider {
 }
 
 func (cs *provider) ListLibraryItems(ctx context.Context, libraryUUID string) ([]string, error) {
-	logger := log.WithValues("libraryUUID", libraryUUID)
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("libraryUUID", libraryUUID)
 	itemList, err := cs.libMgr.ListLibraryItems(ctx, libraryUUID)
 	if err != nil {
 		if util.IsNotFoundError(err) {
@@ -96,7 +96,7 @@ func (cs *provider) ListLibraryItems(ctx context.Context, libraryUUID string) ([
 }
 
 func (cs *provider) GetLibraryItems(ctx context.Context, libraryUUID string) ([]library.Item, error) {
-	logger := log.WithValues("libraryUUID", libraryUUID)
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("libraryUUID", libraryUUID)
 	itemList, err := cs.libMgr.ListLibraryItems(ctx, libraryUUID)
 	if err != nil {
 		if util.IsNotFoundError(err) {
@@ -164,7 +164,7 @@ func (cs *provider) RetrieveOvfEnvelopeByLibraryItemID(ctx context.Context, item
 	}
 
 	if libItem == nil || libItem.Type != library.ItemTypeOVF {
-		log.Error(nil, "empty or non OVF library item type, skipping", "itemID", itemID)
+		pkglog.FromContextOrDefault(ctx).Error(nil, "empty or non OVF library item type, skipping", "itemID", itemID)
 		// No need to return the error here to avoid unnecessary reconciliation.
 		return nil, nil
 	}
@@ -177,7 +177,7 @@ func readerFromURL(ctx context.Context, c *rest.Client, url *url.URL) (io.ReadCl
 	readerStream, _, err := c.Download(ctx, url, &p)
 	if err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
-		log.Error(err, "Error occurred when downloading file", "url", url)
+		pkglog.FromContextOrDefault(ctx).Error(err, "Error occurred when downloading file", "url", url)
 		return nil, err
 	}
 
@@ -193,7 +193,8 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 		return nil, err
 	}
 
-	logger := log.WithValues("sessionID", sessionID, "itemID", item.ID, "itemName", item.Name)
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("sessionID", sessionID, "itemID", item.ID, "itemName", item.Name)
+	ctx = logr.NewContext(ctx, logger)
 	logger.V(4).Info("download session for item created")
 
 	defer func() {
@@ -203,7 +204,7 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 	}()
 
 	// Download ovf from the library item.
-	fileURL, err := cs.generateDownloadURLForLibraryItem(ctx, logger, sessionID, item)
+	fileURL, err := cs.generateDownloadURLForLibraryItem(ctx, sessionID, item)
 	if err != nil {
 		return nil, err
 	}
@@ -231,12 +232,13 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 
 // UpdateLibraryItem updates the content library item's name and description.
 func (cs *provider) UpdateLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
-	log.Info("Updating Library Item", "itemID", itemID,
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.Info("Updating Library Item", "itemID", itemID,
 		"newName", newName, "newDescription", newDescription)
 
 	item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
 	if err != nil {
-		log.Error(err, "error getting library item")
+		logger.Error(err, "error getting library item")
 		return err
 	}
 
@@ -262,7 +264,7 @@ func (cs *provider) SyncLibraryItem(
 
 // Only used in testing.
 func (cs *provider) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
-	log.Info("Creating Library Item", "item", libraryItem, "path", path)
+	pkglog.FromContextOrDefault(ctx).Info("Creating Library Item", "item", libraryItem, "path", path)
 
 	itemID, err := cs.libMgr.CreateLibraryItem(ctx, libraryItem)
 	if err != nil {
@@ -324,9 +326,10 @@ func (cs *provider) CreateLibraryItem(ctx context.Context, libraryItem library.I
 // 3. download the file.
 func (cs *provider) generateDownloadURLForLibraryItem(
 	ctx context.Context,
-	logger logr.Logger,
 	sessionID string,
 	item *library.Item) (*url.URL, error) {
+
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("sessionID", sessionID)
 
 	// List the files available for download in the library item.
 	files, err := cs.libMgr.ListLibraryItemDownloadSessionFile(ctx, sessionID)
@@ -385,7 +388,7 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 		}
 
 		fileURL = info.DownloadEndpoint.URI
-		log.V(4).Info("Downloaded file", "fileURL", fileURL)
+		logger.V(4).Info("Downloaded file", "fileURL", fileURL)
 		return true, nil
 	})
 

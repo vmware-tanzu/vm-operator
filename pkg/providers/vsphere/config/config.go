@@ -14,13 +14,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
 )
-
-var log = logf.Log.WithName("vsphere").WithName("config")
 
 // VSphereVMProviderConfig represents the configuration for a Vsphere VM Provider instance.
 // Contains information enabling integration with a backend vSphere instance for VM management.
@@ -242,7 +240,8 @@ func UpdateVcInConfigMap(ctx context.Context, client ctrlclient.Client, vcPNID, 
 
 	err = client.Patch(ctx, configMap, ctrlclient.MergeFrom(origConfigMap))
 	if err != nil {
-		log.Error(err, "Failed to update provider ConfigMap", "configMapName", configMap.Name)
+		pkglog.FromContextOrDefault(ctx).Error(err, "Failed to update provider ConfigMap",
+			"configMapName", configMap.Name)
 		return false, err
 	}
 

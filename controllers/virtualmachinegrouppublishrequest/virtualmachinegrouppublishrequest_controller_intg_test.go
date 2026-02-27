@@ -53,7 +53,7 @@ func intgTestsReconcile() {
 	getVMPubReqs := func(ctx *builder.IntegrationTestContext, ns string) []vmopv1.VirtualMachinePublishRequest {
 		reqs := &vmopv1.VirtualMachinePublishRequestList{}
 		Expect(ctx.Client.List(ctx, reqs, client.InNamespace(ns), client.MatchingLabels{
-			vmopv1.VirtualMachinePublishRequestManagedByLabelKey: vmGroupPubReq.Name,
+			vmopv1.VirtualMachinePublishRequestManagedByLabelKey: string(vmGroupPubReq.UID),
 		})).NotTo(HaveOccurred())
 		return reqs.Items
 	}

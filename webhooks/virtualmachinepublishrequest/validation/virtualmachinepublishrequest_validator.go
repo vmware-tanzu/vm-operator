@@ -195,7 +195,7 @@ func (v validator) validateCreateVMGroupPublishRequestOwnership(vmPub *vmopv1.Vi
 
 	for _, ownerRef := range vmPub.OwnerReferences {
 		if ownerRef.Kind == "VirtualMachineGroupPublishRequest" &&
-			ownerRef.Name == vmPub.Labels[vmopv1.VirtualMachinePublishRequestManagedByLabelKey] {
+			string(ownerRef.UID) == vmPub.Labels[vmopv1.VirtualMachinePublishRequestManagedByLabelKey] {
 			return nil
 		}
 	}

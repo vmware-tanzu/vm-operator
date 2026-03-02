@@ -506,27 +506,26 @@ func IsKubernetesNode(vm vmopv1.VirtualMachine) bool {
 // WorkloadDomainIsolation capability set to a value based on the provided VM.
 func GetContextWithWorkloadDomainIsolation(
 	ctx context.Context,
-	vm vmopv1.VirtualMachine) context.Context {
+	vm *vmopv1.VirtualMachine) context.Context {
 
-	// Create a copy of the config so the WorkloadDomainIsolation capability
-	// may be altered for just this VM.
+	// Typically the WorkloadDomainIsolation will be enabled but older
+	// versions of vSphere Kubernetes Service (VKS) do not support
+	// that feature so it will be disabled. However, an old VKS version
+	// should not impact non-VKS VMs so enable it for just those VMs.
+
 	cfg := pkgcfg.FromContext(ctx)
-
-	// By default the WorkloadDomainIsolation capability is enabled for all
-	// VMs.
-	cfg.Features.WorkloadDomainIsolation = true
-
-	// If the VM is a Kubernetes node, the WorkloadDomainIsolation
-	// capability is determined by inspecting the value of the cluster's
-	// capability, which may be disabled based on the version of the vSphere
-	// Kubernetes Service (VKS).
-	if IsKubernetesNode(vm) {
-		cfg.Features.WorkloadDomainIsolation = pkgcfg.FromContext(ctx).
-			Features.WorkloadDomainIsolation
+	if cfg.Features.WorkloadDomainIsolation {
+		return ctx
 	}
 
+	if IsKubernetesNode(*vm) {
+		return ctx
+	}
+
+	// Enable WorkloadDomainIsolation for this non-VKS VM.
 	// Layer the updated Config into the context so all logic beneath this
 	// line in the call stack will use the updated value.
+	cfg.Features.WorkloadDomainIsolation = true
 	return pkgcfg.WithContext(ctx, cfg)
 }
 

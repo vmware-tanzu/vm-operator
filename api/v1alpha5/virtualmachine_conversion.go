@@ -5,10 +5,17 @@
 package v1alpha5
 
 import (
+	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
+
+func Convert_v1alpha6_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(
+	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in, out, s)
+}
 
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {

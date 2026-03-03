@@ -833,6 +833,15 @@ type VirtualMachineSpec struct {
 
 	// +optional
 
+	// VolumeAttributesClassName describes the name of a Kubernetes VolumeAttributesClass resource
+	// used to configure this VM's storage-related attributes.
+	//
+	// Please see https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
+	// for more information on Kubernetes volume attribute classes.
+	VolumeAttributesClassName string `json:"volumeAttributesClassName,omitempty"`
+
+	// +optional
+
 	// Bootstrap describes the desired state of the guest's bootstrap
 	// configuration.
 	//

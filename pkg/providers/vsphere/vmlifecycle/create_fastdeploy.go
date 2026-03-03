@@ -138,6 +138,55 @@ func fastDeploy(
 		"vmDirPath", vmDirPath,
 		"vmPathName", createArgs.ConfigSpec.Files.VmPathName)
 
+	// Register cleanup defer immediately after directory creation.
+	defer func() {
+		if retErr == nil {
+			// Do not delete the VM directory if this function succeeded.
+			return
+		}
+
+		// Use a context that is not cancelled when the parent is, so cleanup
+		// runs even if the request is cancelled. Preserves the VC opID so
+		// cleanup is correlated with the failed create in VC logs.
+		ctx := context.WithoutCancel(vmCtx.Context)
+
+		// Delete the VM directory and its contents.
+		// Always use FileManager.DeleteDatastoreFile() first as it can delete
+		// non-empty directories recursively. Note that DeleteDirectory() on a
+		// non-empty directory will return an error, which is why we delete the
+		// directory contents first using DeleteDatastoreFile().
+		t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
+		if err != nil {
+			retErr = fmt.Errorf(
+				"failed to call delete api for vm dir %q: %w,%w",
+				vmDirPath, err, retErr)
+			return
+		}
+
+		// Wait for the delete call to return.
+		if err := t.Wait(ctx); err != nil &&
+			!fault.Is(err, &vimtypes.FileNotFound{}) {
+
+			retErr = fmt.Errorf(
+				"failed to delete vm dir %q: %w,%w",
+				vmDirPath, err, retErr)
+		}
+
+		// For non-TLD datastores, also clean up the namespace mapping.
+		if !createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
+			if err := nm.DeleteDirectory(
+				ctx,
+				datacenter,
+				vmDirUUIDPath); err != nil &&
+				!fault.Is(err, &vimtypes.FileNotFound{}) {
+
+				retErr = fmt.Errorf(
+					"failed to delete vm dir namespace mapping %q: %w,%w",
+					vmDirUUIDPath, err, retErr)
+			}
+		}
+	}()
+
 	dstDiskPaths := make([]string, len(srcDiskPaths))
 	for i := 0; i < len(dstDiskPaths); i++ {
 		dstDiskPaths[i] = fmt.Sprintf("%s/disk-%d.vmdk", vmDirPath, i)
@@ -225,62 +274,6 @@ func fastDeploy(
 			}
 		}
 	}
-
-	// If any error occurs after this point, the newly created VM directory and
-	// its contents need to be cleaned up.
-	defer func() {
-		if retErr == nil {
-			// Do not delete the VM directory if this function was successful.
-			return
-		}
-
-		// Use a new context to ensure cleanup happens even if the context
-		// is cancelled.
-		ctx := context.Background()
-
-		// Delete the VM directory and its contents.
-		if createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
-			t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
-			if err != nil {
-				err = fmt.Errorf(
-					"failed to call delete api for vm dir %q: %w",
-					vmDirPath, err)
-				if retErr == nil {
-					retErr = err
-				} else {
-					retErr = fmt.Errorf("%w,%w", err, retErr)
-				}
-				return
-			}
-
-			// Wait for the delete call to return.
-			if err := t.Wait(ctx); err != nil {
-				if !fault.Is(err, &vimtypes.FileNotFound{}) {
-					err = fmt.Errorf("failed to delete vm dir %q: %w",
-						vmDirPath, err)
-					if retErr == nil {
-						retErr = err
-					} else {
-						retErr = fmt.Errorf("%w,%w", err, retErr)
-					}
-				}
-			}
-		} else if err := nm.DeleteDirectory(
-			ctx,
-			datacenter,
-			vmDirUUIDPath); err != nil {
-
-			if !fault.Is(err, &vimtypes.FileNotFound{}) {
-				err = fmt.Errorf("failed to delete vm dir %q: %w",
-					vmDirUUIDPath, err)
-				if retErr == nil {
-					retErr = err
-				} else {
-					retErr = fmt.Errorf("%w,%w", err, retErr)
-				}
-			}
-		}
-	}()
 
 	folder := object.NewFolder(vimClient, vimtypes.ManagedObjectReference{
 		Type:  "Folder",

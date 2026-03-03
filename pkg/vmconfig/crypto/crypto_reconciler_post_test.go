@@ -342,13 +342,19 @@ var _ = Describe("OnResult", Label(testlabels.Crypto), func() {
 						"",
 						"msg.hostd.configSpec.enc.encrypted",
 					),
-					getMethodFaultTableEntries(
-						func() vimtypes.BaseMethodFault { return &vimtypes.InvalidVmConfig{} },
-						"have vm and disks with different encryption states",
-						"",
-						"msg.hostd.configSpec.enc.mismatch",
-					),
+				getMethodFaultTableEntries(
+					func() vimtypes.BaseMethodFault { return &vimtypes.InvalidVmConfig{} },
+					"have vm and disks with different encryption states",
+					"",
+					"msg.hostd.configSpec.enc.mismatch",
 				),
+				getMethodFaultTableEntries(
+					func() vimtypes.BaseMethodFault { return &vimtypes.InvalidVmConfig{} },
+					"have vm and disks with different key provider types",
+					"",
+					"msg.hostd.configSpec.enc.mixedKeys",
+				),
+			),
 			)
 
 			Context("and is multiple, known faults", func() {

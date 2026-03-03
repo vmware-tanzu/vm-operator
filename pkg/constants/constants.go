@@ -256,4 +256,8 @@ const (
 	// NoUnmanagedVolumesRegisterAnnotationKey is the annotation to not create any CNSRegisterVolumes
 	// by skipping the unmanaged volume register reconcile.
 	NoUnmanagedVolumesRegisterAnnotationKey = "vmoperator.vmware.com/no-unmanaged-volumes-register"
+
+	// PVCEncryptionClassNameAnnotation specifies the name of an EncryptionClass
+	// on a PVC.
+	PVCEncryptionClassNameAnnotation = "csi.vsphere.encryption-class"
 )

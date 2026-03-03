@@ -181,6 +181,22 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	SearchDomains []string `json:"searchDomains,omitempty"`
 }
 
+// VirtualMachineNetworkVLANSpec describes a VLAN interface configuration.
+type VirtualMachineNetworkVLANSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=4094
+
+	// ID is the VLAN ID, a number between 0 and 4094.
+	ID int64 `json:"id"`
+
+	// +kubebuilder:validation:Required
+
+	// Link is the name of the parent interface on which this VLAN is created.
+	// This must reference an interface name from the Interfaces list.
+	Link string `json:"link"`
+}
+
 // VirtualMachineNetworkSpec defines a VM's desired network configuration.
 type VirtualMachineNetworkSpec struct {
 	// +optional
@@ -292,6 +308,19 @@ type VirtualMachineNetworkSpec struct {
 	// The maximum number of network interface allowed is 10 because a vSphere
 	// virtual machine may not have more than 10 virtual ethernet card devices.
 	Interfaces []VirtualMachineNetworkInterfaceSpec `json:"interfaces,omitempty"`
+
+	// +optional
+
+	// VLANs is a map of VLAN interfaces to be configured on top of the physical
+	// network interfaces. The key is the VLAN interface name.
+	//
+	// VLAN interfaces are virtual network interfaces that tag traffic with a
+	// VLAN ID. Each VLAN must reference a parent interface from the Interfaces
+	// list via the Link field.
+	//
+	// Please note this feature is available only with the following bootstrap
+	// providers: CloudInit.
+	VLANs map[string]VirtualMachineNetworkVLANSpec `json:"vlans,omitempty"`
 }
 
 // VirtualMachineNetworkDNSStatus describes the observed state of the guest's

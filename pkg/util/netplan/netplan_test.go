@@ -90,6 +90,60 @@ var _ = DescribeTable("MarshalYAML",
 		},
 		nil,
 	),
+
+	Entry(
+		"single vlan",
+		netplanSingleVLAN,
+		netplan.Config{
+			Network: netplan.Network{
+				Version: 2,
+				Ethernets: map[string]netplan.Ethernet{
+					"eth0": {
+						Dhcp4: ptr.To(true),
+					},
+					"eth1": {
+						Dhcp4: ptr.To(false),
+					},
+				},
+				Vlans: map[string]netplan.VLAN{
+					"vlan100": {
+						ID:   ptr.To(int64(100)),
+						Link: ptr.To("eth1"),
+					},
+				},
+			},
+		},
+		nil,
+	),
+
+	Entry(
+		"multiple vlans",
+		netplanMultipleVLANs,
+		netplan.Config{
+			Network: netplan.Network{
+				Version: 2,
+				Ethernets: map[string]netplan.Ethernet{
+					"eth0": {
+						Dhcp4: ptr.To(true),
+					},
+					"eth1": {
+						Dhcp4: ptr.To(false),
+					},
+				},
+				Vlans: map[string]netplan.VLAN{
+					"vlan100": {
+						ID:   ptr.To(int64(100)),
+						Link: ptr.To("eth1"),
+					},
+					"vlan200": {
+						ID:   ptr.To(int64(200)),
+						Link: ptr.To("eth1"),
+					},
+				},
+			},
+		},
+		nil,
+	),
 )
 
 var _ = DescribeTable("Unmarshal",
@@ -168,6 +222,60 @@ var _ = DescribeTable("Unmarshal",
 		},
 		nil,
 	),
+
+	Entry(
+		"single vlan",
+		netplanSingleVLAN,
+		netplan.Config{
+			Network: netplan.Network{
+				Version: 2,
+				Ethernets: map[string]netplan.Ethernet{
+					"eth0": {
+						Dhcp4: ptr.To(true),
+					},
+					"eth1": {
+						Dhcp4: ptr.To(false),
+					},
+				},
+				Vlans: map[string]netplan.VLAN{
+					"vlan100": {
+						ID:   ptr.To(int64(100)),
+						Link: ptr.To("eth1"),
+					},
+				},
+			},
+		},
+		nil,
+	),
+
+	Entry(
+		"multiple vlans",
+		netplanMultipleVLANs,
+		netplan.Config{
+			Network: netplan.Network{
+				Version: 2,
+				Ethernets: map[string]netplan.Ethernet{
+					"eth0": {
+						Dhcp4: ptr.To(true),
+					},
+					"eth1": {
+						Dhcp4: ptr.To(false),
+					},
+				},
+				Vlans: map[string]netplan.VLAN{
+					"vlan100": {
+						ID:   ptr.To(int64(100)),
+						Link: ptr.To("eth1"),
+					},
+					"vlan200": {
+						ID:   ptr.To(int64(200)),
+						Link: ptr.To("eth1"),
+					},
+				},
+			},
+		},
+		nil,
+	),
 )
 
 const netplanSingleStaticIP = `network:
@@ -215,3 +323,30 @@ const netplanStaticAndDHCPWithOverridesBoolYesNo = `network:
       dhcp4: yes
       dhcp4-overrides:
         route-metric: 200`
+
+const netplanSingleVLAN = `network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+    eth1:
+      dhcp4: false
+  vlans:
+    vlan100:
+      id: 100
+      link: eth1`
+
+const netplanMultipleVLANs = `network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+    eth1:
+      dhcp4: false
+  vlans:
+    vlan100:
+      id: 100
+      link: eth1
+    vlan200:
+      id: 200
+      link: eth1`

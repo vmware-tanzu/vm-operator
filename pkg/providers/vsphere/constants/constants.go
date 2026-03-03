@@ -77,6 +77,8 @@ const (
 	// EncryptionClassNameAnnotation specifies the name of an EncryptionClass
 	// resource. This is used by APIs that participate in BYOK but cannot modify
 	// their spec to do so, such as the PersistentVolumeClaim API.
+	// TODO (aruneshpa): Is this instance storage only? CSI appears to use
+	// PVCEncryptionClassNameAnnotation nowadays.
 	EncryptionClassNameAnnotation = "encryption.vmware.com/encryption-class-name"
 
 	// InstanceStoragePVCNamePrefix prefix of auto-generated PVC names.

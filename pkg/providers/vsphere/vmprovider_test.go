@@ -464,6 +464,18 @@ virtualSystem:
     id: 36
     info: The kind of installed guest operating system
     osType: otherLinuxGuest
+  productSection:
+  - info: Product info
+    property:
+    - id: is_replace
+      label: Is Replacement
+      type: boolean
+      userConfigurable: true
+      default: "false"
+    - id: nsx_hostname
+      label: Hostname
+      type: string
+      userConfigurable: true
   virtualHardwareSection:
   - config:
     - key: firmware

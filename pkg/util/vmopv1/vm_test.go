@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -1114,6 +1115,200 @@ var _ = Describe("CnsRegisterVolumeToVirtualMachineMapper", func() {
 			Expect(func() {
 				mapperFunc(ctx, nil)
 			}).To(Panic())
+		})
+	})
+})
+
+var _ = Describe("PVCToVirtualMachineVolumeClaimNameMapper", func() {
+	const (
+		namespaceName = "fake"
+		fieldName     = "spec.volumes.persistentVolumeClaim.claimName"
+	)
+
+	var (
+		ctx           context.Context
+		k8sClient     ctrlclient.Client
+		withObjs      []ctrlclient.Object
+		withFuncs     interceptor.Funcs
+		pvc1, pvc2    *corev1.PersistentVolumeClaim
+		vm1, vm2, vm3 *vmopv1.VirtualMachine
+		mapFn         handler.TypedMapFunc[*corev1.PersistentVolumeClaim, reconcile.Request]
+		reqs          []reconcile.Request
+	)
+
+	BeforeEach(func() {
+		reqs = nil
+		withObjs = nil
+		withFuncs = interceptor.Funcs{}
+
+		ctx = context.Background()
+
+		pvc1 = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pvc-1",
+				Namespace: namespaceName,
+			},
+		}
+
+		pvc2 = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pvc-2",
+				Namespace: namespaceName,
+			},
+		}
+
+		vm1 = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-vm1",
+				Namespace: namespaceName,
+			},
+		}
+
+		vm2 = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-vm2",
+				Namespace: namespaceName,
+			},
+		}
+
+		vm3 = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-vm3",
+				Namespace: namespaceName,
+			},
+		}
+	})
+
+	pvcsToVMVolumes := func(pvcs ...*corev1.PersistentVolumeClaim) []vmopv1.VirtualMachineVolume {
+		var vols []vmopv1.VirtualMachineVolume
+		for _, pvc := range pvcs {
+			vol := vmopv1.VirtualMachineVolume{
+				Name: "disk-" + pvc.Name,
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvc.Name,
+						},
+					},
+				},
+			}
+			vols = append(vols, vol)
+		}
+		return vols
+	}
+
+	JustBeforeEach(func() {
+		withObjs = append(withObjs, vm1, vm2, vm3)
+
+		// TODO: We need to redo how and where we're defining the extractor funcs,
+		// so this isn't duplicated.
+		k8sClient = fake.NewClientBuilder().
+			WithScheme(builder.NewScheme()).
+			WithInterceptorFuncs(withFuncs).
+			WithObjects(withObjs...).
+			WithIndex(
+				&vmopv1.VirtualMachine{},
+				fieldName,
+				func(rawObj ctrlclient.Object) []string {
+					vm := rawObj.(*vmopv1.VirtualMachine)
+					pvcs := make([]string, 0, len(vm.Spec.Volumes))
+					for _, volume := range vm.Spec.Volumes {
+						if pvc := volume.PersistentVolumeClaim; pvc != nil && pvc.ClaimName != "" {
+							pvcs = append(pvcs, pvc.ClaimName)
+						}
+					}
+					return pvcs
+				},
+			).
+			Build()
+	})
+
+	When("panic is expected", func() {
+		When("k8sClient is nil", func() {
+			JustBeforeEach(func() {
+				k8sClient = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_ = vmopv1util.PVCToVirtualMachineVolumeClaimNameMapper(ctx, k8sClient)
+				}).To(PanicWith("k8sClient is nil"))
+			})
+		})
+	})
+
+	When("panic is not expected", func() {
+		JustBeforeEach(func() {
+			mapFn = vmopv1util.PVCToVirtualMachineVolumeClaimNameMapper(ctx, k8sClient)
+			Expect(mapFn).ToNot(BeNil())
+			reqs = mapFn(ctx, pvc1)
+		})
+
+		When("there is an error listing vms", func() {
+			BeforeEach(func() {
+				withFuncs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if _, ok := list.(*vmopv1.VirtualMachineList); ok {
+						return errors.New("fake")
+					}
+					return client.List(ctx, list, opts...)
+				}
+			})
+			It("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+
+		When("there are no matching vms", func() {
+			It("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+
+		When("there is a single matching vm", func() {
+			BeforeEach(func() {
+				vm1.Spec.Volumes = pvcsToVMVolumes(pvc1)
+				vm2.Spec.Volumes = pvcsToVMVolumes(pvc2)
+			})
+
+			It("one reconcile request should be returned", func() {
+				Expect(reqs).To(ConsistOf(
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      vm1.Name,
+							Namespace: namespaceName,
+						},
+					},
+				))
+			})
+		})
+
+		When("there are multiple matching vms", func() {
+			BeforeEach(func() {
+				vm1.Spec.Volumes = pvcsToVMVolumes(pvc1)
+				vm2.Spec.Volumes = pvcsToVMVolumes(pvc2)
+				vm3.Spec.Volumes = pvcsToVMVolumes(pvc1, pvc2)
+			})
+
+			It("an equal number of requests should be returned", func() {
+				Expect(reqs).To(ConsistOf(
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Namespace: namespaceName,
+							Name:      vm1.Name,
+						},
+					},
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Namespace: namespaceName,
+							Name:      vm3.Name,
+						},
+					},
+				))
+			})
 		})
 	})
 })

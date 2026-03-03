@@ -8,8 +8,11 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -56,14 +59,15 @@ const (
 )
 
 var (
-	ctx              context.Context
-	mgr              pkgmgr.Manager
-	managerOpts      pkgmgr.Options
-	rateLimiterQPS   int
-	rateLimiterBurst int
-	defaultConfig    = pkgcfg.FromEnv()
-	logOptions       = logs.NewOptions()
-	setupLog         = klog.Background().WithName("setup")
+	ctx                               context.Context
+	mgr                               pkgmgr.Manager
+	managerOpts                       pkgmgr.Options
+	rateLimiterQPS                    int
+	rateLimiterBurst                  int
+	controllerMaxConcurrentReconciles string
+	defaultConfig                     = pkgcfg.FromEnv()
+	logOptions                        = logs.NewOptions()
+	setupLog                          = klog.Background().WithName("setup")
 )
 
 // main is the entrypoint for the application. Please note, unless otherwise
@@ -239,6 +243,11 @@ func initFlags() {
 		defaultConfig.MaxConcurrentReconciles,
 		"The maximum number of allowed, concurrent reconciles.")
 	flag.StringVar(
+		&controllerMaxConcurrentReconciles,
+		"controller-max-concurrent-reconciles",
+		"",
+		"Comma-separated list of controller=value pairs to configure max concurrent reconciles per controller (e.g., virtualmachine-controller=10,virtualmachineservice-controller=5).")
+	flag.StringVar(
 		&managerOpts.PodNamespace,
 		"pod-namespace",
 		defaultConfig.PodNamespace,
@@ -311,6 +320,40 @@ func initFlags() {
 	}
 
 	flag.Parse()
+
+	if controllerMaxConcurrentReconciles != "" {
+		parsed, err := parseControllerMaxConcurrentReconciles(controllerMaxConcurrentReconciles)
+		if err != nil {
+			setupLog.Error(err, "Failed to parse controller-max-concurrent-reconciles")
+			os.Exit(1)
+		}
+		managerOpts.ControllerMaxConcurrentReconciles = parsed
+		setupLog.Info("Per-controller max concurrent reconciles configured",
+			"config", managerOpts.ControllerMaxConcurrentReconciles)
+	}
+}
+
+func parseControllerMaxConcurrentReconciles(s string) (map[string]int, error) {
+	if s == "" {
+		return nil, nil
+	}
+	result := make(map[string]int)
+	for _, pair := range strings.Split(s, ",") {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid format %q, expected controller=value", pair)
+		}
+		controller := strings.TrimSpace(parts[0])
+		value, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid value for %q: %w", controller, err)
+		}
+		if value < 0 {
+			return nil, fmt.Errorf("value for %q must be >= 0", controller)
+		}
+		result[controller] = value
+	}
+	return result, nil
 }
 
 func initLogging() {

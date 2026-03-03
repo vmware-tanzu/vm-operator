@@ -68,7 +68,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestsFromMapFunc(
 				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			LogConstructor: pkglog.ControllerLogConstructor(
 				controllerNameShort,
 				controlledType,

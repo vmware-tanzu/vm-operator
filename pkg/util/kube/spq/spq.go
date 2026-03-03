@@ -20,7 +20,7 @@ import (
 
 const (
 	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-	storageClassParamPolicyID      = "storagePolicyID"
+	StorageParamPolicyID           = "storagePolicyID"
 
 	// StoragePolicyQuotaKind is the name of the StoragePolicyQuota kind.
 	StoragePolicyQuotaKind = "StoragePolicyQuota"
@@ -85,11 +85,13 @@ func GetStorageClassesForPolicy(
 	var matches []storagev1.StorageClass
 	for i := range obj.Items {
 		o := obj.Items[i]
-		if id == o.Parameters[storageClassParamPolicyID] {
-			ok, err := IsStorageClassInNamespace(
+		if id == o.Parameters[StorageParamPolicyID] {
+			policyID := o.Parameters[StorageParamPolicyID]
+			ok, err := IsStoragePolicyInNamespace(
 				ctx,
 				k8sClient,
-				&o,
+				o.Name,
+				policyID,
 				namespace)
 			if err != nil {
 				return nil, err
@@ -119,7 +121,7 @@ func GetStorageClassesForPolicyQuota(
 	var matches []storagev1.StorageClass
 	for i := range obj.Items {
 		o := obj.Items[i]
-		if spq.Spec.StoragePolicyId == o.Parameters[storageClassParamPolicyID] {
+		if spq.Spec.StoragePolicyId == o.Parameters[StorageParamPolicyID] {
 			matches = append(matches, o)
 		}
 	}
@@ -143,7 +145,7 @@ func GetStoragePolicyIDFromClass(
 		return "", err
 	}
 
-	return obj.Parameters[storageClassParamPolicyID], nil
+	return obj.Parameters[StorageParamPolicyID], nil
 }
 
 type NotFoundInNamespace struct {
@@ -179,7 +181,9 @@ func GetStorageClassInNamespace(
 		return storagev1.StorageClass{}, err
 	}
 
-	ok, err := IsStorageClassInNamespace(ctx, k8sClient, &sc, namespace)
+	policyID := sc.Parameters[StorageParamPolicyID]
+
+	ok, err := IsStoragePolicyInNamespace(ctx, k8sClient, sc.Name, policyID, namespace)
 	if err != nil {
 		return storagev1.StorageClass{}, err
 	}
@@ -194,18 +198,18 @@ func GetStorageClassInNamespace(
 	return sc, nil
 }
 
-// IsStorageClassInNamespace returns true if the provided storage class is
+// IsStoragePolicyInNamespace returns true if the provided storage policy is
 // available in the provided namespace.
-func IsStorageClassInNamespace(
+func IsStoragePolicyInNamespace(
 	ctx context.Context,
 	k8sClient client.Client,
-	sc *storagev1.StorageClass,
+	objName string,
+	policyID string,
 	namespace string) (bool, error) {
 
 	if pkgcfg.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
-		policyID := sc.Parameters[storageClassParamPolicyID]
 		if policyID == "" {
-			return false, fmt.Errorf("StorageClass does not have policy ID")
+			return false, fmt.Errorf("storage object does not have policy ID")
 		}
 
 		var obj spqv1.StoragePolicyQuotaList
@@ -224,6 +228,9 @@ func IsStorageClassInNamespace(
 		}
 
 	} else {
+		// For backwards compatibility, validation
+		// over ResourceQuota will consider policyID only coming
+		// from StorageClasses
 		var obj corev1.ResourceQuotaList
 		if err := k8sClient.List(
 			ctx,
@@ -233,7 +240,7 @@ func IsStorageClassInNamespace(
 			return false, err
 		}
 
-		prefix := sc.Name + storageResourceQuotaStrPattern
+		prefix := objName + storageResourceQuotaStrPattern
 		for i := range obj.Items {
 			for name := range obj.Items[i].Spec.Hard {
 				if strings.HasPrefix(name.String(), prefix) {

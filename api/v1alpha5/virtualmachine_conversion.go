@@ -19,6 +19,12 @@ func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha5_VirtualMachineBoot
 	return autoConvert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha5_VirtualMachineBootstrapSpec(in, out, s)
 }
 
+func Convert_v1alpha6_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(
+	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in, out, s)
+}
+
 func restore_v1alpha6_VirtualMachineBootstrapDisabled(dst, src *vmopv1.VirtualMachine) {
 	if bs := src.Spec.Bootstrap; bs != nil {
 		if bs.Disabled {

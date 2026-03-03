@@ -2090,6 +2090,7 @@ func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	// WARNING: in.Affinity requires manual conversion: does not exist in peer-type
 	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	out.StorageClass = in.StorageClass
+	// WARNING: in.VolumeAttributesClassName requires manual conversion: does not exist in peer-type
 	// WARNING: in.Bootstrap requires manual conversion: does not exist in peer-type
 	// WARNING: in.Network requires manual conversion: does not exist in peer-type
 	out.PowerState = VirtualMachinePowerState(in.PowerState)

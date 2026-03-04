@@ -141,6 +141,8 @@ func (r *reconciler) ReconcileNormal(
 	ctx context.Context,
 	obj *vmopv1.VirtualMachineImageCache) (retErr error) {
 
+	ctx = pkgctx.WithVCOpID(ctx, obj, "imageCache")
+
 	//
 	// Check if any of the spec.locations or status.locations have an empty
 	// profileID field and remove those entries if they do. This is a

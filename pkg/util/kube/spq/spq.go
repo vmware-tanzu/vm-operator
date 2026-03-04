@@ -86,12 +86,11 @@ func GetStorageClassesForPolicy(
 	for i := range obj.Items {
 		o := obj.Items[i]
 		if id == o.Parameters[StorageParamPolicyID] {
-			policyID := o.Parameters[StorageParamPolicyID]
 			ok, err := IsStoragePolicyInNamespace(
 				ctx,
 				k8sClient,
 				o.Name,
-				policyID,
+				id,
 				namespace)
 			if err != nil {
 				return nil, err

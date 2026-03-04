@@ -39,7 +39,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -75,7 +74,7 @@ const (
 	storageVACNotFoundFmt                      = "Volume Attributes Class %s does not exist"
 	storagePolicyNotAssociatedOnNSFmt          = "Storage policy is not associated with the namespace %s by object %s"
 	storagePolicyNotSpecifiedObjFmt            = "Storage policy not specified on object %s"
-	storageVACNotAllowedFmt                    = "Volume Attributes Class cannot be used if %s capability is not enabled"
+	storageVACNotAllowed                       = "Volume Attributes Class cannot be used if capability is not enabled"
 	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
 	addingModifyingInstanceVolumesNotAllowed   = "adding or modifying instance storage volume claim(s) is not allowed"
 	featureNotEnabled                          = "the %s feature is not enabled"
@@ -710,7 +709,7 @@ func (v validator) validateStorageFields(
 		objPath = field.NewPath("spec", "volumeAttributesClassName")
 		objName = vm.Spec.VolumeAttributesClassName
 		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
-			return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storageVACNotAllowedFmt, capabilities.CapabilityKeyStoragePolicyMutability)))
+			return append(allErrs, field.Invalid(objPath, objName, storageVACNotAllowed))
 		}
 		vac := &storagev1.VolumeAttributesClass{}
 		if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: objName}, vac); err != nil {

@@ -1819,7 +1819,7 @@ func unitTestsValidateCreate() {
 							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
 						},
 						validate: doValidateWithMsg(
-							`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Volume Attributes Class cannot be used if supports_vm_service_storage_policy_mutability capability is not enabled`),
+							`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Volume Attributes Class cannot be used if capability is not enabled`),
 					},
 				),
 			)

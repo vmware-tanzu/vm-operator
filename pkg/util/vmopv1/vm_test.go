@@ -946,7 +946,7 @@ var _ = DescribeTable("GetContextWithWorkloadDomainIsolation",
 		vm vmopv1.VirtualMachine,
 		expected bool,
 	) {
-		c := vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, vm)
+		c := vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, &vm)
 		Ω(pkgcfg.FromContext(c).Features.WorkloadDomainIsolation).Should(Equal(expected))
 	},
 	Entry(

@@ -2984,16 +2984,22 @@ func (v validator) validateVMAffinity(
 					}
 				}
 
-				// For non-privileged users, only zone topology key is allowed for anti-affinity required terms.
-				if !ctx.IsPrivilegedAccount && rs.TopologyKey != corev1.LabelTopologyZone {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
-				}
-
-				// For privileged users (mobility operator), either zone or host topology key is allowed for anti-affinity required terms.
-				if ctx.IsPrivilegedAccount && rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
+				if ctx.IsPrivilegedAccount || pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution {
+					// For privileged users or when VMAffinityRules capability
+					// is enabled, either zone or host topology key is allowed
+					// for anti-affinity required terms.
+					if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
+						allErrs = append(allErrs, field.NotSupported(
+							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
+					}
+				} else {
+					// For non-privileged users without VMAffinityRules
+					// capability enabled, only zone topology key is allowed
+					// for anti-affinity required terms.
+					if rs.TopologyKey != corev1.LabelTopologyZone {
+						allErrs = append(allErrs, field.NotSupported(
+							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
+					}
 				}
 			}
 		}

@@ -81,8 +81,8 @@ var _ = Describe("IsStorageClassInNamespace", func() {
 	JustBeforeEach(func() {
 		client = builder.NewFakeClientWithInterceptors(
 			withFuncs, withObjects...)
-		ok, err = spqutil.IsStorageClassInNamespace(
-			ctx, client, sc, namespace)
+		ok, err = spqutil.IsStoragePolicyInNamespace(
+			ctx, client, sc.Name, sc.Parameters[spqutil.StorageParamPolicyID], namespace)
 	})
 
 	When("FSS_PODVMONSTRETCHEDSUPERVISOR is disabled", func() {

@@ -3759,6 +3759,7 @@ func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 		out.Crypto = nil
 	}
 	out.StorageClass = in.StorageClass
+	// WARNING: in.VolumeAttributesClassName requires manual conversion: does not exist in peer-type
 	if in.Bootstrap != nil {
 		in, out := &in.Bootstrap, &out.Bootstrap
 		*out = new(VirtualMachineBootstrapSpec)

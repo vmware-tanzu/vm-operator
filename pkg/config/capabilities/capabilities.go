@@ -91,6 +91,11 @@ const (
 	// CapabilityKeyAllDisksArePVCs is the name of the capability key defined in
 	// the Supervisor capabilities CRD for enabling all disks as PVCs in VM Op.
 	CapabilityKeyAllDisksArePVCs = "supports_vm_service_all_disks_are_pvcs"
+
+	// CapabilityKeyStoragePolicyMutability is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VM Service's support
+	// for mutability of Storage Policy via Volume Attributes Class (VAC).
+	CapabilityKeyStoragePolicyMutability = "supports_VM_PVC_storage_policy_mutability"
 )
 
 var (
@@ -251,6 +256,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VSpherePolicies = capStatus.Activated
 		case CapabilityKeyAllDisksArePVCs:
 			fs.AllDisksArePVCs = capStatus.Activated
+		case CapabilityKeyStoragePolicyMutability:
+			fs.StoragePolicyMutability = capStatus.Activated
 		}
 
 	}

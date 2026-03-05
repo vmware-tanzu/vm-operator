@@ -70,8 +70,11 @@ const (
 	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
 	removingBackfilledVolumeNotAllowed         = "removing volume backfilled from classic disk is not allowed"
 	modifyingBackfilledVolumeNotAllowed        = "modifying backfilled volume is not allowed"
-	storageClassNotFoundFmt                    = "Storage policy %s does not exist"
-	storageClassNotAssignedFmt                 = "Storage policy is not associated with the namespace %s"
+	storageClassNotFoundFmt                    = "Storage class %s does not exist"
+	storageVACNotFoundFmt                      = "Volume Attributes Class %s does not exist"
+	storagePolicyNotAssociatedOnNSFmt          = "Storage policy is not associated with the namespace %s by object %s"
+	storagePolicyNotSpecifiedObjFmt            = "Storage policy not specified on object %s"
+	storageVACNotAllowed                       = "Volume Attributes Class cannot be used if capability is not enabled"
 	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
 	addingModifyingInstanceVolumesNotAllowed   = "adding or modifying instance storage volume claim(s) is not allowed"
 	featureNotEnabled                          = "the %s feature is not enabled"
@@ -162,7 +165,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateImageOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateClassOnCreate(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateStorageClass(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateStorageFields(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, nil)...)
@@ -672,7 +675,7 @@ func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 	return allErrs
 }
 
-func (v validator) validateStorageClass(
+func (v validator) validateStorageFields(
 	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
@@ -682,24 +685,59 @@ func (v validator) validateStorageClass(
 		return allErrs
 	}
 
-	scPath := field.NewPath("spec", "storageClass")
-	scName := vm.Spec.StorageClass
+	objPath := field.NewPath("spec", "storageClass")
+	objName := vm.Spec.StorageClass
 
-	sc := &storagev1.StorageClass{}
-	if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: scName}, sc); err != nil {
+	obj := &storagev1.StorageClass{}
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: objName}, obj); err != nil {
 		if apierrors.IsNotFound(err) {
-			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotFoundFmt, scName)))
+			return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storageClassNotFoundFmt, objName)))
 		}
-		return append(allErrs, field.Invalid(scPath, scName, err.Error()))
+		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
 	}
 
-	ok, err := spqutil.IsStorageClassInNamespace(ctx, v.client, sc, vm.Namespace)
+	// Storage policyID mutability over storage VolumeAttributeClass objects
+	// we throw an error if someone tries to use the new field
+	// without setting the capability
+
+	// VolumeAttributeClass' policyID takes precedence of StorageClass's policyID
+	// if the capability is enabled AND VolumeAttributesClassName is specified on VM spec
+
+	var policyID string
+
+	if vm.Spec.VolumeAttributesClassName != "" {
+		objPath = field.NewPath("spec", "volumeAttributesClassName")
+		objName = vm.Spec.VolumeAttributesClassName
+		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+			return append(allErrs, field.Invalid(objPath, objName, storageVACNotAllowed))
+		}
+		vac := &storagev1.VolumeAttributesClass{}
+		if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: objName}, vac); err != nil {
+			if apierrors.IsNotFound(err) {
+				return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storageVACNotFoundFmt, objName)))
+			}
+			return append(allErrs, field.Invalid(objPath, objName, err.Error()))
+		}
+		policyID = vac.Parameters[spqutil.StorageParamPolicyID]
+		if policyID == "" {
+			return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storagePolicyNotSpecifiedObjFmt, objName)))
+		}
+
+	} else {
+		// initializing policyID from SC object
+		var errPolicyID error
+		if policyID, errPolicyID = kubeutil.GetStoragePolicyID(*obj); errPolicyID != nil {
+			return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storagePolicyNotSpecifiedObjFmt, objName)))
+		}
+	}
+
+	ok, err := spqutil.IsStoragePolicyInNamespace(ctx, v.client, objName, policyID, vm.Namespace)
 	if err != nil {
-		return append(allErrs, field.Invalid(scPath, scName, err.Error()))
+		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
 	}
 
 	if !ok {
-		allErrs = append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotAssignedFmt, vm.Namespace)))
+		allErrs = append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storagePolicyNotAssociatedOnNSFmt, vm.Namespace, objName)))
 	}
 
 	return allErrs

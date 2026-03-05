@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -118,6 +119,127 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 
 		It("V1Alpha1Compatible condition is true", func() {
 			Expect(conditions.IsTrue(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeTrue())
+		})
+	})
+})
+
+var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func() {
+	var (
+		ovfEnvelope *ovf.Envelope
+	)
+
+	BeforeEach(func() {
+		ovfEnvelope = &ovf.Envelope{
+			VirtualSystemCollection: &ovf.VirtualSystemCollection{
+				VirtualSystem: []ovf.VirtualSystem{
+					{},
+				},
+			},
+		}
+	})
+
+	It("should return error", func() {
+		testCases := []struct {
+			name  string
+			image client.Object
+		}{
+			{
+				name:  "VirtualMachineImage",
+				image: builder.DummyVirtualMachineImage("dummy-image"),
+			},
+			{
+				name:  "ClusterVirtualMachineImage",
+				image: builder.DummyClusterVirtualMachineImage("dummy-image"),
+			},
+		}
+
+		for _, tc := range testCases {
+			err := contentlibrary.UpdateVmiWithOvfEnvelope(tc.image, *ovfEnvelope)
+			Expect(err).To(HaveOccurred(), "should return error for %s", tc.name)
+			Expect(err.Error()).To(ContainSubstring(
+				"OVF with VirtualSystemCollection is not supported"))
+		}
+	})
+})
+
+var _ = Describe("UpdateVmiWithOvfEnvelope with DeploymentOptionSection", func() {
+	var (
+		ovfEnvelope *ovf.Envelope
+		image       *vmopv1.VirtualMachineImage
+
+		disks = []string{
+			"Harddisk 1",
+			"Harddisk 2",
+			"Harddisk 3",
+			"Harddisk core",
+			"Harddisk log",
+			"Harddisk db",
+			"Harddisk dblog",
+			"Harddisk seat",
+			"Harddisk netdump",
+			"Harddisk autodeploy",
+			"Harddisk imagebuilder",
+			"Harddisk updatemgr",
+			"Harddisk archive",
+			"Harddisk lifecycle",
+			"Harddisk lvm_snapshot",
+		}
+	)
+
+	BeforeEach(func() {
+		image = builder.DummyVirtualMachineImage("dummy-image")
+
+		f, err := os.Open(path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "VMware-vCenter-Server-Appliance.ovf"))
+		Expect(err).ToNot(HaveOccurred())
+		defer func() {
+			_ = f.Close()
+		}()
+		ovfEnvelope, err = ovf.Unmarshal(f)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	JustBeforeEach(func() {
+		Expect(contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)).To(Succeed())
+	})
+
+	It("Image should have the correct disks", func() {
+		Expect(image.Status.Disks).To(HaveLen(len(disks)))
+
+		for _, disk := range disks {
+			found := false
+			for _, statusDisk := range image.Status.Disks {
+				if statusDisk.Name == disk {
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue())
+		}
+	})
+
+	Context("no default DeploymentOption", func() {
+		BeforeEach(func() {
+			for i := range ovfEnvelope.DeploymentOption.Configuration {
+				ovfEnvelope.DeploymentOption.Configuration[i].Default = nil
+			}
+		})
+
+		It("Image should have the correct disks", func() {
+			Expect(image.Status.Disks).To(HaveLen(len(disks)))
+
+			for _, disk := range disks {
+				found := false
+				for _, statusDisk := range image.Status.Disks {
+					if statusDisk.Name == disk {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue())
+			}
 		})
 	})
 })

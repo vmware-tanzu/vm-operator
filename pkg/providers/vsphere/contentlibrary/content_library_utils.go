@@ -32,6 +32,10 @@ func UpdateVmiWithOvfEnvelope(
 	obj client.Object,
 	ovfEnvelope ovf.Envelope) error {
 
+	if ovfEnvelope.VirtualSystemCollection != nil {
+		return fmt.Errorf("OVF with VirtualSystemCollection is not supported")
+	}
+
 	var status *vmopv1.VirtualMachineImageStatus
 
 	switch vmi := obj.(type) {
@@ -59,10 +63,27 @@ func UpdateVmiWithOvfEnvelope(
 		ovfEnvelope.VirtualSystem != nil &&
 		len(ovfEnvelope.VirtualSystem.VirtualHardware) > 0 {
 
+		var defaultConfigID string
+		if deploymentOption := ovfEnvelope.DeploymentOption; deploymentOption != nil && len(deploymentOption.Configuration) > 0 {
+			// Per OVF Specification, if no configuration is explicitly
+			// marked as the default, then the first element is to be
+			// considered as the default.
+			defaultConfigID = deploymentOption.Configuration[0].ID
+
+			for _, config := range deploymentOption.Configuration {
+				if config.Default != nil && *config.Default {
+					defaultConfigID = config.ID
+
+					break
+				}
+			}
+		}
+
 		if err := populateImageStatusFromOVFDiskSection(
 			status,
 			ovfEnvelope.VirtualSystem.VirtualHardware[0],
-			ovfEnvelope.Disk.Disks); err != nil {
+			ovfEnvelope.Disk.Disks,
+			defaultConfigID); err != nil {
 
 			return fmt.Errorf(
 				"failed to populate image status from ovf disk section: %w",
@@ -328,48 +349,56 @@ type ovfControllerSpec struct {
 }
 
 func getControllerMapFromOVF(
-	hardware ovf.VirtualHardwareSection) (map[string]ovfControllerSpec, error) {
+	hardware ovf.VirtualHardwareSection,
+	defaultConfigID string) (map[string]ovfControllerSpec, error) {
 
 	controllers := map[string]ovfControllerSpec{}
 
 	for _, i := range hardware.Item {
-		var c *ovfControllerSpec
-		if rt := i.ResourceType; rt != nil {
-			switch *rt {
-			case ovf.IdeController:
-				c = &ovfControllerSpec{
-					typ3: vmopv1.VirtualControllerTypeIDE,
-				}
-			case ovf.ParallelScsiHba:
-				c = &ovfControllerSpec{
-					typ3: vmopv1.VirtualControllerTypeSCSI,
-				}
-			case ovf.OtherStorage:
-				if rst := i.ResourceSubType; rst != nil {
-					switch *rst {
-					case ovf.ResourceSubTypeSATAAHCI,
-						ovf.ResourceSubTypeSATAAHCIAlter:
-						c = &ovfControllerSpec{
-							typ3: vmopv1.VirtualControllerTypeSATA,
-						}
-					case ovf.ResourceSubTypeNVMEController:
-						c = &ovfControllerSpec{
-							typ3: vmopv1.VirtualControllerTypeNVME,
+		// If there is a defaultConfigID, i.e. DeploymentOptionSection exists, then
+		// only consider Items which apply to the default configuration option,
+		// (Item.Configuration == DefaultConfigurationID), or those which apply
+		// to all configuration options, (Item.Configuration == nil).
+		if defaultConfigID == "" || i.Configuration == nil ||
+			(i.Configuration != nil && *i.Configuration == defaultConfigID) {
+			var c *ovfControllerSpec
+			if rt := i.ResourceType; rt != nil {
+				switch *rt {
+				case ovf.IdeController:
+					c = &ovfControllerSpec{
+						typ3: vmopv1.VirtualControllerTypeIDE,
+					}
+				case ovf.ParallelScsiHba:
+					c = &ovfControllerSpec{
+						typ3: vmopv1.VirtualControllerTypeSCSI,
+					}
+				case ovf.OtherStorage:
+					if rst := i.ResourceSubType; rst != nil {
+						switch *rst {
+						case ovf.ResourceSubTypeSATAAHCI,
+							ovf.ResourceSubTypeSATAAHCIAlter:
+							c = &ovfControllerSpec{
+								typ3: vmopv1.VirtualControllerTypeSATA,
+							}
+						case ovf.ResourceSubTypeNVMEController:
+							c = &ovfControllerSpec{
+								typ3: vmopv1.VirtualControllerTypeNVME,
+							}
 						}
 					}
 				}
 			}
-		}
-		if c != nil {
-			if a := i.Address; a != nil && *a != "" {
-				v, err := strconv.ParseInt(*a, 10, 32)
-				if err != nil {
-					return nil, fmt.Errorf(
-						"failed to parse bus number: %s", *a)
+			if c != nil {
+				if a := i.Address; a != nil && *a != "" {
+					v, err := strconv.ParseInt(*a, 10, 32)
+					if err != nil {
+						return nil, fmt.Errorf(
+							"failed to parse bus number: %s", *a)
+					}
+					c.bus = ptr.To(int32(v))
 				}
-				c.bus = ptr.To(int32(v))
+				controllers[i.InstanceID] = *c
 			}
-			controllers[i.InstanceID] = *c
 		}
 	}
 
@@ -379,11 +408,12 @@ func getControllerMapFromOVF(
 func populateImageStatusFromOVFDiskSection(
 	status *vmopv1.VirtualMachineImageStatus,
 	hardware ovf.VirtualHardwareSection,
-	disks []ovf.VirtualDiskDesc) error {
+	disks []ovf.VirtualDiskDesc,
+	defaultConfigID string) error {
 
 	status.Disks = nil
 
-	controllers, err := getControllerMapFromOVF(hardware)
+	controllers, err := getControllerMapFromOVF(hardware, defaultConfigID)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to build controller map from ovf hardware: %w", err)
@@ -395,56 +425,64 @@ func populateImageStatusFromOVFDiskSection(
 	}
 
 	for _, i := range hardware.Item {
-		if i.ResourceType != nil && *i.ResourceType == ovf.DiskDrive {
+		// If there is a defaultConfigID, i.e. DeploymentOptionSection exists, then
+		// only consider Items which apply to the default configuration option,
+		// (Item.Configuration == DefaultConfigurationID), or those which apply
+		// to all configuration options, (Item.Configuration == nil).
+		if defaultConfigID == "" || i.Configuration == nil ||
+			(i.Configuration != nil && *i.Configuration == defaultConfigID) {
 
-			diskName := i.ElementName
+			if i.ResourceType != nil && *i.ResourceType == ovf.DiskDrive {
 
-			if len(i.HostResource) > 0 {
+				diskName := i.ElementName
 
-				diskID := strings.TrimPrefix(i.HostResource[0], "ovf:/disk/")
+				if len(i.HostResource) > 0 {
 
-				if d, ok := diskIDToDisk[diskID]; ok {
-					di := vmopv1.VirtualMachineImageDiskInfo{
-						// Set the name of the disk in the VMI's status.diskInfo
-						// section to ElementName. This is the same value that
-						// is placed in the VirtualDisk's Description.Label
-						// field when the OVF is converted into a ConfigSpec.
-						// This allows users to map the disk from the ConfigSpec
-						// to the disk in the VMI.
-						Name: diskName,
-					}
+					diskID := strings.TrimPrefix(i.HostResource[0], "ovf:/disk/")
 
-					if a := i.AddressOnParent; a != nil {
-						v, err := strconv.ParseInt(*a, 10, 32)
-						if err != nil {
-							return fmt.Errorf(
-								"failed to parse unit number: %s", *a)
+					if d, ok := diskIDToDisk[diskID]; ok {
+						di := vmopv1.VirtualMachineImageDiskInfo{
+							// Set the name of the disk in the VMI's status.diskInfo
+							// section to ElementName. This is the same value that
+							// is placed in the VirtualDisk's Description.Label
+							// field when the OVF is converted into a ConfigSpec.
+							// This allows users to map the disk from the ConfigSpec
+							// to the disk in the VMI.
+							Name: diskName,
 						}
-						di.UnitNumber = ptr.To(int32(v))
-					}
 
-					if p := i.Parent; p != nil {
-						if c, ok := controllers[*p]; ok {
-							di.ControllerType = c.typ3
-							di.ControllerBusNumber = c.bus
+						if a := i.AddressOnParent; a != nil {
+							v, err := strconv.ParseInt(*a, 10, 32)
+							if err != nil {
+								return fmt.Errorf(
+									"failed to parse unit number: %s", *a)
+							}
+							di.UnitNumber = ptr.To(int32(v))
 						}
-					}
 
-					if d.PopulatedSize != nil {
-						populatedSize := int64(*d.PopulatedSize)
-						di.Requested = kubeutil.BytesToResource(populatedSize)
-					}
-
-					// Parse the disk capacity.
-					if c, _ := strconv.ParseInt(d.Capacity, 10, 64); c != 0 {
-						if u := d.CapacityAllocationUnits; u != nil {
-							m := ovf.ParseCapacityAllocationUnits(*u)
-							c *= m
+						if p := i.Parent; p != nil {
+							if c, ok := controllers[*p]; ok {
+								di.ControllerType = c.typ3
+								di.ControllerBusNumber = c.bus
+							}
 						}
-						di.Limit = kubeutil.BytesToResource(c)
-					}
 
-					status.Disks = append(status.Disks, di)
+						if d.PopulatedSize != nil {
+							populatedSize := int64(*d.PopulatedSize)
+							di.Requested = kubeutil.BytesToResource(populatedSize)
+						}
+
+						// Parse the disk capacity.
+						if c, _ := strconv.ParseInt(d.Capacity, 10, 64); c != 0 {
+							if u := d.CapacityAllocationUnits; u != nil {
+								m := ovf.ParseCapacityAllocationUnits(*u)
+								c *= m
+							}
+							di.Limit = kubeutil.BytesToResource(c)
+						}
+
+						status.Disks = append(status.Disks, di)
+					}
 				}
 			}
 		}

@@ -1,0 +1,2166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ovf:Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" xmlns:vmw="http://www.vmware.com/schema/ovf" xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <References>
+    <ovf:File ovf:href="VMware-vCenter-Server-Appliance-file1.json" ovf:id="layout.json_id" ovf:size="15146"/>
+    <ovf:File ovf:href="VMware-vCenter-Server-Appliance-file2.rpm" ovf:id="VMware-vCenter-Server-Appliance-upgrade-requirements.rpm_id" ovf:size="29761305"/>
+    <File ovf:href="VMware-vCenter-Server-Appliance-disk1.vmdk" ovf:id="VMware-vCenter-Server-Appliance-system.vmdk_id" ovf:size="900940800"/>
+    <File ovf:href="VMware-vCenter-Server-Appliance-disk2.vmdk" ovf:id="VMware-vCenter-Server-Appliance-cloud-components.vmdk_id" ovf:size="8598252544"/>
+    <File ovf:href="VMware-vCenter-Server-Appliance-disk3.vmdk" ovf:id="VMware-vCenter-Server-Appliance-swap.vmdk_id" ovf:size="143360"/>
+  </References>
+  <NetworkSection>
+    <Info>List of logical networks used in the package</Info>
+    <Network ovf:name="Network 1">
+      <Description>The &quot;Network 1&quot; network</Description>
+    </Network>
+  </NetworkSection>
+  <DiskSection>
+    <Info>List of the virtual disks and partitions needed</Info>
+    <Disk ovf:capacity="49728" ovf:capacityAllocationUnits="byte * 2^20" ovf:diskId="system" ovf:fileRef="VMware-vCenter-Server-Appliance-system.vmdk_id" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:populatedSize="2761359360"/>
+    <Disk ovf:capacity="8136" ovf:capacityAllocationUnits="byte * 2^20" ovf:diskId="cloudcomponents" ovf:fileRef="VMware-vCenter-Server-Appliance-cloud-components.vmdk_id" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:populatedSize="8530436096"/>
+    <Disk ovf:capacity="2000" ovf:capacityAllocationUnits="byte * 2^20" ovf:diskId="swap" ovf:fileRef="VMware-vCenter-Server-Appliance-swap.vmdk_id" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:populatedSize="262144"/>
+    <ovf:Disk ovf:capacity="20" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="core" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="21" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="log" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="8" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="db" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="15" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="dblog" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="12" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="seat" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="10" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="netdump" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="20" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="autodeploy" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="20" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="imagebuilder" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="100" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="updatemgr" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="15" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="archive" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="4" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="lifecycle" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="4" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="lvm_snapshot" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="10" ovf:capacityAllocationUnits="byte * 2^20" ovf:diskId="disk10MB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="1" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk1GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="5" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk5GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="10" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk10GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="15" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk15GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="25" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk25GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="50" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk50GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="100" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk100GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="150" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk150GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="200" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk200GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="250" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk250GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="300" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk300GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="500" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk500GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="550" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk550GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="1000" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk1000GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="1024" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk1TB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+    <ovf:Disk ovf:capacity="1430" ovf:capacityAllocationUnits="byte * 2^30" ovf:diskId="disk1430GB" ovf:fileRef="" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+  </DiskSection>
+  <DeploymentOptionSection>
+    <Info>List of profiles</Info>
+    <Configuration ovf:id="internal-minimal">
+      <Label>Internal Minimal vCenter Server with Embedded PSC</Label>
+      <Description>This will deploy a Internal Minimal VM configured with 2 vCPUs and 12.5 GB of memory and requires 604 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 10 hosts and 100 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:default="true" ovf:id="tiny">
+      <Label>Tiny vCenter Server with Embedded PSC</Label>
+      <Description>This will deploy a Tiny VM configured with 2 vCPUs and 14 GB of memory and requires 604 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 10 hosts and 100 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="small">
+      <Label>Small vCenter Server with Embedded PSC</Label>
+      <Description>This will deploy a Small VM configured with 4 vCPUs and 21 GB of memory and requires 694 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 100 hosts and 1,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="medium">
+      <Label>Medium vCenter Server with Embedded PSC</Label>
+      <Description>This will deploy a Medium VM configured with 8 vCPUs and 30 GB of memory and requires 858 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 400 hosts and 4,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="large">
+      <Label>Large vCenter Server with Embedded PSC</Label>
+      <Description>This will deploy a Large VM configured with 16 vCPUs and 39 GB of memory and requires 1158 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 1000 hosts and 10,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="xlarge">
+      <Label>X-Large vCenter Server with Embedded PSC</Label>
+      <Description>This will deploy a X-Large VM configured with 24 vCPUs and 58 GB of memory and requires 1783 GB of disk space will be updated for xlarge later. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 2000 hosts and 35,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="tiny-lstorage">
+      <Label>Tiny vCenter Server with Embedded PSC (large storage)</Label>
+      <Description>This will deploy a Tiny VM configured with 2 vCPUs and 14 GB of memory and requires 1494 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 10 hosts and 100 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="small-lstorage">
+      <Label>Small vCenter Server with Embedded PSC (large storage)</Label>
+      <Description>This will deploy a Small VM configured with 4 vCPUs and 21 GB of memory and requires 1519 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 100 hosts and 1,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="medium-lstorage">
+      <Label>Medium vCenter Server with Embedded PSC (large storage)</Label>
+      <Description>This will deploy a Medium VM configured with 8 vCPUs and 30 GB of memory and requires 1658 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 400 hosts and 4,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="large-lstorage">
+      <Label>Large vCenter Server with Embedded PSC (large storage)</Label>
+      <Description>This will deploy a Large VM configured with 16 vCPUs and 39 GB of memory and requires 1708 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 1000 hosts and 10,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="xlarge-lstorage">
+      <Label>X-Large vCenter Server with Embedded PSC (large storage)</Label>
+      <Description>This will deploy a X-Large VM configured with 24 vCPUs and 58 GB of memory and requires 1833 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 2000 hosts and 35,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="tiny-xlstorage">
+      <Label>Tiny vCenter Server with Embedded PSC (x-large storage)</Label>
+      <Description>This will deploy a Tiny VM configured with 2 vCPUs and 14 GB of memory and requires 2874 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 10 hosts and 100 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="small-xlstorage">
+      <Label>Small vCenter Server with Embedded PSC (x-large storage)</Label>
+      <Description>This will deploy a Small VM configured with 4 vCPUs and 21 GB of memory and requires 2899 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 100 hosts and 1,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="medium-xlstorage">
+      <Label>Medium vCenter Server with Embedded PSC (x-large storage)</Label>
+      <Description>This will deploy a Medium VM configured with 8 vCPUs and 30 GB of memory and requires 3038 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 400 hosts and 4,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="large-xlstorage">
+      <Label>Large vCenter Server with Embedded PSC (x-large storage)</Label>
+      <Description>This will deploy a Large VM configured with 16 vCPUs and 39 GB of memory and requires 3088 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 1000 hosts and 10,000 VMs.</Description>
+    </Configuration>
+    <Configuration ovf:id="xlarge-xlstorage">
+      <Label>X-Large vCenter Server with Embedded PSC (x-large storage)</Label>
+      <Description>This will deploy a X-Large VM configured with 24 vCPUs and 58 GB of memory and requires 3213 GB of disk space. This option contains vCenter Server with an embedded Platform Services Controller for managing up to 2000 hosts and 35,000 VMs.</Description>
+    </Configuration>
+  </DeploymentOptionSection>
+  <VirtualSystem ovf:id="VMware-vCenter-Server-Appliance">
+    <Info>A virtual machine</Info>
+    <ProductSection ovf:required="false">
+      <Info>Appliance ISV branding information</Info>
+      <Product>VMware vCenter Server Appliance</Product>
+      <Vendor>VMware Inc.</Vendor>
+      <!--
+            Version is the actual product version in the
+            form X.X.X.X where X is an unsigned 16-bit integer.
+
+            FullVersion is a descriptive version string
+            including, for example, alpha or beta designations
+            and other release criteria.
+        -->
+      <Version>9.1.0.0</Version>
+      <FullVersion>9.1.0.0 build 25234162</FullVersion>
+      <ProductUrl/>
+      <VendorUrl>http://www.vmware.com</VendorUrl>
+      <AppUrl>https://${vami.ip0.VMware_vCenter_Server_Appliance}:5480/</AppUrl>
+      <Category>Application</Category>
+      <Category vmw:uioptional="false">Networking Configuration</Category>
+    </ProductSection>
+    <ProductSection ovf:class="vami" ovf:instance="VMware-vCenter-Server-Appliance" ovf:required="false">
+      <Info>VAMI Properties</Info>
+      <Category>Networking Properties</Category>
+      <Property ovf:key="domain" ovf:type="string" ovf:userConfigurable="true">
+        <Label>Domain Name</Label>
+        <Description>The domain name of this VM. Leave blank if DHCP is desired.</Description>
+      </Property>
+      <Property ovf:key="searchpath" ovf:type="string" ovf:userConfigurable="true">
+        <Label>Domain Search Path</Label>
+        <Description>The domain search path (comma or space separated domain names) for this VM. Leave blank if DHCP is desired.</Description>
+      </Property>
+      </ProductSection>
+    <ProductSection ovf:class="vm" ovf:required="false">
+      <Info>VM specific properties</Info>
+      <Property ovf:key="vmname" ovf:type="string" ovf:value="VMware-vCenter-Server-Appliance"/>
+    </ProductSection>
+    <AnnotationSection>
+      <Info/>
+      <Annotation>VMware vCenter Server Appliance</Annotation>
+    </AnnotationSection>
+    <OperatingSystemSection ovf:id="100" ovf:version="1" vmw:osType="other3xLinux64Guest">
+      <Info>Guest Operating System</Info>
+      <Description>Photon OS </Description>
+    </OperatingSystemSection>
+    <VirtualHardwareSection ovf:required="false" ovf:transport="com.vmware.guestInfo">
+      <Info>Virtual Hardware Requirements</Info>
+      <System>
+        <vssd:ElementName>Virtual Hardware Family</vssd:ElementName>
+        <vssd:InstanceID>0</vssd:InstanceID>
+        <vssd:VirtualSystemType>vmx-17</vssd:VirtualSystemType>
+      </System>
+      <Item configuration="internal-minimal">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 2 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>1</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>2</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 2 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>25</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>2</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="small">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 4 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>27</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>4</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 8 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>29</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>8</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="large">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 16 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>31</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>16</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 24 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>33</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>24</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 2 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>35</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>2</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 4 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>37</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>4</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 8 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>39</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>8</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 16 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>41</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>16</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 24 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>43</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>24</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 2 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>45</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>2</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 4 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>47</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>4</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 8 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>49</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>8</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 16 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>51</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>16</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:Description>Number of virtual CPUs</rasd:Description>
+        <rasd:ElementName> 24 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>53</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>24</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 12836 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>2</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>12836</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 14336 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>24</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>14336</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="small">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 21504 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>26</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>21504</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 30720 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>28</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>30720</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="large">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 39936 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>30</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>39936</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 59392 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>32</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>59392</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 14336 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>34</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>14336</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 21504 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>36</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>21504</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 30720 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>38</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>30720</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 39936 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>40</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>39936</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 59392 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>42</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>59392</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 14336 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>44</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>14336</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 21504 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>46</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>21504</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 30720 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>48</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>30720</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 39936 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>50</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>39936</rasd:VirtualQuantity>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:Description>Memory Size</rasd:Description>
+        <rasd:ElementName> 59392 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>52</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>59392</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:AutomaticAllocation>true</rasd:AutomaticAllocation>
+        <rasd:Connection>Network 1</rasd:Connection>
+        <rasd:ElementName xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">Ethernet adapter on &quot;Network 1&quot;</rasd:ElementName>
+        <rasd:InstanceID xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">3</rasd:InstanceID>
+        <rasd:ResourceSubType>vmxnet3</rasd:ResourceSubType>
+        <rasd:ResourceType>10</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:Address xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">0</rasd:Address>
+        <rasd:ElementName xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">SCSI Controller 0 - LSI Logic</rasd:ElementName>
+        <rasd:InstanceID xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">4</rasd:InstanceID>
+        <rasd:ResourceSubType>lsilogic</rasd:ResourceSubType>
+        <rasd:ResourceType>6</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:Address>1</rasd:Address>
+        <rasd:ElementName>SCSI Controller 1 - LSI Logic</rasd:ElementName>
+        <rasd:InstanceID>10</rasd:InstanceID>
+        <rasd:ResourceSubType>lsilogic</rasd:ResourceSubType>
+        <rasd:ResourceType>6</rasd:ResourceType>
+        </Item>
+      <Item>
+        <rasd:Address>2</rasd:Address>
+        <rasd:ElementName>SCSI Controller 2 - LSI Logic</rasd:ElementName>
+        <rasd:InstanceID>11</rasd:InstanceID>
+        <rasd:ResourceSubType>lsilogic</rasd:ResourceSubType>
+        <rasd:ResourceType>6</rasd:ResourceType>
+        </Item>
+      <Item>
+        <rasd:AddressOnParent>0</rasd:AddressOnParent>
+        <rasd:ElementName xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">Harddisk 1</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/system</rasd:HostResource>
+        <rasd:InstanceID xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">5</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:AddressOnParent>1</rasd:AddressOnParent>
+        <rasd:ElementName xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">Harddisk 2</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/cloudcomponents</rasd:HostResource>
+        <rasd:InstanceID xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">9</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>2</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk 3</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>6</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>3</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk core</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>12</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>4</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk log</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>13</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>5</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk db</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>14</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk15GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk15GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk15GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk15GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk15GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk15GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk15GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>6</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk dblog</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>15</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk200GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk500GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk550GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk550GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk550GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk550GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk550GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1430GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1430GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1430GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1430GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>8</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk seat</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1430GB</rasd:HostResource>
+        <rasd:InstanceID>16</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>9</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk netdump</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>17</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>10</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk autodeploy</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>18</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk10GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>11</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk imagebuilder</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk25GB</rasd:HostResource>
+        <rasd:InstanceID>19</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>12</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk updatemgr</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>20</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk200GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk200GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk50GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>13</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk archive</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk200GB</rasd:HostResource>
+        <rasd:InstanceID>21</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>14</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lifecycle</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk100GB</rasd:HostResource>
+        <rasd:InstanceID>22</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="internal-minimal">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk150GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk150GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk200GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk200GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk300GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk500GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-lstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk500GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-lstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk500GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-lstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk500GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-lstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk500GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-lstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk500GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="tiny-xlstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1000GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="small-xlstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1000GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="medium-xlstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1000GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="large-xlstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1000GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item configuration="xlarge-xlstorage">
+        <rasd:AddressOnParent>15</rasd:AddressOnParent>
+        <rasd:ElementName>Harddisk lvm_snapshot</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/disk1000GB</rasd:HostResource>
+        <rasd:InstanceID>23</rasd:InstanceID>
+        <rasd:Parent>4</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:Address>0</rasd:Address>
+        <rasd:ElementName xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">SATA Controller 0</rasd:ElementName>
+        <rasd:InstanceID xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">7</rasd:InstanceID>
+        <rasd:ResourceSubType>vmware.sata.ahci</rasd:ResourceSubType>
+        <rasd:ResourceType>20</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:AddressOnParent>0</rasd:AddressOnParent>
+        <rasd:AutomaticAllocation>false</rasd:AutomaticAllocation>
+        <rasd:ElementName xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">CD/DVD Drive 1</rasd:ElementName>
+        <rasd:InstanceID xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">8</rasd:InstanceID>
+        <rasd:Parent>7</rasd:Parent>
+        <rasd:ResourceType>15</rasd:ResourceType>
+      </Item>
+      <vmw:ExtraConfig ovf:required="false" vmw:key="msg.autoAnswer" vmw:value="TRUE"/>
+      <vmw:ExtraConfig ovf:required="false" vmw:key="cdrom.showIsoLockWarning" vmw:value="FALSE"/>
+      <!--
+      The flags acpi.smbiosVersion2.7 and vmxnet3.serialNumberV2 are set to FALSE to keep the behaviour
+      same against the previous vmx versions (vmx < 13). This will be removed in vc10GA once we move away
+      from using bios uuid to identify the vc.
+      -->
+      <vmw:ExtraConfig ovf:required="false" vmw:key="acpi.smbiosVersion2.7" vmw:value="FALSE"/>
+      <vmw:ExtraConfig ovf:required="false" vmw:key="vmxnet3.serialNumberV2" vmw:value="FALSE"/>
+      <!--End of temporary ExtraConfig flags-->
+      <vmw:Config vmw:key="cpuHotAddEnabled" vmw:value="true"/>
+      <vmw:Config vmw:key="cpuHotRemoveEnabled" vmw:value="true"/>
+      <vmw:Config vmw:key="memoryHotAddEnabled" vmw:value="true"/>
+    </VirtualHardwareSection>
+  </VirtualSystem>
+</ovf:Envelope>

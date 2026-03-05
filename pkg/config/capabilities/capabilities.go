@@ -100,7 +100,7 @@ const (
 	// CapabilityKeyStoragePolicyMutability is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the VM Service's support
 	// for mutability of Storage Policy via Volume Attributes Class (VAC).
-	CapabilityKeyStoragePolicyMutability = "supports_vm_service_storage_policy_mutability"
+	CapabilityKeyStoragePolicyMutability = "supports_VM_PVC_storage_policy_mutability"
 )
 
 var (

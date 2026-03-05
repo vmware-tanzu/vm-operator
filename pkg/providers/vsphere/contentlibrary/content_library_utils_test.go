@@ -162,6 +162,88 @@ var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func()
 	})
 })
 
+var _ = Describe("UpdateVmiWithOvfEnvelope with DeploymentOptionSection", func() {
+	var (
+		ovfEnvelope *ovf.Envelope
+		image       *vmopv1.VirtualMachineImage
+
+		disks = []string{
+			"Harddisk 1",
+			"Harddisk 2",
+			"Harddisk 3",
+			"Harddisk core",
+			"Harddisk log",
+			"Harddisk db",
+			"Harddisk dblog",
+			"Harddisk seat",
+			"Harddisk netdump",
+			"Harddisk autodeploy",
+			"Harddisk imagebuilder",
+			"Harddisk updatemgr",
+			"Harddisk archive",
+			"Harddisk lifecycle",
+			"Harddisk lvm_snapshot",
+		}
+	)
+
+	BeforeEach(func() {
+		image = builder.DummyVirtualMachineImage("dummy-image")
+
+		f, err := os.Open(path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "VMware-vCenter-Server-Appliance.ovf"))
+		Expect(err).ToNot(HaveOccurred())
+		defer func() {
+			_ = f.Close()
+		}()
+		ovfEnvelope, err = ovf.Unmarshal(f)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	JustBeforeEach(func() {
+		Expect(contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)).To(Succeed())
+	})
+
+	It("Image should have the correct disks", func() {
+		Expect(image.Status.Disks).To(HaveLen(len(disks)))
+
+		for _, disk := range disks {
+			found := false
+			for _, statusDisk := range image.Status.Disks {
+				if statusDisk.Name == disk {
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue())
+		}
+	})
+
+	Context("no default DeploymentOption", func() {
+		BeforeEach(func() {
+			for i := range ovfEnvelope.DeploymentOption.Configuration {
+				ovfEnvelope.DeploymentOption.Configuration[i].Default = nil
+			}
+		})
+
+		It("Image should have the correct disks", func() {
+			Expect(image.Status.Disks).To(HaveLen(len(disks)))
+
+			for _, disk := range disks {
+				found := false
+				for _, statusDisk := range image.Status.Disks {
+					if statusDisk.Name == disk {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue())
+			}
+		})
+	})
+})
+
 var _ = Describe("UpdateVmiWithVirtualMachine", func() {
 
 	const diskUUID = "552e3da8-c1c9-415c-af24-cb60d7c450fa"

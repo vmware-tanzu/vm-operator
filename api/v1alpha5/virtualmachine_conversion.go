@@ -8,6 +8,7 @@ import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
+	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
@@ -26,7 +27,12 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 // ConvertFrom converts the hub version to this VirtualMachine.
 func (dst *VirtualMachine) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachine)
-	return Convert_v1alpha6_VirtualMachine_To_v1alpha5_VirtualMachine(src, dst, nil)
+	if err := Convert_v1alpha6_VirtualMachine_To_v1alpha5_VirtualMachine(src, dst, nil); err != nil {
+		return err
+	}
+
+	// Preserve Hub data on down-conversion except for metadata
+	return utilconversion.MarshalData(src, dst)
 }
 
 // ConvertTo converts this VirtualMachineList to the Hub version.

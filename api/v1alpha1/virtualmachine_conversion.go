@@ -931,6 +931,7 @@ func restore_v1alpha6_VirtualMachineNetworkSpec(
 	dstNetwork.Disabled = srcNetwork.Disabled
 	dstNetwork.Nameservers = srcNetwork.Nameservers
 	dstNetwork.SearchDomains = srcNetwork.SearchDomains
+	dstNetwork.VLANs = srcNetwork.VLANs
 
 	if len(dstNetwork.Interfaces) == 0 {
 		// No interfaces so nothing to fixup (the interfaces were removed): we ignore the restored interfaces.

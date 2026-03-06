@@ -66,6 +66,7 @@ type BootstrapArgs struct {
 	HostName         string
 	DNSServers       []string
 	SearchSuffixes   []string
+	VLANs            map[string]vmopv1.VirtualMachineNetworkVLANSpec
 }
 
 var (
@@ -265,6 +266,7 @@ func GetBootstrapArgs(
 		}
 		bsa.DNSServers = networkSpec.Nameservers
 		bsa.SearchSuffixes = networkSpec.SearchDomains
+		bsa.VLANs = networkSpec.VLANs
 	}
 
 	// If the VM is missing DNS info - that is, it did not specify DNS for the

@@ -1275,6 +1275,12 @@ func restore_v1alpha6_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
 }
 
+func restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.VolumeAttributesClassName != "" {
+		dst.Spec.VolumeAttributesClassName = src.Spec.VolumeAttributesClassName
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -1309,7 +1315,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineVolumes(dst, restored)
 	restore_v1alpha6_VirtualMachineHardware(dst, restored)
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
-
+	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	// END RESTORE
 
 	dst.Status = restored.Status

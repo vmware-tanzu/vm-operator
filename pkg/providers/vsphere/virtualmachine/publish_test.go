@@ -99,7 +99,7 @@ func publishTests() {
 		// TODO: vcsim currently doesn't check if an item already exists in the cl.
 		It("returns error if target content library item already exists", func() {
 			Skip("vcsim currently doesn't check if an item already exists in the cl")
-			vmPubCtx.VMPublishRequest.Spec.Target.Item.Name = ctx.ContentLibraryImageName
+			vmPubCtx.VMPublishRequest.Spec.Target.Item.Name = ctx.ContentLibraryItem1Name
 
 			itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl, "")
 			Expect(err).ToNot(HaveOccurred())

@@ -74,9 +74,9 @@ func vmGroupTests() {
 		initVM := func(vm *vmopv1.VirtualMachine) {
 			vm.Namespace = nsInfo.Namespace
 			vm.Spec.ClassName = vmClass.Name
-			vm.Spec.ImageName = ctx.ContentLibraryImageName
+			vm.Spec.ImageName = ctx.ContentLibraryItem1Name
 			vm.Spec.Image.Kind = cvmiKind
-			vm.Spec.Image.Name = ctx.ContentLibraryImageName
+			vm.Spec.Image.Name = ctx.ContentLibraryItem1Name
 			vm.Spec.StorageClass = ctx.StorageClassName
 			vm.Spec.GroupName = vmGroup.Name
 		}
@@ -91,7 +91,7 @@ func vmGroupTests() {
 			vmic := vmopv1.VirtualMachineImageCache{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-					Name:      pkgutil.VMIName(ctx.ContentLibraryItemID),
+					Name:      pkgutil.VMIName(ctx.ContentLibraryItem1ID),
 				},
 			}
 			Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
@@ -102,7 +102,7 @@ func vmGroupTests() {
 					Name:      vmic.Name,
 				},
 				Data: map[string]string{
-					"value": ovfEnvelopeYAML,
+					"value": ctx.ContentLibraryItem1YAML,
 				},
 			}
 			Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
@@ -110,7 +110,7 @@ func vmGroupTests() {
 			vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
 				OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
 					ConfigMapName:   vmic.Name,
-					ProviderVersion: ctx.ContentLibraryItemVersion,
+					ProviderVersion: ctx.ContentLibraryItem1Version,
 				},
 				Conditions: []metav1.Condition{
 					{
@@ -130,12 +130,12 @@ func vmGroupTests() {
 					DatastoreID:  ctx.Datastore.Reference().Value,
 					Files: []vmopv1.VirtualMachineImageCacheFileStatus{
 						{
-							ID:       ctx.ContentLibraryItemDiskPath,
+							ID:       ctx.ContentLibraryItem1Disk1Path,
 							Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 							DiskType: vmopv1.VolumeTypeClassic,
 						},
 						{
-							ID:   ctx.ContentLibraryItemNVRAMPath,
+							ID:   ctx.ContentLibraryItem1NVRAMPath,
 							Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
 						},
 					},

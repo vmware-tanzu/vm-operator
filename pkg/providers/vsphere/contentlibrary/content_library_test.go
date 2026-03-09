@@ -69,7 +69,7 @@ func clTests() {
 			})
 
 			It("Gets items and returns OVF", func() {
-				item, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, ctx.ContentLibraryImageName, true)
+				item, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, ctx.ContentLibraryItem1Name, true)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(item).ToNot(BeNil())
 

@@ -2066,7 +2066,7 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 		return nil, err
 	}
 
-	err = vs.vmCreateGenConfigSpec(vmCtx, createArgs)
+	err = vs.vmCreateGenConfigSpec(vmCtx, vcClient, createArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -2328,6 +2328,7 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
 	// TODO: This is a partial dupe of what's done in the update path in the remaining Session code. I got
@@ -2383,7 +2384,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 			if err := vmconfcrypto.Reconcile(
 				vmCtx,
 				vs.k8sClient,
-				vs.vcClient.VimClient(),
+				vcClient.VimClient(),
 				vmCtx.VM,
 				vmCtx.MoVM,
 				&createArgs.ConfigSpec); err != nil {
@@ -2396,7 +2397,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	if err := vmconfbootoptions.Reconcile(
 		vmCtx,
 		vs.k8sClient,
-		vs.vcClient.VimClient(),
+		vcClient.VimClient(),
 		vmCtx.VM,
 		vmCtx.MoVM,
 		&createArgs.ConfigSpec); err != nil {

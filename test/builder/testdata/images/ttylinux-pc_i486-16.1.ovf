@@ -9,8 +9,8 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
   xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <References>
-    <File ovf:href="ttylinux-pc_i486-16.1-disk1.vmdk" ovf:id="file1" ovf:size="10595840" />
-    <File ovf:href="ttylinux-pc_i486-16.1-2.nvram" ovf:id="file2" ovf:size="8684" />
+    <File ovf:href="system.vmdk" ovf:id="file1" ovf:size="10595840" />
+    <File ovf:href="ttylinux-pc_i486-16.1.nvram" ovf:id="file2" ovf:size="8684" />
   </References>
   <DiskSection>
     <Info>Virtual disk information</Info>
@@ -29,19 +29,13 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
     <Info>A virtual machine</Info>
     <Name>ttylinux-pc_i486-16.1</Name>
     <ProductSection>
-      <Info></Info>
-      <Category></Category>
-      <Product>Linux</Product>
-      <Vendor>LinuxVendor</Vendor>
-      <Version>v1</Version>
-      <FullVersion>v1.0.0</FullVersion>
-      <ProductUrl></ProductUrl>
-      <VendorUrl></VendorUrl>
-      <AppUrl></AppUrl>
-      <Property key="vmware-system.tkr.os-version" type="string" value="1.15"></Property>
-      <Property key="dummy-key-configurable" type="string" userConfigurable="true" value="dummy-value"></Property>
-      <Property key="dummy-key-not-configurable" type="string" userConfigurable="false" value="dummy-value"></Property>
-      <Property key="dummy-key-not-configurable" type="string" userConfigurable="false" value="dummy-value"></Property>
+      <Info>Product info</Info>
+      <Property key="is_replace" type="boolean" userConfigurable="true" value="false">
+        <Label>Is Replacement</Label>
+      </Property>
+      <Property key="nsx_hostname" type="string" userConfigurable="true" value="">
+        <Label>Hostname</Label>
+      </Property>
     </ProductSection>
     <OperatingSystemSection ovf:id="36" vmw:osType="otherLinuxGuest">
       <Info>The kind of installed guest operating system</Info>
@@ -122,8 +116,9 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
 
 
       <!-- ExtraConfig -->
-      <vmw:ExtraConfig ovf:required="false" vmw:key="vmservice.vmi.labels"
-        vmw:value="example.com/hello:world,fu.bar:,another.example.com:true" />
+      <vmw:ExtraConfig ovf:required="false" vmw:key="fu" vmw:value="barred" />
+      <vmw:ExtraConfig ovf:required="false" vmw:key="hello" vmw:value="world" />
+      <vmw:ExtraConfig ovf:required="false" vmw:key="nvram" vmw:value="ovf:/file/file2" />
       <!-- ExtraConfig -->
 
     </VirtualHardwareSection>

@@ -170,13 +170,24 @@ type TestContextForVCSim struct {
 	workloadDomainIsolation bool
 
 	// When WithContentLibrary is true:
-	LocalContentLibraryID       string
-	ContentLibraryImageName     string
-	ContentLibraryID            string
-	ContentLibraryItemID        string
-	ContentLibraryItemVersion   string
-	ContentLibraryItemDiskPath  string
-	ContentLibraryItemNVRAMPath string
+	LocalContentLibraryID string
+	ContentLibraryID      string
+
+	ContentLibraryItem1ID        string
+	ContentLibraryItem1Name      string
+	ContentLibraryItem1Version   string
+	ContentLibraryItem1Disk1Path string
+	ContentLibraryItem1NVRAMPath string
+	ContentLibraryItem1YAML      string
+
+	ContentLibraryItem2ID        string
+	ContentLibraryItem2Name      string
+	ContentLibraryItem2Version   string
+	ContentLibraryItem2Disk1Path string
+	ContentLibraryItem2Disk2Path string
+	ContentLibraryItem2Disk3Path string
+	ContentLibraryItem2NVRAMPath string
+	ContentLibraryItem2YAML      string
 
 	ContentLibraryIsoImageName   string
 	ContentLibraryIsoItemID      string
@@ -712,25 +723,66 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 
 	c.LocalContentLibraryID = localLibID
 
-	// Create an OVA in the local library.
-	localLibItemOVA := library.Item{
-		Name:      "test-image-ovf",
+	// Create VM images in the local library.
+	localLibItemOVA1 := library.Item{
+		Name:      "test-image-1",
 		Type:      library.ItemTypeOVF,
 		LibraryID: localLibID,
 	}
-	localLibItemOVAID := CreateContentLibraryItem(
+	localLibItemOVA1ID := CreateContentLibraryItem(
 		c,
 		libMgr,
-		localLibItemOVA,
+		localLibItemOVA1,
 		path.Join(
 			testutil.GetRootDirOrDie(),
 			"test", "builder", "testdata",
 			"images", "ttylinux-pc_i486-16.1.ova"),
 	)
-	Expect(localLibItemOVAID).ToNot(BeEmpty())
+	Expect(localLibItemOVA1ID).ToNot(BeEmpty())
 
 	{
-		li, err := libMgr.GetLibraryItem(c, localLibItemOVAID)
+		data, err := os.ReadFile(path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "ttylinux-pc_i486-16.1.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+		c.ContentLibraryItem1YAML = string(data)
+	}
+
+	{
+		li, err := libMgr.GetLibraryItem(c, localLibItemOVA1ID)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(li.Cached).To(BeTrue())
+		Expect(li.ContentVersion).ToNot(BeEmpty())
+	}
+
+	localLibItemOVA2 := library.Item{
+		Name:      "test-image-2",
+		Type:      library.ItemTypeOVF,
+		LibraryID: localLibID,
+	}
+	localLibItemOVA2ID := CreateContentLibraryItem(
+		c,
+		libMgr,
+		localLibItemOVA2,
+		path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "uber.ova"),
+	)
+	Expect(localLibItemOVA2ID).ToNot(BeEmpty())
+
+	{
+		data, err := os.ReadFile(path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "uber.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+		c.ContentLibraryItem2YAML = string(data)
+	}
+
+	{
+		li, err := libMgr.GetLibraryItem(c, localLibItemOVA2ID)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(li.Cached).To(BeTrue())
 		Expect(li.ContentVersion).ToNot(BeEmpty())
@@ -774,40 +826,52 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 
 	// Get the library item IDs for the OVA & ISO from the subscribed library.
 	var (
-		subLibItemOVAID  string
-		subLibItemOVAVer string
-		subLibItemISOID  string
-		subLibItemISOVer string
+		subLibItemOVA1ID  string
+		subLibItemOVA1Ver string
+		subLibItemOVA2ID  string
+		subLibItemOVA2Ver string
+		subLibItemISOID   string
+		subLibItemISOVer  string
 	)
 	subLibItems, err := libMgr.GetLibraryItems(c, subLibID)
 	Expect(err).ToNot(HaveOccurred())
 	for i := range subLibItems {
 		sli := subLibItems[i]
 		switch sli.Name {
-		case localLibItemOVA.Name:
-			subLibItemOVAID = sli.ID
-			subLibItemOVAVer = sli.ContentVersion
+		case localLibItemOVA1.Name:
+			subLibItemOVA1ID = sli.ID
+			subLibItemOVA1Ver = sli.ContentVersion
+		case localLibItemOVA2.Name:
+			subLibItemOVA2ID = sli.ID
+			subLibItemOVA2Ver = sli.ContentVersion
 		case localLibItemISO.Name:
 			subLibItemISOID = sli.ID
 			subLibItemISOVer = sli.ContentVersion
 		}
 	}
-	Expect(subLibItemOVAID).ToNot(BeEmpty())
-	Expect(subLibItemOVAVer).ToNot(BeEmpty())
+	Expect(subLibItemOVA1ID).ToNot(BeEmpty())
+	Expect(subLibItemOVA1Ver).ToNot(BeEmpty())
+	Expect(subLibItemOVA2ID).ToNot(BeEmpty())
+	Expect(subLibItemOVA2Ver).ToNot(BeEmpty())
 	Expect(subLibItemISOID).ToNot(BeEmpty())
 	Expect(subLibItemISOVer).ToNot(BeEmpty())
 
 	c.ContentLibraryID = subLibID
 
-	c.ContentLibraryImageName = localLibItemOVA.Name
-	c.ContentLibraryItemID = subLibItemOVAID
-	c.ContentLibraryItemVersion = subLibItemOVAVer
+	c.ContentLibraryItem1Name = localLibItemOVA1.Name
+	c.ContentLibraryItem1ID = subLibItemOVA1ID
+	c.ContentLibraryItem1Version = subLibItemOVA1Ver
 
-	subLibItemOVAStor, err := libMgr.ListLibraryItemStorage(c, subLibItemOVAID)
+	c.ContentLibraryItem2Name = localLibItemOVA2.Name
+	c.ContentLibraryItem2ID = subLibItemOVA2ID
+	c.ContentLibraryItem2Version = subLibItemOVA2Ver
+
+	subLibItemOVA1Stor, err := libMgr.ListLibraryItemStorage(c, subLibItemOVA1ID)
 	Expect(err).ToNot(HaveOccurred())
-	for _, s := range subLibItemOVAStor {
+	for _, s := range subLibItemOVA1Stor {
+		fmt.Fprintf(GinkgoWriter, "libItem1.storageURIs=%v\n", s.StorageURIs)
 		for _, p := range s.StorageURIs {
-			ext := strings.ToLower(path.Ext(p))
+			ext := path.Ext(strings.ToLower(p))
 			switch ext {
 			case ".vmdk", ".nvram":
 				var moDS mo.Datastore
@@ -821,49 +885,123 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 
 				switch ext {
 				case ".vmdk":
-					c.ContentLibraryItemDiskPath = p
+					c.ContentLibraryItem1Disk1Path = p
 				case ".nvram":
-					c.ContentLibraryItemNVRAMPath = p
+					c.ContentLibraryItem1NVRAMPath = p
 				}
-
 			}
 		}
 	}
+
+	subLibItemOVA2Stor, err := libMgr.ListLibraryItemStorage(c, subLibItemOVA2ID)
+	Expect(err).ToNot(HaveOccurred())
+	for _, s := range subLibItemOVA2Stor {
+		fmt.Fprintf(GinkgoWriter, "libItem2.storageURIs=%v\n", s.StorageURIs)
+		for i := range s.StorageURIs {
+			p := s.StorageURIs[i]
+			fmt.Fprintf(GinkgoWriter, "libItem2[%d].p=%s\n", i, p)
+			base := path.Base(strings.ToLower(p))
+			fmt.Fprintf(GinkgoWriter, "libItem2[%d].base=%s\n", i, base)
+			ext := path.Ext(base)
+			fmt.Fprintf(GinkgoWriter, "libItem2[%d].ext=%s\n", i, ext)
+			switch ext {
+			case ".vmdk", ".nvram":
+				var moDS mo.Datastore
+				Expect(c.Datastore.Properties(
+					c,
+					c.Datastore.Reference(),
+					[]string{"name", "info.url"}, &moDS)).To(Succeed())
+				p := strings.Replace(p, moDS.Info.GetDatastoreInfo().Url, "", 1)
+				p = strings.TrimPrefix(p, "/")
+				p = fmt.Sprintf("[%s] %s", moDS.Name, p)
+
+				switch ext {
+				case ".vmdk":
+					switch base {
+					case "system.vmdk":
+						c.ContentLibraryItem2Disk1Path = p
+					case "data.vmdk":
+						c.ContentLibraryItem2Disk2Path = p
+					case "extra_data.vmdk":
+						c.ContentLibraryItem2Disk3Path = p
+					}
+				case ".nvram":
+					c.ContentLibraryItem2NVRAMPath = p
+				}
+			}
+		}
+	}
+
+	fmt.Fprintf(GinkgoWriter, "ContentLibraryItem1Disk1Path=%v\n", c.ContentLibraryItem1Disk1Path)
+	fmt.Fprintf(GinkgoWriter, "ContentLibraryItem1NVRAMPath=%v\n", c.ContentLibraryItem1NVRAMPath)
+
+	fmt.Fprintf(GinkgoWriter, "ContentLibraryItem2Disk1Path=%v\n", c.ContentLibraryItem2Disk1Path)
+	fmt.Fprintf(GinkgoWriter, "ContentLibraryItem2Disk2Path=%v\n", c.ContentLibraryItem2Disk2Path)
+	fmt.Fprintf(GinkgoWriter, "ContentLibraryItem2Disk3Path=%v\n", c.ContentLibraryItem2Disk3Path)
+	fmt.Fprintf(GinkgoWriter, "ContentLibraryItem2NVRAMPath=%v\n", c.ContentLibraryItem2NVRAMPath)
 
 	c.ContentLibraryIsoImageName = localLibItemISO.Name
 	c.ContentLibraryIsoItemID = subLibItemISOID
 	c.ContentLibraryIsoItemVersion = subLibItemISOVer
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
-	clusterVMImage := DummyClusterVirtualMachineImage(c.ContentLibraryImageName)
-	clusterVMImage.Spec.ProviderRef = &common.LocalObjectRef{
+	clusterVMI1 := DummyClusterVirtualMachineImage(c.ContentLibraryItem1Name)
+	clusterVMI1.Spec.ProviderRef = &common.LocalObjectRef{
 		Kind: "ClusterContentLibraryItem",
 	}
-	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
-	clusterVMImage.Status.ProviderItemID = subLibItemOVAID
-	clusterVMImage.Status.ProviderContentVersion = subLibItemOVAVer
-	clusterVMImage.Status.Type = "OVF"
-	clusterVMImage.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+	Expect(c.Client.Create(c, clusterVMI1)).To(Succeed())
+	clusterVMI1.Status.ProviderItemID = subLibItemOVA1ID
+	clusterVMI1.Status.ProviderContentVersion = subLibItemOVA1Ver
+	clusterVMI1.Status.Type = "OVF"
+	clusterVMI1.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 		{
 			Name:      "disk0",
 			Limit:     ptr.To(resource.MustParse("30Mi")),
 			Requested: ptr.To(resource.MustParse("30Mi")),
 		},
 	}
-	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
-	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
+	conditions.MarkTrue(clusterVMI1, vmopv1.ReadyConditionType)
+	Expect(c.Client.Status().Update(c, clusterVMI1)).To(Succeed())
 
-	// The image isn't quite as prod but sufficient for what we need here ATM.
-	clusterVMImage = DummyClusterVirtualMachineImage(c.ContentLibraryIsoImageName)
-	clusterVMImage.Spec.ProviderRef = &common.LocalObjectRef{
+	clusterVMI2 := DummyClusterVirtualMachineImage(c.ContentLibraryItem2Name)
+	clusterVMI2.Spec.ProviderRef = &common.LocalObjectRef{
 		Kind: "ClusterContentLibraryItem",
 	}
-	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
-	clusterVMImage.Status.ProviderItemID = subLibItemISOID
-	clusterVMImage.Status.ProviderContentVersion = subLibItemISOVer
-	clusterVMImage.Status.Type = "ISO"
-	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
-	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
+	Expect(c.Client.Create(c, clusterVMI2)).To(Succeed())
+	clusterVMI2.Status.ProviderItemID = subLibItemOVA2ID
+	clusterVMI2.Status.ProviderContentVersion = subLibItemOVA2Ver
+	clusterVMI2.Status.Type = "OVF"
+	clusterVMI2.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+		{
+			Name:      "system",
+			Limit:     ptr.To(resource.MustParse("40Mi")),
+			Requested: ptr.To(resource.MustParse("40Mi")),
+		},
+		{
+			Name:      "data",
+			Limit:     ptr.To(resource.MustParse("50Mi")),
+			Requested: ptr.To(resource.MustParse("50Mi")),
+		},
+		{
+			Name:      "scratch",
+			Limit:     ptr.To(resource.MustParse("20Mi")),
+			Requested: ptr.To(resource.MustParse("20Mi")),
+		},
+	}
+	conditions.MarkTrue(clusterVMI2, vmopv1.ReadyConditionType)
+	Expect(c.Client.Status().Update(c, clusterVMI2)).To(Succeed())
+
+	// The image isn't quite as prod but sufficient for what we need here ATM.
+	clusterVMI3 := DummyClusterVirtualMachineImage(c.ContentLibraryIsoImageName)
+	clusterVMI3.Spec.ProviderRef = &common.LocalObjectRef{
+		Kind: "ClusterContentLibraryItem",
+	}
+	Expect(c.Client.Create(c, clusterVMI3)).To(Succeed())
+	clusterVMI3.Status.ProviderItemID = subLibItemISOID
+	clusterVMI3.Status.ProviderContentVersion = subLibItemISOVer
+	clusterVMI3.Status.Type = "ISO"
+	conditions.MarkTrue(clusterVMI3, vmopv1.ReadyConditionType)
+	Expect(c.Client.Status().Update(c, clusterVMI3)).To(Succeed())
 }
 
 func (c *TestContextForVCSim) SimulatorContext() *simulator.Context {

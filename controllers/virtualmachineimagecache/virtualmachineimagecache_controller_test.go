@@ -261,7 +261,7 @@ var _ = Describe(
 				ctx = vcSimCtx
 
 				// Get the info for the OVF-backed image.
-				itemIDOVF = vcSimCtx.ContentLibraryItemID
+				itemIDOVF = vcSimCtx.ContentLibraryItem1ID
 				libMgr := library.NewManager(vcSimCtx.RestClient)
 				item, err := libMgr.GetLibraryItem(ctx, itemIDOVF)
 				Expect(err).ToNot(HaveOccurred())

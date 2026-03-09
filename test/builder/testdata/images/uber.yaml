@@ -1,0 +1,250 @@
+deploymentOptionSection:
+  configuration:
+  - description: 1 CPU, 32 MiB RAM, 2 disks 30 MiB each
+    id: small
+    label: Small
+  - default: true
+    description: 2 CPU, 64 MiB RAM, 2 disks 50 MiB each
+    id: large
+    label: Large
+  info: 'Deployment configurations: small and large'
+diskSection:
+  disk:
+  - capacity: "30"
+    capacityAllocationUnits: byte * 2^20
+    diskId: system_small
+    fileRef: system
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 18743296
+  - capacity: "30"
+    capacityAllocationUnits: byte * 2^20
+    diskId: data_small
+    fileRef: data
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 18743296
+  - capacity: "40"
+    capacityAllocationUnits: byte * 2^20
+    diskId: system_large
+    fileRef: system
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 18743296
+  - capacity: "50"
+    capacityAllocationUnits: byte * 2^20
+    diskId: data_large
+    fileRef: data
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 18743296
+  - capacity: "50"
+    capacityAllocationUnits: byte * 2^20
+    diskId: extra_data_large
+    fileRef: extra_data
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 18743296
+  - capacity: ${scratch_space_size_small}
+    capacityAllocationUnits: byte * 2^20
+    diskId: scratch_small
+  - capacity: ${scratch_space_size_large}
+    capacityAllocationUnits: byte * 2^20
+    diskId: scratch_large
+  info: Virtual disk information
+networkSection:
+  info: The list of logical networks
+  network:
+  - description: The nat network
+    name: nat
+references:
+- href: system.vmdk
+  id: system
+  size: 10595840
+- href: data.vmdk
+  id: data
+  size: 10595840
+- href: extra_data.vmdk
+  id: extra_data
+  size: 10595840
+- href: uber.nvram
+  id: nvram
+  size: 8684
+virtualSystem:
+  id: vm
+  info: A virtual machine
+  name: uber
+  operatingSystemSection:
+    id: 36
+    info: The kind of installed guest operating system
+    osType: otherLinuxGuest
+  productSection:
+  - info: Product info
+    items:
+    - property:
+        configuration: small
+        default: "10"
+        key: scratch_space_size_small
+        type: int
+    - property:
+        configuration: large
+        default: "20"
+        key: scratch_space_size_large
+        type: int
+    property:
+    - configuration: small
+      default: "10"
+      key: scratch_space_size_small
+      type: int
+    - configuration: large
+      default: "20"
+      key: scratch_space_size_large
+      type: int
+  virtualHardwareSection:
+  - config:
+    - key: firmware
+      required: false
+      value: efi
+    - key: powerOpInfo.powerOffType
+      required: false
+      value: soft
+    - key: powerOpInfo.resetType
+      required: false
+      value: soft
+    - key: powerOpInfo.suspendType
+      required: false
+      value: soft
+    - key: tools.syncTimeWithHost
+      required: false
+      value: "true"
+    - key: tools.toolsUpgradePolicy
+      required: false
+      value: upgradeAtPowerCycle
+    extraConfig:
+    - key: fu
+      required: false
+      value: barred
+    - key: hello
+      required: false
+      value: world
+    - key: nvram
+      required: false
+      value: ovf:/file/nvram
+    id: null
+    info: Virtual hardware requirements
+    item:
+    - allocationUnits: hertz * 10^6
+      configuration: small
+      description: Number of Virtual CPUs
+      elementName: 1 virtual CPU(s)
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 1
+    - allocationUnits: byte * 2^20
+      configuration: small
+      description: Memory Size
+      elementName: 32MB of memory
+      instanceID: "2"
+      resourceType: 4
+      virtualQuantity: 32
+    - allocationUnits: hertz * 10^6
+      configuration: large
+      description: Number of Virtual CPUs
+      elementName: 2 virtual CPU(s)
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 2
+    - allocationUnits: byte * 2^20
+      configuration: large
+      description: Memory Size
+      elementName: 64MB of memory
+      instanceID: "2"
+      resourceType: 4
+      virtualQuantity: 64
+    - address: "0"
+      description: SCSI Controller
+      elementName: SCSI Controller 0
+      instanceID: "3"
+      resourceSubType: lsilogic
+      resourceType: 6
+    - addressOnParent: "0"
+      configuration: small
+      elementName: system_small
+      hostResource:
+      - ovf:/disk/system_small
+      instanceID: "4"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "1"
+      configuration: small
+      elementName: data_small
+      hostResource:
+      - ovf:/disk/data_small
+      instanceID: "5"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "2"
+      configuration: small
+      elementName: scratch_small
+      hostResource:
+      - ovf:/disk/scratch_small
+      instanceID: "6"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "0"
+      configuration: large
+      elementName: system_large
+      hostResource:
+      - ovf:/disk/system_large
+      instanceID: "7"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "1"
+      configuration: large
+      elementName: data_large
+      hostResource:
+      - ovf:/disk/data_large
+      instanceID: "8"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "2"
+      configuration: large
+      elementName: extra_data_large
+      hostResource:
+      - ovf:/disk/extra_data_large
+      instanceID: "9"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "3"
+      configuration: large
+      elementName: scratch_large
+      hostResource:
+      - ovf:/disk/scratch_large
+      instanceID: "10"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "1"
+      automaticAllocation: true
+      config:
+      - key: wakeOnLanEnabled
+        required: false
+        value: "false"
+      connection:
+      - nat
+      description: E1000 ethernet adapter on "nat"
+      elementName: ethernet0
+      instanceID: "11"
+      resourceSubType: E1000
+      resourceType: 10
+    - automaticAllocation: false
+      elementName: video
+      instanceID: "12"
+      required: false
+      resourceType: 24
+    - automaticAllocation: false
+      elementName: vmci
+      instanceID: "13"
+      required: false
+      resourceSubType: vmware.vmci
+      resourceType: 1
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemIdentifier: ttylinux-pc_i486-16.1
+      virtualSystemType: vmx-09
+

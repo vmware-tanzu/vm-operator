@@ -5,6 +5,7 @@
 package manager
 
 import (
+	"crypto/tls"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -67,6 +68,11 @@ type Options struct {
 
 	// MetricsAddr is the net.Addr string for the metrics server.
 	MetricsAddr string
+
+	// MetricsTLSOpts are functions that configure the TLS settings for the
+	// metrics server. If empty, defaults to TLS 1.2+ with a restricted set
+	// of ECDHE+AES-GCM cipher suites.
+	MetricsTLSOpts []func(*tls.Config)
 
 	// PodNamespace is the namespace in which the pod running the controller
 	// manager is located.
@@ -214,6 +220,20 @@ func (o *Options) defaults() {
 
 	if o.WebhookSecretVolumeMountPath == "" {
 		o.WebhookSecretVolumeMountPath = DefaultWebhookSecretVolumeMountPath
+	}
+
+	if o.MetricsTLSOpts == nil {
+		o.MetricsTLSOpts = []func(*tls.Config){
+			func(cfg *tls.Config) {
+				cfg.MinVersion = tls.VersionTLS12
+				cfg.CipherSuites = []uint16{
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				}
+			},
+		}
 	}
 
 	if o.InitializeProviders == nil {

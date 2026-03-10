@@ -681,7 +681,10 @@ func (r *Reconciler) checkIsImageAvailable(ctx *pkgctx.VirtualMachinePublishRequ
 		return nil
 	}
 
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionImageAvailable) {
+	// Skip lookup only if we already have both ImageAvailable and ImageName
+	// (avoids Ready without ImageName if status patch failed previously).
+	if ctx.VMPublishRequest.Status.ImageName != "" &&
+		conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionImageAvailable) {
 		return nil
 	}
 

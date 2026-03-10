@@ -1007,6 +1007,24 @@ func unitTestsReconcile() {
 							Expect(vmpub.Status.Ready).To(BeTrue())
 						})
 
+						It("backfills ImageName when ImageAvailable is true but ImageName is empty", func() {
+							// Simulate inconsistent state: conditions patch wrote ImageAvailable, status patch failed (e.g. conflict).
+							conditions.MarkTrue(vmpub, vmopv1.VirtualMachinePublishRequestConditionUploaded)
+							conditions.MarkTrue(vmpub, vmopv1.VirtualMachinePublishRequestConditionImageAvailable)
+							vmpub.Status.ImageName = ""
+
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).NotTo(HaveOccurred())
+
+							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
+							Expect(vmpub.Status.ImageName).To(Equal("dummy-image"))
+							Expect(conditions.IsTrue(vmpub,
+								vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
+							Expect(conditions.IsTrue(vmpub,
+								vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+							Expect(vmpub.Status.Ready).To(BeTrue())
+						})
+
 						It("Update item description failed once", func() {
 							fakeVMProvider.Lock()
 							fakeVMProvider.UpdateContentLibraryItemFn = func(ctx context.Context,

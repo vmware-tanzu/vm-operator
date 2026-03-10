@@ -46,13 +46,6 @@ patches:
     kind: Deployment
     name: controller-manager
     namespace: system
-- path: proxy_metrics_port_patch.yaml
-  target:
-    group: apps
-    version: v1
-    kind: Deployment
-    name: controller-manager
-    namespace: system
 - path: manager_env_var_patch.yaml
   target:
     group: apps

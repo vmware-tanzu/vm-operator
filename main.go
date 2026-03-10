@@ -205,7 +205,7 @@ func initFlags() {
 	flag.StringVar(
 		&managerOpts.MetricsAddr,
 		"metrics-addr",
-		":8083",
+		":8443",
 		"The address the metric endpoint binds to.")
 	flag.StringVar(
 		&managerOpts.HealthProbeBindAddress,

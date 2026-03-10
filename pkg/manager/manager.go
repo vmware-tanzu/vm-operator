@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcfg "sigs.k8s.io/controller-runtime/pkg/config"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsfilters "sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -124,7 +125,10 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 			UsePriorityQueue: &opts.UsePriorityQueue,
 		},
 		Metrics: metricsserver.Options{
-			BindAddress: opts.MetricsAddr,
+			BindAddress:    opts.MetricsAddr,
+			SecureServing:  true,
+			FilterProvider: metricsfilters.WithAuthenticationAndAuthorization,
+			TLSOpts:        opts.MetricsTLSOpts,
 		},
 		WebhookServer: webhook.NewServer(webhook.Options{
 			CertDir: opts.WebhookSecretVolumeMountPath,

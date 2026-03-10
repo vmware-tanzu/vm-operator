@@ -228,7 +228,7 @@ func (r *Reconciler) getVMPublishRequests(
 	for _, req := range reqs.Items {
 		if metav1.IsControlledBy(&req, ctx.VMGroupPublishRequest) {
 			existReqsMap[req.Spec.Source.Name] = req
-			if req.Status.Ready {
+			if req.Status.ImageName != "" && req.Status.Ready {
 				completedReqsSet.Insert(req.Spec.Source.Name)
 			} else {
 				pendingReqsSet.Insert(req.Spec.Source.Name)

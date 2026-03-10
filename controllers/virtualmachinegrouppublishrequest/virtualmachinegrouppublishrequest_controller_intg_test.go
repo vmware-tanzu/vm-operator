@@ -96,6 +96,14 @@ func intgTestsReconcile() {
 		Expect(err).ToNot(HaveOccurred())
 	}
 
+	setVMPubReqImage := func(vmPubReq *vmopv1.VirtualMachinePublishRequest, imageName string) {
+		_, err := controllerutil.CreateOrPatch(ctx, ctx.Client, vmPubReq, func() error {
+			vmPubReq.Status.ImageName = imageName
+			return nil
+		})
+		Expect(err).ToNot(HaveOccurred())
+	}
+
 	verifyDeletionEventually := func() {
 		Eventually(func() []string {
 			if req := getVMGroupPubReq(ctx, client.ObjectKeyFromObject(vmGroupPubReq)); req != nil {
@@ -179,10 +187,16 @@ func intgTestsReconcile() {
 
 			// mark one of the vm publish requests to be true
 			setVMPubReqCompleted(&reqs[0])
+			verifyFalseConditionEventually(len(vmGroupPubReq.Spec.VirtualMachines))
+
+			setVMPubReqImage(&reqs[0], "fake-image-zero")
 			verifyFalseConditionEventually(len(vmGroupPubReq.Spec.VirtualMachines) - 1)
 
 			// mark last of the vm publish requests to be true
 			setVMPubReqCompleted(&reqs[1])
+			verifyFalseConditionEventually(len(vmGroupPubReq.Spec.VirtualMachines) - 1)
+
+			setVMPubReqImage(&reqs[1], "fake-image-one")
 			Eventually(func(g Gomega) {
 				req := getVMGroupPubReq(ctx, client.ObjectKeyFromObject(vmGroupPubReq))
 				Expect(req).ToNot(BeNil())

@@ -24,11 +24,6 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
-
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -140,19 +135,12 @@ func (v validator) validateSource(ctx *pkgctx.WebhookRequestContext, vmpub *vmop
 
 	sourcePath := field.NewPath("spec").Child("source")
 	if apiVersion := vmpub.Spec.Source.APIVersion; apiVersion != "" {
-		var (
-			v1a1GV = vmopv1a1.GroupVersion.String()
-			v1a2GV = vmopv1a2.GroupVersion.String()
-			v1a3GV = vmopv1a3.GroupVersion.String()
-			v1a4GV = vmopv1a4.GroupVersion.String()
-			vmopv1 = vmopv1.GroupVersion.String()
-		)
+		if gv, err := schema.ParseGroupVersion(apiVersion); err != nil {
+			allErrs = append(allErrs, field.InternalError(sourcePath.Child("apiVersion"), err))
+		} else if gv.Group != vmopv1.GroupVersion.Group {
+			allErrs = append(allErrs, field.Invalid(sourcePath.Child("apiVersion"),
+				apiVersion, fmt.Sprintf("apiVersion %q does not match the expected group: %s", gv.Group, vmopv1.GroupVersion.Group)))
 
-		switch apiVersion {
-		case v1a1GV, v1a2GV, v1a3GV, vmopv1:
-		default:
-			allErrs = append(allErrs, field.NotSupported(sourcePath.Child("apiVersion"),
-				apiVersion, []string{v1a1GV, v1a2GV, v1a3GV, v1a4GV, vmopv1, ""}))
 		}
 	}
 
@@ -175,10 +163,14 @@ func (v validator) validateTargetLocation(ctx *pkgctx.WebhookRequestContext, vmp
 		allErrs = append(allErrs, field.Required(targetLocationNamePath, ""))
 	}
 
-	if vmpub.Spec.Target.Location.APIVersion != imgregv1a1.GroupVersion.String() &&
-		vmpub.Spec.Target.Location.APIVersion != imgregv1.GroupVersion.String() {
-		allErrs = append(allErrs, field.NotSupported(targetLocationPath.Child("apiVersion"),
-			vmpub.Spec.Target.Location.APIVersion, []string{imgregv1a1.GroupVersion.String(), imgregv1.GroupVersion.String(), ""}))
+	if apiVersion := vmpub.Spec.Target.Location.APIVersion; apiVersion != "" {
+		if gv, err := schema.ParseGroupVersion(apiVersion); err != nil {
+			allErrs = append(allErrs, field.InternalError(targetLocationPath.Child("apiVersion"), err))
+		} else if gv.Group != imgregv1.GroupVersion.Group {
+			allErrs = append(allErrs, field.Invalid(targetLocationPath.Child("apiVersion"),
+				apiVersion, fmt.Sprintf("apiVersion %q does not match the expected group: %s", gv.Group, imgregv1.GroupVersion.Group)))
+
+		}
 	}
 
 	if vmpub.Spec.Target.Location.Kind != reflect.TypeOf(imgregv1a1.ContentLibrary{}).Name() {

@@ -1,0 +1,653 @@
+deploymentOptionSection:
+  configuration:
+  - description: |2-
+
+      IMPORTANT: Small VM appliance size is suitable for lab and proof-of-concept deployment
+
+      This configuration requires the following:
+      * 4 vCPU
+      * 16GB RAM
+      * 300GB Storage
+      * VM hardware version 10 or greater (vSphere 5.5 or greater)
+    id: small
+    label: Small
+  - default: true
+    description: |2-
+
+      IMPORTANT: This configuration is supported for Local Manager Production deployment ('NSX Manager' role)
+                 This is supported for Global Manager Production deployment
+
+      This configuration requires the following:
+      * 6 vCPU
+      * 24GB RAM
+      * 300GB Storage
+      * VM hardware version 10 or greater (vSphere 5.5 or greater)
+    id: medium
+    label: Medium
+  - description: |2-
+
+      IMPORTANT: This configuration is supported for Local Manager Production deployment ('NSX Manager' role)
+                 This is supported for Global Manager Production deployment
+
+      This configuration requires the following:
+      * 12 vCPU
+      * 48GB RAM
+      * 300GB Storage
+      * VM hardware version 10 or greater (vSphere 5.5 or greater)
+    id: large
+    label: Large
+  - description: |2-
+
+      IMPORTANT: This configuration is supported for Local Manager Production deployment ('NSX Manager' role)
+                 This is supported for Global Manager Production deployment
+
+      This configuration requires the following:
+      * 24 vCPU
+      * 96GB RAM
+      * 400GB Storage
+      * VM hardware version 10 or greater (vSphere 5.5 or greater)
+    id: xlarge
+    label: ExtraLarge
+  info: The list of deployment options
+diskSection:
+  disk:
+  - capacity: "200"
+    capacityAllocationUnits: byte * 2^30
+    diskId: system
+    fileRef: nsx-unified-appliance.vmdk_id
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 4312137728
+  - capacity: "102400"
+    capacityAllocationUnits: byte * 2^20
+    diskId: secondary
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+  - capacity: "102400"
+    capacityAllocationUnits: byte * 2^20
+    diskId: disk100GB
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+  info: List of the virtual disks and partitions needed
+networkSection:
+  info: List of logical networks used in the package
+  network:
+  - description: Network 1
+    name: Network 1
+references:
+- href: nsx-unified-appliance.vmdk
+  id: nsx-unified-appliance.vmdk_id
+  size: 8072292352
+virtualSystem:
+  annotationSection: {}
+  id: nsx-unified-appliance
+  info: A virtual machine
+  operatingSystemSection:
+    description: Ubuntu 16.04 64bit
+    id: 94
+    info: Guest Operating System
+    osType: ubuntu64Guest
+    version: ""
+  productSection:
+  - appUrl: http://${vami.ip0.nsx-unified-appliance}/
+    category: Internal Properties - Do not set these parameters.
+    fullVersion: 9.1.0.0.25262063
+    info: VM ISV branding information
+    items:
+    - category: Application
+    - property:
+        description: 'The password for GRUB root user for this VM. '
+        key: nsx_grub_passwd
+        label: System GRUB Root User Password
+        password: true
+        type: string
+        userConfigurable: true
+    - property:
+        description: 'The timeout to display GRUB menu for this VM. '
+        key: nsx_grub_menu_timeout
+        label: System GRUB menu timeout
+        type: string
+        userConfigurable: true
+    - property:
+        description: "The password for root user for this VM.\nPlease follow the password
+          complexity rule as below:\n    - minimum of 8 characters in length\n    -
+          >=1 uppercase character\n    - >=1 lowercase character\n    - >=1 numeric
+          character\n    - >=1 special character\n    - >=5 unique characters\n    -
+          default password complexity rules as enforced by the Linux PAM module\n
+          \   NOTE: Password strength validation will occur during VM boot.  If the
+          password does not meet the above criteria then login as root user for the
+          change password prompt to appear. "
+        key: nsx_passwd_0
+        label: System Root User Password
+        password: true
+        qualifiers: MinLen(8)
+        type: string
+        userConfigurable: true
+    - property:
+        description: "The password for default CLI user for this VM.\nPlease follow
+          the password complexity rule as below:\n    - minimum of 8 characters in
+          length\n    - >=1 uppercase character\n    - >=1 lowercase character\n    -
+          >=1 numeric character\n    - >=1 special character\n    - >=5 unique characters\n
+          \   - default password complexity rules as enforced by the Linux PAM module\n
+          \   NOTE: Password strength validation will occur during VM boot.  If the
+          password does not meet the above criteria then login as admin user for the
+          change password prompt to appear. "
+        key: nsx_cli_passwd_0
+        label: CLI "admin" User Password
+        password: true
+        qualifiers: MinLen(8)
+        type: string
+        userConfigurable: true
+    - property:
+        description: "The password for audit CLI user for this VM.\nPlease follow
+          the password complexity rule as below:\n    - minimum of 8 characters in
+          length\n    - >=1 uppercase character\n    - >=1 lowercase character\n    -
+          >=1 numeric character\n    - >=1 special character\n    - >=5 unique characters\n
+          \   - default password complexity rules as enforced by the Linux PAM module\n
+          \   NOTE: Password strength validation will occur during VM boot.  If the
+          password does not meet the above criteria then login as admin user and use
+          the NSX CLI command \"set user audit\" to change the audit user password. "
+        key: nsx_cli_audit_passwd_0
+        label: CLI "audit" User Password
+        password: true
+        type: string
+        userConfigurable: true
+    - property:
+        description: Username of administrator user.
+        key: nsx_cli_username
+        label: 'CLI "admin" username (default: admin)'
+        type: string
+        userConfigurable: true
+    - property:
+        description: Username of auditor user.
+        key: nsx_cli_audit_username
+        label: 'CLI "audit" username (default: audit)'
+        type: string
+        userConfigurable: true
+    - property:
+        description: For internal use only.
+        key: extraPara
+        label: Optional parameters
+        password: true
+        type: string
+        userConfigurable: true
+    - category: Network properties
+    - property:
+        description: "The hostname for this VM.\n    Valid characters for hostname
+          are A-Z, a-z, 0-9, dot (.) and hyphen (-). A hostname may not start with
+          a hyphen. Each element of the hostname must be from 1 to 63 characters long
+          and the entire hostname, including the dots, can be at most 253 characters
+          long.\n    NOTE: If hostname contains invalid characters, then the appliance
+          gets deployed with 'nsx-manager' as hostname. "
+        key: nsx_hostname
+        label: Hostname
+        qualifiers: MinLen(1),MaxLen(253)
+        type: string
+        userConfigurable: true
+    - property:
+        default: NSX Manager
+        description: 'The role for this VM. Currently supports ''NSX Global Manager''
+          OR ''NSX Manager'' as rolename. '
+        key: nsx_role
+        label: Rolename
+        qualifiers: ValueMap{"NSX Manager","NSX Global Manager"}
+        type: string
+        userConfigurable: true
+    - property:
+        description: 'The IPv4 Address for the first interface. For IPv6-only deployments
+          use the value: None'
+        key: nsx_ip_0
+        label: Management Network IPv4 Address
+        qualifiers: MinLen(1)
+        type: string
+        userConfigurable: true
+    - property:
+        description: 'The netmask for the first interface. For IPv6-only deployments
+          use the value: None'
+        key: nsx_netmask_0
+        label: Management Network Netmask
+        qualifiers: MinLen(1)
+        type: string
+        userConfigurable: true
+    - property:
+        description: The default IPv4 gateway for this VM.
+        key: nsx_gateway_0
+        label: Default IPv4 Gateway
+        type: string
+        userConfigurable: true
+    - property:
+        description: The IPv6 Address for the first interface.
+        key: nsx_ip6_0
+        label: Management Network IPv6 Address
+        type: string
+        userConfigurable: true
+    - property:
+        description: The IPv6 netmask prefix for the first interface. (ex.- 64)
+        key: nsx_netmask6_0
+        label: Management IPv6 Network Netmask Prefix
+        type: string
+        userConfigurable: true
+    - property:
+        description: The default IPv6 gateway for this VM.
+        key: nsx_gateway6_0
+        label: Default IPv6 Gateway
+        type: string
+        userConfigurable: true
+    - category: DNS
+    - property:
+        description: |-
+          The space separated DNS server list for this VM (valid only if an IPv4 address is specified for the first interface).
+              NOTE: At most three name servers can be configured (first 3 name servers passed in list will be used and all other will be ignored)
+        key: nsx_dns1_0
+        label: DNS Server list
+        type: string
+        userConfigurable: true
+    - property:
+        description: The space separated domain search list for this VM (valid only
+          if an IPv4 address is specified for the first interface).
+        key: nsx_domain_0
+        label: Domain Search List
+        type: string
+        userConfigurable: true
+    - category: Services Configuration
+    - property:
+        description: The NTP server list(space separated) for this VM.
+        key: nsx_ntp_0
+        label: NTP Server List
+        type: string
+        userConfigurable: true
+    - property:
+        default: "false"
+        description: Enabling SSH service is not recommended for security reasons.
+        key: nsx_isSSHEnabled
+        label: Enable SSH
+        type: boolean
+        userConfigurable: true
+    - property:
+        default: "false"
+        description: Allowing root SSH logins is not recommended for security reasons.
+        key: nsx_allowSSHRootLogin
+        label: Allow root SSH logins
+        type: boolean
+        userConfigurable: true
+    - property:
+        default: "false"
+        description: Software Integrity Checker is required only for NDcPP 2.2
+        key: nsx_swIntegrityCheck
+        label: Software Integrity Checker
+        type: boolean
+        userConfigurable: true
+    - category: Internal Properties - Do not set these parameters.
+    - property:
+        description: 'For internal use only. Do not set this parameter. '
+        key: mpIp
+        label: Manager IP
+        type: string
+        userConfigurable: true
+    - property:
+        description: 'For internal use only. Do not set this parameter. '
+        key: mpToken
+        label: Manager Token
+        password: true
+        type: string
+        userConfigurable: true
+    - property:
+        description: 'For internal use only. Do not set this parameter. '
+        key: mpThumbprint
+        label: Manager Thumbprint
+        type: string
+        userConfigurable: true
+    - property:
+        description: 'For internal use only. Do not set this parameter. '
+        key: mpNodeId
+        label: Manager Node ID
+        type: string
+        userConfigurable: true
+    - property:
+        description: 'For internal use only. Do not set this parameter. '
+        key: mpClusterId
+        label: Cluster ID of First Manager Cluster
+        type: string
+        userConfigurable: true
+    product: nsx-unified-appliance
+    property:
+    - description: 'The password for GRUB root user for this VM. '
+      key: nsx_grub_passwd
+      label: System GRUB Root User Password
+      password: true
+      type: string
+      userConfigurable: true
+    - description: 'The timeout to display GRUB menu for this VM. '
+      key: nsx_grub_menu_timeout
+      label: System GRUB menu timeout
+      type: string
+      userConfigurable: true
+    - description: "The password for root user for this VM.\nPlease follow the password
+        complexity rule as below:\n    - minimum of 8 characters in length\n    -
+        >=1 uppercase character\n    - >=1 lowercase character\n    - >=1 numeric
+        character\n    - >=1 special character\n    - >=5 unique characters\n    -
+        default password complexity rules as enforced by the Linux PAM module\n    NOTE:
+        Password strength validation will occur during VM boot.  If the password does
+        not meet the above criteria then login as root user for the change password
+        prompt to appear. "
+      key: nsx_passwd_0
+      label: System Root User Password
+      password: true
+      qualifiers: MinLen(8)
+      type: string
+      userConfigurable: true
+    - description: "The password for default CLI user for this VM.\nPlease follow
+        the password complexity rule as below:\n    - minimum of 8 characters in length\n
+        \   - >=1 uppercase character\n    - >=1 lowercase character\n    - >=1 numeric
+        character\n    - >=1 special character\n    - >=5 unique characters\n    -
+        default password complexity rules as enforced by the Linux PAM module\n    NOTE:
+        Password strength validation will occur during VM boot.  If the password does
+        not meet the above criteria then login as admin user for the change password
+        prompt to appear. "
+      key: nsx_cli_passwd_0
+      label: CLI "admin" User Password
+      password: true
+      qualifiers: MinLen(8)
+      type: string
+      userConfigurable: true
+    - description: "The password for audit CLI user for this VM.\nPlease follow the
+        password complexity rule as below:\n    - minimum of 8 characters in length\n
+        \   - >=1 uppercase character\n    - >=1 lowercase character\n    - >=1 numeric
+        character\n    - >=1 special character\n    - >=5 unique characters\n    -
+        default password complexity rules as enforced by the Linux PAM module\n    NOTE:
+        Password strength validation will occur during VM boot.  If the password does
+        not meet the above criteria then login as admin user and use the NSX CLI command
+        \"set user audit\" to change the audit user password. "
+      key: nsx_cli_audit_passwd_0
+      label: CLI "audit" User Password
+      password: true
+      type: string
+      userConfigurable: true
+    - description: Username of administrator user.
+      key: nsx_cli_username
+      label: 'CLI "admin" username (default: admin)'
+      type: string
+      userConfigurable: true
+    - description: Username of auditor user.
+      key: nsx_cli_audit_username
+      label: 'CLI "audit" username (default: audit)'
+      type: string
+      userConfigurable: true
+    - description: For internal use only.
+      key: extraPara
+      label: Optional parameters
+      password: true
+      type: string
+      userConfigurable: true
+    - description: "The hostname for this VM.\n    Valid characters for hostname are
+        A-Z, a-z, 0-9, dot (.) and hyphen (-). A hostname may not start with a hyphen.
+        Each element of the hostname must be from 1 to 63 characters long and the
+        entire hostname, including the dots, can be at most 253 characters long.\n
+        \   NOTE: If hostname contains invalid characters, then the appliance gets
+        deployed with 'nsx-manager' as hostname. "
+      key: nsx_hostname
+      label: Hostname
+      qualifiers: MinLen(1),MaxLen(253)
+      type: string
+      userConfigurable: true
+    - default: NSX Manager
+      description: 'The role for this VM. Currently supports ''NSX Global Manager''
+        OR ''NSX Manager'' as rolename. '
+      key: nsx_role
+      label: Rolename
+      qualifiers: ValueMap{"NSX Manager","NSX Global Manager"}
+      type: string
+      userConfigurable: true
+    - description: 'The IPv4 Address for the first interface. For IPv6-only deployments
+        use the value: None'
+      key: nsx_ip_0
+      label: Management Network IPv4 Address
+      qualifiers: MinLen(1)
+      type: string
+      userConfigurable: true
+    - description: 'The netmask for the first interface. For IPv6-only deployments
+        use the value: None'
+      key: nsx_netmask_0
+      label: Management Network Netmask
+      qualifiers: MinLen(1)
+      type: string
+      userConfigurable: true
+    - description: The default IPv4 gateway for this VM.
+      key: nsx_gateway_0
+      label: Default IPv4 Gateway
+      type: string
+      userConfigurable: true
+    - description: The IPv6 Address for the first interface.
+      key: nsx_ip6_0
+      label: Management Network IPv6 Address
+      type: string
+      userConfigurable: true
+    - description: The IPv6 netmask prefix for the first interface. (ex.- 64)
+      key: nsx_netmask6_0
+      label: Management IPv6 Network Netmask Prefix
+      type: string
+      userConfigurable: true
+    - description: The default IPv6 gateway for this VM.
+      key: nsx_gateway6_0
+      label: Default IPv6 Gateway
+      type: string
+      userConfigurable: true
+    - description: |-
+        The space separated DNS server list for this VM (valid only if an IPv4 address is specified for the first interface).
+            NOTE: At most three name servers can be configured (first 3 name servers passed in list will be used and all other will be ignored)
+      key: nsx_dns1_0
+      label: DNS Server list
+      type: string
+      userConfigurable: true
+    - description: The space separated domain search list for this VM (valid only
+        if an IPv4 address is specified for the first interface).
+      key: nsx_domain_0
+      label: Domain Search List
+      type: string
+      userConfigurable: true
+    - description: The NTP server list(space separated) for this VM.
+      key: nsx_ntp_0
+      label: NTP Server List
+      type: string
+      userConfigurable: true
+    - default: "false"
+      description: Enabling SSH service is not recommended for security reasons.
+      key: nsx_isSSHEnabled
+      label: Enable SSH
+      type: boolean
+      userConfigurable: true
+    - default: "false"
+      description: Allowing root SSH logins is not recommended for security reasons.
+      key: nsx_allowSSHRootLogin
+      label: Allow root SSH logins
+      type: boolean
+      userConfigurable: true
+    - default: "false"
+      description: Software Integrity Checker is required only for NDcPP 2.2
+      key: nsx_swIntegrityCheck
+      label: Software Integrity Checker
+      type: boolean
+      userConfigurable: true
+    - description: 'For internal use only. Do not set this parameter. '
+      key: mpIp
+      label: Manager IP
+      type: string
+      userConfigurable: true
+    - description: 'For internal use only. Do not set this parameter. '
+      key: mpToken
+      label: Manager Token
+      password: true
+      type: string
+      userConfigurable: true
+    - description: 'For internal use only. Do not set this parameter. '
+      key: mpThumbprint
+      label: Manager Thumbprint
+      type: string
+      userConfigurable: true
+    - description: 'For internal use only. Do not set this parameter. '
+      key: mpNodeId
+      label: Manager Node ID
+      type: string
+      userConfigurable: true
+    - description: 'For internal use only. Do not set this parameter. '
+      key: mpClusterId
+      label: Cluster ID of First Manager Cluster
+      type: string
+      userConfigurable: true
+    required: false
+    vendor: VMware, Inc
+    version: 9.1.0.0
+  - class: vami
+    info: VAMI Properties
+    instance: nsx-unified-appliance
+    required: false
+  - class: vm
+    info: VM specific properties
+    required: false
+  virtualHardwareSection:
+  - config:
+    - key: tools.syncTimeWithHost
+      required: false
+      value: "false"
+    extraConfig:
+    - key: time.synchronize.continue
+      value: "false"
+    - key: time.synchronize.restore
+      value: "false"
+    - key: time.synchronize.resume.disk
+      value: "false"
+    - key: time.synchronize.shrink
+      value: "false"
+    - key: time.synchronize.tools.startup
+      value: "false"
+    - key: ethernet0.rxDataRingEnabled
+      value: "0"
+    - key: ethernet1.rxDataRingEnabled
+      value: "0"
+    - key: ethernet2.rxDataRingEnabled
+      value: "0"
+    - key: ethernet3.rxDataRingEnabled
+      value: "0"
+    - key: isolation.tools.diskWiper.disable
+      value: "true"
+    - key: isolation.tools.memSchedFakeSampleStats.disable
+      value: "true"
+    - key: isolation.tools.diskShrink.disable
+      value: "true"
+    - key: isolation.tools.vmxDnDVersionGet.disable
+      value: "true"
+    - key: isolation.tools.unityActive.disable
+      value: "true"
+    - key: isolation.tools.guestDnDVersionSet.disable
+      value: "true"
+    - key: snapshot.maxSnapshots
+      value: "0"
+    - key: stealclock.enable
+      value: "true"
+    - key: RemoteDisplay.maxConnections
+      value: "1"
+    id: null
+    info: Virtual Hardware Requirements
+    item:
+    - allocationUnits: hertz * 10^9
+      configuration: small
+      description: Number of virtual CPUs
+      elementName: 4 virtual CPU
+      instanceID: "1"
+      reservation: 4
+      resourceType: 3
+      virtualQuantity: 4
+    - allocationUnits: hertz * 10^9
+      configuration: medium
+      description: Number of virtual CPUs
+      elementName: 6 virtual CPU
+      instanceID: "1"
+      reservation: 6
+      resourceType: 3
+      virtualQuantity: 6
+    - allocationUnits: hertz * 10^9
+      configuration: large
+      description: Number of virtual CPUs
+      elementName: 12 virtual CPU
+      instanceID: "1"
+      reservation: 12
+      resourceType: 3
+      virtualQuantity: 12
+    - allocationUnits: hertz * 10^9
+      configuration: xlarge
+      description: Number of virtual CPUs
+      elementName: 24 virtual CPU
+      instanceID: "1"
+      reservation: 24
+      resourceType: 3
+      virtualQuantity: 24
+    - allocationUnits: byte * 2^20
+      configuration: small
+      description: Memory Size
+      elementName: 16384 MB of memory
+      instanceID: "2"
+      reservation: 16384
+      resourceType: 4
+      virtualQuantity: 16384
+    - allocationUnits: byte * 2^20
+      configuration: medium
+      description: Memory Size
+      elementName: 24576 MB of memory
+      instanceID: "2"
+      reservation: 24576
+      resourceType: 4
+      virtualQuantity: 24576
+    - allocationUnits: byte * 2^20
+      configuration: large
+      description: Memory Size
+      elementName: 49152 MB of memory
+      instanceID: "2"
+      reservation: 49152
+      resourceType: 4
+      virtualQuantity: 49152
+    - allocationUnits: byte * 2^20
+      configuration: xlarge
+      description: Memory Size
+      elementName: 98304 MB of memory
+      instanceID: "2"
+      reservation: 98304
+      resourceType: 4
+      virtualQuantity: 98304
+    - automaticAllocation: true
+      connection:
+      - Network 1
+      elementName: Ethernet adapter on vmnet
+      instanceID: "3"
+      resourceSubType: VmxNet3
+      resourceType: 10
+    - address: "0"
+      elementName: SCSI Controller 0  - lsilogic
+      instanceID: "4"
+      resourceSubType: lsilogic
+      resourceType: 6
+    - addressOnParent: "0"
+      elementName: Harddisk 1
+      hostResource:
+      - ovf:/disk/system
+      instanceID: "5"
+      parent: "4"
+      resourceType: 17
+    - addressOnParent: "1"
+      elementName: Harddisk 2
+      hostResource:
+      - ovf:/disk/secondary
+      instanceID: "6"
+      parent: "4"
+      resourceType: 17
+    - addressOnParent: "2"
+      configuration: xlarge
+      elementName: Harddisk xlarge
+      hostResource:
+      - ovf:/disk/disk100GB
+      instanceID: "7"
+      parent: "4"
+      resourceType: 17
+    required: false
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemType: vmx-13 vmx-11 vmx-10
+    transport: com.vmware.guestInfo
+

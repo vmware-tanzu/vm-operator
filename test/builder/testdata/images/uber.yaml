@@ -53,13 +53,13 @@ networkSection:
   - description: The nat network
     name: nat
 references:
-- href: system.vmdk
+- href: disk0.vmdk
   id: system
   size: 10595840
-- href: data.vmdk
+- href: disk1.vmdk
   id: data
   size: 10595840
-- href: extra_data.vmdk
+- href: disk2.vmdk
   id: extra_data
   size: 10595840
 - href: uber.nvram

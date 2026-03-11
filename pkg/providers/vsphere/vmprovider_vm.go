@@ -66,6 +66,7 @@ import (
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
@@ -2431,6 +2432,28 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	return nil
 }
 
+// NormalizeVAppConfigExpressionProperties converts vAppProperty types from
+// expression and ip:network to string so they can be configured via vApp
+// bootstrap templating. Supervisor does not support vApp network expressions.
+func NormalizeVAppConfigExpressionProperties(configSpec *vimtypes.VirtualMachineConfigSpec) {
+	if configSpec == nil {
+		return
+	}
+	if bvac := configSpec.VAppConfig; bvac != nil {
+		if vac := bvac.GetVmConfigSpec(); vac != nil {
+			for i := range vac.Property {
+				if info := vac.Property[i].Info; info != nil {
+					if info.Type == "expression" || info.Type == "ip:network" {
+						info.Type = "string"
+						info.DefaultValue = ""
+						info.UserConfigurable = ptr.To(true)
+					}
+				}
+			}
+		}
+	}
+}
+
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
@@ -2540,6 +2563,11 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 
 	// Inherit the image's vAppConfig.
 	createArgs.ConfigSpec.VAppConfig = imgConfigSpec.VAppConfig
+
+	// Change any vAppProperty types from expression to string since the
+	// expressions are not supported as they are all to do with networking, and
+	// VM Service VMs rely on Supervisor networking, not vApp networking.
+	NormalizeVAppConfigExpressionProperties(&createArgs.ConfigSpec)
 
 	if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
 		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {

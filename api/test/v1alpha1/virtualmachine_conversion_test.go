@@ -81,9 +81,10 @@ func TestVirtualMachineConversion(t *testing.T) {
 				Image: &vmopv1.VirtualMachineImageRef{
 					Name: "my-name",
 				},
-				ImageName:    "my-name",
-				ClassName:    "my-class",
-				StorageClass: "my-storage-class",
+				ImageName:                 "my-name",
+				ClassName:                 "my-class",
+				StorageClass:              "my-storage-class",
+				VolumeAttributesClassName: "my-volume-attributes-class",
 				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 						RawCloudConfig: &vmopv1common.SecretKeySelector{

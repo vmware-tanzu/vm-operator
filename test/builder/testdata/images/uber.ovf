@@ -9,9 +9,9 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
   xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <References>
-    <File ovf:href="system.vmdk" ovf:id="system" ovf:size="10595840" />
-    <File ovf:href="data.vmdk" ovf:id="data" ovf:size="10595840" />
-    <File ovf:href="extra_data.vmdk" ovf:id="extra_data" ovf:size="10595840" />
+    <File ovf:href="disk0.vmdk" ovf:id="system" ovf:size="10595840" />
+    <File ovf:href="disk1.vmdk" ovf:id="data" ovf:size="10595840" />
+    <File ovf:href="disk2.vmdk" ovf:id="extra_data" ovf:size="10595840" />
     <File ovf:href="uber.nvram" ovf:id="nvram" ovf:size="8684" />
   </References>
   <DiskSection>

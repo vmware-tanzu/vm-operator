@@ -226,6 +226,10 @@ func fastDeploy(
 			fb.Datastore = &createArgs.Datastores[0].MoRef
 
 			if fb.FileName != "" {
+				if j >= len(dstDiskPaths) {
+					return nil, fmt.Errorf("invalid disk count")
+				}
+
 				// Only set the file name if it was non-empty
 				// already, otherwise this was a disk entry
 				// from the OVF that was meant to be an empty

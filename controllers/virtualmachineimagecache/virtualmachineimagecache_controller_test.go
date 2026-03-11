@@ -125,7 +125,7 @@ var _ = Describe(
 		assertConfigMapOVF := func(g Gomega, key ctrlclient.ObjectKey) {
 			var obj corev1.ConfigMap
 			g.ExpectWithOffset(1, vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
-			g.ExpectWithOffset(1, obj.Data["value"]).To(MatchYAML(ovfEnvelopeYAML))
+			g.ExpectWithOffset(1, obj.Data["value"]).To(MatchYAML(vcSimCtx.ContentLibraryItem1YAML))
 		}
 
 		assertLocationOVF := func(
@@ -157,20 +157,36 @@ var _ = Describe(
 				obj.Spec.ProviderVersion)
 
 			vmdkFileName := clsutil.GetCachedFileName(
-				"ttylinux-pc_i486-16.1-disk1.vmdk") + ".vmdk"
+				"disk0.vmdk") + ".vmdk"
 			vmdkFilePath := path.Join(itemCacheDir, vmdkFileName)
 
 			nvramFileName := clsutil.GetCachedFileName(
-				"ttylinux-pc_i486-16.1-2.nvram") + ".nvram"
+				"ttylinux-pc_i486-16.1.nvram") + ".nvram"
 			nvramFilePath := path.Join(itemCacheDir, nvramFileName)
 
 			g.ExpectWithOffset(1, status.Files).To(HaveLen(2))
-			g.ExpectWithOffset(1, status.Files[0].ID).To(Equal(vmdkFilePath))
-			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
-			g.ExpectWithOffset(1, status.Files[0].DiskType).To(Equal(vmopv1.VolumeTypeClassic))
-			g.ExpectWithOffset(1, status.Files[1].ID).To(Equal(nvramFilePath))
-			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
-			g.ExpectWithOffset(1, status.Files[1].DiskType).To(BeEmpty())
+
+			var (
+				vmdkFile  *vmopv1.VirtualMachineImageCacheFileStatus
+				nvramFile *vmopv1.VirtualMachineImageCacheFileStatus
+			)
+
+			for i := range status.Files {
+				file := &status.Files[i]
+				if file.ID == vmdkFilePath {
+					vmdkFile = file
+				} else if file.ID == nvramFilePath {
+					nvramFile = file
+				}
+			}
+
+			g.ExpectWithOffset(1, vmdkFile).ToNot(BeNil())
+			g.ExpectWithOffset(1, vmdkFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
+			g.ExpectWithOffset(1, vmdkFile.DiskType).To(Equal(vmopv1.VolumeTypeClassic))
+
+			g.ExpectWithOffset(1, nvramFile).ToNot(BeNil())
+			g.ExpectWithOffset(1, nvramFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
+			g.ExpectWithOffset(1, nvramFile.DiskType).To(BeEmpty())
 		}
 
 		assertLocationVM := func(
@@ -210,12 +226,28 @@ var _ = Describe(
 			nvramFilePath := path.Join(itemCacheDir, nvramFileName)
 
 			g.ExpectWithOffset(1, status.Files).To(HaveLen(2))
-			g.ExpectWithOffset(1, status.Files[0].ID).To(Equal(vmdkFilePath))
-			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
-			g.ExpectWithOffset(1, status.Files[0].DiskType).To(Equal(vmopv1.VolumeTypeClassic))
-			g.ExpectWithOffset(1, status.Files[1].ID).To(Equal(nvramFilePath))
-			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
-			g.ExpectWithOffset(1, status.Files[1].DiskType).To(BeEmpty())
+
+			var (
+				vmdkFile  *vmopv1.VirtualMachineImageCacheFileStatus
+				nvramFile *vmopv1.VirtualMachineImageCacheFileStatus
+			)
+
+			for i := range status.Files {
+				file := &status.Files[i]
+				if file.ID == vmdkFilePath {
+					vmdkFile = file
+				} else if file.ID == nvramFilePath {
+					nvramFile = file
+				}
+			}
+
+			g.ExpectWithOffset(1, vmdkFile).ToNot(BeNil())
+			g.ExpectWithOffset(1, vmdkFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
+			g.ExpectWithOffset(1, vmdkFile.DiskType).To(Equal(vmopv1.VolumeTypeClassic))
+
+			g.ExpectWithOffset(1, nvramFile).ToNot(BeNil())
+			g.ExpectWithOffset(1, nvramFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
+			g.ExpectWithOffset(1, nvramFile.DiskType).To(BeEmpty())
 		}
 
 		Context("Ordered", Ordered, func() {
@@ -1288,135 +1320,3 @@ func (m *fakeClient) CreateLibraryItem(
 	}
 	return nil
 }
-
-const ovfEnvelopeYAML = `
-diskSection:
-  disk:
-  - capacity: "30"
-    capacityAllocationUnits: byte * 2^20
-    diskId: vmdisk1
-    fileRef: file1
-    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
-    populatedSize: 18743296
-  info: Virtual disk information
-networkSection:
-  info: The list of logical networks
-  network:
-  - description: The nat network
-    name: nat
-references:
-- href: ttylinux-pc_i486-16.1-disk1.vmdk
-  id: file1
-  size: 10595840
-- href: ttylinux-pc_i486-16.1-2.nvram
-  id: file2
-  size: 8684
-virtualSystem:
-  id: vm
-  info: A virtual machine
-  name: ttylinux-pc_i486-16.1
-  operatingSystemSection:
-    id: 36
-    info: The kind of installed guest operating system
-    osType: otherLinuxGuest
-  productSection:
-  - fullVersion: v1.0.0
-    product: Linux
-    property:
-    - default: "1.15"
-      key: vmware-system.tkr.os-version
-      type: string
-    - default: dummy-value
-      key: dummy-key-configurable
-      type: string
-      userConfigurable: true
-    - default: dummy-value
-      key: dummy-key-not-configurable
-      type: string
-      userConfigurable: false
-    - default: dummy-value
-      key: dummy-key-not-configurable
-      type: string
-      userConfigurable: false
-    vendor: LinuxVendor
-    version: v1
-  virtualHardwareSection:
-  - config:
-    - key: firmware
-      required: false
-      value: efi
-    - key: powerOpInfo.powerOffType
-      required: false
-      value: soft
-    - key: powerOpInfo.resetType
-      required: false
-      value: soft
-    - key: powerOpInfo.suspendType
-      required: false
-      value: soft
-    - key: tools.syncTimeWithHost
-      required: false
-      value: "true"
-    - key: tools.toolsUpgradePolicy
-      required: false
-      value: upgradeAtPowerCycle
-    extraConfig:
-    - key: vmservice.vmi.labels
-      required: false
-      value: example.com/hello:world,fu.bar:,another.example.com:true
-    id: null
-    info: Virtual hardware requirements
-    item:
-    - allocationUnits: hertz * 10^6
-      description: Number of Virtual CPUs
-      elementName: 1 virtual CPU(s)
-      instanceID: "1"
-      resourceType: 3
-      virtualQuantity: 1
-    - allocationUnits: byte * 2^20
-      description: Memory Size
-      elementName: 32MB of memory
-      instanceID: "2"
-      resourceType: 4
-      virtualQuantity: 32
-    - address: "0"
-      description: IDE Controller
-      elementName: ideController0
-      instanceID: "3"
-      resourceType: 5
-    - addressOnParent: "0"
-      elementName: disk0
-      hostResource:
-      - ovf:/disk/vmdisk1
-      instanceID: "4"
-      parent: "3"
-      resourceType: 17
-    - addressOnParent: "1"
-      automaticAllocation: true
-      config:
-      - key: wakeOnLanEnabled
-        required: false
-        value: "false"
-      connection:
-      - nat
-      description: E1000 ethernet adapter on "nat"
-      elementName: ethernet0
-      instanceID: "5"
-      resourceSubType: E1000
-      resourceType: 10
-    - automaticAllocation: false
-      elementName: video
-      instanceID: "6"
-      required: false
-      resourceType: 24
-    - automaticAllocation: false
-      elementName: vmci
-      instanceID: "7"
-      required: false
-      resourceSubType: vmware.vmci
-      resourceType: 1
-    system:
-      elementName: Virtual Hardware Family
-      instanceID: "0"
-      virtualSystemIdentifier: ttylinux-pc_i486-16.1
-      virtualSystemType: vmx-09`

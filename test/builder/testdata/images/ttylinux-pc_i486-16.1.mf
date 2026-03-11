@@ -1,3 +1,3 @@
-4f704f2e3b30ab2a6e65c079daf85cc0e36f34c0  ttylinux-pc_i486-16.1.ovf
+5aee05417ba3751000da58550bd0042d0245329d  ttylinux-pc_i486-16.1.ovf
 701e98837a28018430889f021571d171ba2252c4  ttylinux-pc_i486-16.1.nvram
-ed64564a37366bfe1c93af80e2ead0cbd398c3d3  system.vmdk
+2b256ff1b92df8faa1b2b2b3aabf36e2b2f2a4d1  disk0.vmdk

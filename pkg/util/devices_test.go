@@ -312,10 +312,18 @@ var _ = Describe("GetPreferredDiskFormat", func() {
 			vimtypes.DatastoreSectorFormat(""),
 		),
 		Entry(
-			"4kn is available",
+			"both 4kn and native 512 are available",
 			[]string{
 				string(vimtypes.DatastoreSectorFormatEmulated_512),
 				string(vimtypes.DatastoreSectorFormatNative_512),
+				string(vimtypes.DatastoreSectorFormatNative_4k),
+			},
+			vimtypes.DatastoreSectorFormatNative_512,
+		),
+		Entry(
+			"only 4kn is available",
+			[]string{
+				string(vimtypes.DatastoreSectorFormatEmulated_512),
 				string(vimtypes.DatastoreSectorFormatNative_4k),
 			},
 			vimtypes.DatastoreSectorFormatNative_4k,
@@ -347,10 +355,18 @@ var _ = Describe("GetPreferredDiskFormat", func() {
 			vimtypes.DatastoreSectorFormat(""),
 		),
 		Entry(
-			"4kn is available",
+			"both 4kn and native 512 are available",
 			[]vimtypes.DatastoreSectorFormat{
 				vimtypes.DatastoreSectorFormatEmulated_512,
 				vimtypes.DatastoreSectorFormatNative_512,
+				vimtypes.DatastoreSectorFormatNative_4k,
+			},
+			vimtypes.DatastoreSectorFormatNative_512,
+		),
+		Entry(
+			"only 4kn is available",
+			[]vimtypes.DatastoreSectorFormat{
+				vimtypes.DatastoreSectorFormatEmulated_512,
 				vimtypes.DatastoreSectorFormatNative_4k,
 			},
 			vimtypes.DatastoreSectorFormatNative_4k,

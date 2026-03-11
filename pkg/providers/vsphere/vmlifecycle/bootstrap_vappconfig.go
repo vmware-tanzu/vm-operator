@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -84,8 +85,8 @@ func GetOVFVAppConfigForConfigSpec(
 const maxVAppPropStringLen = 65535
 
 var (
-	strWithMinLenRx      = regexp.MustCompile(`^(?:string|password)\(\.\.(\d+)\)$`)
-	strWithMaxLenRx      = regexp.MustCompile(`^(?:string|password)\((\d+)\.\.\)$`)
+	strWithMinLenRx      = regexp.MustCompile(`^(?:string|password)\((\d+)\.\.\)$`)
+	strWithMaxLenRx      = regexp.MustCompile(`^(?:string|password)\(\.\.(\d+)\)$`)
 	strWithMinMaxLenRx   = regexp.MustCompile(`^(?:string|password)\((\d+)\.\.(\d+)\)$`)
 	intWithMinMaxSizeRx  = regexp.MustCompile(`^int\(([+-]?\d+)\.\.([+-]?\d+)\)$`)
 	realWithMinMaxSizeRx = regexp.MustCompile(`^real\(([+-]?(?:\d+(?:\.\d*)?|\.\d+))\.\.([+-]?(?:\d+(?:\.\d*)?|\.\d+))\)$`)
@@ -164,27 +165,22 @@ func GetMergedvAppConfigSpec(
 			}
 			p.Value = val
 
-		case "ip:network":
-			//
-			// An IP address in dot-notation (IPv4) and colon-hexadecimal (IPv6)
-			// on a particular network. The behavior of this type depends on the
-			// ipAllocationPolicy.
-			//
-
-			// TODO(akutz) Figure out the correct parsing strategy.
-			p.Value = val
-
 		case "expression":
 			//
-			// The default value specifies an expression that is calculated
-			// by the system.
+			// These should not appear; they should be dropped before they get
+			// here.
 			//
-
-			// TODO(akutz) Figure out the correct parsing strategy.
-			p.Value = val
+			return nil, newParseUnsupportedTypeErr(p, val)
 
 		default:
-			if m := strWithMinLenRx.FindStringSubmatch(p.Type); len(m) > 0 {
+			if strings.HasPrefix(p.Type, "ip:") {
+				//
+				// These should not appear; they should be dropped before they get
+				// here.
+				//
+				return nil, newParseUnsupportedTypeErr(p, val)
+
+			} else if m := strWithMinLenRx.FindStringSubmatch(p.Type); len(m) > 0 {
 				//
 				// A string with minimum character length x.
 				//
@@ -315,6 +311,15 @@ func newParseErr(p vimtypes.VAppPropertyInfo, val string) error {
 		p.Id,
 		p.Type,
 		val)
+}
+
+func newParseUnsupportedTypeErr(p vimtypes.VAppPropertyInfo, val string) error {
+	return fmt.Errorf(
+		"failed to parse unsupported prop=%q, type=%s, value=%v, reason=%s",
+		p.Id,
+		p.Type,
+		val,
+		"unsupported type")
 }
 
 func newParseLenErr(p vimtypes.VAppPropertyInfo, actLen, minLen, maxLen int) error {

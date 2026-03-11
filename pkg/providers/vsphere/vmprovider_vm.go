@@ -2443,7 +2443,9 @@ func NormalizeVAppConfigExpressionProperties(configSpec *vimtypes.VirtualMachine
 		if vac := bvac.GetVmConfigSpec(); vac != nil {
 			for i := range vac.Property {
 				if info := vac.Property[i].Info; info != nil {
-					if info.Type == "expression" || info.Type == "ip:network" {
+					if info.Type == "expression" ||
+						strings.HasPrefix(info.Type, "ip:") {
+
 						info.Type = "string"
 						info.DefaultValue = ""
 						info.UserConfigurable = ptr.To(true)

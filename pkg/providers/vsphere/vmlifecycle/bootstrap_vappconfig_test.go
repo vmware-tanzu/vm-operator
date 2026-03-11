@@ -409,29 +409,21 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 			nil,
 			fmt.Errorf("failed to parse prop=%q, type=%s, value=%v", "ip-prop", "ip", "2001:db8::1:::::::::"),
 		),
-		Entry("ip:network type with valid value",
+		Entry("ip:network type returns unsupported error",
 			map[string]string{"ip-network-prop": "192.168.1.0/24"},
 			[]vimtypes.VAppPropertyInfo{
 				{Key: 1, Id: "ip-network-prop", Value: "0.0.0.0/0", Type: "ip:network", UserConfigurable: ptr.To(true)},
 			},
-			&vimtypes.VmConfigSpec{
-				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "ip-network-prop", Value: "192.168.1.0/24", Type: "ip:network"}},
-				},
-			},
 			nil,
+			fmt.Errorf("failed to parse unsupported prop=%q, type=%s, value=%v, reason=%s", "ip-network-prop", "ip:network", "192.168.1.0/24", "unsupported type"),
 		),
-		Entry("expression type with valid value",
+		Entry("expression type returns unsupported error",
 			map[string]string{"expr-prop": "some-expression"},
 			[]vimtypes.VAppPropertyInfo{
 				{Key: 1, Id: "expr-prop", Value: "old-expr", Type: "expression", UserConfigurable: ptr.To(true)},
 			},
-			&vimtypes.VmConfigSpec{
-				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "expr-prop", Value: "some-expression", Type: "expression"}},
-				},
-			},
 			nil,
+			fmt.Errorf("failed to parse unsupported prop=%q, type=%s, value=%v, reason=%s", "expr-prop", "expression", "some-expression", "unsupported type"),
 		),
 		// Error tests for basic types
 		Entry("string type with value too long",
@@ -482,15 +474,15 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 			nil,
 			fmt.Errorf("failed to parse prop=%q, type=%s, value=%v", "ip-prop", "ip", "192.168.1.1/33"),
 		),
-		// Regex-based type tests
+		// Regex-based type tests (OVF: string(N..)=min length N, string(..N)=max length N)
 		Entry("string with minimum length - valid",
 			map[string]string{"str-min-prop": "abc"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "str-min-prop", Value: "a", Type: "string(..3)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "str-min-prop", Value: "a", Type: "string(3..)", UserConfigurable: ptr.To(true)},
 			},
 			&vimtypes.VmConfigSpec{
 				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-min-prop", Value: "abc", Type: "string(..3)"}},
+					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-min-prop", Value: "abc", Type: "string(3..)"}},
 				},
 			},
 			nil,
@@ -498,19 +490,19 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		Entry("string with minimum length - invalid",
 			map[string]string{"str-min-prop": "ab"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "str-min-prop", Value: "a", Type: "string(..3)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "str-min-prop", Value: "a", Type: "string(3..)", UserConfigurable: ptr.To(true)},
 			},
 			nil,
-			fmt.Errorf("failed to parse prop=%q, type=%s due to length: len=%d, min=%d, max=%d", "str-min-prop", "string(..3)", 2, 3, 65535),
+			fmt.Errorf("failed to parse prop=%q, type=%s due to length: len=%d, min=%d, max=%d", "str-min-prop", "string(3..)", 2, 3, 65535),
 		),
 		Entry("string with maximum length - valid",
 			map[string]string{"str-max-prop": "abc"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "str-max-prop", Value: "a", Type: "string(3..)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "str-max-prop", Value: "a", Type: "string(..3)", UserConfigurable: ptr.To(true)},
 			},
 			&vimtypes.VmConfigSpec{
 				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-max-prop", Value: "abc", Type: "string(3..)"}},
+					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-max-prop", Value: "abc", Type: "string(..3)"}},
 				},
 			},
 			nil,
@@ -518,10 +510,10 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		Entry("string with maximum length - invalid",
 			map[string]string{"str-max-prop": "abcd"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "str-max-prop", Value: "a", Type: "string(3..)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "str-max-prop", Value: "a", Type: "string(..3)", UserConfigurable: ptr.To(true)},
 			},
 			nil,
-			fmt.Errorf("failed to parse prop=%q, type=%s due to length: len=%d, min=%d, max=%d", "str-max-prop", "string(3..)", 4, 0, 3),
+			fmt.Errorf("failed to parse prop=%q, type=%s due to length: len=%d, min=%d, max=%d", "str-max-prop", "string(..3)", 4, 0, 3),
 		),
 		Entry("string with min/max length - valid",
 			map[string]string{"str-range-prop": "abc"},
@@ -707,11 +699,11 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		Entry("password with minimum length - valid",
 			map[string]string{"pass-min-prop": "abc"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "pass-min-prop", Value: "a", Type: "password(..3)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "pass-min-prop", Value: "a", Type: "password(3..)", UserConfigurable: ptr.To(true)},
 			},
 			&vimtypes.VmConfigSpec{
 				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "pass-min-prop", Value: "abc", Type: "password(..3)"}},
+					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "pass-min-prop", Value: "abc", Type: "password(3..)"}},
 				},
 			},
 			nil,
@@ -719,11 +711,11 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		Entry("password with maximum length - valid",
 			map[string]string{"pass-max-prop": "abc"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "pass-max-prop", Value: "a", Type: "password(3..)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "pass-max-prop", Value: "a", Type: "password(..3)", UserConfigurable: ptr.To(true)},
 			},
 			&vimtypes.VmConfigSpec{
 				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "pass-max-prop", Value: "abc", Type: "password(3..)"}},
+					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "pass-max-prop", Value: "abc", Type: "password(..3)"}},
 				},
 			},
 			nil,
@@ -804,11 +796,11 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		Entry("string with exact max length",
 			map[string]string{"str-max-prop": "abc"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "str-max-prop", Value: "a", Type: "string(3..)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "str-max-prop", Value: "a", Type: "string(..3)", UserConfigurable: ptr.To(true)},
 			},
 			&vimtypes.VmConfigSpec{
 				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-max-prop", Value: "abc", Type: "string(3..)"}},
+					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-max-prop", Value: "abc", Type: "string(..3)"}},
 				},
 			},
 			nil,
@@ -816,11 +808,11 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		Entry("string with exact min length",
 			map[string]string{"str-min-prop": "abc"},
 			[]vimtypes.VAppPropertyInfo{
-				{Key: 1, Id: "str-min-prop", Value: "a", Type: "string(..3)", UserConfigurable: ptr.To(true)},
+				{Key: 1, Id: "str-min-prop", Value: "a", Type: "string(3..)", UserConfigurable: ptr.To(true)},
 			},
 			&vimtypes.VmConfigSpec{
 				Property: []vimtypes.VAppPropertySpec{
-					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-min-prop", Value: "abc", Type: "string(..3)"}},
+					{Info: &vimtypes.VAppPropertyInfo{Key: 1, Id: "str-min-prop", Value: "abc", Type: "string(3..)"}},
 				},
 			},
 			nil,

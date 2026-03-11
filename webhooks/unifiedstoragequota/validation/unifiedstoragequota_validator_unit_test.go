@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
@@ -822,11 +823,39 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 				})
 
 				When("disks section is empty in image status", func() {
-					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
-						Expect(resp.Allowed).To(BeFalse())
-						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
-
-						Expect(resp.RequestedCapacities).To(BeNil())
+					BeforeEach(func() {
+						vmi.Status.Type = "OVF"
+					})
+					When("vmi is ready", func() {
+						BeforeEach(func() {
+							pkgcond.MarkTrue(vmi, vmopv1.ReadyConditionType)
+						})
+						It("should write StatusOK code and an empty RequestedCapacity to the response", func() {
+							Expect(resp.Allowed).To(BeTrue())
+							Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+						})
+					})
+					When("vmi is not ready", func() {
+						When("condition is missing", func() {
+							BeforeEach(func() {
+								pkgcond.Delete(vmi, vmopv1.ReadyConditionType)
+							})
+							It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
+								Expect(resp.Allowed).To(BeFalse())
+								Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+								Expect(resp.RequestedCapacities).To(BeNil())
+							})
+						})
+						When("condition is not true", func() {
+							BeforeEach(func() {
+								pkgcond.MarkFalse(vmi, vmopv1.ReadyConditionType, "hello", "world")
+							})
+							It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
+								Expect(resp.Allowed).To(BeFalse())
+								Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+								Expect(resp.RequestedCapacities).To(BeNil())
+							})
+						})
 					})
 				})
 

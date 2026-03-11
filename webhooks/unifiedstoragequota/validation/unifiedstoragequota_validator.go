@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -259,10 +260,17 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 		return CapacityResponse{Response: webhook.Allowed("")}
 	}
 
-	if len(imageStatus.Disks) < 1 {
+	// Allow images through if they are marked ready and have no associated
+	// disks.
+	if pkgcond.IsTrue(imageStatus, vmopv1.ReadyConditionType) {
+		if len(imageStatus.Disks) < 1 {
+			return CapacityResponse{Response: webhook.Allowed("")}
+		}
+	} else if len(imageStatus.Disks) < 1 {
 		return CapacityResponse{
 			Response: webhook.Errored(http.StatusNotFound,
-				fmt.Errorf("no disks found in image %q status.disks", vm.Spec.Image.Name),
+				fmt.Errorf("no disks found in image %q status.disks",
+					vm.Spec.Image.Name),
 			)}
 	}
 

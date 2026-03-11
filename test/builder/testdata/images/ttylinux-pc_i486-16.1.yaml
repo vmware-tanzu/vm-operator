@@ -13,7 +13,7 @@ networkSection:
   - description: The nat network
     name: nat
 references:
-- href: system.vmdk
+- href: disk0.vmdk
   id: file1
   size: 10595840
 - href: ttylinux-pc_i486-16.1.nvram

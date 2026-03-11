@@ -1,0 +1,391 @@
+diskSection:
+  disk:
+  - capacity: "4"
+    capacityAllocationUnits: byte * 2^30
+    diskId: vmdisk0
+    fileRef: file0
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 704643072
+  - capacity: "4"
+    capacityAllocationUnits: byte * 2^30
+    diskId: vmdisk1
+    fileRef: file1
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+    populatedSize: 0
+  - capacity: "4"
+    capacityAllocationUnits: byte * 2^30
+    diskId: vmdisk2
+    fileRef: ""
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+  info: Virtual disk information
+networkSection:
+  info: Virtual Networks
+  network:
+  - description: The Network 1 Network
+    name: Network 1
+references:
+- href: Vcf-License-Server-9.1.0.0.25262073-disk1.vmdk
+  id: file0
+  size: 699083264
+- href: Vcf-License-Server-9.1.0.0.25262073-disk2.vmdk
+  id: file1
+  size: 68096
+virtualSystem:
+  annotationSection:
+    annotation: VCF License Server Appliance
+    info: Information about the installed software
+  id: vm
+  info: Virtual System
+  name: VCF License Server Appliance
+  operatingSystemSection:
+    id: 100
+    info: Operating System
+    osType: vmwarePhoton64Guest
+  productSection:
+  - category: Advanced Configuration
+    fullVersion: 9.1.0.0_Build_25262073
+    info: Information about the installed software
+    items:
+    - category: Application
+    - property:
+        description: The hostname for this VM. Must be resolvable by the vCenter server.
+          Leave blank to try to reverse lookup the IP address.
+        key: hostname
+        label: Hostname
+        type: string
+        userConfigurable: true
+    - property:
+        description: |
+          You can get the unique registration key from VCF Operations under licensing:
+          1. Open VMware Cloud Foundation Operations service.
+          2. Navigate to Licensing > Licenses & Registration > Manage > License Servers > Add License Server
+          3. Copy the generated OTK
+        key: otk
+        label: Unique Registration Key
+        qualifiers: MinLen(2),MaxLen(65535)
+        type: string
+        userConfigurable: true
+    - category: Networking Properties
+    - property:
+        description: The default gateway address for this VM. Leave blank if DHCP
+          is desired.
+        key: gateway.VCF_License_Server_Appliance
+        label: Default Gateway
+        type: string
+        userConfigurable: true
+    - property:
+        description: The domain name of this VM. Leave blank if DHCP is desired.
+        key: domain.VCF_License_Server_Appliance
+        label: Domain Name
+        type: string
+        userConfigurable: true
+    - property:
+        description: The domain search path (comma or space separated domain names)
+          for this VM. Leave blank if DHCP is desired.
+        key: searchpath.VCF_License_Server_Appliance
+        label: Domain Search Path
+        type: string
+        userConfigurable: true
+    - property:
+        description: The domain name server IP Addresses for this VM (comma separated).
+          Leave blank if DHCP is desired.
+        key: dns.VCF_License_Server_Appliance
+        label: Domain Name Servers
+        type: string
+        userConfigurable: true
+    - property:
+        description: The IP address for this interface. Leave blank if DHCP is desired.
+        key: ip0.VCF_License_Server_Appliance
+        label: Network 1 IP Address
+        type: string
+        userConfigurable: true
+    - property:
+        description: The netmask or prefix for this interface. Leave blank if DHCP
+          is desired.
+        key: netmask0.VCF_License_Server_Appliance
+        label: Network 1 IP Netmask
+        type: string
+        userConfigurable: true
+    - property:
+        description: IP address of the HTTP/HTTPS egress proxy to be used. Leave blank
+          if proxy is not needed.
+        key: proxy_ip
+        label: Egress proxy IP
+        type: string
+        userConfigurable: true
+    - property:
+        description: The port number of the HTTP/HTTPS egress proxy to be used. Leave
+          blank if proxy is not needed.
+        key: proxy_port
+        label: Egress proxy port
+        type: string
+        userConfigurable: true
+    - property:
+        description: The username for the HTTP/HTTPS egress proxy to be used. Leave
+          blank if proxy is not needed or username not required to connect to the
+          proxy.
+        key: proxy_username
+        label: Egress proxy username
+        type: string
+        userConfigurable: true
+    - property:
+        description: The password for the HTTP/HTTPS egress proxy to be used. Leave
+          blank if proxy is not needed or password not required to connect to the
+          proxy.
+        key: proxy_password
+        label: Egress proxy password
+        password: true
+        type: string
+        userConfigurable: true
+    - category: Advanced Configuration
+    - property:
+        description: In limited cases, API interaction may be needed to configure
+          the license server before registering with VCF Business Services console
+          for licensing. The API Key is used for these APIs, and these APIs are only
+          available before licensing is complete. If you are not directed to use these
+          APIs by Broadcom, this can be left blank.
+        key: api_key
+        label: API Key
+        type: string
+        userConfigurable: true
+    product: VCF License Server Appliance
+    property:
+    - description: The hostname for this VM. Must be resolvable by the vCenter server.
+        Leave blank to try to reverse lookup the IP address.
+      key: hostname
+      label: Hostname
+      type: string
+      userConfigurable: true
+    - description: |
+        You can get the unique registration key from VCF Operations under licensing:
+        1. Open VMware Cloud Foundation Operations service.
+        2. Navigate to Licensing > Licenses & Registration > Manage > License Servers > Add License Server
+        3. Copy the generated OTK
+      key: otk
+      label: Unique Registration Key
+      qualifiers: MinLen(2),MaxLen(65535)
+      type: string
+      userConfigurable: true
+    - description: The default gateway address for this VM. Leave blank if DHCP is
+        desired.
+      key: gateway.VCF_License_Server_Appliance
+      label: Default Gateway
+      type: string
+      userConfigurable: true
+    - description: The domain name of this VM. Leave blank if DHCP is desired.
+      key: domain.VCF_License_Server_Appliance
+      label: Domain Name
+      type: string
+      userConfigurable: true
+    - description: The domain search path (comma or space separated domain names)
+        for this VM. Leave blank if DHCP is desired.
+      key: searchpath.VCF_License_Server_Appliance
+      label: Domain Search Path
+      type: string
+      userConfigurable: true
+    - description: The domain name server IP Addresses for this VM (comma separated).
+        Leave blank if DHCP is desired.
+      key: dns.VCF_License_Server_Appliance
+      label: Domain Name Servers
+      type: string
+      userConfigurable: true
+    - description: The IP address for this interface. Leave blank if DHCP is desired.
+      key: ip0.VCF_License_Server_Appliance
+      label: Network 1 IP Address
+      type: string
+      userConfigurable: true
+    - description: The netmask or prefix for this interface. Leave blank if DHCP is
+        desired.
+      key: netmask0.VCF_License_Server_Appliance
+      label: Network 1 IP Netmask
+      type: string
+      userConfigurable: true
+    - description: IP address of the HTTP/HTTPS egress proxy to be used. Leave blank
+        if proxy is not needed.
+      key: proxy_ip
+      label: Egress proxy IP
+      type: string
+      userConfigurable: true
+    - description: The port number of the HTTP/HTTPS egress proxy to be used. Leave
+        blank if proxy is not needed.
+      key: proxy_port
+      label: Egress proxy port
+      type: string
+      userConfigurable: true
+    - description: The username for the HTTP/HTTPS egress proxy to be used. Leave
+        blank if proxy is not needed or username not required to connect to the proxy.
+      key: proxy_username
+      label: Egress proxy username
+      type: string
+      userConfigurable: true
+    - description: The password for the HTTP/HTTPS egress proxy to be used. Leave
+        blank if proxy is not needed or password not required to connect to the proxy.
+      key: proxy_password
+      label: Egress proxy password
+      password: true
+      type: string
+      userConfigurable: true
+    - description: In limited cases, API interaction may be needed to configure the
+        license server before registering with VCF Business Services console for licensing.
+        The API Key is used for these APIs, and these APIs are only available before
+        licensing is complete. If you are not directed to use these APIs by Broadcom,
+        this can be left blank.
+      key: api_key
+      label: API Key
+      type: string
+      userConfigurable: true
+    vendor: Broadcom Inc.
+    version: 9.1.0.0
+  - class: vm
+    info: Information about the installed software
+    items:
+    - property:
+        default: VCF_License_Server_Appliance
+        key: vmname
+        type: string
+    property:
+    - default: VCF_License_Server_Appliance
+      key: vmname
+      type: string
+  virtualHardwareSection:
+  - config:
+    - key: bootOptions.efiSecureBootEnabled
+      required: false
+      value: "true"
+    - key: cpuHotAddEnabled
+      required: false
+      value: "false"
+    - key: cpuHotRemoveEnabled
+      required: false
+      value: "false"
+    - key: firmware
+      required: false
+      value: efi
+    - key: flags.vbsEnabled
+      required: false
+      value: "false"
+    - key: flags.vvtdEnabled
+      required: false
+      value: "false"
+    - key: memoryHotAddEnabled
+      required: false
+      value: "false"
+    - key: nestedHVEnabled
+      required: false
+      value: "false"
+    - key: powerOpInfo.powerOffType
+      required: false
+      value: soft
+    - key: powerOpInfo.resetType
+      required: false
+      value: soft
+    - key: powerOpInfo.standbyAction
+      required: false
+      value: checkpoint
+    - key: powerOpInfo.suspendType
+      required: false
+      value: hard
+    - key: tools.afterPowerOn
+      required: false
+      value: "true"
+    - key: tools.afterResume
+      required: false
+      value: "true"
+    - key: tools.beforeGuestShutdown
+      required: false
+      value: "true"
+    - key: tools.beforeGuestStandby
+      required: false
+      value: "true"
+    - key: tools.syncTimeWithHost
+      required: false
+      value: "false"
+    - key: tools.toolsUpgradePolicy
+      required: false
+      value: manual
+    - key: virtualICH7MPresent
+      required: false
+      value: "false"
+    - key: virtualSMCPresent
+      required: false
+      value: "false"
+    extraConfig:
+    - key: vmGenCounter.enable
+      value: "TRUE"
+    - key: disk.EnableUUID
+      value: "TRUE"
+    id: null
+    info: Virtual Hardware
+    item:
+    - allocationUnits: hertz * 10^6
+      description: Virtual CPUs
+      elementName: cpus
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 2
+    - allocationUnits: byte * 2^20
+      description: Virtual Memory
+      elementName: memory
+      instanceID: "2"
+      resourceType: 4
+      virtualQuantity: 4096
+    - description: IDE Controller
+      elementName: sata1
+      instanceID: "3"
+      resourceType: 5
+    - description: SCSI Controller
+      elementName: scsi1
+      instanceID: "4"
+      resourceSubType: lsilogic
+      resourceType: 6
+    - addressOnParent: "0"
+      description: Hard Disk
+      elementName: rootdisk
+      hostResource:
+      - ovf:/disk/vmdisk0
+      instanceID: "5"
+      parent: "4"
+      resourceType: 17
+    - addressOnParent: "1"
+      description: Hard Disk
+      elementName: datadisk
+      hostResource:
+      - ovf:/disk/vmdisk1
+      instanceID: "6"
+      parent: "4"
+      resourceType: 17
+    - addressOnParent: "2"
+      description: Hard Disk
+      elementName: newrootdisk
+      hostResource:
+      - ovf:/disk/vmdisk2
+      instanceID: "7"
+      parent: "4"
+      resourceType: 17
+    - automaticAllocation: true
+      config:
+      - key: connectable.allowGuestControl
+        required: false
+        value: "true"
+      - key: wakeOnLanEnabled
+        required: false
+        value: "false"
+      connection:
+      - Network 1
+      description: Ethernet Adapter
+      elementName: ethernet1
+      instanceID: "8"
+      resourceSubType: VmxNet3
+      resourceType: 10
+    - description: VMCI
+      elementName: vmci1
+      instanceID: "9"
+      resourceSubType: vmware.vmci
+      resourceType: 1
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemIdentifier: VCF License Server Appliance
+      virtualSystemType: vmx-13
+    transport: com.vmware.guestInfo
+

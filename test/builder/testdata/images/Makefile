@@ -1,15 +1,11 @@
 ALL: build
 
-DISK_1 := system.vmdk
-DISK_2 := data.vmdk
-DISK_3 := extra_data.vmdk
-
 IMAGE_1_NAME := ttylinux-pc_i486-16.1
-IMAGE_1_DISKS := $(DISK_1)
+IMAGE_1_DISKS := disk0.vmdk
 IMAGE_1_NVRAM := $(IMAGE_1_NAME).nvram
 
 IMAGE_2_NAME := uber
-IMAGE_2_DISKS := $(DISK_1) $(DISK_2) $(DISK_3)
+IMAGE_2_DISKS := disk0.vmdk disk1.vmdk disk2.vmdk
 IMAGE_2_NVRAM := $(IMAGE_2_NAME).nvram
 
 OVAS := $(IMAGE_1_NAME).ova $(IMAGE_2_NAME).ova
@@ -40,6 +36,20 @@ $(IMAGE_2_NAME).yaml: $(IMAGE_2_NAME).ovf
 	go run ./ovf2yaml.go $(?) >$(@)
 
 build: $(OVAS) $(YAML)
+	$(MAKE) -C vmware/vcsa $(@)
+	$(MAKE) -C vmware/esx $(@)
+	$(MAKE) -C vmware/nsx $(@)
+	$(MAKE) -C vmware/o11n $(@)
+	$(MAKE) -C vmware/opapp $(@)
+	$(MAKE) -C vmware/opcp $(@)
+	$(MAKE) -C vmware/vcfls $(@)
 
 clean:
 	rm -f $(OVAS)
+	$(MAKE) -C vmware/vcsa $(@)
+	$(MAKE) -C vmware/esx $(@)
+	$(MAKE) -C vmware/nsx $(@)
+	$(MAKE) -C vmware/o11n $(@)
+	$(MAKE) -C vmware/opapp $(@)
+	$(MAKE) -C vmware/opcp $(@)
+	$(MAKE) -C vmware/vcfls $(@)

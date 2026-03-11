@@ -7,18 +7,13 @@ package main
 import (
 	"fmt"
 	"os"
-	"path"
 
-	"github.com/vmware-tanzu/vm-operator/test/testutil"
 	"github.com/vmware/govmomi/ovf"
 	"sigs.k8s.io/yaml"
 )
 
 func main() {
-	f, err := os.Open(path.Join(
-		testutil.GetRootDirOrDie(),
-		"test", "builder", "testdata",
-		"images", os.Args[1]))
+	f, err := os.Open(os.Args[1])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

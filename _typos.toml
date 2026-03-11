@@ -16,6 +16,9 @@ extend-exclude = [
     # There are typos in these directories but since they are pulled from external sources.
     "**/pkg/util/netplan/**",
     "**/pkg/util/cloudinit/**",
+    # Ignore OVFs.
+    "**/test/builder/testdata/**/*.ovf",
+    "**/test/builder/testdata/**/*.yaml",
 ]
 
 [default.extend-words]

@@ -1,0 +1,212 @@
+diskSection:
+  disk:
+  - capacity: "32"
+    capacityAllocationUnits: byte * 2^30
+    diskId: vmdisk1
+    fileRef: file1
+    format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
+  info: Virtual disk information
+networkSection:
+  info: The list of logical networks
+  network:
+  - description: The vxw-dvs-34-virtualwire-3-sid-1300002-sc2-01-tr-build01-vc30-dynamic
+      network
+    name: vxw-dvs-34-virtualwire-3-sid-1300002-sc2-01-tr-build01-vc30-dynamic
+references:
+- href: disk-0.vmdk
+  id: file1
+  size: 706671104
+virtualSystem:
+  annotationSection:
+    annotation: ESX VM
+    info: A human-readable annotation
+    required: false
+  id: esxvm-sb-62272164-rZ0
+  info: A virtual machine
+  name: esxvm-sb-62272164-rZ0
+  operatingSystemSection:
+    description: VMware ESXi 8.x
+    id: 104
+    info: The kind of installed guest operating system
+    osType: vmkernel8Guest
+    version: "8"
+  virtualHardwareSection:
+  - config:
+    - key: cpuHotAddEnabled
+      required: false
+      value: "false"
+    - key: cpuHotRemoveEnabled
+      required: false
+      value: "false"
+    - key: memoryHotAddEnabled
+      required: false
+      value: "false"
+    - key: firmware
+      required: false
+      value: efi
+    - key: cpuAllocation.shares.shares
+      required: false
+      value: "2000"
+    - key: cpuAllocation.shares.level
+      required: false
+      value: normal
+    - key: tools.syncTimeWithHost
+      required: false
+      value: "false"
+    - key: tools.afterPowerOn
+      required: false
+      value: "true"
+    - key: tools.afterResume
+      required: false
+      value: "true"
+    - key: tools.beforeGuestShutdown
+      required: false
+      value: "true"
+    - key: tools.beforeGuestStandby
+      required: false
+      value: "true"
+    - key: tools.toolsUpgradePolicy
+      required: false
+      value: manual
+    - key: powerOpInfo.powerOffType
+      required: false
+      value: soft
+    - key: powerOpInfo.resetType
+      required: false
+      value: soft
+    - key: powerOpInfo.suspendType
+      required: false
+      value: hard
+    - key: nestedHVEnabled
+      required: false
+      value: "true"
+    - key: virtualICH7MPresent
+      required: false
+      value: "false"
+    - key: virtualSMCPresent
+      required: false
+      value: "false"
+    - key: flags.vvtdEnabled
+      required: false
+      value: "false"
+    - key: flags.vbsEnabled
+      required: false
+      value: "false"
+    - key: bootOptions.efiSecureBootEnabled
+      required: false
+      value: "false"
+    - key: powerOpInfo.standbyAction
+      required: false
+      value: checkpoint
+    extraConfig:
+    - key: svga.maxWidth
+      required: false
+      value: "720"
+    - key: svga.maxHeight
+      required: false
+      value: "480"
+    id: null
+    info: Virtual hardware requirements
+    item:
+    - allocationUnits: hertz * 10^6
+      description: Number of Virtual CPUs
+      elementName: 2 virtual CPU(s)
+      instanceID: "1"
+      resourceType: 3
+      virtualQuantity: 2
+    - allocationUnits: byte * 2^20
+      description: Memory Size
+      elementName: 8192MB of memory
+      instanceID: "2"
+      resourceType: 4
+      virtualQuantity: 8192
+    - address: "0"
+      config:
+      - key: slotInfo.pciSlotNumber
+        required: false
+        value: "160"
+      description: SCSI Controller
+      elementName: SCSI controller 0
+      instanceID: "3"
+      resourceSubType: VirtualSCSI
+      resourceType: 6
+    - address: "1"
+      description: IDE Controller
+      elementName: IDE 1
+      instanceID: "4"
+      resourceType: 5
+    - address: "0"
+      description: IDE Controller
+      elementName: IDE 0
+      instanceID: "5"
+      resourceType: 5
+    - automaticAllocation: false
+      config:
+      - key: useAutoDetect
+        required: false
+        value: "false"
+      - key: videoRamSizeInKB
+        required: false
+        value: "4096"
+      - key: enable3DSupport
+        required: false
+        value: "false"
+      - key: use3dRenderer
+        required: false
+        value: automatic
+      - key: graphicsMemorySizeInKB
+        required: false
+        value: "262144"
+      elementName: Video card
+      instanceID: "6"
+      required: false
+      resourceType: 24
+    - automaticAllocation: false
+      config:
+      - key: slotInfo.pciSlotNumber
+        required: false
+        value: "32"
+      - key: allowUnrestrictedCommunication
+        required: false
+        value: "false"
+      elementName: VMCI device
+      instanceID: "7"
+      required: false
+      resourceSubType: vmware.vmci
+      resourceType: 1
+    - addressOnParent: "0"
+      config:
+      - key: backing.writeThrough
+        required: false
+        value: "false"
+      elementName: Hard disk 1
+      hostResource:
+      - ovf:/disk/vmdisk1
+      instanceID: "8"
+      parent: "3"
+      resourceType: 17
+    - addressOnParent: "7"
+      automaticAllocation: true
+      config:
+      - key: slotInfo.pciSlotNumber
+        required: false
+        value: "192"
+      - key: wakeOnLanEnabled
+        required: false
+        value: "false"
+      - key: connectable.allowGuestControl
+        required: false
+        value: "true"
+      connection:
+      - vxw-dvs-34-virtualwire-3-sid-1300002-sc2-01-tr-build01-vc30-dynamic
+      description: VmxNet3 ethernet adapter on "vxw-dvs-34-virtualwire-3-sid-1300002-sc2-01-tr-build01-vc30-dynamic"
+      elementName: Network adapter 1
+      instanceID: "9"
+      resourceSubType: VmxNet3
+      resourceType: 10
+    system:
+      elementName: Virtual Hardware Family
+      instanceID: "0"
+      virtualSystemIdentifier: esxvm-sb-62272164-rZ0
+      virtualSystemType: vmx-20
+

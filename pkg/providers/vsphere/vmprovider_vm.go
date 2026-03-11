@@ -2587,7 +2587,54 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		}
 	}
 
+	// If the image's ConfigSpec does not have a guest ID set, and there is a
+	// BusLogic controller from the image, and there is no guest ID from the VM
+	// spec, and the guest ID from the class is otherLinux64, the default, then
+	// set the guest ID to otherLinuxGuest (32-bit).
+	if DefaultGuestIDForBusLogicIfNeeded(
+		vmCtx.VM.Spec.GuestID,
+		imgConfigSpec.GuestId,
+		&createArgs.ConfigSpec) {
+
+		logger.Info(
+			"Defaulted guest ID to otherLinuxGuest (32-bit) due to " +
+				"BusLogic controller")
+	}
+
 	return nil
+}
+
+// DefaultGuestIDForBusLogicIfNeeded sets createArgs.ConfigSpec.GuestId to
+// otherLinuxGuest (32-bit) when: VM spec has no GuestID, createArgs has
+// otherLinux64Guest, image guest ID is not otherLinux64, and the config has a
+// BusLogic controller. Returns true if the guest ID was updated.
+func DefaultGuestIDForBusLogicIfNeeded(
+	vmSpecGuestID, imgGuestID string,
+	configSpec *vimtypes.VirtualMachineConfigSpec) bool {
+
+	if vmSpecGuestID != "" ||
+		configSpec.GuestId !=
+			string(vimtypes.VirtualMachineGuestOsIdentifierOtherLinux64Guest) ||
+		imgGuestID ==
+			string(vimtypes.VirtualMachineGuestOsIdentifierOtherLinux64Guest) {
+		return false
+	}
+
+	for _, bdc := range configSpec.DeviceChange {
+		if bdc != nil {
+			if dc := bdc.GetVirtualDeviceConfigSpec(); dc != nil {
+				if _, ok := dc.Device.(*vimtypes.VirtualBusLogicController); ok {
+
+					configSpec.GuestId = string(
+						vimtypes.VirtualMachineGuestOsIdentifierOtherLinuxGuest)
+
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(

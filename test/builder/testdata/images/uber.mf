@@ -1,5 +1,5 @@
-bfa0964fff7da20b3e057ae8ec6e6668c60b6361  uber.ovf
+32830f9afa732e99b1146bbf3dd94db691b3aa29  uber.ovf
 701e98837a28018430889f021571d171ba2252c4  uber.nvram
-ed64564a37366bfe1c93af80e2ead0cbd398c3d3  system.vmdk
-ed64564a37366bfe1c93af80e2ead0cbd398c3d3  data.vmdk
-ed64564a37366bfe1c93af80e2ead0cbd398c3d3  extra_data.vmdk
+2b256ff1b92df8faa1b2b2b3aabf36e2b2f2a4d1  disk0.vmdk
+2b256ff1b92df8faa1b2b2b3aabf36e2b2f2a4d1  disk1.vmdk
+2b256ff1b92df8faa1b2b2b3aabf36e2b2f2a4d1  disk2.vmdk

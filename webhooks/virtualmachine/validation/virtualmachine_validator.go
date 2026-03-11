@@ -152,7 +152,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	ctx.Context = vmopv1util.GetContextWithWorkloadDomainIsolation(ctx.Context, *vm)
+	ctx.Context = vmopv1util.GetContextWithWorkloadDomainIsolation(ctx.Context, vm)
 	if !pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
 		ctx.Logger.Info("Disabled WorkloadDomainIsolation capability for this VM")
 	}
@@ -247,7 +247,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	ctx.Context = vmopv1util.GetContextWithWorkloadDomainIsolation(ctx.Context, *vm)
+	ctx.Context = vmopv1util.GetContextWithWorkloadDomainIsolation(ctx.Context, vm)
 	if !pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
 		ctx.Logger.Info("Disabled WorkloadDomainIsolation capability for this VM")
 	}

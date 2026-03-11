@@ -359,7 +359,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	// Update the type of placement logic based on whether or not the VM is a
 	// Kubernetes node and the WorkloadDomainIsolation capability.
-	ctx = vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, *vm)
+	ctx = vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, vm)
 	if !pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
 		logger.Info("Disabled WorkloadDomainIsolation capability for this VM")
 	}

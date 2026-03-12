@@ -424,6 +424,8 @@ func populateImageStatusFromOVFDiskSection(
 		diskIDToDisk[d.DiskID] = d
 	}
 
+	usedDiskNames := make(map[string]struct{})
+
 	for _, i := range hardware.Item {
 		// If there is a defaultConfigID, i.e. DeploymentOptionSection exists, then
 		// only consider Items which apply to the default configuration option,
@@ -441,6 +443,19 @@ func populateImageStatusFromOVFDiskSection(
 					diskID := strings.TrimPrefix(i.HostResource[0], "ovf:/disk/")
 
 					if d, ok := diskIDToDisk[diskID]; ok {
+						// Ensure disk name is unique in status.Disks; append an
+						// incremented suffix if the name is already present.
+						if _, exists := usedDiskNames[diskName]; exists {
+							for n := 1; ; n++ {
+								finalName := fmt.Sprintf("%s_%d", diskName, n)
+								if _, exists := usedDiskNames[finalName]; !exists {
+									diskName = finalName
+									break
+								}
+							}
+						}
+						usedDiskNames[diskName] = struct{}{}
+
 						di := vmopv1.VirtualMachineImageDiskInfo{
 							// Set the name of the disk in the VMI's status.diskInfo
 							// section to ElementName. This is the same value that

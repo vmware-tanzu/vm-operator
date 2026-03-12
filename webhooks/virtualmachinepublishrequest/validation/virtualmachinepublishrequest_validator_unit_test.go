@@ -109,10 +109,13 @@ func unitTestsValidateCreate() {
 		ctx *unitValidatingWebhookContext
 		err error
 
-		invalidAPIVersion = "vmoperator.vmware.com/v1"
+		errAPIVersion     = "vmoperator/vmware.com/v1alpha4"
+		invalidAPIVersion = "vmoperator.broad.com/v1alpha4"
 	)
 
 	type createArgs struct {
+		errSourceAPIVersion             bool
+		errTargetLocationAPIVersion     bool
 		invalidSourceAPIVersion         bool
 		invalidSourceKind               bool
 		invalidTargetLocationAPIVersion bool
@@ -132,7 +135,9 @@ func unitTestsValidateCreate() {
 			ctx.vmPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
 		}
 
-		if args.invalidSourceAPIVersion {
+		if args.errSourceAPIVersion {
+			ctx.vmPub.Spec.Source.APIVersion = errAPIVersion
+		} else if args.invalidSourceAPIVersion {
 			ctx.vmPub.Spec.Source.APIVersion = invalidAPIVersion
 		}
 
@@ -140,7 +145,9 @@ func unitTestsValidateCreate() {
 			ctx.vmPub.Spec.Source.Kind = "Machine"
 		}
 
-		if args.invalidTargetLocationAPIVersion {
+		if args.errTargetLocationAPIVersion {
+			ctx.vmPub.Spec.Target.Location.APIVersion = errAPIVersion
+		} else if args.invalidTargetLocationAPIVersion {
 			ctx.vmPub.Spec.Target.Location.APIVersion = invalidAPIVersion
 		}
 
@@ -202,14 +209,18 @@ func unitTestsValidateCreate() {
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny invalid source API version", createArgs{invalidSourceAPIVersion: true}, false,
-			field.NotSupported(sourcePath.Child("apiVersion"), invalidAPIVersion,
-				[]string{"vmoperator.vmware.com/v1alpha1", "vmoperator.vmware.com/v1alpha2", "vmoperator.vmware.com/v1alpha3", "vmoperator.vmware.com/v1alpha4", "vmoperator.vmware.com/v1alpha6", ""}).Error(), nil),
+			field.Invalid(sourcePath.Child("apiVersion"), invalidAPIVersion,
+				"apiVersion \"vmoperator.broad.com\" does not match the expected group: vmoperator.vmware.com").Error(), nil),
+		Entry("should deny invalid source API version", createArgs{errSourceAPIVersion: true}, false,
+			"spec.source.apiVersion: Internal error: unexpected GroupVersion string: vmoperator/vmware.com/v1alpha4", nil),
 		Entry("should deny invalid source kind", createArgs{invalidSourceKind: true}, false,
 			field.NotSupported(sourcePath.Child("kind"), "Machine",
 				[]string{"VirtualMachine", ""}).Error(), nil),
 		Entry("should deny invalid target location API version", createArgs{invalidTargetLocationAPIVersion: true}, false,
-			field.NotSupported(targetLocationPath.Child("apiVersion"), invalidAPIVersion,
-				[]string{"imageregistry.vmware.com/v1alpha1", "imageregistry.vmware.com/v1alpha2", ""}).Error(), nil),
+			field.Invalid(targetLocationPath.Child("apiVersion"), invalidAPIVersion,
+				"apiVersion \"vmoperator.broad.com\" does not match the expected group: imageregistry.vmware.com").Error(), nil),
+		Entry("should deny invalid target location API version", createArgs{errTargetLocationAPIVersion: true}, false,
+			"spec.target.location.apiVersion: Internal error: unexpected GroupVersion string: vmoperator/vmware.com/v1alpha4", nil),
 		Entry("should deny invalid target location kind", createArgs{invalidTargetLocationKind: true}, false,
 			field.NotSupported(targetLocationPath.Child("kind"), "ClusterContentLibrary",
 				[]string{"ContentLibrary", ""}).Error(), nil),

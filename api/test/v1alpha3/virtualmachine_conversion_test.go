@@ -45,7 +45,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 						Crypto: &vmopv1.VirtualMachineCryptoSpec{
 							VTPMMode: vmopv1.VirtualMachineCryptoVTPMModeClone,
 						},
-						StorageClass: "my-storage-class",
+						StorageClass:              "my-storage-class",
+						VolumeAttributesClassName: "my-volume-attributes-class",
 						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 								CloudConfig: &vmopv1cloudinit.CloudConfig{

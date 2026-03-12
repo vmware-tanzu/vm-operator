@@ -174,6 +174,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMAffinityDuringExecution: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyStoragePolicyMutability: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -194,6 +197,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.GuestCustomizationVCDParity = true
 							config.Features.VSpherePolicies = true
 							config.Features.VMAffinityDuringExecution = true
+							config.Features.StoragePolicyMutability = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -240,6 +244,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
 					})
 				})
 
@@ -288,6 +295,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
 					})
 				})
 			})
@@ -345,6 +355,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMAffinityDuringExecution: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyStoragePolicyMutability: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -394,6 +407,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeFalse())
 					})
+					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
+					})
 				})
 
 				When("the capabilities are different", func() {
@@ -407,6 +423,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMWaitForFirstConsumerPVC = true
 							config.Features.VMSharedDisks = true
 							config.Features.GuestCustomizationVCDParity = true
+							config.Features.StoragePolicyMutability = true
 						})
 					})
 					Specify("capabilities changed", func() {
@@ -453,6 +470,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
 					})
 				})
 			})
@@ -748,6 +768,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyStoragePolicyMutability, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyStoragePolicyMutability] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("StoragePolicyMutability=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -806,6 +839,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyVMAffinityDuringExecution: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyStoragePolicyMutability: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -833,6 +869,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.VSpherePolicies = true
 					config.Features.VMAffinityDuringExecution = true
+					config.Features.StoragePolicyMutability = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -881,7 +918,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeTrue())
 			})
-
+			Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -899,11 +938,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.GuestCustomizationVCDParity = false
 					config.Features.VSpherePolicies = false
 					config.Features.VMAffinityDuringExecution = false
+					config.Features.StoragePolicyMutability = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -946,6 +986,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
 			})
 		})
 	})

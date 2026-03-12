@@ -43,15 +43,15 @@ var _ = DescribeTable("StoragePolicyUsageName",
 	Entry("non-empty-input", "my-class", "my-class-vmsnapshot-usage"),
 )
 
-var _ = Describe("IsStorageClassInNamespace", func() {
+var _ = Describe("IsStoragePolicyInNamespace", func() {
 	var (
 		ctx         context.Context
 		client      ctrlclient.Client
 		withObjects []ctrlclient.Object
 		withFuncs   interceptor.Funcs
-		sc          *storagev1.StorageClass
 		namespace   string
 		name        string
+		policyID    string
 		ok          bool
 		err         error
 	)
@@ -60,6 +60,7 @@ var _ = Describe("IsStorageClassInNamespace", func() {
 		ctx = pkgcfg.NewContext()
 		namespace = defaultNamespace
 		name = myStorageClass
+		policyID = sc1PolicyID
 		withFuncs = interceptor.Funcs{}
 		withObjects = []ctrlclient.Object{
 			&corev1.Namespace{
@@ -68,21 +69,13 @@ var _ = Describe("IsStorageClassInNamespace", func() {
 				},
 			},
 		}
-		sc = &storagev1.StorageClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: name,
-			},
-			Parameters: map[string]string{
-				"storagePolicyID": sc1PolicyID,
-			},
-		}
 	})
 
 	JustBeforeEach(func() {
 		client = builder.NewFakeClientWithInterceptors(
 			withFuncs, withObjects...)
-		ok, err = spqutil.IsStorageClassInNamespace(
-			ctx, client, sc, namespace)
+		ok, err = spqutil.IsStoragePolicyInNamespace(
+			ctx, client, name, policyID, namespace)
 	})
 
 	When("FSS_PODVMONSTRETCHEDSUPERVISOR is disabled", func() {

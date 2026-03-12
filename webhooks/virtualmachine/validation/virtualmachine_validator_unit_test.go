@@ -1603,7 +1603,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
 					},
 					validate: doValidateWithMsg(
-						`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy dummy-storage-class does not exist`),
+						`spec.storageClass: Invalid value: "dummy-storage-class": Storage class dummy-storage-class does not exist`),
 				},
 			),
 			Entry("storage class not associated with namespace",
@@ -1672,7 +1672,7 @@ func unitTestsValidateCreate() {
 							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 						},
 						validate: doValidateWithMsg(
-							`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation`),
+							`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation by object dummy-storage-class`),
 					},
 				),
 				Entry("WFFC storage class associated with namespace",
@@ -1689,6 +1689,137 @@ func unitTestsValidateCreate() {
 							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 						},
 						expectAllowed: true,
+					},
+				),
+			)
+		})
+	})
+
+	Context("VolumeAttributesClass", func() {
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.PodVMOnStretchedSupervisor = true
+				config.Features.StoragePolicyMutability = true
+			})
+		})
+
+		DescribeTable("VolumeAttributesClass create", doTest,
+			Entry("volume attributes class not found",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClassWithoutPolicyID()
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+						ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					},
+					validate: doValidateWithMsg(
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Volume Attributes Class dummy-vac does not exist`),
+				},
+			),
+
+			Entry("volume attributes class not associated with namespace",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClassWithoutPolicyID()
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+
+						volumeAttributesClass := builder.DummyVolumeAttributesClass()
+						Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+						ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							volumeAttributesClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "some-other-id")
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+					},
+					validate: doValidateWithMsg(
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation by object dummy-vac`),
+				},
+			),
+			Entry("volume attributes class associated with namespace without storage class policy id",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClassWithoutPolicyID()
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+
+						volumeAttributesClass := builder.DummyVolumeAttributesClassWithID("id-from-vac")
+						Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+						ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							volumeAttributesClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "id-from-vac")
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("volume attributes class associated with namespace taking precedence of storage class policy id",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClassWithID("id-from-storageclass")
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+
+						volumeAttributesClass := builder.DummyVolumeAttributesClassWithID("id-from-vac")
+						Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+						ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							volumeAttributesClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "id-from-vac")
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("volume attributes class not specified and storage class missing policyID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClassWithoutPolicyID()
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy not specified on object dummy-storage-class`),
+				},
+			),
+			Entry("volume attributes class not specified and storage class with policyID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClass()
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							storageClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "id42")
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+
+		Context("StoragePolicyMutability is disabled", func() {
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.StoragePolicyMutability = false
+				})
+			})
+
+			DescribeTable("VAC create", doTest,
+				Entry("block create if VAC is specified",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							storageClass := builder.DummyStorageClassWithID("id-from-storageclass")
+							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+							ctx.vm.Spec.StorageClass = storageClass.Name
+
+							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+						},
+						validate: doValidateWithMsg(
+							`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Volume Attributes Class cannot be used if capability is not enabled`),
 					},
 				),
 			)

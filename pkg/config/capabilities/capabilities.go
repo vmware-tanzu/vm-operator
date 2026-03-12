@@ -96,6 +96,11 @@ const (
 	// the Supervisor capabilities CRD for enabling affinity/anti-affinity rules
 	// for VM Placement during execution.
 	CapabilityKeyVMAffinityDuringExecution = "supports_VM_service_VM_affinity_during_execution"
+
+	// CapabilityKeyStoragePolicyMutability is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VM Service's support
+	// for mutability of Storage Policy via Volume Attributes Class (VAC).
+	CapabilityKeyStoragePolicyMutability = "supports_VM_PVC_storage_policy_mutability"
 )
 
 var (
@@ -258,6 +263,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.AllDisksArePVCs = capStatus.Activated
 		case CapabilityKeyVMAffinityDuringExecution:
 			fs.VMAffinityDuringExecution = capStatus.Activated
+		case CapabilityKeyStoragePolicyMutability:
+			fs.StoragePolicyMutability = capStatus.Activated
 		}
 
 	}

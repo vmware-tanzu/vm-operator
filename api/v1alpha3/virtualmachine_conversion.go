@@ -360,6 +360,12 @@ func restore_v1alpha6_VirtualMachineAffinity(dst, src *vmopv1.VirtualMachine) {
 	}
 }
 
+func restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.VolumeAttributesClassName != "" {
+		dst.Spec.VolumeAttributesClassName = src.Spec.VolumeAttributesClassName
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -387,6 +393,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineAffinity(dst, restored)
 	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
+	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 
 	// END RESTORE
 

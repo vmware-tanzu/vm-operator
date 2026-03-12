@@ -42,6 +42,7 @@ const (
 	DummyDistroVersion             = "dummyDistroVersion"
 	DummyOSType                    = "centosGuest"
 	DummyStorageClassName          = "dummy-storage-class"
+	DummyVolumeAttributesClassName = "dummy-vac"
 	DummyResourceQuotaName         = "dummy-resource-quota"
 	DummyZoneName                  = "dummy-zone"
 	DummyNamespaceName             = "dummy-ns"
@@ -67,6 +68,30 @@ func DummyStorageClassWithID(policyID string) *storagev1.StorageClass {
 			Name: DummyStorageClassName,
 		},
 		Provisioner: "foo",
+		Parameters: map[string]string{
+			"storagePolicyID": policyID,
+		},
+	}
+}
+
+func DummyStorageClassWithoutPolicyID() *storagev1.StorageClass {
+	return &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DummyStorageClassName,
+		},
+		Provisioner: "foo",
+	}
+}
+
+func DummyVolumeAttributesClass() *storagev1.VolumeAttributesClass {
+	return DummyVolumeAttributesClassWithID("id42-vac")
+}
+
+func DummyVolumeAttributesClassWithID(policyID string) *storagev1.VolumeAttributesClass {
+	return &storagev1.VolumeAttributesClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DummyVolumeAttributesClassName,
+		},
 		Parameters: map[string]string{
 			"storagePolicyID": policyID,
 		},

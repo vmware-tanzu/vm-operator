@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -23,6 +22,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -98,6 +98,13 @@ func fastDeploy(
 			return nil, fmt.Errorf("failed to create vm dir: %w", err)
 		}
 
+		// Store for DeleteDirectory at VM delete time.
+		createArgs.ConfigSpec.ExtraConfig = append(
+			createArgs.ConfigSpec.ExtraConfig,
+			&vimtypes.OptionValue{
+				Key:   pkgconst.ExtraConfigVMDirNamespacePath,
+				Value: vdp})
+
 		// The vmDirUUIDPath value will look something like the following:
 		//
 		//     /vmfs/volumes/vsan:a5982d36bd6d11f0-9fd50050569d3d0d/dfc05687-5880-431c-9924-a3a34837443e
@@ -145,45 +152,14 @@ func fastDeploy(
 			return
 		}
 
-		// Use a context that is not cancelled when the parent is, so cleanup
-		// runs even if the request is cancelled. Preserves the VC opID so
-		// cleanup is correlated with the failed create in VC logs.
-		ctx := context.WithoutCancel(vmCtx.Context)
-
-		// Delete the VM directory and its contents.
-		// Always use FileManager.DeleteDatastoreFile() first as it can delete
-		// non-empty directories recursively. Note that DeleteDirectory() on a
-		// non-empty directory will return an error, which is why we delete the
-		// directory contents first using DeleteDatastoreFile().
-		t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
-		if err != nil {
-			retErr = fmt.Errorf(
-				"failed to call delete api for vm dir %q: %w,%w",
-				vmDirPath, err, retErr)
-			return
-		}
-
-		// Wait for the delete call to return.
-		if err := t.Wait(ctx); err != nil &&
-			!fault.Is(err, &vimtypes.FileNotFound{}) {
-
-			retErr = fmt.Errorf(
-				"failed to delete vm dir %q: %w,%w",
-				vmDirPath, err, retErr)
-		}
-
-		// For non-TLD datastores, also clean up the namespace mapping.
-		if !createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
-			if err := nm.DeleteDirectory(
-				ctx,
-				datacenter,
-				vmDirUUIDPath); err != nil &&
-				!fault.Is(err, &vimtypes.FileNotFound{}) {
-
-				retErr = fmt.Errorf(
-					"failed to delete vm dir namespace mapping %q: %w,%w",
-					vmDirUUIDPath, err, retErr)
-			}
+		// vmDirUUIDPath is set only for non-TLD; empty for TLD.
+		if err := virtualmachine.CleanupVMDir(
+			vmCtx.Context,
+			vimClient,
+			datacenter,
+			vmDirPath,
+			vmDirUUIDPath); err != nil {
+			retErr = fmt.Errorf("failed to cleanup vm dir: %w,%w", err, retErr)
 		}
 	}()
 

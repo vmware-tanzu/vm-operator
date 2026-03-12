@@ -446,7 +446,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		}
 	}
 
-	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
+	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM, client.Datacenter())
 }
 
 func (vs *vSphereVMProvider) PublishVirtualMachine(

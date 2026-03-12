@@ -200,6 +200,9 @@ const (
 	// deleted or having its disks promoted.
 	VMProvKeepDisksExtraConfigKey = "vmprov.keepDisks"
 
+	// ExtraConfigVMDirNamespacePath is the path for DatastoreNamespaceManager.DeleteDirectory (non-TLD).
+	ExtraConfigVMDirNamespacePath = "vmoperator.vmware.com.vmDirNamespacePath"
+
 	// CSIVSphereVolumeSyncAnnotationKey is the annotation key for the CSIVSphereVolumeSync
 	// annotation.
 	CSIVSphereVolumeSyncAnnotationKey = "csi.vsphere.volume.sync"

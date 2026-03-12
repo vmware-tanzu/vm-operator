@@ -194,7 +194,7 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
 
-	if err := vs.vmCreateGenConfigSpec(vmCtx, createArgs); err != nil {
+	if err := vs.vmCreateGenConfigSpec(vmCtx, vcClient, createArgs); err != nil {
 		return nil, err
 	}
 

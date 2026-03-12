@@ -145,20 +145,20 @@ func CreateAndWaitForNetworkInterfaces(
 	results := make([]NetworkInterfaceResult, 0, len(networkSpec.Interfaces))
 
 	for i := range networkSpec.Interfaces {
-		interfaceSpec := &networkSpec.Interfaces[i]
+		interfaceSpec := networkSpec.Interfaces[i]
 
 		var result *NetworkInterfaceResult
 		var err error
 
 		switch networkType {
 		case pkgcfg.NetworkProviderTypeVDS:
-			result, err = createNetOPNetworkInterface(vmCtx, client, vimClient, interfaceSpec)
+			result, err = createNetOPNetworkInterface(vmCtx, client, vimClient, &interfaceSpec)
 		case pkgcfg.NetworkProviderTypeNSXT:
-			result, err = createNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
+			result, err = createNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, &interfaceSpec)
 		case pkgcfg.NetworkProviderTypeVPC:
-			result, err = createVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
+			result, err = createVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, &interfaceSpec)
 		case pkgcfg.NetworkProviderTypeNamed:
-			result, err = createNamedNetworkInterface(vmCtx, finder, interfaceSpec)
+			result, err = createNamedNetworkInterface(vmCtx, finder, &interfaceSpec)
 		default:
 			err = fmt.Errorf("unsupported network provider envvar value: %q", networkType)
 		}
@@ -170,7 +170,7 @@ func CreateAndWaitForNetworkInterfaces(
 
 		applyInterfaceSpecToResult(
 			networkSpec,
-			interfaceSpec,
+			&interfaceSpec,
 			defaultToGlobalNameservers,
 			defaultToGlobalSearchDomains,
 			result)

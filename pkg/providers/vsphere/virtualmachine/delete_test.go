@@ -57,7 +57,7 @@ func deleteTests() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(t.Wait(ctx)).To(Succeed())
 
-		err = virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
+		err = virtualmachine.DeleteVirtualMachine(vmCtx, vcVM, nil)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(ctx.GetVMFromMoID(moID)).To(BeNil())
@@ -71,7 +71,7 @@ func deleteTests() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 
-		err = virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
+		err = virtualmachine.DeleteVirtualMachine(vmCtx, vcVM, nil)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(ctx.GetVMFromMoID(moID)).To(BeNil())

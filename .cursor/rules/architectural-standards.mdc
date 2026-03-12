@@ -155,6 +155,53 @@ All Go files MUST have this header:
 // SPDX-License-Identifier: Apache-2.0
 ```
 
+## Code Comments and Documentation
+
+### Comment Grammar
+All comments MUST follow proper grammar rules:
+
+```go
+// Good - proper sentence structure with period
+// ErrorMessageFromTaskInfo extracts a comprehensive error message from a TaskInfo.
+// It combines the localized message with all fault messages to provide complete
+// error details.
+
+// Bad - missing periods
+// ErrorMessageFromTaskInfo extracts a comprehensive error message from a TaskInfo
+// It combines the localized message with all fault messages to provide complete
+// error details
+
+// Good - inline comments end with period
+// No fault messages, return the localized message if available.
+if taskErr.LocalizedMessage != "" {
+    return taskErr.LocalizedMessage
+}
+
+// Bad - inline comments missing period
+// No fault messages, return the localized message if available
+if taskErr.LocalizedMessage != "" {
+    return taskErr.LocalizedMessage
+}
+```
+
+### Function Documentation
+Public functions and methods MUST have godoc comments that:
+- Start with the function name
+- Use complete sentences with proper punctuation
+- Explain what the function does, not how
+- Include examples for complex functions
+
+```go
+// Good
+// GetVirtualMachine retrieves a VirtualMachine resource from the Kubernetes API.
+// It returns an error if the resource is not found or if the API call fails.
+func GetVirtualMachine(ctx context.Context, name string) (*vmopv1.VirtualMachine, error)
+
+// Bad - no period, unclear
+// GetVirtualMachine gets a vm
+func GetVirtualMachine(ctx context.Context, name string) (*vmopv1.VirtualMachine, error)
+```
+
 ## Anti-Patterns to Avoid
 
 1. **Leaking business logic into controllers** - Controllers orchestrate; `pkg/` computes

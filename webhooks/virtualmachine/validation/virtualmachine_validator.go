@@ -696,12 +696,9 @@ func (v validator) validateStorageFields(
 		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
 	}
 
-	// Storage policyID mutability over storage VolumeAttributeClass objects
-	// we throw an error if someone tries to use the new field
-	// without setting the capability
-
-	// VolumeAttributeClass' policyID takes precedence of StorageClass's policyID
-	// if the capability is enabled AND VolumeAttributesClassName is specified on VM spec
+	// Storage policyID mutability via storage VolumeAttributeClass objects
+	// VolumeAttributeClass's policyID trumps StorageClass's policyID.
+	// Throw an error if the new field is used while the capability is disabled.
 
 	var policyID string
 

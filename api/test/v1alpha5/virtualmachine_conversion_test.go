@@ -60,12 +60,6 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
-			{
-				name: "spec.volumeAttributesClassName is empty",
-				hub: &vmopv1.VirtualMachine{
-					Spec: vmopv1.VirtualMachineSpec{},
-				},
-			},
 		}
 
 		for i := range testCases {

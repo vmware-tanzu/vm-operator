@@ -1316,6 +1316,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineHardware(dst, restored)
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
+
 	// END RESTORE
 
 	dst.Status = restored.Status

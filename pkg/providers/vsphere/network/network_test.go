@@ -62,6 +62,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		}
 
 		networkSpec = &vmopv1.VirtualMachineNetworkSpec{}
+		vm.Spec.Network = networkSpec
 	})
 
 	JustBeforeEach(func() {
@@ -780,6 +781,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 				})
 
+				netInterfacesBefore := vmCtx.VM.DeepCopy().Spec.Network.Interfaces
+
 				results, err = network.CreateAndWaitForNetworkInterfaces(
 					vmCtx,
 					ctx.Client,
@@ -788,6 +791,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					nil,
 					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
+
+				Expect(netInterfacesBefore).To(Equal(vmCtx.VM.Spec.Network.Interfaces))
 
 				Expect(results.Results).To(HaveLen(1))
 				result := results.Results[0]

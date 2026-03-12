@@ -18,6 +18,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -207,6 +208,11 @@ func DoBootstrap( //nolint:gocyclo
 		if customizeNeeded {
 			vmCtx.Logger.V(0).Info("Doing bootstrap customize")
 			if err := doCustomize(vmCtx, vcVM, config, customSpec); err != nil {
+				// Mark the customization condition as failed with the error message.
+				// This handles immediate failures (e.g., unsupported tools version) that
+				// occur at the vSphere API level before the guest customization starts.
+				conditions.MarkError(vmCtx.VM, vmopv1.GuestCustomizationCondition,
+					vmopv1.GuestCustomizationFailedReason, err)
 				return fmt.Errorf("bootstrap customize failed: %w", err)
 			}
 

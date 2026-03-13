@@ -33,7 +33,7 @@ func getStorageClassAndPolicyID(
 		pkglog.FromContextOrDefault(ctx).Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
 		return nil, "", err
 	}
-	policyID, err := kubeutil.GetStoragePolicyID(sc)
+	policyID, err := kubeutil.GetStoragePolicyIDFromStorageClass(sc)
 	return &sc, policyID, err
 }
 

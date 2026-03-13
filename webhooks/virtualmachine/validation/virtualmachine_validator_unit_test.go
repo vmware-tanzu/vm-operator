@@ -1603,7 +1603,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
 					},
 					validate: doValidateWithMsg(
-						`spec.storageClass: Invalid value: "dummy-storage-class": Storage class dummy-storage-class does not exist`),
+						`spec.storageClass: Invalid value: "dummy-storage-class": storageclasses.storage.k8s.io "dummy-storage-class" not found`),
 				},
 			),
 			Entry("storage class not associated with namespace",
@@ -1714,7 +1714,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
 					},
 					validate: doValidateWithMsg(
-						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Volume Attributes Class dummy-vac does not exist`),
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": volumeattributesclasses.storage.k8s.io "dummy-vac" not found`),
 				},
 			),
 
@@ -1781,7 +1781,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.StorageClass = storageClass.Name
 					},
 					validate: doValidateWithMsg(
-						`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy not specified on object dummy-storage-class`),
+						`spec.storageClass: Invalid value: "dummy-storage-class": "StorageClass" "dummy-storage-class" missing "storagePolicyID parameter"`),
 				},
 			),
 			Entry("volume attributes class not specified and storage class with policyID",
@@ -1819,7 +1819,7 @@ func unitTestsValidateCreate() {
 							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
 						},
 						validate: doValidateWithMsg(
-							`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Volume Attributes Class cannot be used if capability is not enabled`),
+							`spec.volumeAttributesClassName: Invalid value: "dummy-vac": "VolumeAttributesClass" "dummy-vac" missing "capability to be enabled"`),
 					},
 				),
 			)

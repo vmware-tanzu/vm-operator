@@ -650,7 +650,7 @@ func (r *Reconciler) checkIsTargetEncryptionValid(ctx *pkgctx.VirtualMachinePubl
 		return fmt.Errorf("failed to get storageClass %q: %w", storageClassName, err)
 	}
 
-	storagePolicyID, err := kubeutil.GetStoragePolicyID(sc)
+	storagePolicyID, err := kubeutil.GetStoragePolicyIDFromStorageClass(sc)
 	if err != nil {
 		return err
 	}

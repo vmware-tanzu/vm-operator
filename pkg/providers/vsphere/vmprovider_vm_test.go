@@ -1997,13 +1997,11 @@ func vmTests() {
 							Expect(moVM.Config.VAppConfig).ToNot(BeNil())
 							Expect(moVM.Config.VAppConfig.GetVmConfigInfo()).ToNot(BeNil())
 							props := moVM.Config.VAppConfig.GetVmConfigInfo().Property
-							Expect(props).To(HaveLen(2))
+							Expect(props).To(HaveLen(4))
 							// VCSim does not behave as real VC.
 							// Ids are not returned. So, checking labels.
-							Expect(props[0].Label).To(Equal("Is Replacement"))
-							Expect(props[0].DefaultValue).To(Equal("False"))
-							Expect(props[1].Label).To(Equal("Hostname"))
-							Expect(props[1].Value).To(Equal(""))
+							Expect(props[0].Id).To(Equal("vmware-system.tkr.os-version"))
+							Expect(props[0].DefaultValue).To(Equal("1.15"))
 						})
 
 						When("global default is direct mode", func() {

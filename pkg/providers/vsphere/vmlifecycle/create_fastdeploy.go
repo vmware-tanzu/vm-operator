@@ -399,7 +399,6 @@ func fastDeployLinked(
 
 	j := 0
 	for i := range disks {
-		logger.Info("Ranging over disks", "i", i, "j", j)
 		switch tBack := disks[i].Backing.(type) {
 		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
 			if tBack.FileName != "" {

@@ -716,11 +716,23 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 
 	// Find the matching location status.
 	var locStatus *vmopv1.VirtualMachineImageCacheLocationStatus
-	if locParts := strings.Split(location, ","); len(locParts) == 2 {
-		dcID, dsID := locParts[0], locParts[1]
+	locParts := strings.Split(location, ",")
+	switch len(locParts) {
+	case 2:
+		// An annotation value with only two parts was generated before we
+		// included the storage profile ID in it. Remove the label and
+		// annotation so the updated annotation value will get set.
+		delete(ctx.VM.Labels, pkgconst.VMICacheLabelKey)
+		delete(ctx.VM.Annotations, pkgconst.VMICacheLocationAnnotationKey)
+
+		ctx.Logger.V(4).Info("Removing old VMIC annotation without profileID")
+		return false
+
+	case 3:
+		dcID, dsID, pID := locParts[0], locParts[1], locParts[2]
 		for i := range vmic.Status.Locations {
 			l := vmic.Status.Locations[i]
-			if l.DatacenterID == dcID && l.DatastoreID == dsID {
+			if l.DatacenterID == dcID && l.DatastoreID == dsID && l.ProfileID == pID {
 				locStatus = &l
 				break
 			}

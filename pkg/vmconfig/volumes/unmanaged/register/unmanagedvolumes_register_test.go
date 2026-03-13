@@ -690,33 +690,296 @@ var _ = Describe("Reconcile", func() {
 				})
 			})
 
-			When("PVC exists and is bound", func() {
-				BeforeEach(func() {
-					// Set up VM with volumes already in spec
-					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-						{
-							Name: "disk-uuid-789",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "my-vm-134e95b6",
-									},
+		When("VM has an EncryptionClassName in spec.crypto", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+
+				Expect(unmanagedvolsfill.Reconcile(
+					ctx,
+					nil,
+					nil,
+					vm,
+					moVM,
+					nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
+				Expect(unmanagedvolsfill.Reconcile(
+					ctx,
+					nil,
+					nil,
+					vm,
+					moVM,
+					nil)).To(Succeed())
+			})
+
+			BeforeEach(func() {
+				vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+					EncryptionClassName: "my-enc-class",
+				}
+
+				// Start with empty volumes - let Reconcile add them
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           300,
+						ControllerKey: 200,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/enc-disk.vmdk",
+							},
+							Uuid: "disk-uuid-enc",
+						},
+					},
+					CapacityInBytes: 2 * 1024 * 1024 * 1024,
+				}
+
+				scsiController := &vimtypes.VirtualSCSIController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 200,
+						},
+						BusNumber: 1,
+					},
+				}
+
+				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							scsiController,
+							disk,
+						},
+					},
+				}
+			})
+
+			It("should set the PVC encryption class annotation on created PVCs", func() {
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+				claimName := vmopv1util.FindByTargetID(
+					vmopv1.VirtualControllerTypeSCSI,
+					1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+				var pvc corev1.PersistentVolumeClaim
+				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      claimName,
+				}, &pvc)).To(Succeed())
+
+				Expect(pvc.Annotations[pkgconst.PVCEncryptionClassNameAnnotation]).To(
+					Equal("my-enc-class"))
+				Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
+			})
+		})
+
+		When("VM has no crypto spec", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+
+				Expect(unmanagedvolsfill.Reconcile(
+					ctx,
+					nil,
+					nil,
+					vm,
+					moVM,
+					nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
+				Expect(unmanagedvolsfill.Reconcile(
+					ctx,
+					nil,
+					nil,
+					vm,
+					moVM,
+					nil)).To(Succeed())
+			})
+
+			BeforeEach(func() {
+				vm.Spec.Crypto = nil
+
+				// Start with empty volumes - let Reconcile add them
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           300,
+						ControllerKey: 200,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/noenc-disk.vmdk",
+							},
+							Uuid: "disk-uuid-noenc",
+						},
+					},
+					CapacityInBytes: 2 * 1024 * 1024 * 1024,
+				}
+
+				scsiController := &vimtypes.VirtualSCSIController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 200,
+						},
+						BusNumber: 1,
+					},
+				}
+
+				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							scsiController,
+							disk,
+						},
+					},
+				}
+			})
+
+			It("should not set the PVC encryption class annotation on created PVCs", func() {
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+				claimName := vmopv1util.FindByTargetID(
+					vmopv1.VirtualControllerTypeSCSI,
+					1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+				var pvc corev1.PersistentVolumeClaim
+				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      claimName,
+				}, &pvc)).To(Succeed())
+
+				Expect(pvc.Annotations).ToNot(HaveKey(pkgconst.PVCEncryptionClassNameAnnotation))
+				Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
+			})
+		})
+
+		When("VM has crypto spec with empty EncryptionClassName", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSharedDisks = true
+				})
+
+				Expect(unmanagedvolsfill.Reconcile(
+					ctx,
+					nil,
+					nil,
+					vm,
+					moVM,
+					nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
+				Expect(unmanagedvolsfill.Reconcile(
+					ctx,
+					nil,
+					nil,
+					vm,
+					moVM,
+					nil)).To(Succeed())
+			})
+
+			BeforeEach(func() {
+				vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+					EncryptionClassName: "",
+				}
+
+				// Start with empty volumes - let Reconcile add them
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+				disk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           300,
+						ControllerKey: 200,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/emptyenc-disk.vmdk",
+							},
+							Uuid: "disk-uuid-emptyenc",
+						},
+					},
+					CapacityInBytes: 2 * 1024 * 1024 * 1024,
+				}
+
+				scsiController := &vimtypes.VirtualSCSIController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 200,
+						},
+						BusNumber: 1,
+					},
+				}
+
+				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							scsiController,
+							disk,
+						},
+					},
+				}
+			})
+
+			It("should not set the PVC encryption class annotation on created PVCs", func() {
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+				claimName := vmopv1util.FindByTargetID(
+					vmopv1.VirtualControllerTypeSCSI,
+					1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+				var pvc corev1.PersistentVolumeClaim
+				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      claimName,
+				}, &pvc)).To(Succeed())
+
+				Expect(pvc.Annotations).ToNot(HaveKey(pkgconst.PVCEncryptionClassNameAnnotation))
+				Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
+			})
+		})
+
+		When("PVC exists and is bound", func() {
+			BeforeEach(func() {
+				// Set up VM with volumes already in spec
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "disk-uuid-789",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "my-vm-134e95b6",
 								},
 							},
-							ControllerType:      vmopv1.VirtualControllerTypeIDE,
-							ControllerBusNumber: ptr.To(int32(0)),
-							UnitNumber:          ptr.To(int32(0)),
 						},
-					}
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
+					},
+				}
 
-					// Create bound PVC
-					boundPVC := &corev1.PersistentVolumeClaim{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "my-vm-134e95b6",
-							Namespace: vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									APIVersion: vmopv1.GroupVersion.String(),
+				// Create bound PVC
+				boundPVC := &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "my-vm-134e95b6",
+						Namespace: vm.Namespace,
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: vmopv1.GroupVersion.String(),
 									Kind:       "VirtualMachine",
 									Name:       vm.Name,
 									UID:        vm.UID,

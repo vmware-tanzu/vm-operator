@@ -55,7 +55,7 @@ func assertImage(image *vmopv1.VirtualMachineImage, diskName string) {
 
 	ExpectWithOffset(1, image.Status.Disks).To(HaveLen(1))
 	ExpectWithOffset(1, image.Status.Disks[0].Name).To(Equal(diskName))
-	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("18743296"))
+	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("30Mi"))
 	ExpectWithOffset(1, image.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
 	ExpectWithOffset(1, image.Status.Disks[0].ControllerBusNumber).ToNot(BeNil(), "nil controller bus number")
 	ExpectWithOffset(1, *image.Status.Disks[0].ControllerBusNumber).To(Equal(int32(0)), "incorrect controller bus number")
@@ -132,13 +132,17 @@ var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func()
 		ovfEnvelope = &ovf.Envelope{
 			VirtualSystemCollection: &ovf.VirtualSystemCollection{
 				VirtualSystem: []ovf.VirtualSystem{
-					{},
+					{
+						VirtualHardware: []ovf.VirtualHardwareSection{
+							{},
+						},
+					},
 				},
 			},
 		}
 	})
 
-	It("should return error", func() {
+	It("should not return an error", func() {
 		testCases := []struct {
 			name  string
 			image client.Object
@@ -155,9 +159,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func()
 
 		for _, tc := range testCases {
 			err := contentlibrary.UpdateVmiWithOvfEnvelope(tc.image, *ovfEnvelope)
-			Expect(err).To(HaveOccurred(), "should return error for %s", tc.name)
-			Expect(err.Error()).To(ContainSubstring(
-				"OVF with VirtualSystemCollection is not supported"))
+			Expect(err).ToNot(HaveOccurred())
 		}
 	})
 })

@@ -155,9 +155,11 @@ func vmTests() {
 			vmClass.Namespace = nsInfo.Namespace
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 
-			clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
+			clusterVMI1 := &vmopv1.ClusterVirtualMachineImage{}
+
 			if testConfig.WithContentLibrary {
-				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, clusterVMImage)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMI1)).To(Succeed())
+
 			} else {
 				// BMV: VM creation without CL is broken - and has been for a long while - since we assume
 				// the VM Image will always point to a ContentLibrary item.
@@ -165,17 +167,17 @@ func vmTests() {
 				vsphere.SkipVMImageCLProviderCheck = true
 
 				// Use the default VM created by vcsim as the source.
-				clusterVMImage = builder.DummyClusterVirtualMachineImage("DC0_C0_RP0_VM0")
-				Expect(ctx.Client.Create(ctx, clusterVMImage)).To(Succeed())
-				conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
-				Expect(ctx.Client.Status().Update(ctx, clusterVMImage)).To(Succeed())
+				clusterVMI1 = builder.DummyClusterVirtualMachineImage("DC0_C0_RP0_VM0")
+				Expect(ctx.Client.Create(ctx, clusterVMI1)).To(Succeed())
+				conditions.MarkTrue(clusterVMI1, vmopv1.ReadyConditionType)
+				Expect(ctx.Client.Status().Update(ctx, clusterVMI1)).To(Succeed())
 			}
 
 			vm.Namespace = nsInfo.Namespace
 			vm.Spec.ClassName = vmClass.Name
-			vm.Spec.ImageName = clusterVMImage.Name
+			vm.Spec.ImageName = clusterVMI1.Name
 			vm.Spec.Image.Kind = cvmiKind
-			vm.Spec.Image.Name = clusterVMImage.Name
+			vm.Spec.Image.Name = clusterVMI1.Name
 			vm.Spec.StorageClass = ctx.StorageClassName
 
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
@@ -1617,7 +1619,7 @@ func vmTests() {
 						Expect(ctx.Client.Create(ctx, vmGroup)).To(Succeed())
 
 						clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
-						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, clusterVMImage)).To(Succeed())
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMImage)).To(Succeed())
 
 						vm.Namespace = nsInfo.Namespace
 						vm.Spec.ClassName = vmClass.Name
@@ -1797,7 +1799,8 @@ func vmTests() {
 			When("FSS WCP_VMService_FastDeploy is enabled", func() {
 
 				var (
-					vmic vmopv1.VirtualMachineImageCache
+					vmic1 vmopv1.VirtualMachineImageCache
+					vmic2 vmopv1.VirtualMachineImageCache
 				)
 
 				BeforeEach(func() {
@@ -1808,25 +1811,45 @@ func vmTests() {
 				})
 
 				JustBeforeEach(func() {
-					vmicName := pkgutil.VMIName(ctx.ContentLibraryItemID)
-					vmic = vmopv1.VirtualMachineImageCache{
+					vmic1Name := pkgutil.VMIName(ctx.ContentLibraryItem1ID)
+					vmic1 = vmopv1.VirtualMachineImageCache{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-							Name:      vmicName,
+							Name:      vmic1Name,
 						},
 					}
-					Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, &vmic1)).To(Succeed())
 
-					vmicm := corev1.ConfigMap{
+					vmicm1 := corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: vmic.Namespace,
-							Name:      vmic.Name,
+							Namespace: vmic1.Namespace,
+							Name:      vmic1.Name,
 						},
 						Data: map[string]string{
-							"value": ovfEnvelopeYAML,
+							"value": ctx.ContentLibraryItem1YAML,
 						},
 					}
-					Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, &vmicm1)).To(Succeed())
+
+					vmic2Name := pkgutil.VMIName(ctx.ContentLibraryItem2ID)
+					vmic2 = vmopv1.VirtualMachineImageCache{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+							Name:      vmic2Name,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmic2)).To(Succeed())
+
+					vmicm2 := corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: vmic2.Namespace,
+							Name:      vmic2.Name,
+						},
+						Data: map[string]string{
+							"value": ctx.ContentLibraryItem2YAML,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmicm2)).To(Succeed())
 				})
 
 				assertVMICNotReady := func(err error, msg, name, dcID, dsID string) {
@@ -1838,24 +1861,24 @@ func vmTests() {
 					ExpectWithOffset(1, e.DatastoreID).To(Equal(dsID))
 				}
 
-				When("ovf is not ready", func() {
+				When("ovf ttylinux is not ready", func() {
 					It("should fail", func() {
 						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						assertVMICNotReady(
 							err,
 							"hardware not ready",
-							vmic.Name,
+							vmic1.Name,
 							"",
 							"")
 					})
 				})
 
-				When("ovf is ready", func() {
+				When("ovf ttylinux is ready", func() {
 					JustBeforeEach(func() {
-						vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+						vmic1.Status = vmopv1.VirtualMachineImageCacheStatus{
 							OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
-								ConfigMapName:   vmic.Name,
-								ProviderVersion: ctx.ContentLibraryItemVersion,
+								ConfigMapName:   vmic1.Name,
+								ProviderVersion: ctx.ContentLibraryItem1Version,
 							},
 							Conditions: []metav1.Condition{
 								{
@@ -1864,7 +1887,7 @@ func vmTests() {
 								},
 							},
 						}
-						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						Expect(ctx.Client.Status().Update(ctx, &vmic1)).To(Succeed())
 					})
 
 					When("files are not ready", func() {
@@ -1874,7 +1897,7 @@ func vmTests() {
 							assertVMICNotReady(
 								err,
 								"cached files not ready",
-								vmic.Name,
+								vmic1.Name,
 								ctx.Datacenter.Reference().Value,
 								ctx.Datastore.Reference().Value)
 						})
@@ -1904,21 +1927,21 @@ func vmTests() {
 
 						JustBeforeEach(func() {
 							conditions.MarkTrue(
-								&vmic,
+								&vmic1,
 								vmopv1.VirtualMachineImageCacheConditionFilesReady)
 							cachedFiles := []vmopv1.VirtualMachineImageCacheFileStatus{
 								{
-									ID:       ctx.ContentLibraryItemDiskPath,
+									ID:       ctx.ContentLibraryItem1Disk1Path,
 									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 									DiskType: vmopv1.VolumeTypeClassic,
 								},
 								{
-									ID:   ctx.ContentLibraryItemNVRAMPath,
+									ID:   ctx.ContentLibraryItem1NVRAMPath,
 									Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
 								},
 							}
 
-							vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+							vmic1.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
 								{
 									DatacenterID: ctx.Datacenter.Reference().Value,
 									DatastoreID:  ctx.Datastore.Reference().Value,
@@ -1944,11 +1967,11 @@ func vmTests() {
 									},
 								},
 							}
-							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+							Expect(ctx.Client.Status().Update(ctx, &vmic1)).To(Succeed())
 
 							libMgr := library.NewManager(ctx.RestClient)
 							Expect(libMgr.SyncLibraryItem(ctx,
-								&library.Item{ID: ctx.ContentLibraryItemID},
+								&library.Item{ID: ctx.ContentLibraryItem1ID},
 								true)).To(Succeed())
 						})
 
@@ -1968,19 +1991,17 @@ func vmTests() {
 							v2, _ := ec.GetString("fu")
 							Expect(v2).To(Equal("bar"))
 							v3, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItem1Disk1Path)))
 
 							// Check vAppConfig is not present in the CreateVM ConfigSpec
 							Expect(moVM.Config.VAppConfig).ToNot(BeNil())
 							Expect(moVM.Config.VAppConfig.GetVmConfigInfo()).ToNot(BeNil())
 							props := moVM.Config.VAppConfig.GetVmConfigInfo().Property
-							Expect(props).To(HaveLen(2))
+							Expect(props).To(HaveLen(4))
 							// VCSim does not behave as real VC.
 							// Ids are not returned. So, checking labels.
-							Expect(props[0].Label).To(Equal("Is Replacement"))
-							Expect(props[0].DefaultValue).To(Equal("False"))
-							Expect(props[1].Label).To(Equal("Hostname"))
-							Expect(props[1].Value).To(Equal(""))
+							Expect(props[0].Id).To(Equal("vmware-system.tkr.os-version"))
+							Expect(props[0].DefaultValue).To(Equal("1.15"))
 						})
 
 						When("global default is direct mode", func() {
@@ -2029,7 +2050,7 @@ func vmTests() {
 								// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 								ec := object.OptionValueList(moVM.Config.ExtraConfig)
 								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+								Expect(v).To(Equal(path.Base(ctx.ContentLibraryItem1Disk1Path)))
 							})
 
 							When("vm uses encrypted storage class", func() {
@@ -2111,7 +2132,7 @@ func vmTests() {
 								// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 								ec := object.OptionValueList(moVM.Config.ExtraConfig)
 								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+								Expect(v).To(Equal(path.Base(ctx.ContentLibraryItem1Disk1Path)))
 							})
 
 							When("vm does not support online promote disks", func() {
@@ -2162,6 +2183,2365 @@ func vmTests() {
 									devList := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 									pciDevices := devList.SelectByType(&vimtypes.VirtualPCIPassthrough{})
 									Expect(pciDevices).ToNot(BeEmpty())
+								})
+							})
+						})
+					})
+				})
+
+				When("ovf uber is ready", func() {
+					JustBeforeEach(func() {
+						clusterVMI2 := &vmopv1.ClusterVirtualMachineImage{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem2Name}, clusterVMI2)).To(Succeed())
+
+						vm.Spec.ImageName = clusterVMI2.Name
+						vm.Spec.Image.Name = clusterVMI2.Name
+
+						vmic2.Status = vmopv1.VirtualMachineImageCacheStatus{
+							OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+								ConfigMapName:   vmic2.Name,
+								ProviderVersion: ctx.ContentLibraryItem2Version,
+							},
+							Conditions: []metav1.Condition{
+								{
+									Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, &vmic2)).To(Succeed())
+					})
+
+					When("files are ready", func() {
+
+						BeforeEach(func() {
+							// Ensure the VM has a UID so the VM path is stable.
+							vm.UID = types.UID("123")
+
+							configSpec := vimtypes.VirtualMachineConfigSpec{
+								ExtraConfig: []vimtypes.BaseOptionValue{
+									&vimtypes.OptionValue{
+										Key:   "fu",
+										Value: "bar",
+									},
+								},
+							}
+
+							var w bytes.Buffer
+							enc := vimtypes.NewJSONEncoder(&w)
+							Expect(enc.Encode(configSpec)).To(Succeed())
+
+							vmClass.Spec.ConfigSpec = w.Bytes()
+						})
+
+						JustBeforeEach(func() {
+							conditions.MarkTrue(
+								&vmic2,
+								vmopv1.VirtualMachineImageCacheConditionFilesReady)
+							cachedFiles := []vmopv1.VirtualMachineImageCacheFileStatus{
+								{
+									ID:       ctx.ContentLibraryItem2Disk1Path,
+									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+									DiskType: vmopv1.VolumeTypeClassic,
+								},
+								{
+									ID:       ctx.ContentLibraryItem2Disk2Path,
+									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+									DiskType: vmopv1.VolumeTypeClassic,
+								},
+								{
+									ID:       ctx.ContentLibraryItem2Disk3Path,
+									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+									DiskType: vmopv1.VolumeTypeClassic,
+								},
+								{
+									ID:   ctx.ContentLibraryItem2NVRAMPath,
+									Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
+								},
+							}
+
+							vmic2.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+								{
+									DatacenterID: ctx.Datacenter.Reference().Value,
+									DatastoreID:  ctx.Datastore.Reference().Value,
+									ProfileID:    ctx.StorageProfileID,
+									Files:        cachedFiles,
+									Conditions: []metav1.Condition{
+										{
+											Type:   vmopv1.ReadyConditionType,
+											Status: metav1.ConditionTrue,
+										},
+									},
+								},
+								{
+									DatacenterID: ctx.Datacenter.Reference().Value,
+									DatastoreID:  ctx.Datastore.Reference().Value,
+									ProfileID:    ctx.EncryptedStorageProfileID,
+									Files:        cachedFiles,
+									Conditions: []metav1.Condition{
+										{
+											Type:   vmopv1.ReadyConditionType,
+											Status: metav1.ConditionTrue,
+										},
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic2)).To(Succeed())
+
+							libMgr := library.NewManager(ctx.RestClient)
+							Expect(libMgr.SyncLibraryItem(ctx,
+								&library.Item{ID: ctx.ContentLibraryItem2ID},
+								true)).To(Succeed())
+						})
+
+						It("should succeed", func() {
+							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+							Expect(err).ToNot(HaveOccurred())
+
+							var moVM mo.VirtualMachine
+							Expect(vcVM.Properties(
+								ctx,
+								vcVM.Reference(),
+								[]string{"config.extraConfig", "config.vAppConfig"},
+								&moVM)).To(Succeed())
+							ec := object.OptionValueList(moVM.Config.ExtraConfig)
+							v1, _ := ec.GetString("hello")
+							Expect(v1).To(Equal("world"))
+							v2, _ := ec.GetString("fu")
+							Expect(v2).To(Equal("bar"))
+							v3, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+							Expect(v3).To(Equal(strings.Join(
+								[]string{
+									path.Base(ctx.ContentLibraryItem2Disk1Path),
+									path.Base(ctx.ContentLibraryItem2Disk2Path),
+									path.Base(ctx.ContentLibraryItem2Disk3Path),
+								},
+								",")))
+
+							// Check vAppConfig is not present in the CreateVM ConfigSpec
+							Expect(moVM.Config.VAppConfig).ToNot(BeNil())
+							Expect(moVM.Config.VAppConfig.GetVmConfigInfo()).ToNot(BeNil())
+							props := moVM.Config.VAppConfig.GetVmConfigInfo().Property
+							Expect(props).To(HaveLen(1))
+							Expect(props[0].Id).To(Equal("scratch_space_size_large"))
+						})
+
+						When("global default is direct mode", func() {
+							JustBeforeEach(func() {
+								pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+									config.FastDeployMode = pkgconst.FastDeployModeDirect
+								})
+							})
+
+							It("should succeed with direct mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(BeEmpty())
+							})
+						})
+
+						When("global default is linked mode", func() {
+							JustBeforeEach(func() {
+								pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+									config.FastDeployMode = pkgconst.FastDeployModeLinked
+								})
+							})
+
+							It("should succeed with linked mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(Equal(strings.Join(
+									[]string{
+										path.Base(ctx.ContentLibraryItem2Disk1Path),
+										path.Base(ctx.ContentLibraryItem2Disk2Path),
+										path.Base(ctx.ContentLibraryItem2Disk3Path),
+									},
+									",")))
+							})
+
+							When("vm uses encrypted storage class", func() {
+								JustBeforeEach(func() {
+									var storageClass storagev1.StorageClass
+									Expect(ctx.Client.Get(
+										ctx,
+										client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+										&storageClass)).To(Succeed())
+									Expect(kubeutil.MarkEncryptedStorageClass(
+										ctx,
+										ctx.Client,
+										storageClass,
+										true)).To(Succeed())
+
+									vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+									Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+								})
+
+								It("should succeed by falling back to direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// Even though global default is linked, encrypted storage should
+									// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+						})
+
+						When("vm specifies direct mode via annotation", func() {
+							JustBeforeEach(func() {
+								vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+							})
+
+							It("should succeed with direct mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(BeEmpty())
+							})
+						})
+
+						When("vm specifies linked mode via annotation", func() {
+							JustBeforeEach(func() {
+								vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+							})
+
+							It("should succeed with linked mode", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.hardware.device"},
+									&moVM)).To(Succeed())
+
+								// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v).To(Equal(strings.Join(
+									[]string{
+										path.Base(ctx.ContentLibraryItem2Disk1Path),
+										path.Base(ctx.ContentLibraryItem2Disk2Path),
+										path.Base(ctx.ContentLibraryItem2Disk3Path),
+									},
+									",")))
+							})
+
+							When("vm does not support online promote disks", func() {
+								JustBeforeEach(func() {
+									// Add a PCI passthrough device with device backing that does NOT support online
+									// promote.
+									configSpec := vimtypes.VirtualMachineConfigSpec{
+										DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+											&vimtypes.VirtualDeviceConfigSpec{
+												Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+												Device: &vimtypes.VirtualPCIPassthrough{
+													VirtualDevice: vimtypes.VirtualDevice{
+														Backing: &vimtypes.VirtualPCIPassthroughDeviceBackingInfo{
+															Id: "fake-pci-device",
+														},
+													},
+												},
+											},
+										},
+									}
+
+									var w bytes.Buffer
+									enc := vimtypes.NewJSONEncoder(&w)
+									Expect(enc.Encode(configSpec)).To(Succeed())
+
+									vmClass.Spec.ConfigSpec = w.Bytes()
+									Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
+								})
+
+								It("should succeed by falling back to direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// Even though annotation says linked, online promote not supported should
+									// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+
+									// Verify the PCI passthrough device is present
+									devList := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+									pciDevices := devList.SelectByType(&vimtypes.VirtualPCIPassthrough{})
+									Expect(pciDevices).ToNot(BeEmpty())
+								})
+							})
+						})
+					})
+				})
+
+				When("vmware images are ready", func() {
+
+					When("ovf esx is ready", func() {
+						var (
+							vmic            vmopv1.VirtualMachineImageCache
+							cachedDiskPaths []string
+							cachedDiskNames []string
+
+							libItemID      string
+							libItemName    string
+							libItemYAML    string
+							libItemVersion string
+						)
+
+						JustBeforeEach(func() {
+							libItemID = ctx.ContentLibraryItemESXID
+							libItemName = ctx.ContentLibraryItemESXName
+							libItemYAML = ctx.ContentLibraryItemESXYAML
+							libItemVersion = ctx.ContentLibraryItemESXVersion
+
+							cachedDiskPaths = []string{
+								ctx.ContentLibraryItemESXDisk1Path,
+							}
+							cachedDiskNames = make([]string, len(cachedDiskPaths))
+							for i := range cachedDiskPaths {
+								cachedDiskNames[i] = path.Base(cachedDiskPaths[i])
+							}
+
+							vmicName := pkgutil.VMIName(libItemID)
+							vmic = vmopv1.VirtualMachineImageCache{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+									Name:      vmicName,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+							vmicm := corev1.ConfigMap{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vmic.Namespace,
+									Name:      vmic.Name,
+								},
+								Data: map[string]string{
+									"value": libItemYAML,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+
+							clusterVMI := &vmopv1.ClusterVirtualMachineImage{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: libItemName}, clusterVMI)).To(Succeed())
+
+							vm.Spec.ImageName = clusterVMI.Name
+							vm.Spec.Image.Name = clusterVMI.Name
+
+							vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+								OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+									ConfigMapName:   vmic.Name,
+									ProviderVersion: libItemVersion,
+								},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						When("files are ready", func() {
+
+							BeforeEach(func() {
+								// Ensure the VM has a UID so the VM path is stable.
+								vm.UID = types.UID("123")
+
+								configSpec := vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "fu",
+											Value: "bar",
+										},
+									},
+								}
+
+								var w bytes.Buffer
+								enc := vimtypes.NewJSONEncoder(&w)
+								Expect(enc.Encode(configSpec)).To(Succeed())
+
+								vmClass.Spec.ConfigSpec = w.Bytes()
+							})
+
+							JustBeforeEach(func() {
+								conditions.MarkTrue(
+									&vmic,
+									vmopv1.VirtualMachineImageCacheConditionFilesReady)
+								cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+								for i := range cachedDiskPaths {
+									cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+										ID:       cachedDiskPaths[i],
+										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+										DiskType: vmopv1.VolumeTypeClassic,
+									}
+								}
+
+								vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.StorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.EncryptedStorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+								}
+								Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+								libMgr := library.NewManager(ctx.RestClient)
+								Expect(libMgr.SyncLibraryItem(ctx,
+									&library.Item{ID: libItemID},
+									true)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.vAppConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("fu")
+								Expect(v1).To(Equal("bar"))
+								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("global default is direct mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeDirect
+									})
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("global default is linked mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeLinked
+									})
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+
+								When("vm uses encrypted storage class", func() {
+									JustBeforeEach(func() {
+										var storageClass storagev1.StorageClass
+										Expect(ctx.Client.Get(
+											ctx,
+											client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+											&storageClass)).To(Succeed())
+										Expect(kubeutil.MarkEncryptedStorageClass(
+											ctx,
+											ctx.Client,
+											storageClass,
+											true)).To(Succeed())
+
+										vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+										Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+									})
+
+									It("should succeed by falling back to direct mode", func() {
+										vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+										Expect(err).ToNot(HaveOccurred())
+
+										var moVM mo.VirtualMachine
+										Expect(vcVM.Properties(
+											ctx,
+											vcVM.Reference(),
+											[]string{"config.extraConfig", "config.hardware.device"},
+											&moVM)).To(Succeed())
+
+										// Even though global default is linked, encrypted storage should
+										// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+										ec := object.OptionValueList(moVM.Config.ExtraConfig)
+										v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+										Expect(v).To(BeEmpty())
+									})
+								})
+							})
+
+							When("vm specifies direct mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+							})
+						})
+					})
+
+					When("ovf vcsa is ready", func() {
+						var (
+							vmic            vmopv1.VirtualMachineImageCache
+							cachedDiskPaths []string
+							cachedDiskNames []string
+
+							libItemID      string
+							libItemName    string
+							libItemYAML    string
+							libItemVersion string
+						)
+
+						JustBeforeEach(func() {
+							libItemID = ctx.ContentLibraryItemVCSAID
+							libItemName = ctx.ContentLibraryItemVCSAName
+							libItemYAML = ctx.ContentLibraryItemVCSAYAML
+							libItemVersion = ctx.ContentLibraryItemVCSAVersion
+
+							cachedDiskPaths = []string{
+								ctx.ContentLibraryItemVCSADisk1Path,
+								ctx.ContentLibraryItemVCSADisk2Path,
+								ctx.ContentLibraryItemVCSADisk3Path,
+							}
+							cachedDiskNames = make([]string, len(cachedDiskPaths))
+							for i := range cachedDiskPaths {
+								cachedDiskNames[i] = path.Base(cachedDiskPaths[i])
+							}
+
+							vmicName := pkgutil.VMIName(libItemID)
+							vmic = vmopv1.VirtualMachineImageCache{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+									Name:      vmicName,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+							vmicm := corev1.ConfigMap{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vmic.Namespace,
+									Name:      vmic.Name,
+								},
+								Data: map[string]string{
+									"value": libItemYAML,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+
+							clusterVMI := &vmopv1.ClusterVirtualMachineImage{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: libItemName}, clusterVMI)).To(Succeed())
+
+							vm.Spec.ImageName = clusterVMI.Name
+							vm.Spec.Image.Name = clusterVMI.Name
+
+							vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+								OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+									ConfigMapName:   vmic.Name,
+									ProviderVersion: libItemVersion,
+								},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						When("files are ready", func() {
+
+							BeforeEach(func() {
+								// Ensure the VM has a UID so the VM path is stable.
+								vm.UID = types.UID("123")
+
+								configSpec := vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "fu",
+											Value: "bar",
+										},
+									},
+								}
+
+								var w bytes.Buffer
+								enc := vimtypes.NewJSONEncoder(&w)
+								Expect(enc.Encode(configSpec)).To(Succeed())
+
+								vmClass.Spec.ConfigSpec = w.Bytes()
+							})
+
+							JustBeforeEach(func() {
+								conditions.MarkTrue(
+									&vmic,
+									vmopv1.VirtualMachineImageCacheConditionFilesReady)
+								cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+								for i := range cachedDiskPaths {
+									cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+										ID:       cachedDiskPaths[i],
+										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+										DiskType: vmopv1.VolumeTypeClassic,
+									}
+								}
+
+								vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.StorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.EncryptedStorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+								}
+								Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+								libMgr := library.NewManager(ctx.RestClient)
+								Expect(libMgr.SyncLibraryItem(ctx,
+									&library.Item{ID: libItemID},
+									true)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.vAppConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("fu")
+								Expect(v1).To(Equal("bar"))
+								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("global default is direct mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeDirect
+									})
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("global default is linked mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeLinked
+									})
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+
+								When("vm uses encrypted storage class", func() {
+									JustBeforeEach(func() {
+										var storageClass storagev1.StorageClass
+										Expect(ctx.Client.Get(
+											ctx,
+											client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+											&storageClass)).To(Succeed())
+										Expect(kubeutil.MarkEncryptedStorageClass(
+											ctx,
+											ctx.Client,
+											storageClass,
+											true)).To(Succeed())
+
+										vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+										Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+									})
+
+									It("should succeed by falling back to direct mode", func() {
+										vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+										Expect(err).ToNot(HaveOccurred())
+
+										var moVM mo.VirtualMachine
+										Expect(vcVM.Properties(
+											ctx,
+											vcVM.Reference(),
+											[]string{"config.extraConfig", "config.hardware.device"},
+											&moVM)).To(Succeed())
+
+										// Even though global default is linked, encrypted storage should
+										// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+										ec := object.OptionValueList(moVM.Config.ExtraConfig)
+										v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+										Expect(v).To(BeEmpty())
+									})
+								})
+							})
+
+							When("vm specifies direct mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+							})
+						})
+					})
+
+					When("ovf nsx is ready", func() {
+						var (
+							vmic            vmopv1.VirtualMachineImageCache
+							cachedDiskPaths []string
+							cachedDiskNames []string
+
+							libItemID      string
+							libItemName    string
+							libItemYAML    string
+							libItemVersion string
+						)
+
+						JustBeforeEach(func() {
+							libItemID = ctx.ContentLibraryItemVCSAID
+							libItemName = ctx.ContentLibraryItemVCSAName
+							libItemYAML = ctx.ContentLibraryItemVCSAYAML
+							libItemVersion = ctx.ContentLibraryItemVCSAVersion
+
+							cachedDiskPaths = []string{
+								ctx.ContentLibraryItemVCSADisk1Path,
+								ctx.ContentLibraryItemVCSADisk2Path,
+								ctx.ContentLibraryItemVCSADisk3Path,
+							}
+							cachedDiskNames = make([]string, len(cachedDiskPaths))
+							for i := range cachedDiskPaths {
+								cachedDiskNames[i] = path.Base(cachedDiskPaths[i])
+							}
+
+							vmicName := pkgutil.VMIName(libItemID)
+							vmic = vmopv1.VirtualMachineImageCache{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+									Name:      vmicName,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+							vmicm := corev1.ConfigMap{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vmic.Namespace,
+									Name:      vmic.Name,
+								},
+								Data: map[string]string{
+									"value": libItemYAML,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+
+							clusterVMI := &vmopv1.ClusterVirtualMachineImage{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: libItemName}, clusterVMI)).To(Succeed())
+
+							vm.Spec.ImageName = clusterVMI.Name
+							vm.Spec.Image.Name = clusterVMI.Name
+
+							vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+								OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+									ConfigMapName:   vmic.Name,
+									ProviderVersion: libItemVersion,
+								},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						When("files are ready", func() {
+
+							BeforeEach(func() {
+								// Ensure the VM has a UID so the VM path is stable.
+								vm.UID = types.UID("123")
+
+								configSpec := vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "fu",
+											Value: "bar",
+										},
+									},
+								}
+
+								var w bytes.Buffer
+								enc := vimtypes.NewJSONEncoder(&w)
+								Expect(enc.Encode(configSpec)).To(Succeed())
+
+								vmClass.Spec.ConfigSpec = w.Bytes()
+							})
+
+							JustBeforeEach(func() {
+								conditions.MarkTrue(
+									&vmic,
+									vmopv1.VirtualMachineImageCacheConditionFilesReady)
+								cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+								for i := range cachedDiskPaths {
+									cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+										ID:       cachedDiskPaths[i],
+										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+										DiskType: vmopv1.VolumeTypeClassic,
+									}
+								}
+
+								vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.StorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.EncryptedStorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+								}
+								Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+								libMgr := library.NewManager(ctx.RestClient)
+								Expect(libMgr.SyncLibraryItem(ctx,
+									&library.Item{ID: libItemID},
+									true)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.vAppConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("fu")
+								Expect(v1).To(Equal("bar"))
+								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("global default is direct mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeDirect
+									})
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("global default is linked mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeLinked
+									})
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+
+								When("vm uses encrypted storage class", func() {
+									JustBeforeEach(func() {
+										var storageClass storagev1.StorageClass
+										Expect(ctx.Client.Get(
+											ctx,
+											client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+											&storageClass)).To(Succeed())
+										Expect(kubeutil.MarkEncryptedStorageClass(
+											ctx,
+											ctx.Client,
+											storageClass,
+											true)).To(Succeed())
+
+										vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+										Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+									})
+
+									It("should succeed by falling back to direct mode", func() {
+										vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+										Expect(err).ToNot(HaveOccurred())
+
+										var moVM mo.VirtualMachine
+										Expect(vcVM.Properties(
+											ctx,
+											vcVM.Reference(),
+											[]string{"config.extraConfig", "config.hardware.device"},
+											&moVM)).To(Succeed())
+
+										// Even though global default is linked, encrypted storage should
+										// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+										ec := object.OptionValueList(moVM.Config.ExtraConfig)
+										v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+										Expect(v).To(BeEmpty())
+									})
+								})
+							})
+
+							When("vm specifies direct mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+							})
+						})
+					})
+
+					When("ovf o11n is ready", func() {
+						var (
+							vmic            vmopv1.VirtualMachineImageCache
+							cachedDiskPaths []string
+							cachedDiskNames []string
+
+							libItemID      string
+							libItemName    string
+							libItemYAML    string
+							libItemVersion string
+						)
+
+						JustBeforeEach(func() {
+							libItemID = ctx.ContentLibraryItemO11NID
+							libItemName = ctx.ContentLibraryItemO11NName
+							libItemYAML = ctx.ContentLibraryItemO11NYAML
+							libItemVersion = ctx.ContentLibraryItemO11NVersion
+
+							cachedDiskPaths = []string{
+								ctx.ContentLibraryItemO11NDisk1Path,
+								ctx.ContentLibraryItemO11NDisk2Path,
+								ctx.ContentLibraryItemO11NDisk3Path,
+								ctx.ContentLibraryItemO11NDisk4Path,
+							}
+							cachedDiskNames = make([]string, len(cachedDiskPaths))
+							for i := range cachedDiskPaths {
+								cachedDiskNames[i] = path.Base(cachedDiskPaths[i])
+							}
+
+							vmicName := pkgutil.VMIName(libItemID)
+							vmic = vmopv1.VirtualMachineImageCache{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+									Name:      vmicName,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+							vmicm := corev1.ConfigMap{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vmic.Namespace,
+									Name:      vmic.Name,
+								},
+								Data: map[string]string{
+									"value": libItemYAML,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+
+							clusterVMI := &vmopv1.ClusterVirtualMachineImage{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: libItemName}, clusterVMI)).To(Succeed())
+
+							vm.Spec.ImageName = clusterVMI.Name
+							vm.Spec.Image.Name = clusterVMI.Name
+
+							vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+								OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+									ConfigMapName:   vmic.Name,
+									ProviderVersion: libItemVersion,
+								},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						When("files are ready", func() {
+
+							BeforeEach(func() {
+								// Ensure the VM has a UID so the VM path is stable.
+								vm.UID = types.UID("123")
+
+								configSpec := vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "fu",
+											Value: "bar",
+										},
+									},
+								}
+
+								var w bytes.Buffer
+								enc := vimtypes.NewJSONEncoder(&w)
+								Expect(enc.Encode(configSpec)).To(Succeed())
+
+								vmClass.Spec.ConfigSpec = w.Bytes()
+							})
+
+							JustBeforeEach(func() {
+								conditions.MarkTrue(
+									&vmic,
+									vmopv1.VirtualMachineImageCacheConditionFilesReady)
+								cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+								for i := range cachedDiskPaths {
+									cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+										ID:       cachedDiskPaths[i],
+										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+										DiskType: vmopv1.VolumeTypeClassic,
+									}
+								}
+
+								vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.StorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.EncryptedStorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+								}
+								Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+								libMgr := library.NewManager(ctx.RestClient)
+								Expect(libMgr.SyncLibraryItem(ctx,
+									&library.Item{ID: libItemID},
+									true)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.vAppConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("fu")
+								Expect(v1).To(Equal("bar"))
+								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("global default is direct mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeDirect
+									})
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("global default is linked mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeLinked
+									})
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+
+								When("vm uses encrypted storage class", func() {
+									JustBeforeEach(func() {
+										var storageClass storagev1.StorageClass
+										Expect(ctx.Client.Get(
+											ctx,
+											client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+											&storageClass)).To(Succeed())
+										Expect(kubeutil.MarkEncryptedStorageClass(
+											ctx,
+											ctx.Client,
+											storageClass,
+											true)).To(Succeed())
+
+										vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+										Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+									})
+
+									It("should succeed by falling back to direct mode", func() {
+										vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+										Expect(err).ToNot(HaveOccurred())
+
+										var moVM mo.VirtualMachine
+										Expect(vcVM.Properties(
+											ctx,
+											vcVM.Reference(),
+											[]string{"config.extraConfig", "config.hardware.device"},
+											&moVM)).To(Succeed())
+
+										// Even though global default is linked, encrypted storage should
+										// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+										ec := object.OptionValueList(moVM.Config.ExtraConfig)
+										v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+										Expect(v).To(BeEmpty())
+									})
+								})
+							})
+
+							When("vm specifies direct mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+							})
+						})
+					})
+
+					When("ovf opapp is ready", func() {
+						var (
+							vmic            vmopv1.VirtualMachineImageCache
+							cachedDiskPaths []string
+							cachedDiskNames []string
+
+							libItemID      string
+							libItemName    string
+							libItemYAML    string
+							libItemVersion string
+						)
+
+						JustBeforeEach(func() {
+							libItemID = ctx.ContentLibraryItemOpAppID
+							libItemName = ctx.ContentLibraryItemOpAppName
+							libItemYAML = ctx.ContentLibraryItemOpAppYAML
+							libItemVersion = ctx.ContentLibraryItemVCSAVersion
+
+							cachedDiskPaths = []string{
+								ctx.ContentLibraryItemOpAppDisk1Path,
+								ctx.ContentLibraryItemOpAppDisk2Path,
+								ctx.ContentLibraryItemOpAppDisk3Path,
+							}
+							cachedDiskNames = make([]string, len(cachedDiskPaths))
+							for i := range cachedDiskPaths {
+								cachedDiskNames[i] = path.Base(cachedDiskPaths[i])
+							}
+
+							vmicName := pkgutil.VMIName(libItemID)
+							vmic = vmopv1.VirtualMachineImageCache{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+									Name:      vmicName,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+							vmicm := corev1.ConfigMap{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vmic.Namespace,
+									Name:      vmic.Name,
+								},
+								Data: map[string]string{
+									"value": libItemYAML,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+
+							clusterVMI := &vmopv1.ClusterVirtualMachineImage{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: libItemName}, clusterVMI)).To(Succeed())
+
+							vm.Spec.ImageName = clusterVMI.Name
+							vm.Spec.Image.Name = clusterVMI.Name
+
+							vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+								OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+									ConfigMapName:   vmic.Name,
+									ProviderVersion: libItemVersion,
+								},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						When("files are ready", func() {
+
+							BeforeEach(func() {
+								// Ensure the VM has a UID so the VM path is stable.
+								vm.UID = types.UID("123")
+
+								configSpec := vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "fu",
+											Value: "bar",
+										},
+									},
+								}
+
+								var w bytes.Buffer
+								enc := vimtypes.NewJSONEncoder(&w)
+								Expect(enc.Encode(configSpec)).To(Succeed())
+
+								vmClass.Spec.ConfigSpec = w.Bytes()
+							})
+
+							JustBeforeEach(func() {
+								conditions.MarkTrue(
+									&vmic,
+									vmopv1.VirtualMachineImageCacheConditionFilesReady)
+								cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+								for i := range cachedDiskPaths {
+									cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+										ID:       cachedDiskPaths[i],
+										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+										DiskType: vmopv1.VolumeTypeClassic,
+									}
+								}
+
+								vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.StorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.EncryptedStorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+								}
+								Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+								libMgr := library.NewManager(ctx.RestClient)
+								Expect(libMgr.SyncLibraryItem(ctx,
+									&library.Item{ID: libItemID},
+									true)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.vAppConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("fu")
+								Expect(v1).To(Equal("bar"))
+								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("global default is direct mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeDirect
+									})
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("global default is linked mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeLinked
+									})
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+
+								When("vm uses encrypted storage class", func() {
+									JustBeforeEach(func() {
+										var storageClass storagev1.StorageClass
+										Expect(ctx.Client.Get(
+											ctx,
+											client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+											&storageClass)).To(Succeed())
+										Expect(kubeutil.MarkEncryptedStorageClass(
+											ctx,
+											ctx.Client,
+											storageClass,
+											true)).To(Succeed())
+
+										vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+										Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+									})
+
+									It("should succeed by falling back to direct mode", func() {
+										vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+										Expect(err).ToNot(HaveOccurred())
+
+										var moVM mo.VirtualMachine
+										Expect(vcVM.Properties(
+											ctx,
+											vcVM.Reference(),
+											[]string{"config.extraConfig", "config.hardware.device"},
+											&moVM)).To(Succeed())
+
+										// Even though global default is linked, encrypted storage should
+										// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+										ec := object.OptionValueList(moVM.Config.ExtraConfig)
+										v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+										Expect(v).To(BeEmpty())
+									})
+								})
+							})
+
+							When("vm specifies direct mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+							})
+						})
+					})
+
+					When("ovf opcp is ready", func() {
+						var (
+							vmic            vmopv1.VirtualMachineImageCache
+							cachedDiskPaths []string
+							cachedDiskNames []string
+
+							libItemID      string
+							libItemName    string
+							libItemYAML    string
+							libItemVersion string
+						)
+
+						JustBeforeEach(func() {
+							libItemID = ctx.ContentLibraryItemOpCpID
+							libItemName = ctx.ContentLibraryItemOpCpName
+							libItemYAML = ctx.ContentLibraryItemOpCpYAML
+							libItemVersion = ctx.ContentLibraryItemOpCpVersion
+
+							cachedDiskPaths = []string{
+								ctx.ContentLibraryItemOpCpDisk1Path,
+								ctx.ContentLibraryItemOpCpDisk2Path,
+								ctx.ContentLibraryItemOpCpDisk3Path,
+								ctx.ContentLibraryItemOpCpDisk4Path,
+							}
+							cachedDiskNames = make([]string, len(cachedDiskPaths))
+							for i := range cachedDiskPaths {
+								cachedDiskNames[i] = path.Base(cachedDiskPaths[i])
+							}
+
+							vmicName := pkgutil.VMIName(libItemID)
+							vmic = vmopv1.VirtualMachineImageCache{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+									Name:      vmicName,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+							vmicm := corev1.ConfigMap{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vmic.Namespace,
+									Name:      vmic.Name,
+								},
+								Data: map[string]string{
+									"value": libItemYAML,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+
+							clusterVMI := &vmopv1.ClusterVirtualMachineImage{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: libItemName}, clusterVMI)).To(Succeed())
+
+							vm.Spec.ImageName = clusterVMI.Name
+							vm.Spec.Image.Name = clusterVMI.Name
+
+							vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+								OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+									ConfigMapName:   vmic.Name,
+									ProviderVersion: libItemVersion,
+								},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						When("files are ready", func() {
+
+							BeforeEach(func() {
+								// Ensure the VM has a UID so the VM path is stable.
+								vm.UID = types.UID("123")
+
+								configSpec := vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "fu",
+											Value: "bar",
+										},
+									},
+								}
+
+								var w bytes.Buffer
+								enc := vimtypes.NewJSONEncoder(&w)
+								Expect(enc.Encode(configSpec)).To(Succeed())
+
+								vmClass.Spec.ConfigSpec = w.Bytes()
+							})
+
+							JustBeforeEach(func() {
+								conditions.MarkTrue(
+									&vmic,
+									vmopv1.VirtualMachineImageCacheConditionFilesReady)
+								cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+								for i := range cachedDiskPaths {
+									cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+										ID:       cachedDiskPaths[i],
+										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+										DiskType: vmopv1.VolumeTypeClassic,
+									}
+								}
+
+								vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.StorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.EncryptedStorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+								}
+								Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+								libMgr := library.NewManager(ctx.RestClient)
+								Expect(libMgr.SyncLibraryItem(ctx,
+									&library.Item{ID: libItemID},
+									true)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.vAppConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("fu")
+								Expect(v1).To(Equal("bar"))
+								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("global default is direct mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeDirect
+									})
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("global default is linked mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeLinked
+									})
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+
+								When("vm uses encrypted storage class", func() {
+									JustBeforeEach(func() {
+										var storageClass storagev1.StorageClass
+										Expect(ctx.Client.Get(
+											ctx,
+											client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+											&storageClass)).To(Succeed())
+										Expect(kubeutil.MarkEncryptedStorageClass(
+											ctx,
+											ctx.Client,
+											storageClass,
+											true)).To(Succeed())
+
+										vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+										Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+									})
+
+									It("should succeed by falling back to direct mode", func() {
+										vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+										Expect(err).ToNot(HaveOccurred())
+
+										var moVM mo.VirtualMachine
+										Expect(vcVM.Properties(
+											ctx,
+											vcVM.Reference(),
+											[]string{"config.extraConfig", "config.hardware.device"},
+											&moVM)).To(Succeed())
+
+										// Even though global default is linked, encrypted storage should
+										// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+										ec := object.OptionValueList(moVM.Config.ExtraConfig)
+										v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+										Expect(v).To(BeEmpty())
+									})
+								})
+							})
+
+							When("vm specifies direct mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+							})
+						})
+					})
+
+					When("ovf vcfls is ready", func() {
+						var (
+							vmic            vmopv1.VirtualMachineImageCache
+							cachedDiskPaths []string
+							cachedDiskNames []string
+
+							libItemID      string
+							libItemName    string
+							libItemYAML    string
+							libItemVersion string
+						)
+
+						JustBeforeEach(func() {
+							libItemID = ctx.ContentLibraryItemVCFLSID
+							libItemName = ctx.ContentLibraryItemVCFLSName
+							libItemYAML = ctx.ContentLibraryItemVCFLSYAML
+							libItemVersion = ctx.ContentLibraryItemVCFLSVersion
+
+							cachedDiskPaths = []string{
+								ctx.ContentLibraryItemVCFLSDisk1Path,
+								ctx.ContentLibraryItemVCFLSDisk2Path,
+							}
+							cachedDiskNames = make([]string, len(cachedDiskPaths))
+							for i := range cachedDiskPaths {
+								cachedDiskNames[i] = path.Base(cachedDiskPaths[i])
+							}
+
+							vmicName := pkgutil.VMIName(libItemID)
+							vmic = vmopv1.VirtualMachineImageCache{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+									Name:      vmicName,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+							vmicm := corev1.ConfigMap{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vmic.Namespace,
+									Name:      vmic.Name,
+								},
+								Data: map[string]string{
+									"value": libItemYAML,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+
+							clusterVMI := &vmopv1.ClusterVirtualMachineImage{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: libItemName}, clusterVMI)).To(Succeed())
+
+							vm.Spec.ImageName = clusterVMI.Name
+							vm.Spec.Image.Name = clusterVMI.Name
+
+							vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+								OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+									ConfigMapName:   vmic.Name,
+									ProviderVersion: libItemVersion,
+								},
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						When("files are ready", func() {
+
+							BeforeEach(func() {
+								// Ensure the VM has a UID so the VM path is stable.
+								vm.UID = types.UID("123")
+
+								configSpec := vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "fu",
+											Value: "bar",
+										},
+									},
+								}
+
+								var w bytes.Buffer
+								enc := vimtypes.NewJSONEncoder(&w)
+								Expect(enc.Encode(configSpec)).To(Succeed())
+
+								vmClass.Spec.ConfigSpec = w.Bytes()
+							})
+
+							JustBeforeEach(func() {
+								conditions.MarkTrue(
+									&vmic,
+									vmopv1.VirtualMachineImageCacheConditionFilesReady)
+								cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+								for i := range cachedDiskPaths {
+									cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+										ID:       cachedDiskPaths[i],
+										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+										DiskType: vmopv1.VolumeTypeClassic,
+									}
+								}
+
+								vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.StorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+									{
+										DatacenterID: ctx.Datacenter.Reference().Value,
+										DatastoreID:  ctx.Datastore.Reference().Value,
+										ProfileID:    ctx.EncryptedStorageProfileID,
+										Files:        cachedFiles,
+										Conditions: []metav1.Condition{
+											{
+												Type:   vmopv1.ReadyConditionType,
+												Status: metav1.ConditionTrue,
+											},
+										},
+									},
+								}
+								Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+								libMgr := library.NewManager(ctx.RestClient)
+								Expect(libMgr.SyncLibraryItem(ctx,
+									&library.Item{ID: libItemID},
+									true)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig", "config.vAppConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("fu")
+								Expect(v1).To(Equal("bar"))
+								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("global default is direct mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeDirect
+									})
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("global default is linked mode", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.FastDeployMode = pkgconst.FastDeployModeLinked
+									})
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+								})
+
+								When("vm uses encrypted storage class", func() {
+									JustBeforeEach(func() {
+										var storageClass storagev1.StorageClass
+										Expect(ctx.Client.Get(
+											ctx,
+											client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+											&storageClass)).To(Succeed())
+										Expect(kubeutil.MarkEncryptedStorageClass(
+											ctx,
+											ctx.Client,
+											storageClass,
+											true)).To(Succeed())
+
+										vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+										Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+									})
+
+									It("should succeed by falling back to direct mode", func() {
+										vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+										Expect(err).ToNot(HaveOccurred())
+
+										var moVM mo.VirtualMachine
+										Expect(vcVM.Properties(
+											ctx,
+											vcVM.Reference(),
+											[]string{"config.extraConfig", "config.hardware.device"},
+											&moVM)).To(Succeed())
+
+										// Even though global default is linked, encrypted storage should
+										// force direct mode, so VMProvKeepDisksExtraConfigKey should NOT be present.
+										ec := object.OptionValueList(moVM.Config.ExtraConfig)
+										v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+										Expect(v).To(BeEmpty())
+									})
+								})
+							})
+
+							When("vm specifies direct mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeDirect)
+								})
+
+								It("should succeed with direct mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In direct mode, the VMProvKeepDisksExtraConfigKey should NOT be present.
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(BeEmpty())
+								})
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								JustBeforeEach(func() {
+									vm.SetAnnotation(pkgconst.FastDeployAnnotationKey, pkgconst.FastDeployModeLinked)
+								})
+
+								It("should succeed with linked mode", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config.extraConfig", "config.hardware.device"},
+										&moVM)).To(Succeed())
+
+									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
 								})
 							})
 						})

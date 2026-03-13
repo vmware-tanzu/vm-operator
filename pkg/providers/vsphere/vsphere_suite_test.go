@@ -29,6 +29,7 @@ var suite = builder.NewTestSuite()
 func vcSimTests() {
 	Describe("CPUFreq", cpuFreqTests)
 	Describe("ResourcePolicyTests", resourcePolicyTests)
+	Describe("VAppConfigExpressionProperties", vAppConfigExpressionTests)
 	Describe("VirtualMachine", vmTests)
 	Describe("VirtualMachineE2E", vmE2ETests)
 	Describe("VirtualMachineResize", vmResizeTests)
@@ -36,6 +37,7 @@ func vcSimTests() {
 	Describe("VirtualMachineGroup", vmGroupTests)
 	Describe("VirtualMachineSnapshot", vmSnapshotTests)
 	Describe("VirtualMachineUnmanagedVolumes", unmanagedVolumesTests)
+	Describe("DefaultGuestIDForBusLogic", defaultGuestIDForBusLogicTests)
 }
 
 func TestVSphereProvider(t *testing.T) {

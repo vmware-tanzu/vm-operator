@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -79,7 +80,6 @@ func genConfigSpecAffinityPolicies(
 // processVMAffinity returns placement policies for VM affinity rules.
 // VM affinity is bidirectional, so we only need to send in the label specified
 // in the VM affinity policy. Not additional labels.
-// Note: only zone topology is supported for VM affinity.
 func processVMAffinity(
 	vmCtx pkgctx.VirtualMachineContext,
 	affinity *vmopv1.VMAffinitySpec) []vimtypes.BaseVmPlacementPolicy {
@@ -99,6 +99,22 @@ func processVMAffinity(
 		})
 	}
 
+	// Process host-topology affinity terms only when VMAffinityDuringExecution is enabled.
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+		// Process required affinity terms associated with host topology.
+		requiredHostTagIDs := buildTagIDsFromHostTopology(
+			vmCtx,
+			affinity.RequiredDuringSchedulingPreferredDuringExecution,
+		)
+		for _, tagID := range requiredHostTagIDs {
+			placementPols = append(placementPols, &vimtypes.VmVmAffinity{
+				AffinedVmsTag:    tagID,
+				PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+				PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
+			})
+		}
+	}
+
 	// Process preferred affinity terms associated with zone topology.
 	preferredZoneTagIDs := buildTagIDsFromZoneTopology(
 		vmCtx,
@@ -112,13 +128,28 @@ func processVMAffinity(
 		})
 	}
 
+	// Process host-topology affinity terms only when VMAffinityDuringExecution is enabled.
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+		// Process preferred affinity terms associated with host topology.
+		preferredHostTagIDs := buildTagIDsFromHostTopology(
+			vmCtx,
+			affinity.PreferredDuringSchedulingPreferredDuringExecution,
+		)
+		for _, tagID := range preferredHostTagIDs {
+			placementPols = append(placementPols, &vimtypes.VmVmAffinity{
+				AffinedVmsTag:    tagID,
+				PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
+				PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
+			})
+		}
+	}
+
 	return placementPols
 }
 
 // processVMAntiAffinity returns placement policies from VM anti-affinity rules.
-// Use a single VmToVmGroupsAntiAffinity policy if the labels are non-empty.
-// Note: only zone topology is processed for VM anti-affinity; host topology
-// will be handled by ClusterModules.
+// Use a single VmToVmGroupsAntiAffinity policy per topology/strictness
+// combination if the labels are non-empty.
 func processVMAntiAffinity(
 	vmCtx pkgctx.VirtualMachineContext,
 	antiAffinity *vmopv1.VMAntiAffinitySpec) []vimtypes.BaseVmPlacementPolicy {
@@ -138,6 +169,21 @@ func processVMAntiAffinity(
 		})
 	}
 
+	// Process host-topology anti-affinity terms only when VMAffinityDuringExecution is enabled.
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+		requiredHostTagIDs := buildTagIDsFromHostTopology(
+			vmCtx,
+			antiAffinity.RequiredDuringSchedulingPreferredDuringExecution,
+		)
+		for _, tagID := range requiredHostTagIDs {
+			placementPols = append(placementPols, &vimtypes.VmVmAntiAffinity{
+				AntiAffinedVmsTag: tagID,
+				PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+				PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
+			})
+		}
+	}
+
 	// Process preferred anti-affinity terms associated with zone topology.
 	preferredZoneTagIDs := buildTagIDsFromZoneTopology(
 		vmCtx,
@@ -151,20 +197,36 @@ func processVMAntiAffinity(
 		})
 	}
 
+	// Process host-topology anti-affinity terms only when VMAffinityDuringExecution is enabled.
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+		preferredHostTagIDs := buildTagIDsFromHostTopology(
+			vmCtx,
+			antiAffinity.PreferredDuringSchedulingPreferredDuringExecution,
+		)
+		for _, tagID := range preferredHostTagIDs {
+			placementPols = append(placementPols, &vimtypes.VmVmAntiAffinity{
+				AntiAffinedVmsTag: tagID,
+				PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
+				PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
+			})
+		}
+	}
+
 	return placementPols
 }
 
-// buildTagIDsFromZoneTopology returns a list of TagIds built from the given
-// affinity/anti-affinity terms that have zone topology.
+// buildTagIDsFromTopology returns a list of TagIds built from the given
+// affinity/anti-affinity terms that match the specified topology key.
 // Terms with other topology types are ignored.
-func buildTagIDsFromZoneTopology(
+func buildTagIDsFromTopology(
 	vmCtx pkgctx.VirtualMachineContext,
-	terms []vmopv1.VMAffinityTerm) []vimtypes.TagId {
+	terms []vmopv1.VMAffinityTerm,
+	topologyKey string) []vimtypes.TagId {
 
 	var tagIDs []vimtypes.TagId
 
 	for _, term := range terms {
-		if term.TopologyKey != corev1.LabelTopologyZone {
+		if term.TopologyKey != topologyKey {
 			continue
 		}
 
@@ -186,6 +248,24 @@ func buildTagIDsFromZoneTopology(
 	}
 
 	return tagIDs
+}
+
+// buildTagIDsFromZoneTopology returns a list of TagIds built from the given
+// affinity/anti-affinity terms that have zone topology.
+func buildTagIDsFromZoneTopology(
+	vmCtx pkgctx.VirtualMachineContext,
+	terms []vmopv1.VMAffinityTerm) []vimtypes.TagId {
+
+	return buildTagIDsFromTopology(vmCtx, terms, corev1.LabelTopologyZone)
+}
+
+// buildTagIDsFromHostTopology returns a list of TagIds built from the given
+// affinity/anti-affinity terms that have host topology.
+func buildTagIDsFromHostTopology(
+	vmCtx pkgctx.VirtualMachineContext,
+	terms []vmopv1.VMAffinityTerm) []vimtypes.TagId {
+
+	return buildTagIDsFromTopology(vmCtx, terms, corev1.LabelHostname)
 }
 
 // extractLabelsFromSelector extracts all labels from a LabelSelector, handling both

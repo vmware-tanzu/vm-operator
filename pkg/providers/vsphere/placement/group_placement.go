@@ -107,5 +107,6 @@ func getGroupPlacementRecommendations(
 		finder,
 		candidateRPMoRefs,
 		configSpecs,
+		true,
 		needDatastorePlacement)
 }

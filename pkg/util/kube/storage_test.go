@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
@@ -32,7 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = DescribeTable("GetStoragePolicyID",
+var _ = DescribeTable("GetStoragePolicyIDFromStorageClass",
 	func(inPolicyID, expPolicyID, expErr string) {
 		obj := storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
@@ -42,7 +43,7 @@ var _ = DescribeTable("GetStoragePolicyID",
 		if inPolicyID != "" {
 			obj.Parameters = map[string]string{"storagePolicyID": inPolicyID}
 		}
-		policyID, err := kubeutil.GetStoragePolicyID(obj)
+		policyID, err := kubeutil.GetStoragePolicyIDFromStorageClass(obj)
 		if expErr != "" {
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(expErr))
@@ -62,6 +63,199 @@ var _ = DescribeTable("GetStoragePolicyID",
 		"",
 		""),
 )
+
+var _ = DescribeTable("GetStoragePolicyIDFromVolumeAttributesClass",
+	func(inPolicyID, expPolicyID string, expectErr bool) {
+		obj := storagev1.VolumeAttributesClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-volume-attributes-class",
+			},
+		}
+		if inPolicyID != "" {
+			obj.Parameters = map[string]string{internal.StoragePolicyIDParameter: inPolicyID}
+		}
+		policyID, err := kubeutil.GetStoragePolicyIDFromVolumeAttributesClass(obj)
+		if expectErr {
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
+				ObjectName:    obj.Name,
+				ObjectKind:    internal.VolumeAttributesClassKind,
+				ParameterName: internal.StoragePolicyIDParameter + " parameter",
+			}))
+		} else {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(policyID).To(Equal(expPolicyID))
+		}
+	},
+	Entry(
+		"has policy ID",
+		fakeString,
+		fakeString,
+		false),
+	Entry(
+		"does not have policy ID",
+		"",
+		"",
+		true),
+)
+
+var _ = Describe("GetStoragePolicyID", func() {
+	var (
+		ctx    context.Context
+		client ctrlclient.Client
+		vm     vmopv1.VirtualMachine
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			PodNamespace: fakeString,
+		})
+		vm = vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-vm",
+				Namespace: "my-ns",
+			},
+			Spec: vmopv1.VirtualMachineSpec{},
+		}
+	})
+
+	When("VM has StorageClass set", func() {
+		BeforeEach(func() {
+			vm.Spec.StorageClass = "my-storage-class"
+		})
+
+		When("StorageClass exists with policy ID", func() {
+			BeforeEach(func() {
+				sc := storagev1.StorageClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-storage-class"},
+					Parameters: map[string]string{
+						internal.StoragePolicyIDParameter: fakeString,
+					},
+				}
+				client = fake.NewClientBuilder().WithObjects(&sc).Build()
+			})
+			It("returns the policy ID from the StorageClass", func() {
+				policyID, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(policyID).To(Equal(fakeString))
+			})
+		})
+
+		When("StorageClass does not exist", func() {
+			BeforeEach(func() {
+				client = fake.NewClientBuilder().Build()
+			})
+			It("returns the error from the API", func() {
+				_, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
+		})
+
+		When("StorageClass exists but has no policy ID parameter", func() {
+			BeforeEach(func() {
+				sc := storagev1.StorageClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-storage-class"},
+					Parameters: map[string]string{},
+				}
+				client = fake.NewClientBuilder().WithObjects(&sc).Build()
+			})
+			It("returns ErrMissingParameter", func() {
+				_, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+				Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
+					ObjectName:    "my-storage-class",
+					ObjectKind:    internal.StorageClassKind,
+					ParameterName: internal.StoragePolicyIDParameter + " parameter",
+				}))
+			})
+		})
+	})
+
+	When("VM has empty StorageClass and no VolumeAttributesClassName", func() {
+		It("returns ErrMissingParameter for missing field", func() {
+			client = fake.NewClientBuilder().Build()
+			_, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+			Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
+				ObjectName:    "",
+				ObjectKind:    internal.StorageClassKind,
+				ParameterName: "field",
+			}))
+		})
+	})
+
+	When("VM has VolumeAttributesClassName set", func() {
+		BeforeEach(func() {
+			vm.Spec.VolumeAttributesClassName = "my-vac"
+		})
+
+		When("StoragePolicyMutability feature is disabled", func() {
+			It("returns ErrMissingParameter for capability", func() {
+				client = fake.NewClientBuilder().Build()
+				_, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+				Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
+					ObjectName:    "my-vac",
+					ObjectKind:    internal.VolumeAttributesClassKind,
+					ParameterName: "capability to be enabled",
+				}))
+			})
+		})
+
+		When("StoragePolicyMutability feature is enabled", func() {
+			BeforeEach(func() {
+				ctx = pkgcfg.WithConfig(pkgcfg.Config{
+					PodNamespace: fakeString,
+					Features:     pkgcfg.FeatureStates{StoragePolicyMutability: true},
+				})
+			})
+
+			When("VolumeAttributesClass exists with policy ID", func() {
+				BeforeEach(func() {
+					vac := storagev1.VolumeAttributesClass{
+						ObjectMeta: metav1.ObjectMeta{Name: "my-vac"},
+						Parameters: map[string]string{
+							internal.StoragePolicyIDParameter: fakeString,
+						},
+					}
+					client = fake.NewClientBuilder().WithObjects(&vac).Build()
+				})
+				It("returns the policy ID from the VolumeAttributesClass", func() {
+					policyID, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(policyID).To(Equal(fakeString))
+				})
+			})
+
+			When("VolumeAttributesClass does not exist", func() {
+				BeforeEach(func() {
+					client = fake.NewClientBuilder().Build()
+				})
+				It("returns the error from the API", func() {
+					_, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				})
+			})
+
+			When("VolumeAttributesClass exists but has no policy ID parameter", func() {
+				BeforeEach(func() {
+					vac := storagev1.VolumeAttributesClass{
+						ObjectMeta: metav1.ObjectMeta{Name: "my-vac"},
+						Parameters: map[string]string{},
+					}
+					client = fake.NewClientBuilder().WithObjects(&vac).Build()
+				})
+				It("returns ErrMissingParameter", func() {
+					_, err := kubeutil.GetStoragePolicyID(ctx, client, vm)
+					Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
+						ObjectName:    "my-vac",
+						ObjectKind:    internal.VolumeAttributesClassKind,
+						ParameterName: internal.StoragePolicyIDParameter + " parameter",
+					}))
+				})
+			})
+		})
+	})
+})
 
 var _ = Describe("SetStoragePolicyID", func() {
 	var (
@@ -88,16 +282,17 @@ var _ = Describe("SetStoragePolicyID", func() {
 	})
 	When("id is empty", func() {
 		It("should remove the policy ID from the StorageClass", func() {
-			id, err := kubeutil.GetStoragePolicyID(obj)
+			id, err := kubeutil.GetStoragePolicyIDFromStorageClass(obj)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(id).To(Equal(fakeString))
 
 			kubeutil.SetStoragePolicyID(&obj, "")
 
-			id, err = kubeutil.GetStoragePolicyID(obj)
+			id, err = kubeutil.GetStoragePolicyIDFromStorageClass(obj)
 			Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
-				StorageClassName: fakeString,
-				ParameterName:    internal.StoragePolicyIDParameter,
+				ObjectName:    fakeString,
+				ObjectKind:    internal.StorageClassKind,
+				ParameterName: internal.StoragePolicyIDParameter + " parameter",
 			}))
 			Expect(id).To(BeEmpty())
 		})
@@ -105,7 +300,7 @@ var _ = Describe("SetStoragePolicyID", func() {
 	When("id is non-empty", func() {
 		It("should set the policy ID on the StorageClass", func() {
 			kubeutil.SetStoragePolicyID(&obj, fakeString+"1")
-			id, err := kubeutil.GetStoragePolicyID(obj)
+			id, err := kubeutil.GetStoragePolicyIDFromStorageClass(obj)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(id).To(Equal(fakeString + "1"))
 		})
@@ -684,8 +879,9 @@ var _ = Describe("MarkEncryptedStorageClass", func() {
 		It("should return an error", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
-				StorageClassName: fakeString,
-				ParameterName:    internal.StoragePolicyIDParameter,
+				ObjectName:    fakeString,
+				ObjectKind:    internal.StorageClassKind,
+				ParameterName: internal.StoragePolicyIDParameter + " parameter",
 			}))
 		})
 	})

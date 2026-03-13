@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -69,12 +68,7 @@ const (
 	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
 	removingBackfilledVolumeNotAllowed         = "removing volume backfilled from classic disk is not allowed"
-	modifyingBackfilledVolumeNotAllowed        = "modifying backfilled volume is not allowed"
-	storageClassNotFoundFmt                    = "Storage class %s does not exist"
-	storageVACNotFoundFmt                      = "Volume Attributes Class %s does not exist"
 	storagePolicyNotAssociatedOnNSFmt          = "Storage policy is not associated with the namespace %s by object %s"
-	storagePolicyNotSpecifiedObjFmt            = "Storage policy not specified on object %s"
-	storageVACNotAllowed                       = "Volume Attributes Class cannot be used if capability is not enabled"
 	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
 	addingModifyingInstanceVolumesNotAllowed   = "adding or modifying instance storage volume claim(s) is not allowed"
 	featureNotEnabled                          = "the %s feature is not enabled"
@@ -685,47 +679,21 @@ func (v validator) validateStorageFields(
 		return allErrs
 	}
 
-	objPath := field.NewPath("spec", "storageClass")
-	objName := vm.Spec.StorageClass
-
-	obj := &storagev1.StorageClass{}
-	if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: objName}, obj); err != nil {
-		if apierrors.IsNotFound(err) {
-			return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storageClassNotFoundFmt, objName)))
-		}
-		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
-	}
-
 	// Storage policyID mutability via storage VolumeAttributeClass objects
 	// VolumeAttributeClass's policyID trumps StorageClass's policyID.
-	// Throw an error if the new field is used while the capability is disabled.
 
-	var policyID string
+	objPath := field.NewPath("spec", "storageClass")
+	objName := vm.Spec.StorageClass
 
 	if vm.Spec.VolumeAttributesClassName != "" {
 		objPath = field.NewPath("spec", "volumeAttributesClassName")
 		objName = vm.Spec.VolumeAttributesClassName
-		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
-			return append(allErrs, field.Invalid(objPath, objName, storageVACNotAllowed))
-		}
-		vac := &storagev1.VolumeAttributesClass{}
-		if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: objName}, vac); err != nil {
-			if apierrors.IsNotFound(err) {
-				return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storageVACNotFoundFmt, objName)))
-			}
-			return append(allErrs, field.Invalid(objPath, objName, err.Error()))
-		}
-		policyID = vac.Parameters[spqutil.StorageParamPolicyID]
-		if policyID == "" {
-			return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storagePolicyNotSpecifiedObjFmt, objName)))
-		}
+	}
 
-	} else {
-		// initializing policyID from SC object
-		var errPolicyID error
-		if policyID, errPolicyID = kubeutil.GetStoragePolicyID(*obj); errPolicyID != nil {
-			return append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storagePolicyNotSpecifiedObjFmt, objName)))
-		}
+	policyID, errPolicyID := kubeutil.GetStoragePolicyID(ctx, v.client, *vm)
+
+	if errPolicyID != nil {
+		return append(allErrs, field.Invalid(objPath, objName, errPolicyID.Error()))
 	}
 
 	ok, err := spqutil.IsStoragePolicyInNamespace(ctx, v.client, objName, policyID, vm.Namespace)

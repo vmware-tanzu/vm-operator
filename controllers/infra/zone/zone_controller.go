@@ -54,8 +54,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{
-			SkipNameValidation: SkipNameValidation,
-			LogConstructor:     pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, 0),
+			SkipNameValidation:      SkipNameValidation,
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
 }

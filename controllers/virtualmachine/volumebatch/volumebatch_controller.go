@@ -113,7 +113,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	c, err := controller.New(controllerName, mgr, controller.Options{
 		Reconciler:              r,
-		MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+		MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 		LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, &vmopv1.VirtualMachine{}, mgr.GetScheme()),
 	})
 	if err != nil {

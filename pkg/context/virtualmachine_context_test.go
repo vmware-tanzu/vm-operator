@@ -21,6 +21,66 @@ func TestVMContext(t *testing.T) {
 	RunSpecs(t, "VM Context Suite")
 }
 
+var _ = Describe("ControllerManagerContext", func() {
+	Describe("GetMaxConcurrentReconciles", func() {
+		var cmCtx *pkgctx.ControllerManagerContext
+
+		BeforeEach(func() {
+			cmCtx = &pkgctx.ControllerManagerContext{}
+		})
+
+		When("map is nil", func() {
+			It("should return the default value", func() {
+				result := cmCtx.GetMaxConcurrentReconciles("virtualmachine-controller", 10)
+				Expect(result).To(Equal(10))
+			})
+		})
+
+		When("map is empty", func() {
+			BeforeEach(func() {
+				cmCtx.ControllerMaxConcurrentReconciles = make(map[string]int)
+			})
+
+			It("should return the default value", func() {
+				result := cmCtx.GetMaxConcurrentReconciles("virtualmachine-controller", 10)
+				Expect(result).To(Equal(10))
+			})
+		})
+
+		When("controller is in the map", func() {
+			BeforeEach(func() {
+				cmCtx.ControllerMaxConcurrentReconciles = map[string]int{
+					"virtualmachine-controller": 20,
+					"volume-controller":         5,
+				}
+			})
+
+			It("should return the configured value", func() {
+				result := cmCtx.GetMaxConcurrentReconciles("virtualmachine-controller", 10)
+				Expect(result).To(Equal(20))
+			})
+
+			It("should return the configured value for another controller", func() {
+				result := cmCtx.GetMaxConcurrentReconciles("volume-controller", 10)
+				Expect(result).To(Equal(5))
+			})
+		})
+
+		When("controller is not in the map", func() {
+			BeforeEach(func() {
+				cmCtx.ControllerMaxConcurrentReconciles = map[string]int{
+					"virtualmachine-controller": 20,
+				}
+			})
+
+			It("should return the default value", func() {
+				result := cmCtx.GetMaxConcurrentReconciles("other-controller", 10)
+				Expect(result).To(Equal(10))
+			})
+		})
+	})
+})
+
 var _ = Describe("VM Context Helper Functions", func() {
 	var (
 		ctx context.Context

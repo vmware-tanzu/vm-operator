@@ -907,6 +907,8 @@ func (v validator) validateNetworkVLANs(
 	var (
 		// Track VLAN Link to an existing interface name
 		interfaceNames = sets.New[string]()
+		// Track VLAN Link to an existing interface device name
+		interfaceDeviceNames = sets.New[string]()
 		// Track the primary interface name (first interface in the list),
 		// to disallow VLAN on primary network interface.
 		primaryInterfaceName = ""
@@ -916,14 +918,28 @@ func (v validator) validateNetworkVLANs(
 
 	for i, iface := range networkSpec.Interfaces {
 		interfaceNames.Insert(iface.Name)
+		if iface.GuestDeviceName != "" {
+			interfaceDeviceNames.Insert(iface.GuestDeviceName)
+		}
 		if i == 0 {
 			primaryInterfaceName = iface.Name
 		}
 	}
 
-	// Validate each VLAN configuration.
-	for vlanName, vlanSpec := range networkSpec.VLANs {
-		vlanPath := vlansPath.Key(vlanName)
+	for i, vlanSpec := range networkSpec.VLANs {
+		vlanPath := vlansPath.Index(i)
+
+		// Validate VLAN name does not conflict with interface Name or GuestDeviceName.
+		if interfaceNames.Has(vlanSpec.Name) {
+			allErrs = append(allErrs, field.Invalid(vlanPath.Child("name"), vlanSpec.Name,
+				"vlan name must not conflict with an interface name",
+			))
+		}
+		if interfaceDeviceNames.Has(vlanSpec.Name) {
+			allErrs = append(allErrs, field.Invalid(vlanPath.Child("name"), vlanSpec.Name,
+				"vlan name must not conflict with an interface guestDeviceName",
+			))
+		}
 
 		// Link is required
 		if vlanSpec.Link == "" {
@@ -957,7 +973,7 @@ func (v validator) validateNetworkVLANs(
 					vlanSpec.ID, existingVlanName, vlanSpec.Link),
 			))
 		} else {
-			vlanIDsPerLink[vlanSpec.Link][vlanSpec.ID] = vlanName
+			vlanIDsPerLink[vlanSpec.Link][vlanSpec.ID] = vlanSpec.Name
 		}
 	}
 

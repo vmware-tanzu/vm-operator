@@ -13,7 +13,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-func NetPlanCustomization(result NetworkInterfaceResults, vlans map[string]vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
+func NetPlanCustomization(result NetworkInterfaceResults, vlans []vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
 	netPlan := &netplan.Network{
 		Version:   constants.NetPlanVersion,
 		Ethernets: make(map[string]netplan.Ethernet),
@@ -99,16 +99,15 @@ func NetPlanCustomization(result NetworkInterfaceResults, vlans map[string]vmopv
 		netPlan.Ethernets[r.Name] = npEth
 	}
 
-	// VLANs configuration
 	if len(vlans) > 0 {
 		netPlan.Vlans = make(map[string]netplan.VLAN)
-		for vlanName, vlan := range vlans {
+		for _, vlan := range vlans {
 			npVlan := netplan.VLAN{
 				ID:   ptr.To(vlan.ID),
 				Link: ptr.To(vlan.Link),
 			}
 
-			netPlan.Vlans[vlanName] = npVlan
+			netPlan.Vlans[vlan.Name] = npVlan
 		}
 	}
 

@@ -471,6 +471,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineAffinity(dst, restored)
+	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
+	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
 
 	// END RESTORE
 

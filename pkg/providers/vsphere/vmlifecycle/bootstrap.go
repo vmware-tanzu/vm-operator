@@ -66,7 +66,7 @@ type BootstrapArgs struct {
 	HostName         string
 	DNSServers       []string
 	SearchSuffixes   []string
-	VLANs            map[string]vmopv1.VirtualMachineNetworkVLANSpec
+	VLANs            []vmopv1.VirtualMachineNetworkVLANSpec
 }
 
 var (

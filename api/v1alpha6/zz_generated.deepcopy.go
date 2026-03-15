@@ -2603,10 +2603,8 @@ func (in *VirtualMachineNetworkSpec) DeepCopyInto(out *VirtualMachineNetworkSpec
 	}
 	if in.VLANs != nil {
 		in, out := &in.VLANs, &out.VLANs
-		*out = make(map[string]VirtualMachineNetworkVLANSpec, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
+		*out = make([]VirtualMachineNetworkVLANSpec, len(*in))
+		copy(*out, *in)
 	}
 }
 

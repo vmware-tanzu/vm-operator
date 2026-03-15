@@ -37,7 +37,7 @@ var _ = Describe("Netplan", func() {
 
 		var (
 			results network.NetworkInterfaceResults
-			vlans   map[string]vmopv1.VirtualMachineNetworkVLANSpec
+			vlans   []vmopv1.VirtualMachineNetworkVLANSpec
 			config  *netplan.Network
 			err     error
 		)
@@ -429,10 +429,11 @@ var _ = Describe("Netplan", func() {
 
 			Context("Single VLAN", func() {
 				BeforeEach(func() {
-					vlans = map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-						vlanName1: {
+					vlans = []vmopv1.VirtualMachineNetworkVLANSpec{
+						{
+							Name: vlanName1,
 							ID:   vlanID1,
-							Link: guestDevName,
+							Link: ifName,
 						},
 					}
 				})
@@ -450,20 +451,22 @@ var _ = Describe("Netplan", func() {
 
 					vlan := config.Vlans[vlanName1]
 					Expect(vlan.ID).To(HaveValue(Equal(vlanID1)))
-					Expect(vlan.Link).To(HaveValue(Equal(guestDevName)))
+					Expect(vlan.Link).To(HaveValue(Equal(ifName)))
 				})
 			})
 
 			Context("Multiple VLANs", func() {
 				BeforeEach(func() {
-					vlans = map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-						vlanName1: {
+					vlans = []vmopv1.VirtualMachineNetworkVLANSpec{
+						{
+							Name: vlanName1,
 							ID:   vlanID1,
-							Link: guestDevName,
+							Link: ifName,
 						},
-						vlanName2: {
+						{
+							Name: vlanName2,
 							ID:   vlanID2,
-							Link: guestDevName,
+							Link: ifName,
 						},
 					}
 				})
@@ -479,12 +482,12 @@ var _ = Describe("Netplan", func() {
 					Expect(config.Vlans).To(HaveKey(vlanName1))
 					vlan1 := config.Vlans[vlanName1]
 					Expect(vlan1.ID).To(HaveValue(Equal(vlanID1)))
-					Expect(vlan1.Link).To(HaveValue(Equal(guestDevName)))
+					Expect(vlan1.Link).To(HaveValue(Equal(ifName)))
 
 					Expect(config.Vlans).To(HaveKey(vlanName2))
 					vlan2 := config.Vlans[vlanName2]
 					Expect(vlan2.ID).To(HaveValue(Equal(vlanID2)))
-					Expect(vlan2.Link).To(HaveValue(Equal(guestDevName)))
+					Expect(vlan2.Link).To(HaveValue(Equal(ifName)))
 				})
 			})
 
@@ -500,9 +503,9 @@ var _ = Describe("Netplan", func() {
 				})
 			})
 
-			Context("Empty VLANs map", func() {
+			Context("Empty VLANs list", func() {
 				BeforeEach(func() {
-					vlans = map[string]vmopv1.VirtualMachineNetworkVLANSpec{}
+					vlans = []vmopv1.VirtualMachineNetworkVLANSpec{}
 				})
 
 				It("returns success without VLANs", func() {

@@ -2870,12 +2870,14 @@ func unitTestsValidateCreate() {
 									Name: "eth1",
 								},
 							},
-							VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-								"vlan100": {
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100",
 									ID:   100,
 									Link: "eth1",
 								},
-								"vlan200": {
+								{
+									Name: "vlan200",
 									ID:   200,
 									Link: "eth1",
 								},
@@ -2898,8 +2900,9 @@ func unitTestsValidateCreate() {
 									Name: "eth0",
 								},
 							},
-							VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-								"vlan100": {
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100",
 									ID:   100,
 									Link: "eth0",
 								},
@@ -2907,7 +2910,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans: Invalid value: {"vlan100":{"id":100,"link":"eth0"}}: vlans is available only with the following bootstrap providers: CloudInit`,
+						`vlans is available only with the following bootstrap providers: CloudInit`,
 					),
 				},
 			),
@@ -2921,8 +2924,9 @@ func unitTestsValidateCreate() {
 									Name: "eth0",
 								},
 							},
-							VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-								"vlan100": {
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100",
 									ID:   100,
 									Link: "eth0",
 								},
@@ -2930,7 +2934,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans: Invalid value: {"vlan100":{"id":100,"link":"eth0"}}: vlans is available only with the following bootstrap providers: CloudInit`,
+						`vlans is available only with the following bootstrap providers: CloudInit`,
 					),
 				},
 			),
@@ -2947,16 +2951,17 @@ func unitTestsValidateCreate() {
 									Name: "eth0",
 								},
 							},
-							VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-								"vlan100": {
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100",
 									ID:   100,
-									Link: "eth1", // eth1 does not exist
+									Link: "eth1",
 								},
 							},
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans[vlan100].link: Invalid value: "eth1": link must reference an existing interface name from the interfaces list: [eth0]`,
+						`spec.network.vlans[0].link: Invalid value: "eth1": link must reference an existing interface name from the interfaces list: [eth0]`,
 					),
 				},
 			),
@@ -2973,8 +2978,9 @@ func unitTestsValidateCreate() {
 									Name: "eth0",
 								},
 							},
-							VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-								"vlan100": {
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100",
 									ID:   100,
 									Link: "",
 								},
@@ -2982,7 +2988,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans[vlan100].link: Required value: link must reference an interface name`,
+						`spec.network.vlans[0].link: Required value: link must reference an interface name`,
 					),
 				},
 			),
@@ -2996,19 +3002,20 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
-									Name: "eth0", // primary NIC
+									Name: "eth0",
 								},
 							},
-							VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-								"vlan100": {
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100",
 									ID:   100,
-									Link: "eth0", // trying to create VLAN on primary NIC
+									Link: "eth0",
 								},
 							},
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans[vlan100].link: Invalid value: "eth0": cannot create VLAN sub-interface on the primary network interface`,
+						`spec.network.vlans[0].link: Invalid value: "eth0": cannot create VLAN sub-interface on the primary network interface`,
 					),
 				},
 			),
@@ -3028,13 +3035,15 @@ func unitTestsValidateCreate() {
 									Name: "eth1",
 								},
 							},
-							VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-								"vlan100a": {
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100a",
 									ID:   100,
 									Link: "eth1",
 								},
-								"vlan100b": {
-									ID:   100, // duplicate ID on same link
+								{
+									Name: "vlan100b",
+									ID:   100,
 									Link: "eth1",
 								},
 							},
@@ -3042,6 +3051,67 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`Invalid value: 100: VLAN ID 100 is already used by VLAN`,
+					),
+				},
+			),
+
+			Entry("disallow VLAN name conflicting with interface name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+								{
+									Name: "eth1",
+								},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "eth1",
+									ID:   100,
+									Link: "eth1",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.vlans[0].name: Invalid value: "eth1": vlan name must not conflict with an interface name`,
+					),
+				},
+			),
+
+			Entry("disallow VLAN name conflicting with interface guestDeviceName",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+								{
+									Name:            "eth1",
+									GuestDeviceName: "mynic",
+								},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "mynic",
+									ID:   100,
+									Link: "eth1",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.vlans[0].name: Invalid value: "mynic": vlan name must not conflict with an interface guestDeviceName`,
 					),
 				},
 			),

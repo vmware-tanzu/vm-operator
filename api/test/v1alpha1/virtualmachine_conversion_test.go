@@ -2187,7 +2187,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Network: &vmopv1.VirtualMachineNetworkSpec{
 						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 							{
-								Name: "vds-interface",
+								Name: "eth0",
 								Network: &vmopv1common.PartialObjectRef{
 									TypeMeta: metav1.TypeMeta{
 										Kind:       "Network",
@@ -2195,10 +2195,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 									Name: "primary",
 								},
-								GuestDeviceName: "eth0",
 							},
 							{
-								Name: "vds-interface",
+								Name: "eth1",
 								Network: &vmopv1common.PartialObjectRef{
 									TypeMeta: metav1.TypeMeta{
 										Kind:       "Network",
@@ -2206,10 +2205,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 									Name: "primary",
 								},
-								GuestDeviceName: "eth1",
 							},
 							{
-								Name: "vds-interface",
+								Name: "eth2",
 								Network: &vmopv1common.PartialObjectRef{
 									TypeMeta: metav1.TypeMeta{
 										Kind:       "Network",
@@ -2217,19 +2215,21 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 									Name: "primary",
 								},
-								GuestDeviceName: "eth2",
 							},
 						},
-						VLANs: map[string]vmopv1.VirtualMachineNetworkVLANSpec{
-							"vlan100": {
+						VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+							{
+								Name: "vlan100",
 								ID:   100,
 								Link: "eth1",
 							},
-							"vlan200": {
+							{
+								Name: "vlan200",
 								ID:   200,
 								Link: "eth1",
 							},
-							"vlan300": {
+							{
+								Name: "vlan300",
 								ID:   300,
 								Link: "eth2",
 							},
@@ -2253,16 +2253,16 @@ func TestVirtualMachineConversion(t *testing.T) {
 			// Verify hub
 			g.Expect(hubAfter.Spec.Network).ToNot(BeNil())
 			g.Expect(hubAfter.Spec.Network.VLANs).To(HaveLen(3))
-			g.Expect(hubAfter.Spec.Network.VLANs).To(HaveKey("vlan100"))
-			g.Expect(hubAfter.Spec.Network.VLANs).To(HaveKey("vlan200"))
-			g.Expect(hubAfter.Spec.Network.VLANs).To(HaveKey("vlan300"))
 
-			g.Expect(hubAfter.Spec.Network.VLANs["vlan100"].ID).To(Equal(int64(100)))
-			g.Expect(hubAfter.Spec.Network.VLANs["vlan100"].Link).To(Equal("eth1"))
-			g.Expect(hubAfter.Spec.Network.VLANs["vlan200"].ID).To(Equal(int64(200)))
-			g.Expect(hubAfter.Spec.Network.VLANs["vlan200"].Link).To(Equal("eth1"))
-			g.Expect(hubAfter.Spec.Network.VLANs["vlan300"].ID).To(Equal(int64(300)))
-			g.Expect(hubAfter.Spec.Network.VLANs["vlan300"].Link).To(Equal("eth2"))
+			g.Expect(hubAfter.Spec.Network.VLANs[0].Name).To(Equal("vlan100"))
+			g.Expect(hubAfter.Spec.Network.VLANs[0].ID).To(Equal(int64(100)))
+			g.Expect(hubAfter.Spec.Network.VLANs[0].Link).To(Equal("eth1"))
+			g.Expect(hubAfter.Spec.Network.VLANs[1].Name).To(Equal("vlan200"))
+			g.Expect(hubAfter.Spec.Network.VLANs[1].ID).To(Equal(int64(200)))
+			g.Expect(hubAfter.Spec.Network.VLANs[1].Link).To(Equal("eth1"))
+			g.Expect(hubAfter.Spec.Network.VLANs[2].Name).To(Equal("vlan300"))
+			g.Expect(hubAfter.Spec.Network.VLANs[2].ID).To(Equal(int64(300)))
+			g.Expect(hubAfter.Spec.Network.VLANs[2].Link).To(Equal("eth2"))
 
 			// Verify full round-trip equality
 			g.Expect(apiequality.Semantic.DeepEqual(hub.Spec.Network.VLANs, hubAfter.Spec.Network.VLANs)).To(BeTrue(),

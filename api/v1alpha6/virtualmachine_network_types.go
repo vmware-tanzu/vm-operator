@@ -181,8 +181,16 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	SearchDomains []string `json:"searchDomains,omitempty"`
 }
 
-// VirtualMachineNetworkVLANSpec describes a VLAN interface configuration.
+// VirtualMachineNetworkVLANSpec describes a VLAN sub-interface configuration.
 type VirtualMachineNetworkVLANSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=15
+	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+
+	// Name is the name of this VLAN interface.
+	Name string `json:"name"`
+
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=4094
@@ -310,9 +318,11 @@ type VirtualMachineNetworkSpec struct {
 	Interfaces []VirtualMachineNetworkInterfaceSpec `json:"interfaces,omitempty"`
 
 	// +optional
+	// +listType=map
+	// +listMapKey=name
 
-	// VLANs is a map of VLAN interfaces to be configured on top of the physical
-	// network interfaces. The key is the VLAN interface name.
+	// VLANs is a list of VLAN interfaces to be configured on top of the
+	// physical network interfaces.
 	//
 	// VLAN interfaces are virtual network interfaces that tag traffic with a
 	// VLAN ID. Each VLAN must reference a parent interface from the Interfaces
@@ -320,7 +330,7 @@ type VirtualMachineNetworkSpec struct {
 	//
 	// Please note this feature is available only with the following bootstrap
 	// providers: CloudInit.
-	VLANs map[string]VirtualMachineNetworkVLANSpec `json:"vlans,omitempty"`
+	VLANs []VirtualMachineNetworkVLANSpec `json:"vlans,omitempty"`
 }
 
 // VirtualMachineNetworkDNSStatus describes the observed state of the guest's

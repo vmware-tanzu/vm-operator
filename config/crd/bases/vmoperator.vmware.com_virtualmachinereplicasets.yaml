@@ -10110,6 +10110,46 @@ spec:
                             items:
                               type: string
                             type: array
+                          vlans:
+                            description: |-
+                              VLANs is a list of VLAN interfaces to be configured on top of the
+                              physical network interfaces.
+
+                              VLAN interfaces are virtual network interfaces that tag traffic with a
+                              VLAN ID. Each VLAN must reference a parent interface from the Interfaces
+                              list via the Link field.
+
+                              Please note this feature is available only with the following bootstrap
+                              providers: CloudInit.
+                            items:
+                              description: VirtualMachineNetworkVLANSpec describes
+                                a VLAN sub-interface configuration.
+                              properties:
+                                id:
+                                  description: ID is the VLAN ID, a number between
+                                    0 and 4094.
+                                  format: int64
+                                  maximum: 4094
+                                  minimum: 0
+                                  type: integer
+                                link:
+                                  description: |-
+                                    Link is the name of the parent interface on which this VLAN is created.
+                                    This must reference an interface name from the Interfaces list.
+                                  type: string
+                                name:
+                                  description: Name is the name of this VLAN interface.
+                                  pattern: ^[a-z0-9]{2,}$
+                                  type: string
+                              required:
+                              - id
+                              - link
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
                         type: object
                       nextRestartTime:
                         description: |-

@@ -28,6 +28,8 @@ type Address = schema.AddressMapping
 
 type Renderer = schema.Renderer
 
+type VLAN = schema.VLANConfig
+
 func MarshalYAML(in Config) ([]byte, error) {
 	return yaml.Marshal(in)
 }

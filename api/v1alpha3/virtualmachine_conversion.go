@@ -366,6 +366,17 @@ func restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, src *vmopv1.V
 	}
 }
 
+func restore_v1alpha6_VirtualMachineNetworkVLANs(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Network == nil || len(src.Spec.Network.VLANs) == 0 {
+		return
+	}
+
+	if dst.Spec.Network == nil {
+		dst.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+	}
+	dst.Spec.Network.VLANs = src.Spec.Network.VLANs
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -394,6 +405,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineAffinity(dst, restored)
 	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
+	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
 
 	// END RESTORE
 

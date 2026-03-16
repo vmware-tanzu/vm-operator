@@ -3786,7 +3786,7 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Host topology key for non-privileged users",
+			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Host topology key for non-privileged users when VMAffinityRules is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = false
@@ -3800,6 +3800,45 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`),
+				},
+			),
+
+			Entry("allow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Host topology key for non-privileged users when VMAffinityDuringExecution is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMAffinityDuringExecution = true
+						})
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and unsupported topology key for non-privileged users with VMAffinityDuringExecution",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMAffinityDuringExecution = true
+						})
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: "unsupported-key",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "unsupported-key": supported values: "topology.kubernetes.io/zone", "kubernetes.io/hostname"`),
 				},
 			),
 

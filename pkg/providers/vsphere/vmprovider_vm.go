@@ -64,6 +64,7 @@ import (
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
@@ -2422,6 +2423,30 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	return nil
 }
 
+// NormalizeVAppConfigExpressionProperties converts vAppProperty types from
+// expression and ip:network to string so they can be configured via vApp
+// bootstrap templating. Supervisor does not support vApp network expressions.
+func NormalizeVAppConfigExpressionProperties(configSpec *vimtypes.VirtualMachineConfigSpec) {
+	if configSpec == nil {
+		return
+	}
+	if bvac := configSpec.VAppConfig; bvac != nil {
+		if vac := bvac.GetVmConfigSpec(); vac != nil {
+			for i := range vac.Property {
+				if info := vac.Property[i].Info; info != nil {
+					if info.Type == "expression" ||
+						strings.HasPrefix(info.Type, "ip:") {
+
+						info.Type = "string"
+						info.DefaultValue = ""
+						info.UserConfigurable = ptr.To(true)
+					}
+				}
+			}
+		}
+	}
+}
+
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
@@ -2498,6 +2523,11 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 
 	// Inherit the image's vAppConfig.
 	createArgs.ConfigSpec.VAppConfig = imgConfigSpec.VAppConfig
+
+	// Change any vAppProperty types from expression to string since the
+	// expressions are not supported as they are all to do with networking, and
+	// VM Service VMs rely on Supervisor networking, not vApp networking.
+	NormalizeVAppConfigExpressionProperties(&createArgs.ConfigSpec)
 
 	if imageType == imageTypeVM && vmCtx.VM.Spec.Crypto != nil &&
 		vmCtx.VM.Spec.Crypto.VTPMMode == vmopv1.VirtualMachineCryptoVTPMModeClone {
@@ -2587,7 +2617,54 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		}
 	}
 
+	// If the image's ConfigSpec does not have a guest ID set, and there is a
+	// BusLogic controller from the image, and there is no guest ID from the VM
+	// spec, and the guest ID from the class is otherLinux64, the default, then
+	// set the guest ID to otherLinuxGuest (32-bit).
+	if DefaultGuestIDForBusLogicIfNeeded(
+		vmCtx.VM.Spec.GuestID,
+		imgConfigSpec.GuestId,
+		&createArgs.ConfigSpec) {
+
+		logger.Info(
+			"Defaulted guest ID to otherLinuxGuest (32-bit) due to " +
+				"BusLogic controller")
+	}
+
 	return nil
+}
+
+// DefaultGuestIDForBusLogicIfNeeded sets createArgs.ConfigSpec.GuestId to
+// otherLinuxGuest (32-bit) when: VM spec has no GuestID, createArgs has
+// otherLinux64Guest, image guest ID is not otherLinux64, and the config has a
+// BusLogic controller. Returns true if the guest ID was updated.
+func DefaultGuestIDForBusLogicIfNeeded(
+	vmSpecGuestID, imgGuestID string,
+	configSpec *vimtypes.VirtualMachineConfigSpec) bool {
+
+	if vmSpecGuestID != "" ||
+		configSpec.GuestId !=
+			string(vimtypes.VirtualMachineGuestOsIdentifierOtherLinux64Guest) ||
+		imgGuestID ==
+			string(vimtypes.VirtualMachineGuestOsIdentifierOtherLinux64Guest) {
+		return false
+	}
+
+	for _, bdc := range configSpec.DeviceChange {
+		if bdc != nil {
+			if dc := bdc.GetVirtualDeviceConfigSpec(); dc != nil {
+				if _, ok := dc.Device.(*vimtypes.VirtualBusLogicController); ok {
+
+					configSpec.GuestId = string(
+						vimtypes.VirtualMachineGuestOsIdentifierOtherLinuxGuest)
+
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(

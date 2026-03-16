@@ -9,8 +9,8 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
   xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <References>
-    <File ovf:href="ttylinux-pc_i486-16.1-disk1.vmdk" ovf:id="file1" ovf:size="10595840" />
-    <File ovf:href="ttylinux-pc_i486-16.1-2.nvram" ovf:id="file2" ovf:size="8684" />
+    <File ovf:href="disk0.vmdk" ovf:id="file1" ovf:size="10595840" />
+    <File ovf:href="ttylinux-pc_i486-16.1.nvram" ovf:id="file2" ovf:size="8684" />
   </References>
   <DiskSection>
     <Info>Virtual disk information</Info>
@@ -123,7 +123,10 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
 
       <!-- ExtraConfig -->
       <vmw:ExtraConfig ovf:required="false" vmw:key="vmservice.vmi.labels"
-        vmw:value="example.com/hello:world,fu.bar:,another.example.com:true" />
+         vmw:value="example.com/hello:world,fu.bar:,another.example.com:true" />
+      <vmw:ExtraConfig ovf:required="false" vmw:key="fu" vmw:value="barred" />
+      <vmw:ExtraConfig ovf:required="false" vmw:key="hello" vmw:value="world" />
+      <vmw:ExtraConfig ovf:required="false" vmw:key="nvram" vmw:value="ovf:/file/file2" />
       <!-- ExtraConfig -->
 
     </VirtualHardwareSection>

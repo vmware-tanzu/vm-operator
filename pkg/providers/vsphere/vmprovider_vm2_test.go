@@ -342,9 +342,9 @@ func vmE2ETests() {
 
 		vm.Namespace = nsInfo.Namespace
 		vm.Spec.ClassName = vmClass.Name
-		vm.Spec.ImageName = ctx.ContentLibraryImageName
+		vm.Spec.ImageName = ctx.ContentLibraryItem1Name
 		vm.Spec.Image.Kind = cvmiKind
-		vm.Spec.Image.Name = ctx.ContentLibraryImageName
+		vm.Spec.Image.Name = ctx.ContentLibraryItem1Name
 		vm.Spec.StorageClass = ctx.StorageClassName
 		if vm.Spec.Network != nil {
 			vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}

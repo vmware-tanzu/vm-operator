@@ -70,7 +70,7 @@ var _ = Describe("createFastDeploy", func() {
 				// Similar test but for TLD-supported datastores
 				// This uses FileManager.MakeDirectory instead of CreateDirectory
 
-				vmicName := pkgutil.VMIName(ctx.ContentLibraryItemID)
+				vmicName := pkgutil.VMIName(ctx.ContentLibraryItem1ID)
 				vmic := vmopv1.VirtualMachineImageCache{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: pkgcfg.FromContext(ctx).PodNamespace,
@@ -79,7 +79,7 @@ var _ = Describe("createFastDeploy", func() {
 					Status: vmopv1.VirtualMachineImageCacheStatus{
 						OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
 							ConfigMapName:   vmicName,
-							ProviderVersion: ctx.ContentLibraryItemVersion,
+							ProviderVersion: ctx.ContentLibraryItem1Version,
 						},
 						Conditions: []metav1.Condition{
 							{
@@ -98,12 +98,12 @@ var _ = Describe("createFastDeploy", func() {
 								ProfileID:    ctx.StorageProfileID,
 								Files: []vmopv1.VirtualMachineImageCacheFileStatus{
 									{
-										ID:       ctx.ContentLibraryItemDiskPath,
+										ID:       ctx.ContentLibraryItem1Disk1Path,
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
 									},
 									{
-										ID:   ctx.ContentLibraryItemNVRAMPath,
+										ID:   ctx.ContentLibraryItem1NVRAMPath,
 										Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
 									},
 								},
@@ -206,9 +206,9 @@ var _ = Describe("createFastDeploy", func() {
 						},
 					},
 					DatacenterMoID: ctx.Datacenter.Reference().Value,
-					DiskPaths:      []string{ctx.ContentLibraryItemDiskPath}, // Only 1 disk
-					FilePaths:      []string{ctx.ContentLibraryItemNVRAMPath},
-					ProviderItemID: ctx.ContentLibraryItemID,
+					DiskPaths:      []string{ctx.ContentLibraryItem1Disk1Path}, // Only 1 disk
+					FilePaths:      []string{ctx.ContentLibraryItem1NVRAMPath},
+					ProviderItemID: ctx.ContentLibraryItem1ID,
 				}
 
 				// Attempt creation - should fail with "invalid disk count"

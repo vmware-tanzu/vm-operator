@@ -31,10 +31,10 @@ func assertImage(image *vmopv1.VirtualMachineImage, diskName string) {
 	ExpectWithOffset(1, image).ToNot(BeNil())
 	ExpectWithOffset(1, image.Name).Should(Equal("dummy-image"))
 
-	// ExpectWithOffset(1, image.Status.ProductInfo.Vendor).Should(Equal("LinuxVendor"))
-	// ExpectWithOffset(1, image.Status.ProductInfo.Product).Should(Equal("Linux"))
-	// ExpectWithOffset(1, image.Status.ProductInfo.Version).Should(Equal("v1"))
-	// ExpectWithOffset(1, image.Status.ProductInfo.FullVersion).Should(Equal("v1.0.0"))
+	ExpectWithOffset(1, image.Status.ProductInfo.Vendor).Should(Equal("LinuxVendor"))
+	ExpectWithOffset(1, image.Status.ProductInfo.Product).Should(Equal("Linux"))
+	ExpectWithOffset(1, image.Status.ProductInfo.Version).Should(Equal("v1"))
+	ExpectWithOffset(1, image.Status.ProductInfo.FullVersion).Should(Equal("v1.0.0"))
 
 	ExpectWithOffset(1, image.Status.OSInfo.Type).Should(Equal("otherLinuxGuest"))
 	Expect(image.Status.OSInfo.ID).Should(Equal("36"))
@@ -42,20 +42,20 @@ func assertImage(image *vmopv1.VirtualMachineImage, diskName string) {
 	ExpectWithOffset(1, image.Status.HardwareVersion).Should(Equal(ptr.To[int32](9)))
 	ExpectWithOffset(1, image.Status.Firmware).Should(Equal("efi"))
 
-	// ExpectWithOffset(1, image.Status.OVFProperties).Should(HaveLen(1))
-	// ExpectWithOffset(1, image.Status.OVFProperties[0].Key).Should(Equal("dummy-key-configurable"))
-	// ExpectWithOffset(1, image.Status.OVFProperties[0].Type).Should(Equal("string"))
-	// ExpectWithOffset(1, image.Status.OVFProperties[0].Default).Should(Equal(ptr.To("dummy-value")))
+	ExpectWithOffset(1, image.Status.OVFProperties).Should(HaveLen(1))
+	ExpectWithOffset(1, image.Status.OVFProperties[0].Key).Should(Equal("dummy-key-configurable"))
+	ExpectWithOffset(1, image.Status.OVFProperties[0].Type).Should(Equal("string"))
+	ExpectWithOffset(1, image.Status.OVFProperties[0].Default).Should(Equal(ptr.To("dummy-value")))
 
-	// ExpectWithOffset(1, image.Status.VMwareSystemProperties).Should(HaveLen(1))
-	// ExpectWithOffset(1, image.Status.VMwareSystemProperties[0].Key).Should(Equal("vmware-system.tkr.os-version"))
-	// ExpectWithOffset(1, image.Status.VMwareSystemProperties[0].Value).Should(Equal("1.15"))
+	ExpectWithOffset(1, image.Status.VMwareSystemProperties).Should(HaveLen(1))
+	ExpectWithOffset(1, image.Status.VMwareSystemProperties[0].Key).Should(Equal("vmware-system.tkr.os-version"))
+	ExpectWithOffset(1, image.Status.VMwareSystemProperties[0].Value).Should(Equal("1.15"))
 
 	ExpectWithOffset(1, conditions.Has(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeFalse())
 
 	ExpectWithOffset(1, image.Status.Disks).To(HaveLen(1))
 	ExpectWithOffset(1, image.Status.Disks[0].Name).To(Equal(diskName))
-	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("18743296"))
+	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("30Mi"))
 	ExpectWithOffset(1, image.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
 	ExpectWithOffset(1, image.Status.Disks[0].ControllerBusNumber).ToNot(BeNil(), "nil controller bus number")
 	ExpectWithOffset(1, *image.Status.Disks[0].ControllerBusNumber).To(Equal(int32(0)), "incorrect controller bus number")
@@ -63,9 +63,9 @@ func assertImage(image *vmopv1.VirtualMachineImage, diskName string) {
 	ExpectWithOffset(1, image.Status.Disks[0].UnitNumber).ToNot(BeNil(), "nil disk unit number")
 	ExpectWithOffset(1, *image.Status.Disks[0].UnitNumber).To(Equal(int32(0)), "incorrect disk unit number")
 
-	// ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("example.com/hello", "world"))
-	// ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("fu.bar", ""))
-	// ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("another.example.com", "true"))
+	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("example.com/hello", "world"))
+	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("fu.bar", ""))
+	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("another.example.com", "true"))
 }
 
 var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
@@ -98,9 +98,9 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 	})
 
 	It("Repeated calls should not duplicate items", func() {
-		// Expect(image.Status.Disks).ToNot(BeEmpty())
-		// Expect(image.Status.OVFProperties).ToNot(BeEmpty())
-		// Expect(image.Status.VMwareSystemProperties).ToNot(BeEmpty())
+		Expect(image.Status.Disks).ToNot(BeEmpty())
+		Expect(image.Status.OVFProperties).ToNot(BeEmpty())
+		Expect(image.Status.VMwareSystemProperties).ToNot(BeEmpty())
 
 		savedImage := image.DeepCopy()
 		Expect(contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)).To(Succeed())
@@ -132,13 +132,17 @@ var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func()
 		ovfEnvelope = &ovf.Envelope{
 			VirtualSystemCollection: &ovf.VirtualSystemCollection{
 				VirtualSystem: []ovf.VirtualSystem{
-					{},
+					{
+						VirtualHardware: []ovf.VirtualHardwareSection{
+							{},
+						},
+					},
 				},
 			},
 		}
 	})
 
-	It("should return error", func() {
+	It("should not return an error", func() {
 		testCases := []struct {
 			name  string
 			image client.Object
@@ -155,9 +159,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func()
 
 		for _, tc := range testCases {
 			err := contentlibrary.UpdateVmiWithOvfEnvelope(tc.image, *ovfEnvelope)
-			Expect(err).To(HaveOccurred(), "should return error for %s", tc.name)
-			Expect(err.Error()).To(ContainSubstring(
-				"OVF with VirtualSystemCollection is not supported"))
+			Expect(err).ToNot(HaveOccurred())
 		}
 	})
 })

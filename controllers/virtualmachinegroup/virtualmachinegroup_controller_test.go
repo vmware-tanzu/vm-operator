@@ -654,6 +654,13 @@ var _ = Describe(
 					Expect(groupPlacementCallCount.Load()).To(BeZero(),
 						"VMs with zone label override should not be placed by group")
 
+					By("group status should be populated")
+					Eventually(func(g Gomega) {
+						group := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, group)).To(Succeed())
+						g.Expect(group.Status.Members).To(HaveLen(3))
+					}, "2s", "100ms").Should(Succeed())
+
 					By("verifying PlacementReady is not set on member status")
 					Consistently(func(g Gomega) {
 						group := &vmopv1.VirtualMachineGroup{}

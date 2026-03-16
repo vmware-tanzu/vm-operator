@@ -37,7 +37,7 @@ func vcSimTests() {
 	Describe("VirtualMachineGroup", vmGroupTests)
 	Describe("VirtualMachineSnapshot", vmSnapshotTests)
 	Describe("VirtualMachineUnmanagedVolumes", unmanagedVolumesTests)
-	Describe("DefaultGuestIDForBusLogic", defaultGuestIDForBusLogicTests)
+	Describe("DefaultGuestIDIfEmpty", defaultGuestIDIfEmptyTests)
 }
 
 func TestVSphereProvider(t *testing.T) {

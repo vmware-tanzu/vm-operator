@@ -115,6 +115,7 @@ func UpdateVmiWithOvfEnvelope(
 	}
 
 	// Populate the disk information.
+	usedDiskNames := make(map[string]int)
 	status.Disks = nil
 	devices := pkgutil.DevicesFromConfigSpec(&configSpec)
 	controllers := getControllerMapFromVM(devices...)
@@ -122,8 +123,18 @@ func UpdateVmiWithOvfEnvelope(
 		if bdc != nil {
 			if dc := bdc.GetVirtualDeviceConfigSpec(); dc != nil {
 				if d, ok := dc.Device.(*vimtypes.VirtualDisk); ok {
+					diskName := d.DeviceInfo.GetDescription().Label
+					// Ensure disk name is unique in status.Disks; append an
+					// incremented suffix if the name is already present.
+					suffix := 0
+					if currSuffix, exists := usedDiskNames[diskName]; exists {
+						suffix = currSuffix + 1
+						diskName = fmt.Sprintf("%s_%d", diskName, suffix)
+					}
+					usedDiskNames[diskName] = suffix
+
 					sdi := vmopv1.VirtualMachineImageDiskInfo{
-						Name:       d.DeviceInfo.GetDescription().Label,
+						Name:       diskName,
 						Limit:      kubeutil.BytesToResource(d.CapacityInBytes),
 						Requested:  kubeutil.BytesToResource(d.CapacityInBytes),
 						UnitNumber: d.UnitNumber,

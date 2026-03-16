@@ -97,6 +97,33 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		assertImage(image, "disk0")
 	})
 
+	Context("when OVF has duplicate disk ElementNames", func() {
+		BeforeEach(func() {
+			// Add a second disk to the envelope and a second hardware Item with
+			// the same ElementName as the first disk to exercise unique naming.
+			ovfEnvelope.Disk.Disks = append(ovfEnvelope.Disk.Disks, ovfEnvelope.Disk.Disks[0])
+
+			for idx := range ovfEnvelope.VirtualSystem.VirtualHardware[0].Item {
+				item := &ovfEnvelope.VirtualSystem.VirtualHardware[0].Item[idx]
+				if item.ResourceType != nil && *item.ResourceType == ovf.DiskDrive {
+					dup := *item
+					dup.AddressOnParent = ptr.To("1")
+					dup.InstanceID = "8"
+					dup.Parent = ptr.To("3")
+					ovfEnvelope.VirtualSystem.VirtualHardware[0].Item = append(
+						ovfEnvelope.VirtualSystem.VirtualHardware[0].Item, dup)
+					break
+				}
+			}
+		})
+
+		It("assigns unique names by appending an incremented suffix", func() {
+			Expect(image.Status.Disks).To(HaveLen(2))
+			Expect(image.Status.Disks[0].Name).To(Equal("disk0"))
+			Expect(image.Status.Disks[1].Name).To(Equal("disk0_1"))
+		})
+	})
+
 	It("Repeated calls should not duplicate items", func() {
 		Expect(image.Status.Disks).ToNot(BeEmpty())
 		Expect(image.Status.OVFProperties).ToNot(BeEmpty())

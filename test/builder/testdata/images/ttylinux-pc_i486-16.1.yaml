@@ -28,31 +28,47 @@ virtualSystem:
     info: The kind of installed guest operating system
     osType: otherLinuxGuest
   productSection:
-  - info: Product info
+  - fullVersion: v1.0.0
     items:
+    - category: ""
     - property:
-        default: "false"
-        key: is_replace
-        label: Is Replacement
-        type: boolean
-        userConfigurable: true
+        default: "1.15"
+        key: vmware-system.tkr.os-version
+        type: string
     - property:
-        default: ""
-        key: nsx_hostname
-        label: Hostname
+        default: dummy-value
+        key: dummy-key-configurable
         type: string
         userConfigurable: true
+    - property:
+        default: dummy-value
+        key: dummy-key-not-configurable
+        type: string
+        userConfigurable: false
+    - property:
+        default: dummy-value
+        key: dummy-key-not-configurable
+        type: string
+        userConfigurable: false
+    product: Linux
     property:
-    - default: "false"
-      key: is_replace
-      label: Is Replacement
-      type: boolean
-      userConfigurable: true
-    - default: ""
-      key: nsx_hostname
-      label: Hostname
+    - default: "1.15"
+      key: vmware-system.tkr.os-version
+      type: string
+    - default: dummy-value
+      key: dummy-key-configurable
       type: string
       userConfigurable: true
+    - default: dummy-value
+      key: dummy-key-not-configurable
+      type: string
+      userConfigurable: false
+    - default: dummy-value
+      key: dummy-key-not-configurable
+      type: string
+      userConfigurable: false
+    vendor: LinuxVendor
+    version: v1
   virtualHardwareSection:
   - config:
     - key: firmware
@@ -74,6 +90,9 @@ virtualSystem:
       required: false
       value: upgradeAtPowerCycle
     extraConfig:
+    - key: vmservice.vmi.labels
+      required: false
+      value: example.com/hello:world,fu.bar:,another.example.com:true
     - key: fu
       required: false
       value: barred

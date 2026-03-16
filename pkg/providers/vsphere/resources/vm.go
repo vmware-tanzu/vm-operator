@@ -19,6 +19,7 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	taskutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/task"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
@@ -235,15 +236,13 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec vimtypes.Customiza
 
 	taskInfo, err := customizeTask.WaitForResult(ctx, nil)
 	if err != nil {
-		vm.logger.Error(err, "Failed to wait for the result of Customize VM")
-		return err
-	}
-
-	if taskErr := taskInfo.Error; taskErr != nil {
-		// Fetch fault messages for task.Error
-		fault := taskErr.Fault.GetMethodFault()
-		if fault != nil {
-			err = fmt.Errorf("fault messages: %v: %w", fault.FaultMessage, err)
+		// When a task fails, WaitForResult returns an error that contains the LocalizedMessage,
+		// but taskInfo.Error contains the full fault details. Extract a comprehensive error
+		// message that includes both the localized message and all fault messages.
+		if taskInfo != nil {
+			if errMsg := taskutil.ErrorMessageFromTaskInfo(taskInfo); errMsg != "" {
+				err = fmt.Errorf("customization failed: %s", errMsg)
+			}
 		}
 
 		return fmt.Errorf("customization task failed: %w", err)

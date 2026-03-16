@@ -487,11 +487,12 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 				return err
 			}
 		}
-		// Check if quota validation is needed
-		if metav1.HasLabel(ctx.ContentLibraryV1A2.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
-			if err := r.checkContentLibraryQuota(ctx); err != nil {
-				return err
-			}
+	}
+
+	// Check if quota validation is needed
+	if metav1.HasLabel(ctx.ContentLibraryV1A2.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
+		if err := r.checkContentLibraryQuota(ctx); err != nil {
+			return err
 		}
 	}
 

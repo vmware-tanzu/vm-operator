@@ -13,87 +13,54 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 )
 
-func defaultGuestIDForBusLogicTests() {
+func defaultGuestIDIfEmptyTests() {
 	const (
+		otherGuest   = string(vimtypes.VirtualMachineGuestOsIdentifierOtherGuest)
+		otherGuest64 = string(vimtypes.VirtualMachineGuestOsIdentifierOtherGuest64)
+		ubuntu64     = "ubuntu64Guest"
 		otherLinux64 = string(vimtypes.VirtualMachineGuestOsIdentifierOtherLinux64Guest)
-		otherLinux   = string(vimtypes.VirtualMachineGuestOsIdentifierOtherLinuxGuest)
 	)
 
-	busLogicSpec := &vimtypes.VirtualDeviceConfigSpec{
-		Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-		Device:    &vimtypes.VirtualBusLogicController{VirtualSCSIController: vimtypes.VirtualSCSIController{}},
-	}
-	otherDeviceSpec := &vimtypes.VirtualDeviceConfigSpec{
-		Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-		Device:    &vimtypes.VirtualDisk{},
-	}
-
-	DescribeTable("DefaultGuestIDForBusLogicIfNeeded",
+	DescribeTable("DefaultGuestIDIfEmpty",
 		func(
 			vmSpecGuestID string,
 			createGuestID string,
-			deviceChange []vimtypes.BaseVirtualDeviceConfigSpec,
 			imgGuestID string,
 			wantChanged bool,
 			wantGuestID string,
 		) {
 			configSpec := vimtypes.VirtualMachineConfigSpec{
-				GuestId:      createGuestID,
-				DeviceChange: deviceChange,
+				GuestId: createGuestID,
 			}
 
-			got := vsphere.DefaultGuestIDForBusLogicIfNeeded(
+			got := vsphere.DefaultGuestIDIfEmpty(
 				vmSpecGuestID, imgGuestID, &configSpec)
 			Expect(got).To(Equal(wantChanged))
 			Expect(configSpec.GuestId).To(Equal(wantGuestID))
 		},
-		Entry("defaults to otherLinuxGuest when all conditions met",
-			"", otherLinux64,
-			[]vimtypes.BaseVirtualDeviceConfigSpec{busLogicSpec},
-			otherLinux,
-			true, otherLinux,
+		Entry("defaults to otherGuest when all are empty (standard VM class)",
+			"", "", "",
+			true, otherGuest,
+		),
+		Entry("defaults to otherGuest when class has otherGuest64 (UI-created VM class)",
+			"", otherGuest64, "",
+			true, otherGuest,
 		),
 		Entry("no change when VM spec has GuestID",
-			"ubuntu64Guest", otherLinux64,
-			[]vimtypes.BaseVirtualDeviceConfigSpec{busLogicSpec},
-			"",
+			ubuntu64, "", "",
+			false, "",
+		),
+		Entry("no change when configSpec has explicit GuestId",
+			"", otherLinux64, "",
 			false, otherLinux64,
 		),
-		Entry("no change when createArgs GuestId is not otherLinux64",
-			"", "ubuntu64Guest",
-			[]vimtypes.BaseVirtualDeviceConfigSpec{busLogicSpec},
-			otherLinux,
-			false, "ubuntu64Guest",
+		Entry("no change when image has GuestId",
+			"", "", otherLinux64,
+			false, "",
 		),
-		Entry("no change when image GuestId is otherLinux64",
-			"", otherLinux64,
-			[]vimtypes.BaseVirtualDeviceConfigSpec{busLogicSpec},
-			otherLinux64,
-			false, otherLinux64,
-		),
-		Entry("no change when no BusLogic controller",
-			"", otherLinux64,
-			[]vimtypes.BaseVirtualDeviceConfigSpec{otherDeviceSpec},
-			otherLinux,
-			false, otherLinux64,
-		),
-		Entry("no change when DeviceChange is nil",
-			"", otherLinux64,
-			nil,
-			otherLinux,
-			false, otherLinux64,
-		),
-		Entry("no change when DeviceChange is empty",
-			"", otherLinux64,
-			[]vimtypes.BaseVirtualDeviceConfigSpec{},
-			otherLinux,
-			false, otherLinux64,
-		),
-		Entry("defaults when BusLogic is second in DeviceChange",
-			"", otherLinux64,
-			[]vimtypes.BaseVirtualDeviceConfigSpec{otherDeviceSpec, busLogicSpec},
-			"",
-			true, otherLinux,
+		Entry("no change when all are set",
+			ubuntu64, ubuntu64, ubuntu64,
+			false, ubuntu64,
 		),
 	)
 }

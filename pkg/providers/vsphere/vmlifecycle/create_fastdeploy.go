@@ -138,6 +138,55 @@ func fastDeploy(
 		"vmDirPath", vmDirPath,
 		"vmPathName", createArgs.ConfigSpec.Files.VmPathName)
 
+	// Register cleanup defer immediately after directory creation.
+	defer func() {
+		if retErr == nil {
+			// Do not delete the VM directory if this function succeeded.
+			return
+		}
+
+		// Use a context that is not cancelled when the parent is, so cleanup
+		// runs even if the request is cancelled. Preserves the VC opID so
+		// cleanup is correlated with the failed create in VC logs.
+		ctx := context.WithoutCancel(vmCtx.Context)
+
+		// Delete the VM directory and its contents.
+		// Always use FileManager.DeleteDatastoreFile() first as it can delete
+		// non-empty directories recursively. Note that DeleteDirectory() on a
+		// non-empty directory will return an error, which is why we delete the
+		// directory contents first using DeleteDatastoreFile().
+		t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
+		if err != nil {
+			retErr = fmt.Errorf(
+				"failed to call delete api for vm dir %q: %w,%w",
+				vmDirPath, err, retErr)
+			return
+		}
+
+		// Wait for the delete call to return.
+		if err := t.Wait(ctx); err != nil &&
+			!fault.Is(err, &vimtypes.FileNotFound{}) {
+
+			retErr = fmt.Errorf(
+				"failed to delete vm dir %q: %w,%w",
+				vmDirPath, err, retErr)
+		}
+
+		// For non-TLD datastores, also clean up the namespace mapping.
+		if !createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
+			if err := nm.DeleteDirectory(
+				ctx,
+				datacenter,
+				vmDirUUIDPath); err != nil &&
+				!fault.Is(err, &vimtypes.FileNotFound{}) {
+
+				retErr = fmt.Errorf(
+					"failed to delete vm dir namespace mapping %q: %w,%w",
+					vmDirUUIDPath, err, retErr)
+			}
+		}
+	}()
+
 	dstDiskPaths := make([]string, len(srcDiskPaths))
 	for i := 0; i < len(dstDiskPaths); i++ {
 		dstDiskPaths[i] = fmt.Sprintf("%s/disk-%d.vmdk", vmDirPath, i)
@@ -166,20 +215,28 @@ func fastDeploy(
 			diskSpecs = append(diskSpecs, dc)
 		}
 	}
-
-	if a, b := len(srcDiskPaths), len(disks); a != b {
-		logger.Info("Got disks", "disks", disks)
-		return nil, fmt.Errorf(
-			"invalid disk count: len(srcDiskPaths)=%d, len(disks)=%d", a, b)
-	}
+	logger.Info("Got disk specs", "diskSpecs", diskSpecs)
 
 	// Update the disks with their expected file names.
+	j := 0
 	for i := range disks {
 		d := disks[i]
 		if bfb, ok := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo); ok {
 			fb := bfb.GetVirtualDeviceFileBackingInfo()
 			fb.Datastore = &createArgs.Datastores[0].MoRef
-			fb.FileName = dstDiskPaths[i]
+
+			if fb.FileName != "" {
+				if j >= len(dstDiskPaths) {
+					return nil, fmt.Errorf("invalid disk count")
+				}
+
+				// Only set the file name if it was non-empty
+				// already, otherwise this was a disk entry
+				// from the OVF that was meant to be an empty
+				// disk.
+				fb.FileName = dstDiskPaths[j]
+				j++
+			}
 		}
 	}
 	logger.Info("Got disks", "disks", disks)
@@ -225,62 +282,6 @@ func fastDeploy(
 			}
 		}
 	}
-
-	// If any error occurs after this point, the newly created VM directory and
-	// its contents need to be cleaned up.
-	defer func() {
-		if retErr == nil {
-			// Do not delete the VM directory if this function was successful.
-			return
-		}
-
-		// Use a new context to ensure cleanup happens even if the context
-		// is cancelled.
-		ctx := context.Background()
-
-		// Delete the VM directory and its contents.
-		if createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
-			t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
-			if err != nil {
-				err = fmt.Errorf(
-					"failed to call delete api for vm dir %q: %w",
-					vmDirPath, err)
-				if retErr == nil {
-					retErr = err
-				} else {
-					retErr = fmt.Errorf("%w,%w", err, retErr)
-				}
-				return
-			}
-
-			// Wait for the delete call to return.
-			if err := t.Wait(ctx); err != nil {
-				if !fault.Is(err, &vimtypes.FileNotFound{}) {
-					err = fmt.Errorf("failed to delete vm dir %q: %w",
-						vmDirPath, err)
-					if retErr == nil {
-						retErr = err
-					} else {
-						retErr = fmt.Errorf("%w,%w", err, retErr)
-					}
-				}
-			}
-		} else if err := nm.DeleteDirectory(
-			ctx,
-			datacenter,
-			vmDirUUIDPath); err != nil {
-
-			if !fault.Is(err, &vimtypes.FileNotFound{}) {
-				err = fmt.Errorf("failed to delete vm dir %q: %w",
-					vmDirUUIDPath, err)
-				if retErr == nil {
-					retErr = err
-				} else {
-					retErr = fmt.Errorf("%w,%w", err, retErr)
-				}
-			}
-		}
-	}()
 
 	folder := object.NewFolder(vimClient, vimtypes.ManagedObjectReference{
 		Type:  "Folder",
@@ -371,55 +372,88 @@ func fastDeployLinked(
 
 	logger := pkglog.FromContextOrDefault(ctx).WithName("fastDeployLinked")
 
-	// Linked clones do not fully support encryption, so remove the possible
-	// crypto information from the VM's disks.
-	for i := range diskSpecs {
-		ds := diskSpecs[i]
-		if ds.Backing != nil {
-			ds.Backing.Crypto = nil
+	if len(srcDiskPaths) > 0 {
+		// Ensure all the parent disks are added to the ExtraConfig as the
+		// special vmprov.keepDisks value to prevent the parent disk from being
+		// deleted with the VM when it is deleted and/or promoted.
+		srcDiskNames := make([]string, len(srcDiskPaths))
+		for i := range srcDiskPaths {
+			srcDiskNames[i] = path.Base(srcDiskPaths[i])
 		}
+		exConfigKeyVal := &vimtypes.OptionValue{
+			Key:   pkgconst.VMProvKeepDisksExtraConfigKey,
+			Value: strings.Join(srcDiskNames, ","),
+		}
+		configSpec.ExtraConfig = append(configSpec.ExtraConfig, exConfigKeyVal)
+		logger.Info(
+			"Preserving linked parents on delete/promote via extraConfig",
+			"extraConfigKey", exConfigKeyVal.Key,
+			"extraConfigValue", exConfigKeyVal.Value)
 	}
 
-	// Ensure all the parent disks are added to the ExtraConfig as the special
-	// vmprov.keepDisks value to prevent the parent disk from being deleted with
-	// the VM when it is deleted and/or promoted.
-	srcDiskNames := make([]string, len(srcDiskPaths))
-	for i := range srcDiskPaths {
-		srcDiskNames[i] = path.Base(srcDiskPaths[i])
-	}
-	exConfigKeyVal := &vimtypes.OptionValue{
-		Key:   pkgconst.VMProvKeepDisksExtraConfigKey,
-		Value: strings.Join(srcDiskNames, ","),
-	}
-	configSpec.ExtraConfig = append(configSpec.ExtraConfig, exConfigKeyVal)
-	logger.Info("Preserving linked parents on delete/promote via extraConfig",
-		"extraConfigKey", exConfigKeyVal.Key,
-		"extraConfigValue", exConfigKeyVal.Value)
+	logger.Info("Preparing to range over disks",
+		"disks", disks,
+		"len(disks)", len(disks),
+		"diskSpecs", diskSpecs,
+		"len(diskSpecs)", len(diskSpecs))
 
+	j := 0
 	for i := range disks {
-		fileBackingInfo := vimtypes.VirtualDeviceFileBackingInfo{
-			Datastore: &datastoreRef,
-			FileName:  srcDiskPaths[i],
-		}
 		switch tBack := disks[i].Backing.(type) {
 		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-			// Point the disk to its parent.
-			tBack.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{
-				VirtualDeviceFileBackingInfo: fileBackingInfo,
-				DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
-				ThinProvisioned:              ptr.To(true),
+			if tBack.FileName != "" {
+				if diskSpecs[j].Backing != nil {
+					// Linked clones do not fully support encryption, so remove
+					// the possible crypto information from this child disk.
+					diskSpecs[j].Backing.Crypto = nil
+				}
+
+				// Point the disk to its parent.
+				tBack.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{
+					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+						Datastore: &datastoreRef,
+						FileName:  srcDiskPaths[j],
+					},
+					DiskMode:        string(vimtypes.VirtualDiskModePersistent),
+					ThinProvisioned: ptr.To(true),
+				}
+				j++
 			}
 		case *vimtypes.VirtualDiskSeSparseBackingInfo:
-			// Point the disk to its parent.
-			tBack.Parent = &vimtypes.VirtualDiskSeSparseBackingInfo{
-				VirtualDeviceFileBackingInfo: fileBackingInfo,
-				DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+			if tBack.FileName != "" {
+				if diskSpecs[j].Backing != nil {
+					// Linked clones do not fully support encryption, so remove
+					// the possible crypto information from this child disk.
+					diskSpecs[j].Backing.Crypto = nil
+				}
+
+				// Point the disk to its parent.
+				tBack.Parent = &vimtypes.VirtualDiskSeSparseBackingInfo{
+					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+						Datastore: &datastoreRef,
+						FileName:  srcDiskPaths[j],
+					},
+					DiskMode: string(vimtypes.VirtualDiskModePersistent),
+				}
+				j++
 			}
 		case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-			// Point the disk to its parent.
-			tBack.Parent = &vimtypes.VirtualDiskSparseVer2BackingInfo{
-				VirtualDeviceFileBackingInfo: fileBackingInfo,
-				DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+			if tBack.FileName != "" {
+				if diskSpecs[j].Backing != nil {
+					// Linked clones do not fully support encryption, so remove
+					// the possible crypto information from this child disk.
+					diskSpecs[j].Backing.Crypto = nil
+				}
+
+				// Point the disk to its parent.
+				tBack.Parent = &vimtypes.VirtualDiskSparseVer2BackingInfo{
+					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+						Datastore: &datastoreRef,
+						FileName:  srcDiskPaths[j],
+					},
+					DiskMode: string(vimtypes.VirtualDiskModePersistent),
+				}
+				j++
 			}
 		}
 	}
@@ -441,6 +475,32 @@ func fastDeployDirect(
 
 	logger := pkglog.FromContextOrDefault(ctx).WithName("fastDeployDirect")
 
+	for i := range diskSpecs {
+		if d, ok := diskSpecs[i].Device.(*vimtypes.VirtualDisk); ok {
+			switch tBack := d.Backing.(type) {
+			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+				if tBack.FileName == "" {
+					diskSpecs[i].FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+				} else {
+					diskSpecs[i].FileOperation = ""
+				}
+			case *vimtypes.VirtualDiskSeSparseBackingInfo:
+				if tBack.FileName == "" {
+					diskSpecs[i].FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+				} else {
+					diskSpecs[i].FileOperation = ""
+				}
+			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				if tBack.FileName == "" {
+					diskSpecs[i].FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+				} else {
+					diskSpecs[i].FileOperation = ""
+				}
+			}
+		}
+
+	}
+
 	// Copy each disk into the VM directory.
 	if err := fastDeployDirectCopyDisks(
 		ctx,
@@ -452,14 +512,6 @@ func fastDeployDirect(
 		diskFormat); err != nil {
 
 		return nil, err
-	}
-
-	for i := range diskSpecs {
-		ds := diskSpecs[i]
-
-		// Set the file operation to an empty string since the disk already
-		// exists.
-		ds.FileOperation = ""
 	}
 
 	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)

@@ -55,8 +55,6 @@ func unmanagedVolumesTests() {
 		vmProvider  providers.VirtualMachineProviderInterface
 		nsInfo      builder.WorkloadNamespaceInfo
 
-		mockProfileResults []pbmtypes.PbmQueryProfileResult
-
 		vm      *vmopv1.VirtualMachine
 		vmClass *vmopv1.VirtualMachineClass
 	)
@@ -109,29 +107,31 @@ func unmanagedVolumesTests() {
 		}
 		initObjects = append(initObjects, storageClass)
 
-		// Update profile results to include the new disk
-		mockProfileResults = append(mockProfileResults,
-			pbmtypes.PbmQueryProfileResult{
-				Object: pbmtypes.PbmServerObjectRef{
-					Key: "vm-108:203",
-				},
-				ProfileId: []pbmtypes.PbmProfileId{
-					{
-						UniqueId: ctx.StorageProfileID,
-					},
-				},
-			},
-		)
-
-		// Mock PBM service
+		// Mock PBM service: return the storage profile for every queried disk key.
+		// The mock echoes back the queried keys so it is not sensitive to
+		// vcsim-internal device key values, which can change across govmomi
+		// versions.
 		ctx.SimulatorContext().For("/pbm").Map.Handler = func(
 			simCtx *simulator.Context,
 			m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
 
 			if m.Name == "PbmQueryAssociatedProfiles" {
+				req, ok := m.Body.(*pbmtypes.PbmQueryAssociatedProfiles)
+				if !ok {
+					return nil, nil
+				}
+				var results []pbmtypes.PbmQueryProfileResult
+				for _, ref := range req.Entities {
+					results = append(results, pbmtypes.PbmQueryProfileResult{
+						Object: ref,
+						ProfileId: []pbmtypes.PbmProfileId{
+							{UniqueId: ctx.StorageProfileID},
+						},
+					})
+				}
 				return &fakeProfileManager{
 					ProfileManager: &pbmsim.ProfileManager{},
-					Result:         mockProfileResults,
+					Result:         results,
 				}, nil
 			}
 
@@ -145,7 +145,7 @@ func unmanagedVolumesTests() {
 		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 
 		clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
-		Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, clusterVMImage)).To(Succeed())
+		Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMImage)).To(Succeed())
 
 		vm.Namespace = nsInfo.Namespace
 		vm.Spec.ClassName = vmClass.Name
@@ -165,7 +165,6 @@ func unmanagedVolumesTests() {
 		initObjects = nil
 		vmProvider = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
-		mockProfileResults = nil
 	})
 
 	When("VM has unmanaged disks from vSphere", func() {
@@ -296,7 +295,7 @@ func unmanagedVolumesTests() {
 		})
 
 		JustBeforeEach(func() {
-			vmicName := pkgutil.VMIName(ctx.ContentLibraryItemID)
+			vmicName := pkgutil.VMIName(ctx.ContentLibraryItem1ID)
 			vmic = vmopv1.VirtualMachineImageCache{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
@@ -311,7 +310,7 @@ func unmanagedVolumesTests() {
 					Name:      vmic.Name,
 				},
 				Data: map[string]string{
-					"value": ovfEnvelopeYAML,
+					"value": ctx.ContentLibraryItem1YAML,
 				},
 			}
 			Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
@@ -319,7 +318,7 @@ func unmanagedVolumesTests() {
 			vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
 				OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
 					ConfigMapName:   vmic.Name,
-					ProviderVersion: ctx.ContentLibraryItemVersion,
+					ProviderVersion: ctx.ContentLibraryItem1Version,
 				},
 				Conditions: []metav1.Condition{
 					{
@@ -340,12 +339,12 @@ func unmanagedVolumesTests() {
 					ProfileID:    ctx.StorageProfileID,
 					Files: []vmopv1.VirtualMachineImageCacheFileStatus{
 						{
-							ID:       ctx.ContentLibraryItemDiskPath,
+							ID:       ctx.ContentLibraryItem1Disk1Path,
 							Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 							DiskType: vmopv1.VolumeTypeClassic,
 						},
 						{
-							ID:   ctx.ContentLibraryItemNVRAMPath,
+							ID:   ctx.ContentLibraryItem1NVRAMPath,
 							Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
 						},
 					},
@@ -361,7 +360,7 @@ func unmanagedVolumesTests() {
 
 			libMgr := library.NewManager(ctx.RestClient)
 			Expect(libMgr.SyncLibraryItem(ctx,
-				&library.Item{ID: ctx.ContentLibraryItemID},
+				&library.Item{ID: ctx.ContentLibraryItem1ID},
 				true)).To(Succeed())
 
 			pvc := &corev1.PersistentVolumeClaim{

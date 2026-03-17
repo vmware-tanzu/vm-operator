@@ -11,6 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -54,7 +55,7 @@ func assertImage(image *vmopv1.VirtualMachineImage, diskName string) {
 
 	ExpectWithOffset(1, image.Status.Disks).To(HaveLen(1))
 	ExpectWithOffset(1, image.Status.Disks[0].Name).To(Equal(diskName))
-	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("18743296"))
+	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("30Mi"))
 	ExpectWithOffset(1, image.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
 	ExpectWithOffset(1, image.Status.Disks[0].ControllerBusNumber).ToNot(BeNil(), "nil controller bus number")
 	ExpectWithOffset(1, *image.Status.Disks[0].ControllerBusNumber).To(Equal(int32(0)), "incorrect controller bus number")
@@ -96,6 +97,33 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		assertImage(image, "disk0")
 	})
 
+	Context("when OVF has duplicate disk ElementNames", func() {
+		BeforeEach(func() {
+			// Add a second disk to the envelope and a second hardware Item with
+			// the same ElementName as the first disk to exercise unique naming.
+			ovfEnvelope.Disk.Disks = append(ovfEnvelope.Disk.Disks, ovfEnvelope.Disk.Disks[0])
+
+			for idx := range ovfEnvelope.VirtualSystem.VirtualHardware[0].Item {
+				item := &ovfEnvelope.VirtualSystem.VirtualHardware[0].Item[idx]
+				if item.ResourceType != nil && *item.ResourceType == ovf.DiskDrive {
+					dup := *item
+					dup.AddressOnParent = ptr.To("1")
+					dup.InstanceID = "8"
+					dup.Parent = ptr.To("3")
+					ovfEnvelope.VirtualSystem.VirtualHardware[0].Item = append(
+						ovfEnvelope.VirtualSystem.VirtualHardware[0].Item, dup)
+					break
+				}
+			}
+		})
+
+		It("assigns unique names by appending an incremented suffix", func() {
+			Expect(image.Status.Disks).To(HaveLen(2))
+			Expect(image.Status.Disks[0].Name).To(Equal("disk0"))
+			Expect(image.Status.Disks[1].Name).To(Equal("disk0_1"))
+		})
+	})
+
 	It("Repeated calls should not duplicate items", func() {
 		Expect(image.Status.Disks).ToNot(BeEmpty())
 		Expect(image.Status.OVFProperties).ToNot(BeEmpty())
@@ -118,6 +146,129 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 
 		It("V1Alpha1Compatible condition is true", func() {
 			Expect(conditions.IsTrue(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeTrue())
+		})
+	})
+})
+
+var _ = Describe("UpdateVmiWithOvfEnvelope with VirtualSystemCollection", func() {
+	var (
+		ovfEnvelope *ovf.Envelope
+	)
+
+	BeforeEach(func() {
+		ovfEnvelope = &ovf.Envelope{
+			VirtualSystemCollection: &ovf.VirtualSystemCollection{
+				VirtualSystem: []ovf.VirtualSystem{
+					{
+						VirtualHardware: []ovf.VirtualHardwareSection{
+							{},
+						},
+					},
+				},
+			},
+		}
+	})
+
+	It("should not return an error", func() {
+		testCases := []struct {
+			name  string
+			image client.Object
+		}{
+			{
+				name:  "VirtualMachineImage",
+				image: builder.DummyVirtualMachineImage("dummy-image"),
+			},
+			{
+				name:  "ClusterVirtualMachineImage",
+				image: builder.DummyClusterVirtualMachineImage("dummy-image"),
+			},
+		}
+
+		for _, tc := range testCases {
+			err := contentlibrary.UpdateVmiWithOvfEnvelope(tc.image, *ovfEnvelope)
+			Expect(err).ToNot(HaveOccurred())
+		}
+	})
+})
+
+var _ = Describe("UpdateVmiWithOvfEnvelope with DeploymentOptionSection", func() {
+	var (
+		ovfEnvelope *ovf.Envelope
+		image       *vmopv1.VirtualMachineImage
+
+		disks = []string{
+			"Harddisk 1",
+			"Harddisk 2",
+			"Harddisk 3",
+			"Harddisk core",
+			"Harddisk log",
+			"Harddisk db",
+			"Harddisk dblog",
+			"Harddisk seat",
+			"Harddisk netdump",
+			"Harddisk autodeploy",
+			"Harddisk imagebuilder",
+			"Harddisk updatemgr",
+			"Harddisk archive",
+			"Harddisk lifecycle",
+			"Harddisk lvm_snapshot",
+		}
+	)
+
+	BeforeEach(func() {
+		image = builder.DummyVirtualMachineImage("dummy-image")
+
+		f, err := os.Open(path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "VMware-vCenter-Server-Appliance.ovf"))
+		Expect(err).ToNot(HaveOccurred())
+		defer func() {
+			_ = f.Close()
+		}()
+		ovfEnvelope, err = ovf.Unmarshal(f)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	JustBeforeEach(func() {
+		Expect(contentlibrary.UpdateVmiWithOvfEnvelope(image, *ovfEnvelope)).To(Succeed())
+	})
+
+	It("Image should have the correct disks", func() {
+		Expect(image.Status.Disks).To(HaveLen(len(disks)))
+
+		for _, disk := range disks {
+			found := false
+			for _, statusDisk := range image.Status.Disks {
+				if statusDisk.Name == disk {
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue())
+		}
+	})
+
+	Context("no default DeploymentOption", func() {
+		BeforeEach(func() {
+			for i := range ovfEnvelope.DeploymentOption.Configuration {
+				ovfEnvelope.DeploymentOption.Configuration[i].Default = nil
+			}
+		})
+
+		It("Image should have the correct disks", func() {
+			Expect(image.Status.Disks).To(HaveLen(len(disks)))
+
+			for _, disk := range disks {
+				found := false
+				for _, statusDisk := range image.Status.Disks {
+					if statusDisk.Name == disk {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue())
+			}
 		})
 	})
 })

@@ -172,7 +172,7 @@ func vmResizeTests() {
 				vmClass = createVMClass(configSpec, "initial-class")
 
 				clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
-				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, clusterVMImage)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMImage)).To(Succeed())
 
 				vm.Namespace = nsInfo.Namespace
 				vm.Spec.ClassName = vmClass.Name
@@ -700,7 +700,7 @@ func vmResizeTests() {
 			vmClass = createVMClass(configSpec, "initial-class")
 
 			clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
-			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, clusterVMImage)).To(Succeed())
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMImage)).To(Succeed())
 
 			vm.Namespace = nsInfo.Namespace
 			vm.Spec.ClassName = vmClass.Name

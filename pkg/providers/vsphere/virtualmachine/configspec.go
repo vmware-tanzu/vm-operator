@@ -163,21 +163,94 @@ func CreateConfigSpecForPlacement(
 	storageClassesToIDs map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	pciDevKey := pciDevicesStartDeviceKey - 28000
+
+	// If still false after the placement spec's devices are iterated, then
+	// an empty disk will be added to the spec to ensure the placement spec
+	// has at least one disk. Otherwise the placement API fails.
 	hasVirtualDisk := false
 
 	deviceChangeCopy := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
 	for _, devChange := range configSpec.DeviceChange {
 		if spec := devChange.GetVirtualDeviceConfigSpec(); spec != nil {
-			if spec.Device.GetVirtualDevice().Key == 0 {
-				if util.IsDeviceDynamicDirectPathIO(spec.Device) || util.IsDeviceNvidiaVgpu(spec.Device) {
-					spec.Device.GetVirtualDevice().Key = pciDevKey
-					pciDevKey--
+			if bd := spec.Device; bd != nil {
+				switch d := bd.(type) {
+
+				case *vimtypes.VirtualPCIPassthrough:
+					if d := bd.GetVirtualDevice(); d != nil {
+						switch d.Backing.(type) {
+						case *vimtypes.VirtualPCIPassthroughVmiopBackingInfo,
+							*vimtypes.VirtualPCIPassthroughDynamicBackingInfo:
+							if d.Key == 0 {
+								// Ensure Dynamic PCI Passthrough and vGPU
+								// devices have a non-zero device key.
+								d.Key = pciDevKey
+								pciDevKey--
+							}
+						}
+					}
+
+				case *vimtypes.VirtualDisk:
+					if !hasVirtualDisk {
+						// Indicate the VM has at least one disk.
+						hasVirtualDisk = true
+					}
+
+					if d.VDiskId != nil && d.VDiskId.Id != "" {
+						// If the disk is not an FCD, then its file operation
+						// depends on whether or not it has a file name set in
+						// its backing.
+						//
+						// It is possible for OVFs to include disks that are not
+						// backed by any files.
+						//
+						// In order for GoVmomi's ovf.ToConfigSpec function to
+						// distinguish between a file-backed disk and when a new
+						// disk should be created, the file-backed disks include
+						// the file name in the ConfigSpec returned from
+						// ovf.ToConfigSpec. However, this file name would cause
+						// issues when the ConfigSpec is sent to the placement
+						// API since the disk will not exist at a location that
+						// is just the name of the file. Despite the field name,
+						// FileName refers to the fully-qualified datastore path
+						// for existing disks.
+						//
+						// This section wipes the file names out of the
+						// VirtualDisk devices in the config spec sent to the
+						// placement API. This ensures the disks' required
+						// policy, crypto requirements, and capacity are all
+						// considered, while not failing placement due to an
+						// invalid value in the FileName field.
+						//
+						// This section also ensures the FileOperation is
+						// considered a Create, since ovf.ToConfigSpec will set
+						// the operation to an empty string for file-backed
+						// disks.
+						spec.FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+
+						switch tb := d.Backing.(type) {
+						case *vimtypes.VirtualDiskFlatVer1BackingInfo:
+							tb.FileName = ""
+						case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+							tb.FileName = ""
+						case *vimtypes.VirtualDiskSeSparseBackingInfo:
+							tb.FileName = ""
+						case *vimtypes.VirtualDiskSparseVer1BackingInfo:
+							tb.FileName = ""
+						case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+							tb.FileName = ""
+						case *vimtypes.VirtualDiskLocalPMemBackingInfo:
+							tb.FileName = ""
+						case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
+							tb.FileName = ""
+						case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
+							tb.DescriptorFileName = ""
+						case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo:
+							tb.DescriptorFileName = ""
+						}
+					}
 				}
 			}
 
-			if !hasVirtualDisk {
-				_, hasVirtualDisk = spec.Device.(*vimtypes.VirtualDisk)
-			}
 		}
 		deviceChangeCopy = append(deviceChangeCopy, devChange)
 	}

@@ -545,6 +545,23 @@ var _ = Describe(
 						}
 					}, "30s", "100ms").Should(Succeed())
 				}
+
+				verifyGroupMemberPlacementZone = func(
+					groupKey, vmKey types.NamespacedName,
+					zone string) {
+
+					GinkgoHelper()
+					Eventually(func(g Gomega) {
+						group := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, groupKey, group)).To(Succeed())
+						for _, ms := range group.Status.Members {
+							if ms.Kind == virtualMachineKind && ms.Name == vmKey.Name {
+								g.Expect(ms.Placement).ToNot(BeNil())
+								g.Expect(ms.Placement.Zone).To(Equal(zone))
+							}
+						}
+					}, "30s", "100ms").Should(Succeed())
+				}
 			)
 
 			BeforeEach(func() {
@@ -611,6 +628,9 @@ var _ = Describe(
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm1Key, "zone1")
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm3Key, "zone3")
 					verifyGroupPlacementReadyConditionWithZone(vmGroup2Key, vm2Key, "zone2")
+					verifyGroupMemberPlacementZone(vmGroup1Key, vm1Key, "zone1")
+					verifyGroupMemberPlacementZone(vmGroup1Key, vm3Key, "zone3")
+					verifyGroupMemberPlacementZone(vmGroup2Key, vm2Key, "zone2")
 					Expect(groupPlacementCallCount.Load()).To(BeZero(), "VM with uniqueID should not be placed by group")
 				})
 			})
@@ -693,6 +713,11 @@ var _ = Describe(
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm1Key, "zone-a")
 					verifyGroupPlacementReadyConditionWithZone(vmGroup2Key, vm2Key, "zone-b")
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm3Key, "zone-c")
+
+					By("verifying Placement.Zone is populated for brownfield VMs")
+					verifyGroupMemberPlacementZone(vmGroup1Key, vm1Key, "zone-a")
+					verifyGroupMemberPlacementZone(vmGroup2Key, vm2Key, "zone-b")
+					verifyGroupMemberPlacementZone(vmGroup1Key, vm3Key, "zone-c")
 				})
 			})
 

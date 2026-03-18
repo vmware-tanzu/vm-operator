@@ -641,6 +641,11 @@ func (r *Reconciler) getVMForPlacement(
 				//
 				Message: alreadyPlacedZone,
 			})
+			// Populate Placement so consumers can read member.Placement.Zone
+			// consistently for both greenfield and brownfield VMs.
+			memberStatus.Placement = &vmopv1.VirtualMachinePlacementStatus{
+				Zone: alreadyPlacedZone,
+			}
 		}
 	}()
 

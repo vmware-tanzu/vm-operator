@@ -241,7 +241,7 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec vimtypes.Customiza
 		// message that includes both the localized message and all fault messages.
 		if taskInfo != nil {
 			if errMsg := taskutil.ErrorMessageFromTaskInfo(taskInfo); errMsg != "" {
-				err = fmt.Errorf("customization failed: %s", errMsg)
+				err = fmt.Errorf("customization failed: %s: %w", errMsg, err)
 			}
 		}
 

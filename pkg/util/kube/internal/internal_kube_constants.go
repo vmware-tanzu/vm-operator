@@ -17,6 +17,9 @@ const (
 	// StorageClassKind is the kind for a StorageClass resource.
 	StorageClassKind = "StorageClass"
 
+	// VolumeAttributesClassKind is the kind for a VolumeAttributesClass resource.
+	VolumeAttributesClassKind = "VolumeAttributesClass"
+
 	// StorageClassGroup is the API group to which a StorageClass resource
 	// belongs.
 	StorageClassGroup = storagev1.GroupName

@@ -16,11 +16,11 @@ import (
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
 
 const (
 	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-	StorageParamPolicyID           = "storagePolicyID"
 
 	// StoragePolicyQuotaKind is the name of the StoragePolicyQuota kind.
 	StoragePolicyQuotaKind = "StoragePolicyQuota"
@@ -85,7 +85,7 @@ func GetStorageClassesForPolicy(
 	var matches []storagev1.StorageClass
 	for i := range obj.Items {
 		o := obj.Items[i]
-		if id == o.Parameters[StorageParamPolicyID] {
+		if id == o.Parameters[internal.StoragePolicyIDParameter] {
 			ok, err := IsStoragePolicyInNamespace(
 				ctx,
 				k8sClient,
@@ -120,31 +120,12 @@ func GetStorageClassesForPolicyQuota(
 	var matches []storagev1.StorageClass
 	for i := range obj.Items {
 		o := obj.Items[i]
-		if spq.Spec.StoragePolicyId == o.Parameters[StorageParamPolicyID] {
+		if spq.Spec.StoragePolicyId == o.Parameters[internal.StoragePolicyIDParameter] {
 			matches = append(matches, o)
 		}
 	}
 
 	return matches, nil
-}
-
-// GetStoragePolicyIDFromClass returns the storage policy ID for the named
-// storage class.
-func GetStoragePolicyIDFromClass(
-	ctx context.Context,
-	k8sClient client.Client,
-	name string) (string, error) {
-
-	var obj storagev1.StorageClass
-	if err := k8sClient.Get(
-		ctx,
-		client.ObjectKey{Name: name},
-		&obj); err != nil {
-
-		return "", err
-	}
-
-	return obj.Parameters[StorageParamPolicyID], nil
 }
 
 type NotFoundInNamespace struct {
@@ -180,7 +161,7 @@ func GetStorageClassInNamespace(
 		return storagev1.StorageClass{}, err
 	}
 
-	policyID := sc.Parameters[StorageParamPolicyID]
+	policyID := sc.Parameters[internal.StoragePolicyIDParameter]
 
 	ok, err := IsStoragePolicyInNamespace(ctx, k8sClient, sc.Name, policyID, namespace)
 	if err != nil {

@@ -504,7 +504,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 				if err := vs.k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: storageClassName}, &sc); err != nil {
 					return "", fmt.Errorf("failed to get storage class %q: %w", storageClassName, err)
 				}
-				storagePolicyID, err = kubeutil.GetStoragePolicyID(sc)
+				storagePolicyID, err = kubeutil.GetStoragePolicyIDFromStorageClass(sc)
 
 				if err != nil {
 					return "", err

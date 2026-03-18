@@ -423,66 +423,6 @@ var _ = Describe("GetStorageClassesForPolicyQuota", func() {
 	})
 })
 
-var _ = Describe("GetStoragePolicyIDFromClass", func() {
-	var (
-		ctx         context.Context
-		client      ctrlclient.Client
-		withObjects []ctrlclient.Object
-		namespace   string
-		name        string
-		inName      string
-		id          string
-		err         error
-	)
-
-	BeforeEach(func() {
-		ctx = pkgcfg.NewContext()
-		namespace = defaultNamespace
-		name = myStorageClass
-		inName = name
-		withObjects = []ctrlclient.Object{
-			&corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: namespace,
-				},
-			},
-			&storagev1.StorageClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: name,
-				},
-				Parameters: map[string]string{
-					"storagePolicyID": sc1PolicyID,
-				},
-			},
-		}
-	})
-
-	JustBeforeEach(func() {
-		client = builder.NewFakeClient(withObjects...)
-
-		id, err = spqutil.GetStoragePolicyIDFromClass(
-			ctx, client, inName)
-	})
-
-	When("storage class does not exist", func() {
-		BeforeEach(func() {
-			inName = fakeString
-		})
-		It("should return NotFound", func() {
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			Expect(id).To(BeEmpty())
-		})
-	})
-
-	When("storage class does exist", func() {
-		It("should return the expected id", func() {
-			Expect(err).ToNot(HaveOccurred())
-			Expect(id).To(Equal(sc1PolicyID))
-		})
-	})
-})
-
 var _ = Describe("GetStorageClassesForPolicy", func() {
 	var (
 		ctx         context.Context

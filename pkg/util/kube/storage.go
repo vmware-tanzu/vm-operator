@@ -22,6 +22,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -138,32 +139,101 @@ func GetPVCZoneConstraints(
 	return zones, nil
 }
 
-// ErrMissingParameter is returned from GetStoragePolicyID if the StorageClass
+// ErrMissingParameter is returned from GetStoragePolicyID funcs if the object
 // does not have the storage policy ID parameter.
 type ErrMissingParameter struct {
-	StorageClassName string
-	ParameterName    string
+	ObjectName    string
+	ObjectKind    string
+	ParameterName string
 }
 
 func (e ErrMissingParameter) String() string {
 	return fmt.Sprintf(
-		"StorageClass %q does not have %q parameter",
-		e.StorageClassName, e.ParameterName)
+		"%s %q does not have %q parameter",
+		e.ObjectKind, e.ObjectName, e.ParameterName)
 }
 
 func (e ErrMissingParameter) Error() string {
 	return e.String()
 }
 
-// GetStoragePolicyID returns the storage policy ID for a given StorageClass.
+// GetStoragePolicyIDFromStorageClass returns the storage policy ID for a given StorageClass.
 // If no ID is found, an error is returned.
-func GetStoragePolicyID(obj storagev1.StorageClass) (string, error) {
+// Use GetStoragePolicyID for abstraction of the source of the policy ID (StorageClass or VolumeAttributesClass (VAC) object).
+func GetStoragePolicyIDFromStorageClass(obj storagev1.StorageClass) (string, error) {
 	policyID := obj.Parameters[internal.StoragePolicyIDParameter]
 	if policyID == "" {
 		return "", ErrMissingParameter{
-			StorageClassName: obj.Name,
-			ParameterName:    internal.StoragePolicyIDParameter,
+			ObjectName:    obj.Name,
+			ObjectKind:    internal.StorageClassKind,
+			ParameterName: internal.StoragePolicyIDParameter,
 		}
+	}
+	return policyID, nil
+}
+
+// GetStoragePolicyIDFromVolumeAttributesClass returns the storage policy ID for a given VAC.
+// If no ID is found, an error is returned.
+// Use GetStoragePolicyID for abstraction of the source of the policy ID (StorageClass or VolumeAttributesClass (VAC) object).
+func GetStoragePolicyIDFromVolumeAttributesClass(obj storagev1.VolumeAttributesClass) (string, error) {
+	policyID := obj.Parameters[internal.StoragePolicyIDParameter]
+	if policyID == "" {
+		return "", ErrMissingParameter{
+			ObjectName:    obj.Name,
+			ObjectKind:    internal.VolumeAttributesClassKind,
+			ParameterName: internal.StoragePolicyIDParameter,
+		}
+	}
+	return policyID, nil
+}
+
+// GetStoragePolicyID returns the storage policy ID for a given VM.
+// Abstracting from the source of the policy ID (StorageClass or VolumeAttributesClass (VAC) object).
+// Throw an error if VAC field is used while the capability is disabled.
+func GetStoragePolicyID(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm vmopv1.VirtualMachine) (string, error) {
+
+	var objName string
+	var objKind string
+
+	// VolumeAttributeClass's policyID trumps StorageClass's policyID.
+
+	if vm.Spec.VolumeAttributesClassName != "" {
+		objName = vm.Spec.VolumeAttributesClassName
+		objKind = internal.VolumeAttributesClassKind
+
+		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+			return "", fmt.Errorf("%s %q object is specified but capability is not enabled", objKind, objName)
+		}
+		vac := &storagev1.VolumeAttributesClass{}
+		if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: objName}, vac); err != nil {
+			return "", err
+		}
+
+		policyID, err := GetStoragePolicyIDFromVolumeAttributesClass(*vac)
+		if err != nil {
+			return "", err
+		}
+		return policyID, nil
+	}
+
+	objName = vm.Spec.StorageClass
+	objKind = internal.StorageClassKind
+
+	if objName == "" {
+		return "", fmt.Errorf("%s object is empty", objKind)
+	}
+
+	sc := &storagev1.StorageClass{}
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: objName}, sc); err != nil {
+		return "", err
+	}
+
+	policyID, err := GetStoragePolicyIDFromStorageClass(*sc)
+	if err != nil {
+		return "", err
 	}
 	return policyID, nil
 }
@@ -201,7 +271,7 @@ func IsEncryptedStorageClass(
 		return false, "", ctrlclient.IgnoreNotFound(err)
 	}
 
-	profileID, _ := GetStoragePolicyID(obj)
+	profileID, _ := GetStoragePolicyIDFromStorageClass(obj)
 	if profileID == "" {
 		return false, "", nil
 	}
@@ -227,7 +297,7 @@ func IsEncryptedStorageProfile(
 	}
 
 	for i := range obj.Items {
-		if pid, _ := GetStoragePolicyID(obj.Items[i]); pid == profileID {
+		if pid, _ := GetStoragePolicyIDFromStorageClass(obj.Items[i]); pid == profileID {
 			var (
 				obj infrav1.StoragePolicy
 				key = ctrlclient.ObjectKey{
@@ -290,7 +360,7 @@ func MarkEncryptedStorageClass(
 	storageClass storagev1.StorageClass,
 	encrypted bool) error {
 
-	profileID, err := GetStoragePolicyID(storageClass)
+	profileID, err := GetStoragePolicyIDFromStorageClass(storageClass)
 	if err != nil {
 		return err
 	}

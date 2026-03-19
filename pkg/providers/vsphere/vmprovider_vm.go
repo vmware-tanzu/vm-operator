@@ -280,11 +280,17 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		decrementConcurrentCreatesFn()
 	}
 
+	var asyncCreateStarted bool
+	defer func() {
+		// If the async create go routine was started then it will call
+		// the cleanupFn when it is done.
+		if !asyncCreateStarted {
+			cleanupFn()
+		}
+	}()
+
 	createArgs, err := vs.getCreateArgs(vmCtx, client)
 	if err != nil {
-		// If getting the create args failed, the concurrent counter needs to be
-		// decremented before returning.
-		cleanupFn()
 		return nil, err
 	}
 
@@ -302,6 +308,8 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		createArgs,
 		chanErr,
 		cleanupFn)
+
+	asyncCreateStarted = true
 
 	// Return with the error channel. The VM will be re-enqueued once the create
 	// completes with success or failure.

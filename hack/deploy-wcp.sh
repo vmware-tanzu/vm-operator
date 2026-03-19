@@ -5,11 +5,16 @@ set -o nounset
 set -o pipefail
 
 USAGE="
-Usage: ${0} [[-s SV_IP,SV_IP,SV_IP [-S SV_PASSWORD]] | [-v VC_IP [-V VC_SSH_PASSWORD]] | [-T testbedInfo.json]] [-c cluster] image.tar
+Usage: ${0} [[-s SV_IP,SV_IP,SV_IP [-S SV_PASSWORD]] | [-v VC_IP [-V VC_SSH_PASSWORD]] | [-T testbedInfo.json]] [-c cluster] [-C CRDs] [image.tar]
 
 Loads the VM Operator container image to the Supervisor control plane VMs,
 and restarts the deployments. The Supervisor control plane VM credential
 and IPs must be either provided directly, or obtained indirectly from VC.
+
+Loads updated CRDs from artifacts/local-deployment.yaml with the -C argument.
+The argument can be a comma-separated patterns and glob wildcards (* and ?)
+of the CRD names. Updated deployment yaml that contains the CRDs  is
+generated via make kustomize-wcp.
 
 If you have testbedInfo.json file - either a local file or the URL - that
 can be specified with the -T argument. This script will then use that file
@@ -34,6 +39,8 @@ FLAGS:
   -V vCenter ssh password
   -T testbedInfo.json file or URL
   -c Supervisor cluster, eg 'domain-c8'
+  -C Deploy CRDs matching glob pattern (e.g. '*.vmoperator.vmware.com')
+     Supports comma-separated patterns and glob wildcards (* and ?)
 "
 
 #########################################
@@ -56,6 +63,9 @@ VC_SSH_PASSWORD=
 TESTBED_INFO=
 SV_CLUSTER=
 
+DEPLOY_CRD_PATTERN=
+LOCAL_DEPLOYMENT_YAML="artifacts/local-deployment.yaml"
+
 VMOP_YAML="/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml"
 VMOP_YAML_TEMPLATE="/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/.vmop.yaml.template"
 
@@ -71,6 +81,47 @@ function error() {
 
 function fatal() {
     error "${@}" && exit 1
+}
+
+function glob_to_regex() {
+    local pattern="$1"
+    # Escape regex special chars (. becomes \.), then convert glob wildcards
+    pattern=$(printf '%s' "$pattern" | sed 's/\./\\./g; s/\*/.*/g; s/?/./g')
+    echo "$pattern"
+}
+
+function extract_vmop_crds() {
+    local pattern="$1"
+    local regex="" part
+
+    # Convert comma-separated glob patterns to regex alternation
+    IFS=',' read -ra patterns <<< "$pattern"
+    for p in "${patterns[@]}" ; do
+        part=$(glob_to_regex "$p")
+        if [[ -n $regex ]] ; then
+            regex="${regex}|${part}"
+        else
+            regex="$part"
+        fi
+    done
+
+    yq 'select(.kind == "CustomResourceDefinition" and (.metadata.name | test("^('"$regex"')$")))' \
+        "$LOCAL_DEPLOYMENT_YAML"
+}
+
+function sv_deploy_crds() {
+    local pattern="$1"
+    local ip crds_yaml
+
+    ip=${SV_VIP:-${SV_IPS[0]}}
+    crds_yaml=$(extract_vmop_crds "$pattern")
+
+    if [[ -z $crds_yaml ]] ; then
+        fatal "No CRDs matching pattern: $pattern"
+    fi
+
+    log "Deploying CRDs to $ip..."
+    echo "$crds_yaml" | sv_cp_ssh_cmd "$ip" "kubectl apply --server-side=true --force-conflicts -f -"
 }
 
 function vc_ssh_cmd() {
@@ -181,9 +232,9 @@ function sv_copy_and_load_image() {
 
     log "$svip: copied and loaded image"
 
-    cmd="sed -i.bak '/^        image: .*vmop/s|: .*|: '"${image_ref}"'|' $VMOP_YAML"
+    cmd="sed -i.bak '/^        image: .*vmop/s|: .*|: '\"${image_ref}\"'|' $VMOP_YAML"
     sv_cp_ssh_cmd "$svip" "$cmd"
-    cmd="sed -i.bak '/^        image: .*vmop/s|: .*|: '"${image_ref}"'|' $VMOP_YAML_TEMPLATE"
+    cmd="sed -i.bak '/^        image: .*vmop/s|: .*|: '\"${image_ref}\"'|' $VMOP_YAML_TEMPLATE"
     sv_cp_ssh_cmd "$svip" "$cmd"
 
     log "$svip: updated deployment yaml"
@@ -211,7 +262,7 @@ function sv_restart_vmop_deployment() {
 
 #########################################
 
-while getopts ":hc:s:S:v:V:T:" opt ; do
+while getopts ":hc:s:S:v:V:T:C:" opt ; do
     case $opt in
         h)
             echo "$USAGE"
@@ -235,6 +286,9 @@ while getopts ":hc:s:S:v:V:T:" opt ; do
         T)
             TESTBED_INFO=$OPTARG
             ;;
+        C)
+            DEPLOY_CRD_PATTERN=$OPTARG
+            ;;
         *)
             fatal "$USAGE"
             ;;
@@ -243,19 +297,26 @@ done
 
 shift $((OPTIND-1))
 
-if [[ $# -ne 1 ]] ; then
+IMAGE=
+IMAGE_REF=
+
+if [[ $# -eq 1 ]] ; then
+    IMAGE=$1
+
+    if [[ ! -r $IMAGE ]] ; then
+        fatal "Container image $IMAGE does not exist"
+    fi
+
+    IMAGE_REF=$(tar -O -xf "$IMAGE" manifest.json | jq -r '.[0].RepoTags[0]')
+    if [[ -z $IMAGE_REF ]] ; then
+        fatal "cannot extract image tag from container image $IMAGE"
+    fi
+elif [[ $# -gt 1 ]] ; then
     fatal "$USAGE"
 fi
 
-IMAGE=$1
-
-if [[ ! -r $IMAGE ]] ; then
-    fatal "Container image $IMAGE does not exist"
-fi
-
-IMAGE_REF=$(tar -O -xf $IMAGE manifest.json | jq -r '.[0].RepoTags[0]')
-if [[ -z $IMAGE_REF ]] ; then
-    fatal "cannot extract image tag from container image $IMAGE"
+if [[ -z $IMAGE && -z $DEPLOY_CRD_PATTERN ]] ; then
+    fatal "Either image.tar or -C pattern is required"
 fi
 
 if [[ -z $SV_IPS_CSL ]] ; then
@@ -278,16 +339,25 @@ fi
 
 log "Supervisor CP IPs: ${SV_IPS[*]}"
 
-# TODO: Our image is ~30MB compressed, which isn't too bad to upload 3
-# times but could use the first SV CP as the source for the other 2.
-pids=()
-for ip in "${SV_IPS[@]}" ; do
-    sv_copy_and_load_image "$ip" "$IMAGE" "$IMAGE_REF" &
-    pids+=($!)
-done
-wait "${pids[@]}"
+if [[ -n $DEPLOY_CRD_PATTERN ]] ; then
+    if ! command yq >/dev/null 2>&1 ; then
+       fatal "yq command required"
+    fi
+    sv_deploy_crds "$DEPLOY_CRD_PATTERN"
+fi
 
-sv_update_deployment_image "$IMAGE_REF"
-sv_restart_vmop_deployment
+if [[ -n $IMAGE ]] ; then
+    # TODO: Our image is ~30MB compressed, which isn't too bad to upload 3
+    # times but could use the first SV CP as the source for the other 2.
+    pids=()
+    for ip in "${SV_IPS[@]}" ; do
+        sv_copy_and_load_image "$ip" "$IMAGE" "$IMAGE_REF" &
+        pids+=($!)
+    done
+    wait "${pids[@]}"
+
+    sv_update_deployment_image "$IMAGE_REF"
+    sv_restart_vmop_deployment
+fi
 
 # vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

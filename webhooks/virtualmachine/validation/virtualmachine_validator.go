@@ -859,9 +859,6 @@ func (v validator) validateNetworkVLANs(
 	var allErrs field.ErrorList
 
 	networkSpec := vm.Spec.Network
-	if networkSpec == nil || len(networkSpec.VLANs) == 0 {
-		return allErrs
-	}
 
 	if vm.Spec.Bootstrap == nil || vm.Spec.Bootstrap.CloudInit == nil {
 		allErrs = append(allErrs, field.Invalid(
@@ -876,9 +873,6 @@ func (v validator) validateNetworkVLANs(
 		interfaceNames = sets.New[string]()
 		// Track VLAN Link to an existing interface device name
 		interfaceDeviceNames = sets.New[string]()
-		// Track the primary interface name (first interface in the list),
-		// to disallow VLAN on primary network interface.
-		primaryInterfaceName = ""
 		// Track VLAN IDs per link to detect duplicates.
 		vlanIDsPerLink = map[string]map[int64]string{}
 	)
@@ -887,9 +881,6 @@ func (v validator) validateNetworkVLANs(
 		interfaceNames.Insert(iface.Name)
 		if iface.GuestDeviceName != "" {
 			interfaceDeviceNames.Insert(iface.GuestDeviceName)
-		}
-		if i == 0 {
-			primaryInterfaceName = iface.Name
 		}
 	}
 
@@ -918,14 +909,7 @@ func (v validator) validateNetworkVLANs(
 		// Validate Link references an existing interface.
 		if !interfaceNames.Has(vlanSpec.Link) {
 			allErrs = append(allErrs, field.Invalid(vlanPath.Child("link"), vlanSpec.Link,
-				fmt.Sprintf("link must reference an existing interface name from the interfaces list: %v", sets.List(interfaceNames)),
-			))
-			continue
-		}
-		// Disallow creating VLAN sub-interfaces on the primary NIC.
-		if vlanSpec.Link == primaryInterfaceName {
-			allErrs = append(allErrs, field.Invalid(vlanPath.Child("link"), vlanSpec.Link,
-				"cannot create VLAN sub-interface on the primary network interface",
+				"link must reference an existing interface name",
 			))
 			continue
 		}

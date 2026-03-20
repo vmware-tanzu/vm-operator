@@ -100,7 +100,7 @@ func NetPlanCustomization(result NetworkInterfaceResults, vlans []vmopv1.Virtual
 	}
 
 	if len(vlans) > 0 {
-		netPlan.Vlans = make(map[string]netplan.VLAN)
+		netPlan.Vlans = make(map[string]netplan.VLAN, len(vlans))
 		for _, vlan := range vlans {
 			npVlan := netplan.VLAN{
 				ID:   ptr.To(vlan.ID),

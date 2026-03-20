@@ -2910,7 +2910,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`vlans is available only with the following bootstrap providers: CloudInit`,
+						`spec.network.vlans: Invalid value: [{"name":"vlan100","id":100,"link":"eth0"}]: vlans is available only with the following bootstrap providers: CloudInit`,
 					),
 				},
 			),
@@ -2934,7 +2934,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`vlans is available only with the following bootstrap providers: CloudInit`,
+						`spec.network.vlans: Invalid value: [{"name":"vlan100","id":100,"link":"eth0"}]: vlans is available only with the following bootstrap providers: CloudInit`,
 					),
 				},
 			),
@@ -2961,7 +2961,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans[0].link: Invalid value: "eth1": link must reference an existing interface name from the interfaces list: [eth0]`,
+						`spec.network.vlans[0].link: Invalid value: "eth1": link must reference an existing interface name`,
 					),
 				},
 			),
@@ -2989,33 +2989,6 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.network.vlans[0].link: Required value: link must reference an interface name`,
-					),
-				},
-			),
-
-			Entry("disallow VLAN on primary network interface",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
-						}
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-								},
-							},
-							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
-								{
-									Name: "vlan100",
-									ID:   100,
-									Link: "eth0",
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.network.vlans[0].link: Invalid value: "eth0": cannot create VLAN sub-interface on the primary network interface`,
 					),
 				},
 			),
@@ -3050,7 +3023,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`Invalid value: 100: VLAN ID 100 is already used by VLAN`,
+						`spec.network.vlans[1].id: Invalid value: 100: VLAN ID 100 is already used by VLAN "vlan100a" on the same parent link "eth1"`,
 					),
 				},
 			),

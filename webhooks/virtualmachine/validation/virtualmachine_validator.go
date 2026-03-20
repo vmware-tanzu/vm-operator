@@ -877,7 +877,7 @@ func (v validator) validateNetworkVLANs(
 		vlanIDsPerLink = map[string]map[int64]string{}
 	)
 
-	for i, iface := range networkSpec.Interfaces {
+	for _, iface := range networkSpec.Interfaces {
 		interfaceNames.Insert(iface.Name)
 		if iface.GuestDeviceName != "" {
 			interfaceDeviceNames.Insert(iface.GuestDeviceName)

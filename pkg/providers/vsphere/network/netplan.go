@@ -105,6 +105,11 @@ func NetPlanCustomization(result NetworkInterfaceResults, vlans []vmopv1.Virtual
 			npVlan := netplan.VLAN{
 				ID:   ptr.To(vlan.ID),
 				Link: ptr.To(vlan.Link),
+				// Explicitly set dhcp4: false, dhcp6: false, and accept-ra: false
+				// to ensure they remain L2-only until we support user configures them.
+				Dhcp4:    ptr.To(false),
+				Dhcp6:    ptr.To(false),
+				AcceptRa: ptr.To(false),
 			}
 
 			netPlan.Vlans[vlan.Name] = npVlan

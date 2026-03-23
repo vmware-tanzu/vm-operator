@@ -55,7 +55,7 @@ func AddToManagerV1A2(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledItemTypeName),
-		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameLong)),
 		ctx.VMProvider,
 		controlledItemTypeName,
 	)

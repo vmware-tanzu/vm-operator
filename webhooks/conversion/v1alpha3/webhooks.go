@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha3
@@ -14,57 +14,49 @@ import (
 
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachine{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.VirtualMachine{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachineClass{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.VirtualMachineClass{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachineImage{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.VirtualMachineImage{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.ClusterVirtualMachineImage{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.ClusterVirtualMachineImage{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachinePublishRequest{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.VirtualMachinePublishRequest{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachineService{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.VirtualMachineService{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachineSetResourcePolicy{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.VirtualMachineSetResourcePolicy{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachineWebConsoleRequest{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a3.VirtualMachineWebConsoleRequest{}).
 		Complete(); err != nil {
 
 		return err

@@ -28,8 +28,8 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -61,7 +61,7 @@ func AddToManager(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledItemTypeName),
-		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameLong)),
 		ctx.VMProvider,
 		controlledItemTypeName,
 	)

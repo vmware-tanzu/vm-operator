@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha2
@@ -14,50 +14,43 @@ import (
 
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a2.VirtualMachine{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a2.VirtualMachine{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a2.VirtualMachineClass{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a2.VirtualMachineClass{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a2.VirtualMachineImage{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a2.VirtualMachineImage{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a2.VirtualMachinePublishRequest{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a2.VirtualMachinePublishRequest{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a2.VirtualMachineService{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a2.VirtualMachineService{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a2.VirtualMachineSetResourcePolicy{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a2.VirtualMachineSetResourcePolicy{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a2.VirtualMachineWebConsoleRequest{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a2.VirtualMachineWebConsoleRequest{}).
 		Complete(); err != nil {
 
 		return err

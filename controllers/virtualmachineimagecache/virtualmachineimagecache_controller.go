@@ -70,7 +70,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Context:    ctx,
 		Client:     mgr.GetClient(),
 		Logger:     ctx.Logger.WithName("controllers").WithName(controlledTypeName),
-		Recorder:   record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		Recorder:   record.New(mgr.GetEventRecorder(controllerNameLong)),
 		VMProvider: ctx.VMProvider,
 
 		newCLSProvdrFn: newContentLibraryProviderOrDefault(ctx),

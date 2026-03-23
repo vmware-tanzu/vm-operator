@@ -14,7 +14,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	clientgorecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -58,7 +58,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 		vmKey = client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace}
 
 		fakeClient = builder.NewFakeClient()
-		eventRecorder := clientgorecord.NewFakeRecorder(1024)
+		eventRecorder := events.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
 		fakeEvents = eventRecorder.Events
 

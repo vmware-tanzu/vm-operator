@@ -861,9 +861,8 @@ func (v validator) validateNetworkVLANs(
 	networkSpec := vm.Spec.Network
 
 	if vm.Spec.Bootstrap == nil || vm.Spec.Bootstrap.CloudInit == nil {
-		allErrs = append(allErrs, field.Invalid(
-			vlansPath, networkSpec.VLANs,
-			"vlans is available only with the following bootstrap providers: CloudInit",
+		allErrs = append(allErrs, field.Forbidden(
+			vlansPath, "vlans is available only with the following bootstrap providers: CloudInit",
 		))
 		return allErrs
 	}

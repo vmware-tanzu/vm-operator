@@ -2869,10 +2869,13 @@ func unitTestsValidateCreate() {
 								{
 									Name: "eth1",
 								},
+								{
+									Name: "eth2",
+								},
 							},
 							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
 								{
-									Name: "vlan100",
+									Name: "vlan100a",
 									ID:   100,
 									Link: "eth1",
 								},
@@ -2880,6 +2883,11 @@ func unitTestsValidateCreate() {
 									Name: "vlan200",
 									ID:   200,
 									Link: "eth1",
+								},
+								{
+									Name: "vlan100b",
+									ID:   100,
+									Link: "eth2",
 								},
 							},
 						}
@@ -2910,7 +2918,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans: Invalid value: [{"name":"vlan100","id":100,"link":"eth0"}]: vlans is available only with the following bootstrap providers: CloudInit`,
+						`spec.network.vlans: Forbidden: vlans is available only with the following bootstrap providers: CloudInit`,
 					),
 				},
 			),
@@ -2934,7 +2942,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.vlans: Invalid value: [{"name":"vlan100","id":100,"link":"eth0"}]: vlans is available only with the following bootstrap providers: CloudInit`,
+						`spec.network.vlans: Forbidden: vlans is available only with the following bootstrap providers: CloudInit`,
 					),
 				},
 			),

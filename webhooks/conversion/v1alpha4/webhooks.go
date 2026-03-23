@@ -9,6 +9,7 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
@@ -26,6 +27,15 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		Complete(); err != nil {
 
 		return err
+	}
+
+	if pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+		if err := ctrl.NewWebhookManagedBy(mgr).
+			For(&vmopv1a4.VirtualMachineClassInstance{}).
+			Complete(); err != nil {
+
+			return err
+		}
 	}
 
 	if err := ctrl.NewWebhookManagedBy(mgr).

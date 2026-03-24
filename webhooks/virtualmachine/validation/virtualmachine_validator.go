@@ -789,6 +789,10 @@ func (v validator) validateNetwork(
 		}
 	}
 
+	if len(networkSpec.VLANs) > 0 {
+		allErrs = append(allErrs, v.validateNetworkVLANs(networkPath.Child("vlans"), vm)...)
+	}
+
 	if oldVM != nil {
 		if pkgcfg.FromContext(ctx).Features.MutableNetworks {
 			allErrs = append(allErrs, v.validateNetworkInterfaceMacAddressNotChanged(ctx, vm, oldVM)...)
@@ -840,6 +844,86 @@ func (v validator) validateNetworkInterfaceMacAddressNotChanged(
 		if oldMAC, ok := interfacesToMACs[key]; ok && interfaceSpec.MACAddr != oldMAC {
 			p := field.NewPath("spec", "network", "interfaces").Index(i).Child("macAddr")
 			allErrs = append(allErrs, field.Invalid(p, interfaceSpec.MACAddr, validation.FieldImmutableErrorMsg))
+		}
+	}
+
+	return allErrs
+}
+
+// validateNetworkVLANs validates the VLANs configuration in the network spec.
+// VLANs are only supported with CloudInit bootstrap provider.
+func (v validator) validateNetworkVLANs(
+	vlansPath *field.Path,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	networkSpec := vm.Spec.Network
+
+	if vm.Spec.Bootstrap == nil || vm.Spec.Bootstrap.CloudInit == nil {
+		allErrs = append(allErrs, field.Forbidden(
+			vlansPath, "vlans is available only with the following bootstrap providers: CloudInit",
+		))
+		return allErrs
+	}
+
+	var (
+		// Track VLAN Link to an existing interface name
+		interfaceNames = sets.New[string]()
+		// Track VLAN Link to an existing interface device name
+		interfaceDeviceNames = sets.New[string]()
+		// Track VLAN IDs per link to detect duplicates.
+		vlanIDsPerLink = map[string]map[int64]string{}
+	)
+
+	for _, iface := range networkSpec.Interfaces {
+		interfaceNames.Insert(iface.Name)
+		if iface.GuestDeviceName != "" {
+			interfaceDeviceNames.Insert(iface.GuestDeviceName)
+		}
+	}
+
+	for i, vlanSpec := range networkSpec.VLANs {
+		vlanPath := vlansPath.Index(i)
+
+		// Validate VLAN name does not conflict with interface Name or GuestDeviceName.
+		if interfaceNames.Has(vlanSpec.Name) {
+			allErrs = append(allErrs, field.Invalid(vlanPath.Child("name"), vlanSpec.Name,
+				"vlan name must not conflict with an interface name",
+			))
+		}
+		if interfaceDeviceNames.Has(vlanSpec.Name) {
+			allErrs = append(allErrs, field.Invalid(vlanPath.Child("name"), vlanSpec.Name,
+				"vlan name must not conflict with an interface guestDeviceName",
+			))
+		}
+
+		// Link is required
+		if vlanSpec.Link == "" {
+			allErrs = append(allErrs, field.Required(vlanPath.Child("link"),
+				"link must reference an interface name",
+			))
+			continue
+		}
+		// Validate Link references an existing interface.
+		if !interfaceNames.Has(vlanSpec.Link) {
+			allErrs = append(allErrs, field.Invalid(vlanPath.Child("link"), vlanSpec.Link,
+				"link must reference an existing interface name",
+			))
+			continue
+		}
+
+		// Check for duplicate VLAN IDs on the same parent link.
+		if vlanIDsPerLink[vlanSpec.Link] == nil {
+			vlanIDsPerLink[vlanSpec.Link] = map[int64]string{}
+		}
+		if existingVlanName, exists := vlanIDsPerLink[vlanSpec.Link][vlanSpec.ID]; exists {
+			allErrs = append(allErrs, field.Invalid(vlanPath.Child("id"), vlanSpec.ID,
+				fmt.Sprintf("VLAN ID %d is already used by VLAN %q on the same parent link %q",
+					vlanSpec.ID, existingVlanName, vlanSpec.Link),
+			))
+		} else {
+			vlanIDsPerLink[vlanSpec.Link][vlanSpec.ID] = vlanSpec.Name
 		}
 	}
 

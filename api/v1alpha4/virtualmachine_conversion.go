@@ -59,6 +59,12 @@ func Convert_v1alpha6_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpe
 	return autoConvert_v1alpha6_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s)
 }
 
+func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha4_VirtualMachineNetworkSpec(
+	in *vmopv1.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha4_VirtualMachineNetworkSpec(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachineBootstrapSpec(
 	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
 
@@ -294,6 +300,17 @@ func restore_v1alpha6_VirtualMachineAffinity(dst, src *vmopv1.VirtualMachine) {
 	}
 }
 
+func restore_v1alpha6_VirtualMachineNetworkVLANs(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Network == nil || len(src.Spec.Network.VLANs) == 0 {
+		return
+	}
+
+	if dst.Spec.Network == nil {
+		dst.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+	}
+	dst.Spec.Network.VLANs = src.Spec.Network.VLANs
+}
+
 func restore_v1alpha6_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
 	for i := range src.Spec.Volumes {
@@ -346,6 +363,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineAffinity(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumes(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
+	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
 
 	// END RESTORE
 

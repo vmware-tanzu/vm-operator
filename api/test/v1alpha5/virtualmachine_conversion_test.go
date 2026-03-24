@@ -60,6 +60,35 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "spec.network.vlans",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+								{
+									Name: "eth1",
+								},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100",
+									ID:   100,
+									Link: "eth1",
+								},
+								{
+									Name: "vlan200",
+									ID:   200,
+									Link: "eth1",
+								},
+							},
+						},
+					},
+				},
+			},
 		}
 
 		for i := range testCases {

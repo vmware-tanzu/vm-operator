@@ -213,6 +213,18 @@ func TestVirtualMachineConversion(t *testing.T) {
 							SearchDomains: []string{"vmware.com"},
 						},
 					},
+					VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+						{
+							Name: "vlan100",
+							ID:   100,
+							Link: "my-interface",
+						},
+						{
+							Name: "vlan200",
+							ID:   200,
+							Link: "my-interface",
+						},
+					},
 				},
 				PowerState:      vmopv1.VirtualMachinePowerStateOff,
 				PowerOffMode:    vmopv1.VirtualMachinePowerOpModeHard,

@@ -7,12 +7,13 @@ package network
 import (
 	"strings"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, error) {
+func NetPlanCustomization(result NetworkInterfaceResults, vlans []vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
 	netPlan := &netplan.Network{
 		Version:   constants.NetPlanVersion,
 		Ethernets: make(map[string]netplan.Ethernet),
@@ -96,6 +97,23 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, err
 		}
 
 		netPlan.Ethernets[r.Name] = npEth
+	}
+
+	if len(vlans) > 0 {
+		netPlan.Vlans = make(map[string]netplan.VLAN, len(vlans))
+		for _, vlan := range vlans {
+			npVlan := netplan.VLAN{
+				ID:   ptr.To(vlan.ID),
+				Link: ptr.To(vlan.Link),
+				// Explicitly set dhcp4: false, dhcp6: false, and accept-ra: false
+				// to ensure they remain L2-only until we support user configures them.
+				Dhcp4:    ptr.To(false),
+				Dhcp6:    ptr.To(false),
+				AcceptRa: ptr.To(false),
+			}
+
+			netPlan.Vlans[vlan.Name] = npVlan
+		}
 	}
 
 	return netPlan, nil

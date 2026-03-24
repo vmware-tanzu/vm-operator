@@ -3059,6 +3059,7 @@ func autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNe
 	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
 	out.Interfaces = *(*[]VirtualMachineNetworkInterfaceSpec)(unsafe.Pointer(&in.Interfaces))
+	// WARNING: in.VLANs requires manual conversion: does not exist in peer-type
 	return nil
 }
 

@@ -116,6 +116,12 @@ func Convert_v1alpha6_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpe
 	return autoConvert_v1alpha6_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(in, out, s)
 }
 
+func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetworkSpec(
+	in *vmopv1.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetworkSpec(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha3_VirtualMachineBootstrapSpec(
 	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
 

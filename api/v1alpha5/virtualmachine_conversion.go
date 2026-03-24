@@ -13,6 +13,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
+func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha5_VirtualMachineNetworkSpec(
+	in *vmopv1.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha5_VirtualMachineNetworkSpec(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha5_VirtualMachineBootstrapSpec(
 	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
 

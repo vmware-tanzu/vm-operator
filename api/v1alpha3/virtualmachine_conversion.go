@@ -122,6 +122,12 @@ func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetwor
 	return autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetworkSpec(in, out, s)
 }
 
+func Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_VirtualMachineNetworkInterfaceSpec(
+	in *vmopv1.VirtualMachineNetworkInterfaceSpec, out *VirtualMachineNetworkInterfaceSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_VirtualMachineNetworkInterfaceSpec(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha3_VirtualMachineBootstrapSpec(
 	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
 
@@ -383,6 +389,26 @@ func restore_v1alpha6_VirtualMachineNetworkVLANs(dst, src *vmopv1.VirtualMachine
 	dst.Spec.Network.VLANs = src.Spec.Network.VLANs
 }
 
+func restore_v1alpha6_VirtualMachineNetworkInterfaceIPFamilyPolicy(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Network == nil || len(src.Spec.Network.Interfaces) == 0 {
+		return
+	}
+	if dst.Spec.Network == nil || len(dst.Spec.Network.Interfaces) == 0 {
+		return
+	}
+	srcByName := make(map[string]*vmopv1.VirtualMachineNetworkInterfaceSpec, len(src.Spec.Network.Interfaces))
+	for i := range src.Spec.Network.Interfaces {
+		srcByName[src.Spec.Network.Interfaces[i].Name] = &src.Spec.Network.Interfaces[i]
+	}
+	for i := range dst.Spec.Network.Interfaces {
+		srcIface, ok := srcByName[dst.Spec.Network.Interfaces[i].Name]
+		if !ok {
+			continue
+		}
+		dst.Spec.Network.Interfaces[i].IPFamilyPolicy = srcIface.IPFamilyPolicy
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -412,6 +438,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
+	restore_v1alpha6_VirtualMachineNetworkInterfaceIPFamilyPolicy(dst, restored)
 
 	// END RESTORE
 

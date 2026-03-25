@@ -484,6 +484,325 @@ var _ = Describe("UpdateStatus", func() {
 					})
 				})
 			})
+
+			Context("Fallback from interface statuses", func() {
+				const (
+					fallbackIP4 = "10.0.0.1"
+					fallbackIP6 = "2001:db8::1"
+				)
+
+				Context("Non-CloudInit: PrimaryIP4 set, PrimaryIP6 missing - fallback from same interface", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = validIP4
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: validIP4,
+											State:     "preferred",
+										},
+										{
+											IpAddress: fallbackIP6,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate PrimaryIP6 from the same interface", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(validIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(fallbackIP6))
+					})
+				})
+
+				Context("Non-CloudInit: PrimaryIP6 set, PrimaryIP4 missing - fallback from same interface", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = validIP6
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: validIP6,
+											State:     "preferred",
+										},
+										{
+											IpAddress: fallbackIP4,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate PrimaryIP4 from the same interface", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(fallbackIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(validIP6))
+					})
+				})
+
+				Context("Non-CloudInit: Both empty - fallback from first interface", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = ""
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: fallbackIP4,
+											State:     "preferred",
+										},
+										{
+											IpAddress: fallbackIP6,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate both PrimaryIP4 and PrimaryIP6 from first interface", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(fallbackIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(fallbackIP6))
+					})
+				})
+
+				Context("CloudInit: PrimaryIP4 set, PrimaryIP6 missing - fallback from same interface", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = ""
+						vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{}
+						vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   constants.CloudInitGuestInfoLocalIPv4Key,
+								Value: validIP4,
+							},
+						}
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: validIP4,
+											State:     "preferred",
+										},
+										{
+											IpAddress: fallbackIP6,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate PrimaryIP6 from the same interface", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(validIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(fallbackIP6))
+					})
+				})
+
+				Context("CloudInit: PrimaryIP6 set, PrimaryIP4 missing - fallback from same interface", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = ""
+						vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{}
+						vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   constants.CloudInitGuestInfoLocalIPv6Key,
+								Value: validIP6,
+							},
+						}
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: validIP6,
+											State:     "preferred",
+										},
+										{
+											IpAddress: fallbackIP4,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate PrimaryIP4 from the same interface", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(fallbackIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(validIP6))
+					})
+				})
+
+				Context("CloudInit: Both empty - fallback from first interface", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = ""
+						vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{}
+						vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: fallbackIP4,
+											State:     "preferred",
+										},
+										{
+											IpAddress: fallbackIP6,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate both PrimaryIP4 and PrimaryIP6 from first interface", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(fallbackIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(fallbackIP6))
+					})
+				})
+
+				Context("Both empty, first interface has only IPv4", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = ""
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: fallbackIP4,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate only PrimaryIP4", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(fallbackIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
+					})
+				})
+
+				Context("Both empty, first interface has only IPv6", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = ""
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: fallbackIP6,
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should populate only PrimaryIP6", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(fallbackIP6))
+					})
+				})
+
+				Context("Interface not found for PrimaryIP4", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = validIP4
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: "10.0.0.99", // Different IP
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should not populate PrimaryIP6", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(validIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
+					})
+				})
+
+				Context("CIDR notation in Address field", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = ""
+						vmCtx.MoVM.Guest.Net = []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "00:11:22:33:44:55",
+								IpConfig: &vimtypes.NetIpConfigInfo{
+									IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+										{
+											IpAddress: fallbackIP4 + "/24", // CIDR notation
+											State:     "preferred",
+										},
+										{
+											IpAddress: fallbackIP6 + "/64", // CIDR notation
+											State:     "preferred",
+										},
+									},
+								},
+							},
+						}
+						data.NetworkDeviceKeysToSpecIdx[4000] = 0
+					})
+					It("should extract IPs correctly, stripping CIDR notation", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(fallbackIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(fallbackIP6))
+					})
+				})
+			})
 		})
 
 		Context("Interfaces", func() {

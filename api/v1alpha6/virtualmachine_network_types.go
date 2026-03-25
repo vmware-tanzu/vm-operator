@@ -10,6 +10,18 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 )
 
+// NetworkInterfaceIPFamilyPolicy defines the IP family policy for a network interface.
+type NetworkInterfaceIPFamilyPolicy string
+
+const (
+	// NetworkInterfaceIPFamilyPolicyIPv4Only indicates only IPv4 addresses will be allocated.
+	NetworkInterfaceIPFamilyPolicyIPv4Only NetworkInterfaceIPFamilyPolicy = "IPv4Only"
+	// NetworkInterfaceIPFamilyPolicyIPv6Only indicates only IPv6 addresses will be allocated.
+	NetworkInterfaceIPFamilyPolicyIPv6Only NetworkInterfaceIPFamilyPolicy = "IPv6Only"
+	// NetworkInterfaceIPFamilyPolicyDualStack indicates both IPv4 and IPv6 addresses will be allocated.
+	NetworkInterfaceIPFamilyPolicyDualStack NetworkInterfaceIPFamilyPolicy = "DualStack"
+)
+
 // VirtualMachineNetworkRouteSpec defines a static route for a guest.
 type VirtualMachineNetworkRouteSpec struct {
 	// To is either "default", or an IP4 or IP6 address.
@@ -179,6 +191,19 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// or true, if search domains is not provided, the global search domains
 	// will be used instead.
 	SearchDomains []string `json:"searchDomains,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Enum=IPv4Only;IPv6Only;DualStack
+
+	// IPFamilyPolicy specifies the IP family policy for this network interface.
+	// Values: IPv4Only, IPv6Only, DualStack.
+	// When set to IPv4Only, only an IPv4 address will be allocated.
+	// When set to IPv6Only, only an IPv6 address will be allocated.
+	// When set to DualStack, both IPv4 and IPv6 addresses will be allocated.
+	// This field is directly passed to the underlying network interface provider.
+	// If not specified, the field will be nil and no IPFamilyPolicy will be set and the
+	// default behavior of the network interface provider will be used.
+	IPFamilyPolicy *NetworkInterfaceIPFamilyPolicy `json:"ipFamilyPolicy,omitempty"`
 }
 
 // VirtualMachineNetworkVLANSpec describes a VLAN sub-interface configuration.

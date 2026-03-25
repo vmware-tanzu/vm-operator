@@ -9952,6 +9952,21 @@ spec:
                                     inside the guest, ex. dvd, cdrom, sda, etc.
                                   pattern: ^\w\w+$
                                   type: string
+                                ipFamilyPolicy:
+                                  description: |-
+                                    IPFamilyPolicy specifies the IP family policy for this network interface.
+                                    Values: IPv4Only, IPv6Only, DualStack.
+                                    When set to IPv4Only, only an IPv4 address will be allocated.
+                                    When set to IPv6Only, only an IPv6 address will be allocated.
+                                    When set to DualStack, both IPv4 and IPv6 addresses will be allocated.
+                                    This field is directly passed to the underlying network interface provider.
+                                    If not specified, the field will be nil and no IPFamilyPolicy will be set and the
+                                    default behavior of the network interface provider will be used.
+                                  enum:
+                                  - IPv4Only
+                                  - IPv6Only
+                                  - DualStack
+                                  type: string
                                 macAddr:
                                   description: |-
                                     MACAddr is the optional MAC address of this interface.

@@ -303,6 +303,142 @@ func intgTestsReconcile() {
 				vmServiceName = "test-vm-service-unmatched-vm"
 			})
 
+			Context("Dual-stack VM", func() {
+				BeforeEach(func() {
+					vmServiceName = "test-vm-service-dual-stack"
+				})
+
+				It("Endpoints contain both IPv4 and IPv6 addresses", func() {
+					dualStackVM := &vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "dual-stack-vm",
+							Namespace: ctx.Namespace,
+							Labels:    vmLabels,
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							PowerState: vmopv1.VirtualMachinePowerStateOn,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, dualStackVM)).To(Succeed())
+
+					dualStackVM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+						PrimaryIP4: "192.168.1.100",
+						PrimaryIP6: "2001:db8::100",
+					}
+					Expect(ctx.Client.Status().Update(ctx, dualStackVM)).To(Succeed())
+
+					vmService := &vmopv1.VirtualMachineService{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      vmServiceName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: vmopv1.VirtualMachineServiceSpec{
+							Type:     vmopv1.VirtualMachineServiceTypeClusterIP,
+							Ports:    []vmopv1.VirtualMachineServicePort{vmServicePort},
+							Selector: selector,
+						},
+					}
+
+					objKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
+
+					By("Create VirtualMachineService", func() {
+						Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
+					})
+
+					By("Endpoints should contain only IPv4 address for SingleStack service", func() {
+						// In an IPv4-only cluster, a SingleStack service gets an IPv4 ClusterIP
+						// An IPv4 service can only route to IPv4 endpoints, so only IPv4 is included
+						// even if the VM has both IPv4 and IPv6 addresses
+						endpoints := &corev1.Endpoints{}
+						Eventually(func() bool {
+							if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
+								return len(endpoints.Subsets) >= 1
+							}
+							return false
+						}).Should(BeTrue())
+
+						// Collect all IP addresses from all subsets
+						var allIPs []string
+						for _, subset := range endpoints.Subsets {
+							for _, addr := range subset.Addresses {
+								allIPs = append(allIPs, addr.IP)
+							}
+						}
+
+						Expect(allIPs).To(ContainElement("192.168.1.100"), "Should contain IPv4 address")
+						Expect(allIPs).NotTo(ContainElement("2001:db8::100"), "Should not contain IPv6 address for SingleStack IPv4 service")
+					})
+
+					By("Cleanup", func() {
+						Expect(ctx.Client.Delete(ctx, vmService)).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, dualStackVM)).To(Succeed())
+					})
+				})
+			})
+
+			Context("IPv6-only VM", func() {
+				BeforeEach(func() {
+					vmServiceName = "test-vm-service-ipv6-only"
+				})
+
+				It("Endpoints contain only IPv6 address", func() {
+					ipv6VM := &vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "ipv6-vm",
+							Namespace: ctx.Namespace,
+							Labels:    vmLabels,
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							PowerState: vmopv1.VirtualMachinePowerStateOn,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, ipv6VM)).To(Succeed())
+
+					ipv6VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+						PrimaryIP6: "2001:db8::200",
+					}
+					Expect(ctx.Client.Status().Update(ctx, ipv6VM)).To(Succeed())
+
+					vmService := &vmopv1.VirtualMachineService{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      vmServiceName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: vmopv1.VirtualMachineServiceSpec{
+							Type:     vmopv1.VirtualMachineServiceTypeClusterIP,
+							Ports:    []vmopv1.VirtualMachineServicePort{vmServicePort},
+							Selector: selector,
+						},
+					}
+
+					objKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
+
+					By("Create VirtualMachineService", func() {
+						Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
+					})
+
+					By("Endpoints should be empty when service IP family doesn't match VM IP family", func() {
+						// In an IPv4-only cluster, a SingleStack service gets an IPv4 ClusterIP
+						// An IPv4 service cannot route to IPv6 endpoints, so endpoints should be empty
+						endpoints := &corev1.Endpoints{}
+						Eventually(func() bool {
+							if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
+								return true
+							}
+							return false
+						}).Should(BeTrue())
+
+						// Endpoints should be empty because IPv4 service cannot route to IPv6-only VM
+						Expect(endpoints.Subsets).To(BeEmpty())
+					})
+
+					By("Cleanup", func() {
+						Expect(ctx.Client.Delete(ctx, vmService)).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, ipv6VM)).To(Succeed())
+					})
+				})
+			})
+
 			// The VM mapping function needs to be fixed for this to work.
 			XIt("Simulate workflow", func() {
 				readyVM := &vmopv1.VirtualMachine{}

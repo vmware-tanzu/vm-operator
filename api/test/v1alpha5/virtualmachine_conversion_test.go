@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/utils/ptr"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -83,6 +84,25 @@ func TestVirtualMachineConversion(t *testing.T) {
 									Name: "vlan200",
 									ID:   200,
 									Link: "eth1",
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.network.interfaces.ipFamilyPolicy",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:           "eth0",
+									IPFamilyPolicy: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyDualStack),
+								},
+								{
+									Name:           "eth1",
+									IPFamilyPolicy: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyIPv6Only),
 								},
 							},
 						},

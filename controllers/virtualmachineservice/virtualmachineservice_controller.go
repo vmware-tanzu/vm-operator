@@ -7,6 +7,7 @@ package virtualmachineservice
 import (
 	"context"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 
@@ -409,6 +410,23 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 		service.Spec.ExternalName = vmService.Spec.ExternalName
 		service.Spec.LoadBalancerIP = vmService.Spec.LoadBalancerIP
 		service.Spec.LoadBalancerSourceRanges = vmService.Spec.LoadBalancerSourceRanges
+
+		// Set IPFamilies and IPFamilyPolicy for dual-stack support
+		// These fields only apply to ClusterIP, NodePort, and LoadBalancer types
+		// They are wiped when type is ExternalName
+		if vmService.Spec.Type != vmopv1.VirtualMachineServiceTypeExternalName {
+			if len(vmService.Spec.IPFamilies) > 0 {
+				service.Spec.IPFamilies = vmService.Spec.IPFamilies
+			}
+			if vmService.Spec.IPFamilyPolicy != nil {
+				service.Spec.IPFamilyPolicy = vmService.Spec.IPFamilyPolicy
+			}
+		} else {
+			// Clear IPFamilies and IPFamilyPolicy for ExternalName services
+			service.Spec.IPFamilies = nil
+			service.Spec.IPFamilyPolicy = nil
+		}
+
 		if service.Spec.Type == corev1.ServiceTypeLoadBalancer {
 			service.Spec.AllocateLoadBalancerNodePorts = ptr.To(false)
 		} else {
@@ -557,6 +575,16 @@ func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *pkgctx.Vir
 		return err
 	}
 	subsets := utils.RepackSubsets(unpackedSubsets)
+	// Split subsets by IP family to ensure IPv4 and IPv6 remain separate
+	// Above RepackSubsets merges subsets with identical ports, which combines IPv4 and IPv6
+	subsets = r.splitSubsetsByIPFamily(subsets)
+
+	// Filter endpoints based on Service's IPFamilies and IPFamilyPolicy
+	// Endpoints must match the Service's IP family - an IPv4 Service cannot route to IPv6 endpoints
+	allowedFamilies := r.determineAllowedIPFamilies(service)
+	if len(allowedFamilies) > 0 {
+		subsets = r.filterSubsetsByIPFamilies(subsets, allowedFamilies)
+	}
 
 	endpoints := &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
@@ -613,7 +641,14 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		return nil, err
 	}
 
-	var subsets = make([]corev1.EndpointSubset, 0, len(vmList.Items))
+	// Group addresses by IP family to ensure IPv4 and IPv6 remain in separate subsets
+	// after RepackSubsets merges subsets with identical ports
+	type addressInfo struct {
+		addr  corev1.EndpointAddress
+		ready bool
+		ports []corev1.EndpointPort
+	}
+	ipFamilyToAddresses := make(map[corev1.IPFamily][]addressInfo)
 	var vmInSubsetsMap map[types.UID]struct{}
 
 	for i := range vmList.Items {
@@ -625,15 +660,27 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			continue
 		}
 
-		var vmIP string
+		// Collect all IPs for this VM (both IPv4 and IPv6)
+		var vmIPs []struct {
+			ip     string
+			family corev1.IPFamily
+		}
 		if vm.Status.Network != nil {
-			vmIP = vm.Status.Network.PrimaryIP4
-			if vmIP == "" {
-				vmIP = vm.Status.Network.PrimaryIP6
+			if vm.Status.Network.PrimaryIP4 != "" {
+				vmIPs = append(vmIPs, struct {
+					ip     string
+					family corev1.IPFamily
+				}{vm.Status.Network.PrimaryIP4, corev1.IPv4Protocol})
+			}
+			if vm.Status.Network.PrimaryIP6 != "" {
+				vmIPs = append(vmIPs, struct {
+					ip     string
+					family corev1.IPFamily
+				}{vm.Status.Network.PrimaryIP6, corev1.IPv6Protocol})
 			}
 		}
 
-		if vmIP == "" {
+		if len(vmIPs) == 0 {
 			// The EndpointAddress must have a valid IP so we cannot include this VM in the
 			// NotReadyAddresses.
 			// TODO: When we more fully support multiple NICs, we'll need someway to select which IP.
@@ -663,30 +710,8 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			}
 		}
 
-		epa := corev1.EndpointAddress{
-			IP: vmIP,
-			TargetRef: &corev1.ObjectReference{
-				APIVersion: vm.APIVersion,
-				Kind:       vm.Kind,
-				Namespace:  vm.Namespace,
-				Name:       vm.Name,
-				UID:        vm.UID,
-				// NOTE: This currently isn't set to limit downstream reconcile churn in things
-				// watching these Endpoints but isn't ideal. We should be smarter and only update
-				// this when something relevant to the service, e.g. the VM's IP, changes.
-				// ResourceVersion: vm.ResourceVersion,
-			},
-		}
-
-		// Populate the EP subset for this VM. We create one subset for each VM, and then our
-		// caller will repack the subsets that have identical ports.
-		subset := corev1.EndpointSubset{}
-		if ready {
-			subset.Addresses = []corev1.EndpointAddress{epa}
-		} else {
-			subset.NotReadyAddresses = []corev1.EndpointAddress{epa}
-		}
-
+		// Build ports list once for reuse across all IPs
+		var ports []corev1.EndpointPort
 		// TODO: Headless support
 		for _, servicePort := range service.Spec.Ports {
 			portName := servicePort.Name
@@ -702,7 +727,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				continue
 			}
 
-			subset.Ports = append(subset.Ports,
+			ports = append(ports,
 				corev1.EndpointPort{
 					Name:     portName,
 					Port:     int32(portNum), //nolint:gosec // disable G115
@@ -710,10 +735,252 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				})
 		}
 
+		// Group addresses by IP family
+		// This ensures IPv4 and IPv6 addresses remain in separate subsets
+		for _, vmIPInfo := range vmIPs {
+			epa := corev1.EndpointAddress{
+				IP: vmIPInfo.ip,
+				TargetRef: &corev1.ObjectReference{
+					APIVersion: vm.APIVersion,
+					Kind:       vm.Kind,
+					Namespace:  vm.Namespace,
+					Name:       vm.Name,
+					UID:        vm.UID,
+					// NOTE: This currently isn't set to limit downstream reconcile churn in things
+					// watching these Endpoints but isn't ideal. We should be smarter and only update
+					// this when something relevant to the service, e.g. the VM's IP, changes.
+					// ResourceVersion: vm.ResourceVersion,
+				},
+			}
+
+			ipFamilyToAddresses[vmIPInfo.family] = append(ipFamilyToAddresses[vmIPInfo.family], addressInfo{
+				addr:  epa,
+				ready: ready,
+				ports: ports,
+			})
+		}
+	}
+
+	// Create subsets grouped by IP family
+	// This ensures IPv4 and IPv6 addresses remain in separate subsets even after RepackSubsets
+	subsets := make([]corev1.EndpointSubset, 0, len(ipFamilyToAddresses))
+	for _, addrInfos := range ipFamilyToAddresses {
+		if len(addrInfos) == 0 {
+			continue
+		}
+
+		var readyAddrs, notReadyAddrs []corev1.EndpointAddress
+		for _, addrInfo := range addrInfos {
+			if addrInfo.ready {
+				readyAddrs = append(readyAddrs, addrInfo.addr)
+			} else {
+				notReadyAddrs = append(notReadyAddrs, addrInfo.addr)
+			}
+		}
+
+		// All addresses in this group should have the same ports (they come from the same service)
+		// Use the ports from the first address info
+		ports := addrInfos[0].ports
+
+		subset := corev1.EndpointSubset{
+			Addresses:         readyAddrs,
+			NotReadyAddresses: notReadyAddrs,
+			Ports:             ports,
+		}
+
 		subsets = append(subsets, subset)
 	}
 
 	return subsets, nil
+}
+
+// splitSubsetsByIPFamily splits subsets that contain both IPv4 and IPv6 addresses
+// into separate subsets, one for each IP family. This ensures dual-stack support
+// even after RepackSubsets merges subsets with identical ports.
+func (r *ReconcileVirtualMachineService) splitSubsetsByIPFamily(subsets []corev1.EndpointSubset) []corev1.EndpointSubset {
+	var result []corev1.EndpointSubset
+
+	for _, subset := range subsets {
+		var ipv4Addrs, ipv6Addrs []corev1.EndpointAddress
+		var ipv4NotReady, ipv6NotReady []corev1.EndpointAddress
+
+		// Split ready addresses by IP family
+		for _, addr := range subset.Addresses {
+			// Use net.ParseIP to properly detect IPv4 vs IPv6
+			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
+			if ip := net.ParseIP(addr.IP); ip != nil {
+				if ip.To4() != nil {
+					ipv4Addrs = append(ipv4Addrs, addr)
+				} else {
+					ipv6Addrs = append(ipv6Addrs, addr)
+				}
+			}
+			// Invalid IPs are silently skipped (shouldn't occur in practice)
+		}
+
+		// Split not-ready addresses by IP family
+		for _, addr := range subset.NotReadyAddresses {
+			// Use net.ParseIP to properly detect IPv4 vs IPv6
+			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
+			if ip := net.ParseIP(addr.IP); ip != nil {
+				if ip.To4() != nil {
+					ipv4NotReady = append(ipv4NotReady, addr)
+				} else {
+					ipv6NotReady = append(ipv6NotReady, addr)
+				}
+			}
+			// Invalid IPs are silently skipped (shouldn't occur in practice)
+		}
+
+		// Create separate subsets for IPv4 and IPv6 if both exist
+		if len(ipv4Addrs) > 0 || len(ipv4NotReady) > 0 {
+			result = append(result, corev1.EndpointSubset{
+				Addresses:         ipv4Addrs,
+				NotReadyAddresses: ipv4NotReady,
+				Ports:             subset.Ports,
+			})
+		}
+		if len(ipv6Addrs) > 0 || len(ipv6NotReady) > 0 {
+			result = append(result, corev1.EndpointSubset{
+				Addresses:         ipv6Addrs,
+				NotReadyAddresses: ipv6NotReady,
+				Ports:             subset.Ports,
+			})
+		}
+	}
+
+	return result
+}
+
+// determineAllowedIPFamilies determines which IP families should be included
+// in endpoints based on Service's IPFamilies and IPFamilyPolicy.
+// For SingleStack policy, only the ClusterIP/IPFamilies family is allowed.
+// Endpoints must match the Service's IP family - an IPv4 Service cannot route to IPv6 endpoints.
+func (r *ReconcileVirtualMachineService) determineAllowedIPFamilies(service *corev1.Service) map[corev1.IPFamily]bool {
+	allowedFamilies := make(map[corev1.IPFamily]bool)
+
+	// If IPFamilies is explicitly set, use that (takes precedence for all policies)
+	if len(service.Spec.IPFamilies) > 0 {
+		for _, family := range service.Spec.IPFamilies {
+			allowedFamilies[family] = true
+		}
+		return allowedFamilies
+	}
+
+	// For SingleStack policy without explicit IPFamilies, use ClusterIP family as primary
+	if service.Spec.IPFamilyPolicy != nil && *service.Spec.IPFamilyPolicy == corev1.IPFamilyPolicySingleStack {
+		// Determine primary family from IPFamilies or ClusterIP
+		var primaryFamily corev1.IPFamily
+		if len(service.Spec.IPFamilies) > 0 {
+			primaryFamily = service.Spec.IPFamilies[0]
+		} else {
+			// Determine family from ClusterIP
+			var firstIP string
+			if len(service.Spec.ClusterIPs) > 0 {
+				firstIP = service.Spec.ClusterIPs[0]
+			} else if service.Spec.ClusterIP != "" {
+				firstIP = service.Spec.ClusterIP
+			}
+			if firstIP != "" && firstIP != "None" {
+				if ip := net.ParseIP(firstIP); ip != nil {
+					if ip.To4() != nil {
+						primaryFamily = corev1.IPv4Protocol
+					} else {
+						primaryFamily = corev1.IPv6Protocol
+					}
+				} else {
+					primaryFamily = corev1.IPv4Protocol // Default
+				}
+			} else {
+				primaryFamily = corev1.IPv4Protocol // Default
+			}
+		}
+
+		// For SingleStack, only allow the primary family (ClusterIP/IPFamilies family)
+		// This ensures that endpoints match the Service's IP family, as an IPv4 Service
+		// cannot route to IPv6 endpoints and vice versa
+		allowedFamilies[primaryFamily] = true
+		return allowedFamilies
+	}
+
+	// For non-SingleStack policies, use IPFamilies if explicitly set
+	if len(service.Spec.IPFamilies) > 0 {
+		for _, family := range service.Spec.IPFamilies {
+			allowedFamilies[family] = true
+		}
+		return allowedFamilies
+	}
+
+	// If IPFamilies is not set, use IPFamilyPolicy to determine behavior
+	if service.Spec.IPFamilyPolicy != nil {
+		switch *service.Spec.IPFamilyPolicy {
+		case corev1.IPFamilyPolicyPreferDualStack, corev1.IPFamilyPolicyRequireDualStack:
+			// PreferDualStack or RequireDualStack: Include both families
+			allowedFamilies[corev1.IPv4Protocol] = true
+			allowedFamilies[corev1.IPv6Protocol] = true
+		}
+	} else {
+		// If neither IPFamilies nor IPFamilyPolicy is set, include all (backward compatibility)
+		allowedFamilies[corev1.IPv4Protocol] = true
+		allowedFamilies[corev1.IPv6Protocol] = true
+	}
+
+	return allowedFamilies
+}
+
+// filterSubsetsByIPFamilies filters endpoint subsets to only include addresses
+// matching the allowed IP families.
+func (r *ReconcileVirtualMachineService) filterSubsetsByIPFamilies(subsets []corev1.EndpointSubset, allowedFamilies map[corev1.IPFamily]bool) []corev1.EndpointSubset {
+	var result []corev1.EndpointSubset
+	for _, subset := range subsets {
+		var filteredAddrs, filteredNotReady []corev1.EndpointAddress
+
+		// Filter ready addresses
+		for _, addr := range subset.Addresses {
+			// Use net.ParseIP to properly detect IPv4 vs IPv6
+			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
+			if ip := net.ParseIP(addr.IP); ip != nil {
+				var family corev1.IPFamily
+				if ip.To4() != nil {
+					family = corev1.IPv4Protocol
+				} else {
+					family = corev1.IPv6Protocol
+				}
+				if allowedFamilies[family] {
+					filteredAddrs = append(filteredAddrs, addr)
+				}
+			}
+			// Invalid IPs are silently skipped (shouldn't occur in practice)
+		}
+
+		// Filter not-ready addresses
+		for _, addr := range subset.NotReadyAddresses {
+			// Use net.ParseIP to properly detect IPv4 vs IPv6
+			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
+			if ip := net.ParseIP(addr.IP); ip != nil {
+				var family corev1.IPFamily
+				if ip.To4() != nil {
+					family = corev1.IPv4Protocol
+				} else {
+					family = corev1.IPv6Protocol
+				}
+				if allowedFamilies[family] {
+					filteredNotReady = append(filteredNotReady, addr)
+				}
+			}
+			// Invalid IPs are silently skipped (shouldn't occur in practice)
+		}
+
+		// Only include subset if it has addresses
+		if len(filteredAddrs) > 0 || len(filteredNotReady) > 0 {
+			result = append(result, corev1.EndpointSubset{
+				Addresses:         filteredAddrs,
+				NotReadyAddresses: filteredNotReady,
+				Ports:             subset.Ports,
+			})
+		}
+	}
+	return result
 }
 
 // updateVMService syncs the VirtualMachineService Status from the Service status.

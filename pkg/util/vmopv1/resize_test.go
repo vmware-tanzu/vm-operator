@@ -119,7 +119,7 @@ var _ = Describe("GetLastResizedAnnotation", func() {
 
 	When("Resize annotation is present from classless VM", func() {
 		BeforeEach(func() {
-			Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, ""))
+			Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, "")).To(Succeed())
 		})
 
 		It("Returns expected values", func() {

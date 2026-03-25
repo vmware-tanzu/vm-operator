@@ -50,8 +50,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	)
 
 	c, err := controller.New(controllerNameShort, mgr, controller.Options{
-		Reconciler:     r,
-		LogConstructor: pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		Reconciler:              r,
+		MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, 0),
+		LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 	})
 	if err != nil {
 		return err

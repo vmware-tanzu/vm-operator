@@ -51,6 +51,10 @@ type ControllerManagerContext struct {
 	// controller will receive concurrently.
 	MaxConcurrentReconciles int
 
+	// ControllerMaxConcurrentReconciles maps controller short names to their
+	// max concurrent reconciles.
+	ControllerMaxConcurrentReconciles map[string]int
+
 	// WebhookServiceNamespace is the namespace in which the webhook service
 	// is located.
 	WebhookServiceNamespace string
@@ -84,4 +88,19 @@ type ControllerManagerContext struct {
 // String returns ControllerManagerName.
 func (c *ControllerManagerContext) String() string {
 	return c.Name
+}
+
+// GetMaxConcurrentReconciles returns the max concurrent reconciles for the
+// specified controller, or the specified default value. A default value of
+// 0 means to fall back to the global default set in the controller-runtime
+// Manager which we don't set, and that default value is 1.
+func (c *ControllerManagerContext) GetMaxConcurrentReconciles(
+	controllerNameShort string,
+	defaultValue int) int {
+
+	if v, ok := c.ControllerMaxConcurrentReconciles[controllerNameShort]; ok {
+		return v
+	}
+
+	return defaultValue
 }

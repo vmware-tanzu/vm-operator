@@ -70,7 +70,7 @@ func intgTestsReconcile() {
 		Eventually(func(g Gomega) {
 			image := &vmopv1.ClusterVirtualMachineImage{}
 			g.Expect(ctx.Client.Get(ctx, objKey, image)).To(Succeed())
-			g.Expect(conditions.IsTrue(image, vmopv1.ReadyConditionType))
+			g.Expect(conditions.IsTrue(image, vmopv1.ReadyConditionType)).To(BeTrue())
 			// Assert that SyncVirtualMachineImage() has been called too.
 			g.Expect(image.Status.Firmware).To(Equal(firmwareValue))
 		}).Should(Succeed(), "waiting for ClusterVirtualMachineImage to be sync'd and ready")

@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -53,7 +52,7 @@ func intgTestsReconcile() {
 	JustBeforeEach(func() {
 		obj.Parameters["storagePolicyID"] = profileID
 		polKey = ctrlclient.ObjectKey{
-			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+			Namespace: ctx.PodNamespace,
 			Name:      kubeutil.GetStoragePolicyObjectName(profileID),
 		}
 		Expect(ctx.Client.Create(ctx, &obj)).To(Succeed())
@@ -75,7 +74,7 @@ func intgTestsReconcile() {
 						ctx,
 						polKey,
 						&infrav1.StoragePolicy{})).ToNot(Succeed())
-				})
+				}).Should(Succeed())
 			})
 		})
 		Context("with invalid policy ID", func() {
@@ -88,7 +87,7 @@ func intgTestsReconcile() {
 						ctx,
 						polKey,
 						&infrav1.StoragePolicy{})).To(Succeed())
-				})
+				}).Should(Succeed())
 			})
 		})
 		Context("with valid policy ID", func() {
@@ -101,7 +100,7 @@ func intgTestsReconcile() {
 						ctx,
 						polKey,
 						&infrav1.StoragePolicy{})).To(Succeed())
-				})
+				}).Should(Succeed())
 			})
 		})
 	})

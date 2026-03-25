@@ -526,10 +526,10 @@ func intgTestsReconcile() {
 				By("Finalizer should still be present", func() {
 					Eventually(func(g Gomega) {
 						vm := getVirtualMachine(ctx, vmKey)
-						Expect(vm).ToNot(BeNil())
-						Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
-						Expect(vm.Status.InstanceUUID).To(Equal(instanceUUID))
-					})
+						g.Expect(vm).ToNot(BeNil())
+						g.Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
+						g.Expect(vm.Status.InstanceUUID).To(Equal(instanceUUID))
+					}).Should(Succeed())
 				})
 			})
 		})

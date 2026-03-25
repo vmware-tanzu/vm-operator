@@ -703,7 +703,7 @@ func intgTests() {
 					}()
 					obj.Status.ObservedGeneration = obj.GetGeneration()
 					lastGeneration := obj.GetGeneration()
-					Expect(testEnv.Status().Update(ctx, obj))
+					Expect(testEnv.Status().Update(ctx, obj)).To(Succeed())
 
 					By("Creating a new patch helper")
 					patcher, err := NewHelper(obj, testEnv)

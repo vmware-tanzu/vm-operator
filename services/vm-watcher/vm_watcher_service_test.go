@@ -292,7 +292,7 @@ var _ = Describe(
 					for _, zone := range zoneList.Items {
 						g.Expect(zone.Finalizers).To(ConsistOf(zonectrl.Finalizer))
 					}
-				})
+				}).Should(Succeed())
 			})
 		})
 

@@ -20,6 +20,7 @@ import (
 
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	vspheretask "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/task"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm/internal"
 )
 
@@ -339,7 +340,9 @@ func doAndWaitOnHardPowerOp(
 			return PowerOpResultNone, nil
 		}
 		if ti != nil {
-			log.Error(err, "Change power state task failed", "taskInfo", ti)
+			log.Error(err, "Change power state task failed",
+				"taskInfo", ti,
+				"faultChain", vspheretask.FaultCauseChain(ti.Error))
 		}
 		return 0, fmt.Errorf("hard set power state to %s failed %w", desiredPowerState, err)
 	}
@@ -707,3 +710,4 @@ func setLastRestartTimeInExtraConfigAndWait(
 
 	return nil
 }
+

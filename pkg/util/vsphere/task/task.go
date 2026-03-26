@@ -11,6 +11,28 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
+// FaultCauseChain walks the FaultCause linked list starting from lmf and
+// returns all localized messages joined with " -> ", from the root fault to
+// the deepest cause. Returns an empty string if lmf is nil.
+func FaultCauseChain(lmf *vimtypes.LocalizedMethodFault) string {
+	if lmf == nil {
+		return ""
+	}
+
+	var msgs []string
+	for lmf != nil {
+		if lmf.LocalizedMessage != "" {
+			msgs = append(msgs, lmf.LocalizedMessage)
+		}
+		mf := lmf.Fault.GetMethodFault()
+		if mf == nil || mf.FaultCause == nil {
+			break
+		}
+		lmf = mf.FaultCause
+	}
+	return strings.Join(msgs, " -> ")
+}
+
 // ErrorMessageFromTaskInfo extracts a comprehensive error message from a TaskInfo.
 // It combines the localized message with all fault messages to provide complete
 // error details. This is useful when vSphere returns a generic localized message

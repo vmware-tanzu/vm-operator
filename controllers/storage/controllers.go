@@ -12,6 +12,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/storage/storageclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/storage/storagepolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/storage/storagepolicyquota"
+	"github.com/vmware-tanzu/vm-operator/controllers/storage/volumeattributesclass"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
@@ -38,6 +39,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 		if err := storagepolicy.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize StoragePolicy controller: %w", err)
+		}
+	}
+
+	if features.StoragePolicyMutability {
+		if err := volumeattributesclass.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VolumeAttributesClass controller: %w", err)
 		}
 	}
 

@@ -281,6 +281,106 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					Expect(status.DiskFormat).To(Equal(infrav1.DiskFormat512n))
 					Expect(status.DiskProvisioningMode).To(BeEmpty())
 				})
+
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "sector-format-512",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("sector-format-512"))
+					})
+				})
+			})
+
+			When("the profileID references an existent 512n policy but there is only one storage class object", func() {
+				BeforeEach(func() {
+					profileID = profileMap.namesToID["sector-format-512"]
+
+					withObjs = append(withObjs,
+						&storagev1.StorageClass{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sector-format-512",
+							},
+						},
+					)
+				})
+				JustBeforeEach(func() {
+					Expect(profileID).ToNot(BeEmpty())
+				})
+				It("should return the policy status", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(status).ToNot(BeZero())
+					Expect(status.StorageClasses).To(HaveLen(1))
+					Expect(status.StorageClasses[0]).To(Equal("sector-format-512"))
+					Expect(status.VolumeAttributesClass).To(BeEmpty())
+					Expect(status.Datastores).To(HaveLen(1))
+					Expect(status.Datastores[0].ID.ObjectID).To(Equal(datastore1Ref.Value))
+					Expect(status.Datastores[0].ID.ServerID).To(Equal(datastore1Ref.ServerGUID))
+					Expect(status.Datastores[0].Type).To(Equal(datastore1K8sType))
+					Expect(status.Encrypted).To(BeFalse())
+					Expect(status.DiskFormat).To(Equal(infrav1.DiskFormat512n))
+					Expect(status.DiskProvisioningMode).To(BeEmpty())
+				})
+			})
+
+			When("The profileID references a valid 512n policy, but the associated storage class and VAC objects are missing", func() {
+				BeforeEach(func() {
+					profileID = profileMap.namesToID["sector-format-512"]
+				})
+				JustBeforeEach(func() {
+					Expect(profileID).ToNot(BeEmpty())
+				})
+				It("should return the policy status", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(status).ToNot(BeZero())
+					Expect(status.StorageClasses).To(HaveLen(0))
+					Expect(status.VolumeAttributesClass).To(BeEmpty())
+					Expect(status.Datastores).To(HaveLen(1))
+					Expect(status.Datastores[0].ID.ObjectID).To(Equal(datastore1Ref.Value))
+					Expect(status.Datastores[0].ID.ServerID).To(Equal(datastore1Ref.ServerGUID))
+					Expect(status.Datastores[0].Type).To(Equal(datastore1K8sType))
+					Expect(status.Encrypted).To(BeFalse())
+					Expect(status.DiskFormat).To(Equal(infrav1.DiskFormat512n))
+					Expect(status.DiskProvisioningMode).To(BeEmpty())
+				})
+			})
+
+			When("The profileID references an existing 512n policy, the storage class objects do not exist but the associated VAC object does", func() {
+				BeforeEach(func() {
+					profileID = profileMap.namesToID["sector-format-512"]
+					withObjs = append(withObjs,
+						&storagev1.VolumeAttributesClass{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sector-format-512",
+							},
+						},
+					)
+				})
+				JustBeforeEach(func() {
+					Expect(profileID).ToNot(BeEmpty())
+				})
+				It("should return the policy status", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(status).ToNot(BeZero())
+					Expect(status.StorageClasses).To(HaveLen(0))
+					Expect(status.VolumeAttributesClass).To(Equal("sector-format-512"))
+					Expect(status.Datastores).To(HaveLen(1))
+					Expect(status.Datastores[0].ID.ObjectID).To(Equal(datastore1Ref.Value))
+					Expect(status.Datastores[0].ID.ServerID).To(Equal(datastore1Ref.ServerGUID))
+					Expect(status.Datastores[0].Type).To(Equal(datastore1K8sType))
+					Expect(status.Encrypted).To(BeFalse())
+					Expect(status.DiskFormat).To(Equal(infrav1.DiskFormat512n))
+					Expect(status.DiskProvisioningMode).To(BeEmpty())
+				})
 			})
 
 			When("the profileID references a 4k policy", func() {
@@ -317,6 +417,24 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					Expect(status.Encrypted).To(BeFalse())
 					Expect(status.DiskFormat).To(Equal(infrav1.DiskFormat4k))
 					Expect(status.DiskProvisioningMode).To(BeEmpty())
+				})
+
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "sector-format-4k",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("sector-format-4k"))
+					})
 				})
 			})
 
@@ -355,6 +473,23 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					Expect(status.DiskFormat).To(BeEmpty())
 					Expect(status.DiskProvisioningMode).To(Equal(infrav1.DiskProvisioningModeThin))
 				})
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "vmfs-provisioning-thin",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("vmfs-provisioning-thin"))
+					})
+				})
 			})
 
 			When("the profileID references a VMFS thick policy", func() {
@@ -391,6 +526,24 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					Expect(status.Encrypted).To(BeFalse())
 					Expect(status.DiskFormat).To(BeEmpty())
 					Expect(status.DiskProvisioningMode).To(Equal(infrav1.DiskProvisioningModeThick))
+				})
+
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "vmfs-provisioning-thick",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("vmfs-provisioning-thick"))
+					})
 				})
 			})
 
@@ -429,6 +582,25 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					Expect(status.DiskFormat).To(BeEmpty())
 					Expect(status.DiskProvisioningMode).To(Equal(infrav1.DiskProvisioningModeThickEagerZero))
 				})
+
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "vmfs-provisioning-thick-eager-zero",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("vmfs-provisioning-thick-eager-zero"))
+					})
+				})
+
 			})
 
 			When("the profileID references a VSAN thin policy", func() {
@@ -469,6 +641,25 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					Expect(status.DiskFormat).To(BeEmpty())
 					Expect(status.DiskProvisioningMode).To(Equal(infrav1.DiskProvisioningModeThin))
 				})
+
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "vsan-provisioning-thin",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("vsan-provisioning-thin"))
+					})
+				})
+
 			})
 
 			When("the profileID references a VSAN thick policy", func() {
@@ -508,6 +699,24 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					Expect(status.Encrypted).To(BeFalse())
 					Expect(status.DiskFormat).To(BeEmpty())
 					Expect(status.DiskProvisioningMode).To(Equal(infrav1.DiskProvisioningModeThick))
+				})
+
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "vsan-provisioning-thick",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("vsan-provisioning-thick"))
+					})
 				})
 			})
 
@@ -573,6 +782,24 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 							},
 						))
 						Expect(status.Encrypted).To(BeTrue())
+					})
+				})
+
+				Context("backed by a volume attributes class", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&storagev1.VolumeAttributesClass{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "vm-encryption-policy",
+								},
+							},
+						)
+					})
+					It("should return the policy status", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(status).ToNot(BeZero())
+
+						Expect(status.VolumeAttributesClass).To(Equal("vm-encryption-policy"))
 					})
 				})
 			})

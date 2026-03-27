@@ -89,6 +89,12 @@ type StoragePolicyStatus struct {
 
 	// +optional
 
+	// VolumeAttributesClass is the observed name of VolumeAttributesClass object that
+	// reference this storage policy.
+	VolumeAttributesClass string `json:"volumeAttributesClass,omitempty"`
+
+	// +optional
+
 	// Encrypted is the observed status of encryption support for the storage
 	// policy.
 	Encrypted bool `json:"encrypted,omitempty"`

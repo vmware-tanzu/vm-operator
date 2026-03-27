@@ -99,6 +99,17 @@ func GetStoragePolicyStatus(
 		return infrav1.StoragePolicyStatus{}, err
 	}
 
+	// Collect volume attributes class name.
+	if err := getVolumeAttributesClassName(
+		ctx,
+		k8sClient,
+		p,
+		profileID,
+		&status); err != nil {
+
+		return infrav1.StoragePolicyStatus{}, err
+	}
+
 	// Sort the slices in the status.
 	status.Sort()
 
@@ -124,15 +135,42 @@ func getStorageClassNames(
 			obj storagev1.StorageClass
 			key = ctrlclient.ObjectKey{Name: n}
 		)
-		if err := ctrlclient.IgnoreNotFound(
-			k8sClient.Get(ctx, key, &obj)); err != nil {
-
+		err := k8sClient.Get(ctx, key, &obj)
+		if err != nil {
+			if ctrlclient.IgnoreNotFound(err) == nil {
+				continue
+			}
 			return fmt.Errorf(
 				"failed to get storage class %q for profile %q: %w",
 				n, profileID, err)
 		}
 		status.StorageClasses = append(status.StorageClasses, n)
 	}
+	return nil
+}
+
+func getVolumeAttributesClassName(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	p *pbmtypes.PbmCapabilityProfile,
+	profileID string,
+	status *infrav1.StoragePolicyStatus) error {
+
+	var (
+		obj storagev1.VolumeAttributesClass
+		key = ctrlclient.ObjectKey{Name: p.K8sCompliantName}
+	)
+	err := k8sClient.Get(ctx, key, &obj)
+	if err != nil {
+		if ctrlclient.IgnoreNotFound(err) == nil {
+			return nil
+		}
+		return fmt.Errorf(
+			"failed to get volume attributes class %q for profile %q: %w",
+			p.K8sCompliantName, profileID, err)
+	}
+	status.VolumeAttributesClass = p.K8sCompliantName
+
 	return nil
 }
 

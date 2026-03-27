@@ -26,6 +26,9 @@ const (
 	// Fuzz describes a fuzz test.
 	Fuzz = "fuzz"
 
+	// Group describes a test related to group logic.
+	Group = "group"
+
 	// Mutation describes a test related to a mutation webhook.
 	Mutation = "mutation"
 
@@ -34,6 +37,9 @@ const (
 
 	// Service describes a test related to a service (non-Controller runnable).
 	Service = "service"
+
+	// Snapshot describes a test related to snapshot logic.
+	Snapshot = "snapshot"
 
 	// Update describes a test related to update logic.
 	Update = "update"
@@ -58,6 +64,9 @@ const (
 
 	// VCSim describes a test that uses vC Sim.
 	VCSim = "vcsim"
+
+	// VKS describes a test related to VKS.
+	VKS = "vks"
 
 	// Webhook describes a test related to a webhook.
 	Webhook = "webhook"

@@ -5,6 +5,9 @@
 package vsphere_test
 
 import (
+	"context"
+	"math/rand"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -13,314 +16,408 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
-	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func vmGroupTests() {
-
 	var (
+		parentCtx   context.Context
 		initObjects []client.Object
 		testConfig  builder.VCSimTestConfig
 		ctx         *builder.TestContextForVCSim
 		vmProvider  providers.VirtualMachineProviderInterface
 		nsInfo      builder.WorkloadNamespaceInfo
 
-		vm1     *vmopv1.VirtualMachine
-		vm2     *vmopv1.VirtualMachine
+		vm      *vmopv1.VirtualMachine
 		vmClass *vmopv1.VirtualMachineClass
-		vmGroup *vmopv1.VirtualMachineGroup
+
+		zoneName string
 	)
 
 	BeforeEach(func() {
+		parentCtx = pkgcfg.NewContextWithDefaultConfig()
+		parentCtx = ctxop.WithContext(parentCtx)
+		parentCtx = ovfcache.WithContext(parentCtx)
+		parentCtx = cource.WithContext(parentCtx)
+		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+			config.AsyncCreateEnabled = false
+			config.AsyncSignalEnabled = false
+		})
 		testConfig = builder.VCSimTestConfig{
 			WithContentLibrary: true,
 		}
 
-		vm1 = builder.DummyBasicVirtualMachine("group-placement-vm-1", "")
-		vm2 = builder.DummyBasicVirtualMachine("group-placement-vm-2", "")
 		vmClass = builder.DummyVirtualMachineClassGenName()
+		vm = builder.DummyBasicVirtualMachine("test-vm", "")
 
-		vmGroup = &vmopv1.VirtualMachineGroup{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "vm-group-test",
-			},
-			Spec: vmopv1.VirtualMachineGroupSpec{
-				BootOrder: make([]vmopv1.VirtualMachineGroupBootOrderGroup, 1),
-			},
+		if vm.Spec.Network == nil {
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
 		}
-		vmGroup.Spec.BootOrder[0].Members = append(vmGroup.Spec.BootOrder[0].Members,
-			vmopv1.GroupMember{Kind: "VirtualMachine", Name: vm1.Name},
-			vmopv1.GroupMember{Kind: "VirtualMachine", Name: vm2.Name})
+		vm.Spec.Network.Disabled = true
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
+		ctx = suite.NewTestContextForVCSimWithParentContext(
+			parentCtx, testConfig, initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.Features.FastDeploy = true
+			config.MaxDeployThreadsOnProvider = 1
 		})
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
+		vmProvider = vsphere.NewVSphereVMProviderFromClient(
+			ctx, ctx.Client, ctx.Recorder)
 		nsInfo = ctx.CreateWorkloadNamespace()
 
 		vmClass.Namespace = nsInfo.Namespace
 		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
-		Expect(ctx.Client.Status().Update(ctx, vmClass)).To(Succeed())
 
-		initVM := func(vm *vmopv1.VirtualMachine) {
-			vm.Namespace = nsInfo.Namespace
-			vm.Spec.ClassName = vmClass.Name
-			vm.Spec.ImageName = ctx.ContentLibraryItem1Name
-			vm.Spec.Image.Kind = cvmiKind
-			vm.Spec.Image.Name = ctx.ContentLibraryItem1Name
-			vm.Spec.StorageClass = ctx.StorageClassName
-			vm.Spec.GroupName = vmGroup.Name
+		clusterVMI1 := &vmopv1.ClusterVirtualMachineImage{}
+
+		if testConfig.WithContentLibrary {
+			Expect(ctx.Client.Get(
+				ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name},
+				clusterVMI1)).To(Succeed())
+		} else {
+			vsphere.SkipVMImageCLProviderCheck = true
+			clusterVMI1 = builder.DummyClusterVirtualMachineImage("DC0_C0_RP0_VM0")
+			Expect(ctx.Client.Create(ctx, clusterVMI1)).To(Succeed())
+			conditions.MarkTrue(clusterVMI1, vmopv1.ReadyConditionType)
+			Expect(ctx.Client.Status().Update(ctx, clusterVMI1)).To(Succeed())
 		}
-		initVM(vm1)
-		initVM(vm2)
 
-		vmGroup.Namespace = nsInfo.Namespace
+		vm.Namespace = nsInfo.Namespace
+		vm.Spec.ClassName = vmClass.Name
+		vm.Spec.ImageName = clusterVMI1.Name
+		vm.Spec.Image.Kind = cvmiKind
+		vm.Spec.Image.Name = clusterVMI1.Name
+		vm.Spec.StorageClass = ctx.StorageClassName
 
-		{
-			// TODO: Put this test builder to reduce duplication.
+		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 
-			vmic := vmopv1.VirtualMachineImageCache{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-					Name:      pkgutil.VMIName(ctx.ContentLibraryItem1ID),
-				},
-			}
-			Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
-
-			vmicm := corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: vmic.Namespace,
-					Name:      vmic.Name,
-				},
-				Data: map[string]string{
-					"value": ctx.ContentLibraryItem1YAML,
-				},
-			}
-			Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
-
-			vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
-				OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
-					ConfigMapName:   vmic.Name,
-					ProviderVersion: ctx.ContentLibraryItem1Version,
-				},
-				Conditions: []metav1.Condition{
-					{
-						Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
-						Status: metav1.ConditionTrue,
-					},
-				},
-			}
-			Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
-
-			pkgcond.MarkTrue(
-				&vmic,
-				vmopv1.VirtualMachineImageCacheConditionFilesReady)
-			vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
-				{
-					DatacenterID: ctx.Datacenter.Reference().Value,
-					DatastoreID:  ctx.Datastore.Reference().Value,
-					Files: []vmopv1.VirtualMachineImageCacheFileStatus{
-						{
-							ID:       ctx.ContentLibraryItem1Disk1Path,
-							Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
-							DiskType: vmopv1.VolumeTypeClassic,
-						},
-						{
-							ID:   ctx.ContentLibraryItem1NVRAMPath,
-							Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
-						},
-					},
-					Conditions: []metav1.Condition{
-						{
-							Type:   vmopv1.ReadyConditionType,
-							Status: metav1.ConditionTrue,
-						},
-					},
-				},
-			}
-			Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
-		}
+		zoneName = ctx.GetFirstZoneName()
+		vm.Labels[corev1.LabelTopologyZone] = zoneName
+		Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 	})
 
 	AfterEach(func() {
+		vsphere.SkipVMImageCLProviderCheck = false
+
+		if vm != nil &&
+			!pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+			By("Assert vm.Status.Crypto is nil when BYOK is disabled", func() {
+				Expect(vm.Status.Crypto).To(BeNil())
+			})
+		}
+
+		vmClass = nil
+		vm = nil
+
 		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
 		vmProvider = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
-
-		vm1 = nil
-		vm2 = nil
-		vmClass = nil
-		vmGroup = nil
 	})
 
-	assertMemberStatusForVM := func(vm *vmopv1.VirtualMachine, ms vmopv1.VirtualMachineGroupMemberStatus) {
-		GinkgoHelper()
+	BeforeEach(func() {
+		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+			config.Features.VMGroups = true
+		})
+	})
 
-		Expect(ms.Name).To(Equal(vm.Name), "Unexpected Name")
-		Expect(ms.Kind).To(Equal("VirtualMachine"), "Unexpected Kind")
-		Expect(ms.Placement).ToNot(BeNil(), "Missing Placement")
-		Expect(pkgcond.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue(), "No placement ready condition")
-		Expect(ms.Placement.Zone).ToNot(BeEmpty(), "Missing Placement Zone")
-		Expect(ms.Placement.Pool).ToNot(BeEmpty(), "Missing Placement Pool")
-		Expect(ms.Placement.Node).To(BeEmpty(), "Has Placement Node")
-		if pkgcfg.FromContext(ctx).Features.FastDeploy {
-			Expect(ms.Placement.Datastores).ToNot(BeEmpty(), "Missing Placement Datastores")
-			// Verify against VirtualMachineImageCache.Status
-		} else {
-			Expect(ms.Placement.Datastores).To(BeEmpty(), "Has Placement Datastores")
+	var vmg vmopv1.VirtualMachineGroup
+	JustBeforeEach(func() {
+		// Remove explicit zone label so group placement can work
+		if vm.Labels != nil {
+			delete(vm.Labels, corev1.LabelTopologyZone)
+			Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 		}
-	}
 
-	assertNotReadyMemberStatusForVM := func(
-		vm *vmopv1.VirtualMachine,
-		ms vmopv1.VirtualMachineGroupMemberStatus,
-		reason string) {
-
-		GinkgoHelper()
-
-		Expect(ms.Name).To(Equal(vm.Name), "Unexpected Name")
-		Expect(ms.Kind).To(Equal("VirtualMachine"), "Unexpected Kind")
-		Expect(ms.Placement).To(BeNil(), "Has Placement")
-
-		c := pkgcond.Get(ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
-		Expect(c).ToNot(BeNil(), "Condition missing")
-		Expect(c.Status).To(Equal(metav1.ConditionFalse))
-		Expect(c.Reason).To(Equal(reason))
-	}
-
-	Context("Group placement with VMs specifying affinity policies", func() {
-		It("should process preferred VM affinity policies during group placement", func() {
-			// Add preferred affinity policy to vm1
-			vm1.Spec.Affinity = &vmopv1.AffinitySpec{
-				VMAffinity: &vmopv1.VMAffinitySpec{
-					PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
-						{
-							LabelSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"app": "database",
-								},
-							},
-							TopologyKey: "topology.kubernetes.io/zone",
-						},
-					},
-				},
-			}
-
-			groupPlacements := []providers.VMGroupPlacement{
-				{
-					VMGroup: vmGroup,
-					VMMembers: []*vmopv1.VirtualMachine{
-						vm1,
-						vm2,
-					},
-				},
-			}
-
-			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(vmGroup.Status.Members).To(HaveLen(2))
-			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
-			assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
-		})
-
-		It("should process required VM affinity policies during group placement", func() {
-			// Add required affinity policy to vm1
-			vm1.Spec.Affinity = &vmopv1.AffinitySpec{
-				VMAffinity: &vmopv1.VMAffinitySpec{
-					RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
-						{
-							LabelSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"tier": "frontend",
-								},
-							},
-							TopologyKey: "topology.kubernetes.io/zone",
-						},
-					},
-				},
-			}
-
-			groupPlacements := []providers.VMGroupPlacement{
-				{
-					VMGroup: vmGroup,
-					VMMembers: []*vmopv1.VirtualMachine{
-						vm1,
-						vm2,
-					},
-				},
-			}
-
-			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(vmGroup.Status.Members).To(HaveLen(2))
-			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
-			assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
-		})
+		vmg = vmopv1.VirtualMachineGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "vmg",
+				Namespace: vm.Namespace,
+			},
+		}
+		Expect(ctx.Client.Create(ctx, &vmg)).To(Succeed())
 	})
 
-	Context("VSpherePolicies is enabled", func() {
-		JustBeforeEach(func() {
-			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.VSpherePolicies = true
+	Context("VM Creation", func() {
+		When("spec.groupName is set to a non-existent group", func() {
+			JustBeforeEach(func() {
+				vm.Spec.GroupName = "vmg-invalid"
+			})
+			Specify("it should return an error creating VM", func() {
+				err := createOrUpdateVM(ctx, vmProvider, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
 			})
 		})
 
-		It("should process VM with PolicyEval during group placement", func() {
-			groupPlacements := []providers.VMGroupPlacement{
-				{
-					VMGroup: vmGroup,
-					VMMembers: []*vmopv1.VirtualMachine{
-						vm1,
-						vm2,
+		When("spec.groupName is set to a group to which the VM does not belong", func() {
+			JustBeforeEach(func() {
+				vm.Spec.GroupName = vmg.Name
+			})
+			Specify("it should return an error creating VM", func() {
+				err := createOrUpdateVM(ctx, vmProvider, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
+			})
+		})
+
+		When("spec.groupName is set to a group to which the VM does belong", func() {
+			JustBeforeEach(func() {
+				vm.Spec.GroupName = vmg.Name
+				vmg.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Name: vm.Name,
+								Kind: "VirtualMachine",
+							},
+						},
+					},
+				}
+				Expect(ctx.Client.Update(ctx, &vmg)).To(Succeed())
+			})
+
+			When("VM Group placement condition is not ready", func() {
+				JustBeforeEach(func() {
+					vmg.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
+						{
+							Name: vm.Name,
+							Kind: "VirtualMachine",
+							Conditions: []metav1.Condition{
+								{
+									Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+									Status: metav1.ConditionFalse,
+								},
+							},
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, &vmg)).To(Succeed())
+				})
+				Specify("it should return an error creating VM", func() {
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+					Expect(err.Error()).To(ContainSubstring("VM Group placement is not ready"))
+				})
+			})
+
+			When("VM Group placement condition is ready", func() {
+				var (
+					groupZone string
+					groupHost string
+					groupPool string
+				)
+				JustBeforeEach(func() {
+					// Ensure the group zone is different to verify the placement actually from group.
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					groupZone = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+					for groupZone == vm.Labels[corev1.LabelTopologyZone] {
+						groupZone = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+					}
+
+					ccrs := ctx.GetAZClusterComputes(groupZone)
+					Expect(ccrs).ToNot(BeEmpty())
+					ccr := ccrs[0]
+					hosts, err := ccr.Hosts(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(hosts).ToNot(BeEmpty())
+					groupHost = hosts[0].Reference().Value
+
+					nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, groupZone, "")
+					Expect(nsRP).ToNot(BeNil())
+					groupPool = nsRP.Reference().Value
+
+					vmg.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
+						{
+							Name: vm.Name,
+							Kind: "VirtualMachine",
+							Conditions: []metav1.Condition{
+								{
+									Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+									Status: metav1.ConditionTrue,
+								},
+							},
+							Placement: &vmopv1.VirtualMachinePlacementStatus{
+								Zone: groupZone,
+								Node: groupHost,
+								Pool: groupPool,
+							},
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, &vmg)).To(Succeed())
+				})
+				Specify("it should successfully create VM from group's placement", func() {
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+					By("VM is placed in the expected zone from group", func() {
+						Expect(vm.Status.Zone).To(Equal(groupZone))
+					})
+					By("VM is placed in the expected host from group", func() {
+						vmHost, err := vcVM.HostSystem(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(vmHost.Reference().Value).To(Equal(groupHost))
+					})
+					By("VM is created in the expected pool from group", func() {
+						rp, err := vcVM.ResourcePool(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(rp.Reference().Value).To(Equal(groupPool))
+					})
+					By("VM has expected group linked condition", func() {
+						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+					})
+				})
+			})
+		})
+	})
+
+	Context("VM Update", func() {
+		JustBeforeEach(func() {
+			// Unset groupName to ensure the VM can be created.
+			vm.Spec.GroupName = ""
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+		})
+
+		When("spec.groupName is set to a non-existent group", func() {
+			JustBeforeEach(func() {
+				vm.Spec.GroupName = "vmg-invalid"
+			})
+			Specify("vm should have group linked condition set to false", func() {
+				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+				Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+			})
+		})
+
+		When("spec.groupName is set to a group to which the VM does not belong", func() {
+			JustBeforeEach(func() {
+				vm.Spec.GroupName = vmg.Name
+			})
+			Specify("vm should have group linked condition set to false", func() {
+				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+				Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+			})
+		})
+
+		When("spec.groupName is set to a group to which the VM does belong", func() {
+			JustBeforeEach(func() {
+				vm.Spec.GroupName = vmg.Name
+				vmg.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Name: vm.Name,
+								Kind: "VirtualMachine",
+							},
+						},
+					},
+				}
+				Expect(ctx.Client.Update(ctx, &vmg)).To(Succeed())
+			})
+			Specify("vm should have group linked condition set to true", func() {
+				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+				Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+			})
+
+			When("spec.groupName no longer points to group", func() {
+				Specify("vm should no longer have group linked condition", func() {
+					vm.Spec.GroupName = ""
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+					Expect(c).To(BeNil())
+				})
+			})
+		})
+	})
+
+	Context("Zone Label Override for VM Groups", func() {
+		var (
+			vm       *vmopv1.VirtualMachine
+			vmGroup  *vmopv1.VirtualMachineGroup
+			vmClass  *vmopv1.VirtualMachineClass
+			zoneName string
+		)
+
+		BeforeEach(func() {
+			vmClass = builder.DummyVirtualMachineClassGenName()
+			vm = builder.DummyBasicVirtualMachine("test-vm-zone-override", "")
+			vmGroup = &vmopv1.VirtualMachineGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-group-zone-override",
+				},
+				Spec: vmopv1.VirtualMachineGroupSpec{
+					BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
+						{
+							Members: []vmopv1.GroupMember{
+								{Kind: "VirtualMachine", Name: vm.ObjectMeta.Name},
+							},
+						},
 					},
 				},
 			}
+		})
 
-			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-			Expect(err).To(HaveOccurred())
+		JustBeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMGroups = true
+			})
 
-			Expect(vmGroup.Status.Members).To(HaveLen(2))
-			assertNotReadyMemberStatusForVM(vm1, vmGroup.Status.Members[0], "NotReady")
-			assertNotReadyMemberStatusForVM(vm2, vmGroup.Status.Members[1], "NotReady")
+			vmClass.Namespace = nsInfo.Namespace
+			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 
-			markPolicyEvalReady := func(vm *vmopv1.VirtualMachine) {
-				policyEval := &vspherepolv1.PolicyEvaluation{}
-				Expect(ctx.Client.Get(ctx, client.ObjectKey{
-					Namespace: vm.Namespace,
-					Name:      "vm-" + vm.Name},
-					policyEval)).To(Succeed())
-				policyEval.Status.ObservedGeneration = policyEval.Generation
-				pkgcond.MarkTrue(policyEval, vspherepolv1.ReadyConditionType)
-				Expect(ctx.Client.Status().Update(ctx, policyEval)).To(Succeed())
+			vmGroup.Namespace = nsInfo.Namespace
+			Expect(ctx.Client.Create(ctx, vmGroup)).To(Succeed())
+
+			clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMImage)).To(Succeed())
+
+			vm.Namespace = nsInfo.Namespace
+			vm.Spec.ClassName = vmClass.Name
+			vm.Spec.ImageName = clusterVMImage.Name
+			vm.Spec.Image.Kind = cvmiKind
+			vm.Spec.Image.Name = clusterVMImage.Name
+			vm.Spec.StorageClass = ctx.StorageClassName
+
+			vm.Spec.GroupName = vmGroup.Name
+
+			zoneName = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+			vm.Labels = map[string]string{
+				corev1.LabelTopologyZone: zoneName,
 			}
 
-			markPolicyEvalReady(vm1)
-			err = vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-			Expect(err).To(HaveOccurred())
-			Expect(err).To(MatchError(vsphere.ErrVMGroupPlacementConfigSpec))
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+		})
 
-			Expect(vmGroup.Status.Members).To(HaveLen(2))
-			assertNotReadyMemberStatusForVM(vm1, vmGroup.Status.Members[0], "PendingPlacement")
-			assertNotReadyMemberStatusForVM(vm2, vmGroup.Status.Members[1], "NotReady")
+		Context("when VM has explicit zone label and is part of group", func() {
+			It("should create VM in specified zone, not using group placement", func() {
+				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+				Expect(err).To(MatchError(vsphere.ErrCreate))
 
-			markPolicyEvalReady(vm2)
-			err = vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-			Expect(err).ToNot(HaveOccurred())
+				// Verify VM was created
+				Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+			})
+		})
 
-			Expect(vmGroup.Status.Members).To(HaveLen(2))
-			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
-			assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+		Context("when VM has explicit zone label but is not linked to group", func() {
+			BeforeEach(func() {
+				vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{}
+			})
+
+			It("should fail to create VM", func() {
+				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
+			})
 		})
 	})
 }

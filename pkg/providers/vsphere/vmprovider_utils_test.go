@@ -31,8 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func vmUtilTests() {
-
+var _ = Describe("Utils", func() {
 	var (
 		k8sClient   client.Client
 		initObjects []client.Object
@@ -1729,4 +1728,4 @@ func vmUtilTests() {
 			})
 		})
 	})
-}
+})

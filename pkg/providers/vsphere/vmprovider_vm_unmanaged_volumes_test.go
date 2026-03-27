@@ -43,9 +43,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-// unmanagedVolumesTests provides comprehensive test coverage for the
+// vmUnmanagedVolumesTests provides comprehensive test coverage for the
 // AllDisksArePVCs feature in the vSphere provider.
-func unmanagedVolumesTests() {
+func vmUnmanagedVolumesTests() {
 
 	var (
 		parentCtx   context.Context

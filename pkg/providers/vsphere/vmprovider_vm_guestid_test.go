@@ -13,7 +13,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 )
 
-func defaultGuestIDIfEmptyTests() {
+func vmGuestIDTests() {
 	const (
 		otherGuest   = string(vimtypes.VirtualMachineGuestOsIdentifierOtherGuest)
 		otherGuest64 = string(vimtypes.VirtualMachineGuestOsIdentifierOtherGuest64)

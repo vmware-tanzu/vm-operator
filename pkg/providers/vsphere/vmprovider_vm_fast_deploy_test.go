@@ -49,9 +49,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
-func fastDeployVMTests() {
+func vmFastDeployTests() {
 	const (
-		dvpgName = "DC0_DVPG0"
 		vmdkExt  = ".vmdk"
 		nvramExt = ".nvram"
 	)

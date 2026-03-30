@@ -145,7 +145,7 @@ func vmResizeTests() {
 		assertExpectedReservationFields(o, 0, -1, 0, -1)
 	}
 
-	DescribeTableSubtree("Resize VM",
+	DescribeTableSubtree("Resize",
 		func(fullResize bool) {
 
 			var (
@@ -678,7 +678,7 @@ func vmResizeTests() {
 		Entry("CPU & Memory", false),
 	)
 
-	Context("Devops Overrides", func() {
+	Context("Overrides", func() {
 
 		var (
 			vm         *vmopv1.VirtualMachine

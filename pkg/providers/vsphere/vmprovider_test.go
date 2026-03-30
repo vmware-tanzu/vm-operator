@@ -5,431 +5,181 @@
 package vsphere_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
-	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
+	"github.com/vmware/govmomi/object"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func cpuFreqTests() {
+// Shared by vsphere_test VM specs (vmprovider_vm_*_test.go, fast deploy, resize, …).
+const (
+	cvmiKind     = "ClusterVirtualMachineImage"
+	vcsimCPUFreq = 2294
+	dvpgName     = "DC0_DVPG0"
+)
+
+const (
+	createOrUpdateVMMaxAllowedCallCount = 100
+)
+
+func createOrUpdateVM(
+	testCtx *builder.TestContextForVCSim,
+	provider providers.VirtualMachineProviderInterface,
+	vm *vmopv1.VirtualMachine) error {
+
+	var fn func(ctx context.Context) error
+
+	if pkgcfg.FromContext(testCtx).AsyncSignalEnabled &&
+		pkgcfg.FromContext(testCtx).AsyncCreateEnabled {
+
+		By("non-blocking createOrUpdateVM")
+		fn = func(ctx context.Context) error {
+			return createOrUpdateVMAsync(testCtx, provider, vm)
+		}
+	} else {
+		By("blocking createOrUpdateVM")
+		fn = func(ctx context.Context) error {
+			return provider.CreateOrUpdateVirtualMachine(ctx, vm)
+		}
+	}
 
 	var (
-		testConfig builder.VCSimTestConfig
-		ctx        *builder.TestContextForVCSim
-		vmProvider providers.VirtualMachineProviderInterface
+		totalCallCount    = 0
+		nonErrorCallCount = 0
 	)
 
-	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{}
-	})
+	for {
+		var (
+			err    error
+			repeat bool
+			opctx  = ctxop.WithContext(testCtx)
+		)
 
-	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(testConfig)
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-	})
+		err = fn(opctx)
 
-	AfterEach(func() {
-		ctx.AfterEach()
-		ctx = nil
-		vmProvider = nil
-	})
+		if ctxop.IsUpdate(opctx) {
+			ctxop.MarkUpdate(testCtx)
+		}
 
-	Context("ComputeCPUMinFrequency", func() {
-		It("returns success", func() {
-			Expect(vmProvider.ComputeCPUMinFrequency(ctx)).To(Succeed())
-		})
-	})
+		if err != nil {
+			switch {
+			case errors.Is(err, vsphere.ErrCreate),
+				errors.Is(err, vsphere.ErrBackup),
+				errors.Is(err, vsphere.ErrBootstrapCustomize),
+				errors.Is(err, vsphere.ErrBootstrapReconfigure),
+				errors.Is(err, vsphere.ErrReconfigure),
+				errors.Is(err, vsphere.ErrRestart),
+				errors.Is(err, vsphere.ErrSetPowerState),
+				errors.Is(err, vsphere.ErrUpgradeHardwareVersion),
+				errors.Is(err, vsphere.ErrPromoteDisks),
+				errors.Is(err, vsphere.ErrSnapshotRevert),
+				errors.Is(err, vsphere.ErrPolicyNotReady),
+				errors.Is(err, vsphere.ErrUpgradeSchema),
+				errors.Is(err, vsphere.ErrUpgradeObject):
+
+				repeat = true
+			default:
+				GinkgoLogr.Error(err, "createOrUpdateVM fail")
+				return err
+			}
+		}
+
+		if totalCallCount > 100 {
+			ExpectWithOffset(1, totalCallCount).To(
+				BeNumerically("<", createOrUpdateVMMaxAllowedCallCount),
+				"cannot exceed createOrUpdateVMMaxAllowedCallCount for tests")
+		}
+
+		totalCallCount++
+
+		if !repeat {
+			nonErrorCallCount++
+		}
+
+		if nonErrorCallCount == 2 {
+			GinkgoLogr.Info(
+				"createOrUpdateVM success",
+				"totalCalls", totalCallCount)
+			return nil
+		}
+
+		GinkgoLogr.Info(
+			"createOrUpdateVM repeat",
+			"totalCalls", totalCallCount,
+			"err", err)
+	}
 }
 
-var _ = Describe("UpdateVcCreds", func() {
-	var (
-		ctx        *builder.TestContextForVCSim
-		testConfig builder.VCSimTestConfig
-		vmProvider providers.VirtualMachineProviderInterface
-	)
+func createOrUpdateAndGetVcVM(
+	ctx *builder.TestContextForVCSim,
+	provider providers.VirtualMachineProviderInterface,
+	vm *vmopv1.VirtualMachine) (*object.VirtualMachine, error) {
 
-	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(testConfig)
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-	})
+	if err := createOrUpdateVM(ctx, provider, vm); err != nil {
+		return nil, err
+	}
 
-	AfterEach(func() {
-		ctx.AfterEach()
-	})
+	ExpectWithOffset(1, vm.Status.UniqueID).ToNot(BeEmpty())
+	vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+	ExpectWithOffset(1, vcVM).ToNot(BeNil())
+	return vcVM, nil
+}
 
-	When("Invalid Credentials", func() {
+func createOrUpdateVMAsync(
+	ctx *builder.TestContextForVCSim,
+	provider providers.VirtualMachineProviderInterface,
+	vm *vmopv1.VirtualMachine) error {
 
-		It("returns error", func() {
-			data := map[string][]byte{}
-			Expect(vmProvider.UpdateVcCreds(ctx, data)).To(MatchError("vCenter username and password are missing"))
-		})
-	})
+	GinkgoLogr.Info("entered createOrUpdateVMAsync")
 
-	When("New Credentials", func() {
+	chanErr, err := provider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+	if err != nil {
+		if errors.Is(err, vsphere.ErrUpgradeSchema) ||
+			errors.Is(err, vsphere.ErrUpgradeObject) {
 
-		It("VC Client is logged out", func() {
-			vcClient, err := vmProvider.VSphereClient(ctx)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(vcClient).NotTo(BeNil())
-			session, err := vcClient.RestClient().Session(ctx)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(session).ToNot(BeNil())
+			ExpectWithOffset(1, ctx.Client.Update(
+				ctx,
+				vm)).To(Succeed())
+		}
+		GinkgoLogr.Info("createOrUpdateVMAsync returned", "err", err)
+		return err
+	}
 
-			data := map[string][]byte{
-				"username": []byte("newUser"),
-				"password": []byte("newPassword"),
-			}
-			Expect(vmProvider.UpdateVcCreds(ctx, data)).To(Succeed())
-			By("Client is logged out", func() {
-				session, err := vcClient.RestClient().Session(ctx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(session).To(BeNil())
-			})
-		})
-	})
-
-	When("Same Credentials", func() {
-
-		It("VC Client is not logged out", func() {
-			vcClient, err := vmProvider.VSphereClient(ctx)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(vcClient).NotTo(BeNil())
-			session, err := vcClient.RestClient().Session(ctx)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(session).ToNot(BeNil())
-
-			data := map[string][]byte{
-				"username": []byte(ctx.VCClientConfig.Username),
-				"password": []byte(ctx.VCClientConfig.Password),
-			}
-			Expect(vmProvider.UpdateVcCreds(ctx, data)).To(Succeed())
-			By("VC Client is the same", func() {
-				vcClient2, err := vmProvider.VSphereClient(ctx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(vcClient2).To(BeIdenticalTo(vcClient))
-
-				session, err := vcClient.RestClient().Session(ctx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(session).ToNot(BeNil())
-			})
-		})
-	})
-})
-
-var _ = Describe("SyncVirtualMachineImage", func() {
-	var (
-		ctx        *builder.TestContextForVCSim
-		testConfig builder.VCSimTestConfig
-		vmProvider providers.VirtualMachineProviderInterface
-	)
-
-	BeforeEach(func() {
-		testConfig.WithContentLibrary = true
-		ctx = suite.NewTestContextForVCSim(testConfig)
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-	})
-
-	AfterEach(func() {
-		ctx.AfterEach()
-	})
-
-	When("content library item is an unexpected K8s object type", func() {
-		It("should return an error", func() {
-			err := vmProvider.SyncVirtualMachineImage(ctx, &imgregv1a1.ContentLibrary{}, &vmopv1.VirtualMachineImage{})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("unexpected content library item K8s object type %T", &imgregv1a1.ContentLibrary{})))
-		})
-	})
-
-	When("content library item is a v1alpha2 type", func() {
-		It("should not return an error", func() {
-			err := vmProvider.SyncVirtualMachineImage(ctx, &imgregv1.ContentLibraryItem{}, &vmopv1.VirtualMachineImage{})
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
-
-	When("content library item is not an OVF type", func() {
-		It("should return early without updating VM Image status", func() {
-			isoItem := &imgregv1a1.ContentLibraryItem{
-				Status: imgregv1a1.ContentLibraryItemStatus{
-					Type: imgregv1a1.ContentLibraryItemTypeIso,
-				},
-			}
-			var vmi vmopv1.VirtualMachineImage
-			Expect(vmProvider.SyncVirtualMachineImage(ctx, isoItem, &vmi)).To(Succeed())
-			Expect(vmi.Status).To(Equal(vmopv1.VirtualMachineImageStatus{}))
-		})
-	})
-
-	When("content library item is an OVF type", func() {
-		// TODO(akutz) Promote this block when the FSS WCP_VMService_FastDeploy is
-		//             removed.
-		When("FSS WCP_VMService_FastDeploy is enabled", func() {
-
-			var (
-				err         error
-				cli         imgregv1a1.ContentLibraryItem
-				vmi1        vmopv1.VirtualMachineImage
-				vmic1       vmopv1.VirtualMachineImageCache
-				vmicm1      corev1.ConfigMap
-				createVMIC1 bool
-			)
-
-			BeforeEach(func() {
-				pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.FastDeploy = true
-				})
-
-				cli = imgregv1a1.ContentLibraryItem{
-					Spec: imgregv1a1.ContentLibraryItemSpec{
-						UUID: types.UID(ctx.ContentLibraryItem1ID),
-					},
-					Status: imgregv1a1.ContentLibraryItemStatus{
-						ContentVersion: "v1",
-						Type:           imgregv1a1.ContentLibraryItemTypeOvf,
-					},
+	if chanErr != nil {
+		// Unlike the VM controller, this test helper blocks until the async
+		// parts of CreateOrUpdateVM are complete. This is to avoid a large
+		// refactor for now.
+		for err2 := range chanErr {
+			if err2 != nil {
+				GinkgoLogr.Info("createOrUpdateVMAsync chanErr", "err", err2)
+				if err == nil {
+					err = err2
+				} else {
+					err = fmt.Errorf("%w,%w", err, err2)
 				}
-
-				vmi1 = vmopv1.VirtualMachineImage{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "my-namespace",
-						Name:      "my-vmi",
-					},
-				}
-
-				createVMIC1 = true
-				vmicName := util.VMIName(ctx.ContentLibraryItem1ID)
-				vmic1 = vmopv1.VirtualMachineImageCache{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-						Name:      vmicName,
-					},
-					Status: vmopv1.VirtualMachineImageCacheStatus{
-						OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
-							ConfigMapName:   vmicName,
-							ProviderVersion: "v1",
-						},
-						Conditions: []metav1.Condition{
-							{
-								Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
-								Status: metav1.ConditionTrue,
-							},
-						},
-					},
-				}
-
-				vmicm1 = corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: vmic1.Namespace,
-						Name:      vmic1.Name,
-					},
-					Data: map[string]string{
-						"value": ctx.ContentLibraryItem1YAML,
-					},
-				}
-				Expect(ctx.Client.Create(ctx, &vmicm1)).To(Succeed())
-			})
-
-			JustBeforeEach(func() {
-				if createVMIC1 {
-					status := vmic1.Status.DeepCopy()
-					Expect(ctx.Client.Create(ctx, &vmic1)).To(Succeed())
-					vmic1.Status = *status
-					Expect(ctx.Client.Status().Update(ctx, &vmic1)).To(Succeed())
-				}
-				err = vmProvider.SyncVirtualMachineImage(ctx, &cli, &vmi1)
-			})
-
-			When("it fails to createOrPatch the VMICache resource", func() {
-				// TODO(akutz) Add interceptors to the vcSim test context so
-				//             this can be tested.
-				XIt("should return an error", func() {
-
-				})
-			})
-
-			assertVMICExists := func(namespace, name string) {
-				var (
-					obj vmopv1.VirtualMachineImageCache
-					key = ctrlclient.ObjectKey{
-						Namespace: namespace,
-						Name:      name,
-					}
-				)
-				ExpectWithOffset(1, ctx.Client.Get(ctx, key, &obj)).To(Succeed())
 			}
+		}
+	}
 
-			assertVMICNotReady := func(err error, name string) {
-				var e pkgerr.VMICacheNotReadyError
-				ExpectWithOffset(1, errors.As(err, &e)).To(BeTrue())
-				ExpectWithOffset(1, e.Name).To(Equal(name))
-			}
+	if errors.Is(err, vsphere.ErrCreate) {
+		ExpectWithOffset(1, ctx.Client.Get(
+			ctx,
+			client.ObjectKeyFromObject(vm),
+			vm)).To(Succeed())
+	}
 
-			When("OVF condition is False", func() {
-				BeforeEach(func() {
-					vmic1.Status.Conditions[0].Status = metav1.ConditionFalse
-					vmic1.Status.Conditions[0].Message = "fubar"
-				})
-				It("should return an error", func() {
-					Expect(err).To(MatchError("failed to get hardware: fubar: cache not ready"))
-				})
-			})
-
-			When("OVF is not ready", func() {
-				When("condition is missing", func() {
-					BeforeEach(func() {
-						createVMIC1 = false
-					})
-					It("should return ErrVMICacheNotReady", func() {
-						assertVMICExists(vmic1.Namespace, vmic1.Name)
-						assertVMICNotReady(err, vmic1.Name)
-					})
-				})
-				When("condition is unknown", func() {
-					BeforeEach(func() {
-						vmic1.Status.Conditions[0].Status = metav1.ConditionUnknown
-					})
-					It("should return ErrVMICacheNotReady", func() {
-						assertVMICNotReady(err, vmic1.Name)
-					})
-				})
-				When("status.ovf is nil", func() {
-					BeforeEach(func() {
-						vmic1.Status.OVF = nil
-					})
-					It("should return ErrVMICacheNotReady", func() {
-						assertVMICNotReady(err, vmic1.Name)
-					})
-				})
-				When("status.ovf.providerVersion does not match expected version", func() {
-					BeforeEach(func() {
-						vmic1.Status.OVF.ProviderVersion = ""
-					})
-					It("should return ErrVMICacheNotReady", func() {
-						assertVMICNotReady(err, vmic1.Name)
-					})
-				})
-				When("configmap is missing", func() {
-					BeforeEach(func() {
-						Expect(ctx.Client.Delete(ctx, &vmicm1)).To(Succeed())
-					})
-					It("should return ErrVMICacheNotReady", func() {
-						assertVMICNotReady(err, vmic1.Name)
-					})
-				})
-			})
-
-			When("OVF is ready", func() {
-				When("marshaled ovf data is invalid", func() {
-					BeforeEach(func() {
-						vmicm1.Data["value"] = "invalid"
-						Expect(ctx.Client.Update(ctx, &vmicm1)).To(Succeed())
-					})
-					It("should return an error", func() {
-						Expect(err).To(MatchError("failed to unmarshal ovf yaml into envelope: " +
-							"error unmarshaling JSON: while decoding JSON: " +
-							"json: cannot unmarshal string into Go value of type ovf.Envelope"))
-					})
-				})
-				When("marshaled ovf data is valid", func() {
-					It("should return success and update VM Image status accordingly", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(vmi1.Status.Firmware).To(Equal("efi"))
-						Expect(vmi1.Status.HardwareVersion).NotTo(BeNil())
-						Expect(*vmi1.Status.HardwareVersion).To(Equal(int32(9)))
-						Expect(vmi1.Status.OSInfo.ID).To(Equal("36"))
-						Expect(vmi1.Status.OSInfo.Type).To(Equal("otherLinuxGuest"))
-						Expect(vmi1.Status.Disks).To(HaveLen(1))
-						Expect(vmi1.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
-						Expect(vmi1.Status.Disks[0].Requested.String()).To(Equal("30Mi"))
-					})
-				})
-
-			})
-		})
-
-		// TODO(akutz) Remove this block when the FSS WCP_VMService_FastDeploy is
-		//             removed.
-		When("FSS WCP_VMService_FastDeploy is disabled", func() {
-
-			BeforeEach(func() {
-				pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.FastDeploy = false
-				})
-			})
-
-			When("it fails to get the OVF envelope", func() {
-				It("should return an error", func() {
-					cli := &imgregv1a1.ContentLibraryItem{
-						Spec: imgregv1a1.ContentLibraryItemSpec{
-							// Use an invalid item ID to fail to get the OVF envelope.
-							UUID: "invalid-library-ID",
-						},
-						Status: imgregv1a1.ContentLibraryItemStatus{
-							Type: imgregv1a1.ContentLibraryItemTypeOvf,
-						},
-					}
-					err := vmProvider.SyncVirtualMachineImage(ctx, cli, &vmopv1.VirtualMachineImage{})
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("failed to get OVF envelope for library item \"invalid-library-ID\""))
-				})
-			})
-
-			When("OVF envelope is nil", func() {
-				It("should return an error", func() {
-					ovfItem := &imgregv1a1.ContentLibraryItem{
-						Spec: imgregv1a1.ContentLibraryItemSpec{
-							UUID: types.UID(ctx.ContentLibraryIsoItemID),
-						},
-						Status: imgregv1a1.ContentLibraryItemStatus{
-							Type: imgregv1a1.ContentLibraryItemTypeOvf,
-						},
-					}
-					err := vmProvider.SyncVirtualMachineImage(ctx, ovfItem, &vmopv1.VirtualMachineImage{})
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("OVF envelope is nil for library item %q", ctx.ContentLibraryIsoItemID)))
-				})
-			})
-
-			When("there is a valid OVF envelope", func() {
-				It("should return success and update VM Image status accordingly", func() {
-					cli := &imgregv1a1.ContentLibraryItem{
-						Spec: imgregv1a1.ContentLibraryItemSpec{
-							UUID: types.UID(ctx.ContentLibraryItem1ID),
-						},
-						Status: imgregv1a1.ContentLibraryItemStatus{
-							Type: imgregv1a1.ContentLibraryItemTypeOvf,
-						},
-					}
-					var vmi vmopv1.VirtualMachineImage
-					Expect(vmProvider.SyncVirtualMachineImage(ctx, cli, &vmi)).To(Succeed())
-					Expect(vmi.Status.Firmware).To(Equal("efi"))
-					Expect(vmi.Status.HardwareVersion).NotTo(BeNil())
-					Expect(*vmi.Status.HardwareVersion).To(Equal(int32(9)))
-					Expect(vmi.Status.OSInfo.ID).To(Equal("36"))
-					Expect(vmi.Status.OSInfo.Type).To(Equal("otherLinuxGuest"))
-					Expect(vmi.Status.Disks).To(HaveLen(1))
-					Expect(vmi.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
-					Expect(vmi.Status.Disks[0].Requested.String()).To(Equal("30Mi"))
-				})
-			})
-		})
-	})
-})
+	GinkgoLogr.Info("createOrUpdateVMAsync returned post channel", "err", err)
+	return err
+}

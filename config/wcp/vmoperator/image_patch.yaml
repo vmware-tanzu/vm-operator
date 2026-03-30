@@ -10,11 +10,6 @@ spec:
       - name: manager
         image: vmware/vmop:0.0.1
         imagePullPolicy: IfNotPresent
-      - name: kube-rbac-proxy
-        image: localhost:5000/vmware/kube-rbac-proxy:0.0.1
-        imagePullPolicy: IfNotPresent
-        command:
-          - /kube-rbac-proxy
 ---
 apiVersion: apps/v1
 kind: Deployment

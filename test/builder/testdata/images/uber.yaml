@@ -10,7 +10,7 @@ deploymentOptionSection:
   info: 'Deployment configurations: small and large'
 diskSection:
   disk:
-  - capacity: "30"
+  - capacity: "20"
     capacityAllocationUnits: byte * 2^20
     diskId: system_small
     fileRef: system
@@ -34,7 +34,7 @@ diskSection:
     fileRef: data
     format: http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized
     populatedSize: 18743296
-  - capacity: "50"
+  - capacity: "60"
     capacityAllocationUnits: byte * 2^20
     diskId: extra_data_large
     fileRef: extra_data

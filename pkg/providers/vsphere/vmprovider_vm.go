@@ -1942,15 +1942,27 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 						// The location has the cached files.
 						vmCtx.Logger.Info("got source files", "files", l.Files)
 
+						createArgs.CachedFileNames = map[string]string{}
+
 						for i := range l.Files {
 							id := l.Files[i].ID
+
+							if name := l.Files[i].Name; name != "" {
+								createArgs.CachedFileNames[name] = id
+							}
+
 							switch {
 							case strings.EqualFold(".vmdk", path.Ext(id)):
-								createArgs.DiskPaths = append(createArgs.DiskPaths, id)
+								createArgs.DiskPaths = append(
+									createArgs.DiskPaths, id)
 							default:
-								createArgs.FilePaths = append(createArgs.FilePaths, id)
+								createArgs.FilePaths = append(
+									createArgs.FilePaths, id)
 							}
 						}
+
+						vmCtx.Logger.Info("got cached file names",
+							"cachedFileNames", createArgs.CachedFileNames)
 
 						readyCond := pkgcnd.TrueCondition(vmopv1.VirtualMachineConditionImageCacheReady)
 						readyCond.Message = fmt.Sprintf(

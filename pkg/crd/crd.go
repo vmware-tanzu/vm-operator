@@ -317,6 +317,30 @@ func Install( //nolint:gocyclo
 						}
 					}
 
+					if !features.VMExtraConfig {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("advanced", "preferHTEnabled"),
+							specFieldPath("advanced", "hugePages1GEnabled"),
+							specFieldPath("advanced", "timeTrackerLowLatencyEnabled"),
+							specFieldPath("advanced", "cpuAffinityExclusiveNoStatsEnabled"),
+							specFieldPath("advanced", "vmxSwapEnabled"),
+							specFieldPath("advanced", "pNUMANodeAffinity"),
+							specFieldPath("advanced", "extraConfig"),
+							specFieldPath("network", "interfaces", "[]", "type"),
+							specFieldPath("network", "interfaces", "[]", "vNUMANodeID"),
+							specFieldPath("network", "interfaces", "[]", "vmxnet3"),
+							specFieldPath("network", "interfaces", "[]", "advancedProperties"),
+							statusFieldPath("extraConfig"),
+						); err != nil {
+
+							return err
+						}
+					}
+
 					return nil
 				}); err != nil {
 

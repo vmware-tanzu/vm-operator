@@ -25,6 +25,8 @@ type VirtualMachineNetworkRouteSpec struct {
 	Metric int32 `json:"metric,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(self.vmxnet3) || self.type == 'VMXNet3'",message="vmxnet3 tuning fields require interface type VMXNet3"
+
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's
 // network interface.
 type VirtualMachineNetworkInterfaceSpec struct {
@@ -179,6 +181,48 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// or true, if search domains is not provided, the global search domains
 	// will be used instead.
 	SearchDomains []string `json:"searchDomains,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Enum=VMXNet3;SRIOV
+
+	// Type is the NIC device model: VMXNet3 or SRIOV when set. The field is
+	// optional; when omitted or empty, it is derived from the VirtualMachineClass
+	// ConfigSpec ethernet devices when mappable (admission on create, and schema
+	// upgrade for existing objects when the VM extra config capability is on),
+	// defaulting to VMXNet3. On update, an empty value may preserve the prior
+	// stored type. When vmxnet3 tuning is present, Type must be VMXNet3.
+	Type VirtualMachineNetworkInterfaceType `json:"type,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+
+	// VNUMANodeID assigns this interface to a specific virtual NUMA node.
+	// The value must match a virtual NUMA node ID configured in the VM's
+	// CPU topology (spec.cpu.coresPerNumaNode). Co-locating a NIC with the
+	// vCPUs that process its traffic reduces cross-NUMA memory latency for
+	// latency-sensitive workloads.
+	// Requires spec.minHardwareVersion >= 20.
+	// Cannot be changed while the VM is powered on.
+	VNUMANodeID *int32 `json:"vNUMANodeID,omitempty"`
+
+	// +optional
+
+	// VMXNet3 contains configuration options specific to VMXNet3 interfaces.
+	// API validation requires Type to be VMXNet3 when this field is set.
+	VMXNet3 *VirtualMachineNetworkInterfaceVMXNet3Spec `json:"vmxnet3,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=key
+
+	// AdvancedProperties is a fallback for device-specific VMX properties not
+	// yet exposed as first-class fields. Each key is the bare property name
+	// without the ethernetX. prefix; the device index is injected at runtime
+	// based on the vSphere device key.
+	//
+	// The admission webhook rejects keys that duplicate a first-class field
+	// above (e.g. "ctxPerDev" is rejected because VMXNet3.CtxPerDev exists).
+	AdvancedProperties []vmopv1common.KeyValuePair `json:"advancedProperties,omitempty"`
 }
 
 // VirtualMachineNetworkVLANSpec describes a VLAN sub-interface configuration.

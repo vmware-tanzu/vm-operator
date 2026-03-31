@@ -101,6 +101,12 @@ const (
 	// defined in the Supervisor capabilities CRD for the VM Service's support
 	// for mutability of Storage Policy via Volume Attributes Class (VAC).
 	CapabilityKeyStoragePolicyMutability = "supports_VM_PVC_storage_policy_mutability"
+
+	// CapabilityKeyVMExtraConfig is the name of the capability key defined
+	// in the Supervisor capabilities CRD for the VM Service's support for
+	// VM extraConfig configuration: spec.advanced first-class fields, extraConfig
+	// fallback, and per-NIC VMXNet3 tuning properties.
+	CapabilityKeyVMExtraConfig = "supports_vm_service_vm_extra_config"
 )
 
 var (
@@ -265,6 +271,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyStoragePolicyMutability:
 			fs.StoragePolicyMutability = capStatus.Activated
+		case CapabilityKeyVMExtraConfig:
+			fs.VMExtraConfig = capStatus.Activated
 		}
 
 	}

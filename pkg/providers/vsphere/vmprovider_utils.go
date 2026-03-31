@@ -617,29 +617,7 @@ func GetVMClassConfigSpecFromClassName(
 	className, namespace string,
 ) (vimtypes.VirtualMachineConfigSpec, error) {
 
-	// For classless VMs, return empty config spec.
-	if className == "" {
-		return vimtypes.VirtualMachineConfigSpec{}, nil
-	}
-
-	vmClass := &vmopv1.VirtualMachineClass{}
-	vmClassKey := ctrlclient.ObjectKey{
-		Name:      className,
-		Namespace: namespace,
-	}
-
-	if err := k8sClient.Get(ctx, vmClassKey, vmClass); err != nil {
-		return vimtypes.VirtualMachineConfigSpec{}, fmt.Errorf(
-			"failed to get VM Class %s: %w", className, err)
-	}
-
-	// If the VM Class has a ConfigSpec, use the existing function to parse it.
-	if len(vmClass.Spec.ConfigSpec) > 0 {
-		return GetVMClassConfigSpec(ctx, vmClass.Spec.ConfigSpec)
-	}
-
-	// Otherwise, create config spec from VM Class devices.
-	return virtualmachine.ConfigSpecFromVMClassDevices(&vmClass.Spec), nil
+	return virtualmachine.ClassConfigSpecForName(ctx, k8sClient, className, namespace)
 }
 
 // GetConfigSpecFromOVFCache retrieves the VM config spec from a

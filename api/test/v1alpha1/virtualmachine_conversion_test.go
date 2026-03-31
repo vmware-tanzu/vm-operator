@@ -2168,6 +2168,53 @@ func TestVirtualMachineConversion(t *testing.T) {
 			hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
 		})
 
+		t.Run("VirtualMachine hub-spoke-hub with advanced config fields", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+						ChangeBlockTracking:               ptrOf(true),
+						PreferHTEnabled:                   ptrOf(true),
+						HugePages1GEnabled:                ptrOf(true),
+						TimeTrackerLowLatencyEnabled:      ptrOf(true),
+						CPUAffinityExclusiveNoStatsEnabled: ptrOf(true),
+						VMXSwapEnabled:                    ptrOf(false),
+						PNUMANodeAffinity:                 []int32{0, 1},
+						ExtraConfig: []vmopv1common.KeyValuePair{
+							{Key: "somekey", Value: "somevalue"},
+						},
+					},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
+		})
+
+		t.Run("VirtualMachine hub-spoke-hub with NIC advanced fields", func(t *testing.T) {
+			g := NewWithT(t)
+			ctxPerDev := vmopv1.TxContextThreadingModePerDevice
+			hub := vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+								Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								VNUMANodeID: ptrOf(int32(1)),
+								VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+									UPTv2Enabled: ptrOf(true),
+									CtxPerDev:    &ctxPerDev,
+								},
+								AdvancedProperties: []vmopv1common.KeyValuePair{
+									{Key: "test-key", Value: "test-val"},
+								},
+							},
+						},
+					},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
+		})
+
 		t.Run("VirtualMachine hub-spoke pauseAnnotation rename", func(t *testing.T) {
 			g := NewWithT(t)
 			hub := vmopv1.VirtualMachine{

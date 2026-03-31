@@ -65,14 +65,7 @@ func FaultCauseChain(lmf *vimtypes.LocalizedMethodFault) string {
 	var nodes []string
 	for lmf != nil {
 		var parts []string
-		localizedMsg := strings.TrimRight(lmf.LocalizedMessage, ": \n\r\t")
-		if localizedMsg != "" {
-			parts = append(parts, localizedMsg)
-		}
 		mf := lmf.Fault.GetMethodFault()
-		/*if b, err := json.MarshalIndent(mf, "", "  "); err == nil {
-			log.Info("full mf detail", "fault", string(b))
-		}*/
 		if mf != nil {
 			for _, fm := range mf.FaultMessage {
 				if fm.Message != "" {

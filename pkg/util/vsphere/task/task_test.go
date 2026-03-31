@@ -30,11 +30,16 @@ var _ = Describe("FaultCauseChain", func() {
 	Context("when there is only the root fault with no FaultCause", func() {
 		It("should return the root localized message", func() {
 			lmf := &vimtypes.LocalizedMethodFault{
-				LocalizedMessage: "Operation failed",
 				Fault: &vimtypes.InvalidPowerState{
 					InvalidState: vimtypes.InvalidState{
 						VimFault: vimtypes.VimFault{
-							MethodFault: vimtypes.MethodFault{},
+							MethodFault: vimtypes.MethodFault{
+								FaultMessage: []vimtypes.LocalizableMessage{
+									{
+										Message: "Operation failed",
+									},
+								},
+							},
 						},
 					},
 				},
@@ -46,7 +51,6 @@ var _ = Describe("FaultCauseChain", func() {
 	Context("when the root fault has an empty localized message", func() {
 		It("should skip the empty message and return only non-empty causes", func() {
 			lmf := &vimtypes.LocalizedMethodFault{
-				LocalizedMessage: "",
 				Fault: &vimtypes.InvalidPowerState{
 					InvalidState: vimtypes.InvalidState{
 						VimFault: vimtypes.VimFault{
@@ -55,7 +59,13 @@ var _ = Describe("FaultCauseChain", func() {
 									LocalizedMessage: "cause message",
 									Fault: &vimtypes.SystemError{
 										RuntimeFault: vimtypes.RuntimeFault{
-											MethodFault: vimtypes.MethodFault{},
+											MethodFault: vimtypes.MethodFault{
+												FaultMessage: []vimtypes.LocalizableMessage{
+													{
+														Message: "cause message",
+													},
+												},
+											},
 										},
 									},
 								},
@@ -71,15 +81,24 @@ var _ = Describe("FaultCauseChain", func() {
 	Context("when there is a two-level FaultCause chain", func() {
 		It("should return both messages joined with ' -> '", func() {
 			lmf := &vimtypes.LocalizedMethodFault{
-				LocalizedMessage: "root message",
 				Fault: &vimtypes.InsufficientResourcesFault{
 					VimFault: vimtypes.VimFault{
 						MethodFault: vimtypes.MethodFault{
+							FaultMessage: []vimtypes.LocalizableMessage{
+								{
+									Message: "root message",
+								},
+							},
 							FaultCause: &vimtypes.LocalizedMethodFault{
-								LocalizedMessage: "cause message",
 								Fault: &vimtypes.SystemError{
 									RuntimeFault: vimtypes.RuntimeFault{
-										MethodFault: vimtypes.MethodFault{},
+										MethodFault: vimtypes.MethodFault{
+											FaultMessage: []vimtypes.LocalizableMessage{
+												{
+													Message: "cause message",
+												},
+											},
+										},
 									},
 								},
 							},
@@ -94,20 +113,33 @@ var _ = Describe("FaultCauseChain", func() {
 	Context("when there is a three-level FaultCause chain", func() {
 		It("should return all three messages joined with ' -> '", func() {
 			lmf := &vimtypes.LocalizedMethodFault{
-				LocalizedMessage: "root message",
 				Fault: &vimtypes.InsufficientResourcesFault{
 					VimFault: vimtypes.VimFault{
 						MethodFault: vimtypes.MethodFault{
+							FaultMessage: []vimtypes.LocalizableMessage{
+								{
+									Message: "root message",
+								},
+							},
 							FaultCause: &vimtypes.LocalizedMethodFault{
-								LocalizedMessage: "intermediate cause",
 								Fault: &vimtypes.SystemError{
 									RuntimeFault: vimtypes.RuntimeFault{
 										MethodFault: vimtypes.MethodFault{
+											FaultMessage: []vimtypes.LocalizableMessage{
+												{
+													Message: "intermediate cause",
+												},
+											},
 											FaultCause: &vimtypes.LocalizedMethodFault{
-												LocalizedMessage: "root cause",
 												Fault: &vimtypes.SystemError{
 													RuntimeFault: vimtypes.RuntimeFault{
-														MethodFault: vimtypes.MethodFault{},
+														MethodFault: vimtypes.MethodFault{
+															FaultMessage: []vimtypes.LocalizableMessage{
+																{
+																	Message: "root cause",
+																},
+															},
+														},
 													},
 												},
 											},

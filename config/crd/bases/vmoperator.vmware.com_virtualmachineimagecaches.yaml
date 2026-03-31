@@ -269,6 +269,9 @@ spec:
                               - Type=Disk, DiskType=Managed -- The ID value describes a First Class
                                                                Disk (FCD).
                             type: string
+                          name:
+                            description: Name describes the original name of the file.
+                            type: string
                           type:
                             description: Type describes the type of file.
                             enum:
@@ -573,6 +576,9 @@ spec:
                               - Type=Disk, DiskType=Managed -- The ID value describes a First Class
                                                                Disk (FCD).
                             type: string
+                          name:
+                            description: Name describes the original name of the file.
+                            type: string
                           type:
                             description: Type describes the type of file.
                             enum:
@@ -874,6 +880,9 @@ spec:
                               - Type=Disk, DiskType=Managed -- The ID value describes a First Class
                                                                Disk (FCD).
                             type: string
+                          name:
+                            description: Name describes the original name of the file.
+                            type: string
                           type:
                             description: Type describes the type of file.
                             enum:
@@ -1174,6 +1183,9 @@ spec:
                                                                path.
                               - Type=Disk, DiskType=Managed -- The ID value describes a First Class
                                                                Disk (FCD).
+                            type: string
+                          name:
+                            description: Name describes the original name of the file.
                             type: string
                           type:
                             description: Type describes the type of file.

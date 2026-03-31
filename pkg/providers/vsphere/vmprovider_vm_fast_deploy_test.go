@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"path"
 	"strconv"
@@ -50,9 +51,19 @@ import (
 )
 
 func vmFastDeployTests() {
+
+	type diskResult struct {
+		cachedFileName  string
+		fromCache       bool
+		capacityInBytes int64
+	}
+
 	const (
 		vmdkExt  = ".vmdk"
 		nvramExt = ".nvram"
+
+		oneMiB = 1 * 1024 * 1024
+		oneGiB = oneMiB * 1024
 	)
 
 	var (
@@ -141,7 +152,14 @@ func vmFastDeployTests() {
 			vm.Spec.StorageClass = ctx.EncryptedStorageClassName
 		}
 
-		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+		vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeOnline
+		vm.Spec.Network.Disabled = false
+		vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+			{
+				Name:    "eth0",
+				Network: &vmopv1common.PartialObjectRef{Name: dvpgName},
+			},
+		}
 
 		if configSpec != nil {
 			var w bytes.Buffer
@@ -152,13 +170,6 @@ func vmFastDeployTests() {
 			Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
 		}
 
-		vm.Spec.Network.Disabled = false
-		vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
-			{
-				Name:    "eth0",
-				Network: &vmopv1common.PartialObjectRef{Name: dvpgName},
-			},
-		}
 	})
 
 	JustAfterEach(func() {
@@ -217,8 +228,27 @@ func vmFastDeployTests() {
 		func(
 			ovfPath string,
 			cachedDiskNames []string,
-			numExpectedDisks int,
+			expectedDisks map[string]diskResult,
 			expectNvram bool) {
+
+			var (
+				expectedDiskNamesFromCache []string
+			)
+
+			BeforeEach(func() {
+				shuffleSlice(cachedDiskNames)
+
+				for _, v := range expectedDisks {
+					if v.fromCache {
+						expectedDiskNamesFromCache = append(
+							expectedDiskNamesFromCache, v.cachedFileName)
+					}
+				}
+			})
+
+			AfterEach(func() {
+				expectedDiskNamesFromCache = nil
+			})
 
 			JustBeforeEach(func() {
 				By("Creating library item", func() {
@@ -411,10 +441,58 @@ func vmFastDeployTests() {
 				ecKeyFuVal, _ := extraConfig.GetString("fu")
 				Expect(ecKeyFuVal).To(Equal("bar"))
 
+				By("Assert expected number of disks", func() {
+					devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+					disks := devices.SelectByType((*vimtypes.VirtualDisk)(nil))
+					Expect(disks).To(HaveLen(len(expectedDisks)))
+				})
+
+				return nil
+			}
+
+			assertCapacity := func() {
 				devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 				disks := devices.SelectByType((*vimtypes.VirtualDisk)(nil))
-				Expect(disks).To(HaveLen(numExpectedDisks))
-				return nil
+
+				for _, bd := range disks {
+					d := bd.(*vimtypes.VirtualDisk)
+					bfb := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo)
+					fb := bfb.GetVirtualDeviceFileBackingInfo()
+					baseFileName := path.Base(fb.FileName)
+					if edr, ok := expectedDisks[baseFileName]; ok {
+						Expect(d.CapacityInBytes).To(Equal(edr.capacityInBytes))
+					}
+				}
+			}
+
+			assertFileNames := func() {
+				devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+				disks := devices.SelectByType((*vimtypes.VirtualDisk)(nil))
+				actualDiskNames := map[string]struct{}{}
+
+				for _, bd := range disks {
+					d := bd.(*vimtypes.VirtualDisk)
+					bfb := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo)
+					fb := bfb.GetVirtualDeviceFileBackingInfo()
+					baseFileName := path.Base(fb.FileName)
+					actualDiskNames[baseFileName] = struct{}{}
+				}
+
+				for expectedDiskName := range expectedDisks {
+					Expect(actualDiskNames).To(HaveKey(expectedDiskName))
+				}
+			}
+
+			assertKeptDisks := func() {
+				v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+				Expect(ok).To(BeTrue())
+				Expect(strings.Split(v, ",")).To(ConsistOf(expectedDiskNamesFromCache))
+			}
+
+			assertNoKeptDisks := func() {
+				v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+				Expect(ok).To(BeFalse())
+				Expect(v).To(BeEmpty())
 			}
 
 			When("hardware is not ready", func() {
@@ -489,6 +567,7 @@ func vmFastDeployTests() {
 								ID:       cachedDiskPaths[i],
 								Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 								DiskType: vmopv1.VolumeTypeClassic,
+								Name:     cachedDiskNames[i],
 							}
 						}
 
@@ -533,11 +612,11 @@ func vmFastDeployTests() {
 							})
 						})
 
-						It("should succeed", func() {
+						It("should succeed with direct mode", func() {
 							Expect(createVM()).To(Succeed())
-							v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-							Expect(v).To(BeEmpty())
-							Expect(ok).To(BeFalse())
+							By("Assert no kept disks", assertNoKeptDisks)
+							By("Assert disk names", assertFileNames)
+							By("Assert capacity", assertCapacity)
 						})
 
 						When("vm specifies linked mode via annotation", func() {
@@ -549,9 +628,8 @@ func vmFastDeployTests() {
 
 							It("should succeed with linked mode", func() {
 								Expect(createVM()).To(Succeed())
-								v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
-								Expect(ok).To(BeTrue())
+								By("Assert kept disks", assertKeptDisks)
+								By("Assert disk names", assertFileNames)
 							})
 						})
 					})
@@ -563,11 +641,21 @@ func vmFastDeployTests() {
 							})
 						})
 
-						It("should succeed", func() {
+						It("should succeed with linked mode", func() {
 							Expect(createVM()).To(Succeed())
-							v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-							Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
-							Expect(ok).To(BeTrue())
+							By("Assert kept disks", assertKeptDisks)
+							By("Assert disk names", assertFileNames)
+						})
+
+						When("disk promotion is disabled", func() {
+							JustBeforeEach(func() {
+								vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+							})
+							It("should succeed with linked mode", func() {
+								Expect(createVM()).To(Succeed())
+								By("Assert kept disks", assertKeptDisks)
+								By("Assert disk names", assertFileNames)
+							})
 						})
 
 						When("vm uses encrypted storage class", func() {
@@ -577,13 +665,9 @@ func vmFastDeployTests() {
 
 							It("should succeed by falling back to direct mode", func() {
 								Expect(createVM()).To(Succeed())
-								// Even though global default is linked, encrypted
-								// storage should force direct mode, so
-								// VMProvKeepDisksExtraConfigKey should NOT be
-								// present.
-								v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v).To(BeEmpty())
-								Expect(ok).To(BeFalse())
+								By("Assert no kept disks", assertNoKeptDisks)
+								By("Assert disk names", assertFileNames)
+								By("Assert capacity", assertCapacity)
 							})
 						})
 
@@ -596,11 +680,9 @@ func vmFastDeployTests() {
 
 							It("should succeed with direct mode", func() {
 								Expect(createVM()).To(Succeed())
-								// In direct mode, the VMProvKeepDisksExtraConfigKey
-								// should NOT be present.
-								v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v).To(BeEmpty())
-								Expect(ok).To(BeFalse())
+								By("Assert no kept disks", assertNoKeptDisks)
+								By("Assert disk names", assertFileNames)
+								By("Assert capacity", assertCapacity)
 							})
 						})
 					})
@@ -614,7 +696,13 @@ func vmFastDeployTests() {
 			[]string{
 				"disk0.vmdk",
 			},
-			1,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "disk0.vmdk",
+					fromCache:       true,
+					capacityInBytes: 30 * oneMiB,
+				},
+			},
 			true,
 		),
 
@@ -626,7 +714,26 @@ func vmFastDeployTests() {
 				"disk1.vmdk",
 				"disk2.vmdk",
 			},
-			4,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "disk0.vmdk",
+					fromCache:       true,
+					capacityInBytes: 40 * oneMiB,
+				},
+				"disk-1.vmdk": {
+					cachedFileName:  "disk1.vmdk",
+					fromCache:       true,
+					capacityInBytes: 50 * oneMiB,
+				},
+				"disk-2.vmdk": {
+					cachedFileName:  "disk2.vmdk",
+					fromCache:       true,
+					capacityInBytes: 60 * oneMiB,
+				},
+				"test-vm.vmdk": {
+					capacityInBytes: 20 * oneMiB,
+				},
+			},
 			true,
 		),
 
@@ -634,11 +741,61 @@ func vmFastDeployTests() {
 			"vcsa",
 			"vmware/vcsa/VMware-vCenter-Server-Appliance-9.1.0.0.25262036_OVF10.ova",
 			[]string{
+				"VMware-vCenter-Server-Appliance-9.1.0.0.25262036-swap.vmdk",
 				"VMware-vCenter-Server-Appliance-9.1.0.0.25262036-system.vmdk",
 				"VMware-vCenter-Server-Appliance-9.1.0.0.25262036-cloud-components.vmdk",
-				"VMware-vCenter-Server-Appliance-9.1.0.0.25262036-swap.vmdk",
 			},
-			15,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "VMware-vCenter-Server-Appliance-9.1.0.0.25262036-system.vmdk",
+					fromCache:       true,
+					capacityInBytes: 49728 * oneMiB,
+				},
+				"disk-1.vmdk": {
+					cachedFileName:  "VMware-vCenter-Server-Appliance-9.1.0.0.25262036-cloud-components.vmdk",
+					fromCache:       true,
+					capacityInBytes: 7779 * oneMiB,
+				},
+				"test-vm.vmdk": {
+					capacityInBytes: 25 * oneGiB,
+				},
+				"test-vm_1.vmdk": {
+					capacityInBytes: 25 * oneGiB,
+				},
+				"test-vm_2.vmdk": {
+					capacityInBytes: 50 * oneGiB,
+				},
+				"test-vm_3.vmdk": {
+					capacityInBytes: 10 * oneGiB,
+				},
+				"test-vm_4.vmdk": {
+					capacityInBytes: 15 * oneGiB,
+				},
+				"test-vm_5.vmdk": {
+					capacityInBytes: 10 * oneGiB,
+				},
+				"test-vm_6.vmdk": {
+					capacityInBytes: 1 * oneGiB,
+				},
+				"test-vm_7.vmdk": {
+					capacityInBytes: 10 * oneGiB,
+				},
+				"test-vm_8.vmdk": {
+					capacityInBytes: 10 * oneGiB,
+				},
+				"test-vm_9.vmdk": {
+					capacityInBytes: 100 * oneGiB,
+				},
+				"test-vm_10.vmdk": {
+					capacityInBytes: 50 * oneGiB,
+				},
+				"test-vm_11.vmdk": {
+					capacityInBytes: 100 * oneGiB,
+				},
+				"test-vm_12.vmdk": {
+					capacityInBytes: 150 * oneGiB,
+				},
+			},
 			false,
 		),
 
@@ -648,7 +805,13 @@ func vmFastDeployTests() {
 			[]string{
 				"disk-0.vmdk",
 			},
-			1,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "disk-0.vmdk",
+					fromCache:       true,
+					capacityInBytes: 32 * oneGiB,
+				},
+			},
 			false,
 		),
 
@@ -658,7 +821,16 @@ func vmFastDeployTests() {
 			[]string{
 				"nsx-unified-appliance.vmdk",
 			},
-			2,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "nsx-unified-appliance.vmdk",
+					fromCache:       true,
+					capacityInBytes: 200 * oneGiB,
+				},
+				"test-vm.vmdk": {
+					capacityInBytes: 100 * oneGiB,
+				},
+			},
 			false,
 		),
 
@@ -671,7 +843,28 @@ func vmFastDeployTests() {
 				"O11N_VA-9.1.0.0.25262048-home.vmdk",
 				"O11N_VA-9.1.0.0.25262048-data.vmdk",
 			},
-			4,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "O11N_VA-9.1.0.0.25262048-system.vmdk",
+					fromCache:       true,
+					capacityInBytes: 50 * oneGiB,
+				},
+				"disk-1.vmdk": {
+					cachedFileName:  "O11N_VA-9.1.0.0.25262048-logs.vmdk",
+					fromCache:       true,
+					capacityInBytes: 8 * oneGiB,
+				},
+				"disk-2.vmdk": {
+					cachedFileName:  "O11N_VA-9.1.0.0.25262048-home.vmdk",
+					fromCache:       true,
+					capacityInBytes: 20 * oneGiB,
+				},
+				"disk-3.vmdk": {
+					cachedFileName:  "O11N_VA-9.1.0.0.25262048-data.vmdk",
+					fromCache:       true,
+					capacityInBytes: 108 * oneGiB,
+				},
+			},
 			false,
 		),
 
@@ -683,7 +876,23 @@ func vmFastDeployTests() {
 				"Operations-Appliance-9.1.0.0.25262067-data.vmdk",
 				"Operations-Appliance-9.1.0.0.25262067-cloud-components.vmdk",
 			},
-			3,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "Operations-Appliance-9.1.0.0.25262067-system.vmdk",
+					fromCache:       true,
+					capacityInBytes: 20 * oneGiB,
+				},
+				"disk-1.vmdk": {
+					cachedFileName:  "Operations-Appliance-9.1.0.0.25262067-data.vmdk",
+					fromCache:       true,
+					capacityInBytes: 250 * oneGiB,
+				},
+				"disk-2.vmdk": {
+					cachedFileName:  "Operations-Appliance-9.1.0.0.25262067-cloud-components.vmdk",
+					fromCache:       true,
+					capacityInBytes: 4 * oneGiB,
+				},
+			},
 			false,
 		),
 
@@ -696,7 +905,23 @@ func vmFastDeployTests() {
 				"Operations-Cloud-Proxy-9.1.0.0.25262086-cloud-components.vmdk",
 				"Operations-Cloud-Proxy-9.1.0.0.25262086-unified.vmdk",
 			},
-			3,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "Operations-Cloud-Proxy-9.1.0.0.25262086-system.vmdk",
+					fromCache:       true,
+					capacityInBytes: 20 * oneGiB,
+				},
+				"disk-1.vmdk": {
+					cachedFileName:  "Operations-Cloud-Proxy-9.1.0.0.25262086-data.vmdk",
+					fromCache:       true,
+					capacityInBytes: 120 * oneGiB,
+				},
+				"disk-2.vmdk": {
+					cachedFileName:  "Operations-Cloud-Proxy-9.1.0.0.25262086-cloud-components.vmdk",
+					fromCache:       true,
+					capacityInBytes: 4 * oneGiB,
+				},
+			},
 			false,
 		),
 
@@ -707,8 +932,28 @@ func vmFastDeployTests() {
 				"Vcf-License-Server-9.1.0.0.25262073-disk1.vmdk",
 				"Vcf-License-Server-9.1.0.0.25262073-disk2.vmdk",
 			},
-			3,
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "Vcf-License-Server-9.1.0.0.25262073-disk1.vmdk",
+					fromCache:       true,
+					capacityInBytes: 4 * oneGiB,
+				},
+				"disk-1.vmdk": {
+					cachedFileName:  "Vcf-License-Server-9.1.0.0.25262073-disk2.vmdk",
+					fromCache:       true,
+					capacityInBytes: 4 * oneGiB,
+				},
+				"test-vm.vmdk": {
+					capacityInBytes: 4 * oneGiB,
+				},
+			},
 			false,
 		),
 	)
+}
+
+func shuffleSlice[T any](a []T) {
+	rand.Shuffle(len(a), func(i, j int) {
+		a[i], a[j] = a[j], a[i]
+	})
 }

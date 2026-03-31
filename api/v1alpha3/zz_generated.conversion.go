@@ -2615,6 +2615,7 @@ func autoConvert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha6_Virtual
 	out.ID = in.ID
 	out.Type = v1alpha6.VirtualMachineImageCacheFileType(in.Type)
 	out.DiskType = v1alpha6.VolumeType(in.DiskType)
+	out.Name = in.Name
 	return nil
 }
 
@@ -2626,6 +2627,7 @@ func Convert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha6_VirtualMach
 func autoConvert_v1alpha6_VirtualMachineImageCacheFileStatus_To_v1alpha3_VirtualMachineImageCacheFileStatus(in *v1alpha6.VirtualMachineImageCacheFileStatus, out *VirtualMachineImageCacheFileStatus, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Type = VirtualMachineImageCacheFileType(in.Type)
+	out.Name = in.Name
 	out.DiskType = VirtualMachineVolumeType(in.DiskType)
 	return nil
 }

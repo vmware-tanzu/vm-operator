@@ -125,6 +125,11 @@ type VirtualMachineImageCacheFileStatus struct {
 	// This field is only non-empty when Type=Disk.
 	DiskType VirtualMachineVolumeType `json:"diskType,omitempty"`
 
+	// +optional
+
+	// Name describes the original name of the file.
+	Name string `json:"name,omitempty"`
+
 	// TODO(akutz) In the future there may be additional information about the
 	//             disk, such as its sector format (512 vs 4k), is encrypted,
 	//             thin-provisioned, adapter type, etc.

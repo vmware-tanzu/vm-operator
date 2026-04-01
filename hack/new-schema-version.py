@@ -309,7 +309,10 @@ def _discover_root_types(api_dir: Path) -> list[str]:
 
 
 def _generate_conversion_webhooks_go(
-    package_name: str, api_import_path: str, root_types: list[str]
+    package_name: str,
+    api_import_path: str,
+    root_types: list[str],
+    import_alias: str = "vmopv1",
 ) -> str:
     """Generate webhooks/conversion/VERSION/webhooks.go that registers conversion for each root type."""
     lines = [
@@ -323,7 +326,7 @@ def _generate_conversion_webhooks_go(
         '\tctrl "sigs.k8s.io/controller-runtime"',
         '\tctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"',
         "",
-        f'\tvmopv1 "{api_import_path}"',
+        f'\t{import_alias} "{api_import_path}"',
         '\tpkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"',
         ")",
         "",
@@ -334,7 +337,7 @@ def _generate_conversion_webhooks_go(
         lines.extend(
             [
                 f"\tif err := ctrl.NewWebhookManagedBy(mgr).",
-                f"\t\tFor(&vmopv1.{t}{{}}).",
+                f"\t\tFor(&{import_alias}.{t}{{}}).",
                 "\t\tComplete(); err != nil {",
                 "",
                 "\t\treturn err",
@@ -525,6 +528,10 @@ class SchemaMigration:
                 "Updating api/{old} to use versioned import aliases",
             ),
             (
+                self.step_create_conversion_tests,
+                "Creating api/test/{old} conversion tests",
+            ),
+            (
                 self.step_update_template_constants,
                 "Adding {new} template constants to pkg/providers/vsphere/constants",
             ),
@@ -608,7 +615,11 @@ class SchemaMigration:
     # -------------------------------------------------------------------------
 
     def step_demote_old_hub(self) -> None:
-        """Convert Hub()-only conversion files to ConvertTo/ConvertFrom."""
+        """Convert Hub()-only conversion files to ConvertTo/ConvertFrom.
+
+        Also handles root types that were introduced in the old hub version
+        and therefore have no *_conversion.go file at all.
+        """
         for conv_file in self.ctx.old_api_dir.glob("*_conversion.go"):
             content = self.ops.read_file(conv_file)
 
@@ -633,6 +644,8 @@ class SchemaMigration:
             # Generate the new conversion file content
             new_content = self._generate_spoke_conversion_file(types)
             self.ops.write_file(conv_file, new_content)
+
+        self._create_conversion_for_new_root_types()
 
     def _generate_spoke_conversion_file(self, types: list[str]) -> str:
         """Generate spoke conversion file with ConvertTo/ConvertFrom."""
@@ -669,6 +682,88 @@ class SchemaMigration:
                     f"\tsrc := srcRaw.(*vmopv1.{t})",
                     f"\treturn Convert_{new_ver}_{t}_To_{old_ver}_{t}(src, dst, nil)",
                     "}",
+                    "",
+                ]
+            )
+
+        return "\n".join(lines)
+
+    def _create_conversion_for_new_root_types(self) -> None:
+        """Create conversion files for root types introduced in the old hub
+        that have no *_conversion.go file.
+
+        When a type is introduced in the current hub version, it typically
+        only gets a types file (no conversion file, since the hub doesn't
+        need ConvertTo/ConvertFrom). When a new hub is created, these types
+        need:
+          1. A spoke conversion file in the old version (ConvertTo/ConvertFrom)
+          2. A hub conversion file in the new version (Hub() markers)
+        """
+        old_ver = self.ctx.old_ver
+        new_ver = self.ctx.new_ver
+
+        all_root_types = _discover_root_types(self.ctx.old_api_dir)
+        existing_conv_types: set[str] = set()
+        for conv_file in self.ctx.old_api_dir.glob("*_conversion.go"):
+            content = self.ops.read_file(conv_file)
+            for m in re.finditer(r"func \(\w* ?\*(\w+)\)", content):
+                existing_conv_types.add(m.group(1))
+
+        missing_types = [t for t in all_root_types if t not in existing_conv_types]
+        if not missing_types:
+            return
+
+        # Group types by their source file to create appropriately named
+        # conversion files.
+        type_to_file: dict[str, list[str]] = {}
+        root_marker = "// +kubebuilder:object:root=true"
+        type_re = re.compile(r"^type\s+(\w+)\s+(?:struct|=)", re.MULTILINE)
+        for go_file in sorted(self.ctx.old_api_dir.glob("*_types.go")):
+            content = self.ops.read_file(go_file)
+            for part in content.split(root_marker)[1:]:
+                m = type_re.search(part)
+                if m and m.group(1) in missing_types:
+                    stem = go_file.stem.replace("_types", "")
+                    type_to_file.setdefault(stem, [])
+                    type_to_file[stem].append(m.group(1))
+
+        for stem, types in type_to_file.items():
+            conv_name = f"{stem}_conversion.go"
+
+            # Include List types alongside their parent types.
+            types_with_lists = []
+            for t in types:
+                types_with_lists.append(t)
+                types_with_lists.append(f"{t}List")
+
+            # Create spoke conversion in old version.
+            spoke_content = self._generate_spoke_conversion_file(types_with_lists)
+            self.ops.write_file(self.ctx.old_api_dir / conv_name, spoke_content)
+
+            # Create hub conversion in new version.
+            hub_content = self._generate_hub_conversion_file(
+                new_ver, types_with_lists
+            )
+            self.ops.write_file(self.ctx.new_api_dir / conv_name, hub_content)
+
+    @staticmethod
+    def _generate_hub_conversion_file(package_name: str, types: list[str]) -> str:
+        """Generate a hub conversion file with Hub() markers."""
+        lines = [
+            "// © Broadcom. All Rights Reserved.",
+            '// The term "Broadcom" refers to Broadcom Inc. and/or its '
+            "subsidiaries.",
+            "// SPDX-License-Identifier: Apache-2.0",
+            "",
+            f"package {package_name}",
+            "",
+        ]
+
+        for t in types:
+            lines.extend(
+                [
+                    f"// Hub marks {t} as a conversion hub.",
+                    f"func (*{t}) Hub() {{}}",
                     "",
                 ]
             )
@@ -999,23 +1094,38 @@ class SchemaMigration:
         webhooks_dir = self.ctx.root / "webhooks" / "conversion"
         old_api_dir = self.ctx.old_api_dir
         new_webhook_dir = webhooks_dir / self.ctx.new_ver
+        old_webhook_dir = webhooks_dir / self.ctx.old_ver
         webhooks_go = webhooks_dir / "webhooks.go"
 
         if not old_api_dir.exists():
             return
 
-        # Discover root types from previous hub (old_ver): types with +kubebuilder:object:root=true, excluding *List
         root_types = _discover_root_types(old_api_dir)
         if not root_types:
             return
 
+        # Create webhooks/conversion/NEW_VER/webhooks.go for the new hub.
         new_webhook_dir.mkdir(parents=True, exist_ok=True)
         api_import_path = f"github.com/vmware-tanzu/vm-operator/api/{self.ctx.new_ver}"
-        package_name = self.ctx.new_ver  # e.g. v1alpha6
+        package_name = self.ctx.new_ver
         content = _generate_conversion_webhooks_go(
             package_name, api_import_path, root_types
         )
         self.ops.write_file(new_webhook_dir / "webhooks.go", content)
+
+        # Regenerate webhooks/conversion/OLD_VER/webhooks.go so it includes
+        # all root types (including types introduced in the old hub version
+        # that were not present in the previous hub's webhook file).
+        old_webhook_dir.mkdir(parents=True, exist_ok=True)
+        old_alias = self.ctx.version_alias(self.ctx.old_ver)
+        old_api_import = (
+            f"github.com/vmware-tanzu/vm-operator/api/{self.ctx.old_ver}"
+        )
+        old_content = _generate_conversion_webhooks_go(
+            self.ctx.old_ver, old_api_import, root_types,
+            import_alias=old_alias,
+        )
+        self.ops.write_file(old_webhook_dir / "webhooks.go", old_content)
 
         # Update parent webhooks/conversion/webhooks.go with new imports and AddToManager call
         if webhooks_go.exists():
@@ -1128,6 +1238,8 @@ class SchemaMigration:
             self.ctx.old_api_dir,
             self.ctx.new_api_dir,
             self.ctx.root / "vendor",
+            self.ctx.root / "webhooks" / "conversion" / self.ctx.old_ver,
+            self.ctx.root / "api" / "test" / self.ctx.old_ver,
         ]
 
         for go_file in self.ctx.root.rglob("*.go"):
@@ -1289,7 +1401,260 @@ class SchemaMigration:
             )
 
     # -------------------------------------------------------------------------
-    # Step 16: Add new version template constants (pkg/providers/vsphere/constants)
+    # Step 16: Create api/test/OLD_VER conversion tests
+    # -------------------------------------------------------------------------
+
+    def step_create_conversion_tests(self) -> None:
+        """Create api/test/OLD_VER with FuzzyConversion tests for all
+        converted types.
+
+        When a new hub is introduced, the previous hub becomes a spoke and
+        needs fuzz-based round-trip tests (Spoke-Hub-Spoke, Hub-Spoke-Hub)
+        for every root type that has conversion.
+        """
+        old_ver = self.ctx.old_ver
+        new_ver = self.ctx.new_ver
+        prev_ver = self.ctx.prev_ver
+
+        test_dir = self.ctx.root / "api" / "test" / old_ver
+        if test_dir.exists():
+            return
+
+        src_test_dir: Path | None = None
+        if prev_ver:
+            candidate = self.ctx.root / "api" / "test" / prev_ver
+            if candidate.exists():
+                src_test_dir = candidate
+
+        self.ops.mkdir(test_dir)
+
+        root_types = _discover_root_types(self.ctx.old_api_dir)
+        conv_types: list[str] = []
+        for conv_file in self.ctx.old_api_dir.glob("*_conversion.go"):
+            content = self.ops.read_file(conv_file)
+            for m in re.finditer(r"func \(\w* ?\*(\w+)\)", content):
+                name = m.group(1)
+                if name in root_types:
+                    conv_types.append(name)
+        conv_types = sorted(set(conv_types))
+
+        old_alpha_num = self._version_alpha_num(old_ver)
+        suite_func_name = (
+            f"TestV1Alpha{old_alpha_num}" if old_alpha_num
+            else f"Test{old_ver.title()}"
+        )
+        suite_content = self._generate_suite_test(old_ver, suite_func_name)
+        self.ops.write_file(
+            test_dir / f"{old_ver}_suite_test.go", suite_content
+        )
+
+        if src_test_dir and (src_test_dir / "conversion_test.go").exists():
+            self._copy_and_adapt_conversion_test(
+                src_test_dir, test_dir, conv_types
+            )
+        else:
+            content = self._generate_conversion_test(
+                old_ver, new_ver, conv_types
+            )
+            self.ops.write_file(test_dir / "conversion_test.go", content)
+
+    def _generate_suite_test(self, ver: str, func_name: str) -> str:
+        """Generate the Ginkgo suite test file."""
+        return "\n".join([
+            "// © Broadcom. All Rights Reserved.",
+            '// The term "Broadcom" refers to Broadcom Inc. and/or its '
+            "subsidiaries.",
+            "// SPDX-License-Identifier: Apache-2.0",
+            "",
+            f"package {ver}_test",
+            "",
+            "import (",
+            '\t"testing"',
+            "",
+            '\t. "github.com/onsi/ginkgo/v2"',
+            '\t. "github.com/onsi/gomega"',
+            ")",
+            "",
+            f"func {func_name}(t *testing.T) {{",
+            "\tRegisterFailHandler(Fail)",
+            f'\tRunSpecs(t, "{ver} Suite")',
+            "}",
+            "",
+        ])
+
+    def _copy_and_adapt_conversion_test(
+        self,
+        src_test_dir: Path,
+        dst_test_dir: Path,
+        conv_types: list[str],
+    ) -> None:
+        """Copy conversion_test.go from the previous version's test dir and
+        adapt it for the new spoke version.
+
+        Preserves hand-written fuzzer override functions while adding
+        Context blocks for any new types.
+        """
+        old_ver = self.ctx.old_ver
+        new_ver = self.ctx.new_ver
+        prev_ver = self.ctx.prev_ver
+        old_alias = self.ctx.version_alias(old_ver)
+        prev_alias = self.ctx.version_alias(prev_ver) if prev_ver else ""
+
+        src_file = src_test_dir / "conversion_test.go"
+        content = self.ops.read_file(src_file)
+
+        if prev_ver:
+            content = content.replace(
+                f"package {prev_ver}_test", f"package {old_ver}_test"
+            )
+
+        if prev_ver and prev_alias:
+            base = "github.com/vmware-tanzu/vm-operator/api"
+            content = content.replace(
+                f'{prev_alias} "{base}/{prev_ver}"',
+                f'{old_alias} "{base}/{old_ver}"',
+            )
+            content = content.replace(f"{prev_alias}.", f"{old_alias}.")
+
+        base = "github.com/vmware-tanzu/vm-operator/api"
+        for v in self.ctx.all_versions:
+            if v == old_ver or v == new_ver:
+                continue
+            content = content.replace(
+                f'vmopv1 "{base}/{v}"', f'vmopv1 "{base}/{new_ver}"'
+            )
+            content = content.replace(
+                f'vmopv1sysprep "{base}/{v}/sysprep"',
+                f'vmopv1sysprep "{base}/{new_ver}/sysprep"',
+            )
+
+        tested_types: set[str] = set()
+        for m in re.finditer(r'Context\("(\w+)"', content):
+            tested_types.add(m.group(1))
+
+        missing = [t for t in conv_types if t not in tested_types]
+        if missing:
+            new_blocks = self._generate_context_blocks(old_alias, missing)
+            content = content.replace(
+                "\n})\n\nvar _ = Describe(\"Client-side conversion\"",
+                f"{new_blocks}\n}})\n\nvar _ = Describe(\"Client-side conversion\"",
+            )
+
+        content = self._strip_unused_funcs(content)
+
+        self.ops.write_file(dst_test_dir / "conversion_test.go", content)
+
+    @staticmethod
+    def _strip_unused_funcs(content: str) -> str:
+        """Remove package-level unexported functions whose names are not
+        referenced anywhere else in the file (i.e. defined but never called).
+        """
+        func_pat = re.compile(
+            r"\n(func ([a-z]\w*)\b[^\n]*\{.*?\n\})", re.DOTALL
+        )
+        for m in reversed(list(func_pat.finditer(content))):
+            name = m.group(2)
+            rest = content[: m.start(1)] + content[m.end(1) :]
+            if name not in rest:
+                content = rest
+        return content
+
+    def _generate_context_blocks(
+        self, spoke_alias: str, types: list[str]
+    ) -> str:
+        """Generate Ginkgo Context blocks for fuzzy conversion tests."""
+        blocks = []
+        for t in types:
+            blocks.append(
+                f'\n\tContext("{t}", func() {{\n'
+                f"\t\tBeforeEach(func() {{\n"
+                f"\t\t\tinput = fuzztests.FuzzTestFuncInput{{\n"
+                f"\t\t\t\tScheme: scheme,\n"
+                f"\t\t\t\tHub:    &vmopv1.{t}{{}},\n"
+                f"\t\t\t\tSpoke:  &{spoke_alias}.{t}{{}},\n"
+                f"\t\t\t}}\n"
+                f"\t\t}})\n"
+                f'\t\tContext("Spoke-Hub-Spoke", func() {{\n'
+                f'\t\t\tIt("should get fuzzy with it", func() {{\n'
+                f"\t\t\t\tfuzztests.SpokeHubSpoke(input)\n"
+                f"\t\t\t}})\n"
+                f"\t\t}})\n"
+                f'\t\tContext("Hub-Spoke-Hub", func() {{\n'
+                f'\t\t\tIt("should get fuzzy with it", func() {{\n'
+                f"\t\t\t\tfuzztests.HubSpokeHub(input)\n"
+                f"\t\t\t}})\n"
+                f"\t\t}})\n"
+                f"\t}})"
+            )
+        return "\n".join(blocks)
+
+    def _generate_conversion_test(
+        self,
+        old_ver: str,
+        new_ver: str,
+        conv_types: list[str],
+    ) -> str:
+        """Generate a conversion_test.go from scratch when no previous test
+        directory exists to copy from."""
+        old_alias = self.ctx.version_alias(old_ver)
+        base = "github.com/vmware-tanzu/vm-operator/api"
+
+        context_blocks = self._generate_context_blocks(old_alias, conv_types)
+
+        return "\n".join([
+            "// © Broadcom. All Rights Reserved.",
+            '// The term "Broadcom" refers to Broadcom Inc. and/or its '
+            "subsidiaries.",
+            "// SPDX-License-Identifier: Apache-2.0",
+            "",
+            f"package {old_ver}_test",
+            "",
+            "import (",
+            '\t. "github.com/onsi/ginkgo/v2"',
+            '\t. "github.com/onsi/gomega"',
+            "",
+            '\t"k8s.io/apimachinery/pkg/runtime"',
+            "",
+            '\t"github.com/vmware-tanzu/vm-operator/api/test/utilconversion/fuzztests"',
+            f'\t{old_alias} "{base}/{old_ver}"',
+            f'\tvmopv1 "{base}/{new_ver}"',
+            ")",
+            "",
+            'var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {',
+            "",
+            "\tvar (",
+            "\t\tscheme *runtime.Scheme",
+            "\t\tinput  fuzztests.FuzzTestFuncInput",
+            "\t)",
+            "",
+            "\tBeforeEach(func() {",
+            "\t\tscheme = runtime.NewScheme()",
+            f"\t\tExpect({old_alias}.AddToScheme(scheme)).To(Succeed())",
+            "\t\tExpect(vmopv1.AddToScheme(scheme)).To(Succeed())",
+            "\t})",
+            "",
+            "\tAfterEach(func() {",
+            "\t\tinput = fuzztests.FuzzTestFuncInput{}",
+            "\t})",
+            f"{context_blocks}",
+            "})",
+            "",
+            'var _ = Describe("Client-side conversion", func() {',
+            '\tIt("should convert VirtualMachine from current API version '
+            'to latest API version", func() {',
+            "\t\tscheme := runtime.NewScheme()",
+            f"\t\tExpect({old_alias}.AddToScheme(scheme)).To(Succeed())",
+            "\t\tExpect(vmopv1.AddToScheme(scheme)).To(Succeed())",
+            f"\t\tvm1 := &{old_alias}.VirtualMachine{{}}",
+            "\t\tvm2 := &vmopv1.VirtualMachine{}",
+            "\t\tExpect(scheme.Convert(vm1, vm2, nil)).To(Succeed())",
+            "\t})",
+            "})",
+            "",
+        ])
+
+    # -------------------------------------------------------------------------
+    # Step 17: Add new version template constants (pkg/providers/vsphere/constants)
     # -------------------------------------------------------------------------
 
     def _version_alpha_num(self, version: str) -> str | None:
@@ -1361,7 +1726,7 @@ class SchemaMigration:
         self.ops.write_file(constants_go, content.replace(marker, new_block, 1))
 
     # -------------------------------------------------------------------------
-    # Step 17: Demote old hub and add new hub in bootstrap_templatedata.go
+    # Step 18: Demote old hub and add new hub in bootstrap_templatedata.go
     # -------------------------------------------------------------------------
 
     def step_update_bootstrap_templatedata(self) -> None:
@@ -1592,7 +1957,7 @@ class SchemaMigration:
         self.ops.write_file(path, content)
 
     # -------------------------------------------------------------------------
-    # Step 18: Run make generate
+    # Step 19: Run make generate
     # -------------------------------------------------------------------------
 
     def _run_make(self, target: str) -> None:
@@ -1644,7 +2009,7 @@ class SchemaMigration:
         self._run_make("generate")
 
     # -------------------------------------------------------------------------
-    # Step 19: Run make generate-go-conversions
+    # Step 20: Run make generate-go-conversions
     # -------------------------------------------------------------------------
 
     def step_run_make_generate_go_conversions(self) -> None:
@@ -1652,7 +2017,7 @@ class SchemaMigration:
         self._run_make("generate-go-conversions")
 
     # -------------------------------------------------------------------------
-    # Step 20: Run make manager-only
+    # Step 21: Run make manager-only
     # -------------------------------------------------------------------------
 
     def step_run_make_manager_only(self) -> None:
@@ -1660,7 +2025,7 @@ class SchemaMigration:
         self._run_make("manager-only")
 
     # -------------------------------------------------------------------------
-    # Step 21: Run make lint-go-full
+    # Step 22: Run make lint-go-full
     # -------------------------------------------------------------------------
 
     def step_run_make_lint_go_full(self) -> None:
@@ -1668,7 +2033,7 @@ class SchemaMigration:
         self._run_make("lint-go-full")
 
     # -------------------------------------------------------------------------
-    # Step 22: Run make generate-api-docs
+    # Step 23: Run make generate-api-docs
     # -------------------------------------------------------------------------
 
     def step_run_make_generate_api_docs(self) -> None:
@@ -1676,7 +2041,7 @@ class SchemaMigration:
         self._run_make("generate-api-docs")
 
     # -------------------------------------------------------------------------
-    # Step 23: Update documentation
+    # Step 24: Update documentation
     # -------------------------------------------------------------------------
 
     def step_update_docs(self) -> None:

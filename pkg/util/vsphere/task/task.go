@@ -54,32 +54,3 @@ func ErrorMessageFromTaskInfo(taskInfo *vimtypes.TaskInfo) string {
 
 	return strings.Join(faultMsgs, "; ")
 }
-
-// FaultCauseChain walks the FaultCause linked list starting from lmf and
-// returns all localized messages joined with " -> ", from the root fault to
-// the deepest cause. Returns an empty string if lmf is nil.
-func FaultCauseChain(lmf *vimtypes.LocalizedMethodFault) string {
-	if lmf == nil {
-		return ""
-	}
-	var nodes []string
-	for lmf != nil {
-		var parts []string
-		mf := lmf.Fault.GetMethodFault()
-		if mf != nil {
-			for _, fm := range mf.FaultMessage {
-				if fm.Message != "" {
-					parts = append(parts, fm.Message)
-				}
-			}
-		}
-		if len(parts) > 0 {
-			nodes = append(nodes, strings.Join(parts, ": "))
-		}
-		if mf == nil || mf.FaultCause == nil {
-			break
-		}
-		lmf = mf.FaultCause
-	}
-	return strings.Join(nodes, " -> ")
-}

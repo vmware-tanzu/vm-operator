@@ -342,7 +342,7 @@ func doAndWaitOnHardPowerOp(
 		if ti != nil {
 			log.Error(err, "Change power state task failed", "taskInfo", ti)
 		}
-		return 0, fmt.Errorf("hard set power state to %s failed %s", desiredPowerState, vspheretask.FaultCauseChain(ti.Error))
+		return 0, fmt.Errorf("hard set power state to %s failed  %s ", desiredPowerState, vspheretask.ErrorMessageFromTaskInfo(ti))
 	}
 
 	switch desiredPowerState {

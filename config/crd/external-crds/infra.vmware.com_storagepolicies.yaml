@@ -103,6 +103,11 @@ spec:
                 items:
                   type: string
                 type: array
+              volumeAttributesClass:
+                description: |-
+                  VolumeAttributesClass is the observed name of VolumeAttributesClass object that
+                  reference this storage policy.
+                type: string
             type: object
         type: object
     served: true

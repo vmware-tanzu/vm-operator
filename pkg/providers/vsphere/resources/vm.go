@@ -8,11 +8,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
@@ -26,16 +24,12 @@ import (
 type VirtualMachine struct {
 	Name             string
 	vcVirtualMachine *object.VirtualMachine
-	logger           logr.Logger
 }
-
-var log = logf.Log.WithName("vmresource")
 
 func NewVMFromObject(objVM *object.VirtualMachine) *VirtualMachine {
 	return &VirtualMachine{
 		Name:             objVM.Name(),
 		vcVirtualMachine: objVM,
-		logger:           log.WithValues("name", objVM.Name()),
 	}
 }
 
@@ -44,7 +38,7 @@ func (vm *VirtualMachine) VcVM() *object.VirtualMachine {
 }
 
 func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *vimtypes.VirtualMachineConfigSpec) error {
-	vm.logger.V(5).Info("Create VM")
+	pkglog.FromContextOrDefault(ctx).V(5).Info("Create VM")
 
 	if vm.vcVirtualMachine != nil {
 		return fmt.Errorf("failed to create VM %q because the VM object is already set", vm.Name)
@@ -65,7 +59,7 @@ func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, poo
 }
 
 func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, cloneSpec *vimtypes.VirtualMachineCloneSpec) (*vimtypes.ManagedObjectReference, error) {
-	vm.logger.V(5).Info("Clone VM")
+	pkglog.FromContextOrDefault(ctx).V(5).Info("Clone VM")
 
 	cloneTask, err := vm.vcVirtualMachine.Clone(ctx, folder, cloneSpec.Config.Name, *cloneSpec)
 	if err != nil {
@@ -107,46 +101,11 @@ func (vm *VirtualMachine) GetProperties(ctx context.Context, properties []string
 	var o mo.VirtualMachine
 	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), properties, &o)
 	if err != nil {
-		vm.logger.Error(err, "Error getting VM properties")
+		pkglog.FromContextOrDefault(ctx).Error(err, "Error getting VM properties")
 		return nil, err
 	}
 
 	return &o, nil
-}
-
-func (vm *VirtualMachine) ReferenceValue() string {
-	vm.logger.V(5).Info("Get ReferenceValue")
-	return vm.vcVirtualMachine.Reference().Value
-}
-
-func (vm *VirtualMachine) MoRef() vimtypes.ManagedObjectReference {
-	vm.logger.V(5).Info("Get MoRef")
-	return vm.vcVirtualMachine.Reference()
-}
-
-func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
-	// Notes from Alkesh Shah regarding MoIDs in VC as of 7.0
-	//
-	// MoRef IDs are unique within the scope of a single VC. Since Clusters are entities in VCs, the MoRef IDs will be unique across clusters
-	//
-	// Identity in VC is derived from a sequence. This ID is used in generating the MoId (or MoRef ID) for the entity in VC. Sequence is monotonically
-	// increasing and so during regular operation there are no dupes
-	//
-	// Backup-Restore: We now make sure that our sequence does not go back in time when restoring from a backup
-	// ( ) So this
-	// ensures that after restore we get new MoIds which are never used before… (we advance the sequence counter based on time)
-	//
-	// Discovery of VMs: We only use moids from the VM store during restore from a backup. In the unlikely event
-	// that there are two VMs which are presenting the same MoId, we will regenerate a new MoId based on the current
-	// sequence. Keep in mind, Ideally the unlikely scenario should not occur as we attempt to tamper proof the MoId
-	// stored in the VM store ( )
-	// so two VMs having the same MoId should not happen because they cannot have the same VMX path and we use VMX path
-	// for ensuring this tamper proof behavior.
-	//
-	// Removing from VC and Re-adding the VM to same VC: VM will be given a new MoId (even if the VM is added using
-	// RegisterVM operation from VC)
-	// Basically, lifetime of the identity is tied to VC’s knowledge of it’s existence in it’s inventory
-	return vm.ReferenceValue(), nil
 }
 
 var ErrSetPowerState = pkgerr.NoRequeueNoErr("updated power state")
@@ -190,10 +149,11 @@ func (vm *VirtualMachine) SetPowerState(
 
 // GetVirtualDevices returns the VMs VirtualDeviceList.
 func (vm *VirtualMachine) GetVirtualDevices(ctx context.Context) (object.VirtualDeviceList, error) {
-	vm.logger.V(5).Info("GetVirtualDevices")
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("GetVirtualDevices")
 	deviceList, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {
-		vm.logger.Error(err, "Failed to get devices for VM")
+		logger.Error(err, "Failed to get devices for VM")
 		return nil, err
 	}
 
@@ -202,10 +162,11 @@ func (vm *VirtualMachine) GetVirtualDevices(ctx context.Context) (object.Virtual
 
 // GetVirtualDisks returns the list of VMs vmdks.
 func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDeviceList, error) {
-	vm.logger.V(5).Info("GetVirtualDisks")
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("GetVirtualDisks")
 	deviceList, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {
-		vm.logger.Error(err, "Failed to get devices for VM")
+		logger.Error(err, "Failed to get devices for VM")
 		return nil, err
 	}
 
@@ -213,10 +174,11 @@ func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDe
 }
 
 func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.VirtualDeviceList, error) {
-	vm.logger.V(4).Info("GetNetworkDevices")
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(4).Info("GetNetworkDevices")
 	devices, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {
-		vm.logger.Error(err, "Failed to get devices for VM")
+		logger.Error(err, "Failed to get devices for VM")
 		return nil, err
 	}
 
@@ -224,13 +186,14 @@ func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.Virtual
 }
 
 func (vm *VirtualMachine) Customize(ctx context.Context, spec vimtypes.CustomizationSpec) error {
-	vm.logger.V(5).Info("Customize", "spec", spec)
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("Customize", "spec", spec)
 
 	ctxop.MarkUpdate(ctx)
 
 	customizeTask, err := vm.vcVirtualMachine.Customize(ctx, spec)
 	if err != nil {
-		vm.logger.Error(err, "Failed to customize VM")
+		logger.Error(err, "Failed to customize VM")
 		return err
 	}
 

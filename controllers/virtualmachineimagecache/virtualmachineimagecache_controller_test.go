@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
@@ -93,8 +94,10 @@ var _ = Describe(
 			itemIDOVF      string
 			itemVersionOVF string
 
-			itemIDVM      string
-			itemVersionVM string
+			itemIDVM            string
+			itemVersionVM       string
+			itemDiskFileNameVM  string
+			itemNVRAMFileNameVM string
 
 			faker fakeClient
 		)
@@ -173,9 +176,10 @@ var _ = Describe(
 
 			for i := range status.Files {
 				file := &status.Files[i]
-				if file.ID == vmdkFilePath {
+				switch file.ID {
+				case vmdkFilePath:
 					vmdkFile = file
-				} else if file.ID == nvramFilePath {
+				case nvramFilePath:
 					nvramFile = file
 				}
 			}
@@ -183,10 +187,14 @@ var _ = Describe(
 			g.ExpectWithOffset(1, vmdkFile).ToNot(BeNil())
 			g.ExpectWithOffset(1, vmdkFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
 			g.ExpectWithOffset(1, vmdkFile.DiskType).To(Equal(vmopv1.VolumeTypeClassic))
+			g.ExpectWithOffset(1, vmdkFile.ID).ToNot(BeEmpty())
+			g.ExpectWithOffset(1, vmdkFile.Name).ToNot(BeEmpty())
 
 			g.ExpectWithOffset(1, nvramFile).ToNot(BeNil())
 			g.ExpectWithOffset(1, nvramFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
 			g.ExpectWithOffset(1, nvramFile.DiskType).To(BeEmpty())
+			g.ExpectWithOffset(1, nvramFile.ID).ToNot(BeEmpty())
+			g.ExpectWithOffset(1, nvramFile.Name).ToNot(BeEmpty())
 		}
 
 		assertLocationVM := func(
@@ -234,9 +242,10 @@ var _ = Describe(
 
 			for i := range status.Files {
 				file := &status.Files[i]
-				if file.ID == vmdkFilePath {
+				switch file.ID {
+				case vmdkFilePath:
 					vmdkFile = file
-				} else if file.ID == nvramFilePath {
+				case nvramFilePath:
 					nvramFile = file
 				}
 			}
@@ -244,10 +253,15 @@ var _ = Describe(
 			g.ExpectWithOffset(1, vmdkFile).ToNot(BeNil())
 			g.ExpectWithOffset(1, vmdkFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
 			g.ExpectWithOffset(1, vmdkFile.DiskType).To(Equal(vmopv1.VolumeTypeClassic))
+			g.ExpectWithOffset(1, vmdkFile.ID).ToNot(BeEmpty())
+			g.ExpectWithOffset(1, vmdkFile.Name).To(Equal(itemDiskFileNameVM))
 
 			g.ExpectWithOffset(1, nvramFile).ToNot(BeNil())
 			g.ExpectWithOffset(1, nvramFile.Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
 			g.ExpectWithOffset(1, nvramFile.DiskType).To(BeEmpty())
+			g.ExpectWithOffset(1, nvramFile.Name).ToNot(BeEmpty())
+			g.ExpectWithOffset(1, nvramFile.ID).ToNot(BeEmpty())
+			g.ExpectWithOffset(1, nvramFile.Name).To(Equal(itemNVRAMFileNameVM))
 		}
 
 		Context("Ordered", Ordered, func() {
@@ -302,13 +316,31 @@ var _ = Describe(
 				// Get the info for the VM-backed image.
 				vms := vcSimCtx.SimulatorContext().Map.All(
 					string(vimtypes.ManagedObjectTypeVirtualMachine))
-				for i := range vms {
-					if vms[i].Entity().Name == vmName {
-						itemIDVM = vms[i].Reference().Value
+				for _, obj := range vms {
+					vm := obj.(*simulator.VirtualMachine)
+					if vm.Name == vmName {
+						itemIDVM = vm.Reference().Value
+
+						devices := object.VirtualDeviceList(vm.Config.Hardware.Device)
+						disks := devices.SelectByType(&vimtypes.VirtualDisk{})
+						Expect(disks).To(HaveLen(1))
+						b, ok := disks[0].GetVirtualDevice().Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+						Expect(ok).To(BeTrue())
+						itemDiskFileNameVM = b.FileName
+
+						for _, f := range vm.LayoutEx.File {
+							if strings.HasSuffix(f.Name, ".nvram") {
+								itemNVRAMFileNameVM = f.Name
+								break
+							}
+						}
+
 						break
 					}
 				}
 				Expect(itemIDVM).ToNot(BeEmpty())
+				Expect(itemDiskFileNameVM).ToNot(BeEmpty())
+				Expect(itemNVRAMFileNameVM).ToNot(BeEmpty())
 				itemVersionVM = ""
 
 				// Create one namespace for all the ordered tests.

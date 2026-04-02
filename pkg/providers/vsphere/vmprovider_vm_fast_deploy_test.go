@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -50,6 +51,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
+//nolint:gocyclo
 func vmFastDeployTests() {
 
 	type diskResult struct {
@@ -95,6 +97,8 @@ func vmFastDeployTests() {
 		libItemName    string
 		libItemYAML    string
 		libItemVersion string
+
+		expectedDiskNamesFromCache []string
 	)
 
 	BeforeEach(func() {
@@ -170,9 +174,22 @@ func vmFastDeployTests() {
 			Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
 		}
 
+		h := xxhash.New()
+		_, _ = h.Write([]byte(strconv.Itoa(int(time.Now().UnixMicro()))))
+		data := h.Sum(nil)
+		libItemName = fmt.Sprintf(
+			"test-image-%x",
+			data[len(data)-7:])
 	})
 
 	JustAfterEach(func() {
+		Expect(client.IgnoreNotFound(ctx.Client.Delete(ctx, &vmicm))).To(Succeed())
+		Expect(ctx.Client.Delete(ctx, &vmic)).To(Succeed())
+
+		if localLibItemID != "" {
+			Expect(libMgr.DeleteLibraryItem(ctx, &library.Item{ID: localLibItemID})).To(Succeed())
+		}
+
 		vmi = nil
 		vmic = vmopv1.VirtualMachineImageCache{}
 		vmicm = corev1.ConfigMap{}
@@ -188,6 +205,8 @@ func vmFastDeployTests() {
 	})
 
 	AfterEach(func() {
+		expectedDiskNamesFromCache = nil
+
 		if vm != nil &&
 			!pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
 
@@ -224,16 +243,391 @@ func vmFastDeployTests() {
 		ExpectWithOffset(1, e.DatastoreID).To(Equal(dsID))
 	}
 
-	DescribeTableSubtree("images",
+	DescribeTableSubtree("vm",
+		func(
+			vmName string,
+			expectedDisks map[string]diskResult,
+			expectNvram bool) {
+
+			var (
+				simVM *simulator.VirtualMachine
+			)
+
+			BeforeEach(func() {
+				for _, v := range expectedDisks {
+					if v.fromCache {
+						expectedDiskNamesFromCache = append(
+							expectedDiskNamesFromCache, v.cachedFileName)
+					}
+				}
+			})
+
+			AfterEach(func() {
+				simVM = nil
+			})
+
+			JustBeforeEach(func() {
+				By("Finding simulated vm", func() {
+					vms := ctx.SimulatorContext().Map.All(
+						string(vimtypes.ManagedObjectTypeVirtualMachine))
+					for _, obj := range vms {
+						vm := obj.(*simulator.VirtualMachine)
+						if vm.Name == vmName {
+							simVM = vm
+							break
+						}
+					}
+					Expect(simVM).ToNot(BeNil())
+					libItemID = simVM.Reference().Value
+
+					devices := object.VirtualDeviceList(simVM.Config.Hardware.Device)
+					disks := devices.SelectByType(&vimtypes.VirtualDisk{})
+					Expect(disks).To(HaveLen(1))
+					b, ok := disks[0].GetVirtualDevice().Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+					Expect(ok).To(BeTrue())
+					vmdkFileName := b.FileName
+
+					var nvramFileName string
+					for _, f := range simVM.LayoutEx.File {
+						if strings.HasSuffix(f.Name, ".nvram") {
+							nvramFileName = f.Name
+							break
+						}
+					}
+
+					Expect(vmdkFileName).ToNot(BeEmpty())
+					Expect(nvramFileName).ToNot(BeEmpty())
+
+					cachedDiskPaths = append(cachedDiskPaths, vmdkFileName)
+				})
+
+				By("Creating vmi", func() {
+					vmi = builder.DummyClusterVirtualMachineImage(libItemName)
+					vmi.Spec.ProviderRef = &vmopv1common.LocalObjectRef{
+						Kind: "ClusterContentLibraryItem",
+					}
+					Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
+					vmi.Status.ProviderItemID = libItemID
+					vmi.Status.ProviderContentVersion = libItemVersion
+					vmi.Status.Type = "VM"
+					for i := range cachedDiskPaths {
+						vmi.Status.Disks = append(
+							vmi.Status.Disks,
+							vmopv1.VirtualMachineImageDiskInfo{
+								Name:      cachedDiskPaths[i],
+								Limit:     ptr.To(resource.MustParse("10Mi")),
+								Requested: ptr.To(resource.MustParse("10Mi")),
+							})
+					}
+					conditions.MarkTrue(vmi, vmopv1.ReadyConditionType)
+					Expect(ctx.Client.Status().Update(ctx, vmi)).To(Succeed())
+
+					vm.Spec.ImageName = vmi.Name
+					vm.Spec.Image.Name = vmi.Name
+					vm.Spec.Image.Kind = cvmiKind
+				})
+
+				By("Creating vmic", func() {
+					vmicName := pkgutil.VMIName(libItemID)
+					vmic = vmopv1.VirtualMachineImageCache{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+							Name:      vmicName,
+						},
+						Spec: vmopv1.VirtualMachineImageCacheSpec{
+							ProviderID: libItemID,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+				})
+			})
+
+			createVM := func() error {
+				var err error
+				vcVM, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				if err != nil {
+					return err
+				}
+
+				Expect(vcVM.Properties(
+					ctx,
+					vcVM.Reference(),
+					[]string{
+						"config.extraConfig",
+						"config.vAppConfig",
+						"config.hardware.device",
+					},
+					&moVM)).To(Succeed())
+
+				extraConfig = object.OptionValueList(moVM.Config.ExtraConfig)
+
+				ecKeyFuVal, _ := extraConfig.GetString("fu")
+				Expect(ecKeyFuVal).To(Equal("bar"))
+
+				By("Assert expected number of disks", func() {
+					devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+					disks := devices.SelectByType((*vimtypes.VirtualDisk)(nil))
+					Expect(disks).To(HaveLen(len(expectedDisks)))
+				})
+
+				return nil
+			}
+
+			assertCapacity := func() {
+				devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+				disks := devices.SelectByType((*vimtypes.VirtualDisk)(nil))
+
+				for _, bd := range disks {
+					d := bd.(*vimtypes.VirtualDisk)
+					bfb := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo)
+					fb := bfb.GetVirtualDeviceFileBackingInfo()
+					baseFileName := path.Base(fb.FileName)
+					if edr, ok := expectedDisks[baseFileName]; ok {
+						Expect(d.CapacityInBytes).To(Equal(edr.capacityInBytes))
+					}
+				}
+			}
+
+			assertFileNames := func() {
+				devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+				disks := devices.SelectByType((*vimtypes.VirtualDisk)(nil))
+				actualDiskNames := map[string]struct{}{}
+
+				for _, bd := range disks {
+					d := bd.(*vimtypes.VirtualDisk)
+					bfb := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo)
+					fb := bfb.GetVirtualDeviceFileBackingInfo()
+					baseFileName := path.Base(fb.FileName)
+					actualDiskNames[baseFileName] = struct{}{}
+				}
+
+				for expectedDiskName := range expectedDisks {
+					Expect(actualDiskNames).To(HaveKey(expectedDiskName))
+				}
+			}
+
+			assertKeptDisks := func() {
+				v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+				Expect(ok).To(BeTrue())
+				Expect(strings.Split(v, ",")).To(ConsistOf(expectedDiskNamesFromCache))
+			}
+
+			assertNoKeptDisks := func() {
+				v, ok := extraConfig.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+				Expect(ok).To(BeFalse())
+				Expect(v).To(BeEmpty())
+			}
+
+			When("hardware is not ready", func() {
+				It("should fail", func() {
+					assertVMICNotReady(
+						createVM(),
+						"hardware not ready",
+						vmic.Name,
+						"",
+						"")
+				})
+			})
+
+			When("hardware is ready", func() {
+
+				JustBeforeEach(func() {
+					vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+						OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+							ConfigMapName:   vmic.Name,
+							ProviderVersion: libItemVersion,
+						},
+						Conditions: []metav1.Condition{
+							{
+								Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+								Status: metav1.ConditionTrue,
+							},
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+				})
+
+				When("files are not ready", func() {
+					It("should fail", func() {
+						assertVMICNotReady(
+							createVM(),
+							"cached files not ready",
+							vmic.Name,
+							ctx.Datacenter.Reference().Value,
+							ctx.Datastore.Reference().Value)
+					})
+				})
+
+				When("files are ready", func() {
+
+					BeforeEach(func() {
+						// Ensure the VM has a UID so the VM path is stable.
+						vm.UID = types.UID("123")
+
+						configSpec := vimtypes.VirtualMachineConfigSpec{
+							ExtraConfig: []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
+									Key:   "fu",
+									Value: "bar",
+								},
+							},
+						}
+
+						var w bytes.Buffer
+						enc := vimtypes.NewJSONEncoder(&w)
+						Expect(enc.Encode(configSpec)).To(Succeed())
+
+						vmClass.Spec.ConfigSpec = w.Bytes()
+					})
+
+					JustBeforeEach(func() {
+						conditions.MarkTrue(
+							&vmic,
+							vmopv1.VirtualMachineImageCacheConditionFilesReady)
+						cachedFiles := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDiskPaths))
+						for i := range cachedDiskPaths {
+							cachedFiles[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+								ID:       cachedDiskPaths[i],
+								Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+								DiskType: vmopv1.VolumeTypeClassic,
+								Name:     cachedDiskPaths[i],
+							}
+						}
+
+						vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+							{
+								DatacenterID: ctx.Datacenter.Reference().Value,
+								DatastoreID:  ctx.Datastore.Reference().Value,
+								ProfileID:    ctx.StorageProfileID,
+								Files:        cachedFiles,
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.ReadyConditionType,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							},
+							{
+								DatacenterID: ctx.Datacenter.Reference().Value,
+								DatastoreID:  ctx.Datastore.Reference().Value,
+								ProfileID:    ctx.EncryptedStorageProfileID,
+								Files:        cachedFiles,
+								Conditions: []metav1.Condition{
+									{
+										Type:   vmopv1.ReadyConditionType,
+										Status: metav1.ConditionTrue,
+									},
+								},
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+					})
+
+					When("global default is direct mode", func() {
+						JustBeforeEach(func() {
+							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+								config.FastDeployMode = pkgconst.FastDeployModeDirect
+							})
+						})
+
+						It("should succeed with direct mode", func() {
+							Expect(createVM()).To(Succeed())
+							By("Assert no kept disks", assertNoKeptDisks)
+							By("Assert disk names", assertFileNames)
+							By("Assert capacity", assertCapacity)
+						})
+
+						When("vm specifies linked mode via annotation", func() {
+							BeforeEach(func() {
+								vm.SetAnnotation(
+									pkgconst.FastDeployAnnotationKey,
+									pkgconst.FastDeployModeLinked)
+							})
+
+							It("should succeed with linked mode", func() {
+								Expect(createVM()).To(Succeed())
+								By("Assert kept disks", assertKeptDisks)
+								By("Assert disk names", assertFileNames)
+							})
+						})
+					})
+
+					When("global default is linked mode", func() {
+						JustBeforeEach(func() {
+							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+								config.FastDeployMode = pkgconst.FastDeployModeLinked
+							})
+						})
+
+						It("should succeed with linked mode", func() {
+							Expect(createVM()).To(Succeed())
+							By("Assert kept disks", assertKeptDisks)
+							By("Assert disk names", assertFileNames)
+						})
+
+						When("disk promotion is disabled", func() {
+							JustBeforeEach(func() {
+								vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+							})
+							It("should succeed with linked mode", func() {
+								Expect(createVM()).To(Succeed())
+								By("Assert kept disks", assertKeptDisks)
+								By("Assert disk names", assertFileNames)
+							})
+						})
+
+						When("vm uses encrypted storage class", func() {
+							BeforeEach(func() {
+								useEncryptedStorageClass = true
+							})
+
+							It("should succeed by falling back to direct mode", func() {
+								Expect(createVM()).To(Succeed())
+								By("Assert no kept disks", assertNoKeptDisks)
+								By("Assert disk names", assertFileNames)
+								By("Assert capacity", assertCapacity)
+							})
+						})
+
+						When("vm specifies direct mode via annotation", func() {
+							BeforeEach(func() {
+								vm.SetAnnotation(
+									pkgconst.FastDeployAnnotationKey,
+									pkgconst.FastDeployModeDirect)
+							})
+
+							It("should succeed with direct mode", func() {
+								Expect(createVM()).To(Succeed())
+								By("Assert no kept disks", assertNoKeptDisks)
+								By("Assert disk names", assertFileNames)
+								By("Assert capacity", assertCapacity)
+							})
+						})
+					})
+				})
+			})
+		},
+
+		Entry(
+			"vm-1",
+			"DC0_C0_RP0_VM1",
+			map[string]diskResult{
+				"disk-0.vmdk": {
+					cachedFileName:  "disk1.vmdk",
+					fromCache:       true,
+					capacityInBytes: 10 * oneGiB,
+				},
+			},
+			true,
+		),
+	)
+
+	DescribeTableSubtree("ovf",
 		func(
 			ovfPath string,
 			cachedDiskNames []string,
 			expectedDisks map[string]diskResult,
 			expectNvram bool) {
-
-			var (
-				expectedDiskNamesFromCache []string
-			)
 
 			BeforeEach(func() {
 				shuffleSlice(cachedDiskNames)
@@ -244,10 +638,6 @@ func vmFastDeployTests() {
 							expectedDiskNamesFromCache, v.cachedFileName)
 					}
 				}
-			})
-
-			AfterEach(func() {
-				expectedDiskNamesFromCache = nil
 			})
 
 			JustBeforeEach(func() {
@@ -264,13 +654,6 @@ func vmFastDeployTests() {
 						ovaAbsPath,
 						".ova",
 						".yaml", 1)
-
-					h := xxhash.New()
-					_, _ = h.Write([]byte(strconv.Itoa(int(time.Now().UnixMicro()))))
-					data := h.Sum(nil)
-					libItemName = fmt.Sprintf(
-						"test-image-%x",
-						data[len(data)-7:])
 
 					localLibItem := library.Item{
 						Name:      libItemName,
@@ -397,6 +780,9 @@ func vmFastDeployTests() {
 							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
 							Name:      vmicName,
 						},
+						Spec: vmopv1.VirtualMachineImageCacheSpec{
+							ProviderID: libItemID,
+						},
 					}
 					Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
 
@@ -411,12 +797,6 @@ func vmFastDeployTests() {
 					}
 					Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
 				})
-			})
-
-			JustAfterEach(func() {
-				Expect(ctx.Client.Delete(ctx, &vmicm)).To(Succeed())
-				Expect(ctx.Client.Delete(ctx, &vmic)).To(Succeed())
-				Expect(libMgr.DeleteLibraryItem(ctx, &library.Item{ID: localLibItemID})).To(Succeed())
 			})
 
 			createVM := func() error {

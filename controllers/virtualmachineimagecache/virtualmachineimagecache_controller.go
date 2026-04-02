@@ -722,17 +722,10 @@ func getSourceFilePathsForVM(
 				sf.VDiskID = disk.VDiskId.Id
 			}
 
-			switch tb := disk.Backing.(type) {
-			case *vimtypes.VirtualDiskFlatVer1BackingInfo:
-				sf.Path = tb.FileName
-			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-				sf.Path = tb.FileName
-			case *vimtypes.VirtualDiskSeSparseBackingInfo:
-				sf.Path = tb.FileName
-			case *vimtypes.VirtualDiskSparseVer1BackingInfo:
-				sf.Path = tb.FileName
-			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-				sf.Path = tb.FileName
+			if bfb, ok := disk.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo); ok {
+				fb := bfb.GetVirtualDeviceFileBackingInfo()
+				sf.Path = fb.FileName
+				sf.OriginalName = fb.FileName
 			}
 
 			if sf.Path != "" {
@@ -746,7 +739,8 @@ func getSourceFilePathsForVM(
 		f := moVM.LayoutEx.File[i]
 		if strings.EqualFold(path.Ext(f.Name), ".nvram") {
 			srcFiles = append(srcFiles, clsutil.SourceFile{
-				Path: f.Name,
+				Path:         f.Name,
+				OriginalName: f.Name,
 			})
 		}
 	}

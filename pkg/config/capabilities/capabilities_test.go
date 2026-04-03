@@ -177,6 +177,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyStoragePolicyMutability: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVlanSubinterface: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -198,6 +201,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VSpherePolicies = true
 							config.Features.VMAffinityDuringExecution = true
 							config.Features.StoragePolicyMutability = true
+							config.Features.VMVlanSubinterface = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -247,6 +251,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
 					})
 				})
 
@@ -298,6 +305,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
 					})
 				})
 			})
@@ -358,6 +368,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyStoragePolicyMutability: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVlanSubinterface: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -410,6 +423,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
 					})
+					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
+					})
 				})
 
 				When("the capabilities are different", func() {
@@ -424,6 +440,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMSharedDisks = true
 							config.Features.GuestCustomizationVCDParity = true
 							config.Features.StoragePolicyMutability = true
+							config.Features.VMVlanSubinterface = true
 						})
 					})
 					Specify("capabilities changed", func() {
@@ -473,6 +490,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
 					})
 				})
 			})
@@ -781,6 +801,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVlanSubinterface, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVlanSubinterface] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VMVlanSubinterface=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -842,6 +875,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyStoragePolicyMutability: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVlanSubinterface: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -870,6 +906,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VSpherePolicies = true
 					config.Features.VMAffinityDuringExecution = true
 					config.Features.StoragePolicyMutability = true
+					config.Features.VMVlanSubinterface = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -921,6 +958,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -939,11 +979,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VSpherePolicies = false
 					config.Features.VMAffinityDuringExecution = false
 					config.Features.StoragePolicyMutability = false
+					config.Features.VMVlanSubinterface = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -989,6 +1030,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
 			})
 		})
 	})

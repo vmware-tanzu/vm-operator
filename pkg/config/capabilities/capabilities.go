@@ -101,6 +101,10 @@ const (
 	// defined in the Supervisor capabilities CRD for the VM Service's support
 	// for mutability of Storage Policy via Volume Attributes Class (VAC).
 	CapabilityKeyStoragePolicyMutability = "supports_VM_PVC_storage_policy_mutability"
+
+	// CapabilityKeyVlanSubinterface is the name of capability key defined in the
+	// Supervisor capabilities CRD for the VM service supports VLAN Sub-Interfaces.
+	CapabilityKeyVlanSubinterface = "supports_VM_service_vlan_subinterface"
 )
 
 var (
@@ -265,6 +269,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyStoragePolicyMutability:
 			fs.StoragePolicyMutability = capStatus.Activated
+		case CapabilityKeyVlanSubinterface:
+			fs.VMVlanSubinterface = capStatus.Activated
 		}
 
 	}

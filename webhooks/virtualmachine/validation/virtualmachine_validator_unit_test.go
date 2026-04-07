@@ -2855,9 +2855,42 @@ func unitTestsValidateCreate() {
 				},
 			),
 
+			Entry("Feature Gate inactive",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+								{
+									Name: "eth1",
+								},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{
+									Name: "vlan100a",
+									ID:   100,
+									Link: "eth1",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.vlans: Forbidden: the VLAN Sub Interface feature is not enabled`,
+					),
+				},
+			),
+
 			Entry("allow valid VLANs parameter",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}
@@ -2899,6 +2932,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow VLANs without CloudInit bootstrap",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
 						}
@@ -2926,6 +2962,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow VLANs without any bootstrap",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
@@ -2950,6 +2989,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow VLAN with invalid link reference",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}
@@ -2977,6 +3019,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow VLAN with empty link",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}
@@ -3004,6 +3049,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow duplicate VLAN IDs on the same parent link",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}
@@ -3039,6 +3087,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow VLAN name conflicting with interface name",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}
@@ -3069,6 +3120,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow VLAN name conflicting with interface guestDeviceName",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}

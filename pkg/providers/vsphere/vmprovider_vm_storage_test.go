@@ -134,12 +134,22 @@ func vmStorageTests() {
 			testConfig.WithoutStorageClass = true
 		})
 
-		It("Fails to create VM", func() {
+		It("Creates VM", func() {
 			Expect(vm.Spec.StorageClass).To(BeEmpty())
 
-			_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-			Expect(err).To(HaveOccurred())
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
 
+			var o mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+			By("has expected datastore", func() {
+				datastore, err := ctx.Finder.DefaultDatastore(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(o.Datastore).To(HaveLen(1))
+				Expect(o.Datastore[0]).To(Equal(datastore.Reference()))
+			})
 		})
 	})
 

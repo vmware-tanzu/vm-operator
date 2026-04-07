@@ -2296,12 +2296,9 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		return err
 	}
 
-	// The storage profile ID can be obtained from the StorageClass or VolumeAttributesClass (VAC) object.
-	storageProfileID, err := kubeutil.GetStoragePolicyID(vmCtx, vs.k8sClient, *vmCtx.VM)
-	if err != nil {
-		return err
-	}
-	isEnc, err := kubeutil.IsEncryptedStorageProfile(vmCtx, vs.k8sClient, storageProfileID)
+	storageProfileID := vmStorage.StorageClassToPolicyID[vmStorageClass]
+	isEnc, _, err := kubeutil.IsEncryptedStorageClass(
+		vmCtx, vs.k8sClient, vmCtx.VM.Spec.StorageClass)
 	if err != nil {
 		return err
 	}

@@ -291,30 +291,17 @@ func IsEncryptedStorageProfile(
 	k8sClient ctrlclient.Client,
 	profileID string) (bool, error) {
 
-	var obj storagev1.StorageClassList
-	if err := k8sClient.List(ctx, &obj); err != nil {
+	var obj infrav1.StoragePolicy
+	key := ctrlclient.ObjectKey{
+		Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+		Name:      GetStoragePolicyObjectName(profileID),
+	}
+
+	if err := k8sClient.Get(ctx, key, &obj); err != nil {
 		return false, err
 	}
+	return obj.Status.Encrypted, nil
 
-	for i := range obj.Items {
-		if pid, _ := GetStoragePolicyIDFromStorageClass(obj.Items[i]); pid == profileID {
-			var (
-				obj infrav1.StoragePolicy
-				key = ctrlclient.ObjectKey{
-					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-					Name:      GetStoragePolicyObjectName(pid),
-				}
-			)
-			if key.Name != "" {
-				if err := k8sClient.Get(ctx, key, &obj); err != nil {
-					return false, ctrlclient.IgnoreNotFound(err)
-				}
-				return obj.Status.Encrypted, nil
-			}
-		}
-	}
-
-	return false, nil
 }
 
 // GetStoragePolicyObjectName returns the expected name of a StoragePolicy

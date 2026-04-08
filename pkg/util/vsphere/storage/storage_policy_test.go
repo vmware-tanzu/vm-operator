@@ -291,6 +291,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -354,7 +357,7 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 				})
 			})
 
-			When("The profileID references an existing 512n policy, the storage class objects do not exist but the associated VAC object does", func() {
+			When("The profileID references an existing 512n policy, the storage class objects do not exist but the associated VAC object does but capability is not enabled", func() {
 				BeforeEach(func() {
 					profileID = profileMap.namesToID["sector-format-512"]
 					withObjs = append(withObjs,
@@ -364,6 +367,38 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 							},
 						},
 					)
+				})
+				JustBeforeEach(func() {
+					Expect(profileID).ToNot(BeEmpty())
+				})
+				It("should return the policy status", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(status).ToNot(BeZero())
+					Expect(status.StorageClasses).To(HaveLen(0))
+					Expect(status.VolumeAttributesClass).To(BeEmpty())
+					Expect(status.Datastores).To(HaveLen(1))
+					Expect(status.Datastores[0].ID.ObjectID).To(Equal(datastore1Ref.Value))
+					Expect(status.Datastores[0].ID.ServerID).To(Equal(datastore1Ref.ServerGUID))
+					Expect(status.Datastores[0].Type).To(Equal(datastore1K8sType))
+					Expect(status.Encrypted).To(BeFalse())
+					Expect(status.DiskFormat).To(Equal(infrav1.DiskFormat512n))
+					Expect(status.DiskProvisioningMode).To(BeEmpty())
+				})
+			})
+
+			When("The profileID references an existing 512n policy, the storage class objects do not exist but the associated VAC object does and capabililty is enabled", func() {
+				BeforeEach(func() {
+					profileID = profileMap.namesToID["sector-format-512"]
+					withObjs = append(withObjs,
+						&storagev1.VolumeAttributesClass{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sector-format-512",
+							},
+						},
+					)
+					ctx = pkgcfg.WithConfig(pkgcfg.Config{
+						Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+					})
 				})
 				JustBeforeEach(func() {
 					Expect(profileID).ToNot(BeEmpty())
@@ -428,6 +463,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -482,6 +520,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -537,6 +578,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -592,6 +636,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -651,6 +698,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -710,6 +760,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -794,6 +847,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 								},
 							},
 						)
+						ctx = pkgcfg.WithConfig(pkgcfg.Config{
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+						})
 					})
 					It("should return the policy status", func() {
 						Expect(err).ToNot(HaveOccurred())

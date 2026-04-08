@@ -1328,10 +1328,13 @@ func isEncryptedProfile(ctx context.Context,
 	spec vimtypes.BaseVirtualMachineProfileSpec) (bool, error) {
 
 	if profile, ok := spec.(*vimtypes.VirtualMachineDefinedProfileSpec); ok {
-		return kubeutil.IsEncryptedStorageProfile(
-			ctx,
+
+		isEnc, err := kubeutil.IsEncryptedStorageProfile(ctx,
 			args.k8sClient,
 			profile.ProfileId)
+
+		// TODO: Verify if we should propagate the error when the storage profile is not found
+		return isEnc, ctrlclient.IgnoreNotFound(err)
 	}
 	return false, nil
 }

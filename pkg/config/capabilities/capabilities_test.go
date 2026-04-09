@@ -803,7 +803,7 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 		})
 		Context(capabilities.CapabilityKeyVlanSubinterface, func() {
 			BeforeEach(func() {
-				Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
+				Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
 				obj.Status.Supervisor[capabilities.CapabilityKeyVlanSubinterface] = capv1.CapabilityStatus{
 					Activated: true,
 				}

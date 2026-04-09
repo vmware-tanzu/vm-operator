@@ -104,7 +104,7 @@ const (
 
 	// CapabilityKeyVlanSubinterface is the name of capability key defined in the
 	// Supervisor capabilities CRD for the VM service supports VLAN Sub-Interfaces.
-	CapabilityKeyVlanSubinterface = "supports_VM_service_vlan_subinterface"
+	CapabilityKeyVlanSubinterface = "supports_vm_service_vlan_subinterface"
 )
 
 var (

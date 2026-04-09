@@ -378,15 +378,13 @@ func (r *reconciler) reconcileLocations(
 				GetDatastoreInfo().SupportedVDiskFormats...)
 
 		isEnc, err := kubeutil.IsEncryptedStorageProfile(ctx, r.Client, spec.ProfileID)
-		// TODO: Verify if we should propagate the error when the storage profile is not found
-		if ctrlclient.IgnoreNotFound(err) != nil {
+		if err != nil {
 			conditions = conditions.MarkError(
 				vmopv1.ReadyConditionType,
 				conditionReasonFailed,
 				err)
 			status.Conditions = conditions
 			continue
-
 		}
 
 		// Update the srcFiles elements with the profile and format info.

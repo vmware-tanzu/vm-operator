@@ -644,6 +644,7 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 		client        ctrlclient.Client
 		funcs         interceptor.Funcs
 		withObjs      []ctrlclient.Object
+		storageClass  storagev1.StorageClass
 		storagePolicy infrav1.StoragePolicy
 		profileID     string
 	)
@@ -654,6 +655,15 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 		})
 		funcs = interceptor.Funcs{}
 		profileID = uuid.NewString()
+		storageClass = storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fakeString,
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: profileID,
+			},
+		}
 		storagePolicy = infrav1.StoragePolicy{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: fakeString,
@@ -667,6 +677,7 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 				Encrypted: true,
 			},
 		}
+		withObjs = []ctrlclient.Object{&storageClass}
 	})
 
 	JustBeforeEach(func() {
@@ -684,20 +695,141 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 			ctx, client, profileID)
 	})
 
-	When("there is not a StoragePolicy", func() {
-		It("should return false", func() {
+	When("getting the StorageClass returns an error", func() {
+		BeforeEach(func() {
+			funcs.List = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				list ctrlclient.ObjectList,
+				opts ...ctrlclient.ListOption) error {
+
+				if _, ok := list.(*storagev1.StorageClassList); ok {
+					return apierrors.NewInternalError(errors.New(fakeString))
+				}
+
+				return client.List(ctx, list, opts...)
+			}
+		})
+		It("should return the error", func() {
+			Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("there are no StorageClasses", func() {
+		BeforeEach(func() {
+			withObjs = nil
+		})
+		It("should return an error", func() {
 			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("there is a StorageClass but does not match the profile ID", func() {
+		BeforeEach(func() {
+			profileID += "1"
+		})
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("there is not a StoragePolicy", func() {
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			Expect(ok).To(BeFalse())
 		})
 	})
 
 	When("there is a StoragePolicy that matches the profile ID", func() {
 		BeforeEach(func() {
-			withObjs = []ctrlclient.Object{&storagePolicy}
+			withObjs = append(withObjs, &storagePolicy)
 		})
 		It("should return true", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ok).To(BeTrue())
+		})
+	})
+
+	Context("when StoragePolicyMutability feature is enabled", func() {
+		var vac storagev1.VolumeAttributesClass
+
+		BeforeEach(func() {
+			ctx = pkgcfg.WithConfig(pkgcfg.Config{
+				PodNamespace: fakeString,
+				Features: pkgcfg.FeatureStates{
+					StoragePolicyMutability: true,
+				},
+			})
+			vac = storagev1.VolumeAttributesClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: fakeString + "-vac",
+					UID:  types.UID(uuid.NewString()),
+				},
+				Parameters: map[string]string{
+					internal.StoragePolicyIDParameter: profileID,
+				},
+			}
+		})
+
+		When("getting the VolumeAttributesClass returns an error", func() {
+			BeforeEach(func() {
+				funcs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if _, ok := list.(*storagev1.VolumeAttributesClassList); ok {
+						return apierrors.NewInternalError(errors.New(fakeString))
+					}
+
+					return client.List(ctx, list, opts...)
+				}
+			})
+			It("should return the error", func() {
+				Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
+				Expect(ok).To(BeFalse())
+			})
+		})
+
+		When("there are no VolumeAttributesClasses but StorageClass matches", func() {
+			BeforeEach(func() {
+				withObjs = []ctrlclient.Object{&storageClass, &storagePolicy}
+			})
+			It("should return true", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeTrue())
+			})
+		})
+
+		When("VolumeAttributesClass matches the profile ID", func() {
+			BeforeEach(func() {
+				// Remove StorageClass to ensure it's found via VAC
+				withObjs = []ctrlclient.Object{&vac, &storagePolicy}
+			})
+			It("should return true", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeTrue())
+			})
+		})
+
+		When("neither matches the profile ID", func() {
+			BeforeEach(func() {
+				vac.Parameters[internal.StoragePolicyIDParameter] = profileID + "1"
+				storageClass.Parameters[internal.StoragePolicyIDParameter] = profileID + "1"
+				withObjs = []ctrlclient.Object{&vac, &storageClass}
+			})
+			It("should return an error", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("not found"))
+				Expect(ok).To(BeFalse())
+			})
 		})
 	})
 })

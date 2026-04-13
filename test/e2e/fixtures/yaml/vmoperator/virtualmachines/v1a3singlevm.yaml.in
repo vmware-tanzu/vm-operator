@@ -1,0 +1,55 @@
+apiVersion: vmoperator.vmware.com/v1alpha3
+kind: VirtualMachine
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  {{if .Annotations}}
+  annotations:
+    {{range $key, $value := .Annotations}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+  {{if .Labels}}
+  labels:
+    {{range $key, $value := .Labels}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+spec:
+  className: {{.VMClassName}}
+  storageClass: {{.StorageClassName}}
+  {{if .ImageName}}
+  imageName: {{.ImageName}}
+  {{end}}
+  {{if .PowerState}}
+  powerState: {{.PowerState}}
+  {{end}}
+  {{if .GuestID}}
+  guestID: {{.GuestID}}
+  {{end}}
+  {{if .Crypto}}
+  crypto:
+    encryptionClassName: {{.Crypto.EncryptionClassName}}
+    useDefaultKeyProvider: {{.Crypto.UseDefaultKeyProvider}}
+  {{end}}
+  {{if .PVCNames}}
+  volumes:
+  {{range .PVCNames}}
+  - name: {{.}}
+    persistentVolumeClaim:
+      claimName: {{.}}
+  {{end}}
+  {{end}}
+  {{if .Cdrom}}
+  cdrom:
+    {{range .Cdrom }}
+    - name: {{.Name}}
+      image:
+        name: {{.ImageName}}
+        {{if .ImageKind}}
+        kind: {{.ImageKind}}
+        {{end}}
+      connected: {{.Connected}}
+      allowGuestControl: {{.AllowGuestControl}}
+    {{end}}
+  {{end}}

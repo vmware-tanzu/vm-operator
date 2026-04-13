@@ -69,3 +69,7 @@ infrastructure-components.yaml
 /local.envvars
 /vendor
 /kind-cluster-info-dump
+
+# E2E tests
+test/e2e/**/test_logs
+e2e-tests

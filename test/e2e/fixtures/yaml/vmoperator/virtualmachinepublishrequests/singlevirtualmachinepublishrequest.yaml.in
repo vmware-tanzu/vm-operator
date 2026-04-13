@@ -1,0 +1,26 @@
+apiVersion: vmoperator.vmware.com/v1alpha2
+kind: VirtualMachinePublishRequest
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  {{if .Annotations}}
+  annotations:
+    {{range $key, $value := .Annotations}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+  {{if .Labels}}
+  labels:
+    {{range $key, $value := .Labels}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+spec:
+  source:
+    name: {{.Source.Name}}
+  target:
+    item:
+      name: {{.Target.Item.Name}}
+      description: {{.Target.Item.Description}}
+    location:
+      name: {{.Target.Location.Name}}

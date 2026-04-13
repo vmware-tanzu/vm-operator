@@ -1,0 +1,9 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: ContentSourceBinding
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+contentSourceRef:
+  apiVersion: vmoperator.vmware.com/v1alpha1
+  kind: ContentSource
+  name: {{.Name}}

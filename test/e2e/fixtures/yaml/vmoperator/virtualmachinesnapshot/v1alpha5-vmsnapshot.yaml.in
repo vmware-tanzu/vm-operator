@@ -1,0 +1,21 @@
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachineSnapshot
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  {{- if .ImportedSnapshot}}
+  annotations:
+    "vmoperator.vmware.com/imported-snapshot": ""
+  {{- end}}
+spec:
+  vmName: "{{ .VMName }}"
+  {{- if .Memory}}
+  memory: {{.Memory}}
+  {{- end}}
+  {{- if .Quiesce}}
+  quiesce:
+    timeout: {{.Quiesce}}
+  {{- end}}
+  {{- if .Description}}
+  description: "{{.Description}}"
+  {{- end}}

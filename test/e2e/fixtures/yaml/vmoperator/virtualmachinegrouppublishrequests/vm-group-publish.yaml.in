@@ -1,0 +1,14 @@
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachineGroupPublishRequest
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+  source: {{.Source}}
+  target: {{.Target}}
+  {{if .VirtualMachines}}
+  virtualMachines: {{.VirtualMachines}}
+  {{end}}
+  {{if .TTLSecondsAfterFinished}}
+  ttlSecondsAfterFinished: {{.TTLSecondsAfterFinished}}
+  {{end}}

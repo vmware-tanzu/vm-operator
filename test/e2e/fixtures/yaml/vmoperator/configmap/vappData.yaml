@@ -1,0 +1,5 @@
+data:
+  nameservers: "{{ (index .V1alpha1.Net.Nameservers 0) }}"
+  hostname: "{{ .V1alpha1.VM.Name }}"                 
+  management_ip: "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"
+  management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"

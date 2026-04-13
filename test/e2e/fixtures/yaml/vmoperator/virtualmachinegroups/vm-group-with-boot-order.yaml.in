@@ -1,0 +1,31 @@
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachineGroup
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+{{- if .GroupName}}
+  groupName: {{.GroupName}}
+{{- end}}
+{{- if .PowerState}}
+  powerState: {{.PowerState}}
+{{- end}}
+{{- if .PowerOffMode}}
+  powerOffMode: {{.PowerOffMode}}
+{{- end}}
+{{- if .NextForcePowerStateSyncTime}}
+  nextForcePowerStateSyncTime: {{.NextForcePowerStateSyncTime}}
+{{- end}}
+{{- if .BootOrder}}
+  bootOrder:
+{{- range .BootOrder}}
+  - members:
+{{- range .Members}}
+    - name: {{.Name}}
+      kind: {{.Kind}}
+{{- end}}
+{{- if .PowerOnDelay}}
+    powerOnDelay: {{.PowerOnDelay}}
+{{- end}}
+{{- end}}
+{{- end}}

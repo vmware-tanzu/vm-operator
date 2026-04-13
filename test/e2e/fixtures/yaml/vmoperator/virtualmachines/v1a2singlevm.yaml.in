@@ -1,0 +1,87 @@
+apiVersion: vmoperator.vmware.com/v1alpha2
+kind: VirtualMachine
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  {{if .Annotations}}
+  annotations:
+    {{range $key, $value := .Annotations}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+  {{if .Labels}}
+  labels:
+    {{range $key, $value := .Labels}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+spec:
+  {{if .NetworkA2.Interfaces}}
+  network:
+    interfaces:
+      - name: eth0
+        network:
+          apiVersion: {{(index .NetworkA2.Interfaces 0).APIVersion}}
+          kind: {{(index .NetworkA2.Interfaces 0).Kind}}
+          name: {{(index .NetworkA2.Interfaces 0).Name}}
+  {{end}}
+  className: {{.VMClassName}}
+  storageClass: {{.StorageClassName}}
+  imageName: {{.ImageName}}
+  {{if .ResourcePolicy}}
+  reserved:
+    resourcePolicyName: {{.ResourcePolicy}}
+  {{end}}
+  powerState: {{.PowerState}}
+  {{if and .Bootstrap (or .Bootstrap.CloudInit .Bootstrap.Sysprep .Bootstrap.VAppConfig .Bootstrap.LinuxPrep)}}
+  bootstrap:
+    {{if .Bootstrap.CloudInit }}
+    cloudInit:
+      {{if .Bootstrap.CloudInit.RawCloudConfig}}
+      rawCloudConfig:
+        key: {{ .Bootstrap.CloudInit.RawCloudConfig.Key}}
+        name: {{.Bootstrap.CloudInit.RawCloudConfig.Name}}
+      {{end}}
+      {{if .Bootstrap.CloudInit.CloudConfig}}
+      cloudConfig:
+        {{ .Bootstrap.CloudInit.CloudConfig}}
+      {{end}}
+    {{end}}
+    {{if .Bootstrap.Sysprep }}
+    sysprep:
+      {{if .Bootstrap.Sysprep.RawSysprep }}
+      rawSysprep:
+        key: {{.Bootstrap.Sysprep.RawSysprep.Key }}
+        name: {{.Bootstrap.Sysprep.RawSysprep.Name }}
+      {{end}}
+      {{if .Bootstrap.Sysprep.Sysprep }}
+      sysprep:
+        {{.Bootstrap.Sysprep.Sysprep }}
+      {{end}}
+    {{end}}
+    {{ if .Bootstrap.VAppConfig }}
+    vAppConfig:
+      {{ if .Bootstrap.VAppConfig.RawProperties }}
+      rawProperties: {{ .Bootstrap.VAppConfig.RawProperties }}
+      {{end}}
+      {{ if .Bootstrap.VAppConfig.Properties }}
+      properties: 
+        - key: {{ (index .Bootstrap.VAppConfig.Properties 0).Key}}
+          value:
+            value: "{{ (index .Bootstrap.VAppConfig.Properties 0).Value.Value}}"
+      {{end}}
+    {{end}}
+    {{ if .Bootstrap.LinuxPrep }}
+    linuxPrep:
+      hardwareClockIsUTC: {{ .Bootstrap.LinuxPrep.HardwareClockIsUTC }}
+      timeZone: {{ .Bootstrap.LinuxPrep.TimeZone }}
+    {{end}}
+  {{end}}
+  {{if .PVCNames}}
+  volumes:
+  {{range .PVCNames}}
+  - name: {{.}}
+    persistentVolumeClaim:
+      claimName: {{.}}
+  {{end}}
+  {{end}}

@@ -6,6 +6,9 @@ alwaysApply: false
 
 # Testing Standards
 
+**E2E (real WCP/vSphere cluster):** Tests under `test/e2e/` follow a different layout and Makefile workflow than controller tests. Follow **e2e-sync-with-changes** to add/update/delete E2E tests with product work; use **e2e-testing** when editing `test/e2e/**/*.go`, and read **`test/e2e/README.md`** for setup, running, labels, and writing patterns.
+
+
 ## Test File Naming
 
 | Suffix | Purpose | Example |

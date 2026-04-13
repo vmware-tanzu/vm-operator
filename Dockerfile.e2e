@@ -1,0 +1,88 @@
+# VM Operator E2E Test Container
+# Self-contained E2E testing environment
+
+# Use Broadcom internal registry (Docker Hub mirror) 
+ARG BASE_IMAGE=mirror.gcr.io/library/golang:1.26.2-alpine
+
+# Build stage - compile tests
+FROM ${BASE_IMAGE} AS builder
+
+# Build stage setup
+WORKDIR /vm-operator
+
+# Copy all source code needed for compilation
+COPY go.mod go.sum ./
+COPY api/ ./api/
+COPY external/ ./external/
+COPY pkg/ ./pkg/
+COPY test/e2e/ ./test/e2e/
+COPY hack/ ./hack/
+COPY Makefile ./
+
+# Install Go dependencies
+RUN go mod download
+
+# Pre-compile test binaries for faster execution  
+RUN cd test/e2e/vmservice && go test -c -o /vm-operator/e2e-tests .
+
+# Runtime stage - minimal image with compiled tests
+FROM ${BASE_IMAGE} AS runtime
+
+# Build information (moved to runtime stage)
+ARG BUILD_BRANCH
+ARG BUILD_COMMIT  
+ARG BUILD_NUMBER
+ARG BUILD_VERSION
+
+# Image labels
+LABEL branch="${BUILD_BRANCH}" \
+      buildNumber="${BUILD_NUMBER}" \
+      commit="${BUILD_COMMIT}" \
+      name="VM Operator E2E Tests" \
+      vendor="Broadcom" \
+      version="${BUILD_VERSION}"
+
+# Install required packages (alpine-based)
+RUN apk update && \
+    apk add --no-cache \
+        curl \
+        jq \
+        git \
+        openssh-client \
+        sshpass \
+        bash \
+        make \
+        && \
+    rm -rf /var/cache/apk/*
+
+# Install kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/
+
+# Create non-root user early 
+RUN addgroup -g 1000 vmoperator && \
+    adduser -u 1000 -G vmoperator -s /bin/bash -D vmoperator
+
+# Create directories and set up convenience scripts
+RUN mkdir -p /vm-operator /tmp/go-cache && \
+    chown vmoperator:vmoperator /vm-operator /tmp/go-cache
+
+WORKDIR /vm-operator
+
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/setup-testbed-env.sh ./hack/setup-testbed-env.sh
+RUN ln -sf /vm-operator/hack/setup-testbed-env.sh /usr/local/bin/setup-testbed-env
+
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/config/ ./test/e2e/vmservice/config/
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/fixtures/ ./test/e2e/fixtures/
+
+# Switch to non-root user for runtime
+USER vmoperator
+
+# Set up Go environment for runtime
+ENV GOCACHE="/tmp/go-cache"
+
+# Default command
+CMD ["/bin/bash"]

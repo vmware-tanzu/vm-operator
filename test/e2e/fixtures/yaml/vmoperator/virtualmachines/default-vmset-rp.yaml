@@ -1,0 +1,7 @@
+apiVersion: vmoperator.vmware.com/v1alpha2
+kind: VirtualMachineSetResourcePolicy
+metadata:
+  name: default-vm-set-rp
+  namespace: {{.Namespace}}
+spec:
+

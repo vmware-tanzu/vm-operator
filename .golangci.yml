@@ -382,3 +382,25 @@ linters:
     # Ignore different receiver names in conversion functions (e.g. src vs dst).
     - path: "_conversion.go"
       text: ".*receiver name"
+
+    - path: "test/e2e"
+      linters:
+        - revive
+        - gosec
+        - prealloc
+        - wsl
+        - wsl_v5
+        - gocritic
+        - gocyclo
+        - noinlineerr
+        - makezero
+        - modernize
+        - gocheckcompilerdirectives
+        - embeddedstructcheck
+        - importas
+        - ineffassign
+        - goconst
+        - depguard
+        - godoclint
+        # E2E tests use . imports for gomega or ginkgo.
+        - staticcheck

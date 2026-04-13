@@ -106,6 +106,11 @@ IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
+# E2E test image configuration  
+E2E_BASE_IMAGE ?= mirror.gcr.io/library/golang:1.26.2-alpine
+E2E_IMAGE ?= vmoperator-e2e
+E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
+
 # Code coverage files
 COVERAGE_FILE ?= cover.out
 
@@ -160,8 +165,8 @@ NET_OP_API_SLUG := github.com/vmware-tanzu/net-operator-api
 BUILD_TYPE ?= dev
 BUILD_NUMBER ?= 00000000
 
-BUILD_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
-BUILD_COMMIT ?= $(shell git rev-parse --short HEAD)
+BUILD_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BUILD_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 # ex. 1.2.3+abcdefg+4.5.6+hijklmn
 ifeq (,$(strip $(PRDCT_VERSION)))
@@ -937,3 +942,98 @@ verify-local-manifests: ## Verify the local manifests
 .PHONY: verify-wcp-manifests
 verify-wcp-manifests: ## Verify the WCP manifests
 	VERIFY_MANIFESTS=true $(MAKE) deploy-wcp
+
+## --------------------------------------
+## E2E Tests
+## --------------------------------------
+
+.PHONY: e2e-image-build
+e2e-image-build: GOOS=linux
+e2e-image-build: ## Build E2E test container image
+	@echo "Building VM Operator E2E test image..."
+	$(CRI_BIN) build \
+	  -f Dockerfile.e2e \
+	  -t "$(E2E_IMAGE):$(IMAGE_TAG)" \
+	  -t "$(E2E_IMAGE):$(BUILD_NUMBER)" \
+	  -t "$(E2E_IMAGE):$(IMAGE_VERSION)" \
+	  --build-arg BUILD_BRANCH="$(BUILD_BRANCH)" \
+	  --build-arg BUILD_COMMIT="$(BUILD_COMMIT)" \
+	  --build-arg BUILD_NUMBER="$(BUILD_NUMBER)" \
+	  --build-arg BUILD_VERSION="$(BUILD_VERSION)" \
+	  --build-arg BASE_IMAGE="$(E2E_BASE_IMAGE)" \
+	  $(ADDITIONAL_CRI_BUILD_FLAGS) \
+	  .
+	@if [ -n "$(IMAGE_FILE)" ]; then \
+		mkdir -p "$$(dirname "$(IMAGE_FILE)")"; \
+		$(CRI_BIN) save "$(E2E_IMAGE):$(IMAGE_VERSION)" -o "$(IMAGE_FILE)"; \
+	fi
+	@echo "✅ E2E image build complete: $(E2E_IMAGE):$(IMAGE_TAG)"
+
+.PHONY: e2e-image-push
+e2e-image-push: ## Push E2E test container image
+	$(CRI_BIN) push $(E2E_IMG)
+
+.PHONY: e2e-image-remove
+e2e-image-remove: ## Remove E2E test container image
+	@if [[ "`$(CRI_BIN) images -q $(E2E_IMG) 2>/dev/null`" != "" ]]; then \
+		echo "Remove E2E test container $(E2E_IMG)"; \
+		$(CRI_BIN) rmi $(E2E_IMG); \
+	fi
+
+# E2E Test Environment Variables:
+#   E2E_NAMESPACE          - Use specific namespace for tests (default: random)
+#   TEST_FOCUS             - Ginkgo focus pattern to run specific tests
+#   TEST_SKIP              - Ginkgo skip pattern to exclude tests
+#   LABEL_FILTER           - Ginkgo label filter (e.g., "smoke", "!extended-functional")
+#   FLAKE_ATTEMPTS         - Number of retry attempts for flaky tests
+#   E2E_PREBUILT_BINARY    - Path to `go test -c` output (default: $(ROOT_DIR)e2e-tests)
+
+E2E_PREBUILT_BINARY ?= $(ROOT_DIR)e2e-tests
+
+.PHONY: test-e2e
+test-e2e: ## Run e2e tests (auto-detect: prebuilt binary if available, else ginkgo)
+	@if [ -x "$(E2E_PREBUILT_BINARY)" ]; then \
+		$(MAKE) test-e2e-prebuilt; \
+	else \
+		$(MAKE) test-e2e-ginkgo; \
+	fi
+
+.PHONY: test-e2e-prebuilt
+test-e2e-prebuilt: ## Run e2e tests using precompiled binary. Used by the E2E container image.
+	@test -x "$(E2E_PREBUILT_BINARY)" || { echo "error: $(E2E_PREBUILT_BINARY) missing or not executable. Run: cd test/e2e/vmservice && go test -c -o ../../../e2e-tests ."; exit 1; }
+	@echo "Running E2E tests (prebuilt $(E2E_PREBUILT_BINARY))..."
+	@$(eval GINKGO_ARGS := --ginkgo.v)
+	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=test_logs)
+	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --ginkgo.focus="$(TEST_FOCUS)"))
+	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --ginkgo.skip="$(TEST_SKIP)"))
+	$(if $(TEST_SKIP),$(eval E2E_ARGS += -e2e.test-skip="$(TEST_SKIP)"))
+	$(if $(LABEL_FILTER),$(eval GINKGO_ARGS += --ginkgo.label-filter="$(LABEL_FILTER)"))
+	$(if $(FLAKE_ATTEMPTS),$(eval GINKGO_ARGS += --ginkgo.flake-attempts=$(FLAKE_ATTEMPTS)))
+	$(if $(E2E_NAMESPACE),$(eval export E2E_NAMESPACE=$(E2E_NAMESPACE)))
+	$(E2E_PREBUILT_BINARY) $(E2E_ARGS) $(GINKGO_ARGS)
+
+.PHONY: test-e2e-ginkgo
+test-e2e-ginkgo: | $(GINKGO)
+test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
+	@echo "Running E2E tests (ginkgo compile)..."
+	@$(eval GINKGO_ARGS := -v)
+	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=test_logs)
+	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --focus="$(TEST_FOCUS)"))
+	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --skip="$(TEST_SKIP)"))
+	$(if $(TEST_SKIP),$(eval E2E_ARGS += -e2e.test-skip="$(TEST_SKIP)"))
+	$(if $(LABEL_FILTER),$(eval GINKGO_ARGS += --label-filter="$(LABEL_FILTER)"))
+	$(if $(FLAKE_ATTEMPTS),$(eval GINKGO_ARGS += --flake-attempts=$(FLAKE_ATTEMPTS)))
+	$(if $(E2E_NAMESPACE),$(eval export E2E_NAMESPACE=$(E2E_NAMESPACE)))
+	$(GINKGO) $(GINKGO_ARGS) ./test/e2e/vmservice/... -- $(E2E_ARGS)
+
+.PHONY: e2e-smoke
+e2e-smoke: ## Run e2e smoke tests
+	$(MAKE) test-e2e LABEL_FILTER="smoke"
+
+.PHONY: e2e-core
+e2e-core: ## Run e2e core functional tests
+	$(MAKE) test-e2e LABEL_FILTER="!smoke && !extended-functional"
+
+.PHONY: e2e-extended
+e2e-extended: ## Run e2e extended functional tests
+	$(MAKE) test-e2e LABEL_FILTER="extended-functional"

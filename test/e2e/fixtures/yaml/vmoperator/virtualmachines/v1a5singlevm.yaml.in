@@ -1,0 +1,253 @@
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  {{- if .Labels}}
+  labels:
+    {{- range $key, $value := .Labels}}
+    {{$key}}: "{{$value}}"
+    {{- end}}
+  {{- end}}
+  {{- if .Annotations}}
+  annotations:
+    {{- range $key, $value := .Annotations}}
+    {{$key}}: "{{$value}}"
+    {{- end}}
+  {{- end}}
+spec:
+{{- if .GroupName}}
+  groupName: {{.GroupName}}
+{{- end}}
+  className: {{.VMClassName}}
+  storageClass: {{.StorageClassName}}
+  imageName: {{.ImageName}}
+  {{- if .GuestID}}
+  guestID: {{.GuestID}}
+  {{- end}}
+  {{- if and .Bootstrap (or .Bootstrap.CloudInit .Bootstrap.Sysprep .Bootstrap.VAppConfig .Bootstrap.LinuxPrep)}}
+  bootstrap:
+    {{if .Bootstrap.CloudInit }}
+    cloudInit:
+      {{if .Bootstrap.CloudInit.RawCloudConfig}}
+      rawCloudConfig:
+        key: {{ .Bootstrap.CloudInit.RawCloudConfig.Key}}
+        name: {{.Bootstrap.CloudInit.RawCloudConfig.Name}}
+      {{end}}
+      {{if .Bootstrap.CloudInit.CloudConfig}}
+      cloudConfig:
+        {{ .Bootstrap.CloudInit.CloudConfig}}
+      {{end}}
+    {{end}}
+    {{if .Bootstrap.Sysprep }}
+    sysprep:
+      {{if .Bootstrap.Sysprep.RawSysprep }}
+      rawSysprep:
+        key: {{.Bootstrap.Sysprep.RawSysprep.Key }}
+        name: {{.Bootstrap.Sysprep.RawSysprep.Name }}
+      {{end}}
+      {{if .Bootstrap.Sysprep.Sysprep }}
+      sysprep:
+        {{.Bootstrap.Sysprep.Sysprep }}
+      {{end}}
+    {{end}}
+    {{ if .Bootstrap.VAppConfig }}
+    vAppConfig:
+      {{ if .Bootstrap.VAppConfig.RawProperties }}
+      rawProperties: {{ .Bootstrap.VAppConfig.RawProperties }}
+      {{end}}
+      {{ if .Bootstrap.VAppConfig.Properties }}
+      properties:
+        - key: {{ (index .Bootstrap.VAppConfig.Properties 0).Key}}
+          value:
+            value: "{{ (index .Bootstrap.VAppConfig.Properties 0).Value.Value}}"
+      {{end}}
+    {{end}}
+    {{ if .Bootstrap.LinuxPrep }}
+    linuxPrep:
+      hardwareClockIsUTC: {{ .Bootstrap.LinuxPrep.HardwareClockIsUTC }}
+      timeZone: {{ .Bootstrap.LinuxPrep.TimeZone }}
+      customizeAtNextPowerOn: {{ .Bootstrap.LinuxPrep.CustomizeAtNextPowerOn }}
+    {{end}}
+  {{end}}
+{{- if .PowerState}}
+  powerState: {{.PowerState}}
+{{- end}}
+{{- if .PVCs}}
+  volumes:
+  {{- range .PVCs}}
+    - name: {{.VolumeName}}
+      persistentVolumeClaim:
+        claimName: {{.ClaimName}}
+      {{- if .ControllerBusNumber }}
+      controllerBusNumber: {{.ControllerBusNumber}}
+      {{- end}}
+      {{- if .ControllerType }}
+      controllerType: {{.ControllerType}}
+      {{- end}}
+      {{- if .ControllerType }}
+      controllerType: {{.ControllerType}}
+      {{- end}}
+      {{- if .UnitNumber }}
+      unitNumber: {{.UnitNumber}}
+      {{- end}}
+      {{- if .SharingMode }}
+      sharingMode: {{.SharingMode}}
+      {{- end}}
+      {{- if .ApplicationType }}
+      applicationType: {{.ApplicationType}}
+      {{- end}}
+      {{- if .DiskMode }}
+      diskMode: {{.DiskMode}}
+      {{- end}}
+  {{- end}}
+{{- end}}
+{{- if .Affinity}}
+  affinity:
+    {{- if .Affinity.VMAffinity}}
+    vmAffinity:
+      {{- if .Affinity.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution}}
+      requiredDuringSchedulingPreferredDuringExecution:
+        {{- range .Affinity.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution}}
+        {{- if .LabelSelector}}
+        - labelSelector:
+          {{- if .LabelSelector.MatchLabels}}
+            matchLabels:
+              {{- range $key, $value := .LabelSelector.MatchLabels}}
+              {{$key}}: "{{$value}}"
+              {{- end}}
+          {{- end}}
+          {{- if .LabelSelector.MatchExpressions}}
+            matchExpressions:
+              {{- range .LabelSelector.MatchExpressions}}
+              - key: {{.Key}}
+                operator: {{.Operator}}
+                {{- if .Values}}
+                values:
+                  {{- range .Values}}
+                  - "{{.}}"
+                  {{- end}}
+                {{- end}}
+              {{- end}}
+          {{- end}}
+          {{- end}}
+          topologyKey: {{.TopologyKey}}
+        {{- end}}
+      {{- end}}
+    {{- end}}
+    {{- if .Affinity.VMAntiAffinity}}
+    vmAntiAffinity:
+      {{- if .Affinity.VMAntiAffinity.RequiredDuringSchedulingPreferredDuringExecution}}
+      requiredDuringSchedulingPreferredDuringExecution:
+        {{- range .Affinity.VMAntiAffinity.RequiredDuringSchedulingPreferredDuringExecution}}
+        {{- if .LabelSelector}}
+        - labelSelector:
+          {{- if .LabelSelector.MatchLabels}}
+            matchLabels:
+              {{- range $key, $value := .LabelSelector.MatchLabels}}
+              {{$key}}: "{{$value}}"
+              {{- end}}
+          {{- end}}
+          {{- if .LabelSelector.MatchExpressions}}
+            matchExpressions:
+              {{- range .LabelSelector.MatchExpressions}}
+              - key: {{.Key}}
+                operator: {{.Operator}}
+                {{- if .Values}}
+                values:
+                  {{- range .Values}}
+                  - "{{.}}"
+                  {{- end}}
+                {{- end}}
+              {{- end}}
+          {{- end}}
+          {{- end}}
+          topologyKey: {{.TopologyKey}}
+        {{- end}}
+      {{- end}}
+    {{- end}}
+{{- end}}
+{{- with .Hardware }}
+  hardware:
+    {{- with .SCSIControllers }}
+    scsiControllers: 
+    {{- range . }}
+    - busNumber: {{.BusNumber}}
+      type: {{.Type}}
+      sharingMode: {{.SharingMode}}
+    {{- end }}
+    {{- end }}
+    {{- with .NVMEControllers}}
+    nvmeControllers: 
+    {{- range . }}
+    - busNumber: {{.BusNumber}}
+      sharingMode: {{.SharingMode}}
+    {{- end}}
+    {{- end}}
+    {{- with .SATAControllers}}
+    sataControllers: 
+    {{- range . }}
+    - busNumber: {{.BusNumber}}
+    {{- end}}
+    {{- end}}
+    {{- with .Cdrom}}
+    cdrom: 
+    {{- range .}}
+    - name: {{.Name}}
+      {{- with .Image}}
+      image: 
+        name: {{.Name}}
+        kind: {{.Kind}}
+      {{- end}}
+      {{- if .ControllerBusNumber}}
+      controllerBusNumber: {{.ControllerBusNumber}}
+      {{- end}}
+      {{- if .ControllerType}}
+      controllerType: {{.ControllerType}}
+      {{- end}}
+      {{- if .UnitNumber}}
+      unitNumber: {{.UnitNumber}}
+      {{- end}}
+      {{- if .Connected}}
+      connected: {{.Connected}}
+      {{- end}}
+      {{- if .AllowGuestControl}}
+      allowGuestControl: {{.AllowGuestControl}}
+      {{- end}}
+    {{- end}}
+    {{- end}}
+{{- end }}
+{{- if .Policies}}
+  policies:
+    {{- range .Policies}}
+    - apiVersion: {{.APIVersion}}
+      kind: {{.Kind}}
+      name: {{.Name}}
+    {{- end}}
+{{- end}}
+{{- if .PVCs}}
+{{- range .PVCs}}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{.ClaimName}}
+  namespace: {{.Namespace}}
+spec:
+  accessModes:
+  {{- if gt (len .AccessModes) 0}}
+  {{- range .AccessModes}}
+  - {{.}}
+  {{- end}}
+  {{- else}}
+  - ReadWriteOnce
+  {{- end}}
+  resources:
+    requests:
+      storage: {{.RequestSize}}
+  storageClassName: {{.StorageClassName}}
+  {{- if .VolumeMode}}
+  volumeMode: {{.VolumeMode}}
+  {{- end}}
+{{- end}}
+{{- end}}

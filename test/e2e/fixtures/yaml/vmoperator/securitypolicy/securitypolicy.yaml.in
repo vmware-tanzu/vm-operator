@@ -1,0 +1,14 @@
+apiVersion: crd.nsx.vmware.com/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+  priority: 10
+  appliedTo:
+    - vmSelector:
+        matchLabels:
+          role: allow-ingress
+  rules:
+    - direction: in
+      action: allow

@@ -575,16 +575,6 @@ func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *pkgctx.Vir
 		return err
 	}
 	subsets := utils.RepackSubsets(unpackedSubsets)
-	// Split subsets by IP family to ensure IPv4 and IPv6 remain separate
-	// Above RepackSubsets merges subsets with identical ports, which combines IPv4 and IPv6
-	subsets = r.splitSubsetsByIPFamily(subsets)
-
-	// Filter endpoints based on Service's IPFamilies and IPFamilyPolicy
-	// Endpoints must match the Service's IP family - an IPv4 Service cannot route to IPv6 endpoints
-	allowedFamilies := r.determineAllowedIPFamilies(service)
-	if len(allowedFamilies) > 0 {
-		subsets = r.filterSubsetsByIPFamilies(subsets, allowedFamilies)
-	}
 
 	endpoints := &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
@@ -641,8 +631,11 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		return nil, err
 	}
 
-	// Group addresses by IP family to ensure IPv4 and IPv6 remain in separate subsets
-	// after RepackSubsets merges subsets with identical ports
+	// Include only VM addresses whose IP family is allowed by the Service IPFamilies and IPFamilyPolicy.
+	allowedFamilies := r.determineAllowedIPFamilies(service)
+
+	// Group addresses by IP family while building unpacked subsets; RepackSubsets then
+	// merges subsets that share the same ports into the canonical Endpoints shape.
 	type addressInfo struct {
 		addr  corev1.EndpointAddress
 		ready bool
@@ -666,13 +659,13 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			family corev1.IPFamily
 		}
 		if vm.Status.Network != nil {
-			if vm.Status.Network.PrimaryIP4 != "" {
+			if vm.Status.Network.PrimaryIP4 != "" && allowedFamilies[corev1.IPv4Protocol] {
 				vmIPs = append(vmIPs, struct {
 					ip     string
 					family corev1.IPFamily
 				}{vm.Status.Network.PrimaryIP4, corev1.IPv4Protocol})
 			}
-			if vm.Status.Network.PrimaryIP6 != "" {
+			if vm.Status.Network.PrimaryIP6 != "" && allowedFamilies[corev1.IPv6Protocol] {
 				vmIPs = append(vmIPs, struct {
 					ip     string
 					family corev1.IPFamily
@@ -735,8 +728,6 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				})
 		}
 
-		// Group addresses by IP family
-		// This ensures IPv4 and IPv6 addresses remain in separate subsets
 		for _, vmIPInfo := range vmIPs {
 			epa := corev1.EndpointAddress{
 				IP: vmIPInfo.ip,
@@ -761,8 +752,6 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		}
 	}
 
-	// Create subsets grouped by IP family
-	// This ensures IPv4 and IPv6 addresses remain in separate subsets even after RepackSubsets
 	subsets := make([]corev1.EndpointSubset, 0, len(ipFamilyToAddresses))
 	for _, addrInfos := range ipFamilyToAddresses {
 		if len(addrInfos) == 0 {
@@ -792,64 +781,6 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 	}
 
 	return subsets, nil
-}
-
-// splitSubsetsByIPFamily splits subsets that contain both IPv4 and IPv6 addresses
-// into separate subsets, one for each IP family. This ensures dual-stack support
-// even after RepackSubsets merges subsets with identical ports.
-func (r *ReconcileVirtualMachineService) splitSubsetsByIPFamily(subsets []corev1.EndpointSubset) []corev1.EndpointSubset {
-	var result []corev1.EndpointSubset
-
-	for _, subset := range subsets {
-		var ipv4Addrs, ipv6Addrs []corev1.EndpointAddress
-		var ipv4NotReady, ipv6NotReady []corev1.EndpointAddress
-
-		// Split ready addresses by IP family
-		for _, addr := range subset.Addresses {
-			// Use net.ParseIP to properly detect IPv4 vs IPv6
-			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
-			if ip := net.ParseIP(addr.IP); ip != nil {
-				if ip.To4() != nil {
-					ipv4Addrs = append(ipv4Addrs, addr)
-				} else {
-					ipv6Addrs = append(ipv6Addrs, addr)
-				}
-			}
-			// Invalid IPs are silently skipped (shouldn't occur in practice)
-		}
-
-		// Split not-ready addresses by IP family
-		for _, addr := range subset.NotReadyAddresses {
-			// Use net.ParseIP to properly detect IPv4 vs IPv6
-			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
-			if ip := net.ParseIP(addr.IP); ip != nil {
-				if ip.To4() != nil {
-					ipv4NotReady = append(ipv4NotReady, addr)
-				} else {
-					ipv6NotReady = append(ipv6NotReady, addr)
-				}
-			}
-			// Invalid IPs are silently skipped (shouldn't occur in practice)
-		}
-
-		// Create separate subsets for IPv4 and IPv6 if both exist
-		if len(ipv4Addrs) > 0 || len(ipv4NotReady) > 0 {
-			result = append(result, corev1.EndpointSubset{
-				Addresses:         ipv4Addrs,
-				NotReadyAddresses: ipv4NotReady,
-				Ports:             subset.Ports,
-			})
-		}
-		if len(ipv6Addrs) > 0 || len(ipv6NotReady) > 0 {
-			result = append(result, corev1.EndpointSubset{
-				Addresses:         ipv6Addrs,
-				NotReadyAddresses: ipv6NotReady,
-				Ports:             subset.Ports,
-			})
-		}
-	}
-
-	return result
 }
 
 // determineAllowedIPFamilies determines which IP families should be included
@@ -926,61 +857,6 @@ func (r *ReconcileVirtualMachineService) determineAllowedIPFamilies(service *cor
 	}
 
 	return allowedFamilies
-}
-
-// filterSubsetsByIPFamilies filters endpoint subsets to only include addresses
-// matching the allowed IP families.
-func (r *ReconcileVirtualMachineService) filterSubsetsByIPFamilies(subsets []corev1.EndpointSubset, allowedFamilies map[corev1.IPFamily]bool) []corev1.EndpointSubset {
-	var result []corev1.EndpointSubset
-	for _, subset := range subsets {
-		var filteredAddrs, filteredNotReady []corev1.EndpointAddress
-
-		// Filter ready addresses
-		for _, addr := range subset.Addresses {
-			// Use net.ParseIP to properly detect IPv4 vs IPv6
-			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
-			if ip := net.ParseIP(addr.IP); ip != nil {
-				var family corev1.IPFamily
-				if ip.To4() != nil {
-					family = corev1.IPv4Protocol
-				} else {
-					family = corev1.IPv6Protocol
-				}
-				if allowedFamilies[family] {
-					filteredAddrs = append(filteredAddrs, addr)
-				}
-			}
-			// Invalid IPs are silently skipped (shouldn't occur in practice)
-		}
-
-		// Filter not-ready addresses
-		for _, addr := range subset.NotReadyAddresses {
-			// Use net.ParseIP to properly detect IPv4 vs IPv6
-			// Skip invalid IPs (shouldn't happen with valid endpoint addresses)
-			if ip := net.ParseIP(addr.IP); ip != nil {
-				var family corev1.IPFamily
-				if ip.To4() != nil {
-					family = corev1.IPv4Protocol
-				} else {
-					family = corev1.IPv6Protocol
-				}
-				if allowedFamilies[family] {
-					filteredNotReady = append(filteredNotReady, addr)
-				}
-			}
-			// Invalid IPs are silently skipped (shouldn't occur in practice)
-		}
-
-		// Only include subset if it has addresses
-		if len(filteredAddrs) > 0 || len(filteredNotReady) > 0 {
-			result = append(result, corev1.EndpointSubset{
-				Addresses:         filteredAddrs,
-				NotReadyAddresses: filteredNotReady,
-				Ports:             subset.Ports,
-			})
-		}
-	}
-	return result
 }
 
 // updateVMService syncs the VirtualMachineService Status from the Service status.

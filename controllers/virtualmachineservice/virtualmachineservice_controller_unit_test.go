@@ -1003,57 +1003,32 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, dualStackVM)
 				})
 
-				It("Endpoints should have TWO subsets (one for IPv4, one for IPv6)", func() {
-					Expect(endpoints.Subsets).To(HaveLen(2))
+				It("Endpoints repack IPv4 and IPv6 into one canonical subset", func() {
+					Expect(endpoints.Subsets).To(HaveLen(1))
+					subset := endpoints.Subsets[0]
+					Expect(subset.Ports).To(HaveLen(1))
+					assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
 
-					var ipv4Subset, ipv6Subset *corev1.EndpointSubset
-					for i := range endpoints.Subsets {
-						subset := &endpoints.Subsets[i]
-						if len(subset.Addresses) > 0 {
-							if subset.Addresses[0].IP == "192.168.1.100" {
-								ipv4Subset = subset
-							} else if subset.Addresses[0].IP == "2001:db8::100" {
-								ipv6Subset = subset
-							}
+					var ips []string
+					for _, addr := range subset.Addresses {
+						ips = append(ips, addr.IP)
+					}
+					Expect(ips).To(ContainElements("192.168.1.100", "2001:db8::100"))
+
+					var v4Addr, v6Addr *corev1.EndpointAddress
+					for i := range subset.Addresses {
+						a := &subset.Addresses[i]
+						switch a.IP {
+						case "192.168.1.100":
+							v4Addr = a
+						case "2001:db8::100":
+							v6Addr = a
 						}
 					}
-
-					Expect(ipv4Subset).ToNot(BeNil(), "Should have IPv4 subset")
-					Expect(ipv6Subset).ToNot(BeNil(), "Should have IPv6 subset")
-				})
-
-				It("IPv4 subset contains IPv4 address", func() {
-					var ipv4Subset *corev1.EndpointSubset
-					for i := range endpoints.Subsets {
-						subset := &endpoints.Subsets[i]
-						if len(subset.Addresses) > 0 && subset.Addresses[0].IP == "192.168.1.100" {
-							ipv4Subset = subset
-							break
-						}
-					}
-
-					Expect(ipv4Subset).ToNot(BeNil())
-					Expect(ipv4Subset.Addresses).To(HaveLen(1))
-					assertEPAddrFromVMWithIP(ipv4Subset.Addresses[0], dualStackVM, "192.168.1.100")
-					Expect(ipv4Subset.Ports).To(HaveLen(1))
-					assertEPPortFromVMServicePort(ipv4Subset.Ports[0], vmServicePort1)
-				})
-
-				It("IPv6 subset contains IPv6 address", func() {
-					var ipv6Subset *corev1.EndpointSubset
-					for i := range endpoints.Subsets {
-						subset := &endpoints.Subsets[i]
-						if len(subset.Addresses) > 0 && subset.Addresses[0].IP == "2001:db8::100" {
-							ipv6Subset = subset
-							break
-						}
-					}
-
-					Expect(ipv6Subset).ToNot(BeNil())
-					Expect(ipv6Subset.Addresses).To(HaveLen(1))
-					assertEPAddrFromVMWithIP(ipv6Subset.Addresses[0], dualStackVM, "2001:db8::100")
-					Expect(ipv6Subset.Ports).To(HaveLen(1))
-					assertEPPortFromVMServicePort(ipv6Subset.Ports[0], vmServicePort1)
+					Expect(v4Addr).ToNot(BeNil())
+					Expect(v6Addr).ToNot(BeNil())
+					assertEPAddrFromVMWithIP(*v4Addr, dualStackVM, "192.168.1.100")
+					assertEPAddrFromVMWithIP(*v6Addr, dualStackVM, "2001:db8::100")
 				})
 			})
 
@@ -1114,18 +1089,6 @@ func unitTestsReconcile() {
 				Expect(allIPs).To(ContainElement("192.168.1.20"), "Should contain dual-stack VM IPv4")
 				Expect(allIPs).To(ContainElement("2001:db8::20"), "Should contain dual-stack VM IPv6")
 				Expect(allIPs).To(HaveLen(4), "Should have 4 total IP addresses")
-			})
-
-			It("IPv4 addresses are grouped together", func() {
-				allIPs := collectReadyEndpointIPs(endpoints)
-				Expect(allIPs).To(ContainElement("192.168.1.10"))
-				Expect(allIPs).To(ContainElement("192.168.1.20"))
-			})
-
-			It("IPv6 addresses are grouped together", func() {
-				allIPs := collectReadyEndpointIPs(endpoints)
-				Expect(allIPs).To(ContainElement("2001:db8::10"))
-				Expect(allIPs).To(ContainElement("2001:db8::20"))
 			})
 			})
 		})

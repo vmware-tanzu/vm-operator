@@ -73,6 +73,32 @@ const (
 	// controllers match the desired state specified in the spec.
 	VirtualMachineHardwareControllersVerified = "VirtualMachineHardwareControllersVerified"
 
+	// VirtualMachineConditionExtraConfigSynced status indicates whether a VM's extraConfig
+	// (which includes spec.advanced.extraConfig and first-class advanced fields) has been
+	// successfully applied to vSphere. This condition is marked as False/Pending if changes
+	// are detected while the VM is powered on. The changes will be applied the next time the
+	// VM is in a powered off state.
+	//
+	// It is important to note that the effectiveness of configuration changes depends on the specific property being set:
+	//
+	//  - Some properties can be modified while the VM is running and take effect immediately.
+	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
+	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
+	VirtualMachineConditionExtraConfigSynced = "VirtualMachineExtraConfigSynced"
+
+	// VirtualMachineConditionNetworkConfigSynced indicates whether the VM's
+	// NIC-level properties (interfaces[].vmxnet3, interfaces[].advancedProperties,
+	// interfaces[].vNUMANodeID) are applied to vSphere.
+	// This condition is marked as False/Pending if changes are detected while the VM is powered on.
+	// The changes will be applied the next time the VM is in a powered off state.
+	//
+	// It is important to note that the effectiveness of configuration changes depends on the specific property being set:
+	//
+	//  - Some properties can be modified while the VM is running and take effect immediately.
+	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
+	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
+	VirtualMachineConditionNetworkConfigSynced = "VirtualMachineNetworkConfigSynced"
+
 	// VirtualMachineHardwareVolumesVerified indicates that the VM's hardware
 	// volumes match the desired state specified in the spec.
 	VirtualMachineHardwareVolumesVerified = "VirtualMachineHardwareVolumesVerified"
@@ -1175,6 +1201,63 @@ type VirtualMachineAdvancedSpec struct {
 	// for this VM, a feature utilized by external backup systems such as
 	// VMware Data Recovery.
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
+
+	// +optional
+
+	// PreferHTEnabled hints to the ESXi scheduler to prefer placing vCPUs on
+	// hyperthreads of the same physical core, improving memory locality for
+	// latency-sensitive workloads.
+	PreferHTEnabled *bool `json:"preferHTEnabled,omitempty" vmx:"numa.vcpu.preferHT"`
+
+	// +optional
+
+	// HugePages1GEnabled enables 1 GB huge page backing for VM memory, reducing
+	// TLB pressure for memory-intensive workloads such as Telco VNFs.
+	// Cannot be changed while the VM is powered on.
+	HugePages1GEnabled *bool `json:"hugePages1GEnabled,omitempty" vmx:"sched.mem.lpage.enable1GPage"`
+
+	// +optional
+
+	// TimeTrackerLowLatencyEnabled enables the low-latency time tracking mode,
+	// using a higher-resolution timer to reduce scheduling jitter for
+	// latency-sensitive workloads. Typically set alongside LatencySensitivity=High.
+	TimeTrackerLowLatencyEnabled *bool `json:"timeTrackerLowLatencyEnabled,omitempty" vmx:"timeTracker.lowLatency"`
+
+	// +optional
+
+	// CPUAffinityExclusiveNoStatsEnabled disables per-VM CPU accounting
+	// statistics, reducing scheduler overhead for latency-sensitive workloads.
+	// Typically set alongside LatencySensitivity=High.
+	CPUAffinityExclusiveNoStatsEnabled *bool `json:"cpuAffinityExclusiveNoStatsEnabled,omitempty" vmx:"sched.cpu.affinity.exclusiveNoStats"`
+
+	// +optional
+
+	// VMXSwapEnabled controls whether the VMX process memory may be swapped to
+	// disk by the host. Set to false to disable VMX swapping, reducing latency
+	// jitter for memory-sensitive workloads. When nil the VMX key is left unset,
+	// preserving the hypervisor default.
+	VMXSwapEnabled *bool `json:"vmxSwapEnabled,omitempty" vmx:"sched.swap.vmxSwapEnabled"`
+
+	// +optional
+
+	// PNUMANodeAffinity pins this VM to the specified physical host NUMA nodes.
+	// vSphere scheduler places vCPUs and memory only on the listed physical
+	// NUMA node IDs. An empty slice removes any existing affinity constraint.
+	//
+	// This is distinct from per-NIC virtual NUMA node assignment
+	// (interfaces[].vNUMANodeID), which assigns a NIC to a vNUMA node.
+	PNUMANodeAffinity []int32 `json:"pNUMANodeAffinity,omitempty" vmx:"numa.nodeAffinity"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=key
+
+	// ExtraConfig is a fallback for VM-level VMX properties not yet promoted to
+	// first-class fields above. Keys with reserved prefixes (vmservice., vmtools.,
+	// etc.) are denied by the admission webhook. Device-specific properties
+	// (ethernetX.*) must use spec.network.interfaces[].vmxnet3 for first-class
+	// VMXNet3 fields, or spec.network.interfaces[].advancedProperties for other keys.
+	ExtraConfig []vmopv1common.KeyValuePair `json:"extraConfig,omitempty"`
 }
 
 type VirtualMachineEncryptionType string
@@ -1371,6 +1454,16 @@ type VirtualMachineStatus struct {
 
 	// Policies describes the observed policies applied to this VM.
 	Policies []PolicyStatus `json:"policies,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=key
+
+	// ExtraConfig reflects the effective VMX extraConfig applied to the VM,
+	// merged from all sources: VM Image, VM Class, spec.network.interfaces[]
+	// advanced properties, and spec.advanced.extraConfig.
+	// This denotes the current configuration of the VM.
+	ExtraConfig []vmopv1common.KeyValuePair `json:"extraConfig,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -246,7 +246,7 @@ When VM Operator is upgraded with new capabilities, existing VMs are automatical
 The system tracks schema upgrades using annotations on the VM:
 
 - `vmoperator.vmware.com/upgraded-to-build-version`: The VM Operator build version the VM has been upgraded to
-- `vmoperator.vmware.com/upgraded-to-schema-version`: The API schema version the VM has been upgraded to  
+- `vmoperator.vmware.com/upgraded-to-schema-version`: The API schema version the VM has been upgraded to
 - `vmoperator.vmware.com/upgraded-to-feature-version`: A bitmask indicating which feature-specific upgrades have been applied
 
 ### Storage-Related Upgrades
@@ -576,7 +576,7 @@ The type of encryption used by the VM is reported in the list `status.crypto.enc
 | Encryption storage class |    ✓   |   ✓   |
 | vTPM                     |    ✓   |       |
 
-The `Config` type refers to all files related to a VM except for virtual disks. The `Disks` type indicates at least one of a VM's virtual disks is encrypted. To determine which of the VM's disks are encrypted, please refer to [`status.volumes[].crypto`](#volume-status). 
+The `Config` type refers to all files related to a VM except for virtual disks. The `Disks` type indicates at least one of a VM's virtual disks is encrypted. To determine which of the VM's disks are encrypted, please refer to [`status.volumes[].crypto`](#volume-status).
 
 #### EncryptionSynced Condition
 
@@ -715,7 +715,34 @@ The first two network interfaces in the VM are configured using the VM class. Th
 | `eth1` | `VirtualVmxnet2` |
 | `eth2` | `VirtualVmxnet3` |
 
-#### Per-Interface Guest Network Configuration
+The v1alpha6 `VirtualMachine` API includes per-interface fields for adapter model, tuning, and related settings in the table below. Under the default VM Service configuration, these fields are available on the `VirtualMachine` CRD alongside the name, network reference, and bootstrap fields documented in [Per-interface guest network configuration](#per-interface-guest-network-configuration).
+
+Each `spec.network.interfaces[]` entry may include an optional `type` of `VMXNet3` or `SRIOV`. When `type` is omitted, it is set using the same ordering as the table above: the first interface in the VM spec follows the first network adapter from the VM class, the second follows the second, and so on. Any extra interfaces in the spec beyond those adapters use VMXNet3. The VM spec defines how many interfaces you request; the class does not add or remove interfaces from that list.
+
+| Field | Description |
+|-------|-------------|
+| `type` | Virtual device model: `VMXNet3` or `SRIOV`. Omitted values are filled from the VM class by interface order as described above. |
+| `vNUMANodeID` | Pins the adapter to a virtual NUMA node; must match the VM's CPU topology and required minimum hardware version. |
+| `vmxnet3` | VMXNet3-only performance and offload settings. **Requires `type: VMXNet3`.** See [VMXNet3 interface tuning](#vmxnet3-interface-tuning). |
+| `advancedProperties` | Additional per-adapter VMX settings as key/value pairs. Keys must not duplicate a first-class field (for example a key that duplicates a `vmxnet3` subfield is rejected). |
+
+#### VMXNet3 interface tuning
+
+Use `spec.network.interfaces[].vmxnet3` only when `type` is `VMXNet3`. The API rejects this block for other adapter types.
+
+| Field | Description |
+|-------|-------------|
+| `uptv2Enabled` | Enables UPT v2 (uniform passthrough) for this adapter. Requires a sufficiently high VM hardware version, UPT-capable hardware, full memory reservation, and a current VMXNet3 guest driver. |
+| `ctxPerDev` | Transmit context threading: `PerVM` (default), `PerDevice`, or `PerQueue` (often used with RSS for high throughput). |
+| `rssOffloadEnabled` | Receive Side Scaling offload so the physical NIC can spread receive traffic across queues. |
+| `udpRSSEnabled` | Extends RSS-style distribution to UDP as well as TCP. |
+| `pnicFeatures` | Set of physical NIC queue features (for example `ReceiveSideScaling`, `LargeReceiveOffload`). |
+| `coalescingScheme` | Interrupt coalescing mode: `Disabled`, `Adapt`, `Static`, or `RateBasedCoalescing`. |
+| `coalescingParams` | Parameter string for `Static` or `RateBasedCoalescing` (packet queue limit or interrupts per second, depending on scheme). Ignored for `Disabled` or `Adapt`. |
+
+VM-level advanced options are documented in [Advanced VM settings](#advanced-vm-settings).
+
+#### Per-interface guest network configuration
 
 There are several options which may be used to influence the guest's per-interface networking configuration. Support for these fields depends on the bootstrap provider.
 
@@ -795,6 +822,25 @@ The above data does _not_ represent the _observed_ network configuration of the 
 | `status.network.config.interfaces[].ip.gateway4` | From the corresponding `spec.network.interfaces[].gateway4` if non-empty, otherwise from IPAM unless the connected network is configured to use DHCP4, in which case this field will be empty |
 | `status.network.config.interfaces[].ip.gateway6` | From the corresponding `spec.network.interfaces[].gateway6` if non-empty, otherwise from IPAM unless the connected network is configured to use DHCP6, in which case this field will be empty |
 
+## Advanced VM settings
+
+`spec.advanced` groups optional VM-wide settings that are not covered by the VM class, image, or basic hardware blocks. Under the default VM Service configuration, these fields are available on the `VirtualMachine` CRD. Use per-interface `spec.network.interfaces[]` fields (and `advancedProperties` there) for adapter-specific VMX keys; use `spec.advanced.extraConfig` only for VM-wide keys that do not have a first-class field below.
+
+| Field | Description |
+|-------|-------------|
+| `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. |
+| `defaultVolumeProvisioningMode` | Default provisioning mode for PVCs owned by this VM. |
+| `changeBlockTracking` | Enables change block tracking for backup integrations. |
+| `preferHTEnabled` | Prefer scheduling vCPUs on hyperthreads of the same core for locality. |
+| `hugePages1GEnabled` | Use 1 GiB huge pages for VM memory. Cannot be changed while the VM is powered on. |
+| `timeTrackerLowLatencyEnabled` | Low-latency time tracking; often used with high latency sensitivity. |
+| `cpuAffinityExclusiveNoStatsEnabled` | Disable per-VM CPU accounting statistics; often used with high latency sensitivity. |
+| `vmxSwapEnabled` | Allow or disallow VMX process swap; set `false` to reduce swap-related jitter. |
+| `pNUMANodeAffinity` | Pin the VM to listed physical host NUMA node IDs (distinct from per-NIC `vNUMANodeID`). |
+| `extraConfig` | Fallback list of VM-wide VMX key/value pairs not modeled above. Keys that duplicate a first-class field or reserved prefixes are rejected. Per-adapter keys belong under `spec.network.interfaces[]`. |
+
+`status.extraConfig` lists the effective VM-wide VMX map the operator is managing for observation. Conditions such as `VirtualMachineExtraConfigSynced` and `VirtualMachineNetworkConfigSynced` report whether VM-wide and per-interface advanced settings have been applied.
+
 ## Storage
 
 A VM deployed from a `VirtualMachineImage` or `ClusterVirtualMachineImage` inherit the disk(s) from those images. Additional storage may also be provided by using [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes).
@@ -872,13 +918,13 @@ There are two types of volumes: _Managed_ and _Unmanaged_:
 
 !!! note "Automatic PVC Creation for Image Disks"
     When a `VirtualMachine` is deployed from a VM image, the system automatically creates PersistentVolumeClaims (PVCs) for the disks that come from the image. This process, called _disk registration_, converts unmanaged disks into managed volumes, providing:
-    
+
     - Consistent storage lifecycle management through Kubernetes
     - Integration with Kubernetes storage quotas and resource management
     - Ability to track and manage all VM storage through the PVC API
-    
+
     The registration process:
-    
+
     1. **Backfill**: When the VM is first created or upgraded, any unmanaged disks are automatically added to `spec.volumes` with their current placement information (controller type, bus number, and unit number). A disk is identified as unmanaged if no `spec.volumes` entry exists with matching `controllerType`, `controllerBusNumber`, and `unitNumber` values.
     2. **PVC Creation**: For each unmanaged disk, a PVC is created with:
         - An owner reference pointing to the VM
@@ -888,9 +934,9 @@ There are two types of volumes: _Managed_ and _Unmanaged_:
         - Appropriate access modes based on the disk's sharing configuration
     3. **Volume Registration**: A `CnsRegisterVolume` custom resource is created to register the existing disk with the CSI storage provider, allowing the PVC to bind to the underlying disk without copying data.
     4. **Spec Update**: Once the PVC is bound, the `spec.volumes` entry is updated with the PVC claim name.
-    
+
     This automatic conversion happens transparently during VM reconciliation. Disks from VM images transition from unmanaged volumes to managed volumes without requiring user intervention or data migration.
-    
+
     **Note**: You can provide your own PVC references for image disks by pre-populating `spec.volumes` with entries that have matching controller placement values. See [Mapping spec.volumes to Image Disks](#mapping-specvolumes-to-image-disks) for details.
 
 #### Volume Specification
@@ -946,7 +992,7 @@ The `applicationType` field provides application-specific defaults for specializ
 
 !!! note "Application-Based Defaults"
     When an `applicationType` is specified, the corresponding `diskMode` and volume `sharingMode` values are automatically set by the mutation webhook if not explicitly provided. The validation webhook ensures these values are correct and will reject requests with invalid combinations.
-    
+
     The `applicationType` field is immutable and cannot be changed after the volume is created.
 
 #### Volume Placement
@@ -1015,7 +1061,7 @@ During registration, linked clone disks are:
 
 !!! info "Promotion Behavior"
     Disk promotion consolidates the linked clone delta disk and its parent into a single, independent disk. This process:
-    
+
     - Happens automatically during the first reconciliation after deployment
     - Requires sufficient datastore space for the full disk size
     - Cannot be reversed once completed
@@ -1045,7 +1091,7 @@ VM images reference existing VMs in vCenter as templates:
 
 !!! note "DataSourceRef and Image Disks"
     When PVCs are created for image disks, they include a `dataSourceRef` field pointing to the VM. This indicates:
-    
+
     - The PVC was created through automatic registration, not user action
     - The underlying disk came from a VM image, not from a new PVC request
     - The CSI provisioner should use the `CnsRegisterVolume` workflow instead of creating a new disk
@@ -1063,7 +1109,7 @@ To customize how image disks are managed or to provide explicit PVC references f
 **Important**: To correctly map a `spec.volumes` entry to a disk from the image, you must specify matching placement values:
 
 - `controllerType` - must match the disk's controller type from the image
-- `controllerBusNumber` - must match the controller's bus number from the image  
+- `controllerBusNumber` - must match the controller's bus number from the image
 - `unitNumber` - must match the disk's unit number from the image
 
 These values can be found in the VM image's status:
@@ -1137,7 +1183,7 @@ spec:
     unitNumber: 0
     persistentVolumeClaim:
       claimName: my-os-pvc
-  # Map to data disk (SCSI 0:1)  
+  # Map to data disk (SCSI 0:1)
   - name: data-disk
     controllerType: SCSI
     controllerBusNumber: 0
@@ -1273,7 +1319,7 @@ For volumes that were automatically created from VM images:
 
 !!! note "PVC Ownership"
     PVCs created automatically for image disks have `ownerReferences` pointing to the VM. This means:
-    
+
     - Deleting the VM will cascade delete all owned PVCs
     - Removing the volume from `spec.volumes` does NOT delete the PVC automatically
     - To prevent accidental data loss, you must explicitly delete the PVC
@@ -1346,7 +1392,7 @@ The field `status.volumes` described the observed state of a `VirtualMachine` re
 
 !!! note "Volume Type in Status"
     During the automatic disk registration process, volumes from VM images will initially appear with `type: Classic` in the status. Once the PVC is created and bound, and the registration process is complete, these volumes remain as `type: Classic` in the status even though they are backed by PVCs. The `type` field in status indicates the origin of the disk (from an image) rather than the current storage implementation.
-    
+
     To determine if an unmanaged volume has been converted to use a PVC, check if the corresponding entry in `spec.volumes` has a `persistentVolumeClaim` field populated.
 
 The following example shows the status for a single, encrypted volume that originated from a VM image:
@@ -1447,7 +1493,7 @@ Automatically created PVCs include the following annotation:
 ##### Volume Modes and Access Modes
 
 - **Volume Mode**: Set to `Block` for environments with shared disk support, otherwise `Filesystem`.
-- **Access Modes**: 
+- **Access Modes**:
     - `ReadWriteOnce` for standard disks
     - `ReadWriteMany` for disks with `sharingMode: MultiWriter`
 
@@ -1870,7 +1916,7 @@ RequiredDuringSchedulingPreferredDuringExecution describes affinity requirements
 
 PreferredDuringSchedulingPreferredDuringExecution describes affinity requirements that should be met, but the VM can still be scheduled if the requirement cannot be satisfied. The scheduler will prefer to schedule VMs that satisfy the affinity expressions specified by this field, but it may choose to violate one or more of the expressions. Additionally, it also describes the affinity requirements that should be met during run-time, but the VM can still be run if the requirements cannot be satisfied. This setting is available via `vmAffinity` and `vmAntiAffinity` fields in `spec.affinity`.
 
-#### TopologyKey 
+#### TopologyKey
 The `topologyKey` field is specified with the VM Affinity/Anti-Affinity based scheduling constraints to designate the scope of the rule. Commonly used values include:
 
 * `kubernetes.io/hostname` -- The rule is executed in the context of a node/host.

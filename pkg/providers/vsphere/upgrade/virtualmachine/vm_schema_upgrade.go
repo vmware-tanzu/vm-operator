@@ -166,6 +166,17 @@ func ReconcileSchemaUpgrade(
 		}
 	}
 
+	if features.VMExtraConfig {
+		if f := vmopv1util.FeatureVersionNetExtraConfig; !vmFeatureVersion.Has(f) {
+			if _, err := virtualmachine.FillEmptyNetworkInterfaceTypesFromClass(
+				ctx, k8sClient, vm); err != nil {
+
+				return fmt.Errorf("fill network interface types: %w", err)
+			}
+			vmFeatureVersion.Set(f)
+		}
+	}
+
 	vm.SetAnnotation(
 		pkgconst.UpgradedToFeatureVersionAnnotationKey,
 		vmFeatureVersion.String())

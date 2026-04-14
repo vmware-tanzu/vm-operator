@@ -313,6 +313,27 @@ func vcSimPlacement() {
 					})
 				})
 			})
+
+			Context("when PlaceVmsXCluster returns NoCompatibleHost faults", func() {
+				AfterEach(func() {
+					ctx.SimulatorService().ClearFaultRules()
+				})
+
+				It("returns an error containing the leaf root cause (UnsupportedGuest)", func() {
+					ctx.SimulatorService().AddFaultRule(&simulator.FaultInjectionRule{
+						MethodName:  "PlaceVmsXCluster",
+						ObjectType:  "Folder",
+						ObjectName:  "*",
+						FaultType:   simulator.FaultTypeCustom,
+						Fault:       &vimtypes.NoCompatibleHost{},
+						Probability: 1.0,
+						Enabled:     true,
+					})
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+					Expect(err).To(HaveOccurred())
+					Expect(result).To(BeNil())
+				})
+			})
 		})
 	})
 

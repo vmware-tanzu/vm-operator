@@ -19,6 +19,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 // GetStoragePolicyStatus returns the storage policy status for a given profile
@@ -99,15 +100,17 @@ func GetStoragePolicyStatus(
 		return infrav1.StoragePolicyStatus{}, err
 	}
 
-	// Collect volume attributes class name.
-	if err := getVolumeAttributesClassName(
-		ctx,
-		k8sClient,
-		p,
-		profileID,
-		&status); err != nil {
+	// Collect volume attributes class name only if capability is enabled.
+	if pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+		if err := getVolumeAttributesClassName(
+			ctx,
+			k8sClient,
+			p,
+			profileID,
+			&status); err != nil {
 
-		return infrav1.StoragePolicyStatus{}, err
+			return infrav1.StoragePolicyStatus{}, err
+		}
 	}
 
 	// Sort the slices in the status.

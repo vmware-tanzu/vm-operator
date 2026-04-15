@@ -634,14 +634,12 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 	// Include only VM addresses whose IP family is allowed by the Service IPFamilies and IPFamilyPolicy.
 	allowedFamilies := r.determineAllowedIPFamilies(service)
 
-	// Group addresses by IP family while building unpacked subsets; RepackSubsets then
-	// merges subsets that share the same ports into the canonical Endpoints shape.
 	type addressInfo struct {
 		addr  corev1.EndpointAddress
 		ready bool
 		ports []corev1.EndpointPort
 	}
-	ipFamilyToAddresses := make(map[corev1.IPFamily][]addressInfo)
+	var addressInfos []addressInfo
 	var vmInSubsetsMap map[types.UID]struct{}
 
 	for i := range vmList.Items {
@@ -653,23 +651,13 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			continue
 		}
 
-		// Collect all IPs for this VM (both IPv4 and IPv6)
-		var vmIPs []struct {
-			ip     string
-			family corev1.IPFamily
-		}
+		var vmIPs []string
 		if vm.Status.Network != nil {
 			if vm.Status.Network.PrimaryIP4 != "" && allowedFamilies[corev1.IPv4Protocol] {
-				vmIPs = append(vmIPs, struct {
-					ip     string
-					family corev1.IPFamily
-				}{vm.Status.Network.PrimaryIP4, corev1.IPv4Protocol})
+				vmIPs = append(vmIPs, vm.Status.Network.PrimaryIP4)
 			}
 			if vm.Status.Network.PrimaryIP6 != "" && allowedFamilies[corev1.IPv6Protocol] {
-				vmIPs = append(vmIPs, struct {
-					ip     string
-					family corev1.IPFamily
-				}{vm.Status.Network.PrimaryIP6, corev1.IPv6Protocol})
+				vmIPs = append(vmIPs, vm.Status.Network.PrimaryIP6)
 			}
 		}
 
@@ -728,9 +716,9 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				})
 		}
 
-		for _, vmIPInfo := range vmIPs {
+		for _, ip := range vmIPs {
 			epa := corev1.EndpointAddress{
-				IP: vmIPInfo.ip,
+				IP: ip,
 				TargetRef: &corev1.ObjectReference{
 					APIVersion: vm.APIVersion,
 					Kind:       vm.Kind,
@@ -744,7 +732,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				},
 			}
 
-			ipFamilyToAddresses[vmIPInfo.family] = append(ipFamilyToAddresses[vmIPInfo.family], addressInfo{
+			addressInfos = append(addressInfos, addressInfo{
 				addr:  epa,
 				ready: ready,
 				ports: ports,
@@ -752,32 +740,19 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		}
 	}
 
-	subsets := make([]corev1.EndpointSubset, 0, len(ipFamilyToAddresses))
-	for _, addrInfos := range ipFamilyToAddresses {
-		if len(addrInfos) == 0 {
-			continue
-		}
-
+	subsets := make([]corev1.EndpointSubset, 0, len(addressInfos))
+	for _, addrInfo := range addressInfos {
 		var readyAddrs, notReadyAddrs []corev1.EndpointAddress
-		for _, addrInfo := range addrInfos {
-			if addrInfo.ready {
-				readyAddrs = append(readyAddrs, addrInfo.addr)
-			} else {
-				notReadyAddrs = append(notReadyAddrs, addrInfo.addr)
-			}
+		if addrInfo.ready {
+			readyAddrs = append(readyAddrs, addrInfo.addr)
+		} else {
+			notReadyAddrs = append(notReadyAddrs, addrInfo.addr)
 		}
-
-		// All addresses in this group should have the same ports (they come from the same service)
-		// Use the ports from the first address info
-		ports := addrInfos[0].ports
-
-		subset := corev1.EndpointSubset{
+		subsets = append(subsets, corev1.EndpointSubset{
 			Addresses:         readyAddrs,
 			NotReadyAddresses: notReadyAddrs,
-			Ports:             ports,
-		}
-
-		subsets = append(subsets, subset)
+			Ports:             addrInfo.ports,
+		})
 	}
 
 	return subsets, nil

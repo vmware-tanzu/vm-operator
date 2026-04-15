@@ -60,11 +60,11 @@ func restore_v1alpha6_VirtualMachineAdvancedProps(dst, src *vmopv1.VirtualMachin
 	dst.Spec.Advanced.ExtraConfig = adv.ExtraConfig
 }
 
-func restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, src *vmopv1.VirtualMachine) {
+func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMachine) {
 	if src.Spec.Network == nil || len(src.Spec.Network.Interfaces) == 0 {
 		return
 	}
-	if dst.Spec.Network == nil {
+	if dst.Spec.Network == nil || len(dst.Spec.Network.Interfaces) == 0 {
 		return
 	}
 	srcByName := make(map[string]*vmopv1.VirtualMachineNetworkInterfaceSpec, len(src.Spec.Network.Interfaces))
@@ -77,6 +77,7 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, src *vmop
 			continue
 		}
 		dstIface := &dst.Spec.Network.Interfaces[i]
+		dstIface.IPFamilyPolicy = srcIface.IPFamilyPolicy
 		dstIface.Type = srcIface.Type
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
 		dstIface.VMXNet3 = srcIface.VMXNet3
@@ -124,26 +125,6 @@ func restore_v1alpha6_VirtualMachineNetworkVLANs(dst, src *vmopv1.VirtualMachine
 	dst.Spec.Network.VLANs = src.Spec.Network.VLANs
 }
 
-func restore_v1alpha6_VirtualMachineNetworkInterfaceIPFamilyPolicy(dst, src *vmopv1.VirtualMachine) {
-	if src.Spec.Network == nil || len(src.Spec.Network.Interfaces) == 0 {
-		return
-	}
-	if dst.Spec.Network == nil || len(dst.Spec.Network.Interfaces) == 0 {
-		return
-	}
-	srcByName := make(map[string]*vmopv1.VirtualMachineNetworkInterfaceSpec, len(src.Spec.Network.Interfaces))
-	for i := range src.Spec.Network.Interfaces {
-		srcByName[src.Spec.Network.Interfaces[i].Name] = &src.Spec.Network.Interfaces[i]
-	}
-	for i := range dst.Spec.Network.Interfaces {
-		srcIface, ok := srcByName[dst.Spec.Network.Interfaces[i].Name]
-		if !ok {
-			continue
-		}
-		dst.Spec.Network.Interfaces[i].IPFamilyPolicy = srcIface.IPFamilyPolicy
-	}
-}
-
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -162,9 +143,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineBootstrapDisabled(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
-	restore_v1alpha6_VirtualMachineNetworkInterfaceIPFamilyPolicy(dst, restored)
 	restore_v1alpha6_VirtualMachineAdvancedProps(dst, restored)
-	restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, restored)
+	restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, restored)
 
 	// END RESTORE
 

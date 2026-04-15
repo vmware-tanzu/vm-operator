@@ -322,6 +322,30 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 						assertFeatureVersion("7")
 					})
 				})
+
+				When("VMExtraConfig feature is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMExtraConfig = true
+						})
+						vm.Spec.ClassName = "schema-up-class"
+						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0"},
+							},
+						}
+						cl := builder.DummyVirtualMachineClass("schema-up-class")
+						cl.Namespace = testNamespace
+						Expect(k8sClient.Create(ctx, cl)).To(Succeed())
+					})
+
+					It("should set feature version including NetExtraConfig and backfill NIC type", func() {
+						assertUpgraded()
+						assertFeatureVersion("9")
+						Expect(vm.Spec.Network.Interfaces[0].Type).To(
+							Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+					})
+				})
 			})
 
 			Context("BIOS UUID reconciliation", func() {

@@ -125,6 +125,10 @@ const (
 
 	// FeatureVersionAllDisksArePVCs refers to the AllDisksArePVCs capability.
 	FeatureVersionAllDisksArePVCs // 4
+
+	// FeatureVersionNetExtraConfig refers to VM network extra config (NIC type
+	// and related fields) schema upgrade and backfill.
+	FeatureVersionNetExtraConfig // 8
 )
 
 const (
@@ -134,7 +138,8 @@ const (
 	// FeatureVersionAll is all valid feature bits OR'd together.
 	FeatureVersionAll = FeatureVersionBase |
 		FeatureVersionVMSharedDisks |
-		FeatureVersionAllDisksArePVCs // 7
+		FeatureVersionAllDisksArePVCs |
+		FeatureVersionNetExtraConfig // 15
 )
 
 // FeatureVersions returns all possible, valid FeatureVersion elements.
@@ -143,6 +148,7 @@ func FeatureVersions() []FeatureVersion {
 		FeatureVersionBase,
 		FeatureVersionVMSharedDisks,
 		FeatureVersionAllDisksArePVCs,
+		FeatureVersionNetExtraConfig,
 	}
 }
 
@@ -227,6 +233,9 @@ func ActivatedFeatureVersion(ctx context.Context) FeatureVersion {
 	}
 	if f.AllDisksArePVCs || f.VMSharedDisks {
 		v.Set(FeatureVersionAllDisksArePVCs)
+	}
+	if f.VMExtraConfig {
+		v.Set(FeatureVersionNetExtraConfig)
 	}
 	return v
 }

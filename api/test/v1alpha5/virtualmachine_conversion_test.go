@@ -16,6 +16,7 @@ import (
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 )
 
 func TestVirtualMachineConversion(t *testing.T) {
@@ -103,6 +104,47 @@ func TestVirtualMachineConversion(t *testing.T) {
 								{
 									Name:           "eth1",
 									IPFamilyPolicy: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyIPv6Only),
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.advanced new fields",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+							PreferHTEnabled:                    ptr.To(true),
+							HugePages1GEnabled:                 ptr.To(true),
+							TimeTrackerLowLatencyEnabled:       ptr.To(true),
+							CPUAffinityExclusiveNoStatsEnabled: ptr.To(true),
+							VMXSwapEnabled:                     ptr.To(false),
+							PNUMANodeAffinity:                  []int32{0, 1},
+							ExtraConfig: []vmopv1common.KeyValuePair{
+								{Key: "somekey", Value: "somevalue"},
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.network.interfaces advanced nic fields",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:           "eth0",
+									IPFamilyPolicy: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyDualStack),
+									Type:           vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+									VNUMANodeID:    ptr.To(int32(1)),
+									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+										UPTv2Enabled: ptr.To(true),
+									},
+									AdvancedProperties: []vmopv1common.KeyValuePair{
+										{Key: "test-key", Value: "test-val"},
+									},
 								},
 							},
 						},

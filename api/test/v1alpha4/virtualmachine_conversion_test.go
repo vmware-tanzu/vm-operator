@@ -405,6 +405,46 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "spec.advanced new fields",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+							PreferHTEnabled:                    ptrOf(true),
+							HugePages1GEnabled:                 ptrOf(true),
+							TimeTrackerLowLatencyEnabled:       ptrOf(true),
+							CPUAffinityExclusiveNoStatsEnabled: ptrOf(true),
+							VMXSwapEnabled:                     ptrOf(false),
+							PNUMANodeAffinity:                  []int32{0, 1},
+							ExtraConfig: []vmopv1common.KeyValuePair{
+								{Key: "somekey", Value: "somevalue"},
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.network.interfaces new fields",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:        "eth0",
+									Type:        vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+									VNUMANodeID: ptrOf(int32(1)),
+									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+										UPTv2Enabled: ptrOf(true),
+									},
+									AdvancedProperties: []vmopv1common.KeyValuePair{
+										{Key: "test-key", Value: "test-val"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		}
 
 		for i := range testCases {

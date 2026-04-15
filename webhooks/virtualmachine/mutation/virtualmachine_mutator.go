@@ -123,6 +123,10 @@ func init() {
 		"create.vmoperator.vmware.com/set-default-controllers",
 		(MutateOnCreateFn)(SetDefaultControllers))
 
+	MutateOnCreateFuncs.Store(
+		"create.vmoperator.vmware.com/default-network-interface-type",
+		(MutateOnCreateFn)(mutateOnCreateDefaultNetworkInterfaceType))
+
 	MutateOnUpdateFuncs.Store(
 		"update.vmoperator.vmware.com/set-default-cdrom-image-kind",
 		(MutateOnUpdateFn)(SetDefaultCdromImgKindOnUpdate))
@@ -130,6 +134,10 @@ func init() {
 	MutateOnUpdateFuncs.Store(
 		"update.vmoperator.vmware.com/mutate-cdrom-controller",
 		(MutateOnUpdateFn)(MutateCdromControllerOnUpdate))
+
+	MutateOnUpdateFuncs.Store(
+		"update.vmoperator.vmware.com/default-network-interface-type",
+		(MutateOnUpdateFn)(mutateOnUpdateDefaultNetworkInterfaceType))
 }
 
 // NewMutator returns the package's Mutator.

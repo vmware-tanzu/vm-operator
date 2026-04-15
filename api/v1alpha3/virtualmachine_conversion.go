@@ -122,10 +122,61 @@ func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetwor
 	return autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetworkSpec(in, out, s)
 }
 
+// Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvancedSpec drops
+// fields that do not exist in v1alpha3; they are preserved via MarshalData on ConvertFrom.
+func Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvancedSpec(
+	in *vmopv1.VirtualMachineAdvancedSpec, out *VirtualMachineAdvancedSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvancedSpec(in, out, s)
+}
+
+// Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_VirtualMachineNetworkInterfaceSpec drops
+// fields that do not exist in v1alpha3; they are preserved via MarshalData on ConvertFrom.
 func Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_VirtualMachineNetworkInterfaceSpec(
 	in *vmopv1.VirtualMachineNetworkInterfaceSpec, out *VirtualMachineNetworkInterfaceSpec, s apiconversion.Scope) error {
 
 	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_VirtualMachineNetworkInterfaceSpec(in, out, s)
+}
+
+func restore_v1alpha6_VirtualMachineAdvancedProps(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Advanced == nil {
+		return
+	}
+	if dst.Spec.Advanced == nil {
+		dst.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+	}
+	adv := src.Spec.Advanced
+	dst.Spec.Advanced.PreferHTEnabled = adv.PreferHTEnabled
+	dst.Spec.Advanced.HugePages1GEnabled = adv.HugePages1GEnabled
+	dst.Spec.Advanced.TimeTrackerLowLatencyEnabled = adv.TimeTrackerLowLatencyEnabled
+	dst.Spec.Advanced.CPUAffinityExclusiveNoStatsEnabled = adv.CPUAffinityExclusiveNoStatsEnabled
+	dst.Spec.Advanced.VMXSwapEnabled = adv.VMXSwapEnabled
+	dst.Spec.Advanced.PNUMANodeAffinity = adv.PNUMANodeAffinity
+	dst.Spec.Advanced.ExtraConfig = adv.ExtraConfig
+}
+
+func restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Network == nil || len(src.Spec.Network.Interfaces) == 0 {
+		return
+	}
+	if dst.Spec.Network == nil {
+		return
+	}
+	srcByName := make(map[string]*vmopv1.VirtualMachineNetworkInterfaceSpec, len(src.Spec.Network.Interfaces))
+	for i := range src.Spec.Network.Interfaces {
+		srcByName[src.Spec.Network.Interfaces[i].Name] = &src.Spec.Network.Interfaces[i]
+	}
+	for i := range dst.Spec.Network.Interfaces {
+		srcIface, ok := srcByName[dst.Spec.Network.Interfaces[i].Name]
+		if !ok {
+			continue
+		}
+		dstIface := &dst.Spec.Network.Interfaces[i]
+		dstIface.Type = srcIface.Type
+		dstIface.VNUMANodeID = srcIface.VNUMANodeID
+		dstIface.VMXNet3 = srcIface.VMXNet3
+		dstIface.AdvancedProperties = srcIface.AdvancedProperties
+	}
 }
 
 func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha3_VirtualMachineBootstrapSpec(
@@ -435,10 +486,11 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineAffinity(dst, restored)
-	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkInterfaceIPFamilyPolicy(dst, restored)
+	restore_v1alpha6_VirtualMachineAdvancedProps(dst, restored)
+	restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, restored)
 
 	// END RESTORE
 

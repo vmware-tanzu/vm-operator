@@ -2855,7 +2855,7 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("Feature Gate inactive",
+			Entry("disallow spec.crypto when FeatureGate VMVlanSubinterface is disabled (by default)",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{

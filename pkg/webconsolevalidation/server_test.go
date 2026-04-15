@@ -6,6 +6,7 @@ package webconsolevalidation_test
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -58,6 +59,23 @@ func serverUnitTests() {
 			})
 
 		})
+
+		When("IPv6 dual-stack bind address is provided", func() {
+
+			It("should initialize a new Server with [::] address", func() {
+				server, err := webconsolevalidation.NewServer("[::]:8080", serverPath, fake.NewFakeClient())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(server).NotTo(BeNil())
+				Expect(server.Addr).To(Equal("[::]:8080"))
+			})
+
+			It("should initialize a new Server with [::1] loopback address", func() {
+				server, err := webconsolevalidation.NewServer("[::1]:8080", serverPath, fake.NewFakeClient())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(server).NotTo(BeNil())
+				Expect(server.Addr).To(Equal("[::1]:8080"))
+			})
+		})
 	})
 
 	Context("RunServer", func() {
@@ -88,6 +106,51 @@ func serverUnitTests() {
 			close(done)
 		}, 1.0) // Time out this after 1 second.
 
+		Context("RunServer with dual-stack default", func() {
+
+			var (
+				server     *webconsolevalidation.Server
+				serverPort int
+			)
+
+			BeforeEach(func() {
+				serverPort = getAvailablePort()
+				var err error
+				server, err = webconsolevalidation.NewServer(
+					fmt.Sprintf("[::]:%d", serverPort),
+					serverPath,
+					builder.NewFakeClient(),
+				)
+				Expect(err).NotTo(HaveOccurred())
+
+				go func() {
+					defer GinkgoRecover()
+					_ = server.Run()
+				}()
+
+				time.Sleep(100 * time.Millisecond)
+			})
+
+			It("should accept connections via IPv4 loopback (127.0.0.1)", func() {
+				url := fmt.Sprintf("http://127.0.0.1:%d%s?uuid=test&namespace=test", serverPort, serverPath)
+				resp, err := http.Get(url)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp).NotTo(BeNil())
+				Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+				Expect(resp.Body.Close()).To(Succeed())
+			})
+
+			It("should accept connections via IPv6 loopback ([::1])", func() {
+				url := fmt.Sprintf("http://[::1]:%d%s?uuid=test&namespace=test", serverPort, serverPath)
+				resp, err := http.Get(url)
+				if err != nil {
+					Skip("IPv6 not available on this system: " + err.Error())
+				}
+				Expect(resp).NotTo(BeNil())
+				Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+				Expect(resp.Body.Close()).To(Succeed())
+			})
+		})
 	})
 
 	Context("HandleWebConsoleValidation", func() {
@@ -242,4 +305,16 @@ func fakeValidationRequest(url string, server webconsolevalidation.Server) int {
 	Expect(response.Body.Close()).To(Succeed())
 
 	return response.StatusCode
+}
+
+func getAvailablePort() int {
+	listener, err := net.Listen("tcp", "[::]:0")
+	if err != nil {
+		listener, err = net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+	}
+	defer func() {
+		Expect(listener.Close()).To(Succeed())
+	}()
+	return listener.Addr().(*net.TCPAddr).Port
 }

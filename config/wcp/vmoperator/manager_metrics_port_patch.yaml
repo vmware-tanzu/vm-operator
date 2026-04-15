@@ -1,6 +1,6 @@
 - op: replace
   path: /spec/template/spec/containers/0/args/0
-  value: --metrics-addr=:9848
+  value: --metrics-addr=[::]:9848
 - op: replace
   path: /spec/template/spec/containers/0/ports/2/containerPort
   value: 9848

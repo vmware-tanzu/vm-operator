@@ -392,6 +392,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
 
+	err = r.VMProvider.ListNsAndNameoftheVM(ctx, vm.Namespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list all the VM and validate namespaces")
+	}
+
 	err = r.ReconcileNormal(vmCtx)
 	if err != nil && !ignoredCreateErr(err) {
 		return pkgerr.ResultFromError(err)

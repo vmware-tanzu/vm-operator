@@ -23,6 +23,7 @@ import (
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/tags"
+	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
@@ -147,6 +148,74 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 	vm *vmopv1.VirtualMachine) (<-chan error, error) {
 
 	return vs.createOrUpdateVirtualMachine(ctx, vm, true)
+}
+
+func (vs *vSphereVMProvider) ListNsAndNameoftheVM(ctx context.Context, expectedNs string) error {
+	vms, err := vs.ListVMs(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, vm := range vms {
+		var mvm mo.VirtualMachine
+
+		// CRITICAL CHANGE: Fetch "resourcePool" instead of just "parent"
+		err := vm.Properties(ctx, vm.Reference(), []string{"name", "parent", "resourcePool"}, &mvm)
+		if err != nil {
+			continue
+		}
+
+		var nsName string
+		if mvm.ResourcePool != nil {
+			// A Namespace in vSphere is technically a ResourcePool object
+			rp := object.NewResourcePool(vm.Client(), *mvm.ResourcePool)
+			name, err := rp.ObjectName(ctx)
+			if err != nil {
+				nsName = "err-fetching-rp"
+			} else {
+				nsName = name
+			}
+		} else {
+			nsName = "no-resource-pool"
+		}
+
+		fmt.Printf("Current Namespace (RP): %-15s | VM Name: %-20s\n", nsName, mvm.Name)
+	}
+	return nil
+}
+
+func (vs *vSphereVMProvider) ListVMs(ctx context.Context) ([]*object.VirtualMachine, error) {
+	client, err := vs.VSphereClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vSphere client: %w", err)
+	}
+	//manager := view.NewManager(client.VimClient())
+
+	// Create a container view of all Virtual Machines in the Datacenter
+	vimClient := client.VimClient()
+	rootFolder := vimClient.ServiceContent.RootFolder
+
+	// 3. Create the Manager using the VIM client
+	m := view.NewManager(vimClient)
+	v, err := m.CreateContainerView(ctx, rootFolder, []string{"VirtualMachine"}, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create container view: %w", err)
+	}
+	defer v.Destroy(ctx)
+
+	// Retrieve all VM references
+	var vms []mo.VirtualMachine
+	err = v.Retrieve(ctx, []string{"VirtualMachine"}, []string{"name", "resourcePool"}, &vms)
+	if err != nil {
+		return nil, err
+	}
+
+	var objects []*object.VirtualMachine
+	for _, mvm := range vms {
+		objects = append(objects, object.NewVirtualMachine(client.VimClient(), mvm.Reference()))
+	}
+	return objects, nil
+
 }
 
 func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(

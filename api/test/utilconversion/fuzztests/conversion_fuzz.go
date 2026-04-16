@@ -15,9 +15,11 @@ package fuzztests
 
 import (
 	"math/rand"
+	"time"
 
 	//nolint:depguard
 	"github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
@@ -42,14 +44,27 @@ func GetFuzzer(scheme *runtime.Scheme, funcs ...fuzzer.FuzzerFuncs) *randfill.Fi
 				// fuzzed and always resulted in `nil` values.
 				// This implementation is somewhat similar to the one provided
 				// in the metafuzzer.Funcs.
-				func(input *metav1.Time, c randfill.Continue) {
-					if input != nil {
-						var sec, nsec uint32
-						c.Fill(&sec)
-						c.Fill(&nsec)
-						fuzzed := metav1.Unix(int64(sec), int64(nsec)).Rfc3339Copy()
-						input.Time = fuzzed.Time
+				func(input **metav1.Time, c randfill.Continue) {
+					if c.Bool() {
+						// Leave the Time sometimes nil to also get coverage for this case.
+						return
 					}
+					now := metav1.NewTime(time.Now().Add(time.Duration(-c.Intn(3600)) * time.Second)).Rfc3339Copy()
+					*input = &now
+				},
+				// Custom fuzzer for intstr.IntOrString which does not get fuzzed otherwise.
+				func(in **intstr.IntOrString, c randfill.Continue) {
+					if c.Bool() {
+						// Leave the IntOrString sometimes nil to also get coverage for this case.
+						return
+					}
+					if c.Bool() {
+						// Set the IntOrString sometimes empty to also get coverage for this case.
+						*in = &intstr.IntOrString{}
+						return
+					}
+					v := intstr.FromInt32(c.Int31n(50))
+					*in = &v
 				},
 			}
 		},
@@ -103,7 +118,10 @@ func SpokeHubSpoke(input FuzzTestFuncInput) {
 			input.SpokeAfterMutation(spokeAfter)
 		}
 
-		gomega.ExpectWithOffset(1, apiequality.Semantic.DeepEqual(spokeBefore, spokeAfter)).To(gomega.BeTrue(), cmp.Diff(spokeBefore, spokeAfter))
+		if !apiequality.Semantic.DeepEqual(spokeBefore, spokeAfter) {
+			diff := cmp.Diff(spokeBefore, spokeAfter)
+			gomega.Expect(false).To(gomega.BeTrue(), diff)
+		}
 	}
 }
 
@@ -127,6 +145,9 @@ func HubSpokeHub(input FuzzTestFuncInput) {
 			input.HubAfterMutation(hubAfter)
 		}
 
-		gomega.ExpectWithOffset(1, apiequality.Semantic.DeepEqual(hubBefore, hubAfter)).To(gomega.BeTrue(), cmp.Diff(hubBefore, hubAfter))
+		if !apiequality.Semantic.DeepEqual(hubBefore, hubAfter) {
+			diff := cmp.Diff(hubBefore, hubAfter)
+			gomega.Expect(false).To(gomega.BeTrue(), diff)
+		}
 	}
 }

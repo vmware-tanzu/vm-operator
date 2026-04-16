@@ -121,6 +121,8 @@ func convert_v1alpha6_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 		imageProviderReadyCondition = trueCondition(VirtualMachineImageProviderReadyCondition)
 		imageSyncedCondition = falseConditionWithReason(VirtualMachineImageSyncedCondition)
 	default:
+		// BMV: This looks quite wrong in the case that the image did not
+		// have a Ready condition at all.
 		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
 		imageProviderReadyCondition = trueCondition(VirtualMachineImageProviderReadyCondition)
 		imageSyncedCondition = trueCondition(VirtualMachineImageSyncedCondition)

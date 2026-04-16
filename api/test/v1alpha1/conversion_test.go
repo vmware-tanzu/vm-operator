@@ -5,6 +5,9 @@
 package v1alpha1_test
 
 import (
+	"encoding/json"
+	"reflect"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -12,11 +15,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 	"sigs.k8s.io/randfill"
 
 	"github.com/vmware-tanzu/vm-operator/api/test/utilconversion/fuzztests"
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 )
 
 var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
@@ -88,6 +93,12 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineImage{},
 				Spoke:  &vmopv1a1.VirtualMachineImage{},
+				SpokeAfterMutation: func(convertible ctrlconversion.Convertible) {
+					vmImage := convertible.(*vmopv1a1.VirtualMachineImage)
+					if vmImage.Spec.ProviderRef.Name != "" {
+						vmImage.Spec.ProviderRef.Namespace = vmImage.Namespace
+					}
+				},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineImageFieldsFuncs,
 				},
@@ -170,6 +181,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			})
 		})
 	})
+
 	Context("VirtualMachineSetResourcePolicy", func() {
 		BeforeEach(func() {
 			input = fuzztests.FuzzTestFuncInput{
@@ -194,7 +206,32 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(vmSpec *vmopv1a1.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
+			c.FillNoCustom(vmSpec)
+
+			if md := vmSpec.VmMetadata; md != nil {
+				t := []vmopv1a1.VirtualMachineMetadataTransport{
+					vmopv1a1.VirtualMachineMetadataCloudInitTransport,
+					vmopv1a1.VirtualMachineMetadataOvfEnvTransport,
+					vmopv1a1.VirtualMachineMetadataSysprepTransport,
+					vmopv1a1.VirtualMachineMetadataVAppConfigTransport,
+				}
+				md.Transport = t[c.Intn(len(t))]
+
+				if md.SecretName != "" && md.ConfigMapName != "" {
+					if c.Bool() {
+						md.SecretName = ""
+					} else {
+						md.ConfigMapName = ""
+					}
+				}
+			}
+
+			for i := range vmSpec.NetworkInterfaces {
+				t := []string{"nsx-t", "nsx-t-subnet", "nsx-t-subnetset", "vsphere-distributed"}
+				vmSpec.NetworkInterfaces[i].NetworkType = t[c.Intn(len(t))]
+				vmSpec.NetworkInterfaces[i].ProviderRef = nil
+				vmSpec.NetworkInterfaces[i].EthernetCardType = ""
+			}
 
 			var volumes []vmopv1a1.VirtualMachineVolume
 			for _, vol := range vmSpec.Volumes {
@@ -216,27 +253,90 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				if opts.ChangeBlockTracking != nil && !*opts.ChangeBlockTracking {
 					opts.ChangeBlockTracking = nil
 				}
+
+				// TODO: Conversion
+				vmSpec.AdvancedOptions = nil
 			}
 
 			// This is effectively deprecated.
 			vmSpec.Ports = nil
 		},
 		func(vmSpec *vmopv1.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
+			c.FillNoCustom(vmSpec)
+
+			if vmSpec.Image != nil {
+				vmSpec.Image.Name = vmSpec.ImageName
+			}
+
+			// TODO: Conversion
+			if vmSpec.Class != nil {
+				vmSpec.Class = nil
+			}
+
+			vmSpec.Volumes = nil
+
+			if rs := vmSpec.Reserved; rs != nil {
+				if rs.ResourcePolicyName == "" {
+					vmSpec.Reserved = nil
+				}
+			}
+
+			if bs := vmSpec.Bootstrap; bs != nil {
+				// v1a1 has just single for the bootstrap type field (transport) so
+				// adjust the filled to valid bootstrap combinations.
+				switch c.Rand.Intn(4) {
+				case 0: // CloudInit
+					bs.LinuxPrep = nil
+					bs.Sysprep = nil
+					bs.VAppConfig = nil
+				case 1: // LinuxPrep
+					bs.CloudInit = nil
+					bs.Sysprep = nil
+					if c.Bool() {
+						bs.VAppConfig = nil
+					}
+				case 2: // Sysprep
+					bs.CloudInit = nil
+					bs.LinuxPrep = nil
+					if c.Bool() {
+						bs.VAppConfig = nil
+					}
+				case 3: // vAppConfig
+					bs.CloudInit = nil
+					bs.LinuxPrep = nil
+					bs.Sysprep = nil
+				}
+
+				if reflect.DeepEqual(bs, &vmopv1.VirtualMachineBootstrapSpec{}) {
+					vmSpec.Bootstrap = nil
+				}
+			}
 		},
 		func(vmStatus *vmopv1a1.VirtualMachineStatus, c randfill.Continue) {
-			c.Fill(vmStatus)
-			overrideConditionsSeverity(vmStatus.Conditions)
+			c.FillNoCustom(vmStatus)
+			overrideConditions(vmStatus.Conditions)
 
-			// Do not exist in nextver.
+			for i := range vmStatus.NetworkInterfaces {
+				// Connected does not exist in nextver so assume it is true.
+				vmStatus.NetworkInterfaces[i].Connected = true
+			}
+
+			// Does not exist in nextver.
 			vmStatus.Phase = vmopv1a1.Unknown
 		},
 		func(vmStatus *vmopv1.VirtualMachineStatus, c randfill.Continue) {
-			c.Fill(vmStatus)
+			c.FillNoCustom(vmStatus)
 			overrideConditionsObservedGeneration(vmStatus.Conditions)
 
 			vmStatus.Class = nil
 			vmStatus.Network = nil
+		},
+		func(sel *vmopv1common.SecretKeySelector, c randfill.Continue) {
+			sel.Name = "foo"
+			sel.Key = c.String(0)
+		},
+		func(msg *json.RawMessage, c randfill.Continue) {
+			*msg = []byte(`{"foo":"bar"}`)
 		},
 	}
 }
@@ -255,14 +355,14 @@ var _ = Describe("Client-side conversion", func() {
 func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(classSpec *vmopv1.VirtualMachineClassSpec, c randfill.Continue) {
-			c.Fill(classSpec)
+			c.FillNoCustom(classSpec)
 
 			// Since all random byte arrays are not valid JSON
 			// Passing an empty string as a valid input
 			classSpec.ConfigSpec = []byte("")
 		},
 		func(classSpec *vmopv1a1.VirtualMachineClassSpec, c randfill.Continue) {
-			c.Fill(classSpec)
+			c.FillNoCustom(classSpec)
 
 			// Since all random byte arrays are not valid JSON
 			// Passing an empty string as a valid input
@@ -274,7 +374,11 @@ func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactor
 func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(imageSpec *vmopv1a1.VirtualMachineImageSpec, c randfill.Continue) {
-			c.Fill(imageSpec)
+			c.FillNoCustom(imageSpec)
+
+			// This same type is used in both the namespace and cluster
+			// scoped types so we don't determine the NS backfill here.
+			imageSpec.ProviderRef = vmopv1a1.ContentProviderReference{}
 
 			if imageSpec.OVFEnv != nil {
 				m := make(map[string]vmopv1a1.OvfProperty, len(imageSpec.OVFEnv))
@@ -296,8 +400,12 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageSpec.ProviderRef.Namespace = ""
 		},
 		func(imageStatus *vmopv1a1.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(imageStatus)
-			overrideConditionsSeverity(imageStatus.Conditions)
+			c.FillNoCustom(imageStatus)
+
+			overrideConditions(imageStatus.Conditions)
+
+			// TODO: Figure out the default ready conditions backfill.
+			imageStatus.Conditions = nil
 
 			// Do not exist in nextver.
 			imageStatus.ImageSupported = nil
@@ -306,20 +414,33 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageStatus.Uuid = ""
 			imageStatus.InternalId = ""
 			imageStatus.PowerState = ""
+
+			// This is backed from annotation.
+			imageStatus.ContentLibraryRef = nil //nolint:staticcheck
 		},
 		func(osInfo *vmopv1.VirtualMachineImageOSInfo, c randfill.Continue) {
-			c.Fill(osInfo)
+			c.FillNoCustom(osInfo)
 			// TODO: Need to save serialized object to support lossless conversions.
 			osInfo.ID = ""
 		},
 		func(imageStatus *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(imageStatus)
+			c.FillNoCustom(imageStatus)
+
+			for i := range imageStatus.VMwareSystemProperties {
+				k := imageStatus.VMwareSystemProperties[i].Key
+				imageStatus.VMwareSystemProperties[i].Key = "vmware-system-" + k
+			}
+
 			overrideConditionsObservedGeneration(imageStatus.Conditions)
+			imageStatus.Conditions = nil
+
 			// TODO: Need to save serialized object to support lossless conversions.
+			imageStatus.Type = ""
+			imageStatus.Disks = nil
 			imageStatus.Capabilities = nil
 		},
 		func(imageSpec *vmopv1.VirtualMachineImageSpec, c randfill.Continue) {
-			c.Fill(imageSpec)
+			c.FillNoCustom(imageSpec)
 			if pr := imageSpec.ProviderRef; pr != nil {
 				if pr.APIVersion == "" && pr.Kind == "" && pr.Name == "" {
 					imageSpec.ProviderRef = nil
@@ -333,7 +454,7 @@ func overrideVirtualMachinePublishRequestFieldsFuncs(codecs runtimeserializer.Co
 	return []interface{}{
 		func(publishStatus *vmopv1a1.VirtualMachinePublishRequestStatus, c randfill.Continue) {
 			c.Fill(publishStatus)
-			overrideConditionsSeverity(publishStatus.Conditions)
+			overrideConditions(publishStatus.Conditions)
 		},
 		func(publishStatus *vmopv1.VirtualMachinePublishRequestStatus, c randfill.Continue) {
 			c.Fill(publishStatus)
@@ -342,10 +463,17 @@ func overrideVirtualMachinePublishRequestFieldsFuncs(codecs runtimeserializer.Co
 	}
 }
 
-func overrideConditionsSeverity(conditions []vmopv1a1.Condition) {
-	// metav1.Conditions do not have this field, so on down conversions it will always be empty.
+func overrideConditions(conditions []vmopv1a1.Condition) {
 	for i := range conditions {
+		// metav1.Conditions do not have this field, so on down conversions it
+		// will always be empty.
 		conditions[i].Severity = ""
+
+		// metav1.Conditions required this field so we'll backfill it so set it
+		// to some value.
+		if conditions[i].Reason == "" {
+			conditions[i].Reason = "reason is now required"
+		}
 	}
 }
 

@@ -375,11 +375,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 				Reserved: &vmopv1.VirtualMachineReservedSpec{
 					ResourcePolicyName: "my-resource-policy",
 				},
-				MinHardwareVersion: 42,
-				InstanceUUID:       uuid.NewString(),
-				BiosUUID:           uuid.NewString(),
-				GuestID:            "my-guest-id",
-				PromoteDisksMode:   vmopv1.VirtualMachinePromoteDisksModeOffline,
+				MinHardwareVersion:  42,
+				InstanceUUID:        uuid.NewString(),
+				BiosUUID:            uuid.NewString(),
+				GuestID:             "my-guest-id",
+				CurrentSnapshotName: "my-snapshot-name",
+				GroupName:           "my-group",
+				PromoteDisksMode:    vmopv1.VirtualMachinePromoteDisksModeOffline,
 				BootOptions: &vmopv1.VirtualMachineBootOptions{
 					Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 					BootDelay: &metav1.Duration{Duration: time.Second * 10},

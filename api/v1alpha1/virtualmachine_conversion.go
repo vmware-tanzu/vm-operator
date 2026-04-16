@@ -831,6 +831,10 @@ func restore_v1alpha6_VirtualMachineImage(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.ImageName = src.Spec.ImageName
 }
 
+func restore_v1alpha6_VirtualMachineSnapshot(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.CurrentSnapshotName = src.Spec.CurrentSnapshotName
+}
+
 func restore_v1alpha6_VirtualMachineBootstrapSpec(
 	dst, src *vmopv1.VirtualMachine) {
 
@@ -842,6 +846,13 @@ func restore_v1alpha6_VirtualMachineBootstrapSpec(
 
 	dstBootstrap := dst.Spec.Bootstrap
 	if dstBootstrap == nil {
+		// v1a1 doesn't have a way to represent an empty bootstrap structure
+		// so restore that here.
+		if reflect.DeepEqual(&srcBootstrap, &vmopv1.VirtualMachineBootstrapSpec{}) {
+			dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+			return
+		}
+
 		// v1a1 doesn't have a way to represent standalone LinuxPrep or Disabled.
 		// If we didn't do a conversion in convert_v1alpha1_VmMetadata_To_v1alpha6_BootstrapSpec()
 		// but we saved a LinuxPrep or Disabled in the conversion annotation, restore that here.
@@ -884,6 +895,7 @@ func restore_v1alpha6_VirtualMachineBootstrapSpec(
 			dstLinuxPrep.ExpirePasswordAfterNextLogin = srcLinuxPrep.ExpirePasswordAfterNextLogin
 			dstLinuxPrep.Password = srcLinuxPrep.Password
 			dstLinuxPrep.ScriptText = srcLinuxPrep.ScriptText
+			dstLinuxPrep.CustomizeAtNextPowerOn = srcLinuxPrep.CustomizeAtNextPowerOn
 		}
 	}
 
@@ -916,7 +928,7 @@ func restore_v1alpha6_VirtualMachineNetworkSpec(
 	dst, src *vmopv1.VirtualMachine) {
 
 	srcNetwork := src.Spec.Network
-	if srcNetwork == nil || apiequality.Semantic.DeepEqual(*srcNetwork, vmopv1.VirtualMachineNetworkSpec{}) {
+	if srcNetwork == nil {
 		// Nothing to restore.
 		return
 	}
@@ -1048,14 +1060,17 @@ func restore_v1alpha6_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
 	}
 }
 
-func restore_v1alpha6_VirtualMachineAdvancedProps(dst, src *vmopv1.VirtualMachine) {
-	if src.Spec.Advanced == nil {
+func restore_v1alpha6_VirtualMachineAdvanced(dst, src *vmopv1.VirtualMachine) {
+	adv := src.Spec.Advanced
+	if adv == nil {
 		return
 	}
+
 	if dst.Spec.Advanced == nil {
 		dst.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 	}
-	adv := src.Spec.Advanced
+
+	dst.Spec.Advanced.DefaultVolumeProvisioningMode = adv.DefaultVolumeProvisioningMode
 	dst.Spec.Advanced.PreferHTEnabled = adv.PreferHTEnabled
 	dst.Spec.Advanced.HugePages1GEnabled = adv.HugePages1GEnabled
 	dst.Spec.Advanced.TimeTrackerLowLatencyEnabled = adv.TimeTrackerLowLatencyEnabled
@@ -1334,7 +1349,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineHardware(dst, restored)
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
-	restore_v1alpha6_VirtualMachineAdvancedProps(dst, restored)
+	restore_v1alpha6_VirtualMachineAdvanced(dst, restored)
+	restore_v1alpha6_VirtualMachineSnapshot(dst, restored)
 
 	// END RESTORE
 

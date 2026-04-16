@@ -14,10 +14,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 	"sigs.k8s.io/randfill"
 
 	"github.com/vmware-tanzu/vm-operator/api/test/utilconversion/fuzztests"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 )
@@ -45,6 +47,12 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachine{},
 				Spoke:  &vmopv1a2.VirtualMachine{},
+				SpokeAfterMutation: func(convertible ctrlconversion.Convertible) {
+					vm := convertible.(*vmopv1a2.VirtualMachine)
+					// This field was removed in v1a3 but we'll try to populate it
+					// back that doesn't work with random fuzzed data.
+					vm.Status.Image = nil
+				},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineFieldsFuncs,
 				},
@@ -68,6 +76,9 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineClass{},
 				Spoke:  &vmopv1a2.VirtualMachineClass{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineFieldsFuncs,
+				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -243,7 +254,7 @@ var _ = Describe("Client-side conversion", func() {
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(vmSpec *vmopv1a2.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
+			c.FillNoCustom(vmSpec)
 
 			if bs := vmSpec.Bootstrap; bs != nil {
 				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
@@ -254,15 +265,40 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 					if len(sysPrep.GUIRunOnce.Commands) == 0 {
 						sysPrep.GUIRunOnce.Commands = nil
 					}
+
+					// In v1a3, UserData was changed to a non-pointer field. Change a nil pointer into an
+					// empty struct.
+					if sysPrep.UserData == nil {
+						sysPrep.UserData = &vmopv1a2sysprep.UserData{}
+					}
+
+					// In v1a3, JoinDomain was removed and instead the Spec.Network.DomainName
+					// is used.
+					if sysPrep.Identification != nil && sysPrep.Identification.JoinDomain != "" {
+						if vmSpec.Network == nil {
+							vmSpec.Network = &vmopv1a2.VirtualMachineNetworkSpec{}
+						}
+					}
 				}
 			}
 		},
 		func(vmSpec *vmopv1.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
+			c.FillNoCustom(vmSpec)
+
+			// TODO: Conversion
+			if vmSpec.Class != nil {
+				vmSpec.Class = nil
+			}
 
 			if bs := vmSpec.Bootstrap; bs != nil {
 				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
 					sysPrep := vmSpec.Bootstrap.Sysprep
+
+					if sysPrep.Sysprep.GUIRunOnce != nil {
+						if len(sysPrep.Sysprep.GUIRunOnce.Commands) == 0 {
+							sysPrep.Sysprep.GUIRunOnce = nil
+						}
+					}
 
 					// Match the check done in sysprep conversion.
 					if reflect.DeepEqual(sysPrep.Sysprep, &vmopv1sysprep.Sysprep{}) {
@@ -272,13 +308,13 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			}
 		},
 		func(vmStatus *vmopv1a2.VirtualMachineStatus, c randfill.Continue) {
-			c.Fill(vmStatus)
+			c.FillNoCustom(vmStatus)
 
 			// This field was removed in v1a3.
 			vmStatus.Image = nil
 		},
 		func(msg *json.RawMessage, c randfill.Continue) {
-			*msg = []byte(`{"foo": "bar"}`)
+			*msg = []byte(`{"foo":"bar"}`)
 		},
 	}
 }
@@ -286,11 +322,12 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(vmiStatus *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(vmiStatus)
+			c.FillNoCustom(vmiStatus)
 
-			// Since only VMOP updates the CVMI/VMI's we didn't bother with conversion
-			// when adding this field.
+			// Since only VMOP updates the CVMI/VMI's we didn't bother
+			// with conversion when adding this field.
 			vmiStatus.Disks = nil
+			vmiStatus.Type = ""
 		},
 	}
 }

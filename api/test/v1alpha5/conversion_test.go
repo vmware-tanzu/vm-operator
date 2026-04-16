@@ -6,7 +6,6 @@ package v1alpha5_test
 
 import (
 	"encoding/json"
-	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -19,7 +18,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/test/utilconversion/fuzztests"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 )
 
 var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
@@ -108,9 +106,6 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineImage{},
 				Spoke:  &vmopv1a5.VirtualMachineImage{},
-				FuzzerFuncs: []fuzzer.FuzzerFuncs{
-					overrideVirtualMachineImageFieldsFuncs,
-				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -131,9 +126,6 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.ClusterVirtualMachineImage{},
 				Spoke:  &vmopv1a5.ClusterVirtualMachineImage{},
-				FuzzerFuncs: []fuzzer.FuzzerFuncs{
-					overrideVirtualMachineImageFieldsFuncs,
-				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -260,55 +252,10 @@ var _ = Describe("Client-side conversion", func() {
 	})
 })
 
-func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
-	return []interface{}{
-		func(status *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(status)
-			status.Disks = nil
-		},
-		func(status *vmopv1a5.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(status)
-			status.Disks = nil
-		},
-	}
-}
-
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(vmSpec *vmopv1a5.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
-
-			if bs := vmSpec.Bootstrap; bs != nil {
-				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
-					sysPrep := vmSpec.Bootstrap.Sysprep.Sysprep
-
-					// In v1a3, GUIRunOnce was changed to a pointer field. Change the empty slice into a nil
-					// field so reflect.DeepEqual() determines correctly if GUIRunOnce is unset.
-					if len(sysPrep.GUIRunOnce.Commands) == 0 {
-						sysPrep.GUIRunOnce.Commands = nil
-					}
-				}
-			}
-		},
-		func(vmSpec *vmopv1.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
-
-			if bs := vmSpec.Bootstrap; bs != nil {
-				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
-					sysPrep := vmSpec.Bootstrap.Sysprep
-
-					// Match the check done in sysprep conversion.
-					if reflect.DeepEqual(sysPrep.Sysprep, &vmopv1sysprep.Sysprep{}) {
-						sysPrep.Sysprep = nil
-					}
-				}
-			}
-		},
-		func(vmStatus *vmopv1a5.VirtualMachineStatus, c randfill.Continue) {
-			c.Fill(vmStatus)
-		},
 		func(msg *json.RawMessage, c randfill.Continue) {
-			*msg = []byte(`{"foo": "bar"}`)
+			*msg = []byte(`{"foo":"bar"}`)
 		},
 	}
 }

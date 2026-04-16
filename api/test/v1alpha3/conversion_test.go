@@ -243,11 +243,11 @@ var _ = Describe("Client-side conversion", func() {
 func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(status *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(status)
+			c.FillNoCustom(status)
 			status.Disks = nil
 		},
 		func(status *vmopv1a3.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(status)
+			c.FillNoCustom(status)
 			status.Disks = nil
 		},
 	}
@@ -256,22 +256,29 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(vmSpec *vmopv1a3.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
+			c.FillNoCustom(vmSpec)
 
 			if bs := vmSpec.Bootstrap; bs != nil {
 				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
-					sysPrep := vmSpec.Bootstrap.Sysprep.Sysprep
+					sysPrep := bs.Sysprep.Sysprep
 
 					// In v1a3, GUIRunOnce was changed to a pointer field. Change the empty slice into a nil
 					// field so reflect.DeepEqual() determines correctly if GUIRunOnce is unset.
-					if len(sysPrep.GUIRunOnce.Commands) == 0 {
-						sysPrep.GUIRunOnce.Commands = nil
+					if sysPrep.GUIRunOnce != nil {
+						if len(sysPrep.GUIRunOnce.Commands) == 0 {
+							sysPrep.GUIRunOnce.Commands = nil
+						}
 					}
 				}
 			}
 		},
 		func(vmSpec *vmopv1.VirtualMachineSpec, c randfill.Continue) {
-			c.Fill(vmSpec)
+			c.FillNoCustom(vmSpec)
+
+			// TODO: Conversion
+			if vmSpec.Class != nil {
+				vmSpec.Class = nil
+			}
 
 			if bs := vmSpec.Bootstrap; bs != nil {
 				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
@@ -284,11 +291,8 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				}
 			}
 		},
-		func(vmStatus *vmopv1a3.VirtualMachineStatus, c randfill.Continue) {
-			c.Fill(vmStatus)
-		},
 		func(msg *json.RawMessage, c randfill.Continue) {
-			*msg = []byte(`{"foo": "bar"}`)
+			*msg = []byte(`{"foo":"bar"}`)
 		},
 	}
 }

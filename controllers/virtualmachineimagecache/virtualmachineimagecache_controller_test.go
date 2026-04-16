@@ -348,6 +348,8 @@ var _ = Describe(
 			})
 
 			BeforeEach(func() {
+				provider.Lock()
+				defer provider.Unlock()
 				provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {
 					return vsclient.NewClient(ctx, vcSimCtx.VCClientConfig)
 				}

@@ -1048,6 +1048,23 @@ func restore_v1alpha6_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
 	}
 }
 
+func restore_v1alpha6_VirtualMachineAdvancedProps(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Advanced == nil {
+		return
+	}
+	if dst.Spec.Advanced == nil {
+		dst.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+	}
+	adv := src.Spec.Advanced
+	dst.Spec.Advanced.PreferHTEnabled = adv.PreferHTEnabled
+	dst.Spec.Advanced.HugePages1GEnabled = adv.HugePages1GEnabled
+	dst.Spec.Advanced.TimeTrackerLowLatencyEnabled = adv.TimeTrackerLowLatencyEnabled
+	dst.Spec.Advanced.CPUAffinityExclusiveNoStatsEnabled = adv.CPUAffinityExclusiveNoStatsEnabled
+	dst.Spec.Advanced.VMXSwapEnabled = adv.VMXSwapEnabled
+	dst.Spec.Advanced.PNUMANodeAffinity = adv.PNUMANodeAffinity
+	dst.Spec.Advanced.ExtraConfig = adv.ExtraConfig
+}
+
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha6_Conditions(
 	dst *vmopv1.VirtualMachine) []metav1.Condition {
 
@@ -1317,6 +1334,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineHardware(dst, restored)
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
+	restore_v1alpha6_VirtualMachineAdvancedProps(dst, restored)
 
 	// END RESTORE
 

@@ -61,6 +61,7 @@ import (
 	// _ "github.com/vmware/govmomi/pbm/simulator"
 
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
@@ -73,6 +74,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -999,6 +1001,10 @@ func (c *TestContextForVCSim) SimulatorContext() *simulator.Context {
 	return c.model.Service.Context
 }
 
+func (c *TestContextForVCSim) SimulatorService() *simulator.Service {
+	return c.model.Service
+}
+
 func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName string) {
 	clID := c.ContentLibraryID
 	Expect(clID).ToNot(BeEmpty())
@@ -1133,6 +1139,17 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 			},
 		})).To(Succeed())
 
+		defaultStoragePolicy := &infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: c.PodNamespace,
+				Name:      kubeutil.GetStoragePolicyObjectName(c.StorageProfileID),
+			},
+			Spec: infrav1.StoragePolicySpec{
+				ID: c.StorageProfileID,
+			},
+		}
+		Expect(c.Client.Create(c, defaultStoragePolicy)).To(Succeed())
+
 		c.EncryptedStorageClassName = "vm-encryption-policy"
 		c.EncryptedStorageProfileID = pbmsim.DefaultEncryptionProfileID
 
@@ -1145,6 +1162,21 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 				"storagePolicyID": c.EncryptedStorageProfileID,
 			},
 		})).To(Succeed())
+
+		encryptedStoragePolicy := &infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: c.PodNamespace,
+				Name:      kubeutil.GetStoragePolicyObjectName(c.EncryptedStorageProfileID),
+			},
+			Spec: infrav1.StoragePolicySpec{
+				ID: c.EncryptedStorageProfileID,
+			},
+			Status: infrav1.StoragePolicyStatus{
+				Encrypted: true,
+			},
+		}
+		Expect(c.Client.Create(c, encryptedStoragePolicy)).To(Succeed())
+		Expect(c.Client.Status().Update(c, encryptedStoragePolicy)).To(Succeed())
 	}
 
 	if !config.WithoutNativeKeyProvider {

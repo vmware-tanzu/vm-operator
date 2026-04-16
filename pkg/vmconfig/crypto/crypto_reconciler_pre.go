@@ -660,11 +660,10 @@ func doOp(
 	args reconcileArgs,
 	fn func(context.Context, reconcileArgs) (string, Reason, []string, error)) error {
 
-	// Please note, the return err is ignored here since it is not used anywhere
-	// in the various functions that can be "fn." The reason the pattern is
-	// retained is to avoid any refactoring later if there *does* need to be an
-	// error returned from one of these functions.
-	op, reason, msgs, _ := fn(ctx, args)
+	op, reason, msgs, err := fn(ctx, args)
+	if err != nil {
+		return err
+	}
 
 	if reason == 0 && len(msgs) == 0 {
 		internal.SetOperation(ctx, op)

@@ -27,6 +27,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -886,6 +887,29 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							})
 						})
 
+						When("adding encrypted disk with missing policy", func() {
+							BeforeEach(func() {
+								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+									&vimtypes.VirtualDeviceConfigSpec{
+										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+											Crypto: &vimtypes.CryptoSpecEncrypt{},
+										},
+										Device:    &vimtypes.VirtualDisk{},
+										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+											&vimtypes.VirtualMachineDefinedProfileSpec{
+												ProfileId: "missing-policy",
+											},
+										},
+									},
+								}
+							})
+							It("should return a not found error", func() {
+								Expect(err).To(HaveOccurred())
+								Expect(err.Error()).To(ContainSubstring("storage class with profile ID missing-policy not found"))
+							})
+						})
+
 						When("adding encrypted disk sans policy", func() {
 							BeforeEach(func() {
 								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
@@ -902,6 +926,23 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 										},
 									},
 								}
+								withObjs = append(withObjs, &storagev1.StorageClass{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "fake-storage-class",
+									},
+									Parameters: map[string]string{
+										"storagePolicyID": fakeString,
+									},
+								})
+								withObjs = append(withObjs, &infrav1.StoragePolicy{
+									ObjectMeta: metav1.ObjectMeta{
+										Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+										Name:      kubeutil.GetStoragePolicyObjectName(fakeString),
+									},
+									Status: infrav1.StoragePolicyStatus{
+										Encrypted: false,
+									},
+								})
 							})
 							It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
 								Expect(err).ToNot(HaveOccurred())

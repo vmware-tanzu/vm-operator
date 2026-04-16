@@ -13569,6 +13569,12 @@ spec:
                       for this VM, a feature utilized by external backup systems such as
                       VMware Data Recovery.
                     type: boolean
+                  cpuAffinityExclusiveNoStatsEnabled:
+                    description: |-
+                      CPUAffinityExclusiveNoStatsEnabled disables per-VM CPU accounting
+                      statistics, reducing scheduler overhead for latency-sensitive workloads.
+                      Typically set alongside LatencySensitivity=High.
+                    type: boolean
                   defaultVolumeProvisioningMode:
                     description: |-
                       DefaultVolumeProvisioningMode specifies the default provisioning mode for
@@ -13578,6 +13584,69 @@ spec:
                     - Thick
                     - ThickEagerZero
                     type: string
+                  extraConfig:
+                    description: |-
+                      ExtraConfig is a fallback for VM-level VMX properties not yet promoted to
+                      first-class fields above. Keys with reserved prefixes (vmservice., vmtools.,
+                      etc.) are denied by the admission webhook. Device-specific properties
+                      (ethernetX.*) must use spec.network.interfaces[].vmxnet3 for first-class
+                      VMXNet3 fields, or spec.network.interfaces[].advancedProperties for other keys.
+                    items:
+                      description: |-
+                        KeyValuePair is useful when wanting to realize a map as a list of key/value
+                        pairs.
+                      properties:
+                        key:
+                          description: Key is the key part of the key/value pair.
+                          type: string
+                        value:
+                          description: Value is the optional value part of the key/value
+                            pair.
+                          type: string
+                      required:
+                      - key
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
+                  hugePages1GEnabled:
+                    description: |-
+                      HugePages1GEnabled enables 1 GB huge page backing for VM memory, reducing
+                      TLB pressure for memory-intensive workloads such as Telco VNFs.
+                      Cannot be changed while the VM is powered on.
+                    type: boolean
+                  pNUMANodeAffinity:
+                    description: |-
+                      PNUMANodeAffinity pins this VM to the specified physical host NUMA nodes.
+                      vSphere scheduler places vCPUs and memory only on the listed physical
+                      NUMA node IDs. An empty slice removes any existing affinity constraint.
+
+                      This is distinct from per-NIC virtual NUMA node assignment
+                      (interfaces[].vNUMANodeID), which assigns a NIC to a vNUMA node.
+                    items:
+                      format: int32
+                      type: integer
+                    type: array
+                  preferHTEnabled:
+                    description: |-
+                      PreferHTEnabled hints to the ESXi scheduler to prefer placing vCPUs on
+                      hyperthreads of the same physical core, improving memory locality for
+                      latency-sensitive workloads.
+                    type: boolean
+                  timeTrackerLowLatencyEnabled:
+                    description: |-
+                      TimeTrackerLowLatencyEnabled enables the low-latency time tracking mode,
+                      using a higher-resolution timer to reduce scheduling jitter for
+                      latency-sensitive workloads. Typically set alongside LatencySensitivity=High.
+                    type: boolean
+                  vmxSwapEnabled:
+                    description: |-
+                      VMXSwapEnabled controls whether the VMX process memory may be swapped to
+                      disk by the host. Set to false to disable VMX swapping, reducing latency
+                      jitter for memory-sensitive workloads. When nil the VMX key is left unset,
+                      preserving the hypervisor default.
+                    type: boolean
                 type: object
               affinity:
                 description: Affinity describes the VM's scheduling constraints.
@@ -15633,6 +15702,35 @@ spec:
                           items:
                             type: string
                           type: array
+                        advancedProperties:
+                          description: |-
+                            AdvancedProperties is a fallback for device-specific VMX properties not
+                            yet exposed as first-class fields. Each key is the bare property name
+                            without the ethernetX. prefix; the device index is injected at runtime
+                            based on the vSphere device key.
+
+                            The admission webhook rejects keys that duplicate a first-class field
+                            above (e.g. "ctxPerDev" is rejected because VMXNet3.CtxPerDev exists).
+                          items:
+                            description: |-
+                              KeyValuePair is useful when wanting to realize a map as a list of key/value
+                              pairs.
+                            properties:
+                              key:
+                                description: Key is the key part of the key/value
+                                  pair.
+                                type: string
+                              value:
+                                description: Value is the optional value part of the
+                                  key/value pair.
+                                type: string
+                            required:
+                            - key
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - key
+                          x-kubernetes-list-type: map
                         dhcp4:
                           description: |-
                             DHCP4 indicates whether or not this interface uses DHCP for IP4
@@ -15807,9 +15905,104 @@ spec:
                           items:
                             type: string
                           type: array
+                        type:
+                          description: |-
+                            Type is the NIC device model: VMXNet3 or SRIOV when set. The field is
+                            optional; when omitted or empty, it is derived from the VirtualMachineClass
+                            ConfigSpec ethernet devices when mappable (admission on create, and schema
+                            upgrade for existing objects when the VM extra config capability is on),
+                            defaulting to VMXNet3. On update, an empty value may preserve the prior
+                            stored type. When vmxnet3 tuning is present, Type must be VMXNet3.
+                          enum:
+                          - VMXNet3
+                          - SRIOV
+                          type: string
+                        vNUMANodeID:
+                          description: |-
+                            VNUMANodeID assigns this interface to a specific virtual NUMA node.
+                            The value must match a virtual NUMA node ID configured in the VM's
+                            CPU topology (spec.cpu.coresPerNumaNode). Co-locating a NIC with the
+                            vCPUs that process its traffic reduces cross-NUMA memory latency for
+                            latency-sensitive workloads.
+                            Requires spec.minHardwareVersion >= 20.
+                            Cannot be changed while the VM is powered on.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        vmxnet3:
+                          description: |-
+                            VMXNet3 contains configuration options specific to VMXNet3 interfaces.
+                            API validation requires Type to be VMXNet3 when this field is set.
+                          properties:
+                            coalescingParams:
+                              description: |-
+                                CoalescingParams sets the coalescing parameter when coalescingScheme is
+                                RateBasedCoalescing or Static. The format depends on the scheme:
+                                  - RateBasedCoalescing: single integer string, interrupts/sec (100-100000, e.g. "4000")
+                                  - Static: single integer string, packet queue limit (1-64, e.g. "64")
+                                Ignored when coalescingScheme is Disabled or Adapt.
+                              type: string
+                            coalescingScheme:
+                              description: |-
+                                CoalescingScheme sets the interrupt coalescing scheme for this interface.
+                                Use CoalescingSchemeDisabled for latency-sensitive (LS=High) non-DPDK
+                                workloads to minimise interrupt latency.
+                              type: string
+                            ctxPerDev:
+                              description: |-
+                                CtxPerDev sets the TX context threading mode for this interface.
+                                PerVM (default) gives one TX thread for the whole VM.
+                                PerDevice gives one TX thread per vNIC.
+                                PerQueue gives 2-8 TX threads per vNIC queue (scheduler-determined);
+                                recommended for 100G workloads combined with pnicFeatures including ReceiveSideScaling.
+                                Visible in esxtop as NetWorld-Dev-<name>-Tx threads.
+                              type: string
+                            pnicFeatures:
+                              description: |-
+                                PNICFeatures lists physical NIC queue offload features to enable. The
+                                primary use is including ReceiveSideScaling, which allows the vNIC to leverage physical
+                                NIC RSS hardware queues. Typically set to ["ReceiveSideScaling"] alongside
+                                ctxPerDev=PerQueue for maximum 100G throughput. Omitted or empty means no
+                                extra pNIC queue features beyond defaults.
+                              items:
+                                description: |-
+                                  PNICQueueFeature names one physical NIC queue offload feature for VMXNet3
+                                  pnicFeatures.
+                                  This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: set
+                            rssOffloadEnabled:
+                              description: |-
+                                RSSOffloadEnabled enables RSS (Receive Side Scaling) offload, allowing
+                                the physical NIC to distribute incoming packets across multiple receive
+                                queues using a hardware-computed hash. Reduces hypervisor CPU overhead
+                                and improves multi-core utilization for high-throughput workloads.
+                                Requires pNIC RSS support.
+                              type: boolean
+                            udpRSSEnabled:
+                              description: |-
+                                UDPRSSEnabled extends RSS to UDP traffic. By default RSS only distributes
+                                TCP flows. Enabling this also distributes UDP flows, improving throughput
+                                for UDP-heavy workloads such as GTP-U tunnels, QUIC, or media streaming.
+                              type: boolean
+                            uptv2Enabled:
+                              description: |-
+                                UPTv2Enabled enables UPT v2 (Uniform Passthrough v2) for this interface.
+                                UPT allows the guest to drive the physical NIC virtual function directly
+                                via SR-IOV while preserving vMotion support by dynamically switching
+                                between passthrough and emulation mode. UPTv1 is deprecated.
+
+                                Requires: spec.minHardwareVersion >= 20, SmartNIC with UPT support,
+                                full VM memory reservation, and VMXNet3 v7 guest driver.
+                              type: boolean
+                          type: object
                       required:
                       - name
                       type: object
+                      x-kubernetes-validations:
+                      - message: vmxnet3 tuning fields require interface type VMXNet3
+                        rule: '!has(self.vmxnet3) || self.type == ''VMXNet3'''
                     maxItems: 10
                     type: array
                     x-kubernetes-list-map-keys:
@@ -16536,6 +16729,31 @@ spec:
                 - name
                 - type
                 type: object
+              extraConfig:
+                description: |-
+                  ExtraConfig reflects the effective VMX extraConfig applied to the VM,
+                  merged from all sources: VM Image, VM Class, spec.network.interfaces[]
+                  advanced properties, and spec.advanced.extraConfig.
+                  This denotes the current configuration of the VM.
+                items:
+                  description: |-
+                    KeyValuePair is useful when wanting to realize a map as a list of key/value
+                    pairs.
+                  properties:
+                    key:
+                      description: Key is the key part of the key/value pair.
+                      type: string
+                    value:
+                      description: Value is the optional value part of the key/value
+                        pair.
+                      type: string
+                  required:
+                  - key
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - key
+                x-kubernetes-list-type: map
               guest:
                 description: Guest describes the observed state of the VM's guest.
                 properties:

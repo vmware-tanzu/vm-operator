@@ -188,8 +188,13 @@ func GetStoragePolicyIDFromVolumeAttributesClass(obj storagev1.VolumeAttributesC
 }
 
 // GetStoragePolicyID returns the storage policy ID for a given VM.
-// Abstracting from the source of the policy ID (StorageClass or VolumeAttributesClass (VAC) object).
-// Throw an error if VAC field is used while the capability is disabled.
+// The storage policy ID can be obtained from the VolumeAttributesClass (VAC)
+// object, depending on if the StoragePolicyMutability feature is enabled.
+// If the feature is disabled or VAC doesn't specify the policy ID,
+// the storage policy ID is obtained from the StorageClass.
+//
+// Throws an error if the VolumeAttributesClass field is used while the
+// StoragePolicyMutability feature is disabled.
 func GetStoragePolicyID(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -205,7 +210,10 @@ func GetStoragePolicyID(
 		objKind = internal.VolumeAttributesClassKind
 
 		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
-			return "", fmt.Errorf("%s %q object is specified but capability is not enabled", objKind, objName)
+			return "", fmt.Errorf(
+				"%s %q object is specified but capability is not enabled", 
+				objKind, objName,
+			)
 		}
 		vac := &storagev1.VolumeAttributesClass{}
 		if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: objName}, vac); err != nil {
@@ -291,30 +299,59 @@ func IsEncryptedStorageProfile(
 	k8sClient ctrlclient.Client,
 	profileID string) (bool, error) {
 
-	var obj storagev1.StorageClassList
-	if err := k8sClient.List(ctx, &obj); err != nil {
+	foundStorageProfile := false
+
+	if pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+		var volumeAttributesClasses storagev1.VolumeAttributesClassList
+		if err := k8sClient.List(ctx, &volumeAttributesClasses); err != nil {
+			return false, err
+		}
+		foundStorageProfile = slices.IndexFunc(volumeAttributesClasses.Items,
+			func(volumeAttributesClass storagev1.VolumeAttributesClass) bool {
+				pid, _ := GetStoragePolicyIDFromVolumeAttributesClass(volumeAttributesClass)
+				return pid == profileID
+			},
+		) != -1
+	}
+
+	if !foundStorageProfile {
+		var storageClasses storagev1.StorageClassList
+		if err := k8sClient.List(ctx, &storageClasses); err != nil {
+			return false, err
+		}
+		foundStorageProfile = slices.IndexFunc(storageClasses.Items,
+			func(storageClass storagev1.StorageClass) bool {
+				pid, _ := GetStoragePolicyIDFromStorageClass(storageClass)
+				return pid == profileID
+			},
+		) != -1
+	}
+
+	if !foundStorageProfile {
+		return false, fmt.Errorf(
+			"storage class with profile ID %s not found",
+			profileID,
+		)
+	}
+
+	storagePolicyName := GetStoragePolicyObjectName(profileID)
+	if storagePolicyName == "" {
+		return false, fmt.Errorf(
+			"was not able to construct a storage policy name for profile ID %s",
+			profileID,
+		)
+	}
+
+	key := ctrlclient.ObjectKey{
+		Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+		Name:      storagePolicyName,
+	}
+	var storagePolicy infrav1.StoragePolicy
+	if err := k8sClient.Get(ctx, key, &storagePolicy); err != nil {
 		return false, err
 	}
 
-	for i := range obj.Items {
-		if pid, _ := GetStoragePolicyIDFromStorageClass(obj.Items[i]); pid == profileID {
-			var (
-				obj infrav1.StoragePolicy
-				key = ctrlclient.ObjectKey{
-					Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-					Name:      GetStoragePolicyObjectName(pid),
-				}
-			)
-			if key.Name != "" {
-				if err := k8sClient.Get(ctx, key, &obj); err != nil {
-					return false, ctrlclient.IgnoreNotFound(err)
-				}
-				return obj.Status.Encrypted, nil
-			}
-		}
-	}
-
-	return false, nil
+	return storagePolicy.Status.Encrypted, nil
 }
 
 // GetStoragePolicyObjectName returns the expected name of a StoragePolicy

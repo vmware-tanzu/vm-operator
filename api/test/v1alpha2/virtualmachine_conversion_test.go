@@ -998,5 +998,124 @@ func TestVirtualMachineConversion(t *testing.T) {
 			g.Expect(anno).Should(HaveKeyWithValue(vmopv1a2.PauseAnnotation, "true"))
 			g.Expect(anno).ShouldNot(HaveKey(vmopv1.PauseAnnotation))
 		})
+
+		t.Run("VirtualMachine hub-spoke-hub with advanced config fields", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+						PreferHTEnabled:                    ptrOf(true),
+						HugePages1GEnabled:                 ptrOf(true),
+						TimeTrackerLowLatencyEnabled:       ptrOf(true),
+						CPUAffinityExclusiveNoStatsEnabled: ptrOf(true),
+						VMXSwapEnabled:                     ptrOf(false),
+						PNUMANodeAffinity:                  []int32{0, 1},
+						ExtraConfig: []vmopv1common.KeyValuePair{
+							{Key: "somekey", Value: "somevalue"},
+						},
+					},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+		})
+
+		t.Run("VirtualMachine hub-spoke-hub with NIC advanced fields", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:        "eth0",
+								Type:        vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								VNUMANodeID: ptrOf(int32(1)),
+								VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+									UPTv2Enabled: ptrOf(true),
+								},
+								AdvancedProperties: []vmopv1common.KeyValuePair{
+									{Key: "test-key", Value: "test-val"},
+								},
+							},
+						},
+					},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+		})
+
+		t.Run("VirtualMachine hub-spoke-hub with reordered NIC interfaces", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Hub has two interfaces with distinct advanced props.
+			hubBefore := vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:        "eth0",
+								Type:        vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								VNUMANodeID: ptrOf(int32(0)),
+								VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+									UPTv2Enabled: ptrOf(true),
+								},
+								AdvancedProperties: []vmopv1common.KeyValuePair{
+									{Key: "eth0-key", Value: "eth0-val"},
+								},
+							},
+							{
+								Name:        "eth1",
+								Type:        vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								VNUMANodeID: ptrOf(int32(1)),
+								VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+									UPTv2Enabled: ptrOf(false),
+								},
+								AdvancedProperties: []vmopv1common.KeyValuePair{
+									{Key: "eth1-key", Value: "eth1-val"},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// Down-convert hub → spoke (stores hub in MarshalData annotation).
+			var spoke vmopv1a2.VirtualMachine
+			g.Expect(spoke.ConvertFrom(hubBefore.DeepCopy())).To(Succeed())
+
+			// Simulate reordering: swap the two spoke interfaces.
+			ifaces := spoke.Spec.Network.Interfaces
+			g.Expect(ifaces).To(HaveLen(2))
+			ifaces[0], ifaces[1] = ifaces[1], ifaces[0]
+			spoke.Spec.Network.Interfaces = ifaces
+
+			// Up-convert spoke → hub. Name-based restore must put advanced props
+			// back on the correct interface by name, regardless of slice position.
+			// The resulting order follows the spoke (reordered), so we verify
+			// per-name correctness, not positional equality with hubBefore.
+			var hubAfter vmopv1.VirtualMachine
+			g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+
+			g.Expect(hubAfter.Spec.Network.Interfaces).To(HaveLen(2))
+			byName := map[string]vmopv1.VirtualMachineNetworkInterfaceSpec{}
+			for _, iface := range hubAfter.Spec.Network.Interfaces {
+				byName[iface.Name] = iface
+			}
+
+			// eth0's advanced props must land on the interface named "eth0".
+			eth0 := byName["eth0"]
+			g.Expect(eth0.Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+			g.Expect(eth0.VNUMANodeID).To(Equal(ptrOf(int32(0))))
+			g.Expect(eth0.VMXNet3).NotTo(BeNil())
+			g.Expect(eth0.VMXNet3.UPTv2Enabled).To(Equal(ptrOf(true)))
+			g.Expect(eth0.AdvancedProperties).To(Equal([]vmopv1common.KeyValuePair{{Key: "eth0-key", Value: "eth0-val"}}))
+
+			// eth1's advanced props must land on the interface named "eth1".
+			eth1 := byName["eth1"]
+			g.Expect(eth1.Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+			g.Expect(eth1.VNUMANodeID).To(Equal(ptrOf(int32(1))))
+			g.Expect(eth1.VMXNet3).NotTo(BeNil())
+			g.Expect(eth1.VMXNet3.UPTv2Enabled).To(Equal(ptrOf(false)))
+			g.Expect(eth1.AdvancedProperties).To(Equal([]vmopv1common.KeyValuePair{{Key: "eth1-key", Value: "eth1-val"}}))
+		})
 	})
 }

@@ -18,6 +18,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	faultutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/fault"
 )
 
 // Recommendation is the info about a placement recommendation.
@@ -250,16 +251,17 @@ func getClusterPlacementRecommendations(
 	logger.V(6).Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
 
 	if len(results.Faults) != 0 {
-		var faultMgs []string
-		for _, f := range results.Faults {
-			msgs := make([]string, 0, len(f.Faults))
-			for _, ff := range f.Faults {
-				msgs = append(msgs, ff.LocalizedMessage)
+		var faultMsgs []string
+		for _, pf := range results.Faults {
+
+			leafMessages := faultutil.LocalizedMessagesFromFaults(pf.Faults)
+			if len(leafMessages) > 0 {
+				faultMsgs = append(faultMsgs,
+					fmt.Sprintf("Resource pool (%s) has faults: %s", pf.ResourcePool.Value, strings.Join(leafMessages, " ")))
 			}
-			faultMgs = append(faultMgs,
-				fmt.Sprintf("ResourcePool %s faults: %s", f.ResourcePool.Value, strings.Join(msgs, ", ")))
+
 		}
-		return nil, fmt.Errorf("faults: %v", faultMgs)
+		return nil, fmt.Errorf("%v", faultMsgs)
 	}
 
 	recommendations := make(map[string]Recommendation, len(results.PlacementInfos))

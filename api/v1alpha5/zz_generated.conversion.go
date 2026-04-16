@@ -393,11 +393,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha6.VirtualMachineAdvancedSpec)(nil), (*VirtualMachineAdvancedSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(a.(*v1alpha6.VirtualMachineAdvancedSpec), b.(*VirtualMachineAdvancedSpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineBootOptions)(nil), (*v1alpha6.VirtualMachineBootOptions)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineBootOptions_To_v1alpha6_VirtualMachineBootOptions(a.(*VirtualMachineBootOptions), b.(*v1alpha6.VirtualMachineBootOptions), scope)
 	}); err != nil {
@@ -1098,11 +1093,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha6.VirtualMachineNetworkInterfaceSpec)(nil), (*VirtualMachineNetworkInterfaceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec(a.(*v1alpha6.VirtualMachineNetworkInterfaceSpec), b.(*VirtualMachineNetworkInterfaceSpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineNetworkInterfaceStatus)(nil), (*v1alpha6.VirtualMachineNetworkInterfaceStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineNetworkInterfaceStatus_To_v1alpha6_VirtualMachineNetworkInterfaceStatus(a.(*VirtualMachineNetworkInterfaceStatus), b.(*v1alpha6.VirtualMachineNetworkInterfaceStatus), scope)
 	}); err != nil {
@@ -1488,11 +1478,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha6.VirtualMachineStatus)(nil), (*VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(a.(*v1alpha6.VirtualMachineStatus), b.(*VirtualMachineStatus), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineStorageStatus)(nil), (*v1alpha6.VirtualMachineStorageStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineStorageStatus_To_v1alpha6_VirtualMachineStorageStatus(a.(*VirtualMachineStorageStatus), b.(*v1alpha6.VirtualMachineStorageStatus), scope)
 	}); err != nil {
@@ -1633,8 +1618,18 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineAdvancedSpec)(nil), (*VirtualMachineAdvancedSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(a.(*v1alpha6.VirtualMachineAdvancedSpec), b.(*VirtualMachineAdvancedSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineBootstrapSpec)(nil), (*VirtualMachineBootstrapSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha5_VirtualMachineBootstrapSpec(a.(*v1alpha6.VirtualMachineBootstrapSpec), b.(*VirtualMachineBootstrapSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineNetworkInterfaceSpec)(nil), (*VirtualMachineNetworkInterfaceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec(a.(*v1alpha6.VirtualMachineNetworkInterfaceSpec), b.(*VirtualMachineNetworkInterfaceSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -1645,6 +1640,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineSpec)(nil), (*VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha6_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(a.(*v1alpha6.VirtualMachineSpec), b.(*VirtualMachineSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineStatus)(nil), (*VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(a.(*v1alpha6.VirtualMachineStatus), b.(*VirtualMachineStatus), scope)
 	}); err != nil {
 		return err
 	}
@@ -2473,12 +2473,14 @@ func autoConvert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineA
 	out.BootDiskCapacity = (*resource.Quantity)(unsafe.Pointer(in.BootDiskCapacity))
 	out.DefaultVolumeProvisioningMode = VolumeProvisioningMode(in.DefaultVolumeProvisioningMode)
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
+	// WARNING: in.PreferHTEnabled requires manual conversion: does not exist in peer-type
+	// WARNING: in.HugePages1GEnabled requires manual conversion: does not exist in peer-type
+	// WARNING: in.TimeTrackerLowLatencyEnabled requires manual conversion: does not exist in peer-type
+	// WARNING: in.CPUAffinityExclusiveNoStatsEnabled requires manual conversion: does not exist in peer-type
+	// WARNING: in.VMXSwapEnabled requires manual conversion: does not exist in peer-type
+	// WARNING: in.PNUMANodeAffinity requires manual conversion: does not exist in peer-type
+	// WARNING: in.ExtraConfig requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec is an autogenerated conversion function.
-func Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(in *v1alpha6.VirtualMachineAdvancedSpec, out *VirtualMachineAdvancedSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(in, out, s)
 }
 
 func autoConvert_v1alpha5_VirtualMachineBootOptions_To_v1alpha6_VirtualMachineBootOptions(in *VirtualMachineBootOptions, out *v1alpha6.VirtualMachineBootOptions, s conversion.Scope) error {
@@ -4405,12 +4407,11 @@ func autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_Virtual
 	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
 	out.Routes = *(*[]VirtualMachineNetworkRouteSpec)(unsafe.Pointer(&in.Routes))
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
+	// WARNING: in.Type requires manual conversion: does not exist in peer-type
+	// WARNING: in.VNUMANodeID requires manual conversion: does not exist in peer-type
+	// WARNING: in.VMXNet3 requires manual conversion: does not exist in peer-type
+	// WARNING: in.AdvancedProperties requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec is an autogenerated conversion function.
-func Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec(in *v1alpha6.VirtualMachineNetworkInterfaceSpec, out *VirtualMachineNetworkInterfaceSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec(in, out, s)
 }
 
 func autoConvert_v1alpha5_VirtualMachineNetworkInterfaceStatus_To_v1alpha6_VirtualMachineNetworkInterfaceStatus(in *VirtualMachineNetworkInterfaceStatus, out *v1alpha6.VirtualMachineNetworkInterfaceStatus, s conversion.Scope) error {
@@ -4489,7 +4490,17 @@ func autoConvert_v1alpha5_VirtualMachineNetworkSpec_To_v1alpha6_VirtualMachineNe
 	out.Disabled = in.Disabled
 	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
-	out.Interfaces = *(*[]v1alpha6.VirtualMachineNetworkInterfaceSpec)(unsafe.Pointer(&in.Interfaces))
+	if in.Interfaces != nil {
+		in, out := &in.Interfaces, &out.Interfaces
+		*out = make([]v1alpha6.VirtualMachineNetworkInterfaceSpec, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineNetworkInterfaceSpec_To_v1alpha6_VirtualMachineNetworkInterfaceSpec(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Interfaces = nil
+	}
 	return nil
 }
 
@@ -4504,7 +4515,17 @@ func autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha5_VirtualMachineNe
 	out.Disabled = in.Disabled
 	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
-	out.Interfaces = *(*[]VirtualMachineNetworkInterfaceSpec)(unsafe.Pointer(&in.Interfaces))
+	if in.Interfaces != nil {
+		in, out := &in.Interfaces, &out.Interfaces
+		*out = make([]VirtualMachineNetworkInterfaceSpec, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Interfaces = nil
+	}
 	// WARNING: in.VLANs requires manual conversion: does not exist in peer-type
 	return nil
 }
@@ -5460,7 +5481,15 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha6_VirtualMachineSpec(in *
 	out.RestartMode = v1alpha6.VirtualMachinePowerOpMode(in.RestartMode)
 	out.Volumes = *(*[]v1alpha6.VirtualMachineVolume)(unsafe.Pointer(&in.Volumes))
 	out.ReadinessProbe = (*v1alpha6.VirtualMachineReadinessProbeSpec)(unsafe.Pointer(in.ReadinessProbe))
-	out.Advanced = (*v1alpha6.VirtualMachineAdvancedSpec)(unsafe.Pointer(in.Advanced))
+	if in.Advanced != nil {
+		in, out := &in.Advanced, &out.Advanced
+		*out = new(v1alpha6.VirtualMachineAdvancedSpec)
+		if err := Convert_v1alpha5_VirtualMachineAdvancedSpec_To_v1alpha6_VirtualMachineAdvancedSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Advanced = nil
+	}
 	out.Reserved = (*v1alpha6.VirtualMachineReservedSpec)(unsafe.Pointer(in.Reserved))
 	out.MinHardwareVersion = in.MinHardwareVersion
 	out.InstanceUUID = in.InstanceUUID
@@ -5514,7 +5543,15 @@ func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.RestartMode = VirtualMachinePowerOpMode(in.RestartMode)
 	out.Volumes = *(*[]VirtualMachineVolume)(unsafe.Pointer(&in.Volumes))
 	out.ReadinessProbe = (*VirtualMachineReadinessProbeSpec)(unsafe.Pointer(in.ReadinessProbe))
-	out.Advanced = (*VirtualMachineAdvancedSpec)(unsafe.Pointer(in.Advanced))
+	if in.Advanced != nil {
+		in, out := &in.Advanced, &out.Advanced
+		*out = new(VirtualMachineAdvancedSpec)
+		if err := Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Advanced = nil
+	}
 	out.Reserved = (*VirtualMachineReservedSpec)(unsafe.Pointer(in.Reserved))
 	out.MinHardwareVersion = in.MinHardwareVersion
 	out.InstanceUUID = in.InstanceUUID
@@ -5581,12 +5618,8 @@ func autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(
 	out.Guest = (*VirtualMachineGuestStatus)(unsafe.Pointer(in.Guest))
 	out.Hardware = (*VirtualMachineHardwareStatus)(unsafe.Pointer(in.Hardware))
 	out.Policies = *(*[]PolicyStatus)(unsafe.Pointer(&in.Policies))
+	// WARNING: in.ExtraConfig requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus is an autogenerated conversion function.
-func Convert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(in *v1alpha6.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
-	return autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(in, out, s)
 }
 
 func autoConvert_v1alpha5_VirtualMachineStorageStatus_To_v1alpha6_VirtualMachineStorageStatus(in *VirtualMachineStorageStatus, out *v1alpha6.VirtualMachineStorageStatus, s conversion.Scope) error {

@@ -240,6 +240,17 @@ var _ = Describe("Install", func() {
 				Entry("volumes pvc diskMode", "volumes.[].diskMode"),
 				Entry("volumes pvc sharingMode", "volumes.[].sharingMode"),
 				Entry("volumes pvc unitNumber", "volumes.[].unitNumber"),
+				Entry("advanced preferHTEnabled", "advanced.preferHTEnabled"),
+				Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
+				Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
+				Entry("advanced cpuAffinityExclusiveNoStatsEnabled", "advanced.cpuAffinityExclusiveNoStatsEnabled"),
+				Entry("advanced vmxSwapEnabled", "advanced.vmxSwapEnabled"),
+				Entry("advanced pNUMANodeAffinity", "advanced.pNUMANodeAffinity"),
+				Entry("advanced extraConfig", "advanced.extraConfig"),
+				Entry("network interface type", "network.interfaces.[].type"),
+				Entry("network interface vNUMANodeID", "network.interfaces.[].vNUMANodeID"),
+				Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
+				Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
 			)
 
 			DescribeTable("vm api should not have status fields",
@@ -255,6 +266,7 @@ var _ = Describe("Install", func() {
 				Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
 				Entry("volumes controllerType", "volumes.[].controllerType"),
 				Entry("hardware controllers", "hardware.controllers"),
+				Entry("extraConfig", "extraConfig"),
 			)
 		})
 
@@ -396,6 +408,43 @@ var _ = Describe("Install", func() {
 			)
 		})
 
+		When("VM extra config capability is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMExtraConfig = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
+			})
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("advanced preferHTEnabled", "advanced.preferHTEnabled"),
+				Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
+				Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
+				Entry("advanced cpuAffinityExclusiveNoStatsEnabled", "advanced.cpuAffinityExclusiveNoStatsEnabled"),
+				Entry("advanced vmxSwapEnabled", "advanced.vmxSwapEnabled"),
+				Entry("advanced pNUMANodeAffinity", "advanced.pNUMANodeAffinity"),
+				Entry("advanced extraConfig", "advanced.extraConfig"),
+				Entry("network interface type", "network.interfaces.[].type"),
+				Entry("network interface vNUMANodeID", "network.interfaces.[].vNUMANodeID"),
+				Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
+				Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
+			)
+			DescribeTable("vm api should have status fields",
+				func(field string) {
+					fields := statusFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("extraConfig", "extraConfig"),
+			)
+		})
+
 		When("VM shared disks (OracleRAC) is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -505,6 +554,7 @@ var _ = Describe("Install", func() {
 					config.Features.VSpherePolicies = true
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
+					config.Features.VMExtraConfig = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -717,6 +767,17 @@ var _ = Describe("Install", func() {
 					Entry("volumes diskMode", "volumes.[].diskMode"),
 					Entry("volumes sharingMode", "volumes.[].sharingMode"),
 					Entry("volumes unitNumber", "volumes.[].unitNumber"),
+					Entry("advanced preferHTEnabled", "advanced.preferHTEnabled"),
+					Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
+					Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
+					Entry("advanced cpuAffinityExclusiveNoStatsEnabled", "advanced.cpuAffinityExclusiveNoStatsEnabled"),
+					Entry("advanced vmxSwapEnabled", "advanced.vmxSwapEnabled"),
+					Entry("advanced pNUMANodeAffinity", "advanced.pNUMANodeAffinity"),
+					Entry("advanced extraConfig", "advanced.extraConfig"),
+					Entry("network interface type", "network.interfaces.[].type"),
+					Entry("network interface vNUMANodeID", "network.interfaces.[].vNUMANodeID"),
+					Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
+					Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -732,6 +793,7 @@ var _ = Describe("Install", func() {
 					Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
 					Entry("volumes controllerType", "volumes.[].controllerType"),
 					Entry("hardware controllers", "hardware.controllers"),
+					Entry("extraConfig", "extraConfig"),
 				)
 
 				When("one of the crds is already deleted", func() {
@@ -782,6 +844,17 @@ var _ = Describe("Install", func() {
 						Entry("volumes diskMode", "volumes.[].diskMode"),
 						Entry("volumes sharingMode", "volumes.[].sharingMode"),
 						Entry("volumes unitNumber", "volumes.[].unitNumber"),
+						Entry("advanced preferHTEnabled", "advanced.preferHTEnabled"),
+						Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
+						Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
+						Entry("advanced cpuAffinityExclusiveNoStatsEnabled", "advanced.cpuAffinityExclusiveNoStatsEnabled"),
+						Entry("advanced vmxSwapEnabled", "advanced.vmxSwapEnabled"),
+						Entry("advanced pNUMANodeAffinity", "advanced.pNUMANodeAffinity"),
+						Entry("advanced extraConfig", "advanced.extraConfig"),
+						Entry("network interface type", "network.interfaces.[].type"),
+						Entry("network interface vNUMANodeID", "network.interfaces.[].vNUMANodeID"),
+						Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
+						Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
 					)
 
 					DescribeTable("vm api should have removed status fields",
@@ -797,6 +870,7 @@ var _ = Describe("Install", func() {
 						Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
 						Entry("volumes controllerType", "volumes.[].controllerType"),
 						Entry("hardware controllers", "hardware.controllers"),
+						Entry("extraConfig", "extraConfig"),
 					)
 				})
 			})

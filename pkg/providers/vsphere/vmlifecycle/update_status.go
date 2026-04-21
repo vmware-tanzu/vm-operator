@@ -426,9 +426,6 @@ func reconcileStatusGuest(
 	if config := vmCtx.MoVM.Config; config != nil {
 		extraConfig = object.OptionValueList(config.ExtraConfig).StringMap()
 	}
-	if extraConfig == nil {
-		extraConfig = make(map[string]string)
-	}
 
 	updateGuestNetworkStatus(
 		vmCtx.VM,

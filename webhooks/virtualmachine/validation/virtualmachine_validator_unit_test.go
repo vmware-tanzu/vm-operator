@@ -2858,6 +2858,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow spec.crypto when FeatureGate VMVlanSubinterface is disabled (by default)",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = false
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}

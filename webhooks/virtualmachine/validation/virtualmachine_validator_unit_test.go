@@ -10186,4 +10186,218 @@ func commonCreateAndUpdateValidations(
 			),
 		)
 	})
+
+	Context("TelcoVMServiceAPI extraConfig validation", func() {
+		var (
+			ctx *unitValidatingWebhookContext
+		)
+
+		BeforeEach(func() {
+			ctx = newUnitTestContextForValidatingWebhook(false)
+
+			// Enable TelcoVMServiceAPI feature for all tests in this context
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = true
+			})
+
+			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+		})
+
+		Context("VM-level extraConfig validation", func() {
+			DescribeTable("should validate VM advanced extraConfig", doTest,
+				Entry("should allow non-reserved extraConfig keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "user.custom.setting", Value: "value1"},
+									{Key: "custom.app.config", Value: "value2"},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should reject first-class VMX keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead"),
+					},
+				),
+				Entry("should reject vmservice.* prefix",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "vmservice.test.key", Value: "value"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject guestinfo.* prefix",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "guestinfo.custom.data", Value: "value"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: Forbidden: guestinfo.custom.data: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject vmx.reboot.powerCycle exact key",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "vmx.reboot.powerCycle", Value: "TRUE"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: Forbidden: vmx.reboot.powerCycle: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject GOSC reserved keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "tools.deployPkg.fileName", Value: "package.tar"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: Forbidden: tools.deployPkg.fileName: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject ethernet device-scoped keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "ethernet0.ctxPerDev", Value: "1"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead"),
+					},
+				),
+			)
+		})
+
+		Context("Network interface advancedProperties validation", func() {
+			DescribeTable("should validate NIC advancedProperties", doTest,
+				Entry("should allow non-conflicting advancedProperties",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "custom.nic.setting", Value: "value1"},
+											{Key: "user.network.config", Value: "value2"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should reject first-class NIC properties (bare key)",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "ctxPerDev", Value: "1"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+					},
+				),
+				Entry("should reject first-class NIC properties (device-prefixed)",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "ethernet0.ctxPerDev", Value: "1"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+					},
+				),
+				Entry("should reject generic ethernet device-scoped keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "ethernet1.customSetting", Value: "value"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix"),
+					},
+				),
+				Entry("should reject system reserved network device properties",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "present", Value: "TRUE"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: Forbidden: present: this key is reserved for the system"),
+					},
+				),
+			)
+		})
+
+	})
 }

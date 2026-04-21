@@ -28,18 +28,18 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		annotationsNil,
 		vmSharedDisks,
 		allDisksArePVCs,
-		vmExtraConfig bool,
+		telcoVMServiceAPI bool,
 		expectErr bool,
 		expectedErr error,
 	) {
-		ctx := pkgcfg.WithConfig(pkgcfg.Config{
-			BuildVersion: buildVersion,
-			Features: pkgcfg.FeatureStates{
-				VMSharedDisks:   vmSharedDisks,
-				AllDisksArePVCs: allDisksArePVCs,
-				VMExtraConfig:   vmExtraConfig,
-			},
-		})
+	ctx := pkgcfg.WithConfig(pkgcfg.Config{
+		BuildVersion: buildVersion,
+		Features: pkgcfg.FeatureStates{
+			VMSharedDisks:     vmSharedDisks,
+			AllDisksArePVCs:   allDisksArePVCs,
+			TelcoVMServiceAPI: telcoVMServiceAPI,
+		},
+	})
 
 		vm := vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -136,7 +136,7 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		nil,
 	),
 	Entry(
-		"all annotations are set correctly with VMExtraConfig",
+		"all annotations are set correctly with TelcoVMServiceAPI",
 		"1.2.3-test",
 		ptr.To("1.2.3-test"),
 		ptr.To(vmopv1.GroupVersion.Version),
@@ -344,7 +344,7 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		},
 	),
 	Entry(
-		"feature version annotation does not match when VMExtraConfig is enabled",
+		"feature version annotation does not match when TelcoVMServiceAPI is enabled",
 		"1.2.3-test",
 		ptr.To("1.2.3-test"),
 		ptr.To(vmopv1.GroupVersion.Version),
@@ -433,7 +433,7 @@ var _ = Describe("FeatureVersion", func() {
 			Entry("Base + VMSharedDisks is valid", vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks, true),
 			Entry("Base + AllDisksArePVCs is valid", vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionAllDisksArePVCs, true),
 			Entry("All is valid", vmopv1util.FeatureVersionAll, true),
-			Entry("NetExtraConfig alone is valid", vmopv1util.FeatureVersionNetExtraConfig, true),
+			Entry("TelcoVMServiceAPI alone is valid", vmopv1util.FeatureVersionTelcoVMServiceAPI, true),
 			Entry("invalid bit 16 is invalid", vmopv1util.FeatureVersion(16), false),
 			Entry("invalid bit 255 is invalid", vmopv1util.FeatureVersion(255), false),
 		)
@@ -470,7 +470,7 @@ var _ = Describe("FeatureVersion", func() {
 			Entry("All has base", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionBase, true),
 			Entry("All has VMSharedDisks", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionVMSharedDisks, true),
 			Entry("All has AllDisksArePVCs", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionAllDisksArePVCs, true),
-			Entry("All has NetExtraConfig", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionNetExtraConfig, true),
+			Entry("All has TelcoVMServiceAPI", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionTelcoVMServiceAPI, true),
 		)
 	})
 
@@ -495,7 +495,7 @@ var _ = Describe("FeatureVersion", func() {
 			fv.Set(vmopv1util.FeatureVersionBase)
 			fv.Set(vmopv1util.FeatureVersionVMSharedDisks)
 			fv.Set(vmopv1util.FeatureVersionAllDisksArePVCs)
-			fv.Set(vmopv1util.FeatureVersionNetExtraConfig)
+			fv.Set(vmopv1util.FeatureVersionTelcoVMServiceAPI)
 			Ω(fv).Should(Equal(vmopv1util.FeatureVersionAll))
 		})
 
@@ -521,7 +521,7 @@ var _ = Describe("ParseFeatureVersion", func() {
 		Entry("AllDisksArePVCs", "4", vmopv1util.FeatureVersionAllDisksArePVCs),
 		Entry("Base + AllDisksArePVCs", "5", vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionAllDisksArePVCs),
 		Entry("VMSharedDisks + AllDisksArePVCs", "6", vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
-		Entry("NetExtraConfig", "8", vmopv1util.FeatureVersionNetExtraConfig),
+		Entry("TelcoVMServiceAPI", "8", vmopv1util.FeatureVersionTelcoVMServiceAPI),
 		Entry("All", "15", vmopv1util.FeatureVersionAll),
 		Entry("invalid negative", "-1", vmopv1util.FeatureVersionEmpty),
 		Entry("invalid text", "abc", vmopv1util.FeatureVersionEmpty),
@@ -533,12 +533,12 @@ var _ = Describe("ParseFeatureVersion", func() {
 
 var _ = Describe("ActivatedFeatureVersion", func() {
 	DescribeTable("returns activated feature version",
-		func(vmSharedDisks, allDisksArePVCs, vmExtraConfig bool, expected vmopv1util.FeatureVersion) {
+		func(vmSharedDisks, allDisksArePVCs, telcoVMServiceAPI bool, expected vmopv1util.FeatureVersion) {
 			ctx := pkgcfg.WithConfig(pkgcfg.Config{
 				Features: pkgcfg.FeatureStates{
 					VMSharedDisks:   vmSharedDisks,
 					AllDisksArePVCs: allDisksArePVCs,
-					VMExtraConfig:   vmExtraConfig,
+					TelcoVMServiceAPI: telcoVMServiceAPI,
 				},
 			})
 			Ω(vmopv1util.ActivatedFeatureVersion(ctx)).Should(Equal(expected))
@@ -547,7 +547,7 @@ var _ = Describe("ActivatedFeatureVersion", func() {
 		Entry("VMSharedDisks only", true, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
 		Entry("AllDisksArePVCs only", false, true, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionAllDisksArePVCs),
 		Entry("both disk-related features", true, true, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
-		Entry("VMExtraConfig only", false, false, true, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionNetExtraConfig),
+		Entry("TelcoVMServiceAPI only", false, false, true, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionTelcoVMServiceAPI),
 		Entry("every activated feature bit", true, true, true, vmopv1util.FeatureVersionAll),
 	)
 })

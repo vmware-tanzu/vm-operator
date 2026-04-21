@@ -18,7 +18,7 @@ func mutateOnCreateDefaultNetworkInterfaceType(
 	client ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
-	if !pkgcfg.FromContext(ctx).Features.VMExtraConfig {
+	if !pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
 		return false, nil
 	}
 	return SetDefaultNetworkInterfaceTypesOnCreate(ctx, client, vm)
@@ -29,7 +29,7 @@ func mutateOnUpdateDefaultNetworkInterfaceType(
 	client ctrlclient.Client,
 	newVM, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
-	if !pkgcfg.FromContext(ctx).Features.VMExtraConfig {
+	if !pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
 		return false, nil
 	}
 	return SetDefaultNetworkInterfaceTypesOnUpdate(ctx, client, newVM, oldVM)

@@ -411,7 +411,7 @@ var _ = Describe("Install", func() {
 		When("VM extra config capability is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VMExtraConfig = true
+					config.Features.TelcoVMServiceAPI = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -554,7 +554,7 @@ var _ = Describe("Install", func() {
 					config.Features.VSpherePolicies = true
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
-					config.Features.VMExtraConfig = true
+					config.Features.TelcoVMServiceAPI = true
 				})
 			})
 			It("should get the expected crds", func() {

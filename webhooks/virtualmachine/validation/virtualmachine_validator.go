@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,6 +36,7 @@ import (
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -42,6 +44,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
+	vsphereconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
@@ -99,6 +102,108 @@ const (
 	guestCustomizationVCDParityNotEnabled      = "VC guest customization VCD parity capability is not enabled"
 	bootstrapProviderTypeCannotBeChanged       = "bootstrap provider type cannot be changed"
 	forbiddenRemovableVolume                   = "cannot remove volume with removable=false"
+
+	// ExtraConfig validation error messages.
+	extraConfigUseFirstClassFieldFmt       = "%s: use the corresponding first-class field in %s instead"
+	extraConfigReservedForSystemFmt        = "%s: this key is reserved for the system"
+	extraConfigUseSpecNetworkInterfacesFmt = "%s: use spec.network.interfaces[].vmxnet3 or advancedProperties instead"
+	extraConfigUseBareKeyNameFmt           = "%s: use the bare key name without the network device prefix"
+)
+
+var (
+	ethernetDeviceKeyRE       = regexp.MustCompile(`^ethernet\d+\.(.*)$`)
+	capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
+
+	// firstClassVMAdvancedProperties is the set of vmx keys from first-class VM advanced fields.
+	firstClassVMAdvancedProperties = sync.OnceValue(func() map[string]bool {
+		result := make(map[string]bool)
+		specType := reflect.TypeOf((*vmopv1.VirtualMachineAdvancedSpec)(nil)).Elem()
+		for i := 0; i < specType.NumField(); i++ {
+			field := specType.Field(i)
+			if vmxTag, ok := field.Tag.Lookup("vmx"); ok && vmxTag != "" {
+				result[vmxTag] = true
+			}
+		}
+		return result
+	})
+
+	// firstClassNICAdvancedProperties is the set of vmx key suffixes after ethernet%d. on first-class NIC fields.
+	firstClassNICAdvancedProperties = sync.OnceValue(func() map[string]bool {
+		specType := reflect.TypeOf((*vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec)(nil)).Elem()
+		out := make(map[string]bool)
+		const ethernetPlaceholder = "ethernet%d."
+		for i := 0; i < specType.NumField(); i++ {
+			f := specType.Field(i)
+			vmxTag, ok := f.Tag.Lookup("vmx")
+			if !ok || vmxTag == "" {
+				continue
+			}
+			if !strings.HasPrefix(vmxTag, ethernetPlaceholder) {
+				continue
+			}
+			suffix := strings.TrimPrefix(vmxTag, ethernetPlaceholder)
+			if suffix == "" {
+				continue
+			}
+			out[suffix] = true
+		}
+		return out
+	})
+
+	// systemReservedNetworkDeviceProperties is the set of ethernet device suffixes reserved by the system.
+	systemReservedNetworkDeviceProperties = map[string]bool{
+		"address":                     true,
+		"addresstype":                 true,
+		"allowguestconnectioncontrol": true,
+		"devname":                     true,
+		"dvs.connectionid":            true,
+		"dvs.portgroupid":             true,
+		"dvs.portid":                  true,
+		"dvs.switchid":                true,
+		"externalid":                  true,
+		"filename":                    true,
+		"generatedaddress":            true,
+		"key":                         true,
+		"limit":                       true,
+		"measurelatency":              true,
+		"migrateconnect":              true,
+		"name":                        true,
+		"networkname":                 true,
+		"opaquenetwork.id":            true,
+		"opaquenetwork.type":          true,
+		"present":                     true,
+		"pxm":                         true,
+		"realtime":                    true,
+		"reservation":                 true,
+		"rtdisableoffload":            true,
+		"rtmaxrxqueues":               true,
+		"rtmaxtxqueues":               true,
+		"rtrxdataringdescsize":        true,
+		"rttxdataringdescsize":        true,
+		"shares":                      true,
+		"startconnected":              true,
+		"upt":                         true,
+		"uptcompatibility":            true,
+		"virtualdev":                  true,
+		"vnet":                        true,
+		"wakeonpcktrcv":               true,
+	}
+
+	// systemReservedExtraConfigKeys is the set of exact extraConfig keys reserved by the system.
+	systemReservedExtraConfigKeys = map[string]bool{
+		vsphereconst.ExtraConfigReservedKeyVMXRebootPowerCycle: true,
+		vsphereconst.ExtraConfigReservedProfileID:              true,
+		vsphereconst.ExtraConfigRunContainerKey:                true,
+		vsphereconst.ExtraConfigVMServiceNamespacedName:        true,
+		vsphereconst.GOSCPendingExtraConfigKey:                 true,
+		vsphereconst.GOSCIgnoreToolsCheckExtraConfigKey:        true,
+	}
+
+	// systemReservedExtraConfigPrefixes is the set of extraConfig key prefixes reserved by the system.
+	systemReservedExtraConfigPrefixes = []string{
+		vsphereconst.ExtraConfigReservedPrefixVMService,
+		vsphereconst.ExtraConfigGuestInfoPrefix,
+	}
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -784,7 +889,7 @@ func (v validator) validateNetwork(
 		p := networkPath.Child("interfaces")
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
-			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec, vm.Name)...)
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p.Index(i), interfaceSpec, vm.Name)...)
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p.Index(i), interfaceSpec, vm)...)
 		}
 	}
@@ -947,6 +1052,7 @@ var macAddressSupportNetworkGroups = []string{
 
 //nolint:gocyclo
 func (v validator) validateNetworkInterfaceSpec(
+	ctx *pkgctx.WebhookRequestContext,
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	vmName string) field.ErrorList {
@@ -1092,6 +1198,11 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
+	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI && len(interfaceSpec.AdvancedProperties) > 0 {
+		allErrs = append(allErrs, v.validateNetworkInterfaceAdvancedProperties(
+			interfacePath.Child("advancedProperties"), interfaceSpec.AdvancedProperties)...)
+	}
+
 	return allErrs
 }
 
@@ -1147,6 +1258,40 @@ func (v validator) validateNetworkSpecWithBootStrap(
 				strings.Join(networkSpec.SearchDomains, ","),
 				"searchDomains is available only with the following bootstrap providers: LinuxPrep and Sysprep",
 			))
+		}
+	}
+
+	return allErrs
+}
+
+// validateNetworkInterfaceAdvancedProperties validates spec.network.interfaces[].advancedProperties.
+// Rejects keys that duplicate first-class VMX keys or reserved/device-scoped prefixes.
+func (v validator) validateNetworkInterfaceAdvancedProperties(
+	advancedPropsPath *field.Path,
+	advancedProps []vmopv1common.KeyValuePair) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	for i, kv := range advancedProps {
+		keyPath := advancedPropsPath.Index(i).Child("key")
+
+		if isFirstClassNICAdvancedProperty(kv.Key) {
+			allErrs = append(allErrs, field.Forbidden(keyPath,
+				fmt.Sprintf(extraConfigUseFirstClassFieldFmt, kv.Key, "spec.network.interfaces[].vmxnet3")))
+			continue
+		}
+
+		if isNetworkDeviceProperty(kv.Key) {
+			allErrs = append(allErrs, field.Forbidden(keyPath,
+				fmt.Sprintf(extraConfigUseBareKeyNameFmt, kv.Key)))
+			continue
+		}
+
+		// Reject reserved prefixes that system controls for network devices.
+		if isSystemReservedNetworkDeviceProperty(kv.Key) {
+			allErrs = append(allErrs, field.Forbidden(keyPath,
+				fmt.Sprintf(extraConfigReservedForSystemFmt, kv.Key)))
+			continue
 		}
 	}
 
@@ -1848,7 +1993,7 @@ func (v validator) validateReadinessProbe(
 var megaByte = resource.MustParse("1Mi")
 
 func (v validator) validateAdvanced(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -1864,6 +2009,46 @@ func (v validator) validateAdvanced(
 		if capacity.Value()%megaByte.Value() != 0 {
 			allErrs = append(allErrs, field.Invalid(advancedPath.Child("bootDiskCapacity"),
 				capacity.Value(), vSphereVolumeSizeNotMBMultiple))
+		}
+	}
+
+	// Validate extraConfig when TelcoVMServiceAPI is enabled
+	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+		allErrs = append(allErrs, v.validateAdvancedExtraConfig(ctx, advancedPath, advanced)...)
+	}
+
+	return allErrs
+}
+
+// validateAdvancedExtraConfig validates spec.advanced.extraConfig keys.
+func (v validator) validateAdvancedExtraConfig(
+	_ *pkgctx.WebhookRequestContext,
+	advancedPath *field.Path,
+	advanced *vmopv1.VirtualMachineAdvancedSpec) field.ErrorList {
+
+	var allErrs field.ErrorList
+	if len(advanced.ExtraConfig) == 0 {
+		return allErrs
+	}
+
+	ecPath := advancedPath.Child("extraConfig")
+	for i, kv := range advanced.ExtraConfig {
+		keyPath := ecPath.Index(i).Child("key")
+
+		if isFirstClassVMAdvancedProperty(kv.Key) {
+			allErrs = append(allErrs, field.Forbidden(keyPath,
+				fmt.Sprintf(extraConfigUseFirstClassFieldFmt, kv.Key, "spec.advanced")))
+			continue
+		}
+		if isNetworkDeviceProperty(kv.Key) {
+			allErrs = append(allErrs, field.Forbidden(keyPath,
+				fmt.Sprintf(extraConfigUseSpecNetworkInterfacesFmt, kv.Key)))
+			continue
+		}
+		if isSystemReservedProperty(kv.Key) {
+			allErrs = append(allErrs, field.Forbidden(keyPath,
+				fmt.Sprintf(extraConfigReservedForSystemFmt, kv.Key)))
+			continue
 		}
 	}
 
@@ -2589,8 +2774,6 @@ func (v validator) validateCdromWhenPoweredOn(
 	return allErrs
 }
 
-var capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
-
 // isCAPVServiceAccount checks if the username matches that of the CAPV service account.
 func isCAPVServiceAccount(username string) bool {
 	return capvDefaultServiceAccount.Match([]byte(username))
@@ -3211,4 +3394,45 @@ func (v validator) validateBiosUUID(_ *pkgctx.WebhookRequestContext, vm *vmopv1.
 	}
 
 	return allErrs
+}
+
+func isFirstClassVMAdvancedProperty(key string) bool {
+	return firstClassVMAdvancedProperties()[key]
+}
+
+// isSystemReservedProperty returns true if the key is reserved and controlled by the system.
+func isSystemReservedProperty(key string) bool {
+	// Check exact keys first (fastest lookup)
+	if systemReservedExtraConfigKeys[key] {
+		return true
+	}
+
+	// Check prefixes
+	for _, prefix := range systemReservedExtraConfigPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isSystemReservedNetworkDeviceProperty(key string) bool {
+	return systemReservedNetworkDeviceProperties[key]
+}
+
+func isFirstClassNICAdvancedProperty(key string) bool {
+	firstClassProperties := firstClassNICAdvancedProperties()
+	if firstClassProperties[key] {
+		return true
+	}
+	if m := ethernetDeviceKeyRE.FindStringSubmatch(key); m != nil {
+		_, ok := firstClassProperties[m[1]]
+		return ok
+	}
+	return false
+}
+
+func isNetworkDeviceProperty(key string) bool {
+	return ethernetDeviceKeyRE.MatchString(key)
 }

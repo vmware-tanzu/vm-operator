@@ -57,6 +57,10 @@ const (
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" //nolint:gosec
 	PCIPassthruMMIOSizeDefault        = "512"
 
+	// ExtraConfig reserved prefixes — vm-operator controls these and users must not set them directly.
+	ExtraConfigReservedPrefixVMService          = "vmservice."
+	ExtraConfigReservedKeyVMXRebootPowerCycle   = "vmx.reboot.powerCycle"
+
 	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"
 

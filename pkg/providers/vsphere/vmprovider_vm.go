@@ -163,7 +163,11 @@ func (vs *vSphereVMProvider) GetVMLocation(ctx context.Context, vmName string) (
 	if err != nil {
 		return "", err
 	}
-	defer v.Destroy(ctx)
+	defer func() {
+		if err := v.Destroy(ctx); err != nil {
+			pkglog.FromContextOrDefault(ctx).Error(err, "failed to destroy container view")
+		}
+	}()
 
 	// Use a filter so vCenter only returns the specific VM
 	var vms []mo.VirtualMachine

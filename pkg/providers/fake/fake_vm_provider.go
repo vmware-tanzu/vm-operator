@@ -67,7 +67,7 @@ type funcs struct {
 	DeleteSnapshotFn           func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
 	GetSnapshotSizeFn          func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
-	GetVMLocation              func(ctx context.Context, vmName string) (string, error)
+	GetVMLocationFn            func(ctx context.Context, vmName string) (string, error)
 }
 
 type VMProvider struct {
@@ -108,8 +108,8 @@ func (s *VMProvider) GetVMLocation(ctx context.Context, vmName string) (string, 
 
 	s.Lock()
 	defer s.Unlock()
-	if s.GetVMLocation != nil {
-		return s.GetVMLocation(ctx, vmName)
+	if s.GetVMLocationFn != nil {
+		return s.GetVMLocationFn(ctx, vmName)
 	}
 	return "", nil
 }

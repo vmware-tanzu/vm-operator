@@ -409,12 +409,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return ctrl.Result{RequeueAfter: requeueDelay(vmCtx, err)}, nil
 }
 
-// Inject the halt signal into the context
+// Inject the halt signal into the context.
 func withHalt(ctx context.Context) context.Context {
 	return context.WithValue(ctx, haltReconcileKey{}, true)
 }
 
-// Check if we should stop
+// Check if we should stop.
 func isHalted(ctx context.Context) bool {
 	val := ctx.Value(haltReconcileKey{})
 	return val != nil && val.(bool)

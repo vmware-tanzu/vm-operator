@@ -62,6 +62,8 @@ const (
 // managers.
 var SkipNameValidation *bool
 
+type haltReconcileKey struct{}
+
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
@@ -392,6 +394,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
 	if err = r.ReconcileLocation(vmCtx); err != nil {
+		if isHalted(vmCtx.Context) {
+			return ctrl.Result{Requeue: false}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -404,32 +409,41 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return ctrl.Result{RequeueAfter: requeueDelay(vmCtx, err)}, nil
 }
 
+// Inject the halt signal into the context
+func withHalt(ctx context.Context) context.Context {
+	return context.WithValue(ctx, haltReconcileKey{}, true)
+}
+
+// Check if we should stop
+func isHalted(ctx context.Context) bool {
+	val := ctx.Value(haltReconcileKey{})
+	return val != nil && val.(bool)
+}
+
 func (r *Reconciler) ReconcileLocation(pkgctx *pkgctx.VirtualMachineContext) error {
 	if pkgctx.VM.Status.UniqueID == "" {
-		// This is a new VM creation request.
 		// Skip the check because the VM doesn't exist in vCenter yet.
 		return nil
 	}
 
-	// 1. Fetch the VM properties from vCenter
-	// We declare 'mvm' here so it is no longer undefined
-	actualNs, err := r.VMProvider.GetVMLocation(pkgctx.Context, pkgctx.VM.Name)
+	// Fetch the VM location from vCenter
+	currentLocation, err := r.VMProvider.GetVMLocation(pkgctx.Context, pkgctx.VM.Name)
 	if err != nil {
-		// If the VM is missing, we might want to handle it differently
 		return err
 	}
 
 	// 2. Compare Actual (vCenter) vs Expected (K8s)
-	if actualNs != pkgctx.VM.Namespace {
+	if currentLocation != pkgctx.VM.Namespace {
 		// Use the MarkFalse logic
 		pkgcond.MarkFalse(
-			pkgctx.VM, vmopv1.VirtualMachineConditionCreated, "NamespaceMismatch", "VM is physically in vCenter namespace '%s', but K8s expects '%s'",
-			actualNs, pkgctx.VM.Namespace)
+			pkgctx.VM, vmopv1.VirtualMachineConditionCreated, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", pkgctx.VM.Namespace)
 
 		if err := r.Status().Update(pkgctx.Context, pkgctx.VM); err != nil {
-			return fmt.Errorf("failed to persist namespace mismatch condition: %w", err)
+			return fmt.Errorf("failed to persist location mismatch condition: %w", err)
 		}
-		return fmt.Errorf("reconciliation halted: VM location mismatch")
+
+		pkgctx.Context = withHalt(pkgctx.Context)
+		return fmt.Errorf("reconciliation stopped : VM location mismatch")
 	}
 	return nil
 }

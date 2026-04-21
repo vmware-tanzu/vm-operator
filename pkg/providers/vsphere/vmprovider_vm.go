@@ -164,13 +164,10 @@ func (vs *vSphereVMProvider) GetVMLocation(ctx context.Context, vmName string) (
 		return "", err
 	}
 	defer v.Destroy(ctx)
-	// Define the properties we need for the location check
-	props := []string{"name", "resourcePool"}
 
 	// Use a filter so vCenter only returns the specific VM
 	var vms []mo.VirtualMachine
-	filter := property.Match{"name": vmName}
-	err = v.RetrieveWithFilter(ctx, []string{"VirtualMachine"}, props, &vms, filter)
+	err = v.RetrieveWithFilter(ctx, []string{"VirtualMachine"}, []string{"name", "resourcePool"}, &vms, property.Match{"name": vmName})
 	if err != nil {
 		return "", err
 	}

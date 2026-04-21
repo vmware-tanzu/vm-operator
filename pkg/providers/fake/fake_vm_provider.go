@@ -67,8 +67,7 @@ type funcs struct {
 	DeleteSnapshotFn           func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
 	GetSnapshotSizeFn          func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
-	ListVMsFn                  func(ctx context.Context) ([]*object.VirtualMachine, error)
-	ListNsAndNameoftheVMFn     func(ctx context.Context, expectedNs string) error
+	GetVMLocation              func(ctx context.Context, vmName string) (string, error)
 }
 
 type VMProvider struct {
@@ -104,26 +103,15 @@ func (s *VMProvider) CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv
 	return nil
 }
 
-func (s *VMProvider) ListVMs(ctx context.Context) ([]*object.VirtualMachine, error) {
+func (s *VMProvider) GetVMLocation(ctx context.Context, vmName string) (string, error) {
 	_ = pkgcfg.FromContext(ctx)
 
 	s.Lock()
 	defer s.Unlock()
-	if s.ListVMsFn != nil {
-		return s.ListVMsFn(ctx)
+	if s.GetVMLocation != nil {
+		return s.GetVMLocation(ctx, vmName)
 	}
-	return nil, nil
-}
-
-func (s *VMProvider) ListNsAndNameoftheVM(ctx context.Context, expectedNs string) error {
-	_ = pkgcfg.FromContext(ctx)
-
-	s.Lock()
-	defer s.Unlock()
-	if s.ListNsAndNameoftheVMFn != nil {
-		return s.ListNsAndNameoftheVMFn(ctx, expectedNs)
-	}
-	return nil
+	return "", nil
 }
 
 func (s *VMProvider) CreateOrUpdateVirtualMachineAsync(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error) {

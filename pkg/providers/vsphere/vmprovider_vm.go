@@ -150,72 +150,41 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 	return vs.createOrUpdateVirtualMachine(ctx, vm, true)
 }
 
-func (vs *vSphereVMProvider) ListNsAndNameoftheVM(ctx context.Context, expectedNs string) error {
-	vms, err := vs.ListVMs(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, vm := range vms {
-		var mvm mo.VirtualMachine
-
-		// CRITICAL CHANGE: Fetch "resourcePool" instead of just "parent"
-		err := vm.Properties(ctx, vm.Reference(), []string{"name", "parent", "resourcePool"}, &mvm)
-		if err != nil {
-			continue
-		}
-
-		var nsName string
-		if mvm.ResourcePool != nil {
-			// A Namespace in vSphere is technically a ResourcePool object
-			rp := object.NewResourcePool(vm.Client(), *mvm.ResourcePool)
-			name, err := rp.ObjectName(ctx)
-			if err != nil {
-				nsName = "err-fetching-rp"
-			} else {
-				nsName = name
-			}
-		} else {
-			nsName = "no-resource-pool"
-		}
-
-		fmt.Printf("Current Namespace (RP): %-15s | VM Name: %-20s\n", nsName, mvm.Name)
-	}
-	return nil
-}
-
-func (vs *vSphereVMProvider) ListVMs(ctx context.Context) ([]*object.VirtualMachine, error) {
+func (vs *vSphereVMProvider) GetVMLocation(ctx context.Context, vmName string) (string, error) {
 	client, err := vs.VSphereClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get vSphere client: %w", err)
+		return "", err
 	}
-	//manager := view.NewManager(client.VimClient())
 
-	// Create a container view of all Virtual Machines in the Datacenter
 	vimClient := client.VimClient()
-	rootFolder := vimClient.ServiceContent.RootFolder
-
-	// 3. Create the Manager using the VIM client
 	m := view.NewManager(vimClient)
-	v, err := m.CreateContainerView(ctx, rootFolder, []string{"VirtualMachine"}, true)
+	// Create view specifically for VMs
+	v, err := m.CreateContainerView(ctx, vimClient.ServiceContent.RootFolder, []string{"VirtualMachine"}, true)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create container view: %w", err)
+		return "", err
 	}
 	defer v.Destroy(ctx)
+	// Define the properties we need for the location check
+	props := []string{"name", "resourcePool"}
 
-	// Retrieve all VM references
+	// Use a filter so vCenter only returns the specific VM
 	var vms []mo.VirtualMachine
-	err = v.Retrieve(ctx, []string{"VirtualMachine"}, []string{"name", "resourcePool"}, &vms)
+	filter := property.Match{"name": vmName}
+	err = v.RetrieveWithFilter(ctx, []string{"VirtualMachine"}, props, &vms, filter)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	var objects []*object.VirtualMachine
-	for _, mvm := range vms {
-		objects = append(objects, object.NewVirtualMachine(client.VimClient(), mvm.Reference()))
+	if len(vms) == 0 {
+		return "", fmt.Errorf("VM %s not found", vmName)
 	}
-	return objects, nil
 
+	if vms[0].ResourcePool == nil {
+		return "", fmt.Errorf("resource-pool-not-assigned")
+	}
+
+	rp := object.NewResourcePool(vimClient, *vms[0].ResourcePool)
+	return rp.ObjectName(ctx)
 }
 
 func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(

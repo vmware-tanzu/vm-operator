@@ -391,10 +391,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if !vm.DeletionTimestamp.IsZero() {
 		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
-
-	err = r.VMProvider.ListNsAndNameoftheVM(ctx, vm.Namespace)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to list all the VM and validate namespaces")
+	if err = r.ReconcileLocation(vmCtx); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	err = r.ReconcileNormal(vmCtx)
@@ -404,6 +402,36 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	// Requeue after N amount of time according to the state of the VM.
 	return ctrl.Result{RequeueAfter: requeueDelay(vmCtx, err)}, nil
+}
+
+func (r *Reconciler) ReconcileLocation(pkgctx *pkgctx.VirtualMachineContext) error {
+	if pkgctx.VM.Status.UniqueID == "" {
+		// This is a new VM creation request.
+		// Skip the check because the VM doesn't exist in vCenter yet.
+		return nil
+	}
+
+	// 1. Fetch the VM properties from vCenter
+	// We declare 'mvm' here so it is no longer undefined
+	actualNs, err := r.VMProvider.GetVMLocation(pkgctx.Context, pkgctx.VM.Name)
+	if err != nil {
+		// If the VM is missing, we might want to handle it differently
+		return err
+	}
+
+	// 2. Compare Actual (vCenter) vs Expected (K8s)
+	if actualNs != pkgctx.VM.Namespace {
+		// Use the MarkFalse logic
+		pkgcond.MarkFalse(
+			pkgctx.VM, vmopv1.VirtualMachineConditionCreated, "NamespaceMismatch", "VM is physically in vCenter namespace '%s', but K8s expects '%s'",
+			actualNs, pkgctx.VM.Namespace)
+
+		if err := r.Status().Update(pkgctx.Context, pkgctx.VM); err != nil {
+			return fmt.Errorf("failed to persist namespace mismatch condition: %w", err)
+		}
+		return fmt.Errorf("reconciliation halted: VM location mismatch")
+	}
+	return nil
 }
 
 // Determine if we should request a non-zero requeue delay in order to trigger a

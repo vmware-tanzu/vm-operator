@@ -722,36 +722,36 @@ func unitTestsReconcile() {
 				})
 
 				It("IPv4-only Service only includes IPv4 endpoints", func() {
-				vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
-				err := reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 
-				allAddresses := collectAllEndpointIPs(endpoints)
-				Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2"))
-				Expect(allAddresses).NotTo(ContainElements("2001:db8::1", "2001:db8::2"))
-			})
+					allAddresses := collectAllEndpointIPs(endpoints)
+					Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2"))
+					Expect(allAddresses).NotTo(ContainElements("2001:db8::1", "2001:db8::2"))
+				})
 
-			It("IPv6-only Service only includes IPv6 endpoints", func() {
-				vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv6Protocol}
-				err := reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+				It("IPv6-only Service only includes IPv6 endpoints", func() {
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv6Protocol}
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 
-				allAddresses := collectAllEndpointIPs(endpoints)
-				Expect(allAddresses).To(ContainElements("2001:db8::1", "2001:db8::2"))
-				Expect(allAddresses).NotTo(ContainElements("192.168.1.1", "192.168.1.2"))
-			})
+					allAddresses := collectAllEndpointIPs(endpoints)
+					Expect(allAddresses).To(ContainElements("2001:db8::1", "2001:db8::2"))
+					Expect(allAddresses).NotTo(ContainElements("192.168.1.1", "192.168.1.2"))
+				})
 
-			It("Dual-stack Service includes both IPv4 and IPv6 endpoints", func() {
-				vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
-				err := reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+				It("Dual-stack Service includes both IPv4 and IPv6 endpoints", func() {
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 
-				allAddresses := collectAllEndpointIPs(endpoints)
-				Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2", "2001:db8::1", "2001:db8::2"))
-			})
+					allAddresses := collectAllEndpointIPs(endpoints)
+					Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2", "2001:db8::1", "2001:db8::2"))
+				})
 			})
 
 			Context("Endpoint filtering based on Service IPFamilyPolicy", func() {
@@ -813,36 +813,36 @@ func unitTestsReconcile() {
 					service.Spec.ClusterIPs = []string{"10.0.0.1"}
 					Expect(ctx.Client.Update(ctx, service)).To(Succeed())
 
-				err = reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+					err = reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 
-				allAddresses := collectReadyEndpointIPs(endpoints)
-				Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2"))
-				Expect(allAddresses).NotTo(ContainElements("2001:db8::1", "2001:db8::2"))
-			})
+					allAddresses := collectReadyEndpointIPs(endpoints)
+					Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2"))
+					Expect(allAddresses).NotTo(ContainElements("2001:db8::1", "2001:db8::2"))
+				})
 
-			It("PreferDualStack policy includes both IPv4 and IPv6 endpoints", func() {
-				policy := corev1.IPFamilyPolicyPreferDualStack
-				vmService.Spec.IPFamilyPolicy = &policy
-				err := reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+				It("PreferDualStack policy includes both IPv4 and IPv6 endpoints", func() {
+					policy := corev1.IPFamilyPolicyPreferDualStack
+					vmService.Spec.IPFamilyPolicy = &policy
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 
-				allAddresses := collectReadyEndpointIPs(endpoints)
-				Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2", "2001:db8::1", "2001:db8::2"))
-			})
+					allAddresses := collectReadyEndpointIPs(endpoints)
+					Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2", "2001:db8::1", "2001:db8::2"))
+				})
 
-			It("RequireDualStack policy includes both IPv4 and IPv6 endpoints", func() {
-				policy := corev1.IPFamilyPolicyRequireDualStack
-				vmService.Spec.IPFamilyPolicy = &policy
-				err := reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+				It("RequireDualStack policy includes both IPv4 and IPv6 endpoints", func() {
+					policy := corev1.IPFamilyPolicyRequireDualStack
+					vmService.Spec.IPFamilyPolicy = &policy
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 
-				allAddresses := collectReadyEndpointIPs(endpoints)
-				Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2", "2001:db8::1", "2001:db8::2"))
-			})
+					allAddresses := collectReadyEndpointIPs(endpoints)
+					Expect(allAddresses).To(ContainElements("192.168.1.1", "192.168.1.2", "2001:db8::1", "2001:db8::2"))
+				})
 			})
 
 			Context("VM created after VirtualMachineService", func() {
@@ -884,16 +884,16 @@ func unitTestsReconcile() {
 					Expect(ctx.Client.Create(ctx, newVM)).To(Succeed())
 				})
 
-			It("VM is added to endpoints with correct IP family filtering", func() {
-				// Reconcile again after VM is created (simulating controller watching VM changes)
-				err := reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+				It("VM is added to endpoints with correct IP family filtering", func() {
+					// Reconcile again after VM is created (simulating controller watching VM changes)
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 
-				allAddresses := collectReadyEndpointIPs(endpoints)
-				Expect(allAddresses).To(ContainElement("192.168.1.100"))
-				Expect(allAddresses).NotTo(ContainElement("2001:db8::100"))
-			})
+					allAddresses := collectReadyEndpointIPs(endpoints)
+					Expect(allAddresses).To(ContainElement("192.168.1.100"))
+					Expect(allAddresses).NotTo(ContainElement("2001:db8::100"))
+				})
 			})
 
 			Context("Preserve VMs in Endpoints that have Probe but hasn't run yet", func() {
@@ -1079,17 +1079,17 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, ipv4VM, ipv6VM, dualStackVM)
 				})
 
-			It("All VMs appear in appropriate subsets based on their IP families", func() {
-				Expect(endpoints.Subsets).ToNot(BeEmpty())
+				It("All VMs appear in appropriate subsets based on their IP families", func() {
+					Expect(endpoints.Subsets).ToNot(BeEmpty())
 
-				allIPs := collectReadyEndpointIPs(endpoints)
-				// Should have: IPv4 from ipv4VM, IPv6 from ipv6VM, IPv4 and IPv6 from dualStackVM
-				Expect(allIPs).To(ContainElement("192.168.1.10"), "Should contain IPv4-only VM IP")
-				Expect(allIPs).To(ContainElement("2001:db8::10"), "Should contain IPv6-only VM IP")
-				Expect(allIPs).To(ContainElement("192.168.1.20"), "Should contain dual-stack VM IPv4")
-				Expect(allIPs).To(ContainElement("2001:db8::20"), "Should contain dual-stack VM IPv6")
-				Expect(allIPs).To(HaveLen(4), "Should have 4 total IP addresses")
-			})
+					allIPs := collectReadyEndpointIPs(endpoints)
+					// Should have: IPv4 from ipv4VM, IPv6 from ipv6VM, IPv4 and IPv6 from dualStackVM
+					Expect(allIPs).To(ContainElement("192.168.1.10"), "Should contain IPv4-only VM IP")
+					Expect(allIPs).To(ContainElement("2001:db8::10"), "Should contain IPv6-only VM IP")
+					Expect(allIPs).To(ContainElement("192.168.1.20"), "Should contain dual-stack VM IPv4")
+					Expect(allIPs).To(ContainElement("2001:db8::20"), "Should contain dual-stack VM IPv6")
+					Expect(allIPs).To(HaveLen(4), "Should have 4 total IP addresses")
+				})
 			})
 		})
 

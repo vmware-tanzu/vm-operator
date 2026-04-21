@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -138,18 +140,17 @@ func intgTestsReconcile() {
 				})
 
 				By("VirtualMachineService finalizer should get set")
-				Eventually(func() []string {
+				Eventually(func(g Gomega) {
 					vmService := &vmopv1.VirtualMachineService{}
-					if err := ctx.Client.Get(ctx, objKey, vmService); err == nil {
-						return vmService.GetFinalizers()
-					}
-					return nil
-				}).Should(ContainElement(finalizerName))
+
+					g.Expect(ctx.Client.Get(ctx, objKey, vmService)).To(Succeed())
+					g.Expect(vmService.GetFinalizers()).To(ContainElement(finalizerName))
+				}).Should(Succeed())
 
 				By("Service should be created", func() {
 					service := &corev1.Service{}
-					Eventually(func() error {
-						return ctx.Client.Get(ctx, objKey, service)
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
 					}).Should(Succeed())
 
 					// Service should have label and annotations replicated on vmService create
@@ -163,8 +164,8 @@ func intgTestsReconcile() {
 
 				By("Endpoints should be created", func() {
 					endpoints := &corev1.Endpoints{}
-					Eventually(func() error {
-						return ctx.Client.Get(ctx, objKey, endpoints)
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 					}).Should(Succeed())
 
 					Expect(endpoints.Labels).To(HaveKeyWithValue(dummyLabelKey, dummyLabelVal))
@@ -214,13 +215,13 @@ func intgTestsReconcile() {
 
 				By("Ready VM should be added to Endpoints", func() {
 					endpoints := &corev1.Endpoints{}
-					Eventually(func() bool {
-						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil && len(endpoints.Subsets) == 1 {
-							subset := endpoints.Subsets[0]
-							return len(subset.Addresses) != 0 && len(subset.NotReadyAddresses) != 0
-						}
-						return false
-					}).Should(BeTrue())
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						subset := endpoints.Subsets[0]
+						g.Expect(subset.Addresses).ToNot(BeEmpty())
+						g.Expect(subset.NotReadyAddresses).ToNot(BeEmpty())
+					}).Should(Succeed())
 
 					subsets := endpoints.Subsets
 					Expect(subsets).To(HaveLen(1))
@@ -255,25 +256,21 @@ func intgTestsReconcile() {
 					Expect(ctx.Client.Update(ctx, notReadyVM)).To(Succeed())
 					Expect(ctx.Client.Delete(ctx, notReadyVM)).To(Succeed())
 
-					Eventually(func() bool {
-						endpoints := &corev1.Endpoints{}
-						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
-							return len(endpoints.Subsets) == 1 && len(endpoints.Subsets[0].NotReadyAddresses) == 0
-						}
-						return false
-					}).Should(BeTrue(), "not ready VM should be removed from Endpoints")
+					endpoints := &corev1.Endpoints{}
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						g.Expect(endpoints.Subsets[0].NotReadyAddresses).To(BeEmpty())
+					}).Should(Succeed(), "not ready VM should be removed from Endpoints")
 
 					readyVM.Finalizers = append(readyVM.Finalizers, "dummy.test.finalizer")
 					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
 					Expect(ctx.Client.Delete(ctx, readyVM)).To(Succeed())
 
-					Eventually(func() bool {
-						endpoints := &corev1.Endpoints{}
-						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
-							return len(endpoints.Subsets) == 0
-						}
-						return false
-					}).Should(BeTrue())
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(BeEmpty())
+					}).Should(Succeed())
 
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(notReadyVM), notReadyVM)).To(Succeed())
 					notReadyVM.Finalizers = nil
@@ -287,13 +284,117 @@ func intgTestsReconcile() {
 				By("Delete VirtualMachineService and finalizer should be removed", func() {
 					Expect(ctx.Client.Delete(ctx, vmService)).To(Succeed())
 
-					Eventually(func() []string {
-						vmService := &vmopv1.VirtualMachineService{}
-						if err := ctx.Client.Get(ctx, objKey, vmService); err == nil {
-							return vmService.GetFinalizers()
+					Eventually(func(g Gomega) {
+						got := &vmopv1.VirtualMachineService{}
+						err := ctx.Client.Get(ctx, objKey, got)
+						if apierrors.IsNotFound(err) {
+							return
 						}
-						return nil
-					}).ShouldNot(ContainElement(finalizerName))
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(got.GetFinalizers()).NotTo(ContainElement(finalizerName))
+					}).Should(Succeed())
+				})
+			})
+		})
+
+		Context("Endpoints reflect Service IP family selection", func() {
+			var vmForIPFamilyTest *vmopv1.VirtualMachine
+
+			AfterEach(func() {
+				if vmForIPFamilyTest != nil {
+					Expect(client.IgnoreNotFound(ctx.Client.Delete(ctx, vmForIPFamilyTest))).To(Succeed())
+					vmForIPFamilyTest = nil
+				}
+			})
+
+			Context("Dual-stack VM with SingleStack IPv4 service", func() {
+				BeforeEach(func() {
+					vmServiceName = "test-vm-service-dual-stack"
+				})
+
+				It("includes only IPv4 when VM has both primary IPv4 and IPv6", func() {
+					vmForIPFamilyTest = createVMWithNetwork(ctx, "dual-stack-vm", vmLabels, "192.168.1.100", "2001:db8::100")
+					vmService := createVMService(ctx, vmServiceName, selector, vmServicePort,
+						[]corev1.IPFamily{corev1.IPv4Protocol}, nil)
+
+					objKey := client.ObjectKeyFromObject(vmService)
+					endpoints := &corev1.Endpoints{}
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).ToNot(BeEmpty())
+					}).Should(Succeed())
+
+					allIPs := collectEndpointIPs(endpoints)
+					Expect(allIPs).To(ContainElement("192.168.1.100"))
+					Expect(allIPs).NotTo(ContainElement("2001:db8::100"))
+				})
+			})
+
+			Context("IPv6-only VM with SingleStack IPv4 service", func() {
+				BeforeEach(func() {
+					vmServiceName = "test-vm-service-ipv6-only"
+				})
+
+				It("has empty Endpoints because IPv4 service cannot route to IPv6-only VM", func() {
+					vmForIPFamilyTest = createVMWithNetwork(ctx, "ipv6-vm", vmLabels, "", "2001:db8::200")
+					vmService := createVMService(ctx, vmServiceName, selector, vmServicePort,
+						[]corev1.IPFamily{corev1.IPv4Protocol}, ptr.To(corev1.IPFamilyPolicySingleStack))
+
+					objKey := client.ObjectKeyFromObject(vmService)
+					endpoints := &corev1.Endpoints{}
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+					}).Should(Succeed())
+
+					Expect(endpoints.Subsets).To(BeEmpty())
+				})
+			})
+
+			Context("PreferDualStack with empty ipFamilies", func() {
+				BeforeEach(func() {
+					vmServiceName = "test-vm-service-prefer-empty-ipf"
+				})
+
+				// This should succeed since envtest is single stack.
+				It("creates child Service and IPv4 Endpoints", func() {
+					vmForIPFamilyTest = createVMWithNetwork(ctx, "vm-prefer-empty-ipf", vmLabels, "192.168.6.1", "2001:db8::601")
+					vmService := createVMService(ctx, vmServiceName, selector, vmServicePort,
+						nil, ptr.To(corev1.IPFamilyPolicyPreferDualStack))
+
+					svcKey := client.ObjectKeyFromObject(vmService)
+					svc := &corev1.Service{}
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, svcKey, svc)).To(Succeed())
+					}).Should(Succeed())
+
+					endpoints := &corev1.Endpoints{}
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, svcKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).ToNot(BeEmpty())
+					}).Should(Succeed())
+
+					Expect(collectEndpointIPs(endpoints)).To(ContainElement("192.168.6.1"))
+				})
+			})
+
+			// This should fail since envtest is single stack.
+
+			Context("RequireDualStack with empty ipFamilies", func() {
+				BeforeEach(func() {
+					vmServiceName = "test-vm-service-require-empty-ipf"
+				})
+
+				It("does not create a child Service", func() {
+					vmForIPFamilyTest = createVMWithNetwork(ctx, "vm-require-empty-ipf", vmLabels, "192.168.7.1", "2001:db8::701")
+					vmService := createVMService(ctx, vmServiceName, selector, vmServicePort,
+						nil, ptr.To(corev1.IPFamilyPolicyRequireDualStack))
+
+					svcKey := client.ObjectKeyFromObject(vmService)
+					svc := &corev1.Service{}
+					Consistently(func(g Gomega) {
+						err := ctx.Client.Get(ctx, svcKey, svc)
+						g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					}).Should(Succeed())
 				})
 			})
 		})
@@ -301,142 +402,6 @@ func intgTestsReconcile() {
 		Context("Reconciles after VirtualMachineService after VMs labels no longer match", func() {
 			BeforeEach(func() {
 				vmServiceName = "test-vm-service-unmatched-vm"
-			})
-
-			Context("Dual-stack VM", func() {
-				BeforeEach(func() {
-					vmServiceName = "test-vm-service-dual-stack"
-				})
-
-				It("Endpoints contain both IPv4 and IPv6 addresses", func() {
-					dualStackVM := &vmopv1.VirtualMachine{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "dual-stack-vm",
-							Namespace: ctx.Namespace,
-							Labels:    vmLabels,
-						},
-						Spec: vmopv1.VirtualMachineSpec{
-							PowerState: vmopv1.VirtualMachinePowerStateOn,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, dualStackVM)).To(Succeed())
-
-					dualStackVM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
-						PrimaryIP4: "192.168.1.100",
-						PrimaryIP6: "2001:db8::100",
-					}
-					Expect(ctx.Client.Status().Update(ctx, dualStackVM)).To(Succeed())
-
-					vmService := &vmopv1.VirtualMachineService{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      vmServiceName,
-							Namespace: ctx.Namespace,
-						},
-						Spec: vmopv1.VirtualMachineServiceSpec{
-							Type:     vmopv1.VirtualMachineServiceTypeClusterIP,
-							Ports:    []vmopv1.VirtualMachineServicePort{vmServicePort},
-							Selector: selector,
-						},
-					}
-
-					objKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
-
-					By("Create VirtualMachineService", func() {
-						Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
-					})
-
-					By("Endpoints should contain only IPv4 address for SingleStack service", func() {
-						// In an IPv4-only cluster, a SingleStack service gets an IPv4 ClusterIP
-						// An IPv4 service can only route to IPv4 endpoints, so only IPv4 is included
-						// even if the VM has both IPv4 and IPv6 addresses
-						endpoints := &corev1.Endpoints{}
-						Eventually(func() bool {
-							if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
-								return len(endpoints.Subsets) >= 1
-							}
-							return false
-						}).Should(BeTrue())
-
-						// Collect all IP addresses from all subsets
-						var allIPs []string
-						for _, subset := range endpoints.Subsets {
-							for _, addr := range subset.Addresses {
-								allIPs = append(allIPs, addr.IP)
-							}
-						}
-
-						Expect(allIPs).To(ContainElement("192.168.1.100"), "Should contain IPv4 address")
-						Expect(allIPs).NotTo(ContainElement("2001:db8::100"), "Should not contain IPv6 address for SingleStack IPv4 service")
-					})
-
-					By("Cleanup", func() {
-						Expect(ctx.Client.Delete(ctx, vmService)).To(Succeed())
-						Expect(ctx.Client.Delete(ctx, dualStackVM)).To(Succeed())
-					})
-				})
-			})
-
-			Context("IPv6-only VM", func() {
-				BeforeEach(func() {
-					vmServiceName = "test-vm-service-ipv6-only"
-				})
-
-				It("Endpoints contain only IPv6 address", func() {
-					ipv6VM := &vmopv1.VirtualMachine{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "ipv6-vm",
-							Namespace: ctx.Namespace,
-							Labels:    vmLabels,
-						},
-						Spec: vmopv1.VirtualMachineSpec{
-							PowerState: vmopv1.VirtualMachinePowerStateOn,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, ipv6VM)).To(Succeed())
-
-					ipv6VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
-						PrimaryIP6: "2001:db8::200",
-					}
-					Expect(ctx.Client.Status().Update(ctx, ipv6VM)).To(Succeed())
-
-					vmService := &vmopv1.VirtualMachineService{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      vmServiceName,
-							Namespace: ctx.Namespace,
-						},
-						Spec: vmopv1.VirtualMachineServiceSpec{
-							Type:     vmopv1.VirtualMachineServiceTypeClusterIP,
-							Ports:    []vmopv1.VirtualMachineServicePort{vmServicePort},
-							Selector: selector,
-						},
-					}
-
-					objKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
-
-					By("Create VirtualMachineService", func() {
-						Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
-					})
-
-					By("Endpoints should be empty when service IP family doesn't match VM IP family", func() {
-						// In an IPv4-only cluster, a SingleStack service gets an IPv4 ClusterIP
-						// An IPv4 service cannot route to IPv6 endpoints, so endpoints should be empty
-						endpoints := &corev1.Endpoints{}
-						Eventually(func() bool {
-							if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
-								return true
-							}
-							return false
-						}).Should(BeTrue())
-
-						// Endpoints should be empty because IPv4 service cannot route to IPv6-only VM
-						Expect(endpoints.Subsets).To(BeEmpty())
-					})
-
-					By("Cleanup", func() {
-						Expect(ctx.Client.Delete(ctx, vmService)).To(Succeed())
-						Expect(ctx.Client.Delete(ctx, ipv6VM)).To(Succeed())
-					})
-				})
 			})
 
 			// The VM mapping function needs to be fixed for this to work.
@@ -468,9 +433,10 @@ func intgTestsReconcile() {
 						Namespace: ctx.Namespace,
 					},
 					Spec: vmopv1.VirtualMachineServiceSpec{
-						Type:     vmopv1.VirtualMachineServiceTypeLoadBalancer,
-						Ports:    []vmopv1.VirtualMachineServicePort{vmServicePort},
-						Selector: selector,
+						Type:       vmopv1.VirtualMachineServiceTypeLoadBalancer,
+						Ports:      []vmopv1.VirtualMachineServicePort{vmServicePort},
+						Selector:   selector,
+						IPFamilies: []corev1.IPFamily{corev1.IPv4Protocol},
 					},
 				}
 
@@ -482,12 +448,10 @@ func intgTestsReconcile() {
 
 				By("Ready VM should be added to Endpoints", func() {
 					endpoints := &corev1.Endpoints{}
-					Eventually(func() bool {
-						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
-							return len(endpoints.Subsets) != 0
-						}
-						return false
-					}).Should(BeTrue())
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).ToNot(BeEmpty())
+					}).Should(Succeed())
 
 					subsets := endpoints.Subsets
 					Expect(subsets).To(HaveLen(1))
@@ -511,15 +475,69 @@ func intgTestsReconcile() {
 				})
 
 				By("VM should be removed from Endpoints", func() {
-					Eventually(func() bool {
-						endpoints := &corev1.Endpoints{}
-						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
-							return len(endpoints.Subsets) == 0
-						}
-						return false
-					}).Should(BeTrue())
+					endpoints := &corev1.Endpoints{}
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(BeEmpty())
+					}).Should(Succeed())
 				})
 			})
 		})
 	})
+}
+
+func createVMWithNetwork(ctx *builder.IntegrationTestContext, name string, labels map[string]string, ip4, ip6 string) *vmopv1.VirtualMachine {
+	vm := &vmopv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ctx.Namespace,
+			Labels:    labels,
+		},
+		Spec: vmopv1.VirtualMachineSpec{
+			PowerState: vmopv1.VirtualMachinePowerStateOn,
+		},
+	}
+	Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+	vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+		PrimaryIP4: ip4,
+		PrimaryIP6: ip6,
+	}
+	Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+	return vm
+}
+
+func createVMService(
+	ctx *builder.IntegrationTestContext,
+	name string,
+	selector map[string]string,
+	port vmopv1.VirtualMachineServicePort,
+	ipFamilies []corev1.IPFamily,
+	policy *corev1.IPFamilyPolicy,
+) *vmopv1.VirtualMachineService {
+	vmService := &vmopv1.VirtualMachineService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ctx.Namespace,
+		},
+		Spec: vmopv1.VirtualMachineServiceSpec{
+			Type:           vmopv1.VirtualMachineServiceTypeClusterIP,
+			Ports:          []vmopv1.VirtualMachineServicePort{port},
+			Selector:       selector,
+			IPFamilies:     ipFamilies,
+			IPFamilyPolicy: policy,
+		},
+	}
+	Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
+	return vmService
+}
+
+func collectEndpointIPs(endpoints *corev1.Endpoints) []string {
+	var ips []string
+	for _, subset := range endpoints.Subsets {
+		for _, addr := range subset.Addresses {
+			ips = append(ips, addr.IP)
+		}
+	}
+	return ips
 }

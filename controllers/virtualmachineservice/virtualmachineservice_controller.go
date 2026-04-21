@@ -412,7 +412,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 		service.Spec.LoadBalancerSourceRanges = vmService.Spec.LoadBalancerSourceRanges
 
 		// Set IPFamilies and IPFamilyPolicy for dual-stack support
-		// These fields only apply to ClusterIP, NodePort, and LoadBalancer types
+		// These fields only apply to ClusterIP and LoadBalancer types
 		// They are wiped when type is ExternalName
 		if vmService.Spec.Type != vmopv1.VirtualMachineServiceTypeExternalName {
 			if len(vmService.Spec.IPFamilies) > 0 {
@@ -762,6 +762,8 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 // in endpoints based on Service's IPFamilies and IPFamilyPolicy.
 // For SingleStack policy, only the ClusterIP/IPFamilies family is allowed.
 // Endpoints must match the Service's IP family - an IPv4 Service cannot route to IPv6 endpoints.
+//
+// When spec.ipFamilies is unset, ClusterIP and IPFamilyPolicy are used so Endpoints match the Service.
 func (r *ReconcileVirtualMachineService) determineAllowedIPFamilies(service *corev1.Service) map[corev1.IPFamily]bool {
 	allowedFamilies := make(map[corev1.IPFamily]bool)
 
@@ -775,45 +777,32 @@ func (r *ReconcileVirtualMachineService) determineAllowedIPFamilies(service *cor
 
 	// For SingleStack policy without explicit IPFamilies, use ClusterIP family as primary
 	if service.Spec.IPFamilyPolicy != nil && *service.Spec.IPFamilyPolicy == corev1.IPFamilyPolicySingleStack {
-		// Determine primary family from IPFamilies or ClusterIP
+		// Determine primary family from ClusterIP
 		var primaryFamily corev1.IPFamily
-		if len(service.Spec.IPFamilies) > 0 {
-			primaryFamily = service.Spec.IPFamilies[0]
-		} else {
-			// Determine family from ClusterIP
-			var firstIP string
-			if len(service.Spec.ClusterIPs) > 0 {
-				firstIP = service.Spec.ClusterIPs[0]
-			} else if service.Spec.ClusterIP != "" {
-				firstIP = service.Spec.ClusterIP
-			}
-			if firstIP != "" && firstIP != "None" {
-				if ip := net.ParseIP(firstIP); ip != nil {
-					if ip.To4() != nil {
-						primaryFamily = corev1.IPv4Protocol
-					} else {
-						primaryFamily = corev1.IPv6Protocol
-					}
+		var firstIP string
+		if len(service.Spec.ClusterIPs) > 0 {
+			firstIP = service.Spec.ClusterIPs[0]
+		} else if service.Spec.ClusterIP != "" {
+			firstIP = service.Spec.ClusterIP
+		}
+		if firstIP != "" && firstIP != "None" {
+			if ip := net.ParseIP(firstIP); ip != nil {
+				if ip.To4() != nil {
+					primaryFamily = corev1.IPv4Protocol
 				} else {
-					primaryFamily = corev1.IPv4Protocol // Default
+					primaryFamily = corev1.IPv6Protocol
 				}
 			} else {
 				primaryFamily = corev1.IPv4Protocol // Default
 			}
+		} else {
+			primaryFamily = corev1.IPv4Protocol // Default
 		}
 
 		// For SingleStack, only allow the primary family (ClusterIP/IPFamilies family)
 		// This ensures that endpoints match the Service's IP family, as an IPv4 Service
 		// cannot route to IPv6 endpoints and vice versa
 		allowedFamilies[primaryFamily] = true
-		return allowedFamilies
-	}
-
-	// For non-SingleStack policies, use IPFamilies if explicitly set
-	if len(service.Spec.IPFamilies) > 0 {
-		for _, family := range service.Spec.IPFamilies {
-			allowedFamilies[family] = true
-		}
 		return allowedFamilies
 	}
 

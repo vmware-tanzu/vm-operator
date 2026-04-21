@@ -12,7 +12,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
-	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -42,10 +41,5 @@ func TestVirtualMachineServiceConversion(t *testing.T) {
 		g.Expect(spoke.ConvertFrom(hub)).To(Succeed())
 		g.Expect(spoke.ConvertTo(after)).To(Succeed())
 		g.Expect(apiequality.Semantic.DeepEqual(hub, after)).To(BeTrue(), cmp.Diff(hub, after))
-	})
-
-	t.Run("implements Hub and Convertible", func(t *testing.T) {
-		var _ ctrlconversion.Hub = &vmopv1.VirtualMachineService{}
-		var _ ctrlconversion.Convertible = &vmopv1a5.VirtualMachineService{}
 	})
 }

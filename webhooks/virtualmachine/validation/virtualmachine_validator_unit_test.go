@@ -10551,10 +10551,10 @@ func commonCreateAndUpdateValidations(
 						validate:      doValidateWithMsg("must be a valid 32-bit unsigned integer"),
 					},
 				),
-				Entry("should allow invalid params with non-RateBasedCoalescing",
+				Entry("should allow params string with non-RateBasedCoalescing",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							setupCoalescingTest(ctx, vmopv1.CoalescingSchemeStatic, "invalid_but_ignored")
+							setupCoalescingTest(ctx, vmopv1.CoalescingSchemeStatic, "64,64,64")
 						},
 						expectAllowed: true,
 					},

@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -123,7 +124,6 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			providers.NoopLoadbalancerProvider{},
 		)
 
 		vmServiceCtx = &pkgctx.VirtualMachineServiceContext{
@@ -802,7 +802,6 @@ func nsxtLBProviderTestsReconcile() {
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
-		lbProvider   providers.LoadbalancerProvider
 		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
 		vmServiceCtx *pkgctx.VirtualMachineServiceContext
 
@@ -850,13 +849,14 @@ func nsxtLBProviderTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
-		lbProvider = providers.NsxtLoadBalancerProvider()
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
+		})
 		reconciler = virtualmachineservice.NewReconciler(
 			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			lbProvider,
 		)
 
 		vmServiceCtx = &pkgctx.VirtualMachineServiceContext{
@@ -963,32 +963,26 @@ func nsxtLBProviderTestsReconcile() {
 			})
 
 			It("Should update the k8s Service to remove the provider specific annotations regarding healthCheckNodePort", func() {
-				if service.Annotations == nil {
-					service.Annotations = make(map[string]string)
-				}
+				const port = "30012"
 
-				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
-				annotations, err := lbProvider.GetServiceAnnotations(ctx, vmService)
-				Expect(err).ToNot(HaveOccurred())
-				for k, v := range annotations {
-					service.Annotations[k] = v
-				}
-				Expect(ctx.Client.Update(ctx, service)).To(Succeed())
-
-				err = reconciler.ReconcileNormal(vmServiceCtx)
-				Expect(err).ShouldNot(HaveOccurred())
-
+				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = port
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
 				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
 
-				newService := &corev1.Service{}
-				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
-				By("ensuring the provider specific annotations are removed from the new service")
-				annotationsToBeRemoved, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
-				Expect(err).ToNot(HaveOccurred())
-				for k := range annotationsToBeRemoved {
-					_, exist := newService.Annotations[k]
-					Expect(exist).To(BeFalse())
-				}
+				By("Service should have NSX annotations", func() {
+					service := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+					Expect(service.Annotations).To(HaveKeyWithValue(providers.ServiceLoadBalancerHealthCheckNodePortTagKey, port))
+				})
+
+				delete(vmService.Annotations, utils.AnnotationServiceHealthCheckNodePortKey)
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+
+				By("Service should not have NSX annotations", func() {
+					service := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+					Expect(service.Annotations).ToNot(HaveKey(providers.ServiceLoadBalancerHealthCheckNodePortTagKey))
+				})
 			})
 		})
 	})

@@ -54,24 +54,11 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	lbProviderType := pkgcfg.FromContext(ctx).LoadBalancerProvider
-	if lbProviderType == "" {
-		if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeNSXT || pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
-			lbProviderType = providers.NSXTLoadBalancer
-		}
-	}
-
-	lbProvider, err := providers.GetLoadbalancerProviderByType(mgr, lbProviderType)
-	if err != nil {
-		return err
-	}
-
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		lbProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -94,14 +81,12 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	lbProvider providers.LoadbalancerProvider,
 ) *ReconcileVirtualMachineService {
 	return &ReconcileVirtualMachineService{
-		Context:              ctx,
-		Client:               client,
-		log:                  logger,
-		recorder:             recorder,
-		loadbalancerProvider: lbProvider,
+		Context:  ctx,
+		Client:   client,
+		log:      logger,
+		recorder: recorder,
 	}
 }
 
@@ -111,9 +96,8 @@ var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 type ReconcileVirtualMachineService struct {
 	Context context.Context
 	client.Client
-	log                  logr.Logger
-	recorder             record.Recorder
-	loadbalancerProvider providers.LoadbalancerProvider
+	log      logr.Logger
+	recorder record.Recorder
 }
 
 // Reconcile reads that state of the cluster for a VirtualMachineService object and makes changes based on the state read
@@ -210,6 +194,22 @@ func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *pkgctx.VirtualMach
 	return nil
 }
 
+func (r *ReconcileVirtualMachineService) getLoadbalancerProvider(ctx context.Context) (providers.LoadbalancerProvider, error) {
+	lbProviderType := pkgcfg.FromContext(ctx).LoadBalancerProvider
+	if lbProviderType == "" {
+		switch pkgcfg.FromContext(ctx).NetworkProviderType {
+		case pkgcfg.NetworkProviderTypeNSXT, pkgcfg.NetworkProviderTypeVPC:
+			// This LB provider dates back to the initial release which was NSXT only, but
+			// we have no way to determine what the actual LB is. So continue to set these
+			// based on network provider, but this is hack ideally this would be expressed
+			// in another way like a LoadBalancerClass.
+			lbProviderType = providers.NSXTLoadBalancer
+		}
+	}
+
+	return providers.GetLoadbalancerProviderByType(r.Client, lbProviderType)
+}
+
 func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualMachineServiceContext) error {
 	ctx.Logger.Info("Reconcile VirtualMachineService")
 	defer ctx.Logger.Info("Finished Reconcile VirtualMachineService")
@@ -217,8 +217,14 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 	vmService := ctx.VMService
 
 	if vmService.Spec.Type == vmopv1.VirtualMachineServiceTypeLoadBalancer {
+		lbProvider, err := r.getLoadbalancerProvider(ctx)
+		if err != nil {
+			ctx.Logger.Error(err, "Failed to get load balancer provider")
+			return err
+		}
+
 		// Get LoadBalancer to attach
-		err := r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService)
+		err = lbProvider.EnsureLoadBalancer(ctx, vmService)
 		if err != nil {
 			ctx.Logger.Error(err, "Failed to create or get load balancer for VM Service")
 			return err
@@ -226,9 +232,9 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 
 		// Get the provider specific annotations for service and add them to the VMService as
 		// that's where Service inherits the values.
-		annotations, err := r.loadbalancerProvider.GetServiceAnnotations(ctx, vmService)
+		annotations, err := lbProvider.GetServiceAnnotations(ctx, vmService)
 		if err != nil {
-			ctx.Logger.Error(err, "Failed to get loadbalancer annotations for service")
+			ctx.Logger.Error(err, "Failed to get load balancer annotations for service")
 			return err
 		}
 
@@ -246,9 +252,9 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 
 		// Get the provider specific labels for Service and add them to the vm service
 		// as that's where Service inherits the values.
-		labels, err := r.loadbalancerProvider.GetServiceLabels(ctx, vmService)
+		labels, err := lbProvider.GetServiceLabels(ctx, vmService)
 		if err != nil {
-			ctx.Logger.Error(err, "Failed to get loadbalancer labels for service")
+			ctx.Logger.Error(err, "Failed to get load balancer labels for service")
 			return err
 		}
 
@@ -310,8 +316,8 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 	}
 }
 
-// Set labels and annotations on the Service from the VirtualMachineService. Some loadbalancer providers (currently
-// only NCP) need to filter or translate labels and annotations too.
+// Set labels and annotations on the Service from the VirtualMachineService. Some load balancer
+// providers (currently only NCP) need to filter or translate labels and annotations too.
 func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	ctx *pkgctx.VirtualMachineServiceContext,
 	service *corev1.Service) error {
@@ -335,9 +341,15 @@ func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	}
 
 	// Explicitly remove provider specific annotations
-	annotationsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceAnnotations(ctx, ctx.VMService)
+	lbProvider, err := r.getLoadbalancerProvider(ctx)
 	if err != nil {
-		ctx.Logger.Error(err, "Failed to get loadbalancer specific annotations to remove from Service")
+		ctx.Logger.Error(err, "Failed to get load balancer provider")
+		return err
+	}
+
+	annotationsToBeRemoved, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, ctx.VMService)
+	if err != nil {
+		ctx.Logger.Error(err, "Failed to get load balancer specific annotations to remove from Service")
 		return err
 	}
 	for k := range annotationsToBeRemoved {
@@ -361,9 +373,9 @@ func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	}
 
 	// Explicitly remove provider specific labels
-	labelsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceLabels(ctx, ctx.VMService)
+	labelsToBeRemoved, err := lbProvider.GetToBeRemovedServiceLabels(ctx, ctx.VMService)
 	if err != nil {
-		ctx.Logger.Error(err, "Failed to get loadbalancer specific labels to remove from Service")
+		ctx.Logger.Error(err, "Failed to get load balancer specific labels to remove from Service")
 		return err
 	}
 	for k := range labelsToBeRemoved {

@@ -70,7 +70,7 @@ const (
 // pnicFeatures.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
 //
-// +kubebuilder:validation:XValidation:rule="self == 'LargeReceiveOffload' || self == 'ReceiveSideScaling' || (self.matches('^\\d+$') && int(self) > 0 && (int(self) & (int(self) - 1)) == 0)",message="must be enum value or power of 2 integer string"
+// +kubebuilder:validation:Pattern="^(LargeReceiveOffload|ReceiveSideScaling|\\d+)$"
 type PNICQueueFeature string
 
 const (
@@ -93,7 +93,6 @@ const (
 // value.
 //
 // +kubebuilder:validation:XValidation:rule="!has(self.coalescingParams) || size(self.coalescingParams) < 128",message="coalescingParams must have length < 128"
-// +kubebuilder:validation:XValidation:rule="!has(self.coalescingParams) || !has(self.coalescingScheme) || self.coalescingScheme != 'RateBasedCoalescing' || (self.coalescingParams.matches('^\\d+$') && int(self.coalescingParams) >= 0)",message="coalescingParams must be valid number when coalescingScheme is RateBasedCoalescing"
 type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// +optional
 

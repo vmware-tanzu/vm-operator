@@ -15982,13 +15982,8 @@ spec:
                                   PNICQueueFeature names one physical NIC queue offload feature for VMXNet3
                                   pnicFeatures.
                                   This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
+                                pattern: ^(LargeReceiveOffload|ReceiveSideScaling|\d+)$
                                 type: string
-                                x-kubernetes-validations:
-                                - message: must be enum value or power of 2 integer
-                                    string
-                                  rule: self == 'LargeReceiveOffload' || self == 'ReceiveSideScaling'
-                                    || (self.matches('^\d+$') && int(self) > 0 &&
-                                    (int(self) & (int(self) - 1)) == 0)
                               maxItems: 16
                               type: array
                               x-kubernetes-list-type: set
@@ -16021,12 +16016,6 @@ spec:
                           - message: coalescingParams must have length < 128
                             rule: '!has(self.coalescingParams) || size(self.coalescingParams)
                               < 128'
-                          - message: coalescingParams must be valid number when coalescingScheme
-                              is RateBasedCoalescing
-                            rule: '!has(self.coalescingParams) || !has(self.coalescingScheme)
-                              || self.coalescingScheme != ''RateBasedCoalescing''
-                              || (self.coalescingParams.matches(''^\d+$'') && int(self.coalescingParams)
-                              >= 0)'
                       required:
                       - name
                       type: object

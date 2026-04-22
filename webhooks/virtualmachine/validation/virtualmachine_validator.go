@@ -1203,6 +1203,16 @@ func (v validator) validateNetworkInterfaceSpec(
 			interfacePath.Child("advancedProperties"), interfaceSpec.AdvancedProperties)...)
 	}
 
+	// Validate VMXNet3 configuration if present
+	if interfaceSpec.VMXNet3 != nil {
+		if interfaceSpec.Type != vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3 {
+			allErrs = append(allErrs, field.Forbidden(interfacePath.Child("vmxnet3"),
+				"vmxnet3 configuration is only allowed when type is VMXNet3"))
+		} else {
+			allErrs = append(allErrs, v.validateVMXNet3Spec(interfacePath.Child("vmxnet3"), interfaceSpec.VMXNet3)...)
+		}
+	}
+
 	return allErrs
 }
 
@@ -1296,6 +1306,62 @@ func (v validator) validateNetworkInterfaceAdvancedProperties(
 	}
 
 	return allErrs
+}
+
+func (v validator) validateVMXNet3Spec(
+	vmxnet3Path *field.Path,
+	vmxnet3Spec *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	// Validate PNICFeatures for power-of-2 integers
+	if vmxnet3Spec.PNICFeatures != nil {
+		pnicPath := vmxnet3Path.Child("pnicFeatures")
+		for i, feature := range vmxnet3Spec.PNICFeatures {
+			featurePath := pnicPath.Index(i)
+
+			// Check if it's a known enum value
+			switch feature {
+			case vmopv1.PNICQueueFeatureLargeReceiveOffload, vmopv1.PNICQueueFeatureReceiveSideScaling:
+				// Valid enum values
+				continue
+			default:
+				// Check if it's a valid power-of-2 integer (1, 2, 4, 8, 16, 32, etc.)
+				if isPowerOf2String(string(feature)) {
+					continue
+				}
+				// Invalid value
+				allErrs = append(allErrs, field.Invalid(featurePath, feature,
+					"must be a known enum value (LargeReceiveOffload, ReceiveSideScaling) or a power-of-2 integer (1,2,4,8,16,32,...)"))
+			}
+		}
+	}
+
+	// Validate CoalescingParams when CoalescingScheme is RateBasedCoalescing
+	if vmxnet3Spec.CoalescingScheme != nil && vmxnet3Spec.CoalescingParams != nil {
+		if *vmxnet3Spec.CoalescingScheme == vmopv1.CoalescingSchemeRateBasedCoalescing {
+			// For RateBasedCoalescing, coalescingParams must be a valid unsigned 32-bit integer
+			if _, err := strconv.ParseUint(*vmxnet3Spec.CoalescingParams, 10, 32); err != nil {
+				coalescingPath := vmxnet3Path.Child("coalescingParams")
+				allErrs = append(allErrs, field.Invalid(coalescingPath, *vmxnet3Spec.CoalescingParams,
+					"must be a valid 32-bit unsigned integer when coalescingScheme is RateBasedCoalescing"))
+			}
+		}
+	}
+
+	return allErrs
+}
+
+// isPowerOf2String checks if a string represents a power-of-2 integer.
+func isPowerOf2String(s string) bool {
+	// Parse as integer
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return false
+	}
+
+	// Check if it's a power of 2: n > 0 && (n & (n-1)) == 0
+	return (n & (n - 1)) == 0
 }
 
 // MTU, routes, and searchDomains are available only with CloudInit.

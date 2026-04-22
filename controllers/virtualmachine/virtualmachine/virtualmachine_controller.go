@@ -62,8 +62,6 @@ const (
 // managers.
 var SkipNameValidation *bool
 
-type haltReconcileKey struct{}
-
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
@@ -393,12 +391,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if !vm.DeletionTimestamp.IsZero() {
 		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
-	if err = r.ReconcileLocation(vmCtx); err != nil {
-		if isHalted(vmCtx.Context) {
-			return ctrl.Result{Requeue: false}, nil
-		}
-		return ctrl.Result{}, err
-	}
 
 	err = r.ReconcileNormal(vmCtx)
 	if err != nil && !ignoredCreateErr(err) {
@@ -407,45 +399,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	// Requeue after N amount of time according to the state of the VM.
 	return ctrl.Result{RequeueAfter: requeueDelay(vmCtx, err)}, nil
-}
-
-// Inject the halt signal into the context.
-func withHalt(ctx context.Context) context.Context {
-	return context.WithValue(ctx, haltReconcileKey{}, true)
-}
-
-// Check if we should stop.
-func isHalted(ctx context.Context) bool {
-	val := ctx.Value(haltReconcileKey{})
-	return val != nil && val.(bool)
-}
-
-func (r *Reconciler) ReconcileLocation(pkgctx *pkgctx.VirtualMachineContext) error {
-	if pkgctx.VM.Status.UniqueID == "" {
-		// Skip the check because the VM doesn't exist in vCenter yet.
-		return nil
-	}
-
-	// Fetch the VM location from vCenter
-	currentLocation, err := r.VMProvider.GetVMLocation(pkgctx.Context, pkgctx.VM.Name)
-	if err != nil {
-		return err
-	}
-
-	// 2. Compare Actual (vCenter) vs Expected (K8s)
-	if currentLocation != pkgctx.VM.Namespace {
-		// Use the MarkFalse logic
-		pkgcond.MarkFalse(
-			pkgctx.VM, vmopv1.VirtualMachineConditionCreated, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", pkgctx.VM.Namespace)
-
-		if err := r.Status().Update(pkgctx.Context, pkgctx.VM); err != nil {
-			return fmt.Errorf("failed to persist location mismatch condition: %w", err)
-		}
-
-		pkgctx.Context = withHalt(pkgctx.Context)
-		return fmt.Errorf("reconciliation stopped : VM location mismatch")
-	}
-	return nil
 }
 
 // Determine if we should request a non-zero requeue delay in order to trigger a

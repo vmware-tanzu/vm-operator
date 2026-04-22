@@ -23,7 +23,6 @@ import (
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/tags"
-	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
@@ -41,6 +40,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -150,42 +150,33 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 	return vs.createOrUpdateVirtualMachine(ctx, vm, true)
 }
 
-func (vs *vSphereVMProvider) GetVMLocation(ctx context.Context, vmName string) (string, error) {
-	client, err := vs.VSphereClient(ctx)
+func (vs *vSphereVMProvider) GetVMLocation(ctx context.Context, vm *vmopv1.VirtualMachine) (string, error) {
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "vmLocation"),
+		vm,
+	)
+	ctx = vmCtx.Context
+
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	vimClient := client.VimClient()
-	m := view.NewManager(vimClient)
-	// Create view specifically for VMs
-	v, err := m.CreateContainerView(ctx, vimClient.ServiceContent.RootFolder, []string{"VirtualMachine"}, true)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := v.Destroy(ctx); err != nil {
-			pkglog.FromContextOrDefault(ctx).Error(err, "failed to destroy container view")
-		}
-	}()
-
-	// Use a filter so vCenter only returns the specific VM
-	var vms []mo.VirtualMachine
-	err = v.RetrieveWithFilter(ctx, []string{"VirtualMachine"}, []string{"name", "resourcePool"}, &vms, property.Match{"name": vmName})
+	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
 		return "", err
 	}
 
-	if len(vms) == 0 {
-		return "", fmt.Errorf("VM %s not found", vmName)
+	var o mo.VirtualMachine
+	err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"resourcePool"}, &o)
+	if err != nil {
+		return "", err
 	}
-
-	if vms[0].ResourcePool == nil {
-		return "", fmt.Errorf("resource-pool-not-assigned")
+	if o.ResourcePool != nil {
+		rp := object.NewResourcePool(client.VimClient(), *o.ResourcePool)
+		return rp.ObjectName(ctx)
 	}
-
-	rp := object.NewResourcePool(vimClient, *vms[0].ResourcePool)
-	return rp.ObjectName(ctx)
+	return "", fmt.Errorf("resource pool not found for VM %s", vm.Name)
 }
 
 func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
@@ -1069,6 +1060,12 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
 	}
 
+	if err := vs.reconcileLocation(vmCtx); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("status", reconcileErr, err)
+	}
 	//
 	// 6. Reconcile schema upgrade
 	//
@@ -1145,6 +1142,30 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	return reconcileErr
+}
+
+func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext) error {
+	if vmCtx.VM.Status.UniqueID == "" {
+		// Skip the check because the VM doesn't exist in vCenter yet.
+		return nil
+	}
+
+	// Fetch the VM location from vCenter
+	currentLocation, err := vs.GetVMLocation(vmCtx.Context, vmCtx.VM)
+	if err != nil {
+		return err
+	}
+
+	// 2. Compare Actual (vCenter) vs Expected (K8s)
+	if currentLocation != vmCtx.VM.Namespace {
+		// Use the MarkFalse logic
+		pkgcond.MarkFalse(
+			vmCtx.VM, vmopv1.VirtualMachineConditionCreated, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)
+
+		vmCtx.VM.Annotations[vmopv1.PauseAnnotation] = "true"
+		return fmt.Errorf("reconciliation stopped : VM location mismatch")
+	}
+	return nil
 }
 
 func (vs *vSphereVMProvider) reconcileStatus(

@@ -10483,7 +10483,7 @@ func commonCreateAndUpdateValidations(
 								[]vmopv1.PNICQueueFeature{"0"})
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("must be a known enum value"),
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.pnicFeatures[0]: Invalid value: \"0\": must be a known enum value (LargeReceiveOffload, ReceiveSideScaling) or a power-of-2 integer (1,2,4,8,16,32,...)"),
 					},
 				),
 				Entry("should reject non-power-of-2 integers",
@@ -10493,7 +10493,7 @@ func commonCreateAndUpdateValidations(
 								[]vmopv1.PNICQueueFeature{"3"})
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("must be a known enum value"),
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.pnicFeatures[0]: Invalid value: \"3\": must be a known enum value (LargeReceiveOffload, ReceiveSideScaling) or a power-of-2 integer (1,2,4,8,16,32,...)"),
 					},
 				),
 				Entry("should reject non-integers",
@@ -10503,7 +10503,7 @@ func commonCreateAndUpdateValidations(
 								[]vmopv1.PNICQueueFeature{"abc"})
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("must be a known enum value"),
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.pnicFeatures[0]: Invalid value: \"abc\": must be a known enum value (LargeReceiveOffload, ReceiveSideScaling) or a power-of-2 integer (1,2,4,8,16,32,...)"),
 					},
 				),
 				Entry("should reject VMXNet3 config with SRIOV type",
@@ -10513,7 +10513,7 @@ func commonCreateAndUpdateValidations(
 								[]vmopv1.PNICQueueFeature{vmopv1.PNICQueueFeatureLargeReceiveOffload})
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("vmxnet3 configuration is only allowed when type is VMXNet3"),
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3: Forbidden: vmxnet3 configuration is only allowed when type is VMXNet3"),
 					},
 				),
 			)
@@ -10548,7 +10548,7 @@ func commonCreateAndUpdateValidations(
 							setupCoalescingTest(ctx, vmopv1.CoalescingSchemeRateBasedCoalescing, "abc")
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("must be a valid 32-bit unsigned integer"),
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.coalescingParams: Invalid value: \"abc\": must be a valid 32-bit unsigned integer when coalescingScheme is RateBasedCoalescing"),
 					},
 				),
 				Entry("should allow params string with non-RateBasedCoalescing",

@@ -925,15 +925,14 @@ spec:
               ipFamilies:
                 description: |-
                   IPFamilies is a list of IP families (e.g. IPv4, IPv6) assigned to this
-                  VirtualMachineService. This field is usually assigned automatically based on cluster
-                  configuration and the ipFamilyPolicy field. If this field is specified
-                  manually, the requested family is available in the cluster,
-                  and ipFamilyPolicy allows it, it will be used; otherwise creation of
-                  the VirtualMachineService will fail. This field is conditionally mutable: it allows
+                  VirtualMachineService. Together with ipFamilyPolicy, it guides how the controller
+                  configures the Kubernetes Service. Cluster-level constraints (for example requesting IPv6
+                  when no IPv6 Service range exists) usually surface as errors reconciling the child Service,
+                  not as rejection of the VirtualMachineService object at create time.
+                  This field is conditionally mutable: it allows
                   for adding or removing a secondary IP family, but it does not allow
                   changing the primary IP family of the VirtualMachineService. Valid values are "IPv4"
-                  and "IPv6". This field only applies to VirtualMachineServices of types ClusterIP
-                  and LoadBalancer, and does apply to "headless" VirtualMachineServices.
+                  and "IPv6". This field applies to types ClusterIP (including headless) and LoadBalancer.
                   This field will be wiped when updating a VirtualMachineService to type ExternalName.
 
                   This field may hold a maximum of two entries (dual-stack families, in

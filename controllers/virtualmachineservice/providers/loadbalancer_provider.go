@@ -8,7 +8,7 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
@@ -65,7 +65,7 @@ type LoadbalancerProvider interface {
 	GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error)
 }
 
-func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (LoadbalancerProvider, error) {
+func GetLoadbalancerProviderByType(client client.Client, providerType string) (LoadbalancerProvider, error) {
 	if providerType == NSXTLoadBalancer {
 		return NsxtLoadBalancerProvider(), nil
 	}

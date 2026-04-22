@@ -40,7 +40,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -1159,7 +1158,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	// 2. Compare Actual (vCenter) vs Expected (K8s)
 	if currentLocation != vmCtx.VM.Namespace {
 		// Use the MarkFalse logic
-		pkgcond.MarkFalse(
+		pkgcnd.MarkFalse(
 			vmCtx.VM, vmopv1.VirtualMachineConditionCreated, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)
 
 		vmCtx.VM.Annotations[vmopv1.PauseAnnotation] = "true"

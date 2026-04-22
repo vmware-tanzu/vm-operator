@@ -89,7 +89,10 @@ func (r reconciler) Reconcile(
 		vmBootOptions = vm.Spec.BootOptions
 	}
 
-	csBootOptions := vimtypes.VirtualMachineBootOptions{}
+	var csBootOptions vimtypes.VirtualMachineBootOptions
+	if configSpec.BootOptions != nil {
+		csBootOptions = *configSpec.BootOptions
+	}
 
 	if vmBootOptions.BootDelay != nil {
 		csBootOptions.BootDelay = vmBootOptions.BootDelay.Duration.Milliseconds()

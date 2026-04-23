@@ -1,1 +1,16 @@
 *.tar
+# Test binaries and build artifacts
+*.test
+**/*.test
+# Build outputs
+_output/
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+# OS files
+.DS_Store
+Thumbs.db
+# Git
+.git/

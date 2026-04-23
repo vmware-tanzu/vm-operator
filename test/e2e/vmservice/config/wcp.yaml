@@ -1,0 +1,114 @@
+---
+infraConfig:
+  infraName: "wcp"
+  kubeconfigPath: "$HOME/.kube/wcp-config"
+  networkingTopology: "${NETWORK:-vds}"
+  managementClusterConfig:
+    managementClusterName: "wcp"
+    resources:
+      photonImageDisplayName: "photon-5.0"
+      windowsImageDisplayName: "windows-server2022-efi-tools"
+      storageClassName: "${STORAGE_CLASS:-wcpglobal-storage-profile}"
+      workerStorageClassName: "${WORKER_STORAGE_CLASS:-worker-storagepolicy}"
+      vmClassName: "best-effort-small"
+      vmResourcePolicyName: ""
+      contentLibrarySubscriptionURL: "${CONTENT_LIBRARY_SUBSCRIPTION_URL:-https://wp-content-pstg.broadcom.com/vmsvc/lib.json}"
+
+versionDiscovery:
+  enabled: true
+  systemSpecs:
+    guest-cluster-controller: docker-registry.kube-system.svc:5000/tkg-svs/package/tkg-service@sha256:b190d50fc2d35329d1be5299c24e9bf45bf7f8e40f36323c6648c9f9ed43902d
+    vm-operator: vmoperator-controller:1.9.0-e83c447f
+
+variables:
+  VMOPNamespace: "vmware-system-vmop"
+  VMOPDeploymentName: "vmware-system-vmop-controller-manager"
+  VMOPLeaderElectionResourceName: "vmware-system-vmop-controller-manager-runtime"
+  VMOPImagePrefix: "localhost:5000/vmware/vmop"
+  VMOPManagerCommand: "/manager"
+  EnvFSSVMSVC: "FSS_WCP_VMSERVICE"
+  EnvFSSInstanceStorage: "FSS_WCP_INSTANCE_STORAGE"
+  EnvFSSVMClassAsConfig: "FSS_WCP_VM_CLASS_AS_CONFIG"
+  EnvFSSVMClassAsConfigDaynDate: "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
+  EnvFSSVMImageRegistry: "FSS_WCP_VM_IMAGE_REGISTRY"
+  EnvFSSNamespacedVMClass: "FSS_WCP_NAMESPACED_VM_CLASS"
+  EnvFSSWindowsSysprep: "FSS_WCP_WINDOWS_SYSPREP"
+  EnvFSSV1alpha2: "FSS_WCP_VMSERVICE_V1ALPHA2"
+  EnvFSSVMServiceBackupRestore: "FSS_WCP_VMSERVICE_BACKUPRESTORE"
+  EnvFSSIncrementalRestore: "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
+  EnvFSSVMResizeCPUMemory: "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
+  EnvFSSIsoSupport: "FSS_WCP_VMSERVICE_ISO_SUPPORT"
+  EnvNetworkProvider: "NETWORK_PROVIDER"
+  EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
+  EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
+  EnvWorkloadIsolation: "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
+
+variables:
+  VMOPNamespace: "vmware-system-vmop"
+  VMOPDeploymentName: "vmware-system-vmop-controller-manager"
+  VMOPLeaderElectionResourceName: "vmware-system-vmop-controller-manager-runtime"
+  VMOPImagePrefix: "localhost:5000/vmware/vmop"
+  VMOPManagerCommand: "/manager"
+  EnvFSSVMSVC: "FSS_WCP_VMSERVICE"
+  EnvFSSInstanceStorage: "FSS_WCP_INSTANCE_STORAGE"
+  EnvFSSVMClassAsConfig: "FSS_WCP_VM_CLASS_AS_CONFIG"
+  EnvFSSVMClassAsConfigDaynDate: "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
+  EnvFSSVMImageRegistry: "FSS_WCP_VM_IMAGE_REGISTRY"
+  EnvFSSNamespacedVMClass: "FSS_WCP_NAMESPACED_VM_CLASS"
+  EnvFSSWindowsSysprep: "FSS_WCP_WINDOWS_SYSPREP"
+  EnvFSSV1alpha2: "FSS_WCP_VMSERVICE_V1ALPHA2"
+  EnvFSSVMServiceBackupRestore: "FSS_WCP_VMSERVICE_BACKUPRESTORE"
+  EnvFSSIncrementalRestore: "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
+  EnvFSSVMResizeCPUMemory: "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
+  EnvFSSIsoSupport: "FSS_WCP_VMSERVICE_ISO_SUPPORT"
+  EnvNetworkProvider: "NETWORK_PROVIDER"
+  EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
+  EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
+  EnvWorkloadIsolation: "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
+  # E2E Namespace used for the VM service tests. If not set, a random namespace will be created.
+  E2ENamespace: "${E2E_NAMESPACE:-}"
+
+intervals:
+  # Please keep the wait-virtual-machine values in sync between the different
+  # configuration files.
+  default/wait-virtual-machine-creation: ["5m", "10s"]
+  default/wait-virtual-machine-deletion: ["5m", "10s"]
+  default/wait-virtual-machine-condition-update: ["5m", "10s"]
+  default/wait-virtual-machine-powerstate: ["5m", "10s"]
+  default/wait-virtual-machine-resize: ["5m", "10s"]
+  default/wait-virtual-machine-moid: ["5m", "10s"]
+  default/wait-virtual-machine-restart-mode-update: ["2m", "10s"]
+  default/wait-virtual-machine-vmip: ["5m", "10s"]
+  default/wait-virtual-machine-image-creation: ["3m", "5s"]
+  default/consistent-virtual-machine-condition: ["30s", "5s"]
+  default/wait-virtual-machine-group-deletion: [ "60s", "5s" ]
+  default/wait-virtual-machine-group-condition-update: [ "6m", "5s" ]
+  default/wait-virtual-machine-publish-request-creation: ["60s", "5s"]
+  default/wait-virtual-machine-publish-request-condition: ["6m", "5s"]
+  default/wait-virtual-machine-publish-request-deletion: ["60s", "2s"]
+  default/wait-virtual-machine-group-publish-request-condition: [ "6m", "5s" ]
+  default/wait-virtual-machine-group-publish-request-deletion: [ "60s", "2s" ]
+  default/wait-virtual-machine-snapshot-condition: ["10m", "5s"]
+  default/wait-virtual-machine-snapshot-deletion: ["60s", "2s"]
+  default/wait-virtual-machine-snapshot-quota-usage: ["60s", "5s"]
+  default/wait-virtual-machine-snapshot-related-resource: ["60s", "5s"]
+  default/wait-virtual-machine-snapshot-revert: ["5m", "5s"]
+  default/wait-virtual-machine-snapshot-update: ["5m", "5s"]
+  default/wait-virtual-machine-web-console-request-creation: ["30s", "5s"]
+  default/wait-virtual-machine-cns-node-batch-attachment-creation: ["10m", "5s"]
+  default/wait-virtual-machine-cns-node-batch-attachment-deletion: ["5m", "5s"]
+  default/wait-content-library-name: ["2m", "5s"]
+  default/wait-storage-class-ready: ["5m", "15s"]
+  default/wait-namespace-ready: ["5m", "10s"]
+  default/wait-backup-to-complete: ["10m", "5s"]
+
+  default/wait-config-map-creation: ["3m", "10s"]
+  default/wait-secret-creation: ["3m", "10s"]
+  default/wait-pod-ready: ["2m", "10s"]
+  default/login-retry-timeout: ["5m", "10s"]
+  default/wait-subnet-creation: ["2m", "10s"]
+  default/wait-subnet-deletion: ["6m", "10s"]
+  default/wait-security-policy-creation: ["2m", "10s"]
+  default/wait-pvc-attachment: ["5m", "10s"]
+  default/wait-pvc-deletion: ["2m", "5s"]
+  default/wait-jumpbox-sshpass-ready: ["30m", "10s"]

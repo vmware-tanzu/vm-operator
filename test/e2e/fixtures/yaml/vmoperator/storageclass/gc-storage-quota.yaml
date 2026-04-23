@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gc-storage-quota
+spec:
+  hard:
+    gc-storage-profile.storageclass.storage.k8s.io/requests.storage: 1Gi

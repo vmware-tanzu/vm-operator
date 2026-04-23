@@ -1,0 +1,9 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClassBinding
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+classRef:
+  apiVersion: vmoperator.vmware.com/v1alpha1
+  kind: VirtualMachineClass
+  name: {{.Name}}

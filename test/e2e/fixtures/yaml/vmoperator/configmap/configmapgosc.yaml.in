@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: {{.Name}}
+    namespace: {{.Namespace}}
+data:
+  user-data: |
+    #cloud-config
+    ssh_pwauth: true
+    users:
+      - name: vmware
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        lock_passwd: false
+        # Password set to Admin!23
+        passwd: '$1$salt$SOC33fVbA/ZxeIwD5yw1u1'
+        shell: /bin/bash
+    write_files:
+      - content: |
+          VMSVC Says Hello World
+        path: /helloworld

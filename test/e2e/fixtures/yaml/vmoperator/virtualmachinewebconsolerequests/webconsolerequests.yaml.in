@@ -1,0 +1,16 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: WebConsoleRequest
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+  publicKey: |
+    -----BEGIN PUBLIC KEY-----
+    MIIBCgKCAQEAs8F7eAedZ4R1qKDQVOqyOjzToYs62iFqUZ9TnW+0HVO+tmnWq0Tj
+    TlJ7w46KGpBKxN8KlO82+ovrqkBr4OudQFkn7BbmrZ134phIcc0SQZs2nz9+h1AX
+    1hSHhozp1mS91XvGlrK0k44a2i6boh257de2rWHh3L5zfPJe31h3L90F43Je9/Oh
+    FVrm8NUlRzIUd8ADm/dBEu5bUQ+vHIoh/Xqfglf7oRjp8UHuvV/nHI7XmR607QxI
+    o7QLbIgh3wv4TbfFFJelGpkj7gORSG7gdF7EY0lz5jm/Or4qVUUqAAybyAT1UyiW
+    hfIIwodsz4QjCpL2LDgxro//gFqWRZurZwIDAQAB
+    -----END PUBLIC KEY-----
+  virtualMachineName: {{.VMName}}

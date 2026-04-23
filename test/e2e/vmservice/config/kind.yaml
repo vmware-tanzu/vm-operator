@@ -1,0 +1,59 @@
+---
+infraConfig:
+  infraName: "kind"
+  kubeconfigPath: "$HOME/.kube/config"
+  keepVCSIM: false
+
+  managementClusterConfig:
+    managementClusterName: "kind-e2e"
+    resources:
+      photonImageDisplayName: "photon-k8sd-v1.15.5-vmware.1-guest.1"
+      storageClassName: "gc-storage-profile"
+      vmClassName: "best-effort-small"
+      vmResourcePolicyName: ""
+
+variables:
+  VMOPNamespace: "vmware-system-vmop"
+  VMOPDeploymentName: "vmware-system-vmop-controller-manager"
+  VMOPLeaderElectionResourceName: "vmware-system-vmop-controller-manager-runtime"
+  VMOPImagePrefix: "vmoperator-controller"
+  VMOPManagerCommand: "/manager"
+  EnvFSSVMSVC: "FSS_WCP_VMSERVICE"
+  EnvFSSHA: "FSS_WCP_FAULTDOMAINS"
+  EnvFSSInstanceStorage: "FSS_WCP_INSTANCE_STORAGE"
+  EnvFSSVMClassAsConfig: "FSS_WCP_VM_CLASS_AS_CONFIG"
+  EnvFSSVMClassAsConfigDaynDate: "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
+  EnvFSSVMImageRegistry: "FSS_WCP_VM_IMAGE_REGISTRY"
+  EnvFSSNamespacedVMClass: "FSS_WCP_NAMESPACED_VM_CLASS"
+  EnvFSSWindowsSysprep: "FSS_WCP_WINDOWS_SYSPREP"
+  EnvFSSVMServiceBackupRestore: "FSS_WCP_VMSERVICE_BACKUPRESTORE"
+  EnvFSSIncrementalRestore: "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
+  EnvFSSVMResizeCPUMemory: "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
+  EnvFSSIsoSupport: "FSS_WCP_VMSERVICE_ISO_SUPPORT"
+  EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
+  EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
+  EnvWorkloadIsolation: "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
+
+intervals:
+  # Please keep the wait-virtual-machine values in sync between the different
+  # configuration files.
+  default/wait-virtual-machine-creation: ["5m", "10s"]
+  default/wait-virtual-machine-deletion: ["5m", "10s"]
+  default/wait-virtual-machine-condition-update: ["5m", "10s"]
+  default/wait-virtual-machine-powerstate: ["5m", "10s"]
+  default/wait-virtual-machine-resize: ["5m", "10s"]
+  default/wait-virtual-machine-moid: ["5m", "10s"]
+  default/wait-virtual-machine-vmip: ["5m", "10s"]
+  default/wait-virtual-machine-image-creation: ["20s", "2s"]
+  default/consistent-virtual-machine-condition: ["30s", "5s"]
+
+  default/wait-config-map-creation: ["2m", "5s"]
+  default/wait-secret-creation: ["2m", "5s"]
+  default/wait-pod-ready: ["2m", "10s"]
+  default/login-retry-timeout: ["5m", "10s"]
+  default/wait-subnet-creation: ["2m", "10s"]
+  default/wait-subnet-deletion: ["6m", "10s"]
+  default/wait-security-policy-creation: ["2m", "10s"]
+  default/wait-pvc-attachment: ["5m", "10s"]
+  default/wait-worker-storage-class: ["15m", "15s"]
+  default/wait-jumpbox-sshpass-ready: ["30m", "10s"]

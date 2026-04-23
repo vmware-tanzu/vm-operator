@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: {{.Name}}
+    namespace: {{.Namespace}}
+data:
+  #user-data has the base64 encoded string input: 
+  #cloud-config
+  #ssh_pwauth: true
+  #users:
+  #  - name: vmware
+  #    sudo: ALL=(ALL) NOPASSWD:ALL
+  #    lock_passwd: false
+  #    # Password set to Admin!23
+  #    passwd: '$1$salt$SOC33fVbA/ZxeIwD5yw1u1'
+  #    shell: /bin/bash
+  #write_files:
+  #  - content: |
+  #      VMSVC Says Hello World
+  #    path: /helloworld
+  user-data: I2Nsb3VkLWNvbmZpZwpzc2hfcHdhdXRoOiB0cnVlCnVzZXJzOgogIC0gbmFtZTogdm13YXJlCiAgICBzdWRvOiBBTEw9KEFMTCkgTk9QQVNTV0Q6QUxMCiAgICBsb2NrX3Bhc3N3ZDogZmFsc2UKICAgICMgUGFzc3dvcmQgc2V0IHRvIEFkbWluITIzCiAgICBwYXNzd2Q6ICckMSRzYWx0JFNPQzMzZlZiQS9aeGVJd0Q1eXcxdTEnCiAgICBzaGVsbDogL2Jpbi9iYXNoCndyaXRlX2ZpbGVzOgogIC0gY29udGVudDogfAogICAgICBWTVNWQyBTYXlzIEhlbGxvIFdvcmxkCiAgICBwYXRoOiAvaGVsbG93b3JsZAo=

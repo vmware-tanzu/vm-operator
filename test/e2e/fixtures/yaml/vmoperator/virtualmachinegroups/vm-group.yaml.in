@@ -1,0 +1,18 @@
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachineGroup
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+{{- if .GroupName}}
+  groupName: {{.GroupName}}
+{{- end}}
+{{- if .Members}}
+  bootOrder:
+  - members:
+{{- range .Members}}
+    - name: {{.Name}}
+      kind: {{.Kind}}
+{{- end}}
+{{- end}}
+

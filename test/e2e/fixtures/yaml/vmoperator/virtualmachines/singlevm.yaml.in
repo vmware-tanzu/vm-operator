@@ -1,0 +1,50 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachine
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+  {{if .Annotations}}
+  annotations:
+    {{range $key, $value := .Annotations}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+  {{if .Labels}}
+  labels:
+    {{range $key, $value := .Labels}}
+    {{$key}}: {{$value}}
+    {{end}}
+  {{end}}
+spec:
+  {{if .Network.Type}}
+  networkInterfaces:
+  - networkName: {{.Network.Name}}
+    networkType: {{.Network.Type}}
+  {{end}}
+  className: {{.VMClassName}}
+  storageClass: {{.StorageClassName}}
+  imageName: {{.ImageName}}
+  {{if .ResourcePolicy}}
+  resourcePolicyName: {{.ResourcePolicy}}
+  {{end}}
+  powerState: {{.PowerState}}
+  {{if or .ConfigMapName .SecretName .Transport}}
+  vmMetadata:
+    {{if .ConfigMapName}}
+    configMapName: {{.ConfigMapName}}
+    {{end}}
+    {{if .SecretName}}
+    secretName: {{.SecretName}}
+    {{end}}
+    {{if .Transport}}
+    transport: {{.Transport}}
+    {{end}}
+  {{end}}
+  {{if .PVCNames}}
+  volumes:
+  {{range .PVCNames}}
+  - name: {{.}}
+    persistentVolumeClaim:
+      claimName: {{.}}
+  {{end}}
+  {{end}}

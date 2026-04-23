@@ -92,18 +92,18 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.network.interfaces.ipFamilyPolicy",
+				name: "spec.network.interfaces.requestedAddressFamilyMode",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
 						Network: &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
-									Name:           "eth0",
-									IPFamilyPolicy: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyDualStack),
+									Name:                       "eth0",
+									RequestedAddressFamilyMode: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyDualStack),
 								},
 								{
-									Name:           "eth1",
-									IPFamilyPolicy: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyIPv6Only),
+									Name:                       "eth1",
+									RequestedAddressFamilyMode: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyIPv6Only),
 								},
 							},
 						},
@@ -135,9 +135,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 						Network: &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
-									Name:           "eth0",
-									IPFamilyPolicy: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyDualStack),
-									Type:           vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+									Name:                       "eth0",
+									RequestedAddressFamilyMode: ptr.To(vmopv1.NetworkInterfaceIPFamilyPolicyDualStack),
+									Type:                       vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
 									VNUMANodeID:    ptr.To(int32(1)),
 									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
 										UPTv2Enabled: ptr.To(true),

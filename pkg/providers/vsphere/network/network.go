@@ -423,9 +423,9 @@ func createNetOPNetworkInterface(
 		}
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
-		// Set IPFamilyPolicy if specified in the interface spec.
-		if interfaceSpec.IPFamilyPolicy != nil {
-			netIf.Spec.IPFamilyPolicy = netopv1alpha1.NetworkInterfaceIPFamilyPolicy(*interfaceSpec.IPFamilyPolicy)
+		// Set IPFamilyPolicy on the NetworkInterface CR when the VM requests an address family mode.
+		if interfaceSpec.RequestedAddressFamilyMode != nil {
+			netIf.Spec.IPFamilyPolicy = netopv1alpha1.NetworkInterfaceIPFamilyPolicy(*interfaceSpec.RequestedAddressFamilyMode)
 		}
 		return nil
 	})

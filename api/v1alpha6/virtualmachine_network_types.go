@@ -239,15 +239,15 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// +optional
 	// +kubebuilder:validation:Enum=IPv4Only;IPv6Only;DualStack
 
-	// IPFamilyPolicy specifies the IP family policy for this network interface.
-	// Values: IPv4Only, IPv6Only, DualStack.
+	// RequestedAddressFamilyMode selects which address families this interface
+	// should allocate. Values: IPv4Only, IPv6Only, DualStack.
 	// When set to IPv4Only, only an IPv4 address will be allocated.
 	// When set to IPv6Only, only an IPv6 address will be allocated.
 	// When set to DualStack, both IPv4 and IPv6 addresses will be allocated.
-	// This field is directly passed to the underlying network interface provider.
-	// If not specified, the field will be nil and no IPFamilyPolicy will be set and the
-	// default behavior of the network interface provider will be used.
-	IPFamilyPolicy *NetworkInterfaceIPFamilyPolicy `json:"ipFamilyPolicy,omitempty"`
+	// The controller maps this to the network interface provider's representation.
+	// If not specified, the field will be nil and the default behavior of the
+	// network interface provider will be used.
+	RequestedAddressFamilyMode *NetworkInterfaceIPFamilyPolicy `json:"requestedAddressFamilyMode,omitempty"`
 }
 
 // VirtualMachineNetworkVLANSpec describes a VLAN sub-interface configuration.

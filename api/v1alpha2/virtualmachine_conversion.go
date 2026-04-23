@@ -113,7 +113,7 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 			continue
 		}
 		dstIface := &dst.Spec.Network.Interfaces[i]
-		dstIface.IPFamilyPolicy = srcIface.IPFamilyPolicy
+		dstIface.RequestedAddressFamilyMode = srcIface.RequestedAddressFamilyMode
 		dstIface.Type = srcIface.Type
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
 		dstIface.VMXNet3 = srcIface.VMXNet3

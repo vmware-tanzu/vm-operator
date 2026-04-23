@@ -474,6 +474,10 @@ func unitTestsReconcile() {
 				vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{
 					vmServicePort1,
 				}
+				vmService.Spec.IPFamilies = []corev1.IPFamily{
+					corev1.IPv4Protocol,
+					corev1.IPv6Protocol,
+				}
 
 				vm1 = &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
@@ -565,6 +569,25 @@ func unitTestsReconcile() {
 					It("Not included in Subsets", func() {
 						Expect(endpoints.Subsets).To(BeEmpty())
 					})
+				})
+			})
+
+			Context("when VirtualMachineService omits ipFamilies (simulate apiserver defaulting on fake client)", func() {
+				BeforeEach(func() {
+					vmService.Spec.IPFamilies = nil
+					policy := corev1.IPFamilyPolicyPreferDualStack
+					vmService.Spec.IPFamilyPolicy = &policy
+					initObjects = append(initObjects, vm1, vm3)
+				})
+
+				It("repopulates endpoints after defaulted ipFamilies are written to the Service", func() {
+					simulateAPIServerDefaultedIPFamilies(ctx, objKey, vmService.Spec.IPFamilyPolicy)
+					Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+					Expect(endpoints.Subsets).To(HaveLen(1))
+					subset := endpoints.Subsets[0]
+					Expect(subset.Addresses).To(HaveLen(1))
+					assertEPAddrFromVM(subset.Addresses[0], vm1)
 				})
 			})
 
@@ -805,6 +828,7 @@ func unitTestsReconcile() {
 				It("SingleStack policy with IPv4 clusterIP only includes IPv4 endpoints", func() {
 					policy := corev1.IPFamilyPolicySingleStack
 					vmService.Spec.IPFamilyPolicy = &policy
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
 					// Create service first to get clusterIP
 					err := reconciler.ReconcileNormal(vmServiceCtx)
 					Expect(err).NotTo(HaveOccurred())
@@ -825,6 +849,7 @@ func unitTestsReconcile() {
 				It("PreferDualStack policy includes both IPv4 and IPv6 endpoints", func() {
 					policy := corev1.IPFamilyPolicyPreferDualStack
 					vmService.Spec.IPFamilyPolicy = &policy
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
 					err := reconciler.ReconcileNormal(vmServiceCtx)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
@@ -836,6 +861,7 @@ func unitTestsReconcile() {
 				It("RequireDualStack policy includes both IPv4 and IPv6 endpoints", func() {
 					policy := corev1.IPFamilyPolicyRequireDualStack
 					vmService.Spec.IPFamilyPolicy = &policy
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
 					err := reconciler.ReconcileNormal(vmServiceCtx)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
@@ -945,6 +971,7 @@ func unitTestsReconcile() {
 				var ipv6VM *vmopv1.VirtualMachine
 
 				BeforeEach(func() {
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv6Protocol}
 					ipv6VM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "ipv6-vm",
@@ -1105,6 +1132,10 @@ func unitTestsReconcile() {
 				vmService.Labels[labelName1] = "bar2"
 				vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{
 					vmServicePort1,
+				}
+				vmService.Spec.IPFamilies = []corev1.IPFamily{
+					corev1.IPv4Protocol,
+					corev1.IPv6Protocol,
 				}
 
 				vm1 = &vmopv1.VirtualMachine{
@@ -1397,6 +1428,29 @@ func nsxtLBProviderTestsReconcile() {
 			})
 		})
 	})
+}
+
+// simulateAPIServerDefaultedIPFamilies writes spec.ipFamilies on the Service when it is unset.
+// A real apiserver defaulting chain fills this after create; controller-runtime's fake client does not.
+func simulateAPIServerDefaultedIPFamilies(
+	ctx *builder.UnitTestContextForController,
+	svcKey client.ObjectKey,
+	policy *corev1.IPFamilyPolicy,
+) {
+	svc := &corev1.Service{}
+	Expect(ctx.Client.Get(ctx, svcKey, svc)).To(Succeed())
+	if len(svc.Spec.IPFamilies) > 0 {
+		return
+	}
+	var families []corev1.IPFamily
+	if policy != nil && *policy == corev1.IPFamilyPolicyPreferDualStack {
+		// Align with single-stack envtest: PreferDualStack yields IPv4-only ipFamilies.
+		families = []corev1.IPFamily{corev1.IPv4Protocol}
+	} else {
+		families = []corev1.IPFamily{corev1.IPv4Protocol}
+	}
+	svc.Spec.IPFamilies = families
+	Expect(ctx.Client.Update(ctx, svc)).To(Succeed())
 }
 
 func expectEvent(ctx *builder.UnitTestContextForController, matcher types.GomegaMatcher) {

@@ -3433,7 +3433,7 @@ func autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_Virtual
 	// WARNING: in.VNUMANodeID requires manual conversion: does not exist in peer-type
 	// WARNING: in.VMXNet3 requires manual conversion: does not exist in peer-type
 	// WARNING: in.AdvancedProperties requires manual conversion: does not exist in peer-type
-	// WARNING: in.IPFamilyPolicy requires manual conversion: does not exist in peer-type
+	// WARNING: in.RequestedAddressFamilyMode requires manual conversion: does not exist in peer-type
 	return nil
 }
 

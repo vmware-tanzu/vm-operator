@@ -7,7 +7,6 @@ package virtualmachineservice
 import (
 	"context"
 	"fmt"
-	"net"
 	"reflect"
 	"strings"
 
@@ -272,6 +271,14 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 		return err
 	}
 
+	// Load the Service from the API server so endpoint filtering uses the same
+	// spec.ipFamilies the apiserver stored (including defaulting when policy-only).
+	svcNamespacedName := client.ObjectKey{Namespace: service.Namespace, Name: service.Name}
+	if err := r.Client.Get(ctx, svcNamespacedName, service); err != nil {
+		ctx.Logger.Error(err, "Failed to get Service after create or update")
+		return err
+	}
+
 	err = r.createOrUpdateEndpoints(ctx, service)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to update VirtualMachineService Endpoints")
@@ -415,6 +422,8 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 		// These fields only apply to ClusterIP and LoadBalancer types
 		// They are wiped when type is ExternalName
 		if vmService.Spec.Type != vmopv1.VirtualMachineServiceTypeExternalName {
+			// Only overwrite when the VirtualMachineService specifies ipFamilies so we do not clear
+			// values defaulted or stored by the apiserver when the CR omits them.
 			if len(vmService.Spec.IPFamilies) > 0 {
 				service.Spec.IPFamilies = vmService.Spec.IPFamilies
 			}
@@ -631,8 +640,8 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		return nil, err
 	}
 
-	// Include only VM addresses whose IP family is allowed by the Service IPFamilies and IPFamilyPolicy.
-	allowedFamilies := r.determineAllowedIPFamilies(service)
+	// Include only VM addresses whose IP family is listed in Service spec.ipFamilies.
+	allowedFamilies := determineAllowedIPFamilies(service)
 
 	type addressInfo struct {
 		addr  corev1.EndpointAddress
@@ -758,68 +767,13 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 	return subsets, nil
 }
 
-// determineAllowedIPFamilies determines which IP families should be included
-// in endpoints based on Service's IPFamilies and IPFamilyPolicy.
-// For SingleStack policy, only the ClusterIP/IPFamilies family is allowed.
-// Endpoints must match the Service's IP family - an IPv4 Service cannot route to IPv6 endpoints.
-//
-// When spec.ipFamilies is unset, ClusterIP and IPFamilyPolicy are used so Endpoints match the Service.
-func (r *ReconcileVirtualMachineService) determineAllowedIPFamilies(service *corev1.Service) map[corev1.IPFamily]bool {
+// determineAllowedIPFamilies returns which IP families may appear on Endpoints for this Service.
+// Only spec.ipFamilies is used (after persisting the Service so apiserver defaulting applies).
+func determineAllowedIPFamilies(service *corev1.Service) map[corev1.IPFamily]bool {
 	allowedFamilies := make(map[corev1.IPFamily]bool)
-
-	// If IPFamilies is explicitly set, use that (takes precedence for all policies)
-	if len(service.Spec.IPFamilies) > 0 {
-		for _, family := range service.Spec.IPFamilies {
-			allowedFamilies[family] = true
-		}
-		return allowedFamilies
+	for _, family := range service.Spec.IPFamilies {
+		allowedFamilies[family] = true
 	}
-
-	// For SingleStack policy without explicit IPFamilies, use ClusterIP family as primary
-	if service.Spec.IPFamilyPolicy != nil && *service.Spec.IPFamilyPolicy == corev1.IPFamilyPolicySingleStack {
-		// Determine primary family from ClusterIP
-		var primaryFamily corev1.IPFamily
-		var firstIP string
-		if len(service.Spec.ClusterIPs) > 0 {
-			firstIP = service.Spec.ClusterIPs[0]
-		} else if service.Spec.ClusterIP != "" {
-			firstIP = service.Spec.ClusterIP
-		}
-		if firstIP != "" && firstIP != "None" {
-			if ip := net.ParseIP(firstIP); ip != nil {
-				if ip.To4() != nil {
-					primaryFamily = corev1.IPv4Protocol
-				} else {
-					primaryFamily = corev1.IPv6Protocol
-				}
-			} else {
-				primaryFamily = corev1.IPv4Protocol // Default
-			}
-		} else {
-			primaryFamily = corev1.IPv4Protocol // Default
-		}
-
-		// For SingleStack, only allow the primary family (ClusterIP/IPFamilies family)
-		// This ensures that endpoints match the Service's IP family, as an IPv4 Service
-		// cannot route to IPv6 endpoints and vice versa
-		allowedFamilies[primaryFamily] = true
-		return allowedFamilies
-	}
-
-	// If IPFamilies is not set, use IPFamilyPolicy to determine behavior
-	if service.Spec.IPFamilyPolicy != nil {
-		switch *service.Spec.IPFamilyPolicy {
-		case corev1.IPFamilyPolicyPreferDualStack, corev1.IPFamilyPolicyRequireDualStack:
-			// PreferDualStack or RequireDualStack: Include both families
-			allowedFamilies[corev1.IPv4Protocol] = true
-			allowedFamilies[corev1.IPv6Protocol] = true
-		}
-	} else {
-		// If neither IPFamilies nor IPFamilyPolicy is set, include all (backward compatibility)
-		allowedFamilies[corev1.IPv4Protocol] = true
-		allowedFamilies[corev1.IPv6Protocol] = true
-	}
-
 	return allowedFamilies
 }
 

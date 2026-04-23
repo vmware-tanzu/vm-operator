@@ -1307,15 +1307,15 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			})
 		})
 
-		Context("IPFamilyPolicy", func() {
+		Context("RequestedAddressFamilyMode", func() {
 			Context("IPv4Only policy", func() {
 				BeforeEach(func() {
 					ipFamilyPolicy := vmopv1.NetworkInterfaceIPFamilyPolicyIPv4Only
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:           interfaceName,
-							Network:        &common.PartialObjectRef{Name: networkName},
-							IPFamilyPolicy: &ipFamilyPolicy,
+							Name:                       interfaceName,
+							Network:                    &common.PartialObjectRef{Name: networkName},
+							RequestedAddressFamilyMode: &ipFamilyPolicy,
 						},
 					}
 				})
@@ -1342,9 +1342,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ipFamilyPolicy := vmopv1.NetworkInterfaceIPFamilyPolicyIPv6Only
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:           interfaceName,
-							Network:        &common.PartialObjectRef{Name: networkName},
-							IPFamilyPolicy: &ipFamilyPolicy,
+							Name:                       interfaceName,
+							Network:                    &common.PartialObjectRef{Name: networkName},
+							RequestedAddressFamilyMode: &ipFamilyPolicy,
 						},
 					}
 				})
@@ -1371,9 +1371,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ipFamilyPolicy := vmopv1.NetworkInterfaceIPFamilyPolicyDualStack
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:           interfaceName,
-							Network:        &common.PartialObjectRef{Name: networkName},
-							IPFamilyPolicy: &ipFamilyPolicy,
+							Name:                       interfaceName,
+							Network:                    &common.PartialObjectRef{Name: networkName},
+							RequestedAddressFamilyMode: &ipFamilyPolicy,
 						},
 					}
 				})
@@ -1401,7 +1401,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						{
 							Name:    interfaceName,
 							Network: &common.PartialObjectRef{Name: networkName},
-							// IPFamilyPolicy not set
+							// RequestedAddressFamilyMode not set
 						},
 					}
 				})
@@ -1410,7 +1410,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 
-					By("verify NetworkInterface CR does not have IPFamilyPolicy set", func() {
+					By("verify NetworkInterface CR does not have NetOP IPFamilyPolicy set", func() {
 						netInterface := &netopv1alpha1.NetworkInterface{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
@@ -1431,19 +1431,19 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ipFamilyPolicy3 := vmopv1.NetworkInterfaceIPFamilyPolicyDualStack
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:           "eth0",
-							Network:        &common.PartialObjectRef{Name: networkName},
-							IPFamilyPolicy: &ipFamilyPolicy1,
+							Name:                       "eth0",
+							Network:                    &common.PartialObjectRef{Name: networkName},
+							RequestedAddressFamilyMode: &ipFamilyPolicy1,
 						},
 						{
-							Name:           "eth1",
-							Network:        &common.PartialObjectRef{Name: networkName},
-							IPFamilyPolicy: &ipFamilyPolicy2,
+							Name:                       "eth1",
+							Network:                    &common.PartialObjectRef{Name: networkName},
+							RequestedAddressFamilyMode: &ipFamilyPolicy2,
 						},
 						{
-							Name:           "eth2",
-							Network:        &common.PartialObjectRef{Name: networkName},
-							IPFamilyPolicy: &ipFamilyPolicy3,
+							Name:                       "eth2",
+							Network:                    &common.PartialObjectRef{Name: networkName},
+							RequestedAddressFamilyMode: &ipFamilyPolicy3,
 						},
 					}
 				})

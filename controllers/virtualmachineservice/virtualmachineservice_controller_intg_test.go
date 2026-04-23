@@ -350,12 +350,12 @@ func intgTestsReconcile() {
 				})
 			})
 
-			Context("PreferDualStack with empty ipFamilies", func() {
+			Context("PreferDualStack with ipFamilies defaulted by apiserver", func() {
 				BeforeEach(func() {
 					vmServiceName = "test-vm-service-prefer-empty-ipf"
 				})
 
-				// This should succeed since envtest is single stack.
+				// This should succeed since envtest is single stack (explicit dual ipFamilies rejected).
 				It("creates child Service and IPv4 Endpoints", func() {
 					vmForIPFamilyTest = createVMWithNetwork(ctx, "vm-prefer-empty-ipf", vmLabels, "192.168.6.1", "2001:db8::601")
 					vmService := createVMService(ctx, vmServiceName, selector, vmServicePort,
@@ -379,6 +379,9 @@ func intgTestsReconcile() {
 
 			// This should fail since envtest is single stack.
 
+			// Expects a cluster where dual-stack Services are rejected (typical envtest).
+			// Running against a dual-stack-capable cluster may require skipping this spec or
+			// gating with an environment variable.
 			Context("RequireDualStack with empty ipFamilies", func() {
 				BeforeEach(func() {
 					vmServiceName = "test-vm-service-require-empty-ipf"

@@ -1168,16 +1168,19 @@ func updateGuestNetworkStatus(
 		}
 	}
 
-	// Fallback logic: If one IP is missing, try to find it from the interface containing the other IP
-	// If both are missing, try to get them from the first interface
-	// This applies to both CloudInit and non-CloudInit bootstrap providers
+	// See cloud-init issue: https://github.com/canonical/cloud-init/issues/6851
+	// LinuxPrep does not report dual stack IPs. It reports only one primary IP.
+	// Fallback when guest-reported primaries are incomplete (common in some dual-stack / cloud-init cases).
+	// Same-interface cross-family fill only applies if that interface reports exactly one usable address
+	// of the missing family—otherwise we do not guess. The all-empty sole-NIC path uses the same rule
+	// per family. Usable addresses exclude loopback, unspecified, and link-local (validatePrimaryIP).
 	if len(ifaceStatuses) > 0 {
 		switch {
 		case primaryIP4 != "" && primaryIP6 == "":
 			// Try to find IPv6 on the same interface as IPv4
 			if idx := findInterfaceContainingIP(primaryIP4, ifaceStatuses); idx >= 0 {
 				ipv6Addrs := extractIPsFromInterface(ifaceStatuses[idx], false, validatePrimaryIP)
-				if len(ipv6Addrs) > 0 {
+				if len(ipv6Addrs) == 1 {
 					primaryIP6 = ipv6Addrs[0]
 				}
 			}
@@ -1185,19 +1188,21 @@ func updateGuestNetworkStatus(
 			// Try to find IPv4 on the same interface as IPv6
 			if idx := findInterfaceContainingIP(primaryIP6, ifaceStatuses); idx >= 0 {
 				ipv4Addrs := extractIPsFromInterface(ifaceStatuses[idx], true, validatePrimaryIP)
-				if len(ipv4Addrs) > 0 {
+				if len(ipv4Addrs) == 1 {
 					primaryIP4 = ipv4Addrs[0]
 				}
 			}
 		case primaryIP4 == "" && primaryIP6 == "":
-			// Both empty, try first interface
-			ipv4Addrs := extractIPsFromInterface(ifaceStatuses[0], true, validatePrimaryIP)
-			ipv6Addrs := extractIPsFromInterface(ifaceStatuses[0], false, validatePrimaryIP)
-			if len(ipv4Addrs) > 0 {
-				primaryIP4 = ipv4Addrs[0]
-			}
-			if len(ipv6Addrs) > 0 {
-				primaryIP6 = ipv6Addrs[0]
+			// Both empty, try first interface, if its the only interface present.
+			if len(ifaceStatuses) == 1 {
+				ipv4Addrs := extractIPsFromInterface(ifaceStatuses[0], true, validatePrimaryIP)
+				ipv6Addrs := extractIPsFromInterface(ifaceStatuses[0], false, validatePrimaryIP)
+				if len(ipv4Addrs) == 1 {
+					primaryIP4 = ipv4Addrs[0]
+				}
+				if len(ipv6Addrs) == 1 {
+					primaryIP6 = ipv6Addrs[0]
+				}
 			}
 		}
 	}

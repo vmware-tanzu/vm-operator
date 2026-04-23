@@ -2560,8 +2560,8 @@ func (in *VirtualMachineNetworkInterfaceSpec) DeepCopyInto(out *VirtualMachineNe
 		*out = make([]common.KeyValuePair, len(*in))
 		copy(*out, *in)
 	}
-	if in.IPFamilyPolicy != nil {
-		in, out := &in.IPFamilyPolicy, &out.IPFamilyPolicy
+	if in.RequestedAddressFamilyMode != nil {
+		in, out := &in.RequestedAddressFamilyMode, &out.RequestedAddressFamilyMode
 		*out = new(NetworkInterfaceIPFamilyPolicy)
 		**out = **in
 	}

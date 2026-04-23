@@ -449,6 +449,61 @@ var _ = Describe("GetPVCZoneConstraints", func() {
 			Expect(zones.UnsortedList()).To(ConsistOf("zone1"))
 		})
 	})
+
+	Context("PVC with DataSourceRef", func() {
+
+		It("skips zone constraints when DataSourceRef points to a VirtualMachine", func() {
+			pvcs := []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "clone-from-vm-pvc",
+						Annotations: map[string]string{
+							"csi.vsphere.volume-accessible-topology": `[{"topology.kubernetes.io/zone":"zone-is-ignored"}]`,
+						},
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						DataSourceRef: &corev1.TypedObjectReference{
+							APIGroup: ptr.To(vmopv1.GroupVersion.Group),
+							Kind:     "VirtualMachine",
+							Name:     "source-vm",
+						},
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimBound,
+					},
+				},
+			}
+			zones, err := kubeutil.GetPVCZoneConstraints(nil, pvcs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(zones).To(BeNil())
+		})
+
+		It("still applies zone constraints when DataSourceRef is not a VirtualMachine", func() {
+			pvcs := []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "restore-from-snapshot-pvc",
+						Annotations: map[string]string{
+							"csi.vsphere.volume-accessible-topology": `[{"topology.kubernetes.io/zone":"zone-from-snapshot-pvc"}]`,
+						},
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						DataSourceRef: &corev1.TypedObjectReference{
+							APIGroup: ptr.To("snapshot.storage.k8s.io"),
+							Kind:     "VolumeSnapshot",
+							Name:     "src-snap",
+						},
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimBound,
+					},
+				},
+			}
+			zones, err := kubeutil.GetPVCZoneConstraints(nil, pvcs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(zones.UnsortedList()).To(ConsistOf("zone-from-snapshot-pvc"))
+		})
+	})
 })
 
 var _ = DescribeTableSubtree("GetPVCZoneConstraints Table",

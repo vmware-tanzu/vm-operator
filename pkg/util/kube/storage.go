@@ -69,9 +69,13 @@ func GetPVCZoneConstraints(
 	var zones sets.Set[string]
 
 	for _, pvc := range pvcs {
-		if pvc.Spec.DataSourceRef != nil {
-			// Do not worry about PVCs with data source refs.
-			continue
+		if dsRef := pvc.Spec.DataSourceRef; dsRef != nil && dsRef.APIGroup != nil {
+			// Skip the zonal constraint check for PVCs with us as the DataSourceRef since
+			// those disks are in the placement ConfigSpec. Note that the reference may
+			// point to another object type such as VolumeSnapshot.
+			if *dsRef.APIGroup == vmopv1.GroupVersion.Group && dsRef.Kind == "VirtualMachine" {
+				continue
+			}
 		}
 
 		var z sets.Set[string]

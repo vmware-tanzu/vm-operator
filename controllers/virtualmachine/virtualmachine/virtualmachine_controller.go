@@ -35,7 +35,6 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
-	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
@@ -255,7 +254,6 @@ func NewReconciler(
 		Recorder:   recorder,
 		VMProvider: vmProvider,
 		Prober:     prober,
-		vmMetrics:  metrics.NewVMMetrics(),
 	}
 }
 
@@ -267,7 +265,6 @@ type Reconciler struct {
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
 	Prober     prober.Manager
-	vmMetrics  *metrics.VMMetrics
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
@@ -505,8 +502,6 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 		controllerutil.RemoveFinalizer(ctx.VM, deprecatedFinalizerName)
 	}
 
-	// BMV: Shouldn't these be in the ContainsFinalizer block?
-	r.vmMetrics.DeleteMetrics(ctx)
 	r.Prober.RemoveFromProberManager(ctx.VM)
 
 	ctx.Logger.Info("Finished Reconciling VirtualMachine Deletion")
@@ -543,10 +538,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 			l = l.WithValues("noRequeueReason", reterr.Error())
 		}
 		l.Info("Finished Reconciling VirtualMachine")
-	}()
-
-	defer func() {
-		r.vmMetrics.RegisterVMCreateOrUpdateMetrics(ctx)
 	}()
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {

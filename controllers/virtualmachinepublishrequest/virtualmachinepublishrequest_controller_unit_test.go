@@ -301,10 +301,11 @@ func unitTestsReconcile() {
 			var (
 				files, diskFiles, configFiles []vimtypes.VirtualMachineFileLayoutExFileInfo
 				expectedCapacityValue         *resource.Quantity
+				clv1a2                        *imgregv1.ContentLibrary
 			)
 
 			BeforeEach(func() {
-				clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+				clv1a2 = builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
 				clv1a2.Labels = map[string]string{
 					pkgconst.AsyncQuotaPerformCheckAnnotationKey: "true",
 				}
@@ -521,15 +522,35 @@ func unitTestsReconcile() {
 							return files, nil
 						}
 					})
-					It("should apply the correct annotations and not return an error", func() {
-						_, err := reconciler.ReconcileNormal(vmpubCtx)
-						Expect(err).NotTo(HaveOccurred())
-						Expect(vmpub.Annotations).NotTo(BeEmpty())
+					When("content library type is inventory", func() {
+						BeforeEach(func() {
+							clv1a2.Spec.Type = imgregv1.LibraryTypeInventory
+						})
+						It("should apply the correct annotations and not return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).NotTo(HaveOccurred())
+							Expect(vmpub.Annotations).NotTo(BeEmpty())
 
-						Expect(vmpub.Annotations).To(HaveKeyWithValue(
-							pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
-						Expect(vmpub.Annotations).To(HaveKeyWithValue(
-							pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
+						})
+					})
+					When("content library type is content library", func() {
+						BeforeEach(func() {
+							clv1a2.Spec.Type = imgregv1.LibraryTypeContentLibrary
+						})
+						It("should apply the correct annotations and not return an error", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).NotTo(HaveOccurred())
+							Expect(vmpub.Annotations).NotTo(BeEmpty())
+
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
+							Expect(vmpub.Annotations).To(HaveKeyWithValue(
+								pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, expectedCapacityValue.String()))
+						})
 					})
 				})
 			})

@@ -49,7 +49,7 @@ The kubeconfig will be stored under the directory `~/.kube/<vcIp>.kubeconfig`
 and copied to `~/.kube/wcp-config` which the E2E test reads from.
 
 ```bash
-source ./hack/setup-testbed-env.sh <testbedInfo.json> --env
+source ./hack/setup-testbed-env.sh <testbedInfo.json> --e2e
 ```
 
 2. **Running Tests**

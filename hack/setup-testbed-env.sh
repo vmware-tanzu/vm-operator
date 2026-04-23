@@ -55,6 +55,7 @@ parse_args() {
                 echo "  $0 https://example.com/testbed.json"
                 echo "  source $0 ./testbedinfo.json --e2e"
                 echo "  source $0 https://example.com/testbed.json"
+                shift
                 script_exit 0
                 ;;
             -*)

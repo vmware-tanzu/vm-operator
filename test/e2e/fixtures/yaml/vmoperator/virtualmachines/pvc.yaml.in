@@ -1,0 +1,21 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{.ClaimName}}
+  namespace: {{.Namespace}}
+spec:
+  accessModes:
+  {{- if gt (len .AccessModes) 0}}
+  {{- range .AccessModes}}
+  - {{.}}
+  {{- end}}
+  {{- else}}
+  - ReadWriteOnce
+  {{- end}}
+  resources:
+    requests:
+      storage: {{.RequestSize}}
+  storageClassName: {{.StorageClassName}}
+  {{- if .VolumeMode}}
+  volumeMode: {{.VolumeMode}}
+  {{- end}}

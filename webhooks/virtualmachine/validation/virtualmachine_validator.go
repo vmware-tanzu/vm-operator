@@ -790,7 +790,7 @@ func (v validator) validateNetwork(
 	}
 
 	if len(networkSpec.VLANs) > 0 {
-		allErrs = append(allErrs, v.validateNetworkVLANs(networkPath.Child("vlans"), vm)...)
+		allErrs = append(allErrs, v.validateNetworkVLANs(ctx, networkPath.Child("vlans"), vm)...)
 	}
 
 	if oldVM != nil {
@@ -853,12 +853,20 @@ func (v validator) validateNetworkInterfaceMacAddressNotChanged(
 // validateNetworkVLANs validates the VLANs configuration in the network spec.
 // VLANs are only supported with CloudInit bootstrap provider.
 func (v validator) validateNetworkVLANs(
+	ctx *pkgctx.WebhookRequestContext,
 	vlansPath *field.Path,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
 
 	networkSpec := vm.Spec.Network
+
+	if !pkgcfg.FromContext(ctx).Features.VMVlanSubinterface {
+		allErrs = append(allErrs, field.Forbidden(
+			vlansPath, fmt.Sprintf(featureNotEnabled, "VLAN Sub Interface"),
+		))
+		return allErrs
+	}
 
 	if vm.Spec.Bootstrap == nil || vm.Spec.Bootstrap.CloudInit == nil {
 		allErrs = append(allErrs, field.Forbidden(

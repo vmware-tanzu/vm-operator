@@ -107,6 +107,10 @@ const (
 	// VM extraConfig configuration: spec.advanced first-class fields, extraConfig
 	// fallback, and per-NIC VMXNet3 tuning properties.
 	CapabilityKeyVMExtraConfig = "supports_vm_service_vm_extra_config"
+
+	// CapabilityKeyVlanSubinterface is the name of capability key defined in the
+	// Supervisor capabilities CRD for the VM service supports VLAN Sub-Interfaces.
+	CapabilityKeyVlanSubinterface = "supports_vm_service_vlan_subinterface"
 )
 
 var (
@@ -273,6 +277,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.StoragePolicyMutability = capStatus.Activated
 		case CapabilityKeyVMExtraConfig:
 			fs.VMExtraConfig = capStatus.Activated
+		case CapabilityKeyVlanSubinterface:
+			fs.VMVlanSubinterface = capStatus.Activated
 		}
 
 	}

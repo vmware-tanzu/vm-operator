@@ -202,6 +202,7 @@ type FeatureStates struct {
 	VMAffinityDuringExecution   bool
 	StoragePolicyMutability     bool
 	VMExtraConfig               bool
+	VMVlanSubinterface          bool  
 }
 
 type InstanceStorage struct {

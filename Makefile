@@ -107,7 +107,7 @@ IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
 # E2E test image configuration  
-E2E_BASE_IMAGE ?= mirror.gcr.io/library/golang:1.26.2-alpine
+E2E_BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
 E2E_IMAGE ?= vmoperator-e2e
 E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
 

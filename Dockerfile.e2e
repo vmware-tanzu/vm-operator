@@ -1,8 +1,7 @@
 # VM Operator E2E Test Container
 # Self-contained E2E testing environment
 
-# Use Broadcom internal registry (Docker Hub mirror) 
-ARG BASE_IMAGE=mirror.gcr.io/library/golang:1.26.2-alpine
+ARG BASE_IMAGE=mirror.gcr.io/library/photon:5.0
 
 # Build stage - compile tests
 FROM ${BASE_IMAGE} AS builder
@@ -20,6 +19,10 @@ COPY hack/ ./hack/
 COPY Makefile ./
 
 # Install Go dependencies
+RUN tdnf install -y \
+    build-essential \
+    glibc-devel \
+    go
 RUN go mod download
 
 # Pre-compile test binaries for faster execution  
@@ -42,18 +45,21 @@ LABEL branch="${BUILD_BRANCH}" \
       vendor="Broadcom" \
       version="${BUILD_VERSION}"
 
-# Install required packages (alpine-based)
-RUN apk update && \
-    apk add --no-cache \
+# Install required packages
+RUN tdnf update -y && \
+    tdnf install -y \
         curl \
         jq \
         git \
-        openssh-client \
+        openssh \
         sshpass \
         bash \
         make \
+        build-essential \
+        glibc-devel \
+        go \
         && \
-    rm -rf /var/cache/apk/*
+    rm -rf /var/cache/tdnf
 
 # Install kubectl
 RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
@@ -61,8 +67,8 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/s
     mv kubectl /usr/local/bin/
 
 # Create non-root user early 
-RUN addgroup -g 1000 vmoperator && \
-    adduser -u 1000 -G vmoperator -s /bin/bash -D vmoperator
+RUN groupadd -g 1000 vmoperator && \
+    useradd -u 1000 -g vmoperator -s /bin/bash -m vmoperator
 
 # Create directories and set up convenience scripts
 RUN mkdir -p /vm-operator /tmp/go-cache && \

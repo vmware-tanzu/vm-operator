@@ -2971,9 +2971,20 @@ func (v validator) validateVMAffinity(
 					}
 				}
 
-				if rs.TopologyKey != corev1.LabelTopologyZone {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
+				if pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution {
+					// When VMAffinityDuringExecution capability is enabled,
+					// either zone or host topology key is allowed for affinity required terms.
+					if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
+						allErrs = append(allErrs, field.NotSupported(
+							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
+					}
+				} else {
+					// Without VMAffinityDuringExecution capability enabled,
+					// only zone topology key is allowed for affinity required terms.
+					if rs.TopologyKey != corev1.LabelTopologyZone {
+						allErrs = append(allErrs, field.NotSupported(
+							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
+					}
 				}
 			}
 		}

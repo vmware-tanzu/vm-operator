@@ -16,7 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	apirecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -292,7 +292,7 @@ var _ = Describe("ReconcileInstanceStoragePVCs", func() {
 			Context: baseCtx,
 			VM:      vm,
 		}
-		recorder = record.New(apirecord.NewFakeRecorder(100))
+		recorder = record.New(events.NewFakeRecorder(100))
 
 		// Initialize helper function to create instance storage PVCs with common defaults
 		newInstanceStoragePVC = func(opts ...func(*corev1.PersistentVolumeClaim)) *corev1.PersistentVolumeClaim {

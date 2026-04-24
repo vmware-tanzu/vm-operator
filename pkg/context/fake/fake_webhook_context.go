@@ -5,7 +5,7 @@
 package fake
 
 import (
-	clientrecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -19,6 +19,6 @@ func NewWebhookContext(ctx *pkgctx.ControllerManagerContext) *pkgctx.WebhookCont
 		Name:      WebhookName,
 		Namespace: ctx.Namespace,
 		Logger:    ctx.Logger.WithName(WebhookName),
-		Recorder:  record.New(clientrecord.NewFakeRecorder(1024)),
+		Recorder:  record.New(events.NewFakeRecorder(1024)),
 	}
 }

@@ -336,8 +336,7 @@ def _generate_conversion_webhooks_go(
     for t in root_types:
         lines.extend(
             [
-                f"\tif err := ctrl.NewWebhookManagedBy(mgr).",
-                f"\t\tFor(&{import_alias}.{t}{{}}).",
+                f"\tif err := ctrl.NewWebhookManagedBy(mgr, &{import_alias}.{t}{{}}).",
                 "\t\tComplete(); err != nil {",
                 "",
                 "\t\treturn err",

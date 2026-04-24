@@ -113,7 +113,7 @@ func (nl *NsxtLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmServ
 
 	// When externalTrafficPolicy is set to Local, skip kube-proxy for the
 	// target Service
-	if etp := vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; corev1.ServiceExternalTrafficPolicyType(etp) == corev1.ServiceExternalTrafficPolicyTypeLocal {
+	if etp := vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; corev1.ServiceExternalTrafficPolicy(etp) == corev1.ServiceExternalTrafficPolicyTypeLocal {
 		res[LabelServiceProxyName] = NSXTServiceProxy
 	}
 
@@ -127,7 +127,7 @@ func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Cont
 
 	// When there is no externalTrafficPolicy configured or it's not Local,
 	// remove the service-proxy label
-	if etp := vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; corev1.ServiceExternalTrafficPolicyType(etp) != corev1.ServiceExternalTrafficPolicyTypeLocal {
+	if etp := vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; corev1.ServiceExternalTrafficPolicy(etp) != corev1.ServiceExternalTrafficPolicyTypeLocal {
 		res[LabelServiceProxyName] = NSXTServiceProxy
 	}
 

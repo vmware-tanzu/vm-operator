@@ -17,9 +17,8 @@ import (
 func InitializeProviders(
 	ctx *pkgctx.ControllerManagerContext,
 	mgr ctrlmgr.Manager) error {
-
 	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)
-	recorder := record.New(mgr.GetEventRecorderFor(vmProviderName))
+	recorder := record.New(mgr.GetEventRecorder(vmProviderName))
 	ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), recorder)
 	return nil
 }

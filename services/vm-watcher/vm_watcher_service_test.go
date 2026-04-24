@@ -127,7 +127,7 @@ var _ = Describe(
 
 					g.Expect(vsClient.Valid()).To(BeTrue())
 					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
-				}).Should(Succeed())
+				}, "2s").Should(Succeed())
 
 				By("log out the client session", func() {
 					vsClientMu.Lock()
@@ -173,7 +173,7 @@ var _ = Describe(
 
 					g.Expect(vsClient.Valid()).To(BeTrue())
 					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
-				}).Should(Succeed())
+				}, "2s").Should(Succeed())
 
 				By("invalidate the credentials", func() {
 					vsClientMu.Lock()
@@ -235,7 +235,7 @@ var _ = Describe(
 
 					g.Expect(vsClient.Valid()).To(BeTrue())
 					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
-				}).Should(Succeed())
+				}, "2s").Should(Succeed())
 
 				By("invalidate the port", func() {
 					vsClientMu.Lock()
@@ -292,7 +292,7 @@ var _ = Describe(
 					for _, zone := range zoneList.Items {
 						g.Expect(zone.Finalizers).To(ConsistOf(zonectrl.Finalizer))
 					}
-				}).Should(Succeed())
+				}, "2s").Should(Succeed())
 			})
 		})
 

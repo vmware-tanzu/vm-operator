@@ -159,7 +159,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		MaxConcurrentReconciles:           opts.MaxConcurrentReconciles,
 		ControllerMaxConcurrentReconciles: opts.ControllerMaxConcurrentReconciles,
 		Logger:                            logger,
-		Recorder:                          record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
+		Recorder:                          record.New(mgr.GetEventRecorder(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
 		ContainerNode:                     opts.ContainerNode,
 		SyncPeriod:                        opts.SyncPeriod,
 		EnableWebhookClientVerification:   opts.EnableWebhookClientVerification,

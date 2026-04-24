@@ -5,7 +5,7 @@
 package fake
 
 import (
-	clientrecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -29,7 +29,7 @@ func NewControllerManagerContext() *pkgctx.ControllerManagerContext {
 		ServiceAccountName:      ServiceAccountName,
 		LeaderElectionNamespace: LeaderElectionNamespace,
 		LeaderElectionID:        LeaderElectionID,
-		Recorder:                record.New(clientrecord.NewFakeRecorder(1024)),
+		Recorder:                record.New(events.NewFakeRecorder(1024)),
 		VMProvider:              providerfake.NewVMProvider(),
 	}
 }

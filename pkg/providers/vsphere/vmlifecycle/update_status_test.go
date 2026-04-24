@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	apirecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -3578,7 +3578,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			vmCtx.Context = record.WithContext(
 				vmCtx.Context,
-				record.New(&apirecord.FakeRecorder{Events: chanRecord}))
+				record.New(&events.FakeRecorder{Events: chanRecord}))
 
 			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 				config.AsyncSignalEnabled = true

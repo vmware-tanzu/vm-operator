@@ -987,6 +987,8 @@ e2e-image-remove: ## Remove E2E test container image
 #   LABEL_FILTER           - Ginkgo label filter (e.g., "smoke", "!extended-functional")
 #   FLAKE_ATTEMPTS         - Number of retry attempts for flaky tests
 #   E2E_PREBUILT_BINARY    - Path to `go test -c` output (default: $(ROOT_DIR)e2e-tests)
+#   E2E_ARTIFACT_FOLDER    - Directory for test artifacts/logs (default: test_logs)
+#   E2E_ARGS               - Override all e2e binary arguments (e.g. from CI pipelines)
 
 E2E_PREBUILT_BINARY ?= $(ROOT_DIR)e2e-tests
 
@@ -1003,10 +1005,9 @@ test-e2e-prebuilt: ## Run e2e tests using precompiled binary. Used by the E2E co
 	@test -x "$(E2E_PREBUILT_BINARY)" || { echo "error: $(E2E_PREBUILT_BINARY) missing or not executable. Run: cd test/e2e/vmservice && go test -c -o ../../../e2e-tests ."; exit 1; }
 	@echo "Running E2E tests (prebuilt $(E2E_PREBUILT_BINARY))..."
 	@$(eval GINKGO_ARGS := --ginkgo.v)
-	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=test_logs)
+	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=$(or $(E2E_ARTIFACT_FOLDER),test_logs))
 	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --ginkgo.focus="$(TEST_FOCUS)"))
 	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --ginkgo.skip="$(TEST_SKIP)"))
-	$(if $(TEST_SKIP),$(eval E2E_ARGS += -e2e.test-skip="$(TEST_SKIP)"))
 	$(if $(LABEL_FILTER),$(eval GINKGO_ARGS += --ginkgo.label-filter="$(LABEL_FILTER)"))
 	$(if $(FLAKE_ATTEMPTS),$(eval GINKGO_ARGS += --ginkgo.flake-attempts=$(FLAKE_ATTEMPTS)))
 	$(if $(E2E_NAMESPACE),$(eval export E2E_NAMESPACE=$(E2E_NAMESPACE)))
@@ -1017,10 +1018,9 @@ test-e2e-ginkgo: | $(GINKGO)
 test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
 	@echo "Running E2E tests (ginkgo compile)..."
 	@$(eval GINKGO_ARGS := -v)
-	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=test_logs)
+	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=$(or $(E2E_ARTIFACT_FOLDER),test_logs))
 	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --focus="$(TEST_FOCUS)"))
 	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --skip="$(TEST_SKIP)"))
-	$(if $(TEST_SKIP),$(eval E2E_ARGS += -e2e.test-skip="$(TEST_SKIP)"))
 	$(if $(LABEL_FILTER),$(eval GINKGO_ARGS += --label-filter="$(LABEL_FILTER)"))
 	$(if $(FLAKE_ATTEMPTS),$(eval GINKGO_ARGS += --flake-attempts=$(FLAKE_ATTEMPTS)))
 	$(if $(E2E_NAMESPACE),$(eval export E2E_NAMESPACE=$(E2E_NAMESPACE)))

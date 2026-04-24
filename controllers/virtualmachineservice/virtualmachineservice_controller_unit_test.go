@@ -581,7 +581,7 @@ func unitTestsReconcile() {
 				})
 
 				It("repopulates endpoints after defaulted ipFamilies are written to the Service", func() {
-					simulateAPIServerDefaultedIPFamilies(ctx, objKey, vmService.Spec.IPFamilyPolicy)
+					simulateAPIServerDefaultedIPFamilies(ctx, objKey)
 					Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
 					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 					Expect(endpoints.Subsets).To(HaveLen(1))
@@ -1435,20 +1435,14 @@ func nsxtLBProviderTestsReconcile() {
 func simulateAPIServerDefaultedIPFamilies(
 	ctx *builder.UnitTestContextForController,
 	svcKey client.ObjectKey,
-	policy *corev1.IPFamilyPolicy,
 ) {
 	svc := &corev1.Service{}
 	Expect(ctx.Client.Get(ctx, svcKey, svc)).To(Succeed())
 	if len(svc.Spec.IPFamilies) > 0 {
 		return
 	}
-	var families []corev1.IPFamily
-	if policy != nil && *policy == corev1.IPFamilyPolicyPreferDualStack {
-		// Align with single-stack envtest: PreferDualStack yields IPv4-only ipFamilies.
-		families = []corev1.IPFamily{corev1.IPv4Protocol}
-	} else {
-		families = []corev1.IPFamily{corev1.IPv4Protocol}
-	}
+	// Align with single-stack envtest: PreferDualStack yields IPv4-only ipFamilies.
+	families := []corev1.IPFamily{corev1.IPv4Protocol}
 	svc.Spec.IPFamilies = families
 	Expect(ctx.Client.Update(ctx, svc)).To(Succeed())
 }

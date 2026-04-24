@@ -31,7 +31,7 @@ RUN cd test/e2e/vmservice && go test -c -o /vm-operator/e2e-tests .
 # Runtime stage - minimal image with compiled tests
 FROM ${BASE_IMAGE} AS runtime
 
-# Build information (moved to runtime stage)
+# Build information
 ARG BUILD_BRANCH
 ARG BUILD_COMMIT  
 ARG BUILD_NUMBER
@@ -61,10 +61,10 @@ RUN tdnf update -y && \
         && \
     rm -rf /var/cache/tdnf
 
-# Install kubectl
-RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
-    chmod +x kubectl && \
-    mv kubectl /usr/local/bin/
+ARG KUBECTL_VERSION=v1.32.0
+ARG KUBECTL_URL=https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
+RUN curl -fsSL "${KUBECTL_URL}" -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
 
 # Create non-root user early 
 RUN groupadd -g 1000 vmoperator && \

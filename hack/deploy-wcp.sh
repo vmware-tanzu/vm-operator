@@ -208,7 +208,8 @@ function sv_get_vip_and_password() {
         fatal "No Supervisor cluster found"
     fi
 
-    SV_VIP=$(echo "$sv" | awk '/^IP:/ {print $2}')
+    # In dual stack, the both IPs are command separated. Take first one.
+    SV_VIP=$(echo "$sv" | awk '/^IP:/ {print $2}' | cut -d',' -f1)
     SV_PASSWORD=$(echo "$sv" | awk '/^PWD:/ {print $2}')
 
     log "Supervisor VIP: $SV_VIP Password: $SV_PASSWORD"

@@ -151,6 +151,12 @@ func CreateConfigSpec(
 		initResourceAllocation(&configSpec.MemoryAllocation)
 	}
 
+	// Apply placement policies and tag specs when feature is enabled
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+		genConfigSpecAffinityPolicies(vmCtx, &configSpec)
+		genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec)
+	}
+
 	return configSpec
 }
 

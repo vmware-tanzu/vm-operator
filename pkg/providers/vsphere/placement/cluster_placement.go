@@ -225,13 +225,14 @@ func getClusterPlacementRecommendations(
 	finder *find.Finder,
 	resourcePoolsMoRefs []vimtypes.ManagedObjectReference,
 	configSpecs []vimtypes.VirtualMachineConfigSpec,
-	needDatastorePlacement bool) (map[string]Recommendation, error) {
+	needHostPlacement, needDatastorePlacement bool) (map[string]Recommendation, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	placementSpec := vimtypes.PlaceVmsXClusterSpec{
 		PlacementType:           string(vimtypes.PlaceVmsXClusterSpecPlacementTypeCreateAndPowerOn),
 		ResourcePools:           resourcePoolsMoRefs,
 		VmPlacementSpecs:        make([]vimtypes.PlaceVmsXClusterSpecVmPlacementSpec, len(configSpecs)),
+		HostRecommRequired:      &needHostPlacement,
 		DatastoreRecommRequired: &needDatastorePlacement,
 	}
 

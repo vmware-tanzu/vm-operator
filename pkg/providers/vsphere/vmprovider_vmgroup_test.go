@@ -177,7 +177,7 @@ var _ = Describe(
 			Expect(pkgcond.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue(), "No placement ready condition")
 			Expect(ms.Placement.Zone).ToNot(BeEmpty(), "Missing Placement Zone")
 			Expect(ms.Placement.Pool).ToNot(BeEmpty(), "Missing Placement Pool")
-			Expect(ms.Placement.Node).To(BeEmpty(), "Has Placement Node")
+			Expect(ms.Placement.Node).ToNot(BeEmpty(), "Missing Placement Node")
 			if pkgcfg.FromContext(ctx).Features.FastDeploy {
 				Expect(ms.Placement.Datastores).ToNot(BeEmpty(), "Missing Placement Datastores")
 				// Verify against VirtualMachineImageCache.Status

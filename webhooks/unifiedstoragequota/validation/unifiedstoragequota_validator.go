@@ -98,9 +98,9 @@ type VMSnapshotRequestedCapacityHandler struct {
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	webhookNameLong := fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, webhookName)
 
 	logger := ctx.Logger.WithName(webhookName)
+	webhookNameLong := fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, webhookName)
 
 	// Build the webhookContext.
 	webhookContext := &pkgctx.WebhookContext{
@@ -108,7 +108,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		Name:               webhookName,
 		Namespace:          ctx.Namespace,
 		ServiceAccountName: ctx.ServiceAccountName,
-		Recorder:           record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Recorder:           record.New(mgr.GetEventRecorder(webhookNameLong)),
 		Logger:             logger,
 	}
 	// Initialize the webhook's decoder.

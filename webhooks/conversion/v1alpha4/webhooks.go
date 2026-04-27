@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha4
@@ -15,66 +15,57 @@ import (
 
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.VirtualMachine{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachine{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.VirtualMachineClass{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachineClass{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
 	if pkgcfg.FromContext(ctx).Features.ImmutableClasses {
-		if err := ctrl.NewWebhookManagedBy(mgr).
-			For(&vmopv1a4.VirtualMachineClassInstance{}).
+		if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachineClassInstance{}).
 			Complete(); err != nil {
 
 			return err
 		}
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.VirtualMachineImage{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachineImage{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.ClusterVirtualMachineImage{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.ClusterVirtualMachineImage{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.VirtualMachinePublishRequest{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachinePublishRequest{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.VirtualMachineService{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachineService{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.VirtualMachineSetResourcePolicy{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachineSetResourcePolicy{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a4.VirtualMachineWebConsoleRequest{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a4.VirtualMachineWebConsoleRequest{}).
 		Complete(); err != nil {
 
 		return err

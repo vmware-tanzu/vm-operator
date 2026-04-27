@@ -7,7 +7,7 @@ package builder
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	clientgorecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -89,7 +89,7 @@ func KnownObjectTypes() []client.Object {
 }
 
 func NewFakeRecorder() (record.Recorder, chan string) {
-	fakeEventRecorder := clientgorecord.NewFakeRecorder(1024)
+	fakeEventRecorder := events.NewFakeRecorder(1024)
 	recorder := record.New(fakeEventRecorder)
 	return recorder, fakeEventRecorder.Events
 }

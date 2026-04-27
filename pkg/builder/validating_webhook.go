@@ -80,7 +80,7 @@ func NewValidatingWebhook(
 		Name:                            webhookNameShort,
 		Namespace:                       ctx.Namespace,
 		ServiceAccountName:              ctx.ServiceAccountName,
-		Recorder:                        record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Recorder:                        record.New(mgr.GetEventRecorder(webhookNameLong)),
 		Logger:                          ctx.Logger.WithName(webhookNameShort),
 		EnableWebhookClientVerification: ctx.EnableWebhookClientVerification,
 	}

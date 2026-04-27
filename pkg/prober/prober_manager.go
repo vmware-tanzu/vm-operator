@@ -91,7 +91,7 @@ func AddToManager(
 	mgr ctrlmgr.Manager,
 	vmProvider providers.VirtualMachineProviderInterface) (Manager, error) {
 
-	probeRecorder := vmoprecord.New(mgr.GetEventRecorderFor(proberManagerName))
+	probeRecorder := vmoprecord.New(mgr.GetEventRecorder(proberManagerName))
 
 	// Add the probe manager explicitly as runnable in order to receive a Start() event.
 	m := NewManager(ctx, mgr.GetClient(), probeRecorder, vmProvider)

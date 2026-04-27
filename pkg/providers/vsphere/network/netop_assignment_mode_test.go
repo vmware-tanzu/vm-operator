@@ -12,7 +12,6 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 )
@@ -85,12 +84,12 @@ var _ = Describe("NetOP assignment mode helpers",
 				netopv1alpha1.NetworkInterfaceIPAssignmentModeNone),
 		)
 
-		DescribeTable("NetOPInterfaceIPFamilyPolicyFromIPAMModes",
+		DescribeTable("IPAMModesToNetOPInterfaceIPFamilyPolicy",
 			func(modes []corev1.IPFamily, want netopv1alpha1.NetworkInterfaceIPFamilyPolicy) {
-				Expect(network.NetOPInterfaceIPFamilyPolicyFromIPAMModes(modes)).To(Equal(want))
+				Expect(network.IPAMModesToNetOPInterfaceIPFamilyPolicy(modes)).To(Equal(want))
 			},
-			Entry("nil slice defaults to IPv4Only", []corev1.IPFamily(nil), netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only),
-			Entry("empty slice defaults to IPv4Only", []corev1.IPFamily{}, netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only),
+			Entry("nil slice returns empty string", []corev1.IPFamily(nil), netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")),
+			Entry("empty slice returns empty string", []corev1.IPFamily{}, netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")),
 			Entry("IPv4 only", []corev1.IPFamily{corev1.IPv4Protocol}, netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only),
 			Entry("IPv6 only", []corev1.IPFamily{corev1.IPv6Protocol}, netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only),
 			Entry("dual stack order v4 v6",
@@ -101,40 +100,4 @@ var _ = Describe("NetOP assignment mode helpers",
 				netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack),
 		)
 
-		Describe("SyncNetOPIPFamilyPolicyFromIPAMModes", func() {
-			It("clears NetOP IPFamilyPolicy when VM IPAMModes is nil and NetOP had a policy", func() {
-				netIf := &netopv1alpha1.NetworkInterface{
-					Spec: netopv1alpha1.NetworkInterfaceSpec{
-						IPFamilyPolicy: netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack,
-					},
-				}
-				iface := &vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth0"}
-				network.SyncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
-				Expect(netIf.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")))
-			})
-
-			It("clears NetOP IPFamilyPolicy when VM IPAMModes is empty slice", func() {
-				netIf := &netopv1alpha1.NetworkInterface{
-					Spec: netopv1alpha1.NetworkInterfaceSpec{
-						IPFamilyPolicy: netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only,
-					},
-				}
-				iface := &vmopv1.VirtualMachineNetworkInterfaceSpec{
-					Name:      "eth0",
-					IPAMModes: []corev1.IPFamily{},
-				}
-				network.SyncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
-				Expect(netIf.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")))
-			})
-
-			It("sets NetOP IPFamilyPolicy when VM IPAMModes is non-empty", func() {
-				netIf := &netopv1alpha1.NetworkInterface{}
-				iface := &vmopv1.VirtualMachineNetworkInterfaceSpec{
-					Name:      "eth0",
-					IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
-				}
-				network.SyncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
-				Expect(netIf.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only))
-			})
-		})
 	})

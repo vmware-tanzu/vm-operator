@@ -1307,15 +1307,14 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			})
 		})
 
-		Context("RequestedAddressFamilyMode", func() {
+		Context("IPAMModes", func() {
 			Context("IPv4Only policy", func() {
 				BeforeEach(func() {
-					ipFamilyPolicy := vmopv1.NetworkInterfaceIPFamilyPolicyIPv4Only
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:                       interfaceName,
-							Network:                    &common.PartialObjectRef{Name: networkName},
-							RequestedAddressFamilyMode: &ipFamilyPolicy,
+							Name:    interfaceName,
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 					}
 				})
@@ -1339,12 +1338,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			Context("IPv6Only policy", func() {
 				BeforeEach(func() {
-					ipFamilyPolicy := vmopv1.NetworkInterfaceIPFamilyPolicyIPv6Only
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:                       interfaceName,
-							Network:                    &common.PartialObjectRef{Name: networkName},
-							RequestedAddressFamilyMode: &ipFamilyPolicy,
+							Name:    interfaceName,
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 						},
 					}
 				})
@@ -1368,12 +1366,14 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			Context("DualStack policy", func() {
 				BeforeEach(func() {
-					ipFamilyPolicy := vmopv1.NetworkInterfaceIPFamilyPolicyDualStack
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:                       interfaceName,
-							Network:                    &common.PartialObjectRef{Name: networkName},
-							RequestedAddressFamilyMode: &ipFamilyPolicy,
+							Name:    interfaceName,
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{
+								corev1.IPv4Protocol,
+								corev1.IPv6Protocol,
+							},
 						},
 					}
 				})
@@ -1401,7 +1401,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						{
 							Name:    interfaceName,
 							Network: &common.PartialObjectRef{Name: networkName},
-							// RequestedAddressFamilyMode not set
+							// IPAMModes not set
 						},
 					}
 				})
@@ -1426,24 +1426,24 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			Context("multiple interfaces with different policies", func() {
 				BeforeEach(func() {
-					ipFamilyPolicy1 := vmopv1.NetworkInterfaceIPFamilyPolicyIPv4Only
-					ipFamilyPolicy2 := vmopv1.NetworkInterfaceIPFamilyPolicyIPv6Only
-					ipFamilyPolicy3 := vmopv1.NetworkInterfaceIPFamilyPolicyDualStack
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:                       "eth0",
-							Network:                    &common.PartialObjectRef{Name: networkName},
-							RequestedAddressFamilyMode: &ipFamilyPolicy1,
+							Name:    "eth0",
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 						{
-							Name:                       "eth1",
-							Network:                    &common.PartialObjectRef{Name: networkName},
-							RequestedAddressFamilyMode: &ipFamilyPolicy2,
+							Name:    "eth1",
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 						},
 						{
-							Name:                       "eth2",
-							Network:                    &common.PartialObjectRef{Name: networkName},
-							RequestedAddressFamilyMode: &ipFamilyPolicy3,
+							Name:    "eth2",
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{
+								corev1.IPv4Protocol,
+								corev1.IPv6Protocol,
+							},
 						},
 					}
 				})

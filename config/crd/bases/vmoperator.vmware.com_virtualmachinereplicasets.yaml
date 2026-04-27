@@ -10051,6 +10051,25 @@ spec:
                                     inside the guest, ex. dvd, cdrom, sda, etc.
                                   pattern: ^\w\w+$
                                   type: string
+                                ipamModes:
+                                  description: |-
+                                    IPAMModes lists which Kubernetes IP families (IPv4 and/or IPv6) should be
+                                    allocated for this interface. Values use corev1.IPFamily ("IPv4", "IPv6").
+                                    Each family appears at most once, duplicate values are rejected by the
+                                    API server, and order does not change meaning
+                                    — [IPv4, IPv6] and [IPv6, IPv4] are the same dual-stack request.
+
+                                    When empty, the network interface provider's default applies (for NetOP,
+                                    IPFamilyPolicy is left unset). When non-empty, the controller maps these
+                                    families to the provider's IP family policy (for NetOP: NetworkInterface.Spec.IPFamilyPolicy).
+                                  items:
+                                    description: |-
+                                      IPFamily represents the IP Family (IPv4 or IPv6). This type is used
+                                      to express the family of an IP expressed by a type (e.g. service.spec.ipFamilies).
+                                    type: string
+                                  maxItems: 2
+                                  type: array
+                                  x-kubernetes-list-type: set
                                 macAddr:
                                   description: |-
                                     MACAddr is the optional MAC address of this interface.
@@ -10129,21 +10148,6 @@ spec:
                                   required:
                                   - name
                                   type: object
-                                requestedAddressFamilyMode:
-                                  description: |-
-                                    RequestedAddressFamilyMode selects which address families this interface
-                                    should allocate. Values: IPv4Only, IPv6Only, DualStack.
-                                    When set to IPv4Only, only an IPv4 address will be allocated.
-                                    When set to IPv6Only, only an IPv6 address will be allocated.
-                                    When set to DualStack, both IPv4 and IPv6 addresses will be allocated.
-                                    The controller maps this to the network interface provider's representation.
-                                    If not specified, the field will be nil and the default behavior of the
-                                    network interface provider will be used.
-                                  enum:
-                                  - IPv4Only
-                                  - IPv6Only
-                                  - DualStack
-                                  type: string
                                 routes:
                                   description: |-
                                     Routes is a list of optional, static routes.
@@ -10285,6 +10289,8 @@ spec:
                               - message: vmxnet3 tuning fields require interface type
                                   VMXNet3
                                 rule: '!has(self.vmxnet3) || self.type == ''VMXNet3'''
+                              - message: each ipamModes entry must be IPv4 or IPv6
+                                rule: '!has(self.ipamModes) || self.ipamModes.all(m, m == ''IPv4'' || m == ''IPv6'')'
                             maxItems: 10
                             type: array
                             x-kubernetes-list-map-keys:

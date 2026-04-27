@@ -5,21 +5,10 @@
 package v1alpha6
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-)
-
-// NetworkInterfaceIPFamilyPolicy defines the IP family policy for a network interface.
-type NetworkInterfaceIPFamilyPolicy string
-
-const (
-	// NetworkInterfaceIPFamilyPolicyIPv4Only indicates only IPv4 addresses will be allocated.
-	NetworkInterfaceIPFamilyPolicyIPv4Only NetworkInterfaceIPFamilyPolicy = "IPv4Only"
-	// NetworkInterfaceIPFamilyPolicyIPv6Only indicates only IPv6 addresses will be allocated.
-	NetworkInterfaceIPFamilyPolicyIPv6Only NetworkInterfaceIPFamilyPolicy = "IPv6Only"
-	// NetworkInterfaceIPFamilyPolicyDualStack indicates both IPv4 and IPv6 addresses will be allocated.
-	NetworkInterfaceIPFamilyPolicyDualStack NetworkInterfaceIPFamilyPolicy = "DualStack"
 )
 
 // VirtualMachineNetworkRouteSpec defines a static route for a guest.
@@ -38,6 +27,7 @@ type VirtualMachineNetworkRouteSpec struct {
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(self.vmxnet3) || self.type == 'VMXNet3'",message="vmxnet3 tuning fields require interface type VMXNet3"
+// +kubebuilder:validation:XValidation:rule="!has(self.ipamModes) || self.ipamModes.all(m, m == 'IPv4' || m == 'IPv6')",message="each ipamModes entry must be IPv4 or IPv6"
 
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's
 // network interface.
@@ -237,17 +227,19 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	AdvancedProperties []vmopv1common.KeyValuePair `json:"advancedProperties,omitempty"`
 
 	// +optional
-	// +kubebuilder:validation:Enum=IPv4Only;IPv6Only;DualStack
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=2
 
-	// RequestedAddressFamilyMode selects which address families this interface
-	// should allocate. Values: IPv4Only, IPv6Only, DualStack.
-	// When set to IPv4Only, only an IPv4 address will be allocated.
-	// When set to IPv6Only, only an IPv6 address will be allocated.
-	// When set to DualStack, both IPv4 and IPv6 addresses will be allocated.
-	// The controller maps this to the network interface provider's representation.
-	// If not specified, the field will be nil and the default behavior of the
-	// network interface provider will be used.
-	RequestedAddressFamilyMode *NetworkInterfaceIPFamilyPolicy `json:"requestedAddressFamilyMode,omitempty"`
+	// IPAMModes lists which Kubernetes IP families (IPv4 and/or IPv6) should be
+	// allocated for this interface. Values use corev1.IPFamily ("IPv4", "IPv6").
+	// Each family appears at most once, duplicate values are rejected by the
+	// API server, and order does not change meaning
+	// — [IPv4, IPv6] and [IPv6, IPv4] are the same dual-stack request.
+	//
+	// When empty, the network interface provider's default applies (for NetOP,
+	// IPFamilyPolicy is left unset). When non-empty, the controller maps these
+	// families to the provider's IP family policy (for NetOP: NetworkInterface.Spec.IPFamilyPolicy).
+	IPAMModes []corev1.IPFamily `json:"ipamModes,omitempty"`
 }
 
 // VirtualMachineNetworkVLANSpec describes a VLAN sub-interface configuration.

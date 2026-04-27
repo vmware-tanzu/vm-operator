@@ -7,6 +7,7 @@ package v1alpha4
 import (
 	"slices"
 
+	corev1 "k8s.io/api/core/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
@@ -115,7 +116,7 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 			continue
 		}
 		dstIface := &dst.Spec.Network.Interfaces[i]
-		dstIface.RequestedAddressFamilyMode = srcIface.RequestedAddressFamilyMode
+		dstIface.IPAMModes = append([]corev1.IPFamily(nil), srcIface.IPAMModes...)
 		dstIface.Type = srcIface.Type
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
 		dstIface.VMXNet3 = srcIface.VMXNet3

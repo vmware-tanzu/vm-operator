@@ -105,50 +105,50 @@ func intgTestsValidateCreate() {
 
 	Describe("CRD schema and CEL (ipFamilies and ipFamilyPolicy)", func() {
 		It("allows LoadBalancer with dual-stack ipFamilies and PreferDualStack policy", func() {
-			vm := ctx.vmService.DeepCopy()
-			vm.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+			vmSvc := ctx.vmService.DeepCopy()
+			vmSvc.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
 			p := corev1.IPFamilyPolicyPreferDualStack
-			vm.Spec.IPFamilyPolicy = &p
-			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+			vmSvc.Spec.IPFamilyPolicy = &p
+			Expect(ctx.Client.Create(ctx, vmSvc)).To(Succeed())
 		})
 
 		It("rejects ExternalName when ipFamilies is set", func() {
-			vm := ctx.vmService.DeepCopy()
-			vm.Spec.Type = vmopv1.VirtualMachineServiceTypeExternalName
-			vm.Spec.ExternalName = "backend.example.com."
-			vm.Spec.Ports = nil
-			vm.Spec.Selector = nil
-			vm.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
-			err := ctx.Client.Create(ctx, vm)
+			vmSvc := ctx.vmService.DeepCopy()
+			vmSvc.Spec.Type = vmopv1.VirtualMachineServiceTypeExternalName
+			vmSvc.Spec.ExternalName = "backend.example.com."
+			vmSvc.Spec.Ports = nil
+			vmSvc.Spec.Selector = nil
+			vmSvc.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
+			err := ctx.Client.Create(ctx, vmSvc)
 			Expect(apierrors.IsInvalid(err)).To(BeTrue())
 			Expect(err.Error()).To(ContainSubstring("ipFamilies and ipFamilyPolicy may not be set when type is ExternalName"))
 		})
 
 		It("rejects ExternalName when ipFamilyPolicy is set", func() {
-			vm := ctx.vmService.DeepCopy()
-			vm.Spec.Type = vmopv1.VirtualMachineServiceTypeExternalName
-			vm.Spec.ExternalName = "backend.example.com."
-			vm.Spec.Ports = nil
-			vm.Spec.Selector = nil
+			vmSvc := ctx.vmService.DeepCopy()
+			vmSvc.Spec.Type = vmopv1.VirtualMachineServiceTypeExternalName
+			vmSvc.Spec.ExternalName = "backend.example.com."
+			vmSvc.Spec.Ports = nil
+			vmSvc.Spec.Selector = nil
 			p := corev1.IPFamilyPolicySingleStack
-			vm.Spec.IPFamilyPolicy = &p
-			err := ctx.Client.Create(ctx, vm)
+			vmSvc.Spec.IPFamilyPolicy = &p
+			err := ctx.Client.Create(ctx, vmSvc)
 			Expect(apierrors.IsInvalid(err)).To(BeTrue())
 			Expect(err.Error()).To(ContainSubstring("ipFamilies and ipFamilyPolicy may not be set when type is ExternalName"))
 		})
 
 		It("rejects duplicate ipFamilies entries", func() {
-			vm := ctx.vmService.DeepCopy()
-			vm.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv4Protocol}
-			err := ctx.Client.Create(ctx, vm)
+			vmSvc := ctx.vmService.DeepCopy()
+			vmSvc.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv4Protocol}
+			err := ctx.Client.Create(ctx, vmSvc)
 			Expect(apierrors.IsInvalid(err)).To(BeTrue())
 			Expect(err.Error()).To(ContainSubstring("ipFamilies must not contain duplicate entries"))
 		})
 
 		It("rejects ipFamilies values outside IPv4 and IPv6", func() {
-			vm := ctx.vmService.DeepCopy()
-			vm.Spec.IPFamilies = []corev1.IPFamily{"bogus"}
-			err := ctx.Client.Create(ctx, vm)
+			vmSvc := ctx.vmService.DeepCopy()
+			vmSvc.Spec.IPFamilies = []corev1.IPFamily{"bogus"}
+			err := ctx.Client.Create(ctx, vmSvc)
 			Expect(apierrors.IsInvalid(err)).To(BeTrue())
 			// OpenAPI items.enum may reject before CEL; either error is acceptable.
 			Expect(err.Error()).To(Or(
@@ -159,23 +159,23 @@ func intgTestsValidateCreate() {
 		})
 
 		It("rejects more than two ipFamilies entries", func() {
-			vm := ctx.vmService.DeepCopy()
-			vm.Spec.IPFamilies = []corev1.IPFamily{
+			vmSvc := ctx.vmService.DeepCopy()
+			vmSvc.Spec.IPFamilies = []corev1.IPFamily{
 				corev1.IPv4Protocol,
 				corev1.IPv6Protocol,
 				corev1.IPv4Protocol,
 			}
-			err := ctx.Client.Create(ctx, vm)
+			err := ctx.Client.Create(ctx, vmSvc)
 			Expect(apierrors.IsInvalid(err)).To(BeTrue())
 			// OpenAPI maxItems vs CEL duplicate rule: message text differs by apiserver version.
 			Expect(err.Error()).To(ContainSubstring("ipFamilies"))
 		})
 
 		It("rejects unknown ipFamilyPolicy value", func() {
-			vm := ctx.vmService.DeepCopy()
+			vmSvc := ctx.vmService.DeepCopy()
 			bad := corev1.IPFamilyPolicy("bogus")
-			vm.Spec.IPFamilyPolicy = &bad
-			err := ctx.Client.Create(ctx, vm)
+			vmSvc.Spec.IPFamilyPolicy = &bad
+			err := ctx.Client.Create(ctx, vmSvc)
 			Expect(apierrors.IsInvalid(err)).To(BeTrue())
 			Expect(err.Error()).To(Or(
 				ContainSubstring("ipFamilyPolicy"),

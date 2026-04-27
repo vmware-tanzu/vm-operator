@@ -357,6 +357,14 @@ func NetOPCRName(vmName, networkName, interfaceName string, isV1A1 bool) string 
 	return name
 }
 
+func syncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec, netIf *netopv1alpha1.NetworkInterface) {
+	if len(interfaceSpec.IPAMModes) > 0 {
+		netIf.Spec.IPFamilyPolicy = NetOPInterfaceIPFamilyPolicyFromIPAMModes(interfaceSpec.IPAMModes)
+	} else {
+		netIf.Spec.IPFamilyPolicy = ""
+	}
+}
+
 func createNetOPNetworkInterface(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
@@ -423,10 +431,9 @@ func createNetOPNetworkInterface(
 		}
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
-		// Set IPFamilyPolicy on the NetworkInterface CR when the VM requests an address family mode.
-		if interfaceSpec.RequestedAddressFamilyMode != nil {
-			netIf.Spec.IPFamilyPolicy = netopv1alpha1.NetworkInterfaceIPFamilyPolicy(*interfaceSpec.RequestedAddressFamilyMode)
-		}
+		// Set or clear IPFamilyPolicy from VM IPAMModes. When IPAMModes is empty, clear
+		// the policy so NetOP can apply its default (and updates remove a prior policy).
+		syncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec, netIf)
 		return nil
 	})
 
@@ -473,6 +480,29 @@ func effectiveNetOPIPv6AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) n
 		return st.IPv6AssignmentMode
 	}
 	return netopv1alpha1.NetworkInterfaceIPAssignmentModeNone
+}
+
+// NetOPInterfaceIPFamilyPolicyFromIPAMModes maps spec IPAMModes (Kubernetes IP families) to
+// NetOP NetworkInterfaceIPFamilyPolicy. With both families present it returns DualStack;
+// IPv6 alone returns IPv6-only; otherwise IPv4-only (including empty input).
+func NetOPInterfaceIPFamilyPolicyFromIPAMModes(ipamModes []corev1.IPFamily) netopv1alpha1.NetworkInterfaceIPFamilyPolicy {
+	hasV4, hasV6 := false, false
+	for _, f := range ipamModes {
+		if f == corev1.IPv4Protocol {
+			hasV4 = true
+		}
+		if f == corev1.IPv6Protocol {
+			hasV6 = true
+		}
+	}
+	switch {
+	case hasV4 && hasV6:
+		return netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack
+	case hasV6:
+		return netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only
+	default:
+		return netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only
+	}
 }
 
 func netOpNetIfToResult(

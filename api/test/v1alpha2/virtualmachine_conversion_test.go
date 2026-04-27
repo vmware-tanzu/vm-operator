@@ -1118,4 +1118,21 @@ func TestVirtualMachineConversion(t *testing.T) {
 			g.Expect(eth1.AdvancedProperties).To(Equal([]vmopv1common.KeyValuePair{{Key: "eth1-key", Value: "eth1-val"}}))
 		})
 	})
+
+	t.Run("VirtualMachine hub-spoke-hub with legacy NIC type", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Network: &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+							Type: vmopv1.VirtualMachineNetworkInterfaceTypeE1000e,
+						},
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
 }

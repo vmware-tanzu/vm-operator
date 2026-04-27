@@ -126,7 +126,7 @@ const (
 	// FeatureVersionAllDisksArePVCs refers to the AllDisksArePVCs capability.
 	FeatureVersionAllDisksArePVCs // 4
 
-	// FeatureVersionNetExtraConfig refers to VM network extra config (NIC type
+	// FeatureVersionTelcoVMServiceAPI refers to VM network extra config (NIC type
 	// and related fields) schema upgrade and backfill.
 	FeatureVersionTelcoVMServiceAPI // 8
 )

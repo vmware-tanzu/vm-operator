@@ -16023,7 +16023,8 @@ spec:
                       - message: vmxnet3 tuning fields require interface type VMXNet3
                         rule: '!has(self.vmxnet3) || self.type == ''VMXNet3'''
                       - message: each ipamModes entry must be IPv4 or IPv6
-                        rule: '!has(self.ipamModes) || self.ipamModes.all(m, m == ''IPv4'' || m == ''IPv6'')'
+                        rule: '!has(self.ipamModes) || self.ipamModes.all(m, m ==
+                          ''IPv4'' || m == ''IPv6'')'
                     maxItems: 10
                     type: array
                     x-kubernetes-list-map-keys:

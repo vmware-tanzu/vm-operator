@@ -271,13 +271,9 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 		return err
 	}
 
-	// Load the Service from the API server so endpoint filtering uses the same
-	// spec.ipFamilies the apiserver stored (including defaulting when policy-only).
-	svcNamespacedName := client.ObjectKey{Namespace: service.Namespace, Name: service.Name}
-	if err := r.Client.Get(ctx, svcNamespacedName, service); err != nil {
-		ctx.Logger.Error(err, "Failed to get Service after create or update")
-		return err
-	}
+	ctx.Logger.Info("Service spec.ipFamilies",
+		"service", client.ObjectKeyFromObject(service).String(),
+		"serviceSpecIPFamilies", service.Spec.IPFamilies)
 
 	err = r.createOrUpdateEndpoints(ctx, service)
 	if err != nil {
@@ -768,7 +764,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 }
 
 // determineAllowedIPFamilies returns which IP families may appear on Endpoints for this Service.
-// Only spec.ipFamilies is used (after persisting the Service so apiserver defaulting applies).
+// Only spec.ipFamilies is used (from the Service object after createOrUpdateService / apiserver merge).
 func determineAllowedIPFamilies(service *corev1.Service) map[corev1.IPFamily]bool {
 	allowedFamilies := make(map[corev1.IPFamily]bool)
 	for _, family := range service.Spec.IPFamilies {

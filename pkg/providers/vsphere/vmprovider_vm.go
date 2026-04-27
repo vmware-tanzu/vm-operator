@@ -158,12 +158,7 @@ func (vs *vSphereVMProvider) GetVMLocation(vmCtx pkgctx.VirtualMachineContext, v
 	}
 	if o.ResourcePool != nil {
 		rp := object.NewResourcePool(vcClient.VimClient(), *o.ResourcePool)
-		var rpMo mo.ResourcePool
-		if err := rp.Properties(vmCtx, rp.Reference(), []string{"name"}, &rpMo); err != nil {
-			return "", err
-		}
-		return rpMo.Name, nil
-		//return rp.ObjectName(ctx)
+		return rp.ObjectName(vmCtx)
 	}
 	return "", fmt.Errorf("resource pool not found for VM %s", vm.Name())
 }
@@ -1150,7 +1145,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	if currentLocation != expectedPrefix && !strings.HasPrefix(currentLocation, expectedPrefix+"-") {
 		// Use the MarkFalse logic
 		pkgcnd.MarkFalse(
-			vmCtx.VM, vmopv1.VirtualMachineConditionCreated, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)
+			vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)
 
 		vmCtx.VM.Annotations[vmopv1.PauseAnnotation] = "true"
 		return fmt.Errorf("reconciliation stopped : VM location mismatch")

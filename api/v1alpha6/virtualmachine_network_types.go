@@ -183,14 +183,12 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	SearchDomains []string `json:"searchDomains,omitempty"`
 
 	// +optional
-	// +kubebuilder:validation:Enum=VMXNet3;SRIOV
+	// +kubebuilder:validation:Enum=VMXNet3;SRIOV;E1000;E1000e;VMXNet2;PCNet32
 
-	// Type is the NIC device model: VMXNet3 or SRIOV when set. The field is
-	// optional; when omitted or empty, it is derived from the VirtualMachineClass
-	// ConfigSpec ethernet devices when mappable (admission on create, and schema
-	// upgrade for existing objects when the VM extra config capability is on),
-	// defaulting to VMXNet3. On update, an empty value may preserve the prior
-	// stored type. When vmxnet3 tuning is present, Type must be VMXNet3.
+	// Type is the NIC device model when set (VMXNet3, SRIOV, or legacy vSphere
+	// types: E1000, E1000e, VMXNet2, PCNet32). If omitted, VMXNet3 will be used
+	// for new network interfaces. When vmxnet3 tuning is present, Type must be
+	// VMXNet3.
 	Type VirtualMachineNetworkInterfaceType `json:"type,omitempty"`
 
 	// +optional

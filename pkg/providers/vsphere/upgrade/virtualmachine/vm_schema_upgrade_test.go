@@ -328,22 +328,72 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.Features.TelcoVMServiceAPI = true
 						})
-						vm.Spec.ClassName = "schema-up-class"
+
 						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{Name: "eth0"},
 							},
 						}
-						cl := builder.DummyVirtualMachineClass("schema-up-class")
-						cl.Namespace = testNamespace
-						Expect(k8sClient.Create(ctx, cl)).To(Succeed())
 					})
 
-					It("should set feature version including NetExtraConfig and backfill NIC type", func() {
-						assertUpgraded()
-						assertFeatureVersion("9")
-						Expect(vm.Spec.Network.Interfaces[0].Type).To(
-							Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+					When("VC VM has an vmxnet3 NIC", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualVmxnet3{},
+							}
+						})
+						It("should backfill NIC type from moVM", func() {
+							assertUpgraded()
+							assertFeatureVersion("9")
+							Expect(vm.Spec.Network.Interfaces[0].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+						})
+					})
+
+					When("VC VM has an SR-IOV NIC", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualSriovEthernetCard{},
+							}
+						})
+						It("should backfill SRIOV from moVM", func() {
+							assertUpgraded()
+							assertFeatureVersion("9")
+							Expect(vm.Spec.Network.Interfaces[0].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV))
+						})
+					})
+
+					When("VC VM has multiple NICs", func() {
+						BeforeEach(func() {
+							vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0-vmxnet3"},
+								{Name: "eth1-e1000"},
+								{Name: "eth2-e1000e"},
+								{Name: "eth3-vmxnet2"},
+								{Name: "eth4-pcnet32"},
+								{Name: "eth5-sriov"},
+								{Name: "eth6-extra"},
+							}
+
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualVmxnet3{},
+								&vimtypes.VirtualE1000{},
+								&vimtypes.VirtualE1000e{},
+								&vimtypes.VirtualVmxnet2{},
+								&vimtypes.VirtualPCNet32{},
+								&vimtypes.VirtualSriovEthernetCard{},
+							}
+						})
+						It("should backfill types from moVM", func() {
+							assertUpgraded()
+							assertFeatureVersion("9")
+							Expect(vm.Spec.Network.Interfaces[0].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+							Expect(vm.Spec.Network.Interfaces[1].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeE1000))
+							Expect(vm.Spec.Network.Interfaces[2].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeE1000e))
+							Expect(vm.Spec.Network.Interfaces[3].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet2))
+							Expect(vm.Spec.Network.Interfaces[4].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypePCNet32))
+							Expect(vm.Spec.Network.Interfaces[5].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV))
+							Expect(vm.Spec.Network.Interfaces[6].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+						})
 					})
 				})
 			})

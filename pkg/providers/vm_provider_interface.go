@@ -91,5 +91,4 @@ type VirtualMachineProviderInterface interface {
 	GetSnapshotSize(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	// SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
 	SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.VirtualMachine) error
-	GetVMLocation(ctx context.Context, vm *vmopv1.VirtualMachine) (string, error)
 }

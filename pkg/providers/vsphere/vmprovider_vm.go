@@ -149,33 +149,23 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 	return vs.createOrUpdateVirtualMachine(ctx, vm, true)
 }
 
-func (vs *vSphereVMProvider) GetVMLocation(ctx context.Context, vm *vmopv1.VirtualMachine) (string, error) {
-	vmCtx := pkgctx.NewVirtualMachineContext(
-		pkgctx.WithVCOpID(ctx, vm, "vmLocation"),
-		vm,
-	)
-	ctx = vmCtx.Context
-
-	client, err := vs.getVcClient(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	vcVM, err := vs.getVM(vmCtx, client, true)
-	if err != nil {
-		return "", err
-	}
+func (vs *vSphereVMProvider) GetVMLocation(vmCtx pkgctx.VirtualMachineContext, vm *object.VirtualMachine, vcClient *vcclient.Client) (string, error) {
 
 	var o mo.VirtualMachine
-	err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"resourcePool"}, &o)
+	err := vm.Properties(vmCtx, vm.Reference(), []string{"resourcePool"}, &o)
 	if err != nil {
 		return "", err
 	}
 	if o.ResourcePool != nil {
-		rp := object.NewResourcePool(client.VimClient(), *o.ResourcePool)
-		return rp.ObjectName(ctx)
+		rp := object.NewResourcePool(vcClient.VimClient(), *o.ResourcePool)
+		var rpMo mo.ResourcePool
+		if err := rp.Properties(vmCtx, rp.Reference(), []string{"name"}, &rpMo); err != nil {
+			return "", err
+		}
+		return rpMo.Name, nil
+		//return rp.ObjectName(ctx)
 	}
-	return "", fmt.Errorf("resource pool not found for VM %s", vm.Name)
+	return "", fmt.Errorf("resource pool not found for VM %s", vm.Name())
 }
 
 func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
@@ -1059,7 +1049,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
 	}
 
-	if err := vs.reconcileLocation(vmCtx); err != nil {
+	if err := vs.reconcileLocation(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
 			return errOrReconcileErr(reconcileErr, err)
 		}
@@ -1143,20 +1133,21 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	return reconcileErr
 }
 
-func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext) error {
+func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualMachine, vcClient *vcclient.Client) error {
 	if vmCtx.VM.Status.UniqueID == "" {
 		// Skip the check because the VM doesn't exist in vCenter yet.
 		return nil
 	}
 
 	// Fetch the VM location from vCenter
-	currentLocation, err := vs.GetVMLocation(vmCtx.Context, vmCtx.VM)
+	currentLocation, err := vs.GetVMLocation(vmCtx, vcVM, vcClient)
 	if err != nil {
 		return err
 	}
 
 	// 2. Compare Actual (vCenter) vs Expected (K8s)
-	if currentLocation != vmCtx.VM.Namespace {
+	expectedPrefix := vmCtx.VM.Namespace
+	if currentLocation != expectedPrefix && !strings.HasPrefix(currentLocation, expectedPrefix+"-") {
 		// Use the MarkFalse logic
 		pkgcnd.MarkFalse(
 			vmCtx.VM, vmopv1.VirtualMachineConditionCreated, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)

@@ -6,6 +6,7 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 )
 
 // NoRequeueError may be returned from any part of a reconcile call stack and the
@@ -18,6 +19,12 @@ type NoRequeueError struct {
 	// returning a TerminalError. This is helpful when the error is intended to
 	// stop the reconciliation loop, but not intended to be logged as an error.
 	DoNotErr bool
+}
+
+// NoRequeueErrorf returns a NoRequeueError with the message from the
+// formatted string.
+func NoRequeueErrorf(format string, a ...any) NoRequeueError {
+	return NoRequeueError{Message: fmt.Sprintf(format, a...)}
 }
 
 func (e NoRequeueError) Error() string {
@@ -47,4 +54,10 @@ func IsNoRequeueNoError(err error) bool {
 // NoRequeueNoErr returns a NoRequeueErr with DoNotErr=true.
 func NoRequeueNoErr(msg string) error {
 	return NoRequeueError{Message: msg, DoNotErr: true}
+}
+
+// NoRequeueNoErrorf returns a NoRequeueErr with DoNotErr=true with the
+// message from the formatted string.
+func NoRequeueNoErrorf(format string, a ...any) error {
+	return NoRequeueError{Message: fmt.Sprintf(format, a...), DoNotErr: true}
 }

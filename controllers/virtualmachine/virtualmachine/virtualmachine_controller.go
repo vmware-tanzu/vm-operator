@@ -22,10 +22,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -181,19 +183,36 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestForOwner(
 				mgr.GetScheme(),
 				mgr.GetRESTMapper(),
-				&vmopv1.VirtualMachine{},
-				handler.OnlyControllerOwner()),
+				&vmopv1.VirtualMachine{}),
 		)
 	}
 
-	if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
+	switch pkgcfg.FromContext(ctx).NetworkProviderType {
+	case pkgcfg.NetworkProviderTypeVDS:
+		builder = builder.Watches(
+			&netopv1alpha1.NetworkInterface{},
+			handler.EnqueueRequestForOwner(
+				mgr.GetScheme(),
+				mgr.GetRESTMapper(),
+				&vmopv1.VirtualMachine{}),
+		)
+
+	case pkgcfg.NetworkProviderTypeNSXT:
+		builder = builder.Watches(
+			&ncpv1alpha1.VirtualNetworkInterface{},
+			handler.EnqueueRequestForOwner(
+				mgr.GetScheme(),
+				mgr.GetRESTMapper(),
+				&vmopv1.VirtualMachine{}),
+		)
+
+	case pkgcfg.NetworkProviderTypeVPC:
 		builder = builder.Watches(
 			&vpcv1alpha1.SubnetPort{},
 			handler.EnqueueRequestForOwner(
 				mgr.GetScheme(),
 				mgr.GetRESTMapper(),
-				&vmopv1.VirtualMachine{},
-				handler.OnlyControllerOwner()),
+				&vmopv1.VirtualMachine{}),
 		)
 	}
 

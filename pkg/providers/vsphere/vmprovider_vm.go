@@ -1044,12 +1044,6 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
 	}
 
-	if err := vs.reconcileLocation(vmCtx, vcVM, vcClient); err != nil {
-		if pkgerr.IsNoRequeueError(err) {
-			return errOrReconcileErr(reconcileErr, err)
-		}
-		reconcileErr = getReconcileErr("status", reconcileErr, err)
-	}
 	//
 	// 6. Reconcile schema upgrade
 	//
@@ -1125,24 +1119,40 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		}
 	}
 
+	if err := vs.reconcileLocation(vmCtx, vcVM, vcClient); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("status", reconcileErr, err)
+	}
+
 	return reconcileErr
 }
 
 func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualMachine, vcClient *vcclient.Client) error {
-	if vmCtx.VM.Status.UniqueID == "" {
-		// Skip the check because the VM doesn't exist in vCenter yet.
-		return nil
-	}
-
 	// Fetch the VM location from vCenter
 	currentLocation, err := vs.GetVMLocation(vmCtx, vcVM, vcClient)
 	if err != nil {
 		return err
 	}
-
 	// 2. Compare Actual (vCenter) vs Expected (K8s)
-	expectedPrefix := vmCtx.VM.Namespace
-	if currentLocation != expectedPrefix && !strings.HasPrefix(currentLocation, expectedPrefix+"-") {
+
+	resourcePolicy, _ := GetVMSetResourcePolicy(vmCtx, vs.k8sClient) //
+
+	isValidLocation := false
+	if currentLocation == vmCtx.VM.Namespace {
+		isValidLocation = true //
+	}
+	if resourcePolicy != nil && !isValidLocation {
+		childRP := resourcePolicy.Spec.ResourcePool.Name //
+		childFolder := resourcePolicy.Spec.Folder        //
+
+		if (childRP != "" && currentLocation == childRP) ||
+			(childFolder != "" && currentLocation == childFolder) {
+			isValidLocation = true
+		}
+	}
+	if !isValidLocation {
 		// Use the MarkFalse logic
 		pkgcnd.MarkFalse(
 			vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)

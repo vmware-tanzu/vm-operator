@@ -102,15 +102,15 @@ const (
 	// for mutability of Storage Policy via Volume Attributes Class (VAC).
 	CapabilityKeyStoragePolicyMutability = "supports_VM_PVC_storage_policy_mutability"
 
-	// CapabilityKeyVMExtraConfig is the name of the capability key defined
-	// in the Supervisor capabilities CRD for the VM Service's support for
-	// VM extraConfig configuration: spec.advanced first-class fields, extraConfig
-	// fallback, and per-NIC VMXNet3 tuning properties.
-	CapabilityKeyVMExtraConfig = "supports_vm_service_vm_extra_config"
-
 	// CapabilityKeyVlanSubinterface is the name of capability key defined in the
 	// Supervisor capabilities CRD for the VM service supports VLAN Sub-Interfaces.
 	CapabilityKeyVlanSubinterface = "supports_vm_service_vlan_subinterface"
+
+	// CapabilityKeyTelcoVMServiceAPI is the name of the capability key defined
+	// in the Supervisor capabilities CRD for the VM Service's support for
+	// Telco VM advanced properties: spec.advanced first-class fields, extraConfig
+	// fallback, and per-NIC VMXNet3 tuning properties.
+	CapabilityKeyTelcoVMServiceAPI = "supports_telco_vm_service_api"
 )
 
 var (
@@ -275,10 +275,10 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyStoragePolicyMutability:
 			fs.StoragePolicyMutability = capStatus.Activated
-		case CapabilityKeyVMExtraConfig:
-			fs.VMExtraConfig = capStatus.Activated
 		case CapabilityKeyVlanSubinterface:
 			fs.VMVlanSubinterface = capStatus.Activated
+		case CapabilityKeyTelcoVMServiceAPI:
+			fs.TelcoVMServiceAPI = capStatus.Activated
 		}
 
 	}

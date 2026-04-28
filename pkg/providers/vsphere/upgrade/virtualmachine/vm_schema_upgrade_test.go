@@ -323,10 +323,10 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 					})
 				})
 
-				When("VMExtraConfig feature is enabled", func() {
+				When("TelcoVMServiceAPI feature is enabled", func() {
 					BeforeEach(func() {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.VMExtraConfig = true
+							config.Features.TelcoVMServiceAPI = true
 						})
 						vm.Spec.ClassName = "schema-up-class"
 						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{

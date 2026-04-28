@@ -15938,16 +15938,25 @@ spec:
                               description: |-
                                 CoalescingParams sets the coalescing parameter when coalescingScheme is
                                 RateBasedCoalescing or Static. The format depends on the scheme:
-                                  - RateBasedCoalescing: single integer string, interrupts/sec (100-100000, e.g. "4000")
-                                  - Static: single integer string, packet queue limit (1-64, e.g. "64")
+                                  - RateBasedCoalescing: integer string for interrupts/sec (e.g. "4000")
+                                  - Static: integer string for packet queue limit (e.g. "64")
                                 Ignored when coalescingScheme is Disabled or Adapt.
+                                Must be length < 128 and valid 32-bit unsigned integer for RateBasedCoalescing.
                               type: string
                             coalescingScheme:
                               description: |-
                                 CoalescingScheme sets the interrupt coalescing scheme for this interface.
                                 Use CoalescingSchemeDisabled for latency-sensitive (LS=High) non-DPDK
                                 workloads to minimise interrupt latency.
+                                Accepts known enum values (Disabled, Adapt, Static, RateBasedCoalescing) or any
+                                string with length < 128 for forward compatibility.
                               type: string
+                              x-kubernetes-validations:
+                              - message: must be Disabled, Adapt, Static, RateBasedCoalescing,
+                                  or any other string shorter than 128 characters
+                                rule: self == 'Disabled' || self == 'Adapt' || self
+                                  == 'Static' || self == 'RateBasedCoalescing' ||
+                                  size(self) < 128
                             ctxPerDev:
                               description: |-
                                 CtxPerDev sets the TX context threading mode for this interface.
@@ -15956,7 +15965,14 @@ spec:
                                 PerQueue gives 2-8 TX threads per vNIC queue (scheduler-determined);
                                 recommended for 100G workloads combined with pnicFeatures including ReceiveSideScaling.
                                 Visible in esxtop as NetWorld-Dev-<name>-Tx threads.
+                                Accepts known enum values (PerDevice, PerVM, PerQueue) or single digit integers (1-9)
+                                for direct VMX values.
+                              maxLength: 50
                               type: string
+                              x-kubernetes-validations:
+                              - message: must be PerDevice, PerVM, PerQueue, or a
+                                  number (1-9)
+                                rule: self.matches("^(PerDevice|PerVM|PerQueue|[1-9])$")
                             pnicFeatures:
                               description: |-
                                 PNICFeatures lists physical NIC queue offload features to enable. The
@@ -15964,12 +15980,22 @@ spec:
                                 NIC RSS hardware queues. Typically set to ["ReceiveSideScaling"] alongside
                                 ctxPerDev=PerQueue for maximum 100G throughput. Omitted or empty means no
                                 extra pNIC queue features beyond defaults.
+                                Accepts known enum values (LargeReceiveOffload, ReceiveSideScaling) or integer strings
+                                representing powers of 2 (1,2,4,8,...) for direct VMX bitmask values.
                               items:
                                 description: |-
                                   PNICQueueFeature names one physical NIC queue offload feature for VMXNet3
                                   pnicFeatures.
                                   This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
+                                maxLength: 50
                                 type: string
+                                x-kubernetes-validations:
+                                - message: must be LargeReceiveOffload, ReceiveSideScaling,
+                                    or a non-empty decimal digits string for VMX pNICFeatures
+                                    bitmask values (powers of two such as 1, 2, 4,
+                                    8)
+                                  rule: self.matches("^(LargeReceiveOffload|ReceiveSideScaling|^[1-9][0-9]*)$")
+                              maxItems: 16
                               type: array
                               x-kubernetes-list-type: set
                             rssOffloadEnabled:
@@ -15997,6 +16023,10 @@ spec:
                                 full VM memory reservation, and VMXNet3 v7 guest driver.
                               type: boolean
                           type: object
+                          x-kubernetes-validations:
+                          - message: coalescingParams must have length < 128
+                            rule: '!has(self.coalescingParams) || size(self.coalescingParams)
+                              < 128'
                       required:
                       - name
                       type: object

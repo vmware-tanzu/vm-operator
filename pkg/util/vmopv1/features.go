@@ -128,7 +128,7 @@ const (
 
 	// FeatureVersionNetExtraConfig refers to VM network extra config (NIC type
 	// and related fields) schema upgrade and backfill.
-	FeatureVersionNetExtraConfig // 8
+	FeatureVersionTelcoVMServiceAPI // 8
 )
 
 const (
@@ -139,7 +139,7 @@ const (
 	FeatureVersionAll = FeatureVersionBase |
 		FeatureVersionVMSharedDisks |
 		FeatureVersionAllDisksArePVCs |
-		FeatureVersionNetExtraConfig // 15
+		FeatureVersionTelcoVMServiceAPI // 15
 )
 
 // FeatureVersions returns all possible, valid FeatureVersion elements.
@@ -148,7 +148,7 @@ func FeatureVersions() []FeatureVersion {
 		FeatureVersionBase,
 		FeatureVersionVMSharedDisks,
 		FeatureVersionAllDisksArePVCs,
-		FeatureVersionNetExtraConfig,
+		FeatureVersionTelcoVMServiceAPI,
 	}
 }
 
@@ -234,8 +234,8 @@ func ActivatedFeatureVersion(ctx context.Context) FeatureVersion {
 	if f.AllDisksArePVCs || f.VMSharedDisks {
 		v.Set(FeatureVersionAllDisksArePVCs)
 	}
-	if f.VMExtraConfig {
-		v.Set(FeatureVersionNetExtraConfig)
+	if f.TelcoVMServiceAPI {
+		v.Set(FeatureVersionTelcoVMServiceAPI)
 	}
 	return v
 }

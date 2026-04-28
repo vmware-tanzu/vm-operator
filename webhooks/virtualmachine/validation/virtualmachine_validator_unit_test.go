@@ -110,6 +110,31 @@ func doValidateWithMsg(msgs ...string) func(admission.Response) {
 	}
 }
 
+// doTestWithContext runs a table-style validating webhook test using the provided ctx.
+// It calls ValidateUpdate when ctx.oldVM is set, otherwise ValidateCreate. Use when a nested Context owns a
+// dedicated ctx and the outer commonCreateAndUpdateValidations doTest closure would bind the wrong ctx.
+func doTestWithContext(ctx *unitValidatingWebhookContext, args testParams) {
+	args.setup(ctx)
+
+	var err error
+	ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+	var response admission.Response
+	if ctx.oldVM != nil {
+		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		response = ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+	} else {
+		response = ctx.ValidateCreate(&ctx.WebhookRequestContext)
+	}
+	ExpectWithOffset(1, response.Allowed).To(Equal(args.expectAllowed))
+
+	if args.validate != nil {
+		args.validate(response)
+	}
+}
+
 func unitTests() {
 	Describe(
 		"Create",
@@ -10185,5 +10210,357 @@ func commonCreateAndUpdateValidations(
 				},
 			),
 		)
+	})
+
+	Context("TelcoVMServiceAPI extraConfig validation", func() {
+		var (
+			ctx *unitValidatingWebhookContext
+		)
+
+		// Not the outer commonCreateAndUpdateValidations doTest: that closure binds a different ctx.
+		doTest := func(args testParams) {
+			doTestWithContext(ctx, args)
+		}
+
+		BeforeEach(func() {
+			ctx = newUnitTestContextForValidatingWebhook(true)
+
+			// Enable TelcoVMServiceAPI feature for all tests in this context.
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = true
+			})
+
+			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+		})
+
+		Context("VM-level extraConfig validation", func() {
+			DescribeTable("should validate VM advanced extraConfig", doTest,
+				Entry("should allow non-reserved extraConfig keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "user.custom.setting", Value: "value1"},
+									{Key: "custom.app.config", Value: "value2"},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should reject first-class VMX keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+							"Forbidden: numa.vcpu.preferHT: use the corresponding first-class field " +
+							"in spec.advanced instead"),
+					},
+				),
+				Entry("should reject vmservice.* prefix",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "vmservice.test.key", Value: "value"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+							"Forbidden: vmservice.test.key: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject guestinfo.* prefix",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "guestinfo.custom.data", Value: "value"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+							"Forbidden: guestinfo.custom.data: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject vmx.reboot.powerCycle exact key",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "vmx.reboot.powerCycle", Value: "TRUE"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+							"Forbidden: vmx.reboot.powerCycle: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject GOSC reserved keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "tools.deployPkg.fileName", Value: "package.tar"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+							"Forbidden: tools.deployPkg.fileName: this key is reserved for the system"),
+					},
+				),
+				Entry("should reject ethernet device-scoped keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								ExtraConfig: []common.KeyValuePair{
+									{Key: "ethernet0.ctxPerDev", Value: "1"},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+							"Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead"),
+					},
+				),
+			)
+		})
+
+		Context("Network interface advancedProperties validation", func() {
+			DescribeTable("should validate NIC advancedProperties", doTest,
+				Entry("should allow non-conflicting advancedProperties",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "custom.nic.setting", Value: "value1"},
+											{Key: "user.network.config", Value: "value2"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should reject first-class NIC properties (bare key)",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "ctxPerDev", Value: "1"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
+							"Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+					},
+				),
+				Entry("should reject first-class NIC properties (device-prefixed)",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "ethernet0.ctxPerDev", Value: "1"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
+							"Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+					},
+				),
+				Entry("should reject generic ethernet device-scoped keys",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "ethernet1.customSetting", Value: "value"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
+							"Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix"),
+					},
+				),
+				Entry("should reject system reserved network device properties",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										AdvancedProperties: []common.KeyValuePair{
+											{Key: "present", Value: "TRUE"},
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: Forbidden: present: this key is reserved for the system"),
+					},
+				),
+			)
+		})
+
+		Context("VMXNet3 validation", func() {
+			setupVMXNet3Test := func(ctx *unitValidatingWebhookContext, interfaceType vmopv1.VirtualMachineNetworkInterfaceType, pnicFeatures []vmopv1.PNICQueueFeature) {
+				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+							Type: interfaceType,
+							VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+								PNICFeatures: pnicFeatures,
+							},
+						},
+					},
+				}
+			}
+
+			DescribeTable("should validate PNICFeatures", doTest,
+				// Valid values
+				Entry("should allow enum values",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupVMXNet3Test(ctx, vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								[]vmopv1.PNICQueueFeature{vmopv1.PNICQueueFeatureLargeReceiveOffload, vmopv1.PNICQueueFeatureReceiveSideScaling})
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should allow power-of-2 integers",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupVMXNet3Test(ctx, vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								[]vmopv1.PNICQueueFeature{"1", "2", "4", "8", "16", "1024"})
+						},
+						expectAllowed: true,
+					},
+				),
+
+				// Invalid values
+				Entry("should reject zero",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupVMXNet3Test(ctx, vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								[]vmopv1.PNICQueueFeature{"0"})
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.pnicFeatures[0]: Invalid value: \"0\": must be a known enum value (LargeReceiveOffload, ReceiveSideScaling) or a power-of-2 integer (1,2,4,8,16,32,...)"),
+					},
+				),
+				Entry("should reject non-power-of-2 integers",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupVMXNet3Test(ctx, vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								[]vmopv1.PNICQueueFeature{"3"})
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.pnicFeatures[0]: Invalid value: \"3\": must be a known enum value (LargeReceiveOffload, ReceiveSideScaling) or a power-of-2 integer (1,2,4,8,16,32,...)"),
+					},
+				),
+				Entry("should reject non-integers",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupVMXNet3Test(ctx, vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+								[]vmopv1.PNICQueueFeature{"abc"})
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.pnicFeatures[0]: Invalid value: \"abc\": must be a known enum value (LargeReceiveOffload, ReceiveSideScaling) or a power-of-2 integer (1,2,4,8,16,32,...)"),
+					},
+				),
+				Entry("should reject VMXNet3 config with SRIOV type",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupVMXNet3Test(ctx, vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV,
+								[]vmopv1.PNICQueueFeature{vmopv1.PNICQueueFeatureLargeReceiveOffload})
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3: Forbidden: vmxnet3 configuration is only allowed when type is VMXNet3"),
+					},
+				),
+			)
+
+			setupCoalescingTest := func(ctx *unitValidatingWebhookContext, scheme vmopv1.CoalescingScheme, params string) {
+				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+							Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+							VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+								CoalescingScheme: &scheme,
+								CoalescingParams: &params,
+							},
+						},
+					},
+				}
+			}
+
+			DescribeTable("should validate CoalescingParams", doTest,
+				Entry("should allow valid 32-bit uint with RateBasedCoalescing",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupCoalescingTest(ctx, vmopv1.CoalescingSchemeRateBasedCoalescing, "100")
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should reject non-integer with RateBasedCoalescing",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupCoalescingTest(ctx, vmopv1.CoalescingSchemeRateBasedCoalescing, "abc")
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.network.interfaces[0].vmxnet3.coalescingParams: Invalid value: \"abc\": must be a valid 32-bit unsigned integer when coalescingScheme is RateBasedCoalescing"),
+					},
+				),
+				Entry("should allow params string with non-RateBasedCoalescing",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							setupCoalescingTest(ctx, vmopv1.CoalescingSchemeStatic, "64,64,64")
+						},
+						expectAllowed: true,
+					},
+				),
+			)
+		})
+
 	})
 }

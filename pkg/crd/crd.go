@@ -317,7 +317,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !features.VMExtraConfig {
+					if !features.TelcoVMServiceAPI {
 						if err := removeFields(
 							ctx,
 							k,

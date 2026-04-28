@@ -22,6 +22,9 @@ const (
 // TxContextThreadingMode specifies the transmit context threading mode for a
 // VMXNet3 interface.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
+//
+// +kubebuilder:validation:MaxLength=50
+// +kubebuilder:validation:XValidation:rule="self.matches(\"^(PerDevice|PerVM|PerQueue|[1-9])$\")",message="must be PerDevice, PerVM, PerQueue, or a number (1-9)"
 type TxContextThreadingMode string
 
 const (
@@ -40,6 +43,8 @@ const (
 // CoalescingScheme specifies the interrupt coalescing scheme for a VMXNet3
 // interface.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
+//
+// +kubebuilder:validation:XValidation:rule="self == 'Disabled' || self == 'Adapt' || self == 'Static' || self == 'RateBasedCoalescing' || size(self) < 128",message="must be Disabled, Adapt, Static, RateBasedCoalescing, or any other string shorter than 128 characters"
 type CoalescingScheme string
 
 const (
@@ -54,7 +59,7 @@ const (
 	CoalescingSchemeAdapt CoalescingScheme = "Adapt"
 
 	// CoalescingSchemeStatic queues a fixed number of packets before triggering
-	// an interrupt. CoalescingParams sets the Tx,Rx packet count (range 1-64,
+	// an interrupt. CoalescingParams sets the Tx,Rx packet queue limit (range 1-64,
 	// default "64").
 	CoalescingSchemeStatic CoalescingScheme = "Static"
 
@@ -66,6 +71,9 @@ const (
 // PNICQueueFeature names one physical NIC queue offload feature for VMXNet3
 // pnicFeatures.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
+//
+// +kubebuilder:validation:MaxLength=50
+// +kubebuilder:validation:XValidation:rule="self.matches(\"^(LargeReceiveOffload|ReceiveSideScaling|^[1-9][0-9]*)$\")",message="must be LargeReceiveOffload, ReceiveSideScaling, or a non-empty decimal digits string for VMX pNICFeatures bitmask values (powers of two such as 1, 2, 4, 8)"
 type PNICQueueFeature string
 
 const (
@@ -86,6 +94,8 @@ const (
 // These fields are only valid when the interface Type is VMXNet3. The CRD
 // admission webhook rejects this struct when Type is set to an incompatible
 // value.
+//
+// +kubebuilder:validation:XValidation:rule="!has(self.coalescingParams) || size(self.coalescingParams) < 128",message="coalescingParams must have length < 128"
 type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// +optional
 
@@ -106,6 +116,8 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// PerQueue gives 2-8 TX threads per vNIC queue (scheduler-determined);
 	// recommended for 100G workloads combined with pnicFeatures including ReceiveSideScaling.
 	// Visible in esxtop as NetWorld-Dev-<name>-Tx threads.
+	// Accepts known enum values (PerDevice, PerVM, PerQueue) or single digit integers (1-9)
+	// for direct VMX values.
 	CtxPerDev *TxContextThreadingMode `json:"ctxPerDev,omitempty" vmx:"ethernet%d.ctxPerDev"`
 
 	// +optional
@@ -125,6 +137,7 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	UDPRSSEnabled *bool `json:"udpRSSEnabled,omitempty" vmx:"ethernet%d.udpRSS"`
 
 	// +optional
+	// +kubebuilder:validation:MaxItems=16
 
 	// +listType=set
 	//
@@ -133,6 +146,8 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// NIC RSS hardware queues. Typically set to ["ReceiveSideScaling"] alongside
 	// ctxPerDev=PerQueue for maximum 100G throughput. Omitted or empty means no
 	// extra pNIC queue features beyond defaults.
+	// Accepts known enum values (LargeReceiveOffload, ReceiveSideScaling) or integer strings
+	// representing powers of 2 (1,2,4,8,...) for direct VMX bitmask values.
 	PNICFeatures []PNICQueueFeature `json:"pnicFeatures,omitempty" vmx:"ethernet%d.pnicfeatures"`
 
 	// +optional
@@ -140,14 +155,17 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// CoalescingScheme sets the interrupt coalescing scheme for this interface.
 	// Use CoalescingSchemeDisabled for latency-sensitive (LS=High) non-DPDK
 	// workloads to minimise interrupt latency.
+	// Accepts known enum values (Disabled, Adapt, Static, RateBasedCoalescing) or any
+	// string with length < 128 for forward compatibility.
 	CoalescingScheme *CoalescingScheme `json:"coalescingScheme,omitempty" vmx:"ethernet%d.coalescingScheme"`
 
 	// +optional
 
 	// CoalescingParams sets the coalescing parameter when coalescingScheme is
 	// RateBasedCoalescing or Static. The format depends on the scheme:
-	//   - RateBasedCoalescing: single integer string, interrupts/sec (100-100000, e.g. "4000")
-	//   - Static: single integer string, packet queue limit (1-64, e.g. "64")
+	//   - RateBasedCoalescing: integer string for interrupts/sec (e.g. "4000")
+	//   - Static: integer string for packet queue limit (e.g. "64")
 	// Ignored when coalescingScheme is Disabled or Adapt.
+	// Must be length < 128 and valid 32-bit unsigned integer for RateBasedCoalescing.
 	CoalescingParams *string `json:"coalescingParams,omitempty" vmx:"ethernet%d.coalescingParams"`
 }

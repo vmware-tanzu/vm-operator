@@ -166,8 +166,8 @@ func ReconcileSchemaUpgrade(
 		}
 	}
 
-	if features.VMExtraConfig {
-		if f := vmopv1util.FeatureVersionNetExtraConfig; !vmFeatureVersion.Has(f) {
+	if features.TelcoVMServiceAPI {
+		if f := vmopv1util.FeatureVersionTelcoVMServiceAPI; !vmFeatureVersion.Has(f) {
 			if _, err := virtualmachine.FillEmptyNetworkInterfaceTypesFromClass(
 				ctx, k8sClient, vm); err != nil {
 

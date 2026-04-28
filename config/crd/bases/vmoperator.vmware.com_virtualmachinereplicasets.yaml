@@ -10234,6 +10234,7 @@ spec:
                                         Visible in esxtop as NetWorld-Dev-<name>-Tx threads.
                                         Accepts known enum values (PerDevice, PerVM, PerQueue) or single digit integers (1-9)
                                         for direct VMX values.
+                                      maxLength: 50
                                       type: string
                                       x-kubernetes-validations:
                                       - message: must be PerDevice, PerVM, PerQueue,
@@ -10253,13 +10254,14 @@ spec:
                                           PNICQueueFeature names one physical NIC queue offload feature for VMXNet3
                                           pnicFeatures.
                                           This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
+                                        maxLength: 50
                                         type: string
                                         x-kubernetes-validations:
                                         - message: must be LargeReceiveOffload, ReceiveSideScaling,
                                             or a non-empty decimal digits string for
                                             VMX pNICFeatures bitmask values (powers
                                             of two such as 1, 2, 4, 8)
-                                          rule: self.matches("^(LargeReceiveOffload|ReceiveSideScaling|\d+)$")
+                                          rule: self.matches("^(LargeReceiveOffload|ReceiveSideScaling|^[1-9][0-9]*)$")
                                       maxItems: 16
                                       type: array
                                       x-kubernetes-list-type: set

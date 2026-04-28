@@ -23,6 +23,7 @@ const (
 // VMXNet3 interface.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
 //
+// +kubebuilder:validation:MaxLength=50
 // +kubebuilder:validation:XValidation:rule="self.matches(\"^(PerDevice|PerVM|PerQueue|[1-9])$\")",message="must be PerDevice, PerVM, PerQueue, or a number (1-9)"
 type TxContextThreadingMode string
 
@@ -71,7 +72,8 @@ const (
 // pnicFeatures.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
 //
-// +kubebuilder:validation:XValidation:rule="self.matches(\"^(LargeReceiveOffload|ReceiveSideScaling|\\d+)$\")",message="must be LargeReceiveOffload, ReceiveSideScaling, or a non-empty decimal digits string for VMX pNICFeatures bitmask values (powers of two such as 1, 2, 4, 8)"
+// +kubebuilder:validation:MaxLength=50
+// +kubebuilder:validation:XValidation:rule="self.matches(\"^(LargeReceiveOffload|ReceiveSideScaling|^[1-9][0-9]*)$\")",message="must be LargeReceiveOffload, ReceiveSideScaling, or a non-empty decimal digits string for VMX pNICFeatures bitmask values (powers of two such as 1, 2, 4, 8)"
 type PNICQueueFeature string
 
 const (

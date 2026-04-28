@@ -113,7 +113,7 @@ type VMCreateArgs struct {
 	ChildFolderName       string
 	ClusterMoRef          vimtypes.ManagedObjectReference
 
-	NetworkResults network.NetworkInterfaceResults
+	NetworkDevices []network.NetworkDevice
 }
 
 // TODO: Until we sort out what the Session becomes.
@@ -2328,25 +2328,24 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	networkSpec := vmCtx.VM.Spec.Network
-	if networkSpec == nil || networkSpec.Disabled {
+	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
 		pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
 		return nil
 	}
 
-	results, err := network.CreateAndWaitForNetworkInterfaces(
+	devices, err := network.CreateNetworkDevices(
 		vmCtx,
+		vmCtx.VM,
 		vs.k8sClient,
 		vcClient.VimClient(),
-		vcClient.Finder(),
-		nil, // Don't know the CCR yet (needed to resolve backings for NSX-T)
-		networkSpec)
+		vcClient.Finder())
 	if err != nil {
-		pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady, "NotReady", err)
+		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady,
+			"NotReady", "%v", err)
 		return err
 	}
 
-	createArgs.NetworkResults = results
+	createArgs.NetworkDevices = devices
 	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
 
 	return nil
@@ -2939,7 +2938,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 		return nil
 	}
 
-	resultsIdx := 0
+	devIdx := 0
 	var unmatchedEthDevices []int
 
 	for idx := range createArgs.ConfigSpec.DeviceChange {
@@ -2951,12 +2950,12 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 		device := spec.Device
 		ethCard := device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 
-		if resultsIdx < len(createArgs.NetworkResults.Results) {
-			err := network.ApplyInterfaceResultToVirtualEthCard(vmCtx, ethCard, &createArgs.NetworkResults.Results[resultsIdx])
+		if devIdx < len(createArgs.NetworkDevices) {
+			err := network.ApplyNetworkDeviceToVirtualEthCard(vmCtx, ethCard, &createArgs.NetworkDevices[devIdx])
 			if err != nil {
 				return err
 			}
-			resultsIdx++
+			devIdx++
 
 		} else {
 			// This ConfigSpec Ethernet device does not have a corresponding entry in the VM Spec, so we
@@ -2980,8 +2979,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 
 	// Any remaining VM Spec network interfaces were not matched with a device in the ConfigSpec, so
 	// create a default virtual ethernet card for them.
-	for i := resultsIdx; i < len(createArgs.NetworkResults.Results); i++ {
-		ethCardDev, err := network.CreateDefaultEthCard(vmCtx, &createArgs.NetworkResults.Results[i])
+	for i := devIdx; i < len(createArgs.NetworkDevices); i++ {
+		ethCardDev, err := network.CreateDefaultEthCardFromNetworkDevice(vmCtx, &createArgs.NetworkDevices[i])
 		if err != nil {
 			return err
 		}

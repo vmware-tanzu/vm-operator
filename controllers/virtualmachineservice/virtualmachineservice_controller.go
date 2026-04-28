@@ -271,7 +271,7 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 		return err
 	}
 
-	ctx.Logger.Info("Service spec.ipFamilies",
+	ctx.Logger.V(5).Info("Service spec.ipFamilies",
 		"service", client.ObjectKeyFromObject(service).String(),
 		"serviceSpecIPFamilies", service.Spec.IPFamilies)
 

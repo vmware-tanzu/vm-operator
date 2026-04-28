@@ -1452,63 +1452,58 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 
-					By("verify each NetworkInterface CR that was created has the correct policy", func() {
-						// The function processes interfaces sequentially, so we verify each one that exists
-						// Note: Due to sequential processing, if the first times out, subsequent ones may not be created yet
+					expectedPolicies := map[string]netopv1alpha1.NetworkInterfaceIPFamilyPolicy{
+						"eth0": netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only,
+						"eth1": netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only,
+						"eth2": netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack,
+					}
 
-						// Verify eth0 (should always be created first)
-						netInterface1 := &netopv1alpha1.NetworkInterface{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      network.NetOPCRName(vm.Name, networkName, "eth0", false),
-								Namespace: vm.Namespace,
-							},
+					By("simulate successful NetOP reconcile for each interface", func() {
+						for ifName := range expectedPolicies {
+							netInterface := &netopv1alpha1.NetworkInterface{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      network.NetOPCRName(vm.Name, networkName, ifName, false),
+									Namespace: vm.Namespace,
+								},
+							}
+							err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)
+							if apierrors.IsNotFound(err) {
+								// First call bailed before creating this one; create it now.
+								netInterface.Spec.NetworkName = networkName
+								Expect(ctx.Client.Create(ctx, netInterface)).To(Succeed())
+							} else {
+								Expect(err).ToNot(HaveOccurred())
+							}
+							netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+								{
+									Type:   netopv1alpha1.NetworkInterfaceReady,
+									Status: corev1.ConditionTrue,
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 						}
-						err1 := ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface1), netInterface1)
-						if apierrors.IsNotFound(err1) {
-							// Try old naming convention
-							netInterface1.Name = network.NetOPCRName(vm.Name, networkName, "eth0", true)
-							Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface1), netInterface1)).To(Succeed())
-						} else {
-							Expect(err1).ToNot(HaveOccurred())
-						}
-						Expect(netInterface1.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only))
-
-						// Verify eth1 (may not exist if eth0 timed out)
-						netInterface2 := &netopv1alpha1.NetworkInterface{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      network.NetOPCRName(vm.Name, networkName, "eth1", false),
-								Namespace: vm.Namespace,
-							},
-						}
-						err2 := ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface2), netInterface2)
-						if apierrors.IsNotFound(err2) {
-							// Try old naming convention
-							netInterface2.Name = network.NetOPCRName(vm.Name, networkName, "eth1", true)
-							err2 = ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface2), netInterface2)
-						}
-						if err2 == nil {
-							Expect(netInterface2.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only))
-						}
-						// If not found, that's okay - it means eth0 timed out before eth1 was created
-
-						// Verify eth2 (may not exist if previous ones timed out)
-						netInterface3 := &netopv1alpha1.NetworkInterface{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      network.NetOPCRName(vm.Name, networkName, "eth2", false),
-								Namespace: vm.Namespace,
-							},
-						}
-						err3 := ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface3), netInterface3)
-						if apierrors.IsNotFound(err3) {
-							// Try old naming convention
-							netInterface3.Name = network.NetOPCRName(vm.Name, networkName, "eth2", true)
-							err3 = ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface3), netInterface3)
-						}
-						if err3 == nil {
-							Expect(netInterface3.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack))
-						}
-						// If not found, that's okay - it means previous ones timed out before eth2 was created
 					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(results.Results).To(HaveLen(3))
+
+					for ifName, expectedPolicy := range expectedPolicies {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, ifName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.IPFamilyPolicy).To(Equal(expectedPolicy), "interface %q", ifName)
+					}
 				})
 			})
 		})

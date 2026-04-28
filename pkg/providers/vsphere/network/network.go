@@ -357,7 +357,9 @@ func NetOPCRName(vmName, networkName, interfaceName string, isV1A1 bool) string 
 	return name
 }
 
-func syncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec, netIf *netopv1alpha1.NetworkInterface) {
+// SyncNetOPIPFamilyPolicyFromIPAMModes sets or clears the NetOP IPFamilyPolicy from the VM IPAMModes.
+// When IPAMModes is empty, the policy is cleared so NetOP can apply its default.
+func SyncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec, netIf *netopv1alpha1.NetworkInterface) {
 	if len(interfaceSpec.IPAMModes) > 0 {
 		netIf.Spec.IPFamilyPolicy = NetOPInterfaceIPFamilyPolicyFromIPAMModes(interfaceSpec.IPAMModes)
 	} else {
@@ -433,7 +435,7 @@ func createNetOPNetworkInterface(
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
 		// Set or clear IPFamilyPolicy from VM IPAMModes. When IPAMModes is empty, clear
 		// the policy so NetOP can apply its default (and updates remove a prior policy).
-		syncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec, netIf)
+		SyncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec, netIf)
 		return nil
 	})
 
@@ -457,10 +459,10 @@ func createNetOPNetworkInterface(
 	return netOpNetIfToResult(vimClient, netIf), nil
 }
 
-// effectiveNetOPIPv4AssignmentMode returns how IPv4 is assigned according to NetworkInterface status.
+// EffectiveNetOPIPv4AssignmentMode returns how IPv4 is assigned according to NetworkInterface status.
 // When IPAssignmentMode is unset, NetOP assumes static pool if any IPv4 address is present in IPConfigs,
 // otherwise DHCP.
-func effectiveNetOPIPv4AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) netopv1alpha1.NetworkInterfaceIPAssignmentMode {
+func EffectiveNetOPIPv4AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) netopv1alpha1.NetworkInterfaceIPAssignmentMode {
 	if st.IPAssignmentMode != "" {
 		return st.IPAssignmentMode
 	}
@@ -473,9 +475,9 @@ func effectiveNetOPIPv4AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) n
 	return netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 }
 
-// effectiveNetOPIPv6AssignmentMode returns how IPv6 is assigned according to NetworkInterface status.
+// EffectiveNetOPIPv6AssignmentMode returns how IPv6 is assigned according to NetworkInterface status.
 // When IPv6AssignmentMode is unset, NetOP defaults to none (no IPv6 assignment).
-func effectiveNetOPIPv6AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) netopv1alpha1.NetworkInterfaceIPAssignmentMode {
+func EffectiveNetOPIPv6AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) netopv1alpha1.NetworkInterfaceIPAssignmentMode {
 	if st.IPv6AssignmentMode != "" {
 		return st.IPv6AssignmentMode
 	}
@@ -522,8 +524,8 @@ func netOpNetIfToResult(
 		Backing:    object.NewDistributedVirtualPortgroup(vimClient, pgObjRef),
 	}
 
-	v4Mode := effectiveNetOPIPv4AssignmentMode(netIf.Status)
-	v6Mode := effectiveNetOPIPv6AssignmentMode(netIf.Status)
+	v4Mode := EffectiveNetOPIPv4AssignmentMode(netIf.Status)
+	v6Mode := EffectiveNetOPIPv6AssignmentMode(netIf.Status)
 
 	if v4Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeNone &&
 		v6Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeNone {

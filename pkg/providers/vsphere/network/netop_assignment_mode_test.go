@@ -2,7 +2,7 @@
 // The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package network
+package network_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 )
 
 var _ = Describe("NetOP assignment mode helpers",
@@ -21,7 +22,7 @@ var _ = Describe("NetOP assignment mode helpers",
 	func() {
 		DescribeTable("EffectiveNetOPIPv4AssignmentMode",
 			func(st netopv1alpha1.NetworkInterfaceStatus, want netopv1alpha1.NetworkInterfaceIPAssignmentMode) {
-				Expect(effectiveNetOPIPv4AssignmentMode(st)).To(Equal(want))
+				Expect(network.EffectiveNetOPIPv4AssignmentMode(st)).To(Equal(want))
 			},
 			Entry("explicit DHCP",
 				netopv1alpha1.NetworkInterfaceStatus{
@@ -51,7 +52,7 @@ var _ = Describe("NetOP assignment mode helpers",
 
 		DescribeTable("EffectiveNetOPIPv6AssignmentMode",
 			func(st netopv1alpha1.NetworkInterfaceStatus, want netopv1alpha1.NetworkInterfaceIPAssignmentMode) {
-				Expect(effectiveNetOPIPv6AssignmentMode(st)).To(Equal(want))
+				Expect(network.EffectiveNetOPIPv6AssignmentMode(st)).To(Equal(want))
 			},
 			Entry("explicit DHCP",
 				netopv1alpha1.NetworkInterfaceStatus{
@@ -86,7 +87,7 @@ var _ = Describe("NetOP assignment mode helpers",
 
 		DescribeTable("NetOPInterfaceIPFamilyPolicyFromIPAMModes",
 			func(modes []corev1.IPFamily, want netopv1alpha1.NetworkInterfaceIPFamilyPolicy) {
-				Expect(NetOPInterfaceIPFamilyPolicyFromIPAMModes(modes)).To(Equal(want))
+				Expect(network.NetOPInterfaceIPFamilyPolicyFromIPAMModes(modes)).To(Equal(want))
 			},
 			Entry("nil slice defaults to IPv4Only", []corev1.IPFamily(nil), netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only),
 			Entry("empty slice defaults to IPv4Only", []corev1.IPFamily{}, netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only),
@@ -100,7 +101,7 @@ var _ = Describe("NetOP assignment mode helpers",
 				netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack),
 		)
 
-		Describe("syncNetOPIPFamilyPolicyFromIPAMModes", func() {
+		Describe("SyncNetOPIPFamilyPolicyFromIPAMModes", func() {
 			It("clears NetOP IPFamilyPolicy when VM IPAMModes is nil and NetOP had a policy", func() {
 				netIf := &netopv1alpha1.NetworkInterface{
 					Spec: netopv1alpha1.NetworkInterfaceSpec{
@@ -108,7 +109,7 @@ var _ = Describe("NetOP assignment mode helpers",
 					},
 				}
 				iface := &vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth0"}
-				syncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
+				network.SyncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
 				Expect(netIf.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")))
 			})
 
@@ -122,7 +123,7 @@ var _ = Describe("NetOP assignment mode helpers",
 					Name:      "eth0",
 					IPAMModes: []corev1.IPFamily{},
 				}
-				syncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
+				network.SyncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
 				Expect(netIf.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")))
 			})
 
@@ -132,7 +133,7 @@ var _ = Describe("NetOP assignment mode helpers",
 					Name:      "eth0",
 					IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 				}
-				syncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
+				network.SyncNetOPIPFamilyPolicyFromIPAMModes(iface, netIf)
 				Expect(netIf.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only))
 			})
 		})

@@ -22,7 +22,8 @@ const (
 // TxContextThreadingMode specifies the transmit context threading mode for a
 // VMXNet3 interface.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
-// +kubebuilder:validation:Pattern="^(PerDevice|PerVM|PerQueue|[1-9])$"
+//
+// +kubebuilder:validation:XValidation:rule="self.matches(\"^(PerDevice|PerVM|PerQueue|[1-9])$\")",message="must be PerDevice, PerVM, PerQueue, or a number (1-9)"
 type TxContextThreadingMode string
 
 const (
@@ -42,7 +43,7 @@ const (
 // interface.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
 //
-// +kubebuilder:validation:XValidation:rule="self == 'Disabled' || self == 'Adapt' || self == 'Static' || self == 'RateBasedCoalescing' || size(self) < 128",message="must be enum value or string < 128 chars"
+// +kubebuilder:validation:XValidation:rule="self == 'Disabled' || self == 'Adapt' || self == 'Static' || self == 'RateBasedCoalescing' || size(self) < 128",message="must be Disabled, Adapt, Static, RateBasedCoalescing, or any other string shorter than 128 characters"
 type CoalescingScheme string
 
 const (
@@ -70,7 +71,7 @@ const (
 // pnicFeatures.
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
 //
-// +kubebuilder:validation:Pattern="^(LargeReceiveOffload|ReceiveSideScaling|\\d+)$"
+// +kubebuilder:validation:XValidation:rule="self.matches(\"^(LargeReceiveOffload|ReceiveSideScaling|\\d+)$\")",message="must be LargeReceiveOffload, ReceiveSideScaling, or a non-empty decimal digits string for VMX pNICFeatures bitmask values (powers of two such as 1, 2, 4, 8)"
 type PNICQueueFeature string
 
 const (

@@ -15952,7 +15952,8 @@ spec:
                                 string with length < 128 for forward compatibility.
                               type: string
                               x-kubernetes-validations:
-                              - message: must be enum value or string < 128 chars
+                              - message: must be Disabled, Adapt, Static, RateBasedCoalescing,
+                                  or any other string shorter than 128 characters
                                 rule: self == 'Disabled' || self == 'Adapt' || self
                                   == 'Static' || self == 'RateBasedCoalescing' ||
                                   size(self) < 128
@@ -15966,8 +15967,11 @@ spec:
                                 Visible in esxtop as NetWorld-Dev-<name>-Tx threads.
                                 Accepts known enum values (PerDevice, PerVM, PerQueue) or single digit integers (1-9)
                                 for direct VMX values.
-                              pattern: ^(PerDevice|PerVM|PerQueue|[1-9])$
                               type: string
+                              x-kubernetes-validations:
+                              - message: must be PerDevice, PerVM, PerQueue, or a
+                                  number (1-9)
+                                rule: self.matches("^(PerDevice|PerVM|PerQueue|[1-9])$")
                             pnicFeatures:
                               description: |-
                                 PNICFeatures lists physical NIC queue offload features to enable. The
@@ -15982,8 +15986,13 @@ spec:
                                   PNICQueueFeature names one physical NIC queue offload feature for VMXNet3
                                   pnicFeatures.
                                   This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
-                                pattern: ^(LargeReceiveOffload|ReceiveSideScaling|\d+)$
                                 type: string
+                                x-kubernetes-validations:
+                                - message: must be LargeReceiveOffload, ReceiveSideScaling,
+                                    or a non-empty decimal digits string for VMX pNICFeatures
+                                    bitmask values (powers of two such as 1, 2, 4,
+                                    8)
+                                  rule: self.matches("^(LargeReceiveOffload|ReceiveSideScaling|\d+)$")
                               maxItems: 16
                               type: array
                               x-kubernetes-list-type: set

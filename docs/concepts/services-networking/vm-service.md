@@ -120,3 +120,25 @@ This is because VM workloads do not share the same networking stack as the nodes
 #### `type: ExternalName`
 
 The `VirtualMachineService` API also does not support type [`ExternalName`](https://kubernetes.io/docs/concepts/services-networking/service/#externalname). This type maps a service to the contents of the `externalName` field (for example, to the hostname `api.foo.bar.example`). The mapping configures the cluster's DNS server to return a `CNAME` record with that external hostname value. If this type of service is required, simply create a `Service` resource directly instead of using a `VirtualMachineService`.
+
+
+## Status
+
+### Conditions
+
+The `VirtualMachineService` surfaces observed state through `.status.conditions`. Each condition follows the standard Kubernetes condition format with a `type`, `status` (`True`, `False`, or `Unknown`), a `reason`, and a `message`.
+
+#### `VirtualMachineServiceServiceReady`
+
+This condition reflects the `Ready` condition reported by the underlying Kubernetes `Service`. Because the `VirtualMachineService` controller creates and manages a child `Service` resource, the readiness of that `Service` — as determined by the load-balancer provider — is propagated here so consumers have a single place to check.
+
+| Status | Reason | Meaning |
+| --- | --- | --- |
+| `True` | — | The underlying `Service` has a `Ready` condition with status `True`. |
+| `False` | forwarded from `Service`, or `ServiceNotReady` | The underlying `Service` has a `Ready` condition with status `False`. |
+| `Unknown` | forwarded from `Service`, or `ServiceReadinessUnknown` | The underlying `Service` has a `Ready` condition with status `Unknown`. |
+| `Unknown` | `ServiceReadyNotPresent` | The underlying `Service` does not have a `Ready` condition. |
+
+!!! note "Most load-balancer providers do not set a `Ready` condition"
+
+    Not all load-balancer providers set a `Ready` condition on the underlying `Service`. When none is present, `VirtualMachineServiceServiceReady` will always have `status: Unknown` with `reason: ServiceReadyNotPresent`. This is expected and does not indicate a problem with the `VirtualMachineService`.

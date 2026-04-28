@@ -17,6 +17,11 @@ func Convert_v1alpha6_VirtualMachineServiceSpec_To_v1alpha1_VirtualMachineServic
 	return autoConvert_v1alpha6_VirtualMachineServiceSpec_To_v1alpha1_VirtualMachineServiceSpec(in, out, s)
 }
 
+func Convert_v1alpha6_VirtualMachineServiceStatus_To_v1alpha1_VirtualMachineServiceStatus(
+	in *vmopv1.VirtualMachineServiceStatus, out *VirtualMachineServiceStatus, s apiconversion.Scope) error {
+	return autoConvert_v1alpha6_VirtualMachineServiceStatus_To_v1alpha1_VirtualMachineServiceStatus(in, out, s)
+}
+
 func restoreV1alpha6VirtualMachineServiceIPFamilies(dst, restored *vmopv1.VirtualMachineService) {
 	dst.Spec.IPFamilies = restored.Spec.IPFamilies
 	dst.Spec.IPFamilyPolicy = restored.Spec.IPFamilyPolicy
@@ -30,16 +35,18 @@ func (src *VirtualMachineService) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	}
 
 	restored := &vmopv1.VirtualMachineService{}
-	ok, err := utilconversion.UnmarshalData(src, restored)
-	if err != nil {
+	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
 		return err
 	}
-	if !ok {
-		return nil
-	}
+
+	// BEGIN RESTORE
 
 	restoreV1alpha6VirtualMachineServiceIPFamilies(dst, restored)
+
+	// END RESTORE
+
 	dst.Status = restored.Status
+
 	return nil
 }
 

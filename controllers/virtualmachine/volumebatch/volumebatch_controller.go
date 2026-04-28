@@ -544,8 +544,12 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 			continue
 		}
 
-		// Ignore pvcs that are not bound.
-		if pvc.Status.Phase != corev1.ClaimBound {
+		// Include unbound PVCs when dataSourceRef points at this VM (classic disk
+		// placeholder PVCs created by unmanaged volume register) so CSI can list
+		// them in the batch attachment spec before they are bound.
+		dsRefToVM := pvcDataSourceRefPointsToVM(&pvc, ctx.VM)
+
+		if pvc.Status.Phase != corev1.ClaimBound && !dsRefToVM {
 			ctx.Logger.V(4).Info("PVC is not bound",
 				"pvcName", pvc.Name,
 				"volName", vol.Name,
@@ -579,6 +583,19 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	}
 
 	return volumeSpecs, retErr
+}
+
+// pvcDataSourceRefPointsToVM reports whether the PVC's dataSourceRef selects
+// this VirtualMachine in the same API group (VM Operator classic placeholder PVCs).
+func pvcDataSourceRefPointsToVM(pvc *corev1.PersistentVolumeClaim, vm *vmopv1.VirtualMachine) bool {
+	ds := pvc.Spec.DataSourceRef
+	if ds == nil || ds.Kind != "VirtualMachine" || ds.Name != vm.Name {
+		return false
+	}
+	if ds.APIGroup == nil || *ds.APIGroup != vmopv1.GroupVersion.Group {
+		return false
+	}
+	return true
 }
 
 func (r *Reconciler) getPVC(

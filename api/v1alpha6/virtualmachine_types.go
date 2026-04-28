@@ -115,6 +115,10 @@ const (
 	// configuration is synced to the desired state, determined by whether or
 	// not the guest is reporting the expected IP address(es).
 	VirtualMachineGuestNetworkConfigSynced = "VirtualMachineGuestNetworkConfigSynced"
+
+	// VirtualMachineConditionLocationMismatch indicates that the VM is not in the expected location in the vCenter inventory.
+	// This condition is set when a VM is detected to be in a different folder or resource pool than expected based on its namespace.
+	VirtualMachineConditionLocationMismatch = "VirtualMachineConditionLocationMismatch"
 )
 
 const (

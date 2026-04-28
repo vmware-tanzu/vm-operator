@@ -150,15 +150,17 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 }
 
 func (vs *vSphereVMProvider) GetVMLocation(vmCtx pkgctx.VirtualMachineContext, vm *object.VirtualMachine, vcClient *vcclient.Client) (string, error) {
-
 	var o mo.VirtualMachine
 	err := vm.Properties(vmCtx, vm.Reference(), []string{"resourcePool"}, &o)
 	if err != nil {
 		return "", err
 	}
 	if o.ResourcePool != nil {
-		rp := object.NewResourcePool(vcClient.VimClient(), *o.ResourcePool)
-		return rp.ObjectName(vmCtx)
+		element, err := vcClient.Finder().Element(vmCtx, *o.ResourcePool)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve resource pool path: %w", err)
+		}
+		return element.Path, nil
 	}
 	return "", fmt.Errorf("resource pool not found for VM %s", vm.Name())
 }
@@ -1097,6 +1099,12 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		}
 	}
 
+	if err := vs.reconcileLocation(vmCtx, vcVM, vcClient); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("status", reconcileErr, err)
+	}
 	//
 	// 10. Reconcile power state
 	//
@@ -1119,43 +1127,40 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		}
 	}
 
-	if err := vs.reconcileLocation(vmCtx, vcVM, vcClient); err != nil {
-		if pkgerr.IsNoRequeueError(err) {
-			return errOrReconcileErr(reconcileErr, err)
-		}
-		reconcileErr = getReconcileErr("status", reconcileErr, err)
-	}
-
 	return reconcileErr
 }
 
 func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualMachine, vcClient *vcclient.Client) error {
 	// Fetch the VM location from vCenter
-	currentLocation, err := vs.GetVMLocation(vmCtx, vcVM, vcClient)
+	fullPath, err := vs.GetVMLocation(vmCtx, vcVM, vcClient)
 	if err != nil {
-		return err
+		vmCtx.Logger.V(4).Info("Unable to resolve VM location path", "error", err)
+		return nil
 	}
+
 	// 2. Compare Actual (vCenter) vs Expected (K8s)
 
-	resourcePolicy, _ := GetVMSetResourcePolicy(vmCtx, vs.k8sClient) //
-
-	isValidLocation := false
-	if currentLocation == vmCtx.VM.Namespace {
-		isValidLocation = true //
+	expectedRootName := vmCtx.VM.Namespace
+	resourcePolicy, _ := GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
+	if resourcePolicy != nil && resourcePolicy.Spec.ResourcePool.Name != "" {
+		expectedRootName = resourcePolicy.Spec.ResourcePool.Name
 	}
-	if resourcePolicy != nil && !isValidLocation {
-		childRP := resourcePolicy.Spec.ResourcePool.Name //
-		childFolder := resourcePolicy.Spec.Folder        //
 
-		if (childRP != "" && currentLocation == childRP) ||
-			(childFolder != "" && currentLocation == childFolder) {
+	// 3. Validate Ancestry
+	// Check if the expectedRootName exists as a segment in the path
+	pathParts := strings.Split(fullPath, "/")
+	isValidLocation := false
+	for _, part := range pathParts {
+		if part == expectedRootName {
 			isValidLocation = true
+			break
 		}
 	}
+
 	if !isValidLocation {
 		// Use the MarkFalse logic
 		pkgcnd.MarkFalse(
-			vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)
+			vmCtx.VM, vmopv1.VirtualMachineConditionLocationMismatch, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)
 
 		vmCtx.VM.Annotations[vmopv1.PauseAnnotation] = "true"
 		return fmt.Errorf("reconciliation stopped : VM location mismatch")

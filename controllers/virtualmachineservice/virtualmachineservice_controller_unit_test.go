@@ -456,6 +456,101 @@ func unitTestsReconcile() {
 					Expect(ingress[1].Hostname).To(Equal("hostname1"))
 				})
 			})
+
+			Context("VirtualMachineService ServiceReady Condition", func() {
+				It("Sets ServiceReady condition to Unknown when Service has no conditions", func() {
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					serviceReadyCond := conditions.Get(vmService, vmopv1.ServiceReadyConditionType)
+					Expect(serviceReadyCond).ToNot(BeNil())
+					Expect(serviceReadyCond.Status).To(Equal(metav1.ConditionUnknown))
+					Expect(serviceReadyCond.Reason).To(Equal("ServiceReadyNotPresent"))
+					Expect(serviceReadyCond.Message).To(Equal("Underlying Service does not have Ready condition"))
+				})
+
+				It("Sets ServiceReady condition to True when Service Ready condition is True", func() {
+					service.Status.Conditions = []metav1.Condition{
+						{
+							Type:    "Ready",
+							Status:  metav1.ConditionTrue,
+							Reason:  "ServiceReady",
+							Message: "Service is healthy",
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, service)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					serviceReadyCond := conditions.Get(vmService, vmopv1.ServiceReadyConditionType)
+					Expect(serviceReadyCond).ToNot(BeNil())
+					Expect(serviceReadyCond.Status).To(Equal(metav1.ConditionTrue))
+				})
+
+				It("Sets ServiceReady condition to False when Service Ready condition is False", func() {
+					service.Status.Conditions = []metav1.Condition{
+						{
+							Type:    "Ready",
+							Status:  metav1.ConditionFalse,
+							Reason:  "LoadBalancerError",
+							Message: "Failed to provision load balancer",
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, service)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					serviceReadyCond := conditions.Get(vmService, vmopv1.ServiceReadyConditionType)
+					Expect(serviceReadyCond).ToNot(BeNil())
+					Expect(serviceReadyCond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(serviceReadyCond.Reason).To(Equal("LoadBalancerError"))
+					Expect(serviceReadyCond.Message).To(Equal("Failed to provision load balancer"))
+				})
+
+				It("Sets ServiceReady condition to Unknown when Service Ready condition is Unknown", func() {
+					service.Status.Conditions = []metav1.Condition{
+						{
+							Type:    "Ready",
+							Status:  metav1.ConditionUnknown,
+							Reason:  "LoadBalancerPending",
+							Message: "Load balancer provisioning in progress",
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, service)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					serviceReadyCond := conditions.Get(vmService, vmopv1.ServiceReadyConditionType)
+					Expect(serviceReadyCond).ToNot(BeNil())
+					Expect(serviceReadyCond.Status).To(Equal(metav1.ConditionUnknown))
+					Expect(serviceReadyCond.Reason).To(Equal("LoadBalancerPending"))
+					Expect(serviceReadyCond.Message).To(Equal("Load balancer provisioning in progress"))
+				})
+
+				It("Handles Service Ready condition with empty reason and message", func() {
+					service.Status.Conditions = []metav1.Condition{
+						{
+							Type:   "Ready",
+							Status: metav1.ConditionFalse,
+							// No reason or message provided
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, service)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					serviceReadyCond := conditions.Get(vmService, vmopv1.ServiceReadyConditionType)
+					Expect(serviceReadyCond).ToNot(BeNil())
+					Expect(serviceReadyCond.Status).To(Equal(metav1.ConditionFalse))
+					// Should use default values when service condition has empty reason/message
+					Expect(serviceReadyCond.Reason).To(Equal("ServiceNotReady"))
+					Expect(serviceReadyCond.Message).To(Equal("Underlying Service is not ready"))
+				})
+			})
 		})
 
 		Context("Creates expected Endpoints", func() {

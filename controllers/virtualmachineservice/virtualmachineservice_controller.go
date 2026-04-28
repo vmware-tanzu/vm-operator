@@ -27,7 +27,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -680,7 +680,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		ready := true
 
 		if probe := vm.Spec.ReadinessProbe; probe != nil && (probe.TCPSocket != nil || probe.GuestHeartbeat != nil || len(probe.GuestInfo) != 0) {
-			if condition := conditions.Get(&vm, vmopv1.ReadyConditionType); condition == nil {
+			if condition := pkgcond.Get(&vm, vmopv1.ReadyConditionType); condition == nil {
 				if vmInSubsetsMap == nil {
 					vmInSubsetsMap = r.getVMsReferencedByServiceEndpoints(ctx, service)
 				}
@@ -786,7 +786,64 @@ func (r *ReconcileVirtualMachineService) updateVMService(ctx *pkgctx.VirtualMach
 			}
 			vmService.Status.LoadBalancer.Ingress[idx] = vmIngress
 		}
+	} else {
+		vmService.Status.LoadBalancer.Ingress = nil
 	}
 
+	syncServiceReadyCondition(ctx, service)
+
 	return nil
+}
+
+// syncServiceReadyCondition checks for Ready condition in the underlying Service
+// and reflects it on the VirtualMachineService.
+func syncServiceReadyCondition(
+	ctx *pkgctx.VirtualMachineServiceContext,
+	service *corev1.Service) {
+
+	var readyCond *metav1.Condition
+	for _, condition := range service.Status.Conditions {
+		if condition.Type == "Ready" {
+			readyCond = &condition
+			break
+		}
+	}
+
+	if readyCond != nil {
+		switch readyCond.Status {
+		case metav1.ConditionTrue:
+			pkgcond.MarkTrue(ctx.VMService, vmopv1.ServiceReadyConditionType)
+		case metav1.ConditionFalse:
+			reason := "ServiceNotReady"
+			if readyCond.Reason != "" {
+				reason = readyCond.Reason
+			}
+			message := "Underlying Service is not ready"
+			if readyCond.Message != "" {
+				message = readyCond.Message
+			}
+			pkgcond.MarkFalse(ctx.VMService, vmopv1.ServiceReadyConditionType, reason, "%s", message)
+		case metav1.ConditionUnknown, "":
+			reason := "ServiceReadinessUnknown"
+			if readyCond.Reason != "" {
+				reason = readyCond.Reason
+			}
+			message := "Underlying Service readiness is unknown"
+			if readyCond.Message != "" {
+				message = readyCond.Message
+			}
+			pkgcond.MarkUnknown(ctx.VMService, vmopv1.ServiceReadyConditionType, reason, "%s", message)
+		}
+	} else {
+		// Most of our Service providers do not set any conditions at all. A few do but
+		// don't use Ready. There is an argument for just not showing this condition on
+		// the VirtualMachineService when the Service does not have Ready since just the
+		// presence of any not-True condition could be seen as something is wrong. But
+		// to try to give a consistent conditions in our status, report that as unknown
+		// with a clear reason and message.
+		pkgcond.MarkUnknown(ctx.VMService,
+			vmopv1.ServiceReadyConditionType,
+			"ServiceReadyNotPresent",
+			"Underlying Service does not have Ready condition")
+	}
 }

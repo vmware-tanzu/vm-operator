@@ -8,6 +8,7 @@ infraConfig:
     resources:
       photonImageDisplayName: "photon-5.0"
       windowsImageDisplayName: "windows-server2022-efi-tools"
+      encryptedImageDisplayName: "${ENCRYPTED_IMAGE_DISPLAY_NAME:-photon-5.0-encrypted}"
       storageClassName: "${STORAGE_CLASS:-wcpglobal-storage-profile}"
       workerStorageClassName: "${WORKER_STORAGE_CLASS:-worker-storagepolicy}"
       vmClassName: "best-effort-small"
@@ -79,7 +80,7 @@ intervals:
   default/wait-virtual-machine-moid: ["5m", "10s"]
   default/wait-virtual-machine-restart-mode-update: ["2m", "10s"]
   default/wait-virtual-machine-vmip: ["5m", "10s"]
-  default/wait-virtual-machine-image-creation: ["3m", "5s"]
+  default/wait-virtual-machine-image-creation: ["10m", "5s"]
   default/consistent-virtual-machine-condition: ["30s", "5s"]
   default/wait-virtual-machine-group-deletion: [ "60s", "5s" ]
   default/wait-virtual-machine-group-condition-update: [ "6m", "5s" ]
@@ -100,6 +101,7 @@ intervals:
   default/wait-content-library-name: ["2m", "5s"]
   default/wait-storage-class-ready: ["5m", "15s"]
   default/wait-namespace-ready: ["5m", "10s"]
+  default/wait-kms-cluster-ready: ["2m", "5s"]
   default/wait-backup-to-complete: ["10m", "5s"]
   default/wait-virtual-machine-compute-policy-status-update: ["5m", "10s"]
 

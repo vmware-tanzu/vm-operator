@@ -570,8 +570,11 @@ func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framewor
 		vmi := &vmopv1a3.VirtualMachineImage{}
 		g.Expect(client.Get(ctx, objKey, vmi)).To(Succeed())
 		g.Expect(vmi.Status.Disks).ToNot(BeEmpty())
+		// ProviderContentVersion must be non-empty before the validating webhook
+		// will allow a VM referencing this image to be created.
+		g.Expect(vmi.Status.ProviderContentVersion).ToNot(BeEmpty())
 	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).Should(Succeed(),
-		fmt.Sprintf("failed to wait for vm image %s to have Status.Disks populated", imageName))
+		fmt.Sprintf("failed to wait for vm image %s to have Status.Disks and Status.ProviderContentVersion populated", imageName))
 }
 
 // Utility function to get a ClusterVirtualMachineImage k8s object's name by its display name.

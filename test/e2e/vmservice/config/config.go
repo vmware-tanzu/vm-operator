@@ -43,6 +43,7 @@ type Resources struct {
 	PhotonImageDisplayName        string `json:"photonImageDisplayName,omitempty"`
 	UbuntuImageDisplayName        string `json:"ubuntuImageDisplayName,omitempty"`
 	WindowsImageDisplayName       string `json:"windowsImageDisplayName,omitempty"`
+	EncryptedImageDisplayName     string `json:"encryptedImageDisplayName,omitempty"`
 	StorageClassName              string `json:"storageClassName,omitempty"`
 	WorkerStorageClassName        string `json:"workerStorageClassName,omitempty"`
 	VMClassName                   string `json:"vmClassName,omitempty"`

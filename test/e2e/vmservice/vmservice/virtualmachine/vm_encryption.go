@@ -19,6 +19,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -32,6 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
+	vmserviceutils "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
@@ -47,7 +49,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	const (
 		specName = "vm-encryption"
 
-		// Key Providers setup by hack/kms.sh
+		// standardKeyProviderID requires an external KMIP server (set up via hack/kms.sh).
+		// nativeKeyProviderID is registered automatically by BeforeEach if not pre-configured.
 		standardKeyProviderID = "gce2e-standard"
 		nativeKeyProviderID   = "gce2e-native"
 	)
@@ -71,6 +74,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		byokFSSEnabled                       bool
 		defaultKeyProviderID                 string
 		linuxImageDisplayName                string
+		// cleanupNativeKeyProvider removes the native key provider if it was
+		// registered by this suite rather than pre-configured by the testbed.
+		cleanupNativeKeyProvider func()
 	)
 
 	BeforeEach(func() {
@@ -95,6 +101,12 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
+		By("Ensure native key provider exists (create via WCP if not pre-configured)")
+		var nativeKPErr error
+		cleanupNativeKeyProvider, nativeKPErr = vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
+		Expect(nativeKPErr).NotTo(HaveOccurred(), "failed to ensure native key provider %q", nativeKeyProviderID)
+
+		podVMOnStretchedSupervisorEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
 		byokFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSBYOK"))
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
@@ -153,6 +165,11 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		_ = cryptoManager.SetDefaultKmsClusterId(ctx, defaultKeyProviderID, nil)
 
+		if cleanupNativeKeyProvider != nil {
+			cleanupNativeKeyProvider()
+			cleanupNativeKeyProvider = nil
+		}
+
 		vcenter.LogoutVimClient(vCenterClient)
 	})
 
@@ -179,7 +196,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	})
 
 	It("Create an Encrypted VirtualMachine using encryption storage policy", Label("smoke"), func() {
-		useKeyProvider(ctx, cryptoManager, nativeKeyProviderID)
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create VM using encryption storage policy")
 
@@ -202,8 +219,198 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 	})
 
+	Context("Encrypted Image: publish then deploy", Label("extended-functional", "experimental"), Ordered, func() {
+		const encryptedImageTargetItemName = "encrypted-vm-image"
+
+		var (
+			publishCLID      string
+			publishCLK8sName string
+			pubVMName        string
+			pubVMYaml        []byte
+			vmPubRequestName string
+
+			// publishedImageName is shared from the first It to the second.
+			publishedImageName string
+
+			// orderedNamespace is created once and shared across all It nodes
+			// in this ordered context, independent of the outer per-spec namespace.
+			orderedNamespaceCtx  wcpframework.NamespaceContext
+			orderedNamespaceName string
+			orderedVMIName       string
+		)
+
+		BeforeAll(func() {
+			var err error
+
+			pubVMName = fmt.Sprintf("%s-src-%s", specName, capiutil.RandomString(4))
+			vmPubRequestName = fmt.Sprintf("%s-pub-%s", specName, capiutil.RandomString(4))
+
+			By("Create a dedicated namespace shared across the ordered publish+deploy tests")
+			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+			clIDs := []string{vmserviceCLID}
+			vmClassNames := []string{clusterResources.VMClassName}
+			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+
+			orderedNamespaceName = fmt.Sprintf("%s-enc-img-%s", specName, capiutil.RandomString(4))
+			orderedNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, orderedNamespaceName, input.ArtifactFolder)
+			Expect(err).NotTo(HaveOccurred(), "failed to create ordered namespace %s", orderedNamespaceName)
+			wcp.WaitForNamespaceReady(wcpClient, orderedNamespaceName)
+
+			orderedVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, orderedNamespaceName, linuxImageDisplayName)
+			Expect(err).NotTo(HaveOccurred(), "failed to find VMI %q in namespace %q", linuxImageDisplayName, orderedNamespaceName)
+
+			By("Configure ordered namespace with encryption storage class")
+			details, err := wcpClient.GetNamespace(orderedNamespaceName)
+			Expect(err).NotTo(HaveOccurred())
+			svClientSet := clusterProxy.GetClientSet()
+			storageClass, err := svClientSet.StorageV1().StorageClasses().Get(ctx, clusterResources.StorageClassName, metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			policyID := storageClass.Parameters["storagePolicyID"]
+			encryptionStoragePolicyID, err := vcenter.GetOrCreateEncryptionStoragePolicy(ctx, vCenterClient, encryptionStorageProfileName, policyID)
+			Expect(err).ShouldNot(HaveOccurred())
+			details.VMStorageSpec = append(details.VMStorageSpec, wcp.StorageSpec{Policy: encryptionStoragePolicyID})
+			Expect(wcpClient.SetNamespaceStorageSpecs(orderedNamespaceName, details.VMStorageSpec)).Should(Succeed())
+			wcp.WaitForNamespaceReady(wcpClient, orderedNamespaceName)
+			vmoperator.EnsureStorageClassInNamespace(ctx, svClusterClient, orderedNamespaceName, encryptionStorageClassName, podVMOnStretchedSupervisorEnabled)
+
+			By("Create a local content library to hold the published encrypted image")
+			publishCLID = vmservice.CreateLocalContentLibrary(
+				fmt.Sprintf("%s-cl-%s", specName, capiutil.RandomString(4)),
+				wcpClient,
+			)
+
+			By("Attach the publish content library to the ordered namespace")
+			Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(
+				orderedNamespaceName,
+				wcp.ContentLibrarySpec{ContentLibrary: publishCLID, Writable: true},
+			)).To(Succeed(), "failed to attach publish CL %s to namespace %s", publishCLID, orderedNamespaceName)
+
+			publishCLK8sName, err = vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, orderedNamespaceName, publishCLID)
+			Expect(err).NotTo(HaveOccurred(), "failed to get k8s name for publish CL %s", publishCLID)
+		})
+
+		AfterAll(func() {
+			By("Delete publish request if it exists")
+			vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, orderedNamespaceName, vmPubRequestName)
+			vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, orderedNamespaceName, vmPubRequestName)
+
+			By("Delete source encrypted VM if it was created")
+			if len(pubVMYaml) > 0 {
+				_ = clusterProxy.DeleteWithArgs(ctx, pubVMYaml)
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, orderedNamespaceName, pubVMName)
+			}
+
+			By("Detach and delete the publish content library")
+			if publishCLID != "" {
+				_ = wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(orderedNamespaceName, publishCLID)
+				_ = wcpClient.DeleteLocalContentLibrary(publishCLID)
+			}
+
+			By("Delete the ordered namespace")
+			if orderedNamespaceCtx.GetNamespace() != nil {
+				clusterProxy.DeleteWCPNamespace(orderedNamespaceCtx)
+				wcp.WaitForNamespaceDeleted(wcpClient, orderedNamespaceName)
+			}
+		})
+
+		It("Publish an Encrypted VirtualMachine as an image to a Content Library", func() {
+			useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
+
+			By("Create source encrypted VM using the native key provider and encryption storage policy")
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        orderedNamespaceName,
+				Name:             pubVMName,
+				ImageName:        orderedVMIName,
+				VMClassName:      "best-effort-small",
+				StorageClassName: encryptionStorageClassName,
+				ResourcePolicy:   clusterResources.VMResourcePolicyName,
+				PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			}
+			pubVMYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, pubVMYaml)).Should(Succeed(), "failed to create source encrypted VM:\n %s", string(pubVMYaml))
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, orderedNamespaceName, pubVMName)
+
+			if byokFSSEnabled {
+				waitForCryptoCondition(ctx, config, svClusterClient, orderedNamespaceName, pubVMName, "")
+			}
+
+			By("Power off the source VM before publishing")
+			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, orderedNamespaceName, pubVMName, string(vmopv1a3.VirtualMachinePowerStateOff))
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, orderedNamespaceName, pubVMName, string(vmopv1a3.VirtualMachinePowerStateOff))
+
+			By("Submit VirtualMachinePublishRequest for the encrypted source VM")
+			pubReqParams := manifestbuilders.VirtualMachinePublishRequestYaml{
+				Namespace: orderedNamespaceName,
+				Name:      vmPubRequestName,
+				Source: manifestbuilders.VirtualMachinePublishRequestSource{
+					Name: pubVMName,
+				},
+				Target: manifestbuilders.VirtualMachinePublishRequestTarget{
+					Item: manifestbuilders.VirtualMachinePublishRequestTargetItem{
+						Name:        encryptedImageTargetItemName,
+						Description: "Encrypted VM image published by E2E test",
+					},
+					Location: manifestbuilders.VirtualMachinePublishRequestTargetLocation{
+						Name: publishCLK8sName,
+					},
+				},
+			}
+			pubReqYaml := manifestbuilders.GetVirtualMachinePublishRequestYaml(pubReqParams)
+			Expect(clusterProxy.CreateWithArgs(ctx, pubReqYaml)).Should(Succeed(), "failed to create VirtualMachinePublishRequest:\n %s", string(pubReqYaml))
+
+			By("Verify the publish request completes successfully")
+			vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, orderedNamespaceName, vmPubRequestName, metav1.Condition{
+				Type:   vmopv1a2.VirtualMachinePublishRequestConditionComplete,
+				Status: metav1.ConditionTrue,
+			})
+
+			By("Wait for the published encrypted image to be visible as a VirtualMachineImage")
+			var err error
+			publishedImageName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, orderedNamespaceName, encryptedImageTargetItemName)
+			Expect(err).NotTo(HaveOccurred(), "published encrypted image %q not found in namespace %q", encryptedImageTargetItemName, orderedNamespaceName)
+			Expect(publishedImageName).NotTo(BeEmpty())
+
+			vmoperator.WaitForVirtualMachineImageStatusDisks(ctx, &config.Config, svClusterClient, orderedNamespaceName, publishedImageName)
+		})
+
+		It("Create a VirtualMachine from the published Encrypted Image", func() {
+			Expect(publishedImageName).NotTo(BeEmpty(), "published encrypted image name must be set by the preceding test")
+
+			deployVMName := fmt.Sprintf("%s-dep-%s", specName, capiutil.RandomString(4))
+
+			By("Create VM from the published encrypted image")
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        orderedNamespaceName,
+				Name:             deployVMName,
+				ImageName:        publishedImageName,
+				VMClassName:      "best-effort-small",
+				StorageClassName: encryptionStorageClassName,
+				ResourcePolicy:   clusterResources.VMResourcePolicyName,
+				PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			}
+			deployVMYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, deployVMYaml)).Should(Succeed(), "failed to create VM from encrypted image:\n %s", string(deployVMYaml))
+
+			DeferCleanup(func() {
+				_ = clusterProxy.DeleteWithArgs(ctx, deployVMYaml)
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, orderedNamespaceName, deployVMName)
+			})
+
+			By("Verify VM creation succeeds without parameter errors")
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, orderedNamespaceName, deployVMName)
+
+			By("Verify encryption is correctly propagated to the VM's disks")
+			if byokFSSEnabled {
+				cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, orderedNamespaceName, deployVMName, "")
+				Expect(cryptoStatus).NotTo(BeNil())
+				Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
+				Expect(cryptoStatus.Encrypted).NotTo(BeEmpty())
+			}
+		})
+	})
+
 	It("Create an Encrypted VirtualMachine using VM Class configured with vTPM", func() {
-		useKeyProvider(ctx, cryptoManager, nativeKeyProviderID)
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create VM Class with vTPM and ensure namespace has access")
 
@@ -253,7 +460,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
 		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, cryptoManager, class.KeyProvider) // TODO: should not need to have a default provider set
+		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider) // TODO: should not need to have a default provider set
 
 		By("Create VM Class with vTPM and ensure namespace has access")
 
@@ -304,7 +511,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
 		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, cryptoManager, class.KeyProvider) // Required when using encryption storage policy
+		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider) // Required when using encryption storage policy
 
 		By("Create VM using invalid encryption class name")
 
@@ -362,7 +569,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
 		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, cryptoManager, class.KeyProvider)
+		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider)
 
 		By("Create PVC using encryption class")
 
@@ -414,7 +621,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Skip("BYOK FSS is not enabled")
 		}
 
-		useKeyProvider(ctx, cryptoManager, nativeKeyProviderID)
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -476,7 +683,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
 		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, cryptoManager, class.KeyProvider)
+		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider)
 
 		By("Create PVC with encryption class annotation")
 
@@ -537,12 +744,16 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Skip("BYOK FSS is not enabled")
 		}
 
+		if !vmserviceutils.IsStandardKeyProviderAvailable(ctx, svClusterProxy) {
+			Skip("Standard key provider (gce2e-standard) not available - requires PyKMIP server setup")
+		}
+
 		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
 
-		useKeyProvider(ctx, cryptoManager, standardKeyProviderID)
+		useKeyProvider(ctx, config, cryptoManager, standardKeyProviderID)
 
 		By("Create Encryption Class for the VM")
 
@@ -619,7 +830,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
 		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, cryptoManager, class.KeyProvider)
+		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider)
 
 		By("Create PVC with encryption class annotation")
 
@@ -712,7 +923,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 		vmECYaml := manifestbuilders.GetEncryptionClassYaml(vmClass)
 		Expect(adminClusterProxy.CreateWithArgs(ctx, vmECYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(vmECYaml))
-		useKeyProvider(ctx, cryptoManager, nativeKeyProviderID)
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create Encryption Class using standard key provider for the PVC")
 
@@ -770,12 +981,29 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	})
 }
 
-func useKeyProvider(ctx context.Context, cryptoManager *crypto.ManagerKmip, keyProviderID string) {
-	By(fmt.Sprintf("Use %s key provider and mark it as default", keyProviderID))
-	status, err := cryptoManager.GetClusterStatus(ctx, keyProviderID)
-	Expect(err).NotTo(HaveOccurred(), "error fetching status of key provider %s", keyProviderID)
+func useKeyProvider(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	cryptoManager *crypto.ManagerKmip,
+	keyProviderID string) {
 
-	Expect(status.OverallStatus).To(Equal(types.ManagedEntityStatusGreen))
+	By(fmt.Sprintf("Use %s key provider and mark it as default", keyProviderID))
+
+	// Native key providers report "red" until their first key is generated on
+	// first use — they are still functional for encryption. For external KMIP
+	// providers, poll until the server is reachable (green) before proceeding.
+	isNative, err := cryptoManager.IsNativeProvider(ctx, keyProviderID)
+	Expect(err).NotTo(HaveOccurred(), "error checking if key provider %s is native", keyProviderID)
+
+	if !isNative {
+		Eventually(func(g Gomega) {
+			status, err := cryptoManager.GetClusterStatus(ctx, keyProviderID)
+			g.Expect(err).NotTo(HaveOccurred(), "error fetching status of key provider %s", keyProviderID)
+			g.Expect(status.OverallStatus).To(Equal(types.ManagedEntityStatusGreen),
+				"key provider %s is not green yet (status: %s)", keyProviderID, status.OverallStatus)
+		}, config.GetIntervals("default", "wait-kms-cluster-ready")...).Should(Succeed(),
+			"timed out waiting for key provider %s to become green", keyProviderID)
+	}
 
 	Expect(cryptoManager.SetDefaultKmsClusterId(ctx, keyProviderID, nil)).To(Succeed())
 }

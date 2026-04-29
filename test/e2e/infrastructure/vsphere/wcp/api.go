@@ -211,6 +211,7 @@ type WorkloadManagementAPI interface {
 	// CRUD APIs for configuring Key Providers
 	CreateKeyProvider(provider string) error
 	DeleteKeyProvider(provider string) error
+	BackupKeyProvider(provider string) error
 
 	// CRUD APIs for Zones
 	ListVSphereZones() (VSphereZoneList, error)

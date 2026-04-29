@@ -1900,6 +1900,20 @@ func (d *wcpDcliClient) DeleteKeyProvider(provider string) error {
 	return nil
 }
 
+// BackupKeyProvider exports (backs up) a native key provider. vCenter requires
+// a backup before the provider can be used for encryption.
+func (d *wcpDcliClient) BackupKeyProvider(provider string) error {
+	cmd := fmt.Sprintf("%s kms providers export --provider %s", cryptoManager, provider)
+	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
+		return DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+	return nil
+}
+
+
 // AssignLicenseEntitlement assigns the given license entitlement to the cluster using the dcli cis command.
 func (d *wcpDcliClient) AssignLicenseEntitlement(signedEntitlement string) (string, error) {
 	cmd := fmt.Sprintf("%s %s entitlements update-task --other-vc-usages '[]' --configuration '%s'", showUnreleased, dcliCISLicenseEntitlementPrefix, signedEntitlement)

@@ -10,6 +10,7 @@ import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 
 	vmopv1a5sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 )
 
@@ -24,6 +25,19 @@ func Convert_sysprep_Sysprep_To_sysprep_Sysprep(
 	out.GUIUnattended = (*vmopv1sysprep.GUIUnattended)(unsafe.Pointer(in.GUIUnattended))
 	out.LicenseFilePrintData = (*vmopv1sysprep.LicenseFilePrintData)(unsafe.Pointer(in.LicenseFilePrintData))
 	out.UserData = *(*vmopv1sysprep.UserData)(unsafe.Pointer(&in.UserData))
+	out.ExpirePasswordAfterNextLogin = in.ExpirePasswordAfterNextLogin
+
+	if sc := in.ScriptText; sc != nil {
+		out.ScriptText = &vmopv1common.ValueOrSecretKeySelector{
+			Value: sc.Value,
+		}
+		if sc.From != nil {
+			out.ScriptText.From = &vmopv1common.SecretKeySelector{
+				Name: sc.From.Name,
+				Key:  sc.From.Key,
+			}
+		}
+	}
 
 	if id := in.Identification; id != nil {
 		out.Identification = &vmopv1sysprep.Identification{

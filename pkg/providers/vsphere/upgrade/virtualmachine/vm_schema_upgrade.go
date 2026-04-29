@@ -168,10 +168,11 @@ func ReconcileSchemaUpgrade(
 
 	if features.TelcoVMServiceAPI {
 		if f := vmopv1util.FeatureVersionTelcoVMServiceAPI; !vmFeatureVersion.Has(f) {
-			if _, err := virtualmachine.FillEmptyNetworkInterfaceTypesFromClass(
-				ctx, k8sClient, vm); err != nil {
+			if _, err := virtualmachine.FillEmptyNetworkInterfaceTypesFromMoVM(
+				vm,
+				moVM); err != nil {
 
-				return fmt.Errorf("fill network interface types: %w", err)
+				return fmt.Errorf("unexpected fill network interface types error: %w", err)
 			}
 			vmFeatureVersion.Set(f)
 		}

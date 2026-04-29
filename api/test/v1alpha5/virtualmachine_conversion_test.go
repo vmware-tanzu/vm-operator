@@ -131,6 +131,21 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "spec.network.interfaces legacy NIC type",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Type: vmopv1.VirtualMachineNetworkInterfaceTypeE1000e,
+								},
+							},
+						},
+					},
+				},
+			},
 		}
 
 		for i := range testCases {

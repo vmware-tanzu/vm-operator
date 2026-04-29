@@ -17,6 +17,22 @@ const (
 
 	// VirtualMachineNetworkInterfaceTypeSRIOV specifies an SR-IOV NIC.
 	VirtualMachineNetworkInterfaceTypeSRIOV VirtualMachineNetworkInterfaceType = "SRIOV"
+
+	// VirtualMachineNetworkInterfaceTypeE1000 specifies an Intel e1000 emulated
+	// NIC.
+	VirtualMachineNetworkInterfaceTypeE1000 VirtualMachineNetworkInterfaceType = "E1000"
+
+	// VirtualMachineNetworkInterfaceTypeE1000e specifies an Intel e1000e
+	// emulated NIC.
+	VirtualMachineNetworkInterfaceTypeE1000e VirtualMachineNetworkInterfaceType = "E1000e"
+
+	// VirtualMachineNetworkInterfaceTypeVMXNet2 specifies a VMXNet2
+	// paravirtual NIC.
+	VirtualMachineNetworkInterfaceTypeVMXNet2 VirtualMachineNetworkInterfaceType = "VMXNet2"
+
+	// VirtualMachineNetworkInterfaceTypePCNet32 specifies an AMD PCnet32
+	// emulated NIC.
+	VirtualMachineNetworkInterfaceTypePCNet32 VirtualMachineNetworkInterfaceType = "PCNet32"
 )
 
 // TxContextThreadingMode specifies the transmit context threading mode for a

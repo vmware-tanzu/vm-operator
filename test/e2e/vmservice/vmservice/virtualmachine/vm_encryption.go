@@ -45,9 +45,7 @@ type VMEncryptionInput struct {
 
 func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput) {
 	const (
-		specName                     = "vm-encryption"
-		encryptionStorageProfileName = "VM Service Encryption Policy"
-		encryptionStorageClassName   = "vm-service-encryption-policy"
+		specName = "vm-encryption"
 
 		// Key Providers setup by hack/kms.sh
 		standardKeyProviderID = "gce2e-standard"
@@ -70,7 +68,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmName                               string
 		vmiName                              string
 		createSpecE2eTestBestEffortSmallVTPM wcp.VMClassSpec
-		podVMOnStretchedSupervisorEnabled    bool
 		byokFSSEnabled                       bool
 		defaultKeyProviderID                 string
 		linuxImageDisplayName                string
@@ -98,7 +95,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
-		podVMOnStretchedSupervisorEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
 		byokFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSBYOK"))
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
@@ -122,27 +118,12 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmiName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 		Expect(err).NotTo(HaveOccurred(), "failed to get the VM Image name in namespace %q", tmpNamespaceName)
 
-		svClientSet := clusterProxy.GetClientSet()
-		storageClass, err := svClientSet.StorageV1().StorageClasses().Get(ctx, clusterResources.StorageClassName, metav1.GetOptions{})
-		Expect(err).NotTo(HaveOccurred())
-
-		policyID := storageClass.Parameters["storagePolicyID"]
-
-		By(encryptionStorageProfileName + " should exist")
-		encryptionStoragePolicyID, err := vcenter.GetOrCreateEncryptionStoragePolicy(ctx, vCenterClient, encryptionStorageProfileName, policyID)
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(encryptionStoragePolicyID).ShouldNot(BeEmpty())
-
-		By("Configure namespace with " + encryptionStorageClassName)
-
-		details, err := wcpClient.GetNamespace(tmpNamespaceName)
-		Expect(err).NotTo(HaveOccurred())
-
-		details.VMStorageSpec = append(details.VMStorageSpec, wcp.StorageSpec{Policy: encryptionStoragePolicyID})
-		Expect(wcpClient.SetNamespaceStorageSpecs(tmpNamespaceName, details.VMStorageSpec)).Should(Succeed())
-		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
-
-		vmoperator.EnsureStorageClassInNamespace(ctx, svClusterClient, tmpNamespaceName, encryptionStorageClassName, podVMOnStretchedSupervisorEnabled)
+		By(utils.E2EEncryptionStorageProfileName + " should exist")
+		Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient, 
+			wcpClient, clusterProxy.GetClientSet(), svClusterClient, *config, 
+			tmpNamespaceName, clusterResources.StorageClassName)).
+			To(Succeed(), "failed to ensure encryption storage in namespace %s", 
+				tmpNamespaceName)
 
 		defaultKeyProviderID, err = cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
 		Expect(err).NotTo(HaveOccurred(), "failed to get default Key Provider ID")
@@ -185,7 +166,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
@@ -310,7 +291,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
 			Crypto: &manifestbuilders.Crypto{
@@ -365,7 +346,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, encryptionStorageClassName)
+		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
 		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
 		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
 		Expect(err).ToNot(HaveOccurred())
@@ -381,7 +362,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
@@ -435,7 +416,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
 			Crypto: &manifestbuilders.Crypto{
@@ -479,7 +460,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, encryptionStorageClassName)
+		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
 		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
 		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
 		Expect(err).ToNot(HaveOccurred())
@@ -495,7 +476,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
@@ -555,7 +536,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, encryptionStorageClassName)
+		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
 
 		By("Create VM with attached PVC and encryption class")
 
@@ -564,7 +545,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
@@ -622,7 +603,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, encryptionStorageClassName)
+		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
 		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
 		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
 		Expect(err).ToNot(HaveOccurred())
@@ -638,7 +619,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
@@ -725,7 +706,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, encryptionStorageClassName)
+		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
 		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
 		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
 		Expect(err).ToNot(HaveOccurred())
@@ -741,7 +722,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Name:             vmName,
 			ImageName:        vmiName,
 			VMClassName:      "best-effort-small",
-			StorageClassName: encryptionStorageClassName,
+			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},

@@ -11,7 +11,6 @@ import (
 	"net"
 	"reflect"
 	"strings"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1058,14 +1057,6 @@ func WaitForVMNetworkProviderInfo(ctx context.Context, config *config.E2EConfig,
 	}
 
 	return res
-}
-
-func EnsureStorageClassInNamespace(ctx context.Context, k8sClient ctrlclient.Client, namespace, name string, podVMOnStretchedSupervisorEnabled bool) {
-	Eventually(func(g Gomega) {
-		scInNS, err := utils.IsStorageClassInNamespace(ctx, k8sClient, namespace, name, podVMOnStretchedSupervisorEnabled)
-		g.Expect(err).NotTo(HaveOccurred(), "error checking if storage class %s in namespace %s: %v", name, namespace, err)
-		g.Expect(scInNS).To(BeTrue())
-	}, 3*time.Minute, 10*time.Second).Should(Succeed(), "storage class %s not found in namespace %s", name, namespace)
 }
 
 func WaitOnVirtualMachineGroupCondition(

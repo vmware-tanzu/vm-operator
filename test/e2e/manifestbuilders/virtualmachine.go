@@ -176,6 +176,21 @@ func GetVirtualMachineYamlA5(vmYaml VirtualMachineYaml) []byte {
 	return vmYamlBytes
 }
 
+// GetPersistentVolumeClaimYaml renders a single PersistentVolumeClaim manifest from
+// the same PVC fields used by GetVirtualMachineYamlA5 (see createPvcsFromSpec).
+func GetPersistentVolumeClaimYaml(pvc PVC) []byte {
+	pvcYamlIn := fixtures.ReadFile(vmYamlDir, "pvc.yaml.in")
+	tmpl := template.Must(template.New("pvc").Parse(pvcYamlIn))
+	parsed := new(bytes.Buffer)
+
+	err := tmpl.Execute(parsed, pvc)
+	if err != nil {
+		e2eframework.Failf("Failed executing pvc template: %v", err)
+	}
+
+	return parsed.Bytes()
+}
+
 func ReadVirtualMachineTemplate(vmYaml VirtualMachineYaml, input string) ([]byte, error) {
 	tmpl := template.Must(template.New("vm").Parse(input))
 	parsed := new(bytes.Buffer)

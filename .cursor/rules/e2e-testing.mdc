@@ -12,10 +12,10 @@ alwaysApply: false
 
 ## Running tests
 
-**Environment setup** (kubeconfig under `~/.kube/wcp-config`, vars exported — see README for `testbedInfo.json`):
+**Environment setup** (kubeconfig under `~/.kube/wcp-config`, vars exported — see README for `testbedInfo.json` or a remote URL):
 
 ```bash
-source ./hack/setup-testbed-env.sh <testbedInfo.json> --env
+source ./hack/setup-testbed-env.sh <testbedInfo.json|URL> --e2e
 ```
 
 **Makefile targets** (from repo root):
@@ -48,5 +48,11 @@ Config file: `test/e2e/vmservice/config/wcp.yaml`. Env vars such as `NETWORK`, `
 - Use Ginkgo `Label(...)` with the project’s label scheme (`smoke`, `core-functional`, `extended-functional`, feature labels — see README).
 - Prefer helpers in `lib/vmoperator`, `manifestbuilders`, and `infrastructure/vsphere` rather than ad-hoc API calls.
 - Async behavior: `Eventually` / `Consistently`, not sleeps — same spirit as controller tests; details and snippets are in the README.
+
+### Structure and manifests
+
+- **Avoid inline closures** (`func(...) { ... }` assigned to a variable) inside `Describe` / `Context` unless they are clearly the smallest way to express a one-off and would not read cleaner as a few lines at the call site or a **package-level** helper in the same test package. Prefer inlining the steps in `It` / `BeforeEach`, or extending **`manifestbuilders`** / **`createPvcsFromSpec`**-style helpers so PVC and VM shapes stay consistent with the rest of the suite.
+- **PVCs**: Build volume claims with `createPvcsFromSpec` (or the same `manifestbuilders.PVC` fields it fills) and **`manifestbuilders.GetPersistentVolumeClaimYaml`** when you need a **standalone** PVC document (e.g. apply the PVC before the VM so admission can resolve the claim). That keeps YAML aligned with `GetVirtualMachineYamlA5` / `v1a5singlevm.yaml.in`.
+- **Apply path**: If `controller-runtime` `Create` on a PVC fails against CSI mutation webhooks (e.g. TLS timeout), use **`clusterProxy.ApplyWithArgs`** with the rendered YAML so the same path as `kubectl apply` is used.
 
 When adding new categories, labels, or Makefile variables, **update `test/e2e/README.md`**.

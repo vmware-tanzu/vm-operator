@@ -351,8 +351,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				config.GetVariable("VMOPDeploymentName"),
 				config.GetVariable("VMOPManagerCommand"),
 				config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
-			vmoperator.EnsureStorageClassInNamespace(ctx, svClusterClient, vmSvcNamespace,
-				eztStorageProfileName, podVMOnStretchedSupervisorEnabled)
+			utils.EnsureStorageClassInNamespace(ctx, svClusterClient, vmSvcNamespace,
+				eztStorageProfileName, podVMOnStretchedSupervisorEnabled, *config)
 			e2eframework.Logf(
 				"EZT storage class %s is available in namespace %s",
 				eztStorageProfileName, vmSvcNamespace,
@@ -2210,6 +2210,191 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 							"Expected PVC %s to be bound", volName)
 					}
 				}
+			})
+		})
+
+		Describe("Multi-Writer and Encryption Validation Webhook", Label("extended-functional", "experimental"), func() {
+			BeforeAll(func() {
+				By("Ensuring encryption storage policy and class in test namespace (shared with VMEncryptionSpec)")
+				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				DeferCleanup(vcenter.LogoutVimClient, vCenterClient)
+
+				Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient, wcpClient,
+					clusterProxy.GetClientSet(), svClusterClient, *config,
+					vmSvcNamespace, clusterResources.StorageClassName)).To(Succeed(),
+					"failed to ensure encryption storage in namespace %s", vmSvcNamespace)
+			})
+
+			It("should reject a VM whose encrypted PVC uses MultiWriter sharing mode", func() {
+				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
+					StorageClassName: utils.E2EEncryptionStorageClassName,
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+					VolumeMode:       ptr.To(corev1.PersistentVolumeBlock),
+				}, 1)
+				pvcSpec := pvcs[0]
+
+				By("Creating the encrypted PVC before the VM")
+				Expect(clusterProxy.ApplyWithArgs(ctx, manifestbuilders.GetPersistentVolumeClaimYaml(pvcSpec))).
+					To(Succeed(), "failed to create encrypted PVC %s", pvcSpec.ClaimName)
+				DeferCleanup(func() {
+					_ = svClusterClient.Delete(ctx, &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      pvcSpec.ClaimName,
+							Namespace: vmSvcNamespace,
+						},
+					})
+				})
+
+				By("Attempting to create VM with encrypted PVC in MultiWriter mode (should be webhook-rejected)")
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      vmName,
+						Namespace: vmSvcNamespace,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ClassName:    clusterResources.VMClassName,
+						ImageName:    linuxImageDisplayName,
+						StorageClass: clusterResources.StorageClassName,
+						Volumes: []vmopv1a5.VirtualMachineVolume{
+							{
+								Name: pvcSpec.VolumeName,
+								VirtualMachineVolumeSource: vmopv1a5.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1a5.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: pvcSpec.ClaimName,
+										},
+									},
+								},
+								SharingMode: vmopv1a5.VolumeSharingModeMultiWriter,
+							},
+						},
+					},
+				}
+
+				err := svClusterClient.Create(ctx, vm)
+				Expect(err).To(HaveOccurred(),
+					"expected webhook to reject VM with encrypted PVC in MultiWriter sharing mode")
+				Expect(err.Error()).To(ContainSubstring("MultiWriter disk sharing is not supported for encrypted volumes"),
+					"expected webhook rejection message about encrypted MultiWriter disks")
+			})
+
+			It("should reject a VM whose encrypted PVC is on a physical-sharing SCSI controller", func() {
+				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
+					StorageClassName:    utils.E2EEncryptionStorageClassName,
+					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerBusNumber: ptr.To(int32(1)),
+					AccessModes:         []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+					VolumeMode:          ptr.To(corev1.PersistentVolumeBlock),
+				}, 1)
+				pvcSpec := pvcs[0]
+
+				By("Creating the encrypted PVC before the VM")
+				Expect(clusterProxy.ApplyWithArgs(ctx, manifestbuilders.GetPersistentVolumeClaimYaml(pvcSpec))).
+					To(Succeed(), "failed to create encrypted PVC %s", pvcSpec.ClaimName)
+				DeferCleanup(func() {
+					_ = svClusterClient.Delete(ctx, &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      pvcSpec.ClaimName,
+							Namespace: vmSvcNamespace,
+						},
+					})
+				})
+
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      vmName,
+						Namespace: vmSvcNamespace,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ClassName:    clusterResources.VMClassName,
+						ImageName:    linuxImageDisplayName,
+						StorageClass: clusterResources.StorageClassName,
+						Hardware: &vmopv1a5.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+								{
+									BusNumber:   1,
+									Type:        vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
+									SharingMode: vmopv1a5.VirtualControllerSharingModePhysical,
+								},
+							},
+						},
+						Volumes: []vmopv1a5.VirtualMachineVolume{
+							{
+								Name: pvcSpec.VolumeName,
+								VirtualMachineVolumeSource: vmopv1a5.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1a5.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: pvcSpec.ClaimName,
+										},
+									},
+								},
+								ControllerType:      vmopv1a5.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(1)),
+							},
+						},
+					},
+				}
+
+				By("Attempting to create VM with encrypted PVC on physical-sharing controller (should be webhook-rejected)")
+				err := svClusterClient.Create(ctx, vm)
+				Expect(err).To(HaveOccurred(),
+					"expected webhook to reject VM with encrypted PVC on physical-sharing SCSI controller")
+				Expect(err.Error()).To(ContainSubstring("not supported for encrypted volumes"),
+					"expected webhook rejection message about encrypted volumes and controller sharing")
+			})
+
+			It("should allow a non-encrypted VM with a physical-sharing SCSI controller", func() {
+				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
+					StorageClassName:    eztStorageProfileName,
+					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerBusNumber: ptr.To(int32(1)),
+					UnitNumber:          ptr.To(int32(0)),
+					AccessModes:         []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+					VolumeMode:          ptr.To(corev1.PersistentVolumeBlock),
+				}, 1)
+
+				hardware := vmopv1a5.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+						{
+							BusNumber:   1,
+							Type:        vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1a5.VirtualControllerSharingModePhysical,
+						},
+					},
+				}
+
+				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+					Namespace:        vmSvcNamespace,
+					Name:             vmName,
+					ImageName:        linuxImageDisplayName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					PVCs:             pvcs,
+					Hardware:         &hardware,
+				})
+				vmYamls = append(vmYamls, vmYaml)
+
+				By("Creating non-encrypted VM with physical-sharing SCSI controller")
+				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(),
+					"expected webhook to accept VM with physical-sharing controller and non-encrypted storage")
+
+				By("Waiting for the VM to power on with shared PVCs attached")
+				volumeNames := make([]string, len(pvcs))
+				for i, pvc := range pvcs {
+					volumeNames[i] = pvc.VolumeName
+				}
+
+				backfilledVolumes := getBackfilledVolumes(ctx, config, svClusterClient, vmSvcNamespace, vmName, allDisksArePVCapabilityEnabled)
+				volumeNames = append(volumeNames, backfilledVolumes...)
+				waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, vmName, volumeNames)
+
+				By("Verifying the physical-sharing controller is reflected in VM status")
+				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
+					map[vmopv1a5.VirtualControllerType]int{
+						vmopv1a5.VirtualControllerTypeSCSI: 2,
+						vmopv1a5.VirtualControllerTypeIDE:  2,
+					},
+				)
 			})
 		})
 	})

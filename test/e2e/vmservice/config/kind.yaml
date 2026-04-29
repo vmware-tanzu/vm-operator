@@ -46,6 +46,7 @@ intervals:
   default/wait-virtual-machine-vmip: ["5m", "10s"]
   default/wait-virtual-machine-image-creation: ["20s", "2s"]
   default/consistent-virtual-machine-condition: ["30s", "5s"]
+  default/wait-virtual-machine-compute-policy-status-update: ["5m", "10s"]
 
   default/wait-config-map-creation: ["2m", "5s"]
   default/wait-secret-creation: ["2m", "5s"]

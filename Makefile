@@ -995,7 +995,7 @@ e2e-image-remove: ## Remove E2E test container image
 #   LABEL_FILTER           - Ginkgo label filter (e.g., "smoke", "!extended-functional")
 #   FLAKE_ATTEMPTS         - Number of retry attempts for flaky tests
 #   E2E_PREBUILT_BINARY    - Path to `go test -c` output (default: $(ROOT_DIR)e2e-tests)
-#   E2E_ARTIFACT_FOLDER    - Directory for test artifacts/logs (default: test_logs)
+#   E2E_ARTIFACT_FOLDER    - Directory for test artifacts/logs (default: /tmp/test_logs)
 #   E2E_ARGS               - Override all e2e binary arguments (e.g. from CI pipelines)
 
 E2E_PREBUILT_BINARY ?= $(ROOT_DIR)e2e-tests

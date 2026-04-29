@@ -706,7 +706,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		AfterEach(func() {
 			if tmpNamespaceName != "" {
 				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
-
 				tmpNamespaceName = ""
 			}
 		})
@@ -940,6 +939,432 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm3Name, policyNameToTagID, policyNames[2:3])
 				// VM4 with tier=1 label should have the 1st mandatory policy applied.
 				vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm4Name, policyNameToTagID, policyNames[:1])
+			})
+
+		})
+	})
+
+	Context("Group placement with affinity and anti-affinity at host topology", func() {
+		const (
+			requiredDuringSchedulingPreferredDuringExecution  = "requiredDuringSchedulingPreferredDuringExecution"
+			preferredDuringSchedulingPreferredDuringExecution = "preferredDuringSchedulingPreferredDuringExecution"
+		)
+
+		var (
+			tmpNamespaceName string
+			tmpNamespaceCtx  wcpframework.NamespaceContext
+		)
+
+		// getVMHostFromVmodlFunc retrieves the host moref value from vSphere directly.
+		// Use this before power-on, when vm.Status.Host is not yet populated.
+		getVMHostFromVmodlFunc := func(vmName string) string {
+			GinkgoHelper()
+
+			moid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: moid}
+
+			propCollector := property.DefaultCollector(vCenterClient)
+			var vmMO mo.VirtualMachine
+			Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"runtime.host"}, &vmMO)).To(Succeed())
+			Expect(vmMO.Runtime.Host).ToNot(BeNil())
+
+			return vmMO.Runtime.Host.Value
+		}
+
+		// getVMHostFunc retrieves the host from vm.Status.Host.
+		// Use this after power-on, once the operator has updated the status.
+		getVMHostFunc := func(vmName string) string {
+			GinkgoHelper()
+
+			var host string
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Status.Host).ToNot(BeEmpty())
+				host = vm.Status.Host
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+
+			return host
+		}
+
+		powerOnVMFunc := func(vmName string) {
+			GinkgoHelper()
+
+			vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, tmpNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine %s", vmName)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
+				To(Succeed(), "failed to patch powerState for vm %s", vmName)
+		}
+
+		createHostVMWithAffinityAndAntiAffinityFunc := func(vmName, affinityType string, labelValues, affinityTiers, antiAffinityTiers []string) {
+			GinkgoHelper()
+
+			labels := make(map[string]string)
+			for _, v := range labelValues {
+				labels["tier"] = v
+			}
+
+			var affinityLabelSelector *vmopv1a5.VMAffinitySpec
+			if len(affinityTiers) > 0 {
+				terms := []vmopv1a5.VMAffinityTerm{
+					{
+						LabelSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "tier",
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   affinityTiers,
+								},
+							},
+						},
+						TopologyKey: "kubernetes.io/hostname",
+					},
+				}
+				if affinityType == requiredDuringSchedulingPreferredDuringExecution {
+					affinityLabelSelector = &vmopv1a5.VMAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: terms,
+					}
+				} else if affinityType == preferredDuringSchedulingPreferredDuringExecution {
+					affinityLabelSelector = &vmopv1a5.VMAffinitySpec{
+						PreferredDuringSchedulingPreferredDuringExecution: terms,
+					}
+				}
+			}
+
+			var antiAffinityLabelSelector *vmopv1a5.VMAntiAffinitySpec
+			if len(antiAffinityTiers) > 0 {
+				terms := []vmopv1a5.VMAffinityTerm{
+					{
+						LabelSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "tier",
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   antiAffinityTiers,
+								},
+							},
+						},
+						TopologyKey: "kubernetes.io/hostname",
+					},
+				}
+				if affinityType == requiredDuringSchedulingPreferredDuringExecution {
+					antiAffinityLabelSelector = &vmopv1a5.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: terms,
+					}
+				} else if affinityType == preferredDuringSchedulingPreferredDuringExecution {
+					antiAffinityLabelSelector = &vmopv1a5.VMAntiAffinitySpec{
+						PreferredDuringSchedulingPreferredDuringExecution: terms,
+					}
+				}
+			}
+
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        tmpNamespaceName,
+				Name:             vmName,
+				GroupName:        vmgRootName,
+				Labels:           labels,
+				ImageName:        linuxImageDisplayName,
+				VMClassName:      clusterResources.VMClassName,
+				StorageClassName: clusterResources.StorageClassName,
+				PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
+				Affinity: &vmopv1a5.AffinitySpec{
+					VMAffinity:     affinityLabelSelector,
+					VMAntiAffinity: antiAffinityLabelSelector,
+				},
+			}
+			vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+			Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+		}
+
+		getVMPolicyComplianceFunc := func(policyID, vmName string) wcp.VMPolicyComplianceStatus {
+			GinkgoHelper()
+
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+
+			status, err := input.WCPClient.GetVMPolicyCompliance(policyID, vm.Status.UniqueID)
+			Expect(err).ToNot(HaveOccurred())
+
+			return status
+		}
+
+		verifyAffinity := func(vmHosts map[string]string, affinedVms []string) {
+			if len(affinedVms) <= 1 {
+				return
+			}
+
+			vm1Host, ok := vmHosts[affinedVms[0]]
+			Expect(ok).To(BeTrue())
+			Expect(vm1Host).ToNot(BeEmpty())
+
+			for i := 1; i < len(affinedVms); i++ {
+				vmNHost, ok := vmHosts[affinedVms[i]]
+				Expect(ok).To(BeTrue())
+				Expect(vmNHost).To(Equal(vm1Host))
+			}
+		}
+
+		// all hosts of Vms must be different from each other.
+		verifyAntiAffinity := func(vmHosts map[string]string, antiAffinedVms []string) {
+			if len(antiAffinedVms) <= 1 {
+				return
+			}
+
+			seen := make(map[string]string, len(antiAffinedVms))
+			for _, vmName := range antiAffinedVms {
+				host, ok := vmHosts[vmName]
+				Expect(ok).To(BeTrue())
+				Expect(host).ToNot(BeEmpty())
+				Expect(seen).ToNot(HaveKey(host), "VMs %s and %s are both on host %s, but anti-affinity requires them to be on different hosts", seen[host], vmName, host)
+				seen[host] = vmName
+			}
+		}
+
+		runVmVmAffinityAtHostTopoTest := func(affinityType string, affinedVms, antiAffinedVms []string) {
+			vmgParameters := manifestbuilders.VirtualMachineGroupYaml{
+				Namespace: tmpNamespaceName,
+				Name:      vmgRootName,
+				BootOrder: []manifestbuilders.BootOrder{
+					{
+						Members: []vmopv1a5.GroupMember{},
+					},
+				},
+			}
+			for _, v := range vmMemberNames {
+				vmgParameters.BootOrder[0].Members = append(vmgParameters.BootOrder[0].Members,
+					vmopv1a5.GroupMember{Kind: vmKind, Name: v})
+			}
+
+			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
+			e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
+			Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+
+			affinedSet := make(map[string]bool, len(affinedVms))
+			for _, v := range affinedVms {
+				affinedSet[v] = true
+			}
+			antiAffinedSet := make(map[string]bool, len(antiAffinedVms))
+			for _, v := range antiAffinedVms {
+				antiAffinedSet[v] = true
+			}
+
+			for _, v := range vmMemberNames {
+				labelTier := "1"
+				if antiAffinedSet[v] {
+					labelTier = "2"
+				}
+
+				var affinityTiers, antiAffinityTiers []string
+				if affinedSet[v] {
+					affinityTiers = []string{"1"}
+				}
+				if antiAffinedSet[v] {
+					antiAffinityTiers = []string{"2"}
+				}
+				createHostVMWithAffinityAndAntiAffinityFunc(v, affinityType, []string{labelTier}, affinityTiers, antiAffinityTiers)
+			}
+
+			By("Waiting for all VMs to be created in vSphere (powered off)")
+
+			for _, vmName := range vmMemberNames {
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+			}
+
+			By("Verifying host placement before power-on via vSphere vmodl as vm.status.host may not be populated yet.")
+			vmHosts := make(map[string]string)
+			for _, v := range vmMemberNames {
+				vmHosts[v] = getVMHostFromVmodlFunc(v)
+			}
+
+			// Check placement enforcement for requiredDuringScheduling
+			// This is skipped for preferredDuringScheduling as that is non-deterministic.
+			if affinityType == requiredDuringSchedulingPreferredDuringExecution {
+				By("Verifying all VMs are placed on different hosts before poweron, i.e. placement is as expected")
+				verifyAffinity(vmHosts, affinedVms)
+				verifyAntiAffinity(vmHosts, antiAffinedVms)
+			}
+
+			By("Powering on all VMs")
+			for _, vmName := range vmMemberNames {
+				powerOnVMFunc(vmName)
+			}
+			for _, vmName := range vmMemberNames {
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+			}
+
+			By("Verifying vm.Status.Host is populated for all VMs after power-on")
+			for _, vmName := range vmMemberNames {
+				Expect(getVMHostFunc(vmName)).ToNot(BeEmpty())
+			}
+
+			By("Verifying each VM is configured with the policy with the correct tags.")
+
+			// Build the set of tier labels that are actually in use so we can look up
+			// each policy ID once and then check each VM against its own policy.
+			tierLabels := make(map[string]string) // tier label -> policy ID
+			if len(affinedVms) > 0 {
+				tierLabels["tier:1"] = ""
+			}
+			if len(antiAffinedVms) > 0 {
+				tierLabels["tier:2"] = ""
+			}
+
+			for tagLabel := range tierLabels {
+				Eventually(func(g Gomega) {
+					entries, err := input.WCPClient.ListComputePolicyTagUsage(tmpNamespaceName, tagLabel)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(entries).ToNot(BeEmpty())
+					g.Expect(entries[0].Policy).ToNot(BeEmpty())
+					tierLabels[tagLabel] = entries[0].Policy
+				}, config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")...).Should(Succeed(),
+					"timed out waiting for compute policy tag usage entry for tag %s in namespace %s", tagLabel, tmpNamespaceName)
+			}
+
+			// vmPolicyID maps each VM to the policy ID it should be checked against.
+			vmPolicyID := make(map[string]string, len(vmMemberNames))
+			for _, vmName := range affinedVms {
+				vmPolicyID[vmName] = tierLabels["tier:1"]
+			}
+			for _, vmName := range antiAffinedVms {
+				vmPolicyID[vmName] = tierLabels["tier:2"]
+			}
+
+			for _, vmName := range vmMemberNames {
+				policyID := vmPolicyID[vmName]
+				Eventually(func() string {
+					status := getVMPolicyComplianceFunc(policyID, vmName)
+					return status.Status
+				}, config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")...).
+					Should(Or(Equal("COMPLIANT"), Equal("NOT_COMPLIANT")), "expected VM %s to have a compliance status for policy %s", vmName, policyID)
+			}
+		}
+
+		BeforeEach(func() {
+			skipper.SkipUnlessStretchSupervisorIsEnabled()
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMPlacementPoliciesCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMAffinityDuringExecutionCapabilityName)
+
+			supervisorID := vcenter.GetSupervisorIDFromKubeconfig(ctx, config.InfraConfig.KubeconfigPath)
+			Expect(supervisorID).ToNot(BeEmpty(), "Supervisor ID should not be empty")
+			zoneList, err := clusterProxy.GetZonesBoundWithSupervisor(supervisorID)
+			Expect(err).ToNot(HaveOccurred(), "failed to get zones bound with Supervisor")
+
+			By("Creating a temporary namespace")
+
+			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, input.WCPClient)
+			clIDs := []string{vmserviceCLID}
+			vmClassNames := []string{clusterResources.VMClassName}
+			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
+			Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
+			Expect(tmpNamespaceCtx.GetNamespace()).ToNot(BeNil(), "namespace should not be nil")
+			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
+			wcp.WaitForNamespaceReady(input.WCPClient, tmpNamespaceName)
+
+			By("Ensuring the Linux image is available in the temp namespace")
+
+			_, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+			Expect(err).NotTo(HaveOccurred(), "failed to get VMI by display name %q in namespace %q", linuxImageDisplayName, tmpNamespaceName)
+
+			By("Binding all zones to the temporary namespace")
+
+			namespaceZones, err := utils.ListZonesByNamespace(ctx, input.ClusterProxy.GetClient(), tmpNamespaceName)
+			Expect(err).NotTo(HaveOccurred())
+
+			boundZones := make(map[string]struct{}, len(namespaceZones.Items))
+			for _, zone := range namespaceZones.Items {
+				boundZones[zone.Name] = struct{}{}
+			}
+
+			unboundZones := []string{}
+
+			for _, zone := range zoneList.Zones {
+				if _, ok := boundZones[zone.Zone]; !ok {
+					unboundZones = append(unboundZones, zone.Zone)
+				}
+			}
+
+			if len(unboundZones) > 0 {
+				_, err = clusterProxy.UpdateNamespaceWithZones(ctx, tmpNamespaceName, unboundZones, svClusterClient)
+				Expect(err).ToNot(HaveOccurred(), "failed to update namespace with Zones")
+			}
+
+			zoneHostInfos, err := utils.GetHostsPerZone(ctx, input.ClusterProxy.GetClient(), input.ClusterProxy.GetKubeconfigPath())
+			Expect(err).NotTo(HaveOccurred(), "failed to list zones with hosts")
+
+			minHostsRequirementSatisfied := false
+			for _, zoneHostInfo := range zoneHostInfos {
+				if len(zoneHostInfo.HostIDs) >= 3 {
+					minHostsRequirementSatisfied = true
+					break
+				}
+			}
+
+			Expect(minHostsRequirementSatisfied).To(BeTrue(), "at least 1 zone with 3 hosts expected")
+		})
+
+		AfterEach(func() {
+			if tmpNamespaceName != "" {
+				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+				tmpNamespaceName = ""
+			}
+		})
+
+		When("Group placement with affinity and anti-affinity at host topology", func() {
+			It("Should create 4 VMs with preferred host AF with each other", func() {
+				By("Creating a VirtualMachineGroup with 4 VM-kind members")
+				vmMemberNames = []string{vm1Name, vm2Name, vm3Name, vm4Name}
+				runVmVmAffinityAtHostTopoTest(preferredDuringSchedulingPreferredDuringExecution,
+					[]string{vm1Name, vm2Name, vm3Name, vm4Name},
+					[]string{})
+
+			})
+
+			It("Should create 3 VMs with preferred host AAF with each other", func() {
+				By("Creating a VirtualMachineGroup with 3 VM-kind members")
+				vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+				runVmVmAffinityAtHostTopoTest(preferredDuringSchedulingPreferredDuringExecution,
+					[]string{},
+					[]string{vm1Name, vm2Name, vm3Name})
+
+			})
+
+			It("Should create VMs with preferred host AF (2vms) & AAF (2vms)", func() {
+				By("Creating a VirtualMachineGroup with 4 VM-kind members")
+				vmMemberNames = []string{vm1Name, vm2Name, vm3Name, vm4Name}
+				runVmVmAffinityAtHostTopoTest(preferredDuringSchedulingPreferredDuringExecution,
+					[]string{vm1Name, vm2Name},
+					[]string{vm3Name, vm4Name})
+			})
+
+			It("Should create 4 VMs with required host AF with each other", func() {
+				By("Creating a VirtualMachineGroup with 4 VM-kind members")
+				vmMemberNames = []string{vm1Name, vm2Name, vm3Name, vm4Name}
+				runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingPreferredDuringExecution,
+					[]string{vm1Name, vm2Name, vm3Name, vm4Name},
+					[]string{})
+
+			})
+
+			It("Should create 3 VMs with required host AAF with each other", func() {
+				By("Creating a VirtualMachineGroup with 3 VM-kind members")
+				vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+				runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingPreferredDuringExecution,
+					[]string{},
+					[]string{vm1Name, vm2Name, vm3Name})
+
+			})
+
+			It("Should create VMs with required host AF (2vms) & AAF (2vms)", func() {
+				By("Creating a VirtualMachineGroup with 4 VM-kind members")
+				vmMemberNames = []string{vm1Name, vm2Name, vm3Name, vm4Name}
+				runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingPreferredDuringExecution,
+					[]string{vm1Name, vm2Name},
+					[]string{vm3Name, vm4Name})
 			})
 		})
 	})

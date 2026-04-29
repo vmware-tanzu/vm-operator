@@ -2222,3 +2222,50 @@ func (d *wcpDcliClient) ListHostIDs() ([]string, error) {
 
 	return hostIDs, nil
 }
+
+// ListComputePolicyTagUsage lists compute policy tag usage entries filtered by category name and tag name.
+func (d *wcpDcliClient) ListComputePolicyTagUsage(categoryName, tagName string) ([]TagUsageEntry, error) {
+	cmd := fmt.Sprintf("%scompute policies tagusage list +formatter json", dcliVCenterPrefix)
+
+	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		return nil, DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+
+	var all []TagUsageEntry
+	if err = json.Unmarshal(resp, &all); err != nil {
+		return nil, err
+	}
+
+	var filtered []TagUsageEntry
+	for _, e := range all {
+		if e.CategoryName == categoryName && e.TagName == tagName {
+			filtered = append(filtered, e)
+		}
+	}
+
+	return filtered, nil
+}
+
+// GetVMPolicyCompliance returns the compliance status of a VM against a compute policy.
+func (d *wcpDcliClient) GetVMPolicyCompliance(policyID, vmMoid string) (VMPolicyComplianceStatus, error) {
+	cmd := fmt.Sprintf("%svm compute policies get --policy %s --vm %s +formatter json", dcliVCenterPrefix, policyID, vmMoid)
+
+	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		return VMPolicyComplianceStatus{}, DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+
+	var status VMPolicyComplianceStatus
+	if err = json.Unmarshal(resp, &status); err != nil {
+		return VMPolicyComplianceStatus{}, err
+	}
+
+	return status, nil
+}

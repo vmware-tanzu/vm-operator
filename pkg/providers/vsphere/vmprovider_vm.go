@@ -149,22 +149,6 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 	return vs.createOrUpdateVirtualMachine(ctx, vm, true)
 }
 
-func (vs *vSphereVMProvider) GetVMLocation(vmCtx pkgctx.VirtualMachineContext, vm *object.VirtualMachine, vcClient *vcclient.Client) (string, error) {
-	var o mo.VirtualMachine
-	err := vm.Properties(vmCtx, vm.Reference(), []string{"resourcePool"}, &o)
-	if err != nil {
-		return "", err
-	}
-	if o.ResourcePool != nil {
-		element, err := vcClient.Finder().Element(vmCtx, *o.ResourcePool)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve resource pool path: %w", err)
-		}
-		return element.Path, nil
-	}
-	return "", fmt.Errorf("resource pool not found for VM %s", vm.Name())
-}
-
 func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
@@ -1046,6 +1030,13 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
 	}
 
+	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("status", reconcileErr, err)
+	}
+
 	//
 	// 6. Reconcile schema upgrade
 	//
@@ -1099,12 +1090,6 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		}
 	}
 
-	if err := vs.reconcileLocation(vmCtx, vcVM, vcClient); err != nil {
-		if pkgerr.IsNoRequeueError(err) {
-			return errOrReconcileErr(reconcileErr, err)
-		}
-		reconcileErr = getReconcileErr("status", reconcileErr, err)
-	}
 	//
 	// 10. Reconcile power state
 	//
@@ -1130,41 +1115,65 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	return reconcileErr
 }
 
-func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualMachine, vcClient *vcclient.Client) error {
-	// Fetch the VM location from vCenter
-	fullPath, err := vs.GetVMLocation(vmCtx, vcVM, vcClient)
+func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcClient *vcclient.Client) error {
+	// 1. Get the VM's current Resource Pool from properties already fetched
+	if vmCtx.MoVM.ResourcePool == nil {
+		return fmt.Errorf("VM %s has no resource pool assigned", vmCtx.VM.Name)
+	}
+	currentRPMoRef := *vmCtx.MoVM.ResourcePool
+
+	// 2. Get the Namespace's Root Resource Pool MoRef
+	// We use the topology utility to find the RP mapped to this K8s Namespace
+	_, expectedRootRPMoID, err := topology.GetNamespaceFolderAndRPMoID(
+		vmCtx,
+		vs.k8sClient,
+		vmCtx.VM.Labels[corev1.LabelTopologyZone],
+		vmCtx.VM.Namespace,
+	)
 	if err != nil {
-		vmCtx.Logger.V(4).Info("Unable to resolve VM location path", "error", err)
-		return nil
+		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
-
-	// 2. Compare Actual (vCenter) vs Expected (K8s)
-
-	expectedRootName := vmCtx.VM.Namespace
-	resourcePolicy, _ := GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
-	if resourcePolicy != nil && resourcePolicy.Spec.ResourcePool.Name != "" {
-		expectedRootName = resourcePolicy.Spec.ResourcePool.Name
-	}
-
 	// 3. Validate Ancestry
-	// Check if the expectedRootName exists as a segment in the path
-	pathParts := strings.Split(fullPath, "/")
-	isValidLocation := false
-	for _, part := range pathParts {
-		if part == expectedRootName {
-			isValidLocation = true
-			break
+	// Check if the VM is in the Root RP or a Child RP (common for VKS)
+	isValid := false
+	// Case A: VM is directly in the Namespace Root RP
+	if currentRPMoRef.Value == expectedRootRPMoID {
+		isValid = true
+	} else {
+		poolObj := object.NewResourcePool(vcClient.VimClient(), currentRPMoRef)
+		var moPool mo.ResourcePool
+		// Fetch only the "parent" property to minimize API overhead
+		err := poolObj.Properties(vmCtx, poolObj.Reference(), []string{"parent"}, &moPool)
+
+		if err == nil && moPool.Parent != nil {
+			// Check if the parent of this child RP is the Namespace Root RP
+			if moPool.Parent.Value == expectedRootRPMoID {
+				isValid = true
+			}
 		}
 	}
 
-	if !isValidLocation {
-		// Use the MarkFalse logic
-		pkgcnd.MarkFalse(
-			vmCtx.VM, vmopv1.VirtualMachineConditionLocationMismatch, "LocationMismatch", "VM is moved to different Vcenter location , expected location is: '%s'", vmCtx.VM.Namespace)
+	// 4. Handle Mismatch
+	if !isValid {
+		//vmCtx.Logger.Warn("Location mismatch detected: VM is outside the authorized Namespace Resource Pool hierarchy")
 
+		pkgcnd.MarkFalse(
+			vmCtx.VM,
+			vmopv1.VirtualMachineConditionLocationMismatch,
+			"LocationMismatch",
+			"VM is moved to an unauthorized Resource Pool; expected hierarchy of namespace: '%s'",
+			vmCtx.VM.Namespace,
+		)
+
+		// Pause the VM to prevent VM Operator from making conflicting changes in the wrong location
+		if vmCtx.VM.Annotations == nil {
+			vmCtx.VM.Annotations = make(map[string]string)
+		}
 		vmCtx.VM.Annotations[vmopv1.PauseAnnotation] = "true"
-		return fmt.Errorf("reconciliation stopped : VM location mismatch")
+
+		return fmt.Errorf("reconciliation stopped: VM location mismatch")
 	}
+
 	return nil
 }
 

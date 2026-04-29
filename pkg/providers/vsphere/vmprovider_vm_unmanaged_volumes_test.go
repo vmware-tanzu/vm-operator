@@ -207,6 +207,13 @@ func vmUnmanagedVolumesTests() {
 			Expect(pvc.OwnerReferences[0].Name).To(Equal(vm.Name))
 			Expect(pvc.OwnerReferences[0].Controller).To(BeNil())
 
+			// Do not refresh vm from the API here: registration sets claimName on
+			// the in-memory VM before ErrPendingRegister, but that spec change is
+			// not yet on the server; a Get would drop claimName and break phase 2.
+			createBatchAttachWithPVCVolumeIDCacheMiss(ctx, ctx.Client, vm, claimName)
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
+				To(MatchError(vsphere.ErrRegisterVolumes))
+
 			// Check that CnsRegisterVolume was created.
 			crv := &cnsv1alpha1.CnsRegisterVolume{}
 			Expect(ctx.Client.Get(ctx, client.ObjectKey{
@@ -234,6 +241,19 @@ func vmUnmanagedVolumesTests() {
 			Expect(ctx.Client.Status().Update(ctx, pvc)).To(Succeed())
 			vm.Status.Volumes[0].Attached = true
 			Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+
+			// Status update can resync the VM from the API; phase-1 claimName may
+			// only exist in memory until later persistence, so ensure spec matches
+			// the PVC before the final reconcile.
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())
+			v0 := &vm.Spec.Volumes[0]
+			if v0.PersistentVolumeClaim == nil {
+				v0.PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{}
+			}
+			if v0.PersistentVolumeClaim.ClaimName != claimName {
+				v0.PersistentVolumeClaim.ClaimName = claimName
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+			}
 
 			// Trigger another reconciliation
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
@@ -428,6 +448,11 @@ func vmUnmanagedVolumesTests() {
 			Expect(pvc.OwnerReferences[0].Name).To(Equal(vm.Name))
 			Expect(pvc.OwnerReferences[0].Controller).To(BeNil())
 
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())
+			createBatchAttachWithPVCVolumeIDCacheMiss(ctx, ctx.Client, vm, claimName)
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
+				To(MatchError(vsphere.ErrRegisterVolumes))
+
 			// Check that CnsRegisterVolume was created.
 			crv := &cnsv1alpha1.CnsRegisterVolume{}
 			Expect(ctx.Client.Get(ctx, client.ObjectKey{
@@ -469,6 +494,34 @@ func vmUnmanagedVolumesTests() {
 				vm, vmconfunmanagedvolsreg.Condition)).To(BeTrue())
 		})
 	})
+}
+
+// createBatchAttachWithPVCVolumeIDCacheMiss creates a CnsNodeVMBatchAttachment
+// whose status matches the phase-2 gate in unmanaged volume registration (CSI
+// volume ID cache miss). Without this object, registerUnmanagedDisks does not
+// create CnsRegisterVolume.
+func createBatchAttachWithPVCVolumeIDCacheMiss(
+	ctx context.Context,
+	k8sClient client.Client,
+	vm *vmopv1.VirtualMachine,
+	claimName string,
+) {
+	ba := &cnsv1alpha1.CnsNodeVMBatchAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pkgutil.CNSBatchAttachmentNameForVM(vm.Name),
+			Namespace: vm.Namespace,
+		},
+		Status: cnsv1alpha1.CnsNodeVMBatchAttachmentStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:    cnsv1alpha1.ConditionReady,
+					Status:  metav1.ConditionFalse,
+					Message: "failed to find volumeID for PVC " + claimName,
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, ba)).To(Succeed())
 }
 
 // fakeProfileManager is a mock PBM ProfileManager for testing.

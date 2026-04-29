@@ -30,6 +30,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
@@ -497,6 +498,12 @@ func ensureUnmanagedDisksHaveUpdatedCapacity(
 	return nil
 }
 
+// registerUnmanagedDisks uses a two-phase flow:
+//  1. Ensure every unmanaged classic disk has a PVC and claimName on the VM
+//     spec, then return pending so the volume batch controller can add unbound
+//     PVCs (dataSourceRef → VM) to CnsNodeVMBatchAttachment.
+//  2. On a later reconcile, wait until batch status shows the CSI volume-ID
+//     cache miss text, then ensure CnsRegisterVolume for pending PVCs.
 func registerUnmanagedDisks(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -504,72 +511,104 @@ func registerUnmanagedDisks(
 	vm *vmopv1.VirtualMachine,
 	info pkgvol.VolumeInfo) (bool, error) {
 
-	var hasPending bool
-
 	logger := pkglog.FromContextOrDefault(ctx).WithName("registerUnmanagedDisks")
 	logger.Info(
 		"Registering unmanaged disks",
 		"disks", info.Disks,
 		"volumes", info.Volumes)
 
+	var wroteClaims bool
+
 	for _, di := range info.Disks {
-		// Step 1: Look for the volume entry from spec.volumes.
-		if volume, ok := info.Volumes[di.Target.String()]; ok {
-			// Step 2: Check if a PVC already exists for this volume.
-			pvcName := volume.Name
-			if pvc := volume.PersistentVolumeClaim; pvc != nil {
-				if pvc.ClaimName != "" {
-					pvcName = pvc.ClaimName
-				}
-			}
+		volume, ok := info.Volumes[di.Target.String()]
+		if !ok {
+			continue
+		}
 
-			logger.Info("Processing unmanaged disk",
-				"disk", di, "volume", volume, "isFCD", di.FCD)
-
-			// Step 3: Ensure PVC exists (create if needed).
-			pvc, err := ensurePVCForUnmanagedDisk(
-				ctx,
-				k8sClient,
-				vm,
-				pvcName,
-				di)
-			if err != nil {
-				return false, fmt.Errorf(
-					"failed to ensure pvc %s for disk %s: %w",
-					pvcName, di.UUID, err)
-			}
-
-			// Step 4: Write the name of the PVC back to the entry in
-			//         spec.volumes.
-			if volume.PersistentVolumeClaim == nil {
-				volume.PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{}
-			}
-			volume.PersistentVolumeClaim.ClaimName = pvc.Name
-
-			switch pvc.Status.Phase {
-			case "", corev1.ClaimPending:
-				// Step 5: PVC is not bound - ensure CnsRegisterVolume exists.
-				// This ensures that if the CnsRegisterVolume was deleted prematurely,
-				// it will be re-created.
-				logger.V(4).Info("PVC is pending, ensuring CnsRegisterVolume exists",
-					"pvc", pvc.Name,
-					"isFCD", di.FCD)
-
-				if _, err := ensureCnsRegisterVolumeForDisk(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					pvc,
-					di); err != nil {
-
-					return false, fmt.Errorf(
-						"failed to ensure CnsRegisterVolume %s: %w",
-						pvc.Name, err)
-				}
-				hasPending = true
+		pvcName := volume.Name
+		if pvc := volume.PersistentVolumeClaim; pvc != nil {
+			if pvc.ClaimName != "" {
+				pvcName = pvc.ClaimName
 			}
 		}
+
+		logger.Info("Phase 1: ensure PVC and claim for unmanaged disk",
+			"disk", di, "volume", volume, "isFCD", di.FCD)
+
+		pvc, err := ensurePVCForUnmanagedDisk(ctx, k8sClient, vm, pvcName, di)
+		if err != nil {
+			return false, fmt.Errorf(
+				"failed to ensure pvc %s for disk %s: %w",
+				pvcName, di.UUID, err)
+		}
+
+		if volume.PersistentVolumeClaim == nil ||
+			volume.PersistentVolumeClaim.ClaimName != pvc.Name {
+			wroteClaims = true
+		}
+		if volume.PersistentVolumeClaim == nil {
+			volume.PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{}
+		}
+		volume.PersistentVolumeClaim.ClaimName = pvc.Name
+	}
+
+	if wroteClaims {
+		return true, nil
+	}
+
+	batchShowsPVCVolumeIDCacheMiss, err := batchAttachReportsMissingPVCVolumeIDInCache(
+		ctx, k8sClient, vm)
+	if err != nil {
+		return false, err
+	}
+
+	var hasPending bool
+
+	for _, di := range info.Disks {
+		volume, ok := info.Volumes[di.Target.String()]
+		if !ok {
+			continue
+		}
+
+		pvcName := volume.Name
+		if pvc := volume.PersistentVolumeClaim; pvc != nil {
+			if pvc.ClaimName != "" {
+				pvcName = pvc.ClaimName
+			}
+		}
+
+		pvcObj := &corev1.PersistentVolumeClaim{}
+		key := ctrlclient.ObjectKey{Namespace: vm.Namespace, Name: pvcName}
+		if err := k8sClient.Get(ctx, key, pvcObj); err != nil {
+			return false, fmt.Errorf("failed to get pvc %s for registration phase: %w", key, err)
+		}
+
+		pending := pvcObj.Status.Phase == "" || pvcObj.Status.Phase == corev1.ClaimPending
+		if !pending {
+			continue
+		}
+
+		if !batchShowsPVCVolumeIDCacheMiss {
+			hasPending = true
+			continue
+		}
+
+		logger.V(4).Info("Phase 2: PVC pending, batch status shows volume ID cache miss; ensuring CnsRegisterVolume",
+			"pvc", pvcObj.Name,
+			"isFCD", di.FCD)
+
+		if _, err := ensureCnsRegisterVolumeForDisk(
+			ctx,
+			k8sClient,
+			vimClient,
+			vm,
+			pvcObj,
+			di); err != nil {
+			return false, fmt.Errorf(
+				"failed to ensure CnsRegisterVolume %s: %w",
+				pvcObj.Name, err)
+		}
+		hasPending = true
 	}
 
 	return hasPending, nil
@@ -897,8 +936,10 @@ func cleanupCompletedCnsRegisterVolumesForVM(
 	var errs []error
 	for _, crv := range crvList.Items {
 		if !crv.Status.Registered {
-			logger.V(4).Info("Skipping deletion of CnsRegisterVolume - not yet registered",
-				"crv", crv.Name, "crvStatusError", crv.Status.Error)
+			logger.V(4).Info(
+				"Skipping deletion of CnsRegisterVolume - not yet registered",
+				"crv", crv.Name,
+				"crvStatusError", crv.Status.Error)
 			continue
 		}
 
@@ -936,4 +977,63 @@ func cleanupVolumeStatus(vm *vmopv1.VirtualMachine) {
 				return false
 			}
 		})
+}
+
+// csiErrFindFailPrefix is the error text produced by the
+// vsphere-csi-driver batch attachment helper when a PVC in the batch spec is
+// not yet present in the CSI controller's volume ID cache
+// (GetVolumeIDFromPVCName).
+// See: cnsnodevmbatchattachment getVolumeMetadataMaps.
+const csiErrFindFailPrefix = "failed to find volumeID for PVC"
+
+// batchAttachReportsMissingPVCVolumeIDInCache returns true when the
+// CnsNodeVMBatchAttachment status conditions include the CSI driver's volume-ID
+// cache miss text (GetVolumeIDFromPVCName). CSI does not surface this per PVC
+// on the object; the reconciler treats any condition message containing
+// csiErrFailedToFindVolumeIDForPVCPrefix as the signal that it is safe to
+// ensure CnsRegisterVolume for pending placeholder PVCs.
+func batchAttachReportsMissingPVCVolumeIDInCache(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+) (bool, error) {
+
+	ba := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
+	key := ctrlclient.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      pkgutil.CNSBatchAttachmentNameForVM(vm.Name),
+	}
+	if err := k8sClient.Get(ctx, key, ba); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if conditionsIncludePVCVolumeIDCacheMissMsg(ba.Status.Conditions) {
+		return true, nil
+	}
+
+	for _, v := range ba.Status.VolumeStatus {
+		if conditionsIncludePVCVolumeIDCacheMissMsg(
+			v.PersistentVolumeClaim.Conditions) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// conditionsIncludePVCVolumeIDCacheMissMsg reports whether any condition's
+// message or reason contains the CSI batch volume-ID cache miss substring.
+func conditionsIncludePVCVolumeIDCacheMissMsg(
+	conditions []metav1.Condition) bool {
+
+	for _, c := range conditions {
+		if strings.Contains(c.Message, csiErrFindFailPrefix) ||
+			strings.Contains(c.Reason, csiErrFindFailPrefix) {
+			return true
+		}
+	}
+	return false
 }

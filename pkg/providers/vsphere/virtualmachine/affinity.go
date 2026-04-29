@@ -11,12 +11,59 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
+
+// extractAffinityLabelsFromVM extracts all "key:value" labels referenced
+// in the VM's affinity and anti-affinity rules.
+// Returns a set where keys are "key:value" strings
+// that are used in affinity rules.
+func extractAffinityLabelsFromVM(vmCtx pkgctx.VirtualMachineContext) sets.Set[string] {
+	affinityLabels := sets.New[string]()
+
+	affinity := vmCtx.VM.Spec.Affinity
+	if affinity == nil {
+		return nil
+	}
+
+	// helper to extract "key:value" labels from VMAffinityTerm slice
+	extractFromTerms := func(terms []vmopv1.VMAffinityTerm) {
+		for _, term := range terms {
+			if term.LabelSelector == nil {
+				continue
+			}
+
+			labels, err := extractLabelsFromSelector(term.LabelSelector)
+			if err != nil {
+				vmCtx.Logger.Error(err, "invalid label selector")
+				continue
+			}
+
+			for _, label := range labels {
+				affinityLabels.Insert(label)
+			}
+		}
+	}
+
+	// process VM affinity rules
+	if affinity.VMAffinity != nil {
+		extractFromTerms(affinity.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution)
+		extractFromTerms(affinity.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution)
+	}
+
+	// process VM anti-affinity rules
+	if affinity.VMAntiAffinity != nil {
+		extractFromTerms(affinity.VMAntiAffinity.RequiredDuringSchedulingPreferredDuringExecution)
+		extractFromTerms(affinity.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution)
+	}
+
+	return affinityLabels
+}
 
 // genConfigSpecTagSpecsFromVMLabels generates tag specs from VM labels.
 // This is required when setting affinity/anti-affinity policies on the VM.
@@ -31,10 +78,30 @@ func genConfigSpecTagSpecsFromVMLabels(
 
 	tagsToAdd := make([]vimtypes.TagSpec, 0, len(filteredLabels))
 
-	// Any label on the VM can participate in an affinity/anti-affinity policy.
-	// It does not matter if a label is not participating in any policy.
-	// It could be specified by this, or any other VM's placement policy later.
+	policyLabels := sets.New[string]()
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+		policyLabels = extractAffinityLabelsFromVM(vmCtx)
+	}
+
+	// Any label on the VM can participate in an affinity/anti-affinity
+	// policy.
+	//
+	// For when VMAffinityDuringExecution is enabled,
+	// 	When VM is created, labels which only participate in affinity/anti-affinity
+	// 	policies are added to the configSpec.TagSpecs.
+	// 	This is because DRS expects tags which are ONLY referenced in
+	// 	affinity/anti-affinity policies.
+	//
+	// TODO(for Day 2 operations):
+	// 	When VM is updated and policies are added which refer more labels,
+	// 	this method is called again and the tags are added to the
+	// 	configSpec.TagSpecs.
 	for key, value := range filteredLabels {
+		if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
+			!policyLabels.Has(key+":"+value) {
+			continue
+		}
+
 		tagsToAdd = append(tagsToAdd, vimtypes.TagSpec{
 			ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
 				Operation: vimtypes.ArrayUpdateOperationAdd,

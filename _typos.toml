@@ -37,6 +37,9 @@ extend-ignore-re = [
     # VMIs
     "vmi-.*",
 
+    # Because "ba" is a fair variable name.
+    "ba",
+
     # -- Taken from https://github.com/crate-ci/typos/blob/master/docs/reference.md
     # Next-line ignore. Use // spellchecker:ignore-next-line
     "(#|//)\\s*spellchecker:ignore-next-line\\n.*",

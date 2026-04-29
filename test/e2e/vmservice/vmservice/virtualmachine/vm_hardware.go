@@ -251,6 +251,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		isoSupportFSSEnabled           bool
 		allDisksArePVCapabilityEnabled bool
 		linuxImageDisplayName          string
+		eztStoragePolicyID             string
 	)
 
 	Context("VMs with attached hardware", Ordered, func() {
@@ -318,7 +319,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				clusterResources.StorageClassName)
 
 			// Create or get the EZT storage policy.
-			eztStoragePolicyID, err := vcenter.GetOrCreateEZTStoragePolicy(ctx, vCenterClient, eztStorageProfileName,
+			eztStoragePolicyID, err = vcenter.GetOrCreateEZTStoragePolicy(ctx, vCenterClient, eztStorageProfileName,
 				basePolicyID)
 			Expect(err).ShouldNot(HaveOccurred(), "Failed to create EZT storage policy")
 			Expect(eztStoragePolicyID).ShouldNot(BeEmpty(), "EZT storage policy ID is empty")
@@ -2210,6 +2211,314 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 							"Expected PVC %s to be bound", volName)
 					}
 				}
+			})
+
+			It("Import brownfield VM with shared SCSI controller and shared disk should succeed", Label("experimental"), func() {
+				By("Creating a brownfield VM by deploying from content library template using govmomi")
+				restClient, err := vcenter.NewRestClient(ctx, vCenterAdminClient, testbed.AdminUsername, testbed.AdminPassword)
+				Expect(err).ToNot(HaveOccurred(), "Failed to create REST client")
+
+				By("Finding photon template in content library")
+				photonImageDisplayName := "photon-5.0"
+				photonImageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, photonImageDisplayName)
+				Expect(err).ToNot(HaveOccurred(), "Failed to find photon image")
+
+				photonImage := vmopv1a5.VirtualMachineImage{}
+				err = svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+					Name:      photonImageName,
+					Namespace: input.WCPNamespaceName,
+				}, &photonImage)
+				Expect(err).ToNot(HaveOccurred(), "Failed to get photon image")
+
+				libraryItemID := photonImage.Status.ProviderItemID
+				Expect(libraryItemID).ToNot(BeEmpty(), "Photon image has no ProviderItemID")
+				e2eframework.Logf("Found photon image %s with library item ID: %s", photonImageName, libraryItemID)
+
+				finder := find.NewFinder(vCenterAdminClient, false)
+				ccr, err := finder.ClusterComputeResource(ctx, clusterMoID)
+				Expect(err).ToNot(HaveOccurred(), "Failed to get cluster compute resource")
+				datastores, err := ccr.Datastores(ctx)
+				Expect(err).ToNot(HaveOccurred(), "Failed to get datastores")
+				Expect(len(datastores)).To(BeNumerically(">", 0), "Expected to have at least one datastore")
+
+				var sharedDatastore *object.Datastore
+				for _, ds := range datastores {
+					var dsMO mo.Datastore
+					err := ds.Properties(ctx, ds.Reference(), []string{"summary"}, &dsMO)
+					if err != nil {
+						continue
+					}
+
+					if dsMO.Summary.MultipleHostAccess != nil && *dsMO.Summary.MultipleHostAccess {
+						sharedDatastore = ds
+						e2eframework.Logf("Found shared datastore: %s (type: %s)", dsMO.Summary.Name, dsMO.Summary.Type)
+						break
+					}
+				}
+
+				if sharedDatastore == nil {
+					sharedDatastore = datastores[0]
+					e2eframework.Logf("No shared datastore found, using first datastore: %s", sharedDatastore.Name())
+				}
+
+				resourcePool, err := ccr.ResourcePool(ctx)
+				Expect(err).ToNot(HaveOccurred(), "Failed to get cluster resource pool")
+
+				By(fmt.Sprintf("Deploying VM %s from content library item %s", brownfieldVMName, libraryItemID))
+				vcenterManager := govc.NewManager(restClient)
+				deploySpec := govc.Deploy{
+					DeploymentSpec: govc.DeploymentSpec{
+						Name:               brownfieldVMName,
+						DefaultDatastoreID: sharedDatastore.Reference().Value,
+						AcceptAllEULA:      true,
+					},
+					Target: govc.Target{
+						ResourcePoolID: resourcePool.Reference().Value,
+					},
+				}
+
+				deployedVMRef, err := vcenterManager.DeployLibraryItem(ctx, libraryItemID, deploySpec)
+				Expect(err).ToNot(HaveOccurred(), "Failed to deploy VM from content library")
+				Expect(deployedVMRef).ToNot(BeNil(), "Deployed VM reference is nil")
+
+				brownfieldVMMoID = deployedVMRef.Value
+				e2eframework.Logf("Deployed brownfield VM %s with MoID: %s", brownfieldVMName, brownfieldVMMoID)
+
+				brownfieldVM := object.NewVirtualMachine(vCenterAdminClient, vimtypes.ManagedObjectReference{
+					Type:  "VirtualMachine",
+					Value: brownfieldVMMoID,
+				})
+
+				By("Adding shared SCSI controller with physical sharing mode and shared disk")
+				var moVM mo.VirtualMachine
+				err = brownfieldVM.Properties(ctx, brownfieldVM.Reference(), []string{"config.hardware.device", "datastore"}, &moVM)
+				Expect(err).ToNot(HaveOccurred(), "Failed to get VM properties")
+
+				var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+
+				sharedScsiController := &vimtypes.ParaVirtualSCSIController{
+					VirtualSCSIController: vimtypes.VirtualSCSIController{
+						SharedBus: vimtypes.VirtualSCSISharingPhysicalSharing,
+						VirtualController: vimtypes.VirtualController{
+							BusNumber: 1,
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -1,
+							},
+						},
+					},
+				}
+
+				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device:    sharedScsiController,
+				})
+
+				e2eframework.Logf("Adding ParaVirtual SCSI controller with physical sharing on bus 1")
+
+				Expect(moVM.Datastore).ToNot(BeEmpty(), "VM has no datastores")
+				datastoreRef := moVM.Datastore[0]
+
+				sharedDisk := &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+							DiskMode: string(vimtypes.VirtualDiskModePersistent),
+							Sharing:  string(vimtypes.VirtualDiskSharingSharingMultiWriter),
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								Datastore: &datastoreRef,
+							},
+						},
+						ControllerKey: sharedScsiController.Key,
+						UnitNumber:    vimtypes.NewInt32(0),
+					},
+					CapacityInBytes: 10 * 1024 * 1024,
+				}
+
+				// Use the EZT storage policy created in BeforeAll. EZT (Eager Zeroed Thick)
+				// allocation is required for multi-writer shared disks - this avoids
+				// "Incompatible device backing" errors that occur with thin provisioning.
+				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device:        sharedDisk,
+					Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+						&vimtypes.VirtualMachineDefinedProfileSpec{
+							ProfileId: eztStoragePolicyID,
+						},
+					},
+				})
+
+				e2eframework.Logf("Adding 10MB shared disk on shared SCSI controller")
+
+				configSpec := vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: deviceChanges,
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
+							Key:   "test.shared.disk.import",
+							Value: "true",
+						},
+					},
+				}
+
+				reconfigTask, err := brownfieldVM.Reconfigure(ctx, configSpec)
+				Expect(err).ToNot(HaveOccurred(), "Failed to reconfigure VM with shared hardware")
+				err = reconfigTask.Wait(ctx)
+				Expect(err).ToNot(HaveOccurred(), "Failed to wait for VM reconfiguration")
+				e2eframework.Logf("Successfully added shared SCSI controller and shared disk to brownfield VM")
+
+				By("Powering on the brownfield VM")
+				powerOnTask, err := brownfieldVM.PowerOn(ctx)
+				Expect(err).ToNot(HaveOccurred(), "Failed to power on VM")
+				err = powerOnTask.Wait(ctx)
+				Expect(err).ToNot(HaveOccurred(), "Failed to wait for VM power on")
+				e2eframework.Logf("Brownfield VM powered on")
+
+				By("Creating ImportOperation to import the brownfield VM")
+				importOpName := fmt.Sprintf("import-shared-disk-%s", capiutil.RandomString(4))
+				importOperation = &mopv1a2.ImportOperation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      importOpName,
+						Namespace: vmSvcNamespace,
+					},
+					Spec: mopv1a2.ImportOperationSpec{
+						VirtualMachineID: brownfieldVMMoID,
+						StorageClass:     eztStorageProfileName,
+					},
+				}
+
+				Expect(svClusterClient.Create(ctx, importOperation)).To(Succeed(), "Failed to create ImportOperation")
+				e2eframework.Logf("Created ImportOperation: %s", importOpName)
+
+				By("Waiting for ImportOperation to complete")
+				var importedVMName string
+				Eventually(func(g Gomega) {
+					err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vmSvcNamespace,
+						Name:      importOpName,
+					}, importOperation)
+					g.Expect(err).ToNot(HaveOccurred(), "Failed to get ImportOperation")
+
+					for _, cond := range importOperation.Status.Conditions {
+						if cond.Type == "VirtualMachineCreated" && cond.Status == metav1.ConditionTrue {
+							importedVMName = importOperation.Status.VirtualMachineName
+							g.Expect(importedVMName).ToNot(BeEmpty(), "ImportOperation completed but VirtualMachineName is empty")
+							return
+						}
+
+						if cond.Type == "Failed" && cond.Status == metav1.ConditionTrue {
+							Fail(fmt.Sprintf("ImportOperation failed: %s", cond.Message))
+						}
+					}
+
+					g.Expect(false).To(BeTrue(), "ImportOperation not yet complete")
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).
+					Should(Succeed(), "Timed out waiting for ImportOperation to complete")
+
+				e2eframework.Logf("ImportOperation completed, imported VM name: %s", importedVMName)
+
+				vmYamls = append(vmYamls, manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+					Namespace: vmSvcNamespace,
+					Name:      importedVMName,
+				}))
+
+				By("Assertion 1: Verifying VM is imported and powers on")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+				e2eframework.Logf("Imported VM %s is powered on", importedVMName)
+
+				By("Assertion 2: Verifying shared SCSI controller in VM status")
+				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, map[vmopv1a5.VirtualControllerType]int{
+					vmopv1a5.VirtualControllerTypeIDE:  2,
+					vmopv1a5.VirtualControllerTypeSCSI: 2,
+				})
+
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					g.Expect(err).ToNot(HaveOccurred())
+
+					foundSharedController := false
+					for _, controller := range vm.Spec.Hardware.SCSIControllers {
+						if controller.BusNumber == 1 &&
+							controller.SharingMode == vmopv1a5.VirtualControllerSharingModePhysical {
+							foundSharedController = true
+							e2eframework.Logf("Found shared SCSI controller: bus=%d, sharingMode=%s",
+								controller.BusNumber, controller.SharingMode)
+							break
+						}
+					}
+					g.Expect(foundSharedController).To(BeTrue(), "Expected to find shared SCSI controller with physical sharing mode")
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed(), "Timed out waiting for shared controller verification")
+
+				conditions := []metav1.Condition{
+					{
+						Type:   "VirtualMachineUnmanagedVolumesBackfilled",
+						Status: metav1.ConditionTrue,
+					},
+					{
+						Type:   "VirtualMachineUnmanagedVolumesRegistered",
+						Status: metav1.ConditionTrue,
+					},
+				}
+				for _, condition := range conditions {
+					vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, condition)
+				}
+
+				By("Assertion 3: Verifying shared disk volume has MultiWriter sharing mode")
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					g.Expect(err).ToNot(HaveOccurred())
+
+					foundSharedDisk := false
+					for _, vol := range vm.Status.Volumes {
+						if vol.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
+							*vol.ControllerBusNumber == 1 &&
+							*vol.UnitNumber == 0 {
+
+							e2eframework.Logf("Found shared disk volume: name=%s, sharingMode=%s, controllerBus=%d, unit=%d",
+								vol.Name, vol.SharingMode, *vol.ControllerBusNumber, *vol.UnitNumber)
+
+							g.Expect(vol.SharingMode).To(Equal(vmopv1a5.VolumeSharingModeMultiWriter),
+								"Expected shared disk to have sharingMode=MultiWriter")
+
+							foundSharedDisk = true
+							break
+						}
+					}
+					g.Expect(foundSharedDisk).To(BeTrue(), "Expected to find shared disk on SCSI bus 1 unit 0")
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed(), "Timed out waiting for shared disk volume verification")
+
+				By("Assertion 4: Verifying PVC for shared disk is created and bound")
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					g.Expect(err).ToNot(HaveOccurred())
+
+					for _, vol := range vm.Status.Volumes {
+						if vol.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
+							*vol.ControllerBusNumber == 1 &&
+							*vol.UnitNumber == 0 {
+
+							pvc := &corev1.PersistentVolumeClaim{}
+							pvcKey := ctrlclient.ObjectKey{
+								Namespace: vmSvcNamespace,
+								Name:      vol.Name,
+							}
+							err := svClusterClient.Get(ctx, pvcKey, pvc)
+							g.Expect(err).ToNot(HaveOccurred(), "Failed to get PVC %s", vol.Name)
+
+							e2eframework.Logf("PVC %s annotations: %v", vol.Name, pvc.Annotations)
+							e2eframework.Logf("PVC %s spec: storageClass=%s, volumeMode=%v, accessModes=%v",
+								vol.Name, *pvc.Spec.StorageClassName, *pvc.Spec.VolumeMode, pvc.Spec.AccessModes)
+
+							g.Expect(pvc.Status.Phase).To(Equal(corev1.ClaimBound),
+								"Expected PVC %s to be bound", vol.Name)
+
+							break
+						}
+					}
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed(), "Timed out waiting for PVC verification")
+
+				e2eframework.Logf("Successfully verified shared disk import with MultiWriter sharing mode")
 			})
 		})
 	})

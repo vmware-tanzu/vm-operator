@@ -22,6 +22,7 @@ spec:
         args:
         - "--server-port=9868"
         - "--server-path=/validate"
+        - "--server-bind-address=[::]"
         image: controller:latest
         imagePullPolicy: IfNotPresent
         resources:

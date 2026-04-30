@@ -25,8 +25,9 @@ import (
 )
 
 var (
-	defaultServerPort = 9868
-	defaultServerPath = "/validate"
+	defaultServerPort        = 9868
+	defaultServerPath        = "/validate"
+	defaultServerBindAddress = ""
 )
 
 func init() {
@@ -35,6 +36,9 @@ func init() {
 	}
 	if v, err := strconv.Atoi(os.Getenv("SERVER_PORT")); err == nil {
 		defaultServerPort = v
+	}
+	if v := os.Getenv("SERVER_BIND_ADDRESS"); v != "" {
+		defaultServerBindAddress = v
 	}
 }
 
@@ -56,6 +60,11 @@ func main() {
 		"server-path",
 		defaultServerPath,
 		"The pattern path to handle the web-console validation requests.",
+	)
+	serverBindAddress := flag.String(
+		"server-bind-address",
+		defaultServerBindAddress,
+		"The IP address to bind to. Use [::] for dual-stack (IPv4 and IPv6) support.",
 	)
 
 	flag.Parse()
@@ -84,8 +93,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	addr := *serverBindAddress + ":" + strconv.Itoa(*serverPort)
 	server, err := webconsolevalidation.NewServer(
-		":"+strconv.Itoa(*serverPort),
+		addr,
 		*serverPath,
 		client,
 	)
@@ -94,7 +104,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("Starting the web-console validation server", "port", *serverPort, "path", *serverPath)
+	logger.Info("Starting the web-console validation server", "addr", addr, "path", *serverPath)
 	if err := server.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error(err, "Failed to run the web-console validation server")
 		os.Exit(1)

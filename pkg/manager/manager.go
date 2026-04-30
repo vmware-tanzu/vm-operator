@@ -133,6 +133,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		WebhookServer: webhook.NewServer(webhook.Options{
 			CertDir: opts.WebhookSecretVolumeMountPath,
 			Port:    opts.WebhookServiceContainerPort,
+			Host:    opts.WebhookBindAddress,
 		}),
 		HealthProbeBindAddress:  opts.HealthProbeBindAddress,
 		PprofBindAddress:        opts.PprofBindAddress,

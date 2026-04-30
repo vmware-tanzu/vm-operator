@@ -357,6 +357,16 @@ func NetOPCRName(vmName, networkName, interfaceName string, isV1A1 bool) string 
 	return name
 }
 
+// SyncNetOPIPFamilyPolicyFromIPAMModes sets or clears the NetOP IPFamilyPolicy from the VM IPAMModes.
+// When IPAMModes is empty, the policy is cleared so NetOP can apply its default.
+func SyncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec, netIf *netopv1alpha1.NetworkInterface) {
+	if len(interfaceSpec.IPAMModes) > 0 {
+		netIf.Spec.IPFamilyPolicy = NetOPInterfaceIPFamilyPolicyFromIPAMModes(interfaceSpec.IPAMModes)
+	} else {
+		netIf.Spec.IPFamilyPolicy = ""
+	}
+}
+
 func createNetOPNetworkInterface(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
@@ -423,6 +433,9 @@ func createNetOPNetworkInterface(
 		}
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
+		// Set or clear IPFamilyPolicy from VM IPAMModes. When IPAMModes is empty, clear
+		// the policy so NetOP can apply its default (and updates remove a prior policy).
+		SyncNetOPIPFamilyPolicyFromIPAMModes(interfaceSpec, netIf)
 		return nil
 	})
 
@@ -446,6 +459,54 @@ func createNetOPNetworkInterface(
 	return netOpNetIfToResult(vimClient, netIf), nil
 }
 
+// EffectiveNetOPIPv4AssignmentMode returns how IPv4 is assigned according to NetworkInterface status.
+// When IPAssignmentMode is unset, NetOP assumes static pool if any IPv4 address is present in IPConfigs,
+// otherwise DHCP.
+func EffectiveNetOPIPv4AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) netopv1alpha1.NetworkInterfaceIPAssignmentMode {
+	if st.IPAssignmentMode != "" {
+		return st.IPAssignmentMode
+	}
+	for i := range st.IPConfigs {
+		ip := &st.IPConfigs[i]
+		if ip.IPFamily == corev1.IPv4Protocol && ip.IP != "" {
+			return netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+		}
+	}
+	return netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+}
+
+// EffectiveNetOPIPv6AssignmentMode returns how IPv6 is assigned according to NetworkInterface status.
+// When IPv6AssignmentMode is unset, NetOP defaults to none (no IPv6 assignment).
+func EffectiveNetOPIPv6AssignmentMode(st netopv1alpha1.NetworkInterfaceStatus) netopv1alpha1.NetworkInterfaceIPAssignmentMode {
+	if st.IPv6AssignmentMode != "" {
+		return st.IPv6AssignmentMode
+	}
+	return netopv1alpha1.NetworkInterfaceIPAssignmentModeNone
+}
+
+// NetOPInterfaceIPFamilyPolicyFromIPAMModes maps spec IPAMModes (Kubernetes IP families) to
+// NetOP NetworkInterfaceIPFamilyPolicy. With both families present it returns DualStack;
+// IPv6 alone returns IPv6-only; otherwise IPv4-only (including empty input).
+func NetOPInterfaceIPFamilyPolicyFromIPAMModes(ipamModes []corev1.IPFamily) netopv1alpha1.NetworkInterfaceIPFamilyPolicy {
+	hasV4, hasV6 := false, false
+	for _, f := range ipamModes {
+		if f == corev1.IPv4Protocol {
+			hasV4 = true
+		}
+		if f == corev1.IPv6Protocol {
+			hasV6 = true
+		}
+	}
+	switch {
+	case hasV4 && hasV6:
+		return netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack
+	case hasV6:
+		return netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only
+	default:
+		return netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only
+	}
+}
+
 func netOpNetIfToResult(
 	vimClient *vim25.Client,
 	netIf *netopv1alpha1.NetworkInterface) *NetworkInterfaceResult {
@@ -463,29 +524,37 @@ func netOpNetIfToResult(
 		Backing:    object.NewDistributedVirtualPortgroup(vimClient, pgObjRef),
 	}
 
-	switch netIf.Status.IPAssignmentMode {
-	case netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP:
-		// When NetOP indicates DHCP, IPConfigs will be empty.
-		// Since NetOP doesn't distinguish between IPv4 and IPv6, set both.
-		// User's interface spec can override either or both flags.
-		result.DHCP4 = true
-		result.DHCP6 = true
-	case netopv1alpha1.NetworkInterfaceIPAssignmentModeNone:
+	v4Mode := EffectiveNetOPIPv4AssignmentMode(netIf.Status)
+	v6Mode := EffectiveNetOPIPv6AssignmentMode(netIf.Status)
+
+	if v4Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeNone &&
+		v6Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeNone {
 		result.NoIPAM = true
-	default: // netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
-		// Process all IPConfigs (both IPv4 and IPv6). This correctly handles:
-		// - IPv4-only scenarios (only IPv4 IPConfigs)
-		// - IPv6-only scenarios (only IPv6 IPConfigs)
-		// - Dual-stack scenarios (both IPv4 and IPv6 IPConfigs)
-		// DHCP4/DHCP6 are not set in StaticPool mode, only IPConfigs are populated.
-		for _, ip := range netIf.Status.IPConfigs {
-			ipConfig := NetworkInterfaceIPConfig{
-				IPCIDR:  ipCIDRNotation(ip.IP, ip.SubnetMask, ip.IPFamily == corev1.IPv4Protocol),
-				IsIPv4:  ip.IPFamily == corev1.IPv4Protocol,
-				Gateway: ip.Gateway,
+		return result
+	}
+
+	result.DHCP4 = v4Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+	result.DHCP6 = v6Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+
+	for _, ip := range netIf.Status.IPConfigs {
+		switch ip.IPFamily {
+		case corev1.IPv4Protocol:
+			if v4Mode != netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool {
+				continue
 			}
-			result.IPConfigs = append(result.IPConfigs, ipConfig)
+		case corev1.IPv6Protocol:
+			if v6Mode != netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool {
+				continue
+			}
+		default:
+			continue
 		}
+		ipConfig := NetworkInterfaceIPConfig{
+			IPCIDR:  ipCIDRFromNetOPIPConfig(ip),
+			IsIPv4:  ip.IPFamily == corev1.IPv4Protocol,
+			Gateway: ip.Gateway,
+		}
+		result.IPConfigs = append(result.IPConfigs, ipConfig)
 	}
 
 	return result
@@ -961,6 +1030,24 @@ func waitForReadyNCPNetworkInterface(
 	}
 
 	return vnetIf, nil
+}
+
+// ipCIDRFromNetOPIPConfig builds the CIDR string for a NetOP IPConfig, preferring
+// the Prefix field over the deprecated SubnetMask field.
+func ipCIDRFromNetOPIPConfig(ip netopv1alpha1.IPConfig) string {
+	isIPv4 := ip.IPFamily == corev1.IPv4Protocol
+	mask := ip.SubnetMask
+	// Prefix is an integer (e.g. 24, 64) while ipCIDRNotation expects a subnet mask
+	// string (e.g. "255.255.255.0", "ffff:ffff:ffff:ffff::"). Convert via net.CIDRMask
+	// so we can reuse ipCIDRNotation for both paths.
+	if ip.Prefix != nil {
+		bits := 32
+		if !isIPv4 {
+			bits = 128
+		}
+		mask = net.IP(net.CIDRMask(int(*ip.Prefix), bits)).String()
+	}
+	return ipCIDRNotation(ip.IP, mask, isIPv4)
 }
 
 // ipCIDRNotation takes the IP and subnet mask and returns the IP in CIDR notation.

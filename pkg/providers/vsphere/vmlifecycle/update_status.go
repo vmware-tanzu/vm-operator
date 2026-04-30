@@ -570,6 +570,55 @@ func getRuntimeHostHostname(
 	return "", nil
 }
 
+// extractIPFromAddress extracts the IP address from a string that may contain CIDR notation.
+func extractIPFromAddress(address string) string {
+	ip, _, err := pkgutil.ParseIP(address)
+	if err != nil || ip == nil {
+		return ""
+	}
+	return ip.String()
+}
+
+// findInterfaceContainingIP finds the index of the interface that contains the given IP.
+func findInterfaceContainingIP(ip string, ifaces []vmopv1.VirtualMachineNetworkInterfaceStatus) int {
+	// Normalize the input IP for comparison
+	normalizedIP := extractIPFromAddress(ip)
+	if normalizedIP == "" {
+		return -1
+	}
+	for i, iface := range ifaces {
+		if iface.IP == nil {
+			continue
+		}
+		for _, addr := range iface.IP.Addresses {
+			if extractIPFromAddress(addr.Address) == normalizedIP {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// extractIPsFromInterface extracts IP addresses of the specified family from an interface.
+func extractIPsFromInterface(iface vmopv1.VirtualMachineNetworkInterfaceStatus, isIPv4Required bool, validatePrimaryIP func(string) net.IP) []string {
+	var result []string
+	if iface.IP == nil {
+		return result
+	}
+	for _, addr := range iface.IP.Addresses {
+		ipStr := extractIPFromAddress(addr.Address)
+		if ipStr == "" {
+			continue
+		}
+		if a := validatePrimaryIP(ipStr); a != nil {
+			if (isIPv4Required && a.To4() != nil) || (!isIPv4Required && a.To4() == nil) {
+				result = append(result, ipStr)
+			}
+		}
+	}
+	return result
+}
+
 func guestNicInfoToInterfaceStatus(
 	name string,
 	deviceKey int32,
@@ -1116,6 +1165,45 @@ func updateGuestNetworkStatus(
 		if ip6 := extraConfig[constants.CloudInitGuestInfoLocalIPv6Key]; ip6 != "" {
 			if a := validatePrimaryIP(ip6); a != nil && a.To4() == nil {
 				primaryIP6 = ip6
+			}
+		}
+	}
+
+	// See cloud-init issue: https://github.com/canonical/cloud-init/issues/6851
+	// LinuxPrep does not report dual stack IPs. It reports only one primary IP.
+	// Fallback when guest-reported primaries are incomplete (common in some dual-stack / cloud-init cases).
+	// Same-interface cross-family fill only applies if that interface reports exactly one usable address
+	// of the missing family—otherwise we do not guess. The all-empty sole-NIC path uses the same rule
+	// per family. Usable addresses exclude loopback, unspecified, and link-local (validatePrimaryIP).
+	if len(ifaceStatuses) > 0 {
+		switch {
+		case primaryIP4 != "" && primaryIP6 == "":
+			// Try to find IPv6 on the same interface as IPv4
+			if idx := findInterfaceContainingIP(primaryIP4, ifaceStatuses); idx >= 0 {
+				ipv6Addrs := extractIPsFromInterface(ifaceStatuses[idx], false, validatePrimaryIP)
+				if len(ipv6Addrs) == 1 {
+					primaryIP6 = ipv6Addrs[0]
+				}
+			}
+		case primaryIP6 != "" && primaryIP4 == "":
+			// Try to find IPv4 on the same interface as IPv6
+			if idx := findInterfaceContainingIP(primaryIP6, ifaceStatuses); idx >= 0 {
+				ipv4Addrs := extractIPsFromInterface(ifaceStatuses[idx], true, validatePrimaryIP)
+				if len(ipv4Addrs) == 1 {
+					primaryIP4 = ipv4Addrs[0]
+				}
+			}
+		case primaryIP4 == "" && primaryIP6 == "":
+			// Both empty, try first interface, if its the only interface present.
+			if len(ifaceStatuses) == 1 {
+				ipv4Addrs := extractIPsFromInterface(ifaceStatuses[0], true, validatePrimaryIP)
+				ipv6Addrs := extractIPsFromInterface(ifaceStatuses[0], false, validatePrimaryIP)
+				if len(ipv4Addrs) == 1 {
+					primaryIP4 = ipv4Addrs[0]
+				}
+				if len(ipv6Addrs) == 1 {
+					primaryIP6 = ipv6Addrs[0]
+				}
 			}
 		}
 	}

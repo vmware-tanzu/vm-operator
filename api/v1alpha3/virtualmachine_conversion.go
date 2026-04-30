@@ -7,6 +7,7 @@ package v1alpha3
 import (
 	"slices"
 
+	corev1 "k8s.io/api/core/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
@@ -155,11 +156,11 @@ func restore_v1alpha6_VirtualMachineAdvancedProps(dst, src *vmopv1.VirtualMachin
 	dst.Spec.Advanced.ExtraConfig = adv.ExtraConfig
 }
 
-func restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, src *vmopv1.VirtualMachine) {
+func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMachine) {
 	if src.Spec.Network == nil || len(src.Spec.Network.Interfaces) == 0 {
 		return
 	}
-	if dst.Spec.Network == nil {
+	if dst.Spec.Network == nil || len(dst.Spec.Network.Interfaces) == 0 {
 		return
 	}
 	srcByName := make(map[string]*vmopv1.VirtualMachineNetworkInterfaceSpec, len(src.Spec.Network.Interfaces))
@@ -172,6 +173,7 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, src *vmop
 			continue
 		}
 		dstIface := &dst.Spec.Network.Interfaces[i]
+		dstIface.IPAMModes = append([]corev1.IPFamily(nil), srcIface.IPAMModes...)
 		dstIface.Type = srcIface.Type
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
 		dstIface.VMXNet3 = srcIface.VMXNet3
@@ -466,11 +468,10 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineAffinity(dst, restored)
-	restore_v1alpha6_VirtualMachineCryptoVTPM(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
 	restore_v1alpha6_VirtualMachineAdvancedProps(dst, restored)
-	restore_v1alpha6_VirtualMachineNetworkInterfaceAdvancedProps(dst, restored)
+	restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, restored)
 
 	// END RESTORE
 

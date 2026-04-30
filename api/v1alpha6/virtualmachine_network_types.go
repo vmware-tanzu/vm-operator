@@ -5,6 +5,7 @@
 package v1alpha6
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
@@ -26,6 +27,7 @@ type VirtualMachineNetworkRouteSpec struct {
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(self.vmxnet3) || self.type == 'VMXNet3'",message="vmxnet3 tuning fields require interface type VMXNet3"
+// +kubebuilder:validation:XValidation:rule="!has(self.ipamModes) || self.ipamModes.all(m, m == 'IPv4' || m == 'IPv6')",message="each ipamModes entry must be IPv4 or IPv6"
 
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's
 // network interface.
@@ -223,6 +225,20 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// The admission webhook rejects keys that duplicate a first-class field
 	// above (e.g. "ctxPerDev" is rejected because VMXNet3.CtxPerDev exists).
 	AdvancedProperties []vmopv1common.KeyValuePair `json:"advancedProperties,omitempty"`
+
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=2
+
+	// IPAMModes requests which IP address families (IPv4 and/or IPv6) the network
+	// provider allocates for this interface. Allowed values are IPv4 and IPv6.
+	// Each family appears at most once; duplicate values are rejected by the API
+	// server; order does not change meaning—[IPv4, IPv6] and [IPv6, IPv4] are the
+	// same dual-stack request.
+	//
+	// When unset, the provider's default applies for which families are allocated.
+	// When set, the controller forwards the requested families to the provider for this interface.
+	IPAMModes []corev1.IPFamily `json:"ipamModes,omitempty"`
 }
 
 // VirtualMachineNetworkVLANSpec describes a VLAN sub-interface configuration.

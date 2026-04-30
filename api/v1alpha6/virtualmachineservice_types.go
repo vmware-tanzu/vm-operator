@@ -5,6 +5,7 @@
 package v1alpha6
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -78,6 +79,10 @@ type LoadBalancerIngress struct {
 	Hostname string `json:"hostname,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="self.type != 'ExternalName' || ((!has(self.ipFamilies) || size(self.ipFamilies) == 0) && !has(self.ipFamilyPolicy))",message="ipFamilies and ipFamilyPolicy may not be set when type is ExternalName"
+// +kubebuilder:validation:XValidation:rule="!has(self.ipFamilies) || size(self.ipFamilies) < 2 || self.ipFamilies[0] != self.ipFamilies[1]",message="ipFamilies must not contain duplicate entries"
+// +kubebuilder:validation:XValidation:rule="!has(self.ipFamilies) || self.ipFamilies.all(f, f == 'IPv4' || f == 'IPv6')",message="each ipFamilies entry must be IPv4 or IPv6"
+
 // VirtualMachineServiceSpec defines the desired state of VirtualMachineService.
 type VirtualMachineServiceSpec struct {
 	// Type specifies a desired VirtualMachineServiceType for this
@@ -138,6 +143,40 @@ type VirtualMachineServiceSpec struct {
 	// Must be a valid RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
 	// and requires Type to be ExternalName.
 	ExternalName string `json:"externalName,omitempty"`
+
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=2
+	// +optional
+
+	// IPFamilies is a list of IP families (e.g. IPv4, IPv6) assigned to this
+	// VirtualMachineService. Together with ipFamilyPolicy, it guides how the controller
+	// configures the Kubernetes Service. Cluster-level constraints (for example requesting IPv6
+	// when no IPv6 Service range exists) usually surface as errors reconciling the child Service,
+	// not as rejection of the VirtualMachineService object at create time.
+	// This field is conditionally mutable: it allows
+	// for adding or removing a secondary IP family, but it does not allow
+	// changing the primary IP family of the VirtualMachineService. Valid values are "IPv4"
+	// and "IPv6". This field applies to types ClusterIP (including headless) and LoadBalancer.
+	// This field will be wiped when updating a VirtualMachineService to type ExternalName.
+	//
+	// This field may hold a maximum of two entries (dual-stack families, in
+	// either order).  These families must correspond to the values of the
+	// clusterIPs field, if specified. Both clusterIPs and ipFamilies are
+	// governed by the ipFamilyPolicy field.
+	IPFamilies []corev1.IPFamily `json:"ipFamilies,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Enum=SingleStack;PreferDualStack;RequireDualStack
+
+	// IPFamilyPolicy represents the dual-stack-ness requested or required by
+	// this VirtualMachineService. If there is no value provided, then this field will be set
+	// to SingleStack. VirtualMachineServices can be "SingleStack" (a single IP family),
+	// "PreferDualStack" (two IP families on dual-stack configured clusters or
+	// a single IP family on single-stack clusters), or "RequireDualStack"
+	// (two IP families on dual-stack configured clusters, otherwise fail). The
+	// ipFamilies and clusterIPs fields depend on the value of this field. This
+	// field will be wiped when updating a VirtualMachineService to type ExternalName.
+	IPFamilyPolicy *corev1.IPFamilyPolicy `json:"ipFamilyPolicy,omitempty"`
 }
 
 // VirtualMachineServiceStatus defines the observed state of

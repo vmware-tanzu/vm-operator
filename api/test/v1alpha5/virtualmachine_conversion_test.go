@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"
+	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/utils/ptr"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
@@ -92,6 +93,28 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
+				name: "spec.network.interfaces.ipamModes",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									IPAMModes: []corev1.IPFamily{
+										corev1.IPv4Protocol,
+										corev1.IPv6Protocol,
+									},
+								},
+								{
+									Name:      "eth1",
+									IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
 				name: "spec.advanced new fields",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
@@ -110,13 +133,17 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.network.interfaces new fields",
+				name: "spec.network.interfaces advanced nic fields",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
 						Network: &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
-									Name:        "eth0",
+									Name: "eth0",
+									IPAMModes: []corev1.IPFamily{
+										corev1.IPv4Protocol,
+										corev1.IPv6Protocol,
+									},
 									Type:        vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
 									VNUMANodeID: ptr.To(int32(1)),
 									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{

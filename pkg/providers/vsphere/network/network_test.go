@@ -12,6 +12,7 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -331,6 +332,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					netInterface.Status.ExternalID = externalID
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 					netInterface.Status.MacAddress = "" // NetOP doesn't set this.
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
 							IP:         "192.168.1.110",
@@ -463,9 +466,158 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(results.Results).To(HaveLen(1))
 					result := results.Results[0]
 					Expect(result.DHCP4).To(BeTrue())
-					Expect(result.DHCP6).To(BeTrue()) // Both should be set when NetOP indicates DHCP
+					Expect(result.DHCP6).To(BeFalse())
 					Expect(result.NoIPAM).To(BeFalse())
 					Expect(result.IPConfigs).To(BeEmpty())
+				})
+			})
+
+			When("DHCP is enabled for both IPv4 and IPv6", func() {
+				It("returns success with both DHCP flags set", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NetOP reconcile with explicit IPv6 DHCP", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+							{
+								Type:   netopv1alpha1.NetworkInterfaceReady,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.DHCP4).To(BeTrue())
+					Expect(result.DHCP6).To(BeTrue())
+					Expect(result.NoIPAM).To(BeFalse())
+					Expect(result.IPConfigs).To(BeEmpty())
+				})
+			})
+
+			When("IPv4 uses DHCP and IPv6 uses static pool", func() {
+				It("returns DHCP4 with IPv6 IPConfigs only", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate NetOP mixed assignment modes", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+						netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+							{
+								IP:         "2001:db8::100",
+								IPFamily:   corev1.IPv6Protocol,
+								Gateway:    "2001:db8::1",
+								SubnetMask: "ffff:ffff:ffff:ffff::",
+							},
+						}
+						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+							{
+								Type:   netopv1alpha1.NetworkInterfaceReady,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.DHCP4).To(BeTrue())
+					Expect(result.DHCP6).To(BeFalse())
+					Expect(result.NoIPAM).To(BeFalse())
+					Expect(result.IPConfigs).To(HaveLen(1))
+					Expect(result.IPConfigs[0].IsIPv4).To(BeFalse())
+					Expect(result.IPConfigs[0].IPCIDR).To(Equal("2001:db8::100/64"))
+				})
+			})
+
+			When("IPv4 uses static pool and IPv6 uses DHCP", func() {
+				It("returns DHCP6 with IPv4 IPConfigs only", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate NetOP mixed assignment modes", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+						netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+							{
+								IP:         "192.168.1.100",
+								IPFamily:   corev1.IPv4Protocol,
+								Gateway:    "192.168.1.1",
+								SubnetMask: "255.255.255.0",
+							},
+						}
+						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+							{
+								Type:   netopv1alpha1.NetworkInterfaceReady,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.DHCP4).To(BeFalse())
+					Expect(result.DHCP6).To(BeTrue())
+					Expect(result.NoIPAM).To(BeFalse())
+					Expect(result.IPConfigs).To(HaveLen(1))
+					Expect(result.IPConfigs[0].IsIPv4).To(BeTrue())
+					Expect(result.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
 				})
 			})
 
@@ -550,6 +702,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 						netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 						netInterface.Status.MacAddress = "" // NetOP doesn't set this.
+						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 						netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 							{
 								IP:         "192.168.1.110",
@@ -631,18 +785,19 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
-							IP:         "2001:db8::100",
-							IPFamily:   corev1.IPv6Protocol,
-							Gateway:    "2001:db8::1",
-							SubnetMask: "ffff:ffff:ffff:ffff::",
+							IP:       "2001:db8::100",
+							IPFamily: corev1.IPv6Protocol,
+							Gateway:  "2001:db8::1",
+							Prefix:   ptr.To(int32(64)),
 						},
 						{
-							IP:         "2001:db8::101",
-							IPFamily:   corev1.IPv6Protocol,
-							Gateway:    "2001:db8::1",
-							SubnetMask: "ffff:ffff:ffff:ffff::",
+							IP:       "2001:db8::101",
+							IPFamily: corev1.IPv6Protocol,
+							Gateway:  "2001:db8::1",
+							Prefix:   ptr.To(int32(64)),
 						},
 					}
 					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
@@ -699,16 +854,16 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
-							IP:         "192.168.1.100",
-							IPFamily:   corev1.IPv4Protocol,
-							Gateway:    "192.168.1.1",
-							SubnetMask: "255.255.255.0",
+							IP:       "192.168.1.100",
+							IPFamily: corev1.IPv4Protocol,
+							Gateway:  "192.168.1.1",
+							Prefix:   ptr.To(int32(24)),
 						},
 						{
-							IP:         "192.168.1.101",
-							IPFamily:   corev1.IPv4Protocol,
-							Gateway:    "192.168.1.1",
-							SubnetMask: "255.255.255.0",
+							IP:       "192.168.1.101",
+							IPFamily: corev1.IPv4Protocol,
+							Gateway:  "192.168.1.1",
+							Prefix:   ptr.To(int32(24)),
 						},
 					}
 					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
@@ -834,18 +989,21 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
 							IP:         "192.168.1.100",
 							IPFamily:   corev1.IPv4Protocol,
 							Gateway:    "192.168.1.1",
 							SubnetMask: "255.255.255.0",
+							Prefix:     ptr.To(int32(24)),
 						},
 						{
 							IP:         "2001:db8::100",
 							IPFamily:   corev1.IPv6Protocol,
 							Gateway:    "2001:db8::1",
 							SubnetMask: "ffff:ffff:ffff:ffff::",
+							Prefix:     ptr.To(int32(64)),
 						},
 					}
 					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
@@ -902,6 +1060,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
 							IP:         "192.168.1.100",
@@ -969,6 +1128,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
 							IP:         "192.168.1.100",
@@ -1107,6 +1267,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
 							IP:         "192.168.1.100",
@@ -1143,6 +1304,207 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				result := results.Results[0]
 				Expect(result.IPConfigs[0].Gateway).To(Equal("172.16.1.1"))
 				Expect(result.IPConfigs[1].Gateway).To(Equal("2001:db8::2"))
+			})
+		})
+
+		Context("IPAMModes", func() {
+			Context("IPv4Only policy", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:    interfaceName,
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+						},
+					}
+				})
+
+				It("creates NetworkInterface CR with IPv4Only policy", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+					By("verify NetworkInterface CR has IPv4Only policy", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only))
+					})
+				})
+			})
+
+			Context("IPv6Only policy", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:    interfaceName,
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+						},
+					}
+				})
+
+				It("creates NetworkInterface CR with IPv6Only policy", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+					By("verify NetworkInterface CR has IPv6Only policy", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only))
+					})
+				})
+			})
+
+			Context("DualStack policy", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:    interfaceName,
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{
+								corev1.IPv4Protocol,
+								corev1.IPv6Protocol,
+							},
+						},
+					}
+				})
+
+				It("creates NetworkInterface CR with DualStack policy", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+					By("verify NetworkInterface CR has DualStack policy", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack))
+					})
+				})
+			})
+
+			Context("optional field not specified", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:    interfaceName,
+							Network: &common.PartialObjectRef{Name: networkName},
+							// IPAMModes not set
+						},
+					}
+				})
+
+				It("creates NetworkInterface CR without IPFamilyPolicy set", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+					By("verify NetworkInterface CR does not have NetOP IPFamilyPolicy set", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						// IPFamilyPolicy should be empty string when not specified
+						Expect(netInterface.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")))
+					})
+				})
+			})
+
+			Context("multiple interfaces with different policies", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:    "eth0",
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+						},
+						{
+							Name:    "eth1",
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+						},
+						{
+							Name:    "eth2",
+							Network: &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{
+								corev1.IPv4Protocol,
+								corev1.IPv6Protocol,
+							},
+						},
+					}
+				})
+
+				It("creates NetworkInterface CRs with correct policies for each interface", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+					expectedPolicies := map[string]netopv1alpha1.NetworkInterfaceIPFamilyPolicy{
+						"eth0": netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only,
+						"eth1": netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv6Only,
+						"eth2": netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack,
+					}
+
+					By("simulate successful NetOP reconcile for each interface", func() {
+						for ifName := range expectedPolicies {
+							netInterface := &netopv1alpha1.NetworkInterface{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      network.NetOPCRName(vm.Name, networkName, ifName, false),
+									Namespace: vm.Namespace,
+								},
+							}
+							err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)
+							if apierrors.IsNotFound(err) {
+								// First call bailed before creating this one; create it now.
+								netInterface.Spec.NetworkName = networkName
+								Expect(ctx.Client.Create(ctx, netInterface)).To(Succeed())
+							} else {
+								Expect(err).ToNot(HaveOccurred())
+							}
+							netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+								{
+									Type:   netopv1alpha1.NetworkInterfaceReady,
+									Status: corev1.ConditionTrue,
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+						}
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(results.Results).To(HaveLen(3))
+
+					for ifName, expectedPolicy := range expectedPolicies {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, ifName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.IPFamilyPolicy).To(Equal(expectedPolicy), "interface %q", ifName)
+					}
+				})
 			})
 		})
 	})

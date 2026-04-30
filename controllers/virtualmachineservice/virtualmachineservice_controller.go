@@ -271,6 +271,10 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 		return err
 	}
 
+	ctx.Logger.V(5).Info("Service spec.ipFamilies",
+		"service", client.ObjectKeyFromObject(service).String(),
+		"serviceSpecIPFamilies", service.Spec.IPFamilies)
+
 	err = r.createOrUpdateEndpoints(ctx, service)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to update VirtualMachineService Endpoints")
@@ -409,6 +413,25 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 		service.Spec.ExternalName = vmService.Spec.ExternalName
 		service.Spec.LoadBalancerIP = vmService.Spec.LoadBalancerIP
 		service.Spec.LoadBalancerSourceRanges = vmService.Spec.LoadBalancerSourceRanges
+
+		// Set IPFamilies and IPFamilyPolicy for dual-stack support
+		// These fields only apply to ClusterIP and LoadBalancer types
+		// They are wiped when type is ExternalName
+		if vmService.Spec.Type != vmopv1.VirtualMachineServiceTypeExternalName {
+			// Only overwrite when the VirtualMachineService specifies ipFamilies so we do not clear
+			// values defaulted or stored by the apiserver when the CR omits them.
+			if len(vmService.Spec.IPFamilies) > 0 {
+				service.Spec.IPFamilies = vmService.Spec.IPFamilies
+			}
+			if vmService.Spec.IPFamilyPolicy != nil {
+				service.Spec.IPFamilyPolicy = vmService.Spec.IPFamilyPolicy
+			}
+		} else {
+			// Clear IPFamilies and IPFamilyPolicy for ExternalName services
+			service.Spec.IPFamilies = nil
+			service.Spec.IPFamilyPolicy = nil
+		}
+
 		if service.Spec.Type == corev1.ServiceTypeLoadBalancer {
 			service.Spec.AllocateLoadBalancerNodePorts = ptr.To(false)
 		} else {
@@ -613,7 +636,15 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		return nil, err
 	}
 
-	var subsets = make([]corev1.EndpointSubset, 0, len(vmList.Items))
+	// Include only VM addresses whose IP family is listed in Service spec.ipFamilies.
+	allowedFamilies := determineAllowedIPFamilies(service)
+
+	type addressInfo struct {
+		addr  corev1.EndpointAddress
+		ready bool
+		ports []corev1.EndpointPort
+	}
+	var addressInfos []addressInfo
 	var vmInSubsetsMap map[types.UID]struct{}
 
 	for i := range vmList.Items {
@@ -625,15 +656,17 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			continue
 		}
 
-		var vmIP string
+		var vmIPs []string
 		if vm.Status.Network != nil {
-			vmIP = vm.Status.Network.PrimaryIP4
-			if vmIP == "" {
-				vmIP = vm.Status.Network.PrimaryIP6
+			if vm.Status.Network.PrimaryIP4 != "" && allowedFamilies[corev1.IPv4Protocol] {
+				vmIPs = append(vmIPs, vm.Status.Network.PrimaryIP4)
+			}
+			if vm.Status.Network.PrimaryIP6 != "" && allowedFamilies[corev1.IPv6Protocol] {
+				vmIPs = append(vmIPs, vm.Status.Network.PrimaryIP6)
 			}
 		}
 
-		if vmIP == "" {
+		if len(vmIPs) == 0 {
 			// The EndpointAddress must have a valid IP so we cannot include this VM in the
 			// NotReadyAddresses.
 			// TODO: When we more fully support multiple NICs, we'll need someway to select which IP.
@@ -663,30 +696,8 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			}
 		}
 
-		epa := corev1.EndpointAddress{
-			IP: vmIP,
-			TargetRef: &corev1.ObjectReference{
-				APIVersion: vm.APIVersion,
-				Kind:       vm.Kind,
-				Namespace:  vm.Namespace,
-				Name:       vm.Name,
-				UID:        vm.UID,
-				// NOTE: This currently isn't set to limit downstream reconcile churn in things
-				// watching these Endpoints but isn't ideal. We should be smarter and only update
-				// this when something relevant to the service, e.g. the VM's IP, changes.
-				// ResourceVersion: vm.ResourceVersion,
-			},
-		}
-
-		// Populate the EP subset for this VM. We create one subset for each VM, and then our
-		// caller will repack the subsets that have identical ports.
-		subset := corev1.EndpointSubset{}
-		if ready {
-			subset.Addresses = []corev1.EndpointAddress{epa}
-		} else {
-			subset.NotReadyAddresses = []corev1.EndpointAddress{epa}
-		}
-
+		// Build ports list once for reuse across all IPs
+		var ports []corev1.EndpointPort
 		// TODO: Headless support
 		for _, servicePort := range service.Spec.Ports {
 			portName := servicePort.Name
@@ -702,7 +713,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				continue
 			}
 
-			subset.Ports = append(subset.Ports,
+			ports = append(ports,
 				corev1.EndpointPort{
 					Name:     portName,
 					Port:     int32(portNum), //nolint:gosec // disable G115
@@ -710,10 +721,56 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				})
 		}
 
-		subsets = append(subsets, subset)
+		for _, ip := range vmIPs {
+			epa := corev1.EndpointAddress{
+				IP: ip,
+				TargetRef: &corev1.ObjectReference{
+					APIVersion: vm.APIVersion,
+					Kind:       vm.Kind,
+					Namespace:  vm.Namespace,
+					Name:       vm.Name,
+					UID:        vm.UID,
+					// NOTE: This currently isn't set to limit downstream reconcile churn in things
+					// watching these Endpoints but isn't ideal. We should be smarter and only update
+					// this when something relevant to the service, e.g. the VM's IP, changes.
+					// ResourceVersion: vm.ResourceVersion,
+				},
+			}
+
+			addressInfos = append(addressInfos, addressInfo{
+				addr:  epa,
+				ready: ready,
+				ports: ports,
+			})
+		}
+	}
+
+	subsets := make([]corev1.EndpointSubset, 0, len(addressInfos))
+	for _, addrInfo := range addressInfos {
+		var readyAddrs, notReadyAddrs []corev1.EndpointAddress
+		if addrInfo.ready {
+			readyAddrs = append(readyAddrs, addrInfo.addr)
+		} else {
+			notReadyAddrs = append(notReadyAddrs, addrInfo.addr)
+		}
+		subsets = append(subsets, corev1.EndpointSubset{
+			Addresses:         readyAddrs,
+			NotReadyAddresses: notReadyAddrs,
+			Ports:             addrInfo.ports,
+		})
 	}
 
 	return subsets, nil
+}
+
+// determineAllowedIPFamilies returns which IP families may appear on Endpoints for this Service.
+// Only spec.ipFamilies is used (from the Service object after createOrUpdateService / apiserver merge).
+func determineAllowedIPFamilies(service *corev1.Service) map[corev1.IPFamily]bool {
+	allowedFamilies := make(map[corev1.IPFamily]bool)
+	for _, family := range service.Spec.IPFamilies {
+		allowedFamilies[family] = true
+	}
+	return allowedFamilies
 }
 
 // updateVMService syncs the VirtualMachineService Status from the Service status.

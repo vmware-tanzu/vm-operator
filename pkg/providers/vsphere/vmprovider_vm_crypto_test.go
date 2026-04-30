@@ -163,6 +163,18 @@ func vmCryptoTests() {
 		Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 		vm.Spec.InstanceUUID = o.Config.InstanceUuid
 
+		// Move the imported VM into the namespace's resource pool so that
+		// reconcileLocation accepts the VM as living in an authorized
+		// location for this namespace.
+		nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, zoneName, "")
+		nsRPRef := nsRP.Reference()
+		relocateTask, err := vcVM.Relocate(
+			ctx,
+			vimtypes.VirtualMachineRelocateSpec{Pool: &nsRPRef},
+			vimtypes.VirtualMachineMovePriorityDefaultPriority)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		ExpectWithOffset(1, relocateTask.Wait(ctx)).To(Succeed())
+
 		powerState, err := vcVM.PowerState(ctx)
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		if powerState == vimtypes.VirtualMachinePowerStatePoweredOn {

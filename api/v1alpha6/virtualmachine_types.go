@@ -115,6 +115,10 @@ const (
 	// configuration is synced to the desired state, determined by whether or
 	// not the guest is reporting the expected IP address(es).
 	VirtualMachineGuestNetworkConfigSynced = "VirtualMachineGuestNetworkConfigSynced"
+
+	// VirtualMachineConditionInAuthorizedLocation indicates that the VM is in the expected location in the vCenter inventory.
+	// This condition is set when a VM is detected to be in the incorrect folder or resource pool based on its namespace.
+	VirtualMachineConditionInAuthorizedLocation = "VirtualMachineConditionInAuthorizedLocation"
 )
 
 const (

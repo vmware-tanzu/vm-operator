@@ -1034,7 +1034,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		if pkgerr.IsNoRequeueError(err) {
 			return errOrReconcileErr(reconcileErr, err)
 		}
-		reconcileErr = getReconcileErr("status", reconcileErr, err)
+		reconcileErr = getReconcileErr("location", reconcileErr, err)
 	}
 
 	//
@@ -1155,7 +1155,6 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 
 	// 4. Handle Mismatch
 	if !isValid {
-		//vmCtx.Logger.Warn("Location mismatch detected: VM is outside the authorized Namespace Resource Pool hierarchy")
 
 		pkgcnd.MarkFalse(
 			vmCtx.VM,
@@ -1171,7 +1170,9 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		}
 		vmCtx.VM.Annotations[vmopv1.PauseAnnotation] = "true"
 
-		return fmt.Errorf("reconciliation stopped: VM location mismatch")
+		return pkgerr.NoRequeueError{Message: fmt.Errorf(
+			"reconciliation stopped for the VM %s because it is moved to unauthorized Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
+			vmCtx.VM.Name, expectedRootRPMoID, currentRPMoRef.Value).Error()}
 	}
 
 	pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionInAuthorizedLocation)

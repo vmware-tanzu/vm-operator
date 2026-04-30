@@ -465,6 +465,199 @@ var _ = Describe("CreateConfigSpec", func() {
 			})
 		})
 	})
+
+	Context("AF/AAF policies", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.VMAffinityDuringExecution = true
+			})
+		})
+
+		When("VM spec has affinity policies set", func() {
+			Context("required affinity policy with zone topology key", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Labels = map[string]string{
+						"app":                          "db",
+						"env":                          "prod",
+						"zone":                         "us-west",
+						"vmoperator.vmware.com/paused": "true", // should be filtered out
+					}
+
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAffinity: &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"env": "prod",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "app",
+												Values:   []string{"db"},
+												Operator: metav1.LabelSelectorOpIn,
+											},
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						},
+					}
+				})
+
+				It("should have placement policies and tag specs", func() {
+					// Expect 2 policies: one for MatchLabels "env:prod" and one for MatchExpressions "app:db"
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
+
+					// Verify both policies are VmVmAffinity
+					for _, pol := range configSpec.VmPlacementPolicies {
+						policy, ok := pol.(*vimtypes.VmVmAffinity)
+						Expect(ok).To(BeTrue())
+						Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution)))
+						Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+						Expect(policy.AffinedVmsTag.NameId.Tag).To(BeElementOf("env:prod", "app:db"))
+						Expect(policy.AffinedVmsTag.NameId.Category).To(Equal(vmCtx.VM.Namespace))
+					}
+
+					// Only labels referenced in affinity rules should be included as tags
+					// Affinity rules reference "env" and "app" keys, so only those labels should be present
+					// "zone:us-west" should be excluded since "zone" is not referenced in any affinity rule
+					expectedTagNames := []string{"app:db", "env:prod"}
+					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
+				})
+			})
+
+			Context("anti-affinity policy with zone topology key", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Labels = map[string]string{
+						"app": "web",
+						"env": "prod",
+					}
+
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "web",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						},
+					}
+				})
+
+				It("should have anti-affinity policies and tag specs", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmToVmGroupsAntiAffinity)
+					Expect(ok).To(BeTrue())
+					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution)))
+					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+					Expect(policy.AntiAffinedVmGroupTags).To(HaveLen(1))
+					Expect(policy.AntiAffinedVmGroupTags[0].NameId.Tag).To(Equal("app:web"))
+					Expect(policy.AntiAffinedVmGroupTags[0].NameId.Category).To(Equal(vmCtx.VM.Namespace))
+
+					// Check TagSpecs for VM labels
+					expectedTagNames := []string{"app:web"}
+					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
+				})
+			})
+		})
+
+		When("VM spec has no affinity policies but has labels", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Labels = map[string]string{
+					"app": "standalone",
+					"env": "test",
+				}
+				vmCtx.VM.Spec.Affinity = nil
+			})
+
+			It("should not have any tag specs when no affinity rules exist", func() {
+				Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
+				Expect(configSpec.TagSpecs).To(BeEmpty())
+			})
+		})
+
+		When("VM has labels but affinity only references some of them", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Labels = map[string]string{
+					"app":                          "web",
+					"env":                          "prod",
+					"tier":                         "frontend",
+					"version":                      "1.0",
+					"owner":                        "team-a",
+					"vmoperator.vmware.com/paused": "true", // should be filtered out
+				}
+
+				vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "web",
+									},
+									MatchExpressions: []metav1.LabelSelectorRequirement{
+										{
+											Key:      "env",
+											Values:   []string{"prod", "staging"},
+											Operator: metav1.LabelSelectorOpIn,
+										},
+									},
+								},
+								TopologyKey: corev1.LabelTopologyZone,
+							},
+						},
+					},
+				}
+			})
+
+			It("should only include labels referenced in affinity rules", func() {
+				Expect(configSpec.VmPlacementPolicies).To(HaveLen(3))
+
+				// Only "app" and "env" keys are referenced in affinity rules
+				// "tier", "version", and "owner" labels should be excluded from tags
+				expectedTagNames := []string{"app:web", "env:prod"}
+				assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
+			})
+		})
+
+		When("VMAffinityDuringExecution feature flag is disabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMAffinityDuringExecution = false
+				})
+
+				vmCtx.VM.Labels = map[string]string{
+					"app": "test",
+				}
+				vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "test",
+									},
+								},
+								TopologyKey: corev1.LabelTopologyZone,
+							},
+						},
+					},
+				}
+			})
+
+			It("should not have placement policies or tag specs", func() {
+				Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
+				Expect(configSpec.TagSpecs).To(BeEmpty())
+			})
+		})
+	})
 })
 
 var _ = Describe("CreateConfigSpecForPlacement", func() {
@@ -1113,7 +1306,13 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 						Expect(configSpec.VmPlacementPolicies).To(HaveLen(4))
 						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+						// With VMAffinityDuringExecution enabled, only labels
+						// referenced in affinity rules are added as TagSpecs
+						// Since VM labels ("vm-label1", "vm-label2") don't
+						//  match affinity rule references
+						// ("component", "tier", "environment"),
+						// no TagSpecs should be generated
+						Expect(configSpec.TagSpecs).To(BeEmpty())
 					})
 				})
 
@@ -1171,7 +1370,12 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 						Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
 						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+						// With VMAffinityDuringExecution enabled, only labels
+						// referenced in affinity rules are added as TagSpecs
+						// Since VM labels ("vm-label1", "vm-label2") don't match
+						// affinity rule references ("component", "environment"),
+						// no TagSpecs should be generated
+						Expect(configSpec.TagSpecs).To(BeEmpty())
 					})
 				})
 
@@ -1255,7 +1459,12 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						}
 
 						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(expectedPolicies))
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+						// With VMAffinityDuringExecution enabled, only labels
+						// referenced in affinity rules are added as TagSpecs
+						// Since VM labels ("vm-label1", "vm-label2") don't match
+						// affinity rule references ("component", "tier", "environment"),
+						// no TagSpecs should be generated
+						Expect(configSpec.TagSpecs).To(BeEmpty())
 					})
 				})
 
@@ -1312,7 +1521,12 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						}
 
 						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(expectedPolicies))
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+						// With VMAffinityDuringExecution enabled, only labels
+						// referenced in affinity rules are added as TagSpecs
+						// Since VM labels ("vm-label1", "vm-label2") don't match
+						// affinity rule references ("component", "environment"),
+						// no TagSpecs should be generated
+						Expect(configSpec.TagSpecs).To(BeEmpty())
 					})
 				})
 
@@ -1372,7 +1586,12 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 						Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
 						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+						// With VMAffinityDuringExecution enabled, only labels
+						// referenced in affinity rules are added as TagSpecs
+						// Since VM labels ("vm-label1", "vm-label2") don't match
+						// affinity rule references ("zone-label", "host-label"),
+						// no TagSpecs should be generated
+						Expect(configSpec.TagSpecs).To(BeEmpty())
 					})
 				})
 			})

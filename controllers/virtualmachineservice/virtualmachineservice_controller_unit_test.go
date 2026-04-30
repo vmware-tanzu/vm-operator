@@ -781,10 +781,8 @@ func unitTestsReconcile() {
 				var dualStackVM *vmopv1.VirtualMachine
 				var ipv4VM *vmopv1.VirtualMachine
 				var ipv6VM *vmopv1.VirtualMachine
-				var service *corev1.Service
 
 				BeforeEach(func() {
-					service = &corev1.Service{}
 					dualStackVM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "dual-stack-vm",
@@ -826,6 +824,7 @@ func unitTestsReconcile() {
 				})
 
 				It("SingleStack policy with IPv4 clusterIP only includes IPv4 endpoints", func() {
+					service := &corev1.Service{}
 					policy := corev1.IPFamilyPolicySingleStack
 					vmService.Spec.IPFamilyPolicy = &policy
 					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}

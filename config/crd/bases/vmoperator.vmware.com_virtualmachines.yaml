@@ -15787,15 +15787,14 @@ spec:
                           type: string
                         ipamModes:
                           description: |-
-                            IPAMModes lists which Kubernetes IP families (IPv4 and/or IPv6) should be
-                            allocated for this interface. Values use corev1.IPFamily ("IPv4", "IPv6").
-                            Each family appears at most once, duplicate values are rejected by the
-                            API server, and order does not change meaning
-                            — [IPv4, IPv6] and [IPv6, IPv4] are the same dual-stack request.
+                            IPAMModes requests which IP address families (IPv4 and/or IPv6) the network
+                            provider allocates for this interface. Allowed values are IPv4 and IPv6.
+                            Each family appears at most once; duplicate values are rejected by the API
+                            server; order does not change meaning—[IPv4, IPv6] and [IPv6, IPv4] are the
+                            same dual-stack request.
 
-                            When empty, the network interface provider's default applies (for NetOP,
-                            IPFamilyPolicy is left unset). When non-empty, the controller maps these
-                            families to the provider's IP family policy (for NetOP: NetworkInterface.Spec.IPFamilyPolicy).
+                            When unset, the provider's default applies for which families are allocated.
+                            When set, the controller forwards the requested families to the provider for this interface.
                           items:
                             description: |-
                               IPFamily represents the IP Family (IPv4 or IPv6). This type is used

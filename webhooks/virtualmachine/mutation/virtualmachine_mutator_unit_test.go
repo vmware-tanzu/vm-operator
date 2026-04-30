@@ -194,6 +194,42 @@ func unitTestsMutating() {
 				})
 			})
 
+			When("Disabled is true", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+					})
+				})
+
+				BeforeEach(func() {
+					ctx.vm.Spec.Network.Disabled = true
+				})
+
+				It("Should not add default network interface", func() {
+					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
+					Expect(ctx.vm.Spec.Network.Interfaces).To(BeEmpty())
+				})
+
+				Context("Interfaces is not empty", func() {
+					BeforeEach(func() {
+						ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+							},
+						}
+					})
+
+					It("back fills Network ref", func() {
+						Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+						Expect(ctx.vm.Spec.Network.Interfaces).Should(HaveLen(1))
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("Network"))
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).Should(Equal("netoperator.vmware.com/v1alpha1"))
+					})
+				})
+			})
+
 			When("NoNetwork annotation is set", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {

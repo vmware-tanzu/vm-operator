@@ -501,6 +501,8 @@ func setDefaultNetworkInterfaceNetwork(
 	}
 
 	mutated := false
+	// Fill in any empty fields with that should be there based on the network
+	// provider. The validation webhook will fail for invalid combinations.
 	if ifaceNetwork.APIVersion == "" {
 		ifaceNetwork.APIVersion = networkRef.APIVersion
 		mutated = true
@@ -553,39 +555,42 @@ func AddDefaultNetworkInterface(
 	client ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) bool {
 
-	// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have this annotation
-	// in v1a2: Disabled mostly already covers it. We could map between the two for version conversion, but
-	// they do mean slightly different things, and kind of complicated to know what to do like if the annotation
-	// is removed.
-	if _, ok := vm.Annotations[v1alpha1.NoDefaultNicAnnotation]; ok {
-		if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 {
-			return false
-		}
-	}
-
-	if vm.Spec.Network != nil && vm.Spec.Network.Disabled {
-		return false
-	}
-
 	ok, networkRef := getDefaultNetworkRef(ctx, client)
 	if !ok {
+		// TODO(BV): This really can't fail but will need to change for provider migrated namespaces.
 		return false
 	}
 
-	if vm.Spec.Network == nil {
-		vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-	}
+	if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 {
+		// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have
+		// this annotation in v1a2: Disabled mostly already covers it. We could map between the
+		// two for version conversion, but they do mean slightly different things, and kind of
+		// complicated to know what to do like if the annotation is removed.
+		if _, ok := vm.Annotations[v1alpha1.NoDefaultNicAnnotation]; ok {
+			return false
+		}
 
-	var updated bool
-	if len(vm.Spec.Network.Interfaces) == 0 {
+		if vm.Spec.Network != nil && vm.Spec.Network.Disabled {
+			return false
+		}
+
+		if vm.Spec.Network == nil {
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+		}
+
+		// Add the default interface.
 		vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 			{
 				Name:    defaultInterfaceName,
 				Network: &networkRef,
 			},
 		}
-		updated = true
-	} else {
+
+		return true
+	}
+
+	var updated bool
+	if vm.Spec.Network != nil {
 		for i := range vm.Spec.Network.Interfaces {
 			if ok := setDefaultNetworkInterfaceNetwork(vm, i, networkRef); ok {
 				updated = true

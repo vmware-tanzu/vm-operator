@@ -296,7 +296,7 @@ func initFlags() {
 		&managerOpts.WebhookBindAddress,
 		"webhook-bind-address",
 		pkgmgr.DefaultWebhookBindAddress,
-		"The IP address the webhook server binds to. Use \"::\" for dual-stack (IPv4 and IPv6) support.")
+		"The IP address the webhook server binds to.")
 	flag.BoolVar(
 		&managerOpts.ContainerNode,
 		"container-node",

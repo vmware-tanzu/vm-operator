@@ -60,8 +60,7 @@ const (
 	DefaultWebhookSecretVolumeMountPath = "/etc/vmware/wcp/webhook-certs"
 
 	// DefaultWebhookBindAddress is the default IP address the webhook server
-	// binds to. For IPv6/dual-stack support, configure via deployment spec
-	// with "::".
+	// binds to.
 	DefaultWebhookBindAddress = ""
 
 	// DefaultContainerNode is the default value for the eponymous manager option.

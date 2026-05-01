@@ -80,31 +80,23 @@ func serverUnitTests() {
 
 	Context("RunServer", func() {
 
-		It("should start the server at the given address and path", func(done Done) {
-
-			server := &webconsolevalidation.Server{
-				Addr:       serverAddr,
-				Path:       serverPath,
-				KubeClient: builder.NewFakeClient(),
-			}
+		It("should start the server at the given address and path", func() {
+			srv, err := webconsolevalidation.NewServer(serverAddr, serverPath, builder.NewFakeClient())
+			Expect(err).NotTo(HaveOccurred())
 
 			go func() {
-				Expect(server.Run()).To(Succeed())
+				defer GinkgoRecover()
+				_ = srv.Run()
 			}()
 
-			// Wait for the server to start.
-			time.Sleep(100 * time.Millisecond)
-
-			resp, err := http.Get("http://" + serverAddr + serverPath)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp).NotTo(BeNil())
-			// Verify the server path is correct.
-			Expect(resp.StatusCode).NotTo(Equal(http.StatusNotFound))
-			Expect(resp.Body).NotTo(BeNil())
-			Expect(resp.Body.Close()).To(Succeed())
-
-			close(done)
-		}, 1.0) // Time out this after 1 second.
+			Eventually(func(g Gomega) {
+				resp, err := http.Get("http://" + serverAddr + serverPath)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(resp).NotTo(BeNil())
+				g.Expect(resp.StatusCode).NotTo(Equal(http.StatusNotFound))
+				g.Expect(resp.Body.Close()).To(Succeed())
+			}).WithTimeout(2 * time.Second).Should(Succeed())
+		})
 
 		Context("RunServer with dual-stack default", func() {
 
@@ -128,7 +120,13 @@ func serverUnitTests() {
 					_ = server.Run()
 				}()
 
-				time.Sleep(100 * time.Millisecond)
+				Eventually(func(g Gomega) {
+					url := fmt.Sprintf("http://127.0.0.1:%d%s", serverPort, serverPath)
+					resp, err := http.Get(url)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(resp).NotTo(BeNil())
+					g.Expect(resp.Body.Close()).To(Succeed())
+				}).WithTimeout(2 * time.Second).Should(Succeed())
 			})
 
 			It("should accept connections via IPv4 loopback (127.0.0.1)", func() {

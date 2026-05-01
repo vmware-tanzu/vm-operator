@@ -136,7 +136,6 @@ type Options struct {
 	WebhookSecretVolumeMountPath string
 
 	// WebhookBindAddress is the IP address the webhook server binds to.
-	// Use "::" for dual-stack (IPv4 and IPv6) support.
 	WebhookBindAddress string
 
 	// EnableWebhookClientVerification determines whether to use client certificate

@@ -64,7 +64,7 @@ func main() {
 	serverBindAddress := flag.String(
 		"server-bind-address",
 		defaultServerBindAddress,
-		"The IP address to bind to. Use [::] for dual-stack (IPv4 and IPv6) support.",
+		"The IP address to bind to.",
 	)
 
 	flag.Parse()

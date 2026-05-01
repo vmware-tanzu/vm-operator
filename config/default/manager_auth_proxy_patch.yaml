@@ -12,9 +12,7 @@ spec:
       containers:
       - name: manager
         args:
-        - "--metrics-addr=[::]:8443"
-        - "--webhook-bind-address=::"
-        - "--health-addr=[::]:9445"
+        - "--metrics-addr=:8443"
         - "--profiler-address=127.0.0.1:8073"
         ports:
         - containerPort: 8443

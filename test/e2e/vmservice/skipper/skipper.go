@@ -109,3 +109,19 @@ func SkipUnlessSnapshotFSSEnabled(ctx context.Context, vmSvcClusterProxy *common
 		framework.SkipInternalf(1, "skip the test due to %s is disabled.", utils.SupervisorVMSnapshotFSS)
 	}
 }
+
+func SkipUnlessSupervisorHasAtleastOneZoneWithHostCount(ctx context.Context, vmSvcClusterProxy *common.VMServiceClusterProxy, minHostCount int) {
+	zoneHostInfos, err := utils.GetHostsPerZone(ctx, vmSvcClusterProxy.GetClient(), vmSvcClusterProxy.GetKubeconfigPath())
+	Expect(err).NotTo(HaveOccurred(), "failed to list zones with hosts")
+
+	minHostsRequirementSatisfied := false
+	for _, zoneHostInfo := range zoneHostInfos {
+		if len(zoneHostInfo.HostIDs) >= minHostCount {
+			minHostsRequirementSatisfied = true
+			break
+		}
+	}
+	if !minHostsRequirementSatisfied {
+		framework.SkipInternalf(1, "skip the test as minimum host for zone should atleast be %d", minHostCount)
+	}
+}

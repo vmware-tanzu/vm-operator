@@ -33,3 +33,20 @@ type InfraPolicySpec struct {
 	MatchWorkloadLabel map[string]string
 	EnforcementMode    InfraPolicyEnforcementMode
 }
+
+// TagUsageEntry is a single entry from the compute policies tag-usage list.
+type TagUsageEntry struct {
+	Capability        string `json:"capability"`
+	CategoryName      string `json:"category_name"`
+	TagType           string `json:"tag_type"`
+	TagName           string `json:"tag_name"`
+	PolicyDescription string `json:"policy_description"`
+	PolicyName        string `json:"policy_name"`
+	Tag               string `json:"tag"`
+	Policy            string `json:"policy"`
+}
+
+// VMPolicyComplianceStatus is the compliance result for a VM against a compute policy.
+type VMPolicyComplianceStatus struct {
+	Status string `json:"status"`
+}

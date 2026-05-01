@@ -231,6 +231,8 @@ type WorkloadManagementAPI interface {
 	CreateComputePolicy(spec ComputePolicySpec) (string, error)
 	CreateInfraPolicy(spec InfraPolicySpec) error
 	UpdateNamespaceWithInfraPolicies(namespace string, policyNames ...string) error
+	ListComputePolicyTagUsage(categoryName, tagName string) ([]TagUsageEntry, error)
+	GetVMPolicyCompliance(policyID, vmMoid string) (VMPolicyComplianceStatus, error)
 
 	// NSX APIs
 	GetSupervisorLoadBalancerProvider(supervisorID string) (string, error)

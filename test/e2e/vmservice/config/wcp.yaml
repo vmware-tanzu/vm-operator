@@ -101,6 +101,7 @@ intervals:
   default/wait-storage-class-ready: ["5m", "15s"]
   default/wait-namespace-ready: ["5m", "10s"]
   default/wait-backup-to-complete: ["10m", "5s"]
+  default/wait-virtual-machine-compute-policy-status-update: ["5m", "10s"]
 
   default/wait-config-map-creation: ["3m", "10s"]
   default/wait-secret-creation: ["3m", "10s"]

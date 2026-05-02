@@ -12,6 +12,12 @@ import (
 )
 
 var _ = Describe("Config", func() {
+	Describe("Default", func() {
+		It("Should bind the profiler to loopback only", func() {
+			Expect(pkgcfg.Default().ProfilerAddr).To(Equal("127.0.0.1:8073"))
+		})
+	})
+
 	Describe("GetMaxDeployThreadsOnProvider", func() {
 		When("MaxDeployThreadsOnProvider == 0", func() {
 			It("Should return MaxDeployThreadsOnProvider", func() {

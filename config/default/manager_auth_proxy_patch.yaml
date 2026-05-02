@@ -13,6 +13,7 @@ spec:
       - name: manager
         args:
         - "--metrics-addr=:8443"
+        - "--profiler-address=127.0.0.1:8073"
         ports:
         - containerPort: 8443
           name: metrics-server

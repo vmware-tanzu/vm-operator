@@ -59,6 +59,10 @@ const (
 	//nolint:gosec
 	DefaultWebhookSecretVolumeMountPath = "/etc/vmware/wcp/webhook-certs"
 
+	// DefaultWebhookBindAddress is the default IP address the webhook server
+	// binds to.
+	DefaultWebhookBindAddress = ""
+
 	// DefaultContainerNode is the default value for the eponymous manager option.
 	DefaultContainerNode = false
 

@@ -6,6 +6,7 @@ package webconsolevalidation_test
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -29,6 +30,60 @@ func serverUnitTests() {
 		serverPath = "/validate"
 		serverAddr = "localhost:8080"
 	)
+
+	// testWildcardServer starts a server bound with bindFmt
+	// (a fmt format string accepting a single int port, e.g. "[::]:%d"
+	// or ":%d") and runs wildcardBindSpecs against it.
+	testWildcardServer := func(bindFmt string) {
+		var (
+			server     *webconsolevalidation.Server
+			serverPort int
+		)
+
+		BeforeEach(func() {
+			serverPort = getAvailablePort()
+			var err error
+			server, err = webconsolevalidation.NewServer(
+				fmt.Sprintf(bindFmt, serverPort),
+				serverPath,
+				builder.NewFakeClient(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			go func() {
+				defer GinkgoRecover()
+				_ = server.Run()
+			}()
+
+			Eventually(func(g Gomega) {
+				url := fmt.Sprintf("http://127.0.0.1:%d%s", serverPort, serverPath)
+				resp, err := http.Get(url)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(resp).NotTo(BeNil())
+				g.Expect(resp.Body.Close()).To(Succeed())
+			}).WithTimeout(2 * time.Second).Should(Succeed())
+		})
+
+		It("should accept connections via IPv4 loopback (127.0.0.1)", func() {
+			url := fmt.Sprintf("http://127.0.0.1:%d%s?uuid=test&namespace=test", serverPort, serverPath)
+			resp, err := http.Get(url)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+			Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+			Expect(resp.Body.Close()).To(Succeed())
+		})
+
+		It("should accept connections via IPv6 loopback ([::1])", func() {
+			url := fmt.Sprintf("http://[::1]:%d%s?uuid=test&namespace=test", serverPort, serverPath)
+			resp, err := http.Get(url)
+			if err != nil {
+				Skip("IPv6 not available on this system: " + err.Error())
+			}
+			Expect(resp).NotTo(BeNil())
+			Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+			Expect(resp.Body.Close()).To(Succeed())
+		})
+	}
 
 	Context("NewServer", func() {
 
@@ -58,36 +113,52 @@ func serverUnitTests() {
 			})
 
 		})
+
+		When("IPv6 dual-stack bind address is provided", func() {
+
+			It("should initialize a new Server with [::] address", func() {
+				server, err := webconsolevalidation.NewServer("[::]:8080", serverPath, fake.NewFakeClient())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(server).NotTo(BeNil())
+				Expect(server.Addr).To(Equal("[::]:8080"))
+			})
+
+			It("should initialize a new Server with [::1] loopback address", func() {
+				server, err := webconsolevalidation.NewServer("[::1]:8080", serverPath, fake.NewFakeClient())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(server).NotTo(BeNil())
+				Expect(server.Addr).To(Equal("[::1]:8080"))
+			})
+		})
 	})
 
 	Context("RunServer", func() {
 
-		It("should start the server at the given address and path", func(done Done) {
-
-			server := &webconsolevalidation.Server{
-				Addr:       serverAddr,
-				Path:       serverPath,
-				KubeClient: builder.NewFakeClient(),
-			}
+		It("should start the server at the given address and path", func() {
+			srv, err := webconsolevalidation.NewServer(serverAddr, serverPath, builder.NewFakeClient())
+			Expect(err).NotTo(HaveOccurred())
 
 			go func() {
-				Expect(server.Run()).To(Succeed())
+				defer GinkgoRecover()
+				_ = srv.Run()
 			}()
 
-			// Wait for the server to start.
-			time.Sleep(100 * time.Millisecond)
+			Eventually(func(g Gomega) {
+				resp, err := http.Get("http://" + serverAddr + serverPath)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(resp).NotTo(BeNil())
+				g.Expect(resp.StatusCode).NotTo(Equal(http.StatusNotFound))
+				g.Expect(resp.Body.Close()).To(Succeed())
+			}).WithTimeout(2 * time.Second).Should(Succeed())
+		})
 
-			resp, err := http.Get("http://" + serverAddr + serverPath)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp).NotTo(BeNil())
-			// Verify the server path is correct.
-			Expect(resp.StatusCode).NotTo(Equal(http.StatusNotFound))
-			Expect(resp.Body).NotTo(BeNil())
-			Expect(resp.Body.Close()).To(Succeed())
+		Context("RunServer with [::] bind address", func() {
+			testWildcardServer("[::]:%d")
+		})
 
-			close(done)
-		}, 1.0) // Time out this after 1 second.
-
+		Context("RunServer with default bind address", func() {
+			testWildcardServer(":%d")
+		})
 	})
 
 	Context("HandleWebConsoleValidation", func() {
@@ -242,4 +313,16 @@ func fakeValidationRequest(url string, server webconsolevalidation.Server) int {
 	Expect(response.Body.Close()).To(Succeed())
 
 	return response.StatusCode
+}
+
+func getAvailablePort() int {
+	listener, err := net.Listen("tcp", "[::]:0")
+	if err != nil {
+		listener, err = net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+	}
+	defer func() {
+		Expect(listener.Close()).To(Succeed())
+	}()
+	return listener.Addr().(*net.TCPAddr).Port
 }

@@ -52,7 +52,7 @@ func Default() Config {
 		PodName:                      defaultPrefix + "controller-manager",
 		PodNamespace:                 defaultPrefix + "system",
 		PodServiceAccountName:        defaultPrefix + "service-account",
-		ProfilerAddr:                 ":8073",
+		ProfilerAddr:                 "127.0.0.1:8073",
 		RateLimitBurst:               1000,
 		RateLimitQPS:                 500,
 		SyncPeriod:                   30 * time.Minute,

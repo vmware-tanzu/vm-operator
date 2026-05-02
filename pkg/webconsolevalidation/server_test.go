@@ -31,6 +31,60 @@ func serverUnitTests() {
 		serverAddr = "localhost:8080"
 	)
 
+	// testWildcardServer starts a server bound with bindFmt
+	// (a fmt format string accepting a single int port, e.g. "[::]:%d"
+	// or ":%d") and runs wildcardBindSpecs against it.
+	testWildcardServer := func(bindFmt string) {
+		var (
+			server     *webconsolevalidation.Server
+			serverPort int
+		)
+
+		BeforeEach(func() {
+			serverPort = getAvailablePort()
+			var err error
+			server, err = webconsolevalidation.NewServer(
+				fmt.Sprintf(bindFmt, serverPort),
+				serverPath,
+				builder.NewFakeClient(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			go func() {
+				defer GinkgoRecover()
+				_ = server.Run()
+			}()
+
+			Eventually(func(g Gomega) {
+				url := fmt.Sprintf("http://127.0.0.1:%d%s", serverPort, serverPath)
+				resp, err := http.Get(url)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(resp).NotTo(BeNil())
+				g.Expect(resp.Body.Close()).To(Succeed())
+			}).WithTimeout(2 * time.Second).Should(Succeed())
+		})
+
+		It("should accept connections via IPv4 loopback (127.0.0.1)", func() {
+			url := fmt.Sprintf("http://127.0.0.1:%d%s?uuid=test&namespace=test", serverPort, serverPath)
+			resp, err := http.Get(url)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+			Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+			Expect(resp.Body.Close()).To(Succeed())
+		})
+
+		It("should accept connections via IPv6 loopback ([::1])", func() {
+			url := fmt.Sprintf("http://[::1]:%d%s?uuid=test&namespace=test", serverPort, serverPath)
+			resp, err := http.Get(url)
+			if err != nil {
+				Skip("IPv6 not available on this system: " + err.Error())
+			}
+			Expect(resp).NotTo(BeNil())
+			Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
+			Expect(resp.Body.Close()).To(Succeed())
+		})
+	}
+
 	Context("NewServer", func() {
 
 		When("Server addr or path is empty", func() {
@@ -98,56 +152,12 @@ func serverUnitTests() {
 			}).WithTimeout(2 * time.Second).Should(Succeed())
 		})
 
-		Context("RunServer with dual-stack default", func() {
+		Context("RunServer with [::] bind address", func() {
+			testWildcardServer("[::]:%d")
+		})
 
-			var (
-				server     *webconsolevalidation.Server
-				serverPort int
-			)
-
-			BeforeEach(func() {
-				serverPort = getAvailablePort()
-				var err error
-				server, err = webconsolevalidation.NewServer(
-					fmt.Sprintf("[::]:%d", serverPort),
-					serverPath,
-					builder.NewFakeClient(),
-				)
-				Expect(err).NotTo(HaveOccurred())
-
-				go func() {
-					defer GinkgoRecover()
-					_ = server.Run()
-				}()
-
-				Eventually(func(g Gomega) {
-					url := fmt.Sprintf("http://127.0.0.1:%d%s", serverPort, serverPath)
-					resp, err := http.Get(url)
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(resp).NotTo(BeNil())
-					g.Expect(resp.Body.Close()).To(Succeed())
-				}).WithTimeout(2 * time.Second).Should(Succeed())
-			})
-
-			It("should accept connections via IPv4 loopback (127.0.0.1)", func() {
-				url := fmt.Sprintf("http://127.0.0.1:%d%s?uuid=test&namespace=test", serverPort, serverPath)
-				resp, err := http.Get(url)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(resp).NotTo(BeNil())
-				Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
-				Expect(resp.Body.Close()).To(Succeed())
-			})
-
-			It("should accept connections via IPv6 loopback ([::1])", func() {
-				url := fmt.Sprintf("http://[::1]:%d%s?uuid=test&namespace=test", serverPort, serverPath)
-				resp, err := http.Get(url)
-				if err != nil {
-					Skip("IPv6 not available on this system: " + err.Error())
-				}
-				Expect(resp).NotTo(BeNil())
-				Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
-				Expect(resp.Body.Close()).To(Succeed())
-			})
+		Context("RunServer with default bind address", func() {
+			testWildcardServer(":%d")
 		})
 	})
 

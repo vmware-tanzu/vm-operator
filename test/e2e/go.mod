@@ -54,7 +54,7 @@ require (
 	github.com/antchfx/htmlquery v1.3.6
 	github.com/google/goexpect v0.0.0-20210430020637-ab937bf7fd6f
 	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/gomega v1.40.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/image-registry-operator v0.0.0-00010101000000-000000000000

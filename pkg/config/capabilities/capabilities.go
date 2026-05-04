@@ -111,6 +111,11 @@ const (
 	// Telco VM advanced properties: spec.advanced first-class fields, extraConfig
 	// fallback, and per-NIC VMXNet3 tuning properties.
 	CapabilityKeyTelcoVMServiceAPI = "supports_telco_vm_service_api"
+
+	// CapabilityKeyPerNamespaceNetworkProvider is the name of the capability key
+	// defined in the Supervisor capabilities CRD for enabling different network
+	// providers in different namespaces.
+	CapabilityKeyPerNamespaceNetworkProvider = "supports_per_namespace_network_provider"
 )
 
 var (
@@ -279,6 +284,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMVlanSubinterface = capStatus.Activated
 		case CapabilityKeyTelcoVMServiceAPI:
 			fs.TelcoVMServiceAPI = capStatus.Activated
+		case CapabilityKeyPerNamespaceNetworkProvider:
+			fs.PerNamespaceNetworkProvider = capStatus.Activated
 		}
 
 	}

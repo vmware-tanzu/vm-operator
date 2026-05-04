@@ -180,6 +180,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVlanSubinterface: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -202,6 +205,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMAffinityDuringExecution = true
 							config.Features.StoragePolicyMutability = true
 							config.Features.VMVlanSubinterface = true
+							config.Features.PerNamespaceNetworkProvider = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -254,6 +258,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
 					})
 				})
 
@@ -308,6 +315,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
 					})
 				})
 			})
@@ -371,6 +381,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVlanSubinterface: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -425,6 +438,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
 					})
 				})
 
@@ -493,6 +509,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
 					})
 				})
 			})
@@ -814,6 +833,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyPerNamespaceNetworkProvider] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("PerNamespaceNetworkProvider=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -878,6 +910,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyVlanSubinterface: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -907,6 +942,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMAffinityDuringExecution = true
 					config.Features.StoragePolicyMutability = true
 					config.Features.VMVlanSubinterface = true
+					config.Features.PerNamespaceNetworkProvider = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -961,6 +997,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -980,11 +1019,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMAffinityDuringExecution = false
 					config.Features.StoragePolicyMutability = false
 					config.Features.VMVlanSubinterface = false
+					config.Features.PerNamespaceNetworkProvider = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1033,6 +1073,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
 			})
 		})
 	})

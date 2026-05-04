@@ -36,7 +36,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controlledType      = &corev1.ConfigMap{}
 		controllerName      = "capability-configmap"
 		controllerNameShort = fmt.Sprintf("%s-controller", controllerName)
-		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
 	cache, err := pkgmgr.NewNamespacedCacheForObject(
@@ -53,7 +52,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		cache,
 		ctrl.Log.WithName("controllers").WithName(controllerName),
-		record.New(mgr.GetEventRecorder(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameShort)),
 	)
 
 	// This controller is also run on the non-leaders (webhooks) pods too

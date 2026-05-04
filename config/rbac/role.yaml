@@ -9,7 +9,6 @@ rules:
   resources:
   - configmaps
   - endpoints
-  - events
   - persistentvolumeclaims
   - services
   verbs:
@@ -165,6 +164,14 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
 - apiGroups:
   - iaas.vmware.com
   resources:

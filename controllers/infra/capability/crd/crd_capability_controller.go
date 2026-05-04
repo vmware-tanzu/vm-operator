@@ -31,14 +31,13 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controlledType      = &capv1.Capabilities{}
 		controllerName      = "capability-crd"
 		controllerNameShort = fmt.Sprintf("%s-controller", controllerName)
-		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
-		record.New(mgr.GetEventRecorder(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameShort)),
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).

@@ -54,14 +54,13 @@ func AddToManager(
 		controlledItemTypeName = reflect.TypeOf(controlledItemType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledItemTypeName))
-		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledItemTypeName),
-		record.New(mgr.GetEventRecorder(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		ctx.VMProvider,
 		controlledItemTypeName,
 	)

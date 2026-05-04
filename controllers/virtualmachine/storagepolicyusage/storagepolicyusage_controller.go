@@ -36,7 +36,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	var (
 		controllerName      = "storagepolicyusage"
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controllerName))
-		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
 	// Index the VM's spec.storageClass field to make it easy to list VMs in a
@@ -56,7 +55,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
-		record.New(mgr.GetEventRecorder(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameShort)),
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{

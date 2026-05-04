@@ -52,7 +52,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
-		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
 	r := NewReconciler(
@@ -60,7 +59,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
-		record.New(mgr.GetEventRecorder(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		ctx.VMProvider,
 	)
 

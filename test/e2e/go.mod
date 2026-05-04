@@ -56,11 +56,11 @@ require (
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/sirupsen/logrus v1.9.3
+	github.com/vmware-tanzu/net-operator-api v0.0.0-20260501221253-4950cf50cd6b
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/image-registry-operator v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/mobility-operator v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-20260414073537-dff710623a20
-	github.com/vmware-tanzu/vm-operator/external/net-operator v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/nsx-operator v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-20260414073537-dff710623a20
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-20260414073537-dff710623a20

@@ -17,17 +17,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/klog/v2"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
+	_ "github.com/vmware-tanzu/vm-operator/test/builder/log"
 )
-
-func init() {
-	klog.SetOutput(GinkgoWriter)
-	logf.SetLogger(klog.Background())
-}
 
 func TestKube(t *testing.T) {
 	RegisterFailHandler(Fail)

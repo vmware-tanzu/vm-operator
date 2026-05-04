@@ -10,13 +10,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/klog/v2"
+	_ "github.com/vmware-tanzu/vm-operator/test/builder/log"
 )
-
-func init() {
-	klog.InitFlags(nil)
-	klog.SetOutput(GinkgoWriter)
-}
 
 func TestContentLibrary(t *testing.T) {
 	RegisterFailHandler(Fail)

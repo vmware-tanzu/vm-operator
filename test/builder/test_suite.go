@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
-
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -31,13 +30,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog/v2"
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/yaml"
@@ -51,6 +47,7 @@ import (
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	_ "github.com/vmware-tanzu/vm-operator/test/builder/log" // Configure logging during testing
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
@@ -65,16 +62,6 @@ type InitEnvFn func(
 	ctx context.Context,
 	mgr pkgmgr.Manager,
 	client client.Client)
-
-func init() {
-	klog.InitFlags(nil)
-	klog.SetOutput(GinkgoWriter)
-	logf.SetLogger(klog.Background())
-
-	// TODO(akutz) This is kind of handy, but ultimately it makes discerning
-	//             test-specific logs from regular log non-trivial.
-	// GinkgoLogr = klog.Background()
-}
 
 // TestSuite is used for unit and integration testing builder. Each TestSuite
 // contains one independent test environment and a controller manager.

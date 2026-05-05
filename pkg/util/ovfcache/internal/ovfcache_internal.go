@@ -170,7 +170,9 @@ func GetOVFEnvelope(
 			putResult := val.cache.Put(itemID, cacheItem)
 			logger.Info("Cache item put",
 				"itemID", itemID,
-				"putResult", putResult)
+				"putResult", putResult,
+				"totalCachedItems", val.cache.Size(),
+			)
 		})
 	return env, err
 

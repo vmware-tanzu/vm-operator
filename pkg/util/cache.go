@@ -139,6 +139,14 @@ func (c *Cache[T]) Get(id string, isHit func(t T) bool) (T, bool) {
 	return v.Item, true
 }
 
+// Size returns the current number of cached items.
+func (c *Cache[T]) Size() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return len(c.items)
+}
+
 // CachePutResult describes the result of putting an item into the cache.
 type CachePutResult uint
 

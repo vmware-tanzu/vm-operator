@@ -8312,6 +8312,195 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				expectAllowed:          true,
 			},
 		),
+
+		Entry("disallow spec.advanced vmx field change when TelcoVMServiceAPI and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					ctx.oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+					ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						PreferHTEnabled: ptr.To(true),
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
+				validate: doValidateWithMsg(
+					`spec.advanced.preferHTEnabled: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("disallow spec.advanced slice vmx field change when TelcoVMServiceAPI and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					ctx.oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+					ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						PNUMANodeAffinity: []int32{0, 1},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
+				validate: doValidateWithMsg(
+					`spec.advanced.pNUMANodeAffinity: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("allow spec.advanced.extraConfig change when TelcoVMServiceAPI and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					ctx.oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+					ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						ExtraConfig: []common.KeyValuePair{
+							{Key: "user.mykey", Value: "myvalue"},
+						},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("disallow interfaces[i].type change when TelcoVMServiceAPI and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					if ctx.oldVM.Spec.Network == nil {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.oldVM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0"},
+					}
+					if ctx.vm.Spec.Network == nil {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
+				validate: doValidateWithMsg(
+					`spec.network.interfaces[0].type: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("disallow interfaces[i].vmxnet3 change when TelcoVMServiceAPI and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					if ctx.oldVM.Spec.Network == nil {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.oldVM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+					}
+					if ctx.vm.Spec.Network == nil {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+							Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+							VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+								UPTv2Enabled: ptr.To(true),
+							},
+						},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
+				validate: doValidateWithMsg(
+					`spec.network.interfaces[0].vmxnet3: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("disallow interfaces[i].vNUMANodeID change when TelcoVMServiceAPI and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					if ctx.oldVM.Spec.Network == nil {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.oldVM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0"},
+					}
+					if ctx.vm.Spec.Network == nil {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", VNUMANodeID: ptr.To(int32(1))},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
+				validate: doValidateWithMsg(
+					`spec.network.interfaces[0].vNUMANodeID: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("allow unrestricted NIC field change when TelcoVMServiceAPI enabled and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					if ctx.oldVM.Spec.Network == nil {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.oldVM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0"},
+					}
+					if ctx.vm.Spec.Network == nil {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					// Only DHCP4 changes — not a backfilled field.
+					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", DHCP4: true},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
 	)
 
 	Context("Snapshots", func() {

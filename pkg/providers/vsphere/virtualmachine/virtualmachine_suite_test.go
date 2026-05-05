@@ -24,6 +24,8 @@ func vcSimTests() {
 	Describe("ExtraConfig", Label(testlabels.VCSim), extraConfigTests)
 	Describe("CleanupOnDelete", Label(testlabels.VCSim), cleanupOnDeleteTests)
 	Describe("NetworkInterfaceTypes", networkInterfaceTypeTests)
+	Describe("BackfillExtraConfig", backfillExtraConfigTests)
+	Describe("BackfillNICDeviceProperties", backfillNICDevicePropertiesTests)
 }
 
 var suite = builder.NewTestSuite()

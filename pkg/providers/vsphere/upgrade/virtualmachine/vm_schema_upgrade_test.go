@@ -409,6 +409,54 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 							Expect(vm.Spec.Network.Interfaces[6].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
 						})
 					})
+
+					When("VC VM has ExtraConfig vmx field set", func() {
+						BeforeEach(func() {
+							moVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
+									Key:   "numa.vcpu.preferHT",
+									Value: "TRUE",
+								},
+							}
+						})
+						It("should backfill spec.advanced from moVM ExtraConfig", func() {
+							assertUpgraded()
+							assertFeatureVersion("9")
+							Expect(vm.Spec.Advanced).ToNot(BeNil())
+							Expect(vm.Spec.Advanced.PreferHTEnabled).ToNot(BeNil())
+							Expect(*vm.Spec.Advanced.PreferHTEnabled).To(BeTrue())
+						})
+					})
+
+					When("VC VM has VMXNet3 NIC with UPTv2Enabled=true", func() {
+						BeforeEach(func() {
+							uptv2 := true
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualVmxnet3{Uptv2Enabled: &uptv2},
+							}
+						})
+						It("should backfill vmxnet3.UPTv2Enabled from moVM device", func() {
+							assertUpgraded()
+							assertFeatureVersion("9")
+							Expect(vm.Spec.Network.Interfaces[0].VMXNet3).ToNot(BeNil())
+							Expect(vm.Spec.Network.Interfaces[0].VMXNet3.UPTv2Enabled).ToNot(BeNil())
+							Expect(*vm.Spec.Network.Interfaces[0].VMXNet3.UPTv2Enabled).To(BeTrue())
+						})
+					})
+
+					When("VC VM has NIC with positive NUMA node assignment", func() {
+						BeforeEach(func() {
+							dev := &vimtypes.VirtualVmxnet3{}
+							dev.NumaNode = 2
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{dev}
+						})
+						It("should backfill VNUMANodeID from moVM device", func() {
+							assertUpgraded()
+							assertFeatureVersion("9")
+							Expect(vm.Spec.Network.Interfaces[0].VNUMANodeID).ToNot(BeNil())
+							Expect(*vm.Spec.Network.Interfaces[0].VNUMANodeID).To(Equal(int32(2)))
+						})
+					})
 				})
 			})
 

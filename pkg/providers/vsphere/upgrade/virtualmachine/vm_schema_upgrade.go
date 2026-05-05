@@ -174,6 +174,12 @@ func ReconcileSchemaUpgrade(
 
 				return fmt.Errorf("unexpected fill network interface types error: %w", err)
 			}
+			if _, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM); err != nil {
+				return fmt.Errorf("backfill extraconfig: %w", err)
+			}
+			if _, err := virtualmachine.BackfillNICDevicePropertiesFromMoVM(vm, moVM); err != nil {
+				return fmt.Errorf("backfill nic device properties: %w", err)
+			}
 			vmFeatureVersion.Set(f)
 		}
 	}

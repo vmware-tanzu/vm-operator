@@ -65,10 +65,12 @@ spec:
       rawProperties: {{ .Bootstrap.VAppConfig.RawProperties }}
       {{end}}
       {{ if .Bootstrap.VAppConfig.Properties }}
-      properties: 
-        - key: {{ (index .Bootstrap.VAppConfig.Properties 0).Key}}
+      properties:
+        {{range .Bootstrap.VAppConfig.Properties}}
+        - key: {{.Key}}
           value:
-            value: "{{ (index .Bootstrap.VAppConfig.Properties 0).Value.Value}}"
+            value: "{{.Value.Value}}"
+        {{end}}
       {{end}}
     {{end}}
     {{ if .Bootstrap.LinuxPrep }}

@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi/ovf"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	ctxgen "github.com/vmware-tanzu/vm-operator/pkg/context/generic"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -33,6 +35,18 @@ type VersionedOVFEnvelope struct {
 type GetterFn func(ctx context.Context, itemID string) (*ovf.Envelope, error)
 
 const contextKeyValue contextKeyType = 0
+
+var (
+	ovfCacheItemsGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "vmservice",
+		Name:      "ovf_cache_items",
+		Help:      "Total number of items currently stored in the OVF cache.",
+	})
+)
+
+func init() {
+	ctrlmetrics.Registry.MustRegister(ovfCacheItemsGauge)
+}
 
 // ErrNoGetter is returned from GetOVFEnvelope if there is no getter function.
 var ErrNoGetter = errors.New("ovfcache getter fn is nil")
@@ -64,6 +78,7 @@ func WithContext(
 					l.Lock()
 					locks.Delete(k)
 					l.Unlock()
+					ovfCacheItemsGauge.Set(float64(cache.Size()))
 				}
 			}()
 
@@ -83,7 +98,18 @@ func Put(
 		ctx,
 		contextKeyValue,
 		func(curVal ContextValueType) pkgutil.CachePutResult {
-			return curVal.cache.Put(itemID, env)
+			logger := pkglog.FromContextOrDefault(ctx).
+				WithValues(
+					"itemID", itemID,
+				).V(4)
+			putResult := curVal.cache.Put(itemID, env)
+			ovfCacheItemsGauge.Set(float64(curVal.cache.Size()))
+			logger.Info("Cache item put",
+				"itemID", itemID,
+				"putResult", putResult,
+				"cacheItemsCount", curVal.cache.Size(),
+			)
+			return putResult
 		})
 }
 
@@ -168,10 +194,11 @@ func GetOVFEnvelope(
 			}
 
 			putResult := val.cache.Put(itemID, cacheItem)
+			ovfCacheItemsGauge.Set(float64(val.cache.Size()))
 			logger.Info("Cache item put",
 				"itemID", itemID,
 				"putResult", putResult,
-				"totalCachedItems", val.cache.Size(),
+				"cacheItemsCount", val.cache.Size(),
 			)
 		})
 	return env, err

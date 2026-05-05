@@ -24,6 +24,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -33,6 +34,7 @@ import (
 )
 
 const (
+	vmKind            = "VirtualMachine"
 	vmiKind           = "VirtualMachineImage"
 	cvmiKind          = "Cluster" + vmiKind
 	imgNotFoundFormat = "no VM image exists for %q in namespace or cluster scope"
@@ -423,7 +425,7 @@ func CnsRegisterVolumeToVirtualMachineMapper(
 		var requests []reconcile.Request
 
 		for _, ownerRef := range o.GetOwnerReferences() {
-			if ownerRef.Kind == "VirtualMachine" {
+			if ownerRef.Kind == vmKind {
 				requests = append(requests, reconcile.Request{
 					NamespacedName: client.ObjectKey{
 						Namespace: o.GetNamespace(),
@@ -437,6 +439,72 @@ func CnsRegisterVolumeToVirtualMachineMapper(
 		if len(requests) > 0 {
 			logger.V(4).Info(
 				"Reconciling VMs due to CnsRegisterVolume watch",
+				"requests", requests)
+		}
+
+		return requests
+	}
+}
+
+// CnsNodeVMBatchAttachmentToVirtualMachineMapper returns a mapper function
+// used to enqueue reconcile requests for VMs in response to an event on the
+// CnsNodeVMBatchAttachment resource.
+// A reconcile request is only enqueued when all of the following are true:
+//   - The CnsNodeVMBatchAttachment has an owner reference with Kind
+//     "VirtualMachine".
+//   - CnsNodeVMBatchAttachmentReportsCacheMiss returns true for the object.
+func CnsNodeVMBatchAttachmentToVirtualMachineMapper(
+	ctx context.Context,
+) handler.MapFunc {
+
+	if ctx == nil {
+		panic("context is nil")
+	}
+
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		if ctx == nil {
+			panic("context is nil")
+		}
+		if o == nil {
+			panic("object is nil")
+		}
+
+		ba, ok := o.(*cnsv1alpha1.CnsNodeVMBatchAttachment)
+		if !ok {
+			panic(fmt.Sprintf("object is %T", o))
+		}
+
+		logger := pkglog.FromContextOrDefault(ctx).
+			WithValues("name", o.GetName(), "namespace", o.GetNamespace())
+
+		// Only enqueue for batch attachments that report a PVC volume-ID
+		// cache miss; this is the signal that CSI has not yet resolved the
+		// volume and a VM reconciliation should be triggered.
+		if !CnsNodeVMBatchAttachmentReportsCacheMiss(ba) {
+			logger.V(4).Info(
+				"Skipping CnsNodeVMBatchAttachment without PVC volume-ID cache miss")
+			return nil
+		}
+
+		var requests []reconcile.Request
+
+		for _, ownerRef := range o.GetOwnerReferences() {
+			if ownerRef.Kind == vmKind {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Namespace: o.GetNamespace(),
+						Name:      ownerRef.Name,
+					},
+				})
+				logger.V(4).Info(
+					"Queuing VM reconciliation due to CnsNodeVMBatchAttachment cache miss",
+					"vmName", ownerRef.Name)
+			}
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling VMs due to CnsNodeVMBatchAttachment watch",
 				"requests", requests)
 		}
 

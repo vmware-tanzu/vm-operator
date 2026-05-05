@@ -45,6 +45,32 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+// createBatchAttachWithPVCVolumeIDCacheMiss creates a CnsNodeVMBatchAttachment
+// whose status matches the phase-2 gate in register (CSI volume ID cache miss).
+func createBatchAttachWithPVCVolumeIDCacheMiss(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	claimName string,
+) {
+	ba := &cnsv1alpha1.CnsNodeVMBatchAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vm.Name,
+			Namespace: vm.Namespace,
+		},
+		Status: cnsv1alpha1.CnsNodeVMBatchAttachmentStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:    cnsv1alpha1.ConditionReady,
+					Status:  metav1.ConditionFalse,
+					Message: "failed to find volumeID for PVC " + claimName,
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, ba)).To(Succeed())
+}
+
 var _ = Describe("New", func() {
 	It("should return a reconciler", func() {
 		Expect(unmanagedvolsreg.New()).ToNot(BeNil())
@@ -431,6 +457,16 @@ var _ = Describe("Reconcile", func() {
 					expectedStorage := *kubeutil.BytesToResource(2 * 1024 * 1024 * 1024)
 					Expect(pvc.Spec.Resources.Requests[corev1.ResourceStorage].Equal(expectedStorage)).To(BeTrue())
 
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
@@ -546,6 +582,16 @@ var _ = Describe("Reconcile", func() {
 					Expect(pvc.Spec.AccessModes).To(ContainElement(corev1.ReadWriteMany))
 					expectedStorage := *kubeutil.BytesToResource(2 * 1024 * 1024 * 1024)
 					Expect(pvc.Spec.Resources.Requests[corev1.ResourceStorage].Equal(expectedStorage)).To(BeTrue())
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
@@ -690,296 +736,296 @@ var _ = Describe("Reconcile", func() {
 				})
 			})
 
-		When("VM has an EncryptionClassName in spec.crypto", func() {
-			JustBeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VMSharedDisks = true
+			When("VM has an EncryptionClassName in spec.crypto", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(Succeed())
 				})
 
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(Succeed())
-			})
+				BeforeEach(func() {
+					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+						EncryptionClassName: "my-enc-class",
+					}
 
-			BeforeEach(func() {
-				vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
-					EncryptionClassName: "my-enc-class",
-				}
+					// Start with empty volumes - let Reconcile add them
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
 
-				// Start with empty volumes - let Reconcile add them
-				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
-
-				disk := &vimtypes.VirtualDisk{
-					VirtualDevice: vimtypes.VirtualDevice{
-						Key:           300,
-						ControllerKey: 200,
-						UnitNumber:    ptr.To(int32(0)),
-						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-								FileName: "[LocalDS_0] vm1/enc-disk.vmdk",
-							},
-							Uuid: "disk-uuid-enc",
-						},
-					},
-					CapacityInBytes: 2 * 1024 * 1024 * 1024,
-				}
-
-				scsiController := &vimtypes.VirtualSCSIController{
-					VirtualController: vimtypes.VirtualController{
+					disk := &vimtypes.VirtualDisk{
 						VirtualDevice: vimtypes.VirtualDevice{
-							Key: 200,
+							Key:           300,
+							ControllerKey: 200,
+							UnitNumber:    ptr.To(int32(0)),
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									FileName: "[LocalDS_0] vm1/enc-disk.vmdk",
+								},
+								Uuid: "disk-uuid-enc",
+							},
 						},
-						BusNumber: 1,
-					},
-				}
+						CapacityInBytes: 2 * 1024 * 1024 * 1024,
+					}
 
-				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
-					Hardware: vimtypes.VirtualHardware{
-						Device: []vimtypes.BaseVirtualDevice{
-							scsiController,
-							disk,
+					scsiController := &vimtypes.VirtualSCSIController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 200,
+							},
+							BusNumber: 1,
 						},
-					},
-				}
-			})
+					}
 
-			It("should set the PVC encryption class annotation on created PVCs", func() {
-				Expect(unmanagedvolsreg.Reconcile(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					moVM,
-					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
-
-				claimName := vmopv1util.FindByTargetID(
-					vmopv1.VirtualControllerTypeSCSI,
-					1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
-
-				var pvc corev1.PersistentVolumeClaim
-				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
-					Namespace: vm.Namespace,
-					Name:      claimName,
-				}, &pvc)).To(Succeed())
-
-				Expect(pvc.Annotations[pkgconst.PVCEncryptionClassNameAnnotation]).To(
-					Equal("my-enc-class"))
-				Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
-			})
-		})
-
-		When("VM has no crypto spec", func() {
-			JustBeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VMSharedDisks = true
+					moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								scsiController,
+								disk,
+							},
+						},
+					}
 				})
 
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(Succeed())
+				It("should set the PVC encryption class annotation on created PVCs", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI,
+						1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+					var pvc corev1.PersistentVolumeClaim
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      claimName,
+					}, &pvc)).To(Succeed())
+
+					Expect(pvc.Annotations[pkgconst.PVCEncryptionClassNameAnnotation]).To(
+						Equal("my-enc-class"))
+					Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
+				})
 			})
 
-			BeforeEach(func() {
-				vm.Spec.Crypto = nil
+			When("VM has no crypto spec", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
 
-				// Start with empty volumes - let Reconcile add them
-				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
-
-				disk := &vimtypes.VirtualDisk{
-					VirtualDevice: vimtypes.VirtualDevice{
-						Key:           300,
-						ControllerKey: 200,
-						UnitNumber:    ptr.To(int32(0)),
-						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-								FileName: "[LocalDS_0] vm1/noenc-disk.vmdk",
-							},
-							Uuid: "disk-uuid-noenc",
-						},
-					},
-					CapacityInBytes: 2 * 1024 * 1024 * 1024,
-				}
-
-				scsiController := &vimtypes.VirtualSCSIController{
-					VirtualController: vimtypes.VirtualController{
-						VirtualDevice: vimtypes.VirtualDevice{
-							Key: 200,
-						},
-						BusNumber: 1,
-					},
-				}
-
-				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
-					Hardware: vimtypes.VirtualHardware{
-						Device: []vimtypes.BaseVirtualDevice{
-							scsiController,
-							disk,
-						},
-					},
-				}
-			})
-
-			It("should not set the PVC encryption class annotation on created PVCs", func() {
-				Expect(unmanagedvolsreg.Reconcile(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					moVM,
-					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
-
-				claimName := vmopv1util.FindByTargetID(
-					vmopv1.VirtualControllerTypeSCSI,
-					1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
-
-				var pvc corev1.PersistentVolumeClaim
-				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
-					Namespace: vm.Namespace,
-					Name:      claimName,
-				}, &pvc)).To(Succeed())
-
-				Expect(pvc.Annotations).ToNot(HaveKey(pkgconst.PVCEncryptionClassNameAnnotation))
-				Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
-			})
-		})
-
-		When("VM has crypto spec with empty EncryptionClassName", func() {
-			JustBeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VMSharedDisks = true
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(Succeed())
 				})
 
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
-				Expect(unmanagedvolsfill.Reconcile(
-					ctx,
-					nil,
-					nil,
-					vm,
-					moVM,
-					nil)).To(Succeed())
-			})
+				BeforeEach(func() {
+					vm.Spec.Crypto = nil
 
-			BeforeEach(func() {
-				vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
-					EncryptionClassName: "",
-				}
+					// Start with empty volumes - let Reconcile add them
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
 
-				// Start with empty volumes - let Reconcile add them
-				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
-
-				disk := &vimtypes.VirtualDisk{
-					VirtualDevice: vimtypes.VirtualDevice{
-						Key:           300,
-						ControllerKey: 200,
-						UnitNumber:    ptr.To(int32(0)),
-						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-								FileName: "[LocalDS_0] vm1/emptyenc-disk.vmdk",
-							},
-							Uuid: "disk-uuid-emptyenc",
-						},
-					},
-					CapacityInBytes: 2 * 1024 * 1024 * 1024,
-				}
-
-				scsiController := &vimtypes.VirtualSCSIController{
-					VirtualController: vimtypes.VirtualController{
+					disk := &vimtypes.VirtualDisk{
 						VirtualDevice: vimtypes.VirtualDevice{
-							Key: 200,
+							Key:           300,
+							ControllerKey: 200,
+							UnitNumber:    ptr.To(int32(0)),
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									FileName: "[LocalDS_0] vm1/noenc-disk.vmdk",
+								},
+								Uuid: "disk-uuid-noenc",
+							},
 						},
-						BusNumber: 1,
-					},
-				}
+						CapacityInBytes: 2 * 1024 * 1024 * 1024,
+					}
 
-				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
-					Hardware: vimtypes.VirtualHardware{
-						Device: []vimtypes.BaseVirtualDevice{
-							scsiController,
-							disk,
+					scsiController := &vimtypes.VirtualSCSIController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 200,
+							},
+							BusNumber: 1,
 						},
-					},
-				}
+					}
+
+					moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								scsiController,
+								disk,
+							},
+						},
+					}
+				})
+
+				It("should not set the PVC encryption class annotation on created PVCs", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI,
+						1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+					var pvc corev1.PersistentVolumeClaim
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      claimName,
+					}, &pvc)).To(Succeed())
+
+					Expect(pvc.Annotations).ToNot(HaveKey(pkgconst.PVCEncryptionClassNameAnnotation))
+					Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
+				})
 			})
 
-			It("should not set the PVC encryption class annotation on created PVCs", func() {
-				Expect(unmanagedvolsreg.Reconcile(
-					ctx,
-					k8sClient,
-					vimClient,
-					vm,
-					moVM,
-					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+			When("VM has crypto spec with empty EncryptionClassName", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
 
-				claimName := vmopv1util.FindByTargetID(
-					vmopv1.VirtualControllerTypeSCSI,
-					1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(MatchError(unmanagedvolsfill.ErrPendingBackfill))
+					Expect(unmanagedvolsfill.Reconcile(
+						ctx,
+						nil,
+						nil,
+						vm,
+						moVM,
+						nil)).To(Succeed())
+				})
 
-				var pvc corev1.PersistentVolumeClaim
-				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
-					Namespace: vm.Namespace,
-					Name:      claimName,
-				}, &pvc)).To(Succeed())
+				BeforeEach(func() {
+					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+						EncryptionClassName: "",
+					}
 
-				Expect(pvc.Annotations).ToNot(HaveKey(pkgconst.PVCEncryptionClassNameAnnotation))
-				Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
+					// Start with empty volumes - let Reconcile add them
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+
+					disk := &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key:           300,
+							ControllerKey: 200,
+							UnitNumber:    ptr.To(int32(0)),
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									FileName: "[LocalDS_0] vm1/emptyenc-disk.vmdk",
+								},
+								Uuid: "disk-uuid-emptyenc",
+							},
+						},
+						CapacityInBytes: 2 * 1024 * 1024 * 1024,
+					}
+
+					scsiController := &vimtypes.VirtualSCSIController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 200,
+							},
+							BusNumber: 1,
+						},
+					}
+
+					moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								scsiController,
+								disk,
+							},
+						},
+					}
+				})
+
+				It("should not set the PVC encryption class annotation on created PVCs", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI,
+						1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+					var pvc corev1.PersistentVolumeClaim
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      claimName,
+					}, &pvc)).To(Succeed())
+
+					Expect(pvc.Annotations).ToNot(HaveKey(pkgconst.PVCEncryptionClassNameAnnotation))
+					Expect(pvc.Annotations[unmanagedvolsreg.DiskBackingAnnotation]).ToNot(BeEmpty())
+				})
 			})
-		})
 
-		When("PVC exists and is bound", func() {
-			BeforeEach(func() {
-				// Set up VM with volumes already in spec
-				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
-					{
-						Name: "disk-uuid-789",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "my-vm-134e95b6",
+			When("PVC exists and is bound", func() {
+				BeforeEach(func() {
+					// Set up VM with volumes already in spec
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "disk-uuid-789",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "my-vm-134e95b6",
+									},
 								},
 							},
+							ControllerType:      vmopv1.VirtualControllerTypeIDE,
+							ControllerBusNumber: ptr.To(int32(0)),
+							UnitNumber:          ptr.To(int32(0)),
 						},
-						ControllerType:      vmopv1.VirtualControllerTypeIDE,
-						ControllerBusNumber: ptr.To(int32(0)),
-						UnitNumber:          ptr.To(int32(0)),
-					},
-				}
+					}
 
-				// Create bound PVC
-				boundPVC := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "my-vm-134e95b6",
-						Namespace: vm.Namespace,
-						OwnerReferences: []metav1.OwnerReference{
-							{
-								APIVersion: vmopv1.GroupVersion.String(),
+					// Create bound PVC
+					boundPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "my-vm-134e95b6",
+							Namespace: vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: vmopv1.GroupVersion.String(),
 									Kind:       "VirtualMachine",
 									Name:       vm.Name,
 									UID:        vm.UID,
@@ -1201,6 +1247,16 @@ var _ = Describe("Reconcile", func() {
 					Expect(pvc.Spec.DataSourceRef).ToNot(BeNil())
 					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, "my-vm-f3069b5c")
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
@@ -1587,7 +1643,7 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should handle complete reconciliation cycle", func() {
-					// First reconciliation: should create PVC and CnsRegisterVolume.
+					// First reconciliation: create PVC and write claim (phase 1).
 					Expect(unmanagedvolsreg.Reconcile(
 						ctx,
 						k8sClient,
@@ -1610,6 +1666,16 @@ var _ = Describe("Reconcile", func() {
 					// Set the PVC status to Pending for the test
 					pvc.Status.Phase = corev1.ClaimPending
 					Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
@@ -1867,6 +1933,13 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should return error", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(
+						MatchError(unmanagedvolsreg.ErrPendingRegister))
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE,
+						0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
 					err := unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to ensure CnsRegisterVolume"))
@@ -1930,6 +2003,13 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should return error", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(
+						MatchError(unmanagedvolsreg.ErrPendingRegister))
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE,
+						0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
 					err := unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to get CnsRegisterVolume"))
@@ -2836,6 +2916,17 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			It("should return error", func() {
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+				claimName := vmopv1util.FindByTargetID(
+					vmopv1.VirtualControllerTypeIDE,
+					0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+				createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
 				err := unmanagedvolsreg.Reconcile(
 					ctx,
 					k8sClient,
@@ -3297,7 +3388,11 @@ var _ = Describe("Reconcile", func() {
 					}, crv)
 					Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
-					// Reconcile should create the CRV
+					Expect(unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(
+						MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, "regular-pvc")
+
 					err = unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 

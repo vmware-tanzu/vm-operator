@@ -1138,6 +1138,141 @@ var _ = Describe("CnsRegisterVolumeToVirtualMachineMapper", func() {
 	})
 })
 
+var _ = Describe("CnsNodeVMBatchAttachmentToVirtualMachineMapper", func() {
+	const (
+		vmName    = "test-vm"
+		namespace = "test-namespace"
+	)
+
+	var (
+		ctx        context.Context
+		vm         *vmopv1.VirtualMachine
+		mapperFunc func(context.Context, ctrlclient.Object) []reconcile.Request
+
+		newBA = func(
+			ownerKind string,
+			topConditions []metav1.Condition,
+			volConditions []metav1.Condition,
+		) *cnsv1alpha1.CnsNodeVMBatchAttachment {
+			ba := &cnsv1alpha1.CnsNodeVMBatchAttachment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ba",
+					Namespace: namespace,
+				},
+			}
+			if ownerKind != "" {
+				ba.OwnerReferences = []metav1.OwnerReference{
+					{
+						APIVersion: vmopv1.GroupVersion.String(),
+						Kind:       ownerKind,
+						Name:       vmName,
+					},
+				}
+			}
+			ba.Status.Conditions = topConditions
+			if len(volConditions) > 0 {
+				ba.Status.VolumeStatus = []cnsv1alpha1.VolumeStatus{
+					{
+						Name: "vol-0",
+						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+							ClaimName:  "pvc-0",
+							Conditions: volConditions,
+						},
+					},
+				}
+			}
+			return ba
+		}
+
+		cacheMissCondition = metav1.Condition{
+			Type:    "VolumeAttached",
+			Status:  metav1.ConditionFalse,
+			Reason:  "failed to find volumeID for PVC pvc-0",
+			Message: "failed to find volumeID for PVC pvc-0",
+		}
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		vm = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmName,
+				Namespace: namespace,
+			},
+		}
+		mapperFunc = vmopv1util.CnsNodeVMBatchAttachmentToVirtualMachineMapper(ctx)
+	})
+
+	It("should panic with nil context", func() {
+		Expect(func() {
+			ctx = nil
+			vmopv1util.CnsNodeVMBatchAttachmentToVirtualMachineMapper(ctx)
+		}).To(Panic())
+	})
+
+	Context("when the inner mapper function is called with nil context", func() {
+		It("should panic", func() {
+			Expect(func() {
+				mapperFunc(nil, newBA("VirtualMachine", nil, nil))
+			}).To(Panic())
+		})
+	})
+
+	Context("when the inner mapper function is called with nil object", func() {
+		It("should panic", func() {
+			Expect(func() {
+				mapperFunc(ctx, nil)
+			}).To(Panic())
+		})
+	})
+
+	Context("when CnsNodeVMBatchAttachment has no owner reference", func() {
+		It("should return no reconcile requests even with a cache miss condition", func() {
+			ba := newBA("", []metav1.Condition{cacheMissCondition}, nil)
+			requests := mapperFunc(ctx, ba)
+			Expect(requests).To(BeEmpty())
+		})
+	})
+
+	Context("when CnsNodeVMBatchAttachment has a non-VM owner reference", func() {
+		It("should return no reconcile requests even with a cache miss condition", func() {
+			ba := newBA("SomeOtherKind", []metav1.Condition{cacheMissCondition}, nil)
+			requests := mapperFunc(ctx, ba)
+			Expect(requests).To(BeEmpty())
+		})
+	})
+
+	Context("when CnsNodeVMBatchAttachment has a VM owner reference", func() {
+		Context("but reports no cache miss", func() {
+			It("should return no reconcile requests", func() {
+				ba := newBA("VirtualMachine", nil, nil)
+				requests := mapperFunc(ctx, ba)
+				Expect(requests).To(BeEmpty())
+			})
+		})
+
+		Context("and reports a cache miss in top-level status conditions", func() {
+			It("should return a reconcile request for the owner VM", func() {
+				ba := newBA("VirtualMachine", []metav1.Condition{cacheMissCondition}, nil)
+				requests := mapperFunc(ctx, ba)
+				Expect(requests).To(HaveLen(1))
+				Expect(requests[0].NamespacedName.Name).To(Equal(vm.Name))
+				Expect(requests[0].NamespacedName.Namespace).To(Equal(vm.Namespace))
+			})
+		})
+
+		Context("and reports a cache miss in per-volume status conditions", func() {
+			It("should return a reconcile request for the owner VM", func() {
+				ba := newBA("VirtualMachine", nil, []metav1.Condition{cacheMissCondition})
+				requests := mapperFunc(ctx, ba)
+				Expect(requests).To(HaveLen(1))
+				Expect(requests[0].NamespacedName.Name).To(Equal(vm.Name))
+				Expect(requests[0].NamespacedName.Namespace).To(Equal(vm.Namespace))
+			})
+		})
+	})
+})
+
 var _ = Describe("PVCToVirtualMachineVolumeClaimNameMapper", func() {
 	const (
 		namespaceName = "fake"

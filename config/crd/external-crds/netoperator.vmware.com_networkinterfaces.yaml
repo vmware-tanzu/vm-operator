@@ -40,7 +40,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: NetworkInterfaceSpec defines the desired state of NetworkInterface.
+            description: Spec defines the desired state of the NetworkInterface.
             properties:
               externalID:
                 description: |-
@@ -50,7 +50,7 @@ spec:
                 type: string
               ipFamilyPolicy:
                 description: |-
-                  IPFamilyPolicy specifies the IP family policy for this network interface.
+                  ipFamilyPolicy specifies the IP family policy for this network interface.
                   Values: IPv4Only, IPv6Only, DualStack.
                   When set to IPv4Only, only an IPv4 address will be allocated.
                   When set to IPv6Only, only an IPv6 address will be allocated.
@@ -71,7 +71,7 @@ spec:
                 type: string
               portAllocation:
                 description: |-
-                  PortAllocation is a request to allocate a port for this network interface on the backing network.
+                  portAllocation is a request to allocate a port for this network interface on the backing network.
                   This feature is currently supported only if backing network type is NetworkTypeVDS. In all other
                   cases this field is ignored. Typically this is done implicitly by vCenter Server at the time
                   of attaching a network interface to a network and should be left unset. This is used primarily when
@@ -86,7 +86,7 @@ spec:
                 type: object
               providerRef:
                 description: |-
-                  ProviderRef is a reference to a provider specific network interface object
+                  providerRef is a reference to a provider specific network interface object
                   that specifies the network interface configuration.
                   If unset, default configuration is assumed.
                 properties:
@@ -94,13 +94,13 @@ spec:
                     description: APIGroup is the group for the resource being referenced.
                     type: string
                   apiVersion:
-                    description: API version of the referent.
+                    description: APIVersion is the API version of the referent.
                     type: string
                   kind:
-                    description: Kind is the type of resource being referenced
+                    description: Kind is the type of resource being referenced.
                     type: string
                   name:
-                    description: Name is the name of resource being referenced
+                    description: Name is the name of resource being referenced.
                     type: string
                 required:
                 - apiGroup
@@ -113,13 +113,10 @@ spec:
                 type: string
             type: object
           status:
-            description: |-
-              NetworkInterfaceStatus defines the observed state of NetworkInterface.
-              Once NetworkInterfaceReady condition is True, it should contain configuration to use to place
-              a VM/Pod/Container's nic on the specified network.
+            description: Status defines the observed state of the NetworkInterface.
             properties:
               conditions:
-                description: Conditions is an array of current observed network interface
+                description: Conditions are an array of current observed network interface
                   conditions.
                 items:
                   description: NetworkInterfaceCondition describes the state of a
@@ -127,17 +124,17 @@ spec:
                   properties:
                     lastTransitionTime:
                       description: |-
-                        LastTransitionTime is the timestamp corresponding to the last status
+                        lastTransitionTime is the timestamp corresponding to the last status
                         change of this condition.
                       format: date-time
                       type: string
                     message:
-                      description: Human-readable message indicating details about
-                        last transition.
+                      description: Message is a human-readable message indicating
+                        details about last transition.
                       type: string
                     reason:
-                      description: Machine understandable string that gives the reason
-                        for condition's last transition.
+                      description: Reason is a machine understandable string that
+                        gives the reason for condition's last transition.
                       type: string
                     status:
                       description: |-
@@ -173,16 +170,16 @@ spec:
                   When set to NetworkInterfaceIPAssignmentModeNone, indicates no IP assignment should be performed.
                 type: string
               ipConfigs:
-                description: IPConfigs is an array of IP configurations for the network
+                description: IPConfigs are an array of IP configurations for the network
                   interface.
                 items:
                   description: IPConfig represents an IP configuration.
                   properties:
                     gateway:
-                      description: Gateway setting.
+                      description: Gateway is the default gateway for this configuration.
                       type: string
                     ip:
-                      description: IP setting.
+                      description: IP is the IP address for this configuration.
                       type: string
                     ipFamily:
                       description: IPFamily specifies the IP family (IPv4 vs IPv6)
@@ -190,7 +187,7 @@ spec:
                       type: string
                     prefix:
                       description: |-
-                        Prefix is the prefix length for the IP address (e.g. 24 for a /24 IPv4 network,
+                        prefix is the prefix length for the IP address (e.g. 24 for a /24 IPv4 network,
                         64 for a /64 IPv6 network). If set, this field takes precedence over SubnetMask
                         for both IPv4 and IPv6 addresses.
                       format: int32
@@ -199,7 +196,7 @@ spec:
                       type: integer
                     subnetMask:
                       description: |-
-                        SubnetMask setting.
+                        SubnetMask is the subnet mask for this configuration.
                         Deprecated: Use Prefix instead. If Prefix is set, SubnetMask is ignored.
                       type: string
                   required:
@@ -221,11 +218,11 @@ spec:
                   When set to NetworkInterfaceIPAssignmentModeNone, indicates no IPv6 assignment should be performed.
                 type: string
               macAddress:
-                description: MacAddress setting for the network interface.
+                description: MacAddress is the MAC address for the network interface.
                 type: string
               networkID:
                 description: |-
-                  NetworkID is an network provider specific identifier for the network backing the network
+                  NetworkID is a network provider specific identifier for the network backing the network
                   interface.
                 type: string
               portID:

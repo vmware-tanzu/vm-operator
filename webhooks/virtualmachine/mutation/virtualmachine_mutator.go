@@ -123,9 +123,6 @@ func init() {
 		"create.vmoperator.vmware.com/set-default-controllers",
 		(MutateOnCreateFn)(SetDefaultControllers))
 
-	MutateOnCreateFuncs.Store(
-		"create.vmoperator.vmware.com/default-network-interface-type",
-		(MutateOnCreateFn)(mutateOnCreateDefaultNetworkInterfaceType))
 
 	MutateOnUpdateFuncs.Store(
 		"update.vmoperator.vmware.com/set-default-cdrom-image-kind",

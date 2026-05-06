@@ -717,11 +717,11 @@ The first two network interfaces in the VM are configured using the VM class. Th
 
 The v1alpha6 `VirtualMachine` API includes per-interface fields for adapter model, tuning, and related settings in the table below. Under the default VM Service configuration, these fields are available on the `VirtualMachine` CRD alongside the name, network reference, and bootstrap fields documented in [Per-interface guest network configuration](#per-interface-guest-network-configuration).
 
-Each `spec.network.interfaces[]` entry may include an optional `type` of `VMXNet3` or `SRIOV`. When `type` is omitted, it is set using the same ordering as the table above: the first interface in the VM spec follows the first network adapter from the VM class, the second follows the second, and so on. Any extra interfaces in the spec beyond those adapters use VMXNet3. The VM spec defines how many interfaces you request; the class does not add or remove interfaces from that list.
+Each `spec.network.interfaces[]` entry may include an optional `type` of `VMXNet3`, `SRIOV`, or legacy vSphere models: `E1000`, `E1000e`, `VMXNet2`, and `PCNet32`. When `type` is omitted, it is backfilled during schema upgrade from the actual vSphere VM hardware in the same interface order, defaulting to VMXNet3 when there is no matching adapter. The VM spec defines how many interfaces you request; the VirtualMachineClass does not add or remove interfaces from that list.
 
 | Field | Description |
 |-------|-------------|
-| `type` | Virtual device model: `VMXNet3` or `SRIOV`. Omitted values are filled from the VM class by interface order as described above. |
+| `type` | Virtual device model: `VMXNet3`, `SRIOV`, or legacy types `E1000`, `E1000e`, `VMXNet2`, or `PCNet32`. Omitted values are backfilled from the running VM's hardware during schema upgrade, by interface order as described above. |
 | `vNUMANodeID` | Pins the adapter to a virtual NUMA node; must match the VM's CPU topology and required minimum hardware version. |
 | `vmxnet3` | VMXNet3-only performance and offload settings. **Requires `type: VMXNet3`.** See [VMXNet3 interface tuning](#vmxnet3-interface-tuning). |
 | `advancedProperties` | Additional per-adapter VMX settings as key/value pairs. Keys must not duplicate a first-class field (for example a key that duplicates a `vmxnet3` subfield is rejected). |

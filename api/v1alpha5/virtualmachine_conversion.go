@@ -44,14 +44,15 @@ func Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMach
 	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec(in, out, s)
 }
 
-func restore_v1alpha6_VirtualMachineAdvancedProps(dst, src *vmopv1.VirtualMachine) {
-	if src.Spec.Advanced == nil {
+func restore_v1alpha6_VirtualMachineAdvanced(dst, src *vmopv1.VirtualMachine) {
+	adv := src.Spec.Advanced
+	if adv == nil {
 		return
 	}
+
 	if dst.Spec.Advanced == nil {
 		dst.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 	}
-	adv := src.Spec.Advanced
 	dst.Spec.Advanced.PreferHTEnabled = adv.PreferHTEnabled
 	dst.Spec.Advanced.HugePages1GEnabled = adv.HugePages1GEnabled
 	dst.Spec.Advanced.TimeTrackerLowLatencyEnabled = adv.TimeTrackerLowLatencyEnabled
@@ -144,7 +145,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineBootstrapDisabled(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
-	restore_v1alpha6_VirtualMachineAdvancedProps(dst, restored)
+	restore_v1alpha6_VirtualMachineAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, restored)
 
 	// END RESTORE

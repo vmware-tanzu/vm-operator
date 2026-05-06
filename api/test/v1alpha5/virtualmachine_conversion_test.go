@@ -18,6 +18,7 @@ import (
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 )
 
 func TestVirtualMachineConversion(t *testing.T) {
@@ -52,6 +53,27 @@ func TestVirtualMachineConversion(t *testing.T) {
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
 						Bootstrap: nil,
+					},
+				},
+			},
+			{
+				name: "spec.bootstrap.sysprep.sysprep",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &vmopv1sysprep.Sysprep{
+									ExpirePasswordAfterNextLogin: true,
+									ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+										From: &vmopv1common.SecretKeySelector{
+											Name: "sc-name",
+											Key:  "sc-key",
+										},
+										Value: ptr.To("sc-value"),
+									},
+								},
+							},
+						},
 					},
 				},
 			},

@@ -75,6 +75,7 @@ func backfillVNUMANodeID(
 	if numaNode <= 0 {
 		// 0 → indistinguishable from "not set" due to XML omitempty.
 		// Negative → explicitly no affinity.
+		// TODO: Need a fix from govmomi.
 		return false
 	}
 

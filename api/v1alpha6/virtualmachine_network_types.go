@@ -201,6 +201,8 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// CPU topology (spec.cpu.coresPerNumaNode). Co-locating a NIC with the
 	// vCPUs that process its traffic reduces cross-NUMA memory latency for
 	// latency-sensitive workloads.
+	// Requires EFI firmware (spec.hardware.firmware=EFI); Legacy BIOS does
+	// not support device assignment.
 	// Requires spec.minHardwareVersion >= 20.
 	// Cannot be changed while the VM is powered on.
 	VNUMANodeID *int32 `json:"vNUMANodeID,omitempty"`

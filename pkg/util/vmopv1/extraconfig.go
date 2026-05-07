@@ -14,6 +14,17 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
+// EthernetDeviceKeyBase is the vSphere device key base offset for ethernet
+// (VirtualEthernetCard) devices. The ethernetX index used in VMX ExtraConfig
+// keys (e.g. "ethernet1.ctxPerDev") equals deviceKey - EthernetDeviceKeyBase.
+const EthernetDeviceKeyBase int32 = 4000
+
+// EthernetExtraConfigPrefix returns the "ethernetX." prefix for VMX ExtraConfig
+// keys corresponding to the ethernet device with the given device key.
+func EthernetExtraConfigPrefix(deviceKey int32) string {
+	return fmt.Sprintf("ethernet%d.", deviceKey-EthernetDeviceKeyBase)
+}
+
 var (
 	cachedAdvancedVMXKeyMap = sync.OnceValue(func() map[string]int {
 		return BuildVMXKeyMap(reflect.TypeOf(vmopv1.VirtualMachineAdvancedSpec{}))

@@ -44,9 +44,19 @@ func BackfillExtraConfigFromMoVM(
 	}
 
 	if vm.Spec.Network != nil {
+		ethDevs := collectEthernetDevicesFromMoVM(moVM)
+		// Spec interfaces are zipped by position to ethernet devices (same
+		// convention as FillEmptyNetworkInterfaceTypesFromMoVM). The extraConfig
+		// key index X in ethernetX.* is derived from the device key
+		// (X = deviceKey - 4000), not from the spec array position.
+		// TODO: proper device-to-spec matching beyond positional zip.
 		for i := range vm.Spec.Network.Interfaces {
+			if i >= len(ethDevs) {
+				break
+			}
+			devKey := ethDevs[i].GetVirtualDevice().Key
 			if m, err := backfillNICSpec(
-				i,
+				vmopv1util.EthernetExtraConfigPrefix(devKey),
 				&vm.Spec.Network.Interfaces[i],
 				moVM.Config.ExtraConfig); err != nil {
 				return false, err
@@ -101,7 +111,7 @@ func backfillAdvancedSpec(
 }
 
 func backfillNICSpec(
-	nicIdx int,
+	prefix string,
 	iface *vmopv1.VirtualMachineNetworkInterfaceSpec,
 	extraConfig []vimtypes.BaseOptionValue) (bool, error) {
 
@@ -110,8 +120,6 @@ func backfillNICSpec(
 		iface.Type != vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3 {
 		return false, nil
 	}
-
-	prefix := fmt.Sprintf("ethernet%d.", nicIdx)
 	mutated := false
 
 	for _, bov := range extraConfig {

@@ -18,6 +18,8 @@ import (
 
 func backfillExtraConfigTests() {
 
+	// moVMWithExtraConfig builds a moVM with only ExtraConfig — suitable for
+	// VM-level (spec.advanced.*) backfill tests that need no NIC hardware.
 	moVMWithExtraConfig := func(
 		kvs ...*vimtypes.OptionValue) mo.VirtualMachine {
 
@@ -28,6 +30,37 @@ func backfillExtraConfigTests() {
 		return mo.VirtualMachine{
 			Config: &vimtypes.VirtualMachineConfigInfo{
 				ExtraConfig: ec,
+			},
+		}
+	}
+
+	// moVMWithNICsAndExtraConfig builds a moVM with both hardware ethernet
+	// devices and ExtraConfig — required for NIC-level backfill tests so the
+	// ethernetX index can be derived from the device key.
+	moVMWithNICsAndExtraConfig := func(
+		devs []vimtypes.BaseVirtualDevice,
+		kvs ...*vimtypes.OptionValue) mo.VirtualMachine {
+
+		ec := make([]vimtypes.BaseOptionValue, len(kvs))
+		for i, kv := range kvs {
+			ec[i] = kv
+		}
+		return mo.VirtualMachine{
+			Config: &vimtypes.VirtualMachineConfigInfo{
+				Hardware:    vimtypes.VirtualHardware{Device: devs},
+				ExtraConfig: ec,
+			},
+		}
+	}
+
+	// vmxnet3Dev creates a VirtualVmxnet3 device with the given key.
+	// ethernetX index = key - 4000 (vSphere convention).
+	vmxnet3Dev := func(key int32) vimtypes.BaseVirtualDevice {
+		return &vimtypes.VirtualVmxnet3{
+			VirtualVmxnet: vimtypes.VirtualVmxnet{
+				VirtualEthernetCard: vimtypes.VirtualEthernetCard{
+					VirtualDevice: vimtypes.VirtualDevice{Key: key},
+				},
 			},
 		}
 	}
@@ -201,7 +234,10 @@ func backfillExtraConfigTests() {
 
 			DescribeTable("each vmxnet3 vmx-tagged field round-trips",
 				func(key, raw string, check func(*vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec)) {
-					moVM = moVMWithExtraConfig(ov(key, raw))
+					// Device key 4000 → ethernetIdx 0 → prefix "ethernet0."
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+						ov(key, raw))
 
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
@@ -249,7 +285,9 @@ func backfillExtraConfigTests() {
 
 			DescribeTable("vSphere-managed keys are silently dropped",
 				func(key string) {
-					moVM = moVMWithExtraConfig(ov(key, "value"))
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+						ov(key, "value"))
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(mutated).To(BeFalse())
@@ -265,7 +303,9 @@ func backfillExtraConfigTests() {
 			)
 
 			It("unknown NIC key is silently dropped", func() {
-				moVM = moVMWithExtraConfig(ov("ethernet0.foo", "value"))
+				moVM = moVMWithNICsAndExtraConfig(
+					[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+					ov("ethernet0.foo", "value"))
 				mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mutated).To(BeFalse())
@@ -279,7 +319,9 @@ func backfillExtraConfigTests() {
 				})
 
 				It("skips all ethernet0.* keys", func() {
-					moVM = moVMWithExtraConfig(ov("ethernet0.ctxPerDev", "PerDevice"))
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+						ov("ethernet0.ctxPerDev", "PerDevice"))
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(mutated).To(BeFalse())
@@ -294,7 +336,9 @@ func backfillExtraConfigTests() {
 				})
 
 				It("skips all ethernet0.* keys", func() {
-					moVM = moVMWithExtraConfig(ov("ethernet0.ctxPerDev", "PerDevice"))
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+						ov("ethernet0.ctxPerDev", "PerDevice"))
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(mutated).To(BeFalse())
@@ -308,7 +352,9 @@ func backfillExtraConfigTests() {
 				})
 
 				It("backfills vmxnet3 fields", func() {
-					moVM = moVMWithExtraConfig(ov("ethernet0.ctxPerDev", "PerVM"))
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+						ov("ethernet0.ctxPerDev", "PerVM"))
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(mutated).To(BeTrue())
@@ -328,7 +374,9 @@ func backfillExtraConfigTests() {
 				})
 
 				It("does not overwrite existing value", func() {
-					moVM = moVMWithExtraConfig(ov("ethernet0.ctxPerDev", "PerDevice"))
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+						ov("ethernet0.ctxPerDev", "PerDevice"))
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(mutated).To(BeFalse())
@@ -347,10 +395,16 @@ func backfillExtraConfigTests() {
 				})
 
 				It("lands keys on the correct interfaces; orphan ethernet5 is dropped", func() {
-					moVM = moVMWithExtraConfig(
+					// Devices with sequential keys 4000-4002 → ethernetIdx 0-2.
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{
+							vmxnet3Dev(4000),
+							vmxnet3Dev(4001),
+							vmxnet3Dev(4002),
+						},
 						ov("ethernet0.ctxPerDev", "PerDevice"),
 						ov("ethernet2.ctxPerDev", "PerVM"),
-						ov("ethernet5.ctxPerDev", "PerQueue"), // no spec interface → drop
+						ov("ethernet5.ctxPerDev", "PerQueue"), // no matching device → drop
 					)
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
@@ -369,13 +423,50 @@ func backfillExtraConfigTests() {
 				})
 			})
 
+			When("NIC device keys are non-zero-based (deviceKey=4001 → ethernetIdx=1)", func() {
+				BeforeEach(func() {
+					vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+						{Name: "eth1", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+					}
+				})
+
+				It("uses device-key-derived ethernetX index, not spec array position", func() {
+					// Keys 4001, 4002 → ethernetIdx 1, 2.
+					// spec[0] ↔ device(4001) → look up "ethernet1.*"
+					// spec[1] ↔ device(4002) → look up "ethernet2.*"
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{
+							vmxnet3Dev(4001),
+							vmxnet3Dev(4002),
+						},
+						ov("ethernet1.ctxPerDev", "PerDevice"),
+						ov("ethernet2.ctxPerDev", "PerVM"),
+					)
+					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(mutated).To(BeTrue())
+
+					ifaces := vm.Spec.Network.Interfaces
+					Expect(ifaces[0].VMXNet3).ToNot(BeNil())
+					Expect(*ifaces[0].VMXNet3.CtxPerDev).To(
+						Equal(vmopv1.TxContextThreadingModePerDevice))
+
+					Expect(ifaces[1].VMXNet3).ToNot(BeNil())
+					Expect(*ifaces[1].VMXNet3.CtxPerDev).To(
+						Equal(vmopv1.TxContextThreadingModePerVM))
+				})
+			})
+
 			When("no network interfaces defined", func() {
 				BeforeEach(func() {
 					vm.Spec.Network.Interfaces = nil
 				})
 
 				It("returns no mutation", func() {
-					moVM = moVMWithExtraConfig(ov("ethernet0.ctxPerDev", "PerDevice"))
+					moVM = moVMWithNICsAndExtraConfig(
+						[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+						ov("ethernet0.ctxPerDev", "PerDevice"))
 					mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(mutated).To(BeFalse())
@@ -399,7 +490,9 @@ func backfillExtraConfigTests() {
 						},
 					},
 				}
-				moVM = moVMWithExtraConfig(ov("ethernet0.ctxPerDev", "PerDevice"))
+				moVM = moVMWithNICsAndExtraConfig(
+					[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
+					ov("ethernet0.ctxPerDev", "PerDevice"))
 
 				mutated, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM)
 				Expect(err).ToNot(HaveOccurred())

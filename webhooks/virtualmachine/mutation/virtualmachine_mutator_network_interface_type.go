@@ -37,8 +37,9 @@ func SetDefaultNetworkInterfaceTypesOnUpdate(vm *vmopv1.VirtualMachine) (bool, e
 
 	mutated := false
 	// The interface Type is backfilled during schema upgrade, so don't set
-	// the default type for interfaces until that is done.
-	// TODO: We're missing the locking for this in the validation validateFieldsDuringSchemaUpgrade().
+	// the default until after that is done. The validation webhook's
+	// validateFieldsDuringSchemaUpgrade() prevents Type changes during the
+	// upgrade window, which complements this gate.
 	if vmFeatureVersion.Has(vmopv1util.FeatureVersionTelcoVMServiceAPI) {
 		for i := range vm.Spec.Network.Interfaces {
 			if vm.Spec.Network.Interfaces[i].Type == "" {

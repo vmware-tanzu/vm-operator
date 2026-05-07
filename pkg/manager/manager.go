@@ -154,7 +154,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		LeaderElectionNamespace:         opts.PodNamespace,
 		MaxConcurrentReconciles:         opts.MaxConcurrentReconciles,
 		Logger:                          logger,
-		Recorder:                        record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
+		Recorder:                        record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))), // nolint:staticcheck
 		ContainerNode:                   opts.ContainerNode,
 		SyncPeriod:                      opts.SyncPeriod,
 		EnableWebhookClientVerification: opts.EnableWebhookClientVerification,

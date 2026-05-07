@@ -21,6 +21,7 @@ import (
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 )
@@ -82,6 +83,22 @@ func GetVirtualMachineA3(ctx context.Context, client ctrlclient.Client, ns, name
 // TODO: the above should return vmopv1a5, but requires some refactoring of existing tests.
 func GetVirtualMachineA5(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a5.VirtualMachine, error) {
 	virtualMachine := &vmopv1a5.VirtualMachine{}
+
+	key := types.NamespacedName{
+		Namespace: ns,
+		Name:      name,
+	}
+
+	err := client.Get(ctx, key, virtualMachine)
+	if err != nil {
+		return nil, err
+	}
+
+	return virtualMachine, nil
+}
+
+func GetVirtualMachineA6(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a6.VirtualMachine, error) {
+	virtualMachine := &vmopv1a6.VirtualMachine{}
 
 	key := types.NamespacedName{
 		Namespace: ns,

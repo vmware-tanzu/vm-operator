@@ -16,6 +16,7 @@ import (
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	imageregistryv1alpha1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	imageregistryv1alpha2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	mopv1alpha2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
@@ -74,6 +75,11 @@ func addSchemes(sc *runtime.Scheme) {
 	err = vmopv1a5.AddToScheme(sc)
 	if err != nil {
 		e2eframework.Failf("unable add v1alpha5 VMOP APIs to scheme: %v", err)
+	}
+
+	err = vmopv1a6.AddToScheme(sc)
+	if err != nil {
+		e2eframework.Failf("unable add v1alpha6 VMOP APIs to scheme: %v", err)
 	}
 
 	err = mopv1alpha2.AddToScheme(sc)

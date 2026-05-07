@@ -464,6 +464,24 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 	})
 
+	It("Should verify boot disk storage policy matches VM spec.storageClass after power-on", Label("experimental"), func() {
+		vmParameters := manifestbuilders.VirtualMachineYaml{
+			Namespace:        input.WCPNamespaceName,
+			Name:             vmName,
+			ImageName:        linuxImageDisplayName,
+			VMClassName:      clusterResources.VMClassName,
+			StorageClassName: clusterResources.StorageClassName,
+			ResourcePolicy:   clusterResources.VMResourcePolicyName,
+			PowerState:       poweredOnState,
+		}
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+		By("Verifying boot disk storage policy matches spec.storageClass")
+		vmoperator.EventuallyBootDiskStoragePolicyMatchesVMStorageClass(ctx, config, vCenterClient, svClusterClient, input.WCPNamespaceName, vmName)
+	})
+
 	It("Should emit a condition for a VMClass that doesn't exist in the cluster for a Virtual Machine creation", func() {
 		vmClassName := "test-vmClass"
 		expectedCondition := metav1.Condition{

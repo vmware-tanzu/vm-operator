@@ -14,6 +14,7 @@ replace (
 	github.com/vmware-tanzu/vm-operator/external/infra => ../../external/infra
 	github.com/vmware-tanzu/vm-operator/external/mobility-operator => ../../external/mobility-operator
 	github.com/vmware-tanzu/vm-operator/external/ncp => ../../external/ncp
+	github.com/vmware-tanzu/vm-operator/external/net-operator => ../../external/net-operator
 	github.com/vmware-tanzu/vm-operator/external/nsx-operator => ../../external/nsx-operator
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota => ../../external/storage-policy-quota
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ../../external/tanzu-topology

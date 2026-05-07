@@ -376,39 +376,39 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 						})
 					})
 
-				When("VM Spec interfaces than EthCards", func() {
-					BeforeEach(func() {
-						vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
-							{Name: "eth0-vmxnet3"},
-							{Name: "eth1-e1000"},
-							{Name: "eth2-e1000e"},
-							{Name: "eth3-vmxnet2"},
-							{Name: "eth4-pcnet32"},
-							{Name: "eth5-sriov"},
-							{Name: "eth6-no-device"}, // no matching hardware device
-						}
+					When("VM Spec interfaces than EthCards", func() {
+						BeforeEach(func() {
+							vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0-vmxnet3"},
+								{Name: "eth1-e1000"},
+								{Name: "eth2-e1000e"},
+								{Name: "eth3-vmxnet2"},
+								{Name: "eth4-pcnet32"},
+								{Name: "eth5-sriov"},
+								{Name: "eth6-no-device"}, // no matching hardware device
+							}
 
-						moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
-							&vimtypes.VirtualVmxnet3{},
-							&vimtypes.VirtualE1000{},
-							&vimtypes.VirtualE1000e{},
-							&vimtypes.VirtualVmxnet2{},
-							&vimtypes.VirtualPCNet32{},
-							&vimtypes.VirtualSriovEthernetCard{},
-						}
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualVmxnet3{},
+								&vimtypes.VirtualE1000{},
+								&vimtypes.VirtualE1000e{},
+								&vimtypes.VirtualVmxnet2{},
+								&vimtypes.VirtualPCNet32{},
+								&vimtypes.VirtualSriovEthernetCard{},
+							}
+						})
+						It("should backfill types from moVM; extra spec interface is left unchanged", func() {
+							assertUpgraded()
+							assertFeatureVersion("9")
+							Expect(vm.Spec.Network.Interfaces[0].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
+							Expect(vm.Spec.Network.Interfaces[1].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeE1000))
+							Expect(vm.Spec.Network.Interfaces[2].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeE1000e))
+							Expect(vm.Spec.Network.Interfaces[3].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet2))
+							Expect(vm.Spec.Network.Interfaces[4].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypePCNet32))
+							Expect(vm.Spec.Network.Interfaces[5].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV))
+							Expect(vm.Spec.Network.Interfaces[6].Type).To(BeEmpty())
+						})
 					})
-					It("should backfill types from moVM; extra spec interface is left unchanged", func() {
-						assertUpgraded()
-						assertFeatureVersion("9")
-						Expect(vm.Spec.Network.Interfaces[0].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
-						Expect(vm.Spec.Network.Interfaces[1].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeE1000))
-						Expect(vm.Spec.Network.Interfaces[2].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeE1000e))
-						Expect(vm.Spec.Network.Interfaces[3].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet2))
-						Expect(vm.Spec.Network.Interfaces[4].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypePCNet32))
-						Expect(vm.Spec.Network.Interfaces[5].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV))
-						Expect(vm.Spec.Network.Interfaces[6].Type).To(BeEmpty())
-					})
-				})
 
 					When("VC VM has ExtraConfig vmx field set", func() {
 						BeforeEach(func() {

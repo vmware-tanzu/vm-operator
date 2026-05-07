@@ -58,17 +58,22 @@ RUN tdnf update -y && \
         build-essential \
         glibc-devel \
         go \
+        sudo \
         && \
     rm -rf /var/cache/tdnf
 
-ARG KUBECTL_VERSION=v1.32.0
-ARG KUBECTL_URL=https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
-RUN curl -fsSL "${KUBECTL_URL}" -o /usr/local/bin/kubectl && \
-    chmod +x /usr/local/bin/kubectl
+# kubectl is always staged into the build context as ./kubectl before docker build runs.
+# This is to support passing the kubectl binary from the build system.
+COPY kubectl /usr/local/bin/kubectl
+RUN chmod +x /usr/local/bin/kubectl
 
-# Create non-root user early 
-RUN groupadd -g 1000 vmoperator && \
-    useradd -u 1000 -g vmoperator -s /bin/bash -m vmoperator
+# Create non-root user early
+# GID 201 (mts) matches the testing system's NFS log directory group, required for writing test artifacts.
+# vmoperator is granted passwordless sudo (scoped to chmod only) so it can fix NFS directory
+RUN groupadd -g 201 mts && \
+    groupadd -g 1000 vmoperator && \
+    useradd -u 1000 -g vmoperator -G mts -s /bin/bash -m vmoperator && \
+    echo "vmoperator ALL=(ALL) NOPASSWD: /bin/chmod" >> /etc/sudoers
 
 # Create directories and set up convenience scripts
 RUN mkdir -p /vm-operator /tmp/go-cache && \
@@ -77,7 +82,10 @@ RUN mkdir -p /vm-operator /tmp/go-cache && \
 WORKDIR /vm-operator
 
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/setup-testbed-env.sh ./hack/setup-testbed-env.sh
-RUN ln -sf /vm-operator/hack/setup-testbed-env.sh /usr/local/bin/setup-testbed-env
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/wait-for-artifact-dir.sh ./hack/wait-for-artifact-dir.sh
+RUN ln -sf /vm-operator/hack/setup-testbed-env.sh /usr/local/bin/setup-testbed-env && \
+    ln -sf /vm-operator/hack/wait-for-artifact-dir.sh /usr/local/bin/wait-for-artifact-dir && \
+    chmod +x /vm-operator/hack/wait-for-artifact-dir.sh
 
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests

@@ -73,3 +73,4 @@ infrastructure-components.yaml
 # E2E tests
 test/e2e/**/test_logs
 e2e-tests
+kubectl

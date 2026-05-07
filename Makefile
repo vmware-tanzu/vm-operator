@@ -106,7 +106,7 @@ IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
-# E2E test image configuration  
+# E2E test image configuration
 E2E_BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
 E2E_IMAGE ?= vmoperator-e2e
 E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
@@ -951,6 +951,11 @@ verify-wcp-manifests: ## Verify the WCP manifests
 e2e-image-build: GOOS=linux
 e2e-image-build: ## Build E2E test container image
 	@echo "Building VM Operator E2E test image..."
+	@# Stage kubectl into the build context. This is to support passing the kubectl binary from the build system.
+	@if [ ! -s kubectl ]; then \
+		echo "Downloading kubectl $(E2E_KUBECTL_VERSION)..."; \
+		curl -fsSL "https://dl.k8s.io/release/$(E2E_KUBECTL_VERSION)/bin/linux/amd64/kubectl" -o kubectl && chmod +x kubectl; \
+	fi
 	$(CRI_BIN) build \
 	  -f Dockerfile.e2e \
 	  -t "$(E2E_IMAGE):$(IMAGE_TAG)" \

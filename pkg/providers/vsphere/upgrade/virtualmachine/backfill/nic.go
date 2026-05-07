@@ -18,7 +18,7 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
-// BackfillNICConfigFromMoVM populates per-NIC spec fields from the live vSphere
+// NICConfigFromMoVM populates per-NIC spec fields from the live vSphere
 // VM configuration during schema upgrade. For each zipped (spec interface,
 // ethernet device) pair:
 //
@@ -38,7 +38,7 @@ import (
 //
 // Spec wins: only nil/zero fields are written.
 // Returns true if any field was mutated.
-func BackfillNICConfigFromMoVM(
+func NICConfigFromMoVM(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) (bool, error) {
 

@@ -16,7 +16,7 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
-// BackfillExtraConfigFromMoVM populates spec.advanced.* vmx-tagged fields
+// ExtraConfigFromMoVM populates spec.advanced.* vmx-tagged fields
 // from moVM.Config.ExtraConfig.
 //
 // Only nil/zero spec fields are written; existing values are left unchanged so
@@ -27,7 +27,7 @@ import (
 //
 // Called once per VM during schema upgrade when FeatureVersionTelcoVMServiceAPI
 // is being set. Returns true if any field was mutated.
-func BackfillExtraConfigFromMoVM(
+func ExtraConfigFromMoVM(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) (bool, error) {
 

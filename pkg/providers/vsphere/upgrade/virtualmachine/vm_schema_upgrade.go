@@ -21,6 +21,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	vmbackfill "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/upgrade/virtualmachine/backfill"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -168,17 +169,11 @@ func ReconcileSchemaUpgrade(
 
 	if features.TelcoVMServiceAPI {
 		if f := vmopv1util.FeatureVersionTelcoVMServiceAPI; !vmFeatureVersion.Has(f) {
-			if _, err := virtualmachine.FillEmptyNetworkInterfaceTypesFromMoVM(
-				vm,
-				moVM); err != nil {
-
-				return fmt.Errorf("unexpected fill network interface types error: %w", err)
-			}
-			if _, err := virtualmachine.BackfillExtraConfigFromMoVM(vm, moVM); err != nil {
+			if _, err := vmbackfill.BackfillExtraConfigFromMoVM(vm, moVM); err != nil {
 				return fmt.Errorf("backfill extraconfig: %w", err)
 			}
-			if _, err := virtualmachine.BackfillNICDevicePropertiesFromMoVM(vm, moVM); err != nil {
-				return fmt.Errorf("backfill nic device properties: %w", err)
+			if _, err := vmbackfill.BackfillNICConfigFromMoVM(vm, moVM); err != nil {
+				return fmt.Errorf("backfill nic: %w", err)
 			}
 			vmFeatureVersion.Set(f)
 		}

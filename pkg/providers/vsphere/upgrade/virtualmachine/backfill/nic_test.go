@@ -244,12 +244,12 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 				moVM = moVMWithEthernet(&vimtypes.VirtualVmxnet3{})
 			})
 
-			It("sets type for matched interface; extra spec interface left unchanged", func() {
+			It("sets type from device for matched interface; defaults extra to VMXNet3", func() {
 				mutated, err := backfill.BackfillNICConfigFromMoVM(vm, moVM)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mutated).To(BeTrue())
 				Expect(vm.Spec.Network.Interfaces[0].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
-				Expect(vm.Spec.Network.Interfaces[1].Type).To(BeEmpty())
+				Expect(vm.Spec.Network.Interfaces[1].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
 			})
 		})
 	})
@@ -638,9 +638,9 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 		It("aligns device[0]→interfaces[0], device[1]→interfaces[1], etc.", func() {
 			moVM = moVMWithEthernet(
 				vmxnet3WithProps(1, ptr.To(true)),  // interfaces[0]
-				sriovDev(2),                         // interfaces[1] — only VNUMANodeID
-				vmxnet3WithProps(3, ptr.To(false)),  // interfaces[2]
-				vmxnet3WithProps(4, ptr.To(true)),   // no spec interface → ignored
+				sriovDev(2),                        // interfaces[1] — only VNUMANodeID
+				vmxnet3WithProps(3, ptr.To(false)), // interfaces[2]
+				vmxnet3WithProps(4, ptr.To(true)),  // no spec interface → ignored
 			)
 
 			mutated, err := backfill.BackfillNICConfigFromMoVM(vm, moVM)
@@ -664,7 +664,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 			Expect(*ifaces[2].VMXNet3.UPTv2Enabled).To(BeFalse())
 		})
 
-		It("extra spec interfaces beyond device count are left unchanged", func() {
+		It("extra spec interfaces beyond device count: Type preserved if set, no device properties", func() {
 			moVM = moVMWithEthernet(vmxnet3WithProps(1, ptr.To(true))) // 1 device, 3 spec ifaces
 
 			mutated, err := backfill.BackfillNICConfigFromMoVM(vm, moVM)
@@ -672,8 +672,12 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 			Expect(mutated).To(BeTrue())
 
 			ifaces := vm.Spec.Network.Interfaces
+			// Matched interface gets full backfill.
 			Expect(ifaces[0].VNUMANodeID).ToNot(BeNil())
+			// Unmatched interfaces: Type already set is preserved; no device properties.
+			Expect(ifaces[1].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV))
 			Expect(ifaces[1].VNUMANodeID).To(BeNil())
+			Expect(ifaces[2].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
 			Expect(ifaces[2].VNUMANodeID).To(BeNil())
 		})
 	})

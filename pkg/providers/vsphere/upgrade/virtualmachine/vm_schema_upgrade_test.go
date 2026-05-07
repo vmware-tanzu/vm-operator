@@ -385,7 +385,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 								{Name: "eth3-vmxnet2"},
 								{Name: "eth4-pcnet32"},
 								{Name: "eth5-sriov"},
-								{Name: "eth6-no-device"}, // no matching hardware device
+								{Name: "eth6-default"}, // gets vmxnet3 default
 							}
 
 							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
@@ -397,7 +397,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 								&vimtypes.VirtualSriovEthernetCard{},
 							}
 						})
-						It("should backfill types from moVM; extra spec interface is left unchanged", func() {
+						It("should backfill types from moVM and default to vmxnet3", func() {
 							assertUpgraded()
 							assertFeatureVersion("9")
 							Expect(vm.Spec.Network.Interfaces[0].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
@@ -406,7 +406,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 							Expect(vm.Spec.Network.Interfaces[3].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet2))
 							Expect(vm.Spec.Network.Interfaces[4].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypePCNet32))
 							Expect(vm.Spec.Network.Interfaces[5].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV))
-							Expect(vm.Spec.Network.Interfaces[6].Type).To(BeEmpty())
+							Expect(vm.Spec.Network.Interfaces[6].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
 						})
 					})
 

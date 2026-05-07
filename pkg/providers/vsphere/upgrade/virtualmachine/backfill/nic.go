@@ -53,10 +53,17 @@ func BackfillNICConfigFromMoVM(
 	mutated := false
 
 	for i := range vm.Spec.Network.Interfaces {
-		if i >= len(ethDevs) {
-			break
-		}
 		iface := &vm.Spec.Network.Interfaces[i]
+
+		if i >= len(ethDevs) {
+			// No matching hardware device: default Type to VMXNet3 if unset.
+			if iface.Type == "" {
+				iface.Type = vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3
+				mutated = true
+			}
+			continue
+		}
+
 		dev := ethDevs[i]
 
 		if iface.Type == "" {

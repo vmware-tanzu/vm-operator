@@ -67,13 +67,23 @@ RUN tdnf update -y && \
 COPY kubectl /usr/local/bin/kubectl
 RUN chmod +x /usr/local/bin/kubectl
 
-# Create non-root user early
-# GID 201 (mts) matches the testing system's NFS log directory group, required for writing test artifacts.
-# vmoperator is granted passwordless sudo (scoped to chmod only) so it can fix NFS directory
+# Create users and groups required for the build system's log directory access.
+#
+# svc-vdm_stage0 (UID 2001835): the service account that owns the NFS log
+# directory. We add it here so that our container user (vmoperator) can run
+# "sudo -u svc-vdm_stage0 chmod g+w $RESULTSDIR" to make the directory writable.
+#
+# mts (GID 201): the group that both vmoperator and svc-vdm_stage0 belong to,
+# required for writing test artifacts to the NFS log directory after chmod g+w.
 RUN groupadd -g 201 mts && \
     groupadd -g 1000 vmoperator && \
-    useradd -u 1000 -g vmoperator -G mts -s /bin/bash -m vmoperator && \
-    echo "vmoperator ALL=(ALL) NOPASSWD: /bin/chmod" >> /etc/sudoers
+    groupadd -g 2001835 svc-vdm_stage0 && \
+    sed -i 's/^UID_MAX.*/UID_MAX 4294967294/' /etc/login.defs && \
+    useradd -u 2001835 -g svc-vdm_stage0 -G mts -m -s /bin/bash svc-vdm_stage0 && \
+    useradd -u 1000 -g vmoperator -G mts -m -s /bin/bash vmoperator && \
+    echo "svc-vdm_stage0 ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    echo "vmoperator ALL=(svc-vdm_stage0) NOPASSWD:ALL" >> /etc/sudoers && \
+    sed -i '/Defaults requiretty/d' /etc/sudoers
 
 # Create directories and set up convenience scripts
 RUN mkdir -p /vm-operator /tmp/go-cache && \

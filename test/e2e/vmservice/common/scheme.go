@@ -10,6 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -17,8 +19,6 @@ import (
 	imageregistryv1alpha1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	imageregistryv1alpha2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	mopv1alpha2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
-	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
-
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/vm-operator/external/nsx-operator/api/vpc/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"

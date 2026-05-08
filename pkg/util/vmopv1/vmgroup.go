@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	vmKind  = "VirtualMachine"
 	vmgKind = "VirtualMachineGroup"
 )
 

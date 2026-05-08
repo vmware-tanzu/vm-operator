@@ -197,6 +197,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		)
 	}
 
+	// Watch CnsNodeVMBatchAttachment in order to account for the volume
+	// registration race outlined/fixed in
+	// https://github.com/vmware-tanzu/vm-operator/pull/1572.
+	builder = builder.Watches(
+		&cnsv1alpha1.CnsNodeVMBatchAttachment{},
+		handler.EnqueueRequestsFromMapFunc(
+			vmopv1util.CnsNodeVMBatchAttachmentToVirtualMachineMapper(ctx),
+		),
+	)
+
 	return builder.Complete(r)
 }
 

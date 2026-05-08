@@ -45,6 +45,32 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+// createBatchAttachWithPVCVolumeIDCacheMiss creates a CnsNodeVMBatchAttachment
+// whose status matches the phase-2 gate in register (CSI volume ID cache miss).
+func createBatchAttachWithPVCVolumeIDCacheMiss(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	claimName string,
+) {
+	ba := &cnsv1alpha1.CnsNodeVMBatchAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vm.Name,
+			Namespace: vm.Namespace,
+		},
+		Status: cnsv1alpha1.CnsNodeVMBatchAttachmentStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:    cnsv1alpha1.ConditionReady,
+					Status:  metav1.ConditionFalse,
+					Message: "failed to find volumeID for PVC " + claimName,
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, ba)).To(Succeed())
+}
+
 var _ = Describe("New", func() {
 	It("should return a reconciler", func() {
 		Expect(unmanagedvolsreg.New()).ToNot(BeNil())
@@ -431,6 +457,16 @@ var _ = Describe("Reconcile", func() {
 					expectedStorage := *kubeutil.BytesToResource(2 * 1024 * 1024 * 1024)
 					Expect(pvc.Spec.Resources.Requests[corev1.ResourceStorage].Equal(expectedStorage)).To(BeTrue())
 
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
@@ -546,6 +582,16 @@ var _ = Describe("Reconcile", func() {
 					Expect(pvc.Spec.AccessModes).To(ContainElement(corev1.ReadWriteMany))
 					expectedStorage := *kubeutil.BytesToResource(2 * 1024 * 1024 * 1024)
 					Expect(pvc.Spec.Resources.Requests[corev1.ResourceStorage].Equal(expectedStorage)).To(BeTrue())
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
@@ -939,6 +985,16 @@ var _ = Describe("Reconcile", func() {
 					Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 					Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))
 
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, "my-vm-f3069b5c")
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
 					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
@@ -1324,7 +1380,7 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should handle complete reconciliation cycle", func() {
-					// First reconciliation: should create PVC and CnsRegisterVolume.
+					// First reconciliation: create PVC and write claim (phase 1).
 					Expect(unmanagedvolsreg.Reconcile(
 						ctx,
 						k8sClient,
@@ -1347,6 +1403,16 @@ var _ = Describe("Reconcile", func() {
 					// Set the PVC status to Pending for the test
 					pvc.Status.Phase = corev1.ClaimPending
 					Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 
 					// Verify CnsRegisterVolume was created
 					crv := &cnsv1alpha1.CnsRegisterVolume{}
@@ -1604,6 +1670,13 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should return error", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(
+						MatchError(unmanagedvolsreg.ErrPendingRegister))
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE,
+						0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
 					err := unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to ensure CnsRegisterVolume"))
@@ -1667,6 +1740,13 @@ var _ = Describe("Reconcile", func() {
 				})
 
 				It("should return error", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(
+						MatchError(unmanagedvolsreg.ErrPendingRegister))
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeIDE,
+						0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
 					err := unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to get CnsRegisterVolume"))
@@ -2573,6 +2653,17 @@ var _ = Describe("Reconcile", func() {
 			})
 
 			It("should return error", func() {
+				Expect(unmanagedvolsreg.Reconcile(
+					ctx,
+					k8sClient,
+					vimClient,
+					vm,
+					moVM,
+					configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+				claimName := vmopv1util.FindByTargetID(
+					vmopv1.VirtualControllerTypeIDE,
+					0, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+				createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
 				err := unmanagedvolsreg.Reconcile(
 					ctx,
 					k8sClient,
@@ -3034,7 +3125,11 @@ var _ = Describe("Reconcile", func() {
 					}, crv)
 					Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
-					// Reconcile should create the CRV
+					Expect(unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(
+						MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, "regular-pvc")
+
 					err = unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 					Expect(err).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
 

@@ -111,6 +111,8 @@ E2E_BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
 E2E_IMAGE ?= vmoperator-e2e
 E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
 
+E2E_KUBECTL_VERSION ?= v1.36.0
+
 # Code coverage files
 COVERAGE_FILE ?= cover.out
 

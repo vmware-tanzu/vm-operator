@@ -203,6 +203,7 @@ type FeatureStates struct {
 	StoragePolicyMutability     bool
 	VMVlanSubinterface          bool
 	TelcoVMServiceAPI           bool
+	PerNamespaceNetworkProvider bool
 }
 
 type InstanceStorage struct {

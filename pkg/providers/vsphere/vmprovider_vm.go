@@ -1116,6 +1116,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 }
 
 func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcClient *vcclient.Client) error {
+	logger := pkglog.FromContextOrDefault(vmCtx)
 	// 1. Get the VM's current Resource Pool from properties already fetched
 	if vmCtx.MoVM.ResourcePool == nil {
 		return fmt.Errorf("VM %s has no resource pool assigned", vmCtx.VM.Name)
@@ -1131,7 +1132,8 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		vmCtx.VM.Namespace,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
+		logger.Error(err, "failed to get expected namespace resource pool")
+		return nil
 	}
 	// 3. Validate Ancestry
 	// Check if the VM is in the Root RP or a Child RP (common for VKS)

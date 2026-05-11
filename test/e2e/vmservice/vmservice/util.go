@@ -1212,6 +1212,7 @@ func LabelVM(ctx context.Context, config *config.E2EConfig, clusterProxy *common
 func DeployVMWithCloudInit(
 	ctx context.Context,
 	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	e2eConfig *config.E2EConfig,
 	clusterResources *config.Resources,
 	ns, vmName, groupName string,
 	pvcs []manifestbuilders.PVC) {
@@ -1224,11 +1225,13 @@ func DeployVMWithCloudInit(
 	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
 
 	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
+	linuxVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
+	Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, ns)
 
 	vmParameters := manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,
 		Name:             vmName,
-		ImageName:        linuxImageDisplayName,
+		ImageName:        linuxVMIName,
 		VMClassName:      clusterResources.VMClassName,
 		StorageClassName: clusterResources.StorageClassName,
 		SecretName:       secretName,
@@ -1743,6 +1746,12 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 			Verbs:    "get,list,watch",
 		},
 		{
+			Name:     "gce2e-cns-unregister-volumes",
+			APIGroup: "cns.vmware.com",
+			Resource: "cnsunregistervolumes",
+			Verbs:    "create,update,patch,delete,get,list,watch",
+		},
+		{
 			Name:     "gce2e-import-operations",
 			APIGroup: "mobility-operator.vmware.com",
 			Resource: "importoperations",
@@ -1841,6 +1850,7 @@ func CleanupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) erro
 	customRoles := []RBACRole{
 		{Name: "gce2e-crds"},
 		{Name: "gce2e-cns-batch-attachments"},
+		{Name: "gce2e-cns-unregister-volumes"},
 		{Name: "gce2e-import-operations"},
 	}
 

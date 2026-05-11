@@ -74,3 +74,4 @@ infrastructure-components.yaml
 test/e2e/**/test_logs
 e2e-tests
 kubectl
+test/e2e/**/test-results.xml

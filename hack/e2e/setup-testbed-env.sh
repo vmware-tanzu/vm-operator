@@ -6,14 +6,14 @@
 # for running vm-operator E2E tests by setting up kubeconfig and environment variables.
 #
 #   # Local file:
-#   source ./hack/setup-testbed-env.sh ./testbedinfo.json
+#   source ./hack/e2e/setup-testbed-env.sh ./testbedinfo.json
 #
 #   # Remote URL:
-#   source ./hack/setup-testbed-env.sh https://example.com/testbed.json
+#   source ./hack/e2e/setup-testbed-env.sh https://example.com/testbed.json
 #
 #   # Enable E2E kubeconfig setup by copying kubeconfig to ~/.kube/wcp-config
 #   # which is used by the E2E test to access the Supervisor cluster.
-#   source ./hack/setup-testbed-env.sh ./testbedinfo.json --e2e
+#   source ./hack/e2e/setup-testbed-env.sh ./testbedinfo.json --e2e
 #
 
 set -u
@@ -47,7 +47,8 @@ parse_args() {
                 echo "  TESTBED_SOURCE  Path to local testbedinfo.json or HTTP(S) URL (required)"
                 echo ""
                 echo "Options:"
-                echo "  --e2e           Enable E2E kubeconfig setup (copy kubeconfig to wcp-config)"
+                echo "  --e2e           Enable E2E setup: copy kubeconfig to wcp-config, install"
+                echo "                  kubectl-vsphere, set up HTTP proxy and KMS key providers"
                 echo "  --help, -h      Show this help message"
                 echo ""
                 echo "Examples:"
@@ -263,10 +264,20 @@ fi
 export SUPERVISOR_CLUSTER_IP="${WCP_IP:-}"
 export SUPERVISOR_CLUSTER_PASSWORD="${WCP_PASSWORD:-}"
 
+# Run E2E-specific setup when --e2e is passed:
+#   - install kubectl-vsphere plugin
+#   - set up squid proxy on gateway VM and export HTTP_PROXY
+#   - configure KMS key providers (gce2e-native, gce2e-standard)
+if [ "$ENABLE_E2E_KUBECONFIG" = "true" ]; then
+    _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=hack/e2e/setup-e2e-testbed.sh
+    source "${_SCRIPT_DIR}/setup-e2e-testbed.sh"
+fi
+
 echo ""
 echo "=== Environment Setup Complete ==="
 echo "Data source: ${TESTBED_SOURCE}"
-echo "E2E kubeconfig: $(if [ "$ENABLE_E2E_KUBECONFIG" = "true" ]; then echo "Enabled"; else echo "Disabled (use --e2e to enable)"; fi)"
+echo "E2E setup: $(if [ "$ENABLE_E2E_KUBECONFIG" = "true" ]; then echo "Enabled (--e2e)"; else echo "Disabled (use --e2e to enable)"; fi)"
 echo ""
 echo "The following variables are now available:"
 echo "  VC_URL/VCSA_IP: ${VC_URL}"
@@ -274,6 +285,8 @@ echo "  VC_ROOT_USERNAME/SSH_USERNAME: ${VC_ROOT_USERNAME}"
 echo "  NETWORK: ${NETWORK}"
 echo "  KUBECONFIG: ${KUBECONFIG:-not set}"
 echo "  SUPERVISOR_CLUSTER_IP: ${SUPERVISOR_CLUSTER_IP:-not set}"
+echo "  HTTP_PROXY: ${HTTP_PROXY:-not set}"
+echo "  GATEWAY_IP: ${GATEWAY_IP:-not set}"
 echo ""
 echo "You can now run vm-operator E2E tests with these credentials."
 echo "Example: make e2e-smoke"

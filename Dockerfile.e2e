@@ -59,8 +59,17 @@ RUN tdnf update -y && \
         glibc-devel \
         go \
         sudo \
+        unzip \
+        openssl \
         && \
     rm -rf /var/cache/tdnf
+
+# Install govc - required by hack/kms.sh and hack/proxy.sh for gateway VM discovery and KMS setup.
+# The default URL points to the public GitHub release. This is configurable to support overrides
+# by the build system.
+ARG GOVC_DOWNLOAD_URL=https://github.com/vmware/govmomi/releases/download/v0.53.0/govc_Linux_x86_64.tar.gz
+RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
+    chmod +x /usr/local/bin/govc
 
 # kubectl is always staged into the build context as ./kubectl before docker build runs.
 # This is to support passing the kubectl binary from the build system.
@@ -91,11 +100,8 @@ RUN mkdir -p /vm-operator /tmp/go-cache && \
 
 WORKDIR /vm-operator
 
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/setup-testbed-env.sh ./hack/setup-testbed-env.sh
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/wait-for-artifact-dir.sh ./hack/wait-for-artifact-dir.sh
-RUN ln -sf /vm-operator/hack/setup-testbed-env.sh /usr/local/bin/setup-testbed-env && \
-    ln -sf /vm-operator/hack/wait-for-artifact-dir.sh /usr/local/bin/wait-for-artifact-dir && \
-    chmod +x /vm-operator/hack/wait-for-artifact-dir.sh
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/e2e/ ./hack/e2e/
+RUN chmod +x /vm-operator/hack/e2e/*.sh
 
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests

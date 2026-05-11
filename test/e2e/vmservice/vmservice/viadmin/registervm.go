@@ -75,7 +75,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		svClusterClientSet            *kubernetes.Clientset
 		vmServiceBackupRestoreEnabled bool
 		incrementalRestoreEnabled     bool
-		linuxImageDisplayName         string
+		linuxImageDisplayName string
+		linuxVMIName          string
 	)
 
 	BeforeEach(func() {
@@ -95,6 +96,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		svClusterClientSet = clusterProxy.GetClientSet()
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(config.InfraConfig.ManagementClusterConfig.Resources)
+
+		var vmiErr error
+		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
 
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 		incrementalRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIncrementalRestore"))
@@ -240,7 +245,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
 				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
 						RawCloudConfig: &manifestbuilders.KeySelector{
@@ -373,7 +378,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
 				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
 						RawCloudConfig: &manifestbuilders.KeySelector{
@@ -586,7 +591,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
 				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
 						RawCloudConfig: &manifestbuilders.KeySelector{
@@ -818,7 +823,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
 				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
 						RawCloudConfig: &manifestbuilders.KeySelector{

@@ -68,6 +68,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		isVMMutableNetworksCapEnabled bool
 		linuxImageDisplayName         string
+		linuxVMIName                  string
 	)
 
 	BeforeEach(func() {
@@ -93,6 +94,10 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		vmYaml = nil
 		tmpNamespaceCtx = wcpframework.NamespaceContext{}
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+
+		var err error
+		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
 
 		sshCommandRunner, _ := e2essh.NewSSHCommandRunner(
 			vcenter.GetVCPNIDFromKubeconfigFile(ctx, svClusterProxy.GetKubeconfigPath()),
@@ -134,7 +139,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOff",

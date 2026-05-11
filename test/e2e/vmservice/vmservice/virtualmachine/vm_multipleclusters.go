@@ -49,6 +49,7 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 		vmName string
 
 		linuxImageDisplayName string
+		linuxVMIName          string
 	)
 
 	BeforeEach(func() {
@@ -69,6 +70,10 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+
+		var err error
+		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
@@ -111,7 +116,7 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 					Namespace:        input.WCPNamespaceName,
 					Name:             vmName,
 					Labels:           map[string]string{"topology.kubernetes.io/zone": zoneName},
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -133,7 +138,7 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 				vmParameters := manifestbuilders.VirtualMachineYaml{
 					Namespace:        input.WCPNamespaceName,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,

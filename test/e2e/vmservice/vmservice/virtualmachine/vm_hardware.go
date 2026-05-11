@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -251,6 +252,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		isoSupportFSSEnabled           bool
 		allDisksArePVCapabilityEnabled bool
 		linuxImageDisplayName          string
+		linuxVMIName                   string
 	)
 
 	Context("VMs with attached hardware", Ordered, func() {
@@ -280,13 +282,20 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			wcpClient = input.WCPClient
 			kubeconfigPath := input.ClusterProxy.GetKubeconfigPath()
 
-			clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-			svClusterClient = clusterProxy.GetClient()
-			svClientSet := clusterProxy.GetClientSet()
+		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		svClusterClient = clusterProxy.GetClient()
+		svClientSet := clusterProxy.GetClientSet()
 
-			linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, svClientSet, filepath.Join(input.ArtifactFolder, specName))
+		DeferCleanup(cancelPodWatches)
 
-			isoSupportFSSEnabled = utils.IsFssEnabled(ctx,
+		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+
+		var vmiErr error
+		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, linuxImageDisplayName)
+		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, vmSvcNamespace)
+
+		isoSupportFSSEnabled = utils.IsFssEnabled(ctx,
 				svClusterClient,
 				config.GetVariable("VMOPNamespace"),
 				config.GetVariable("VMOPDeploymentName"),
@@ -426,7 +435,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             spec.pvcs,
@@ -789,7 +798,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 						Namespace:        vmSvcNamespace,
 						Name:             vmName,
-						ImageName:        linuxImageDisplayName,
+						ImageName:        linuxVMIName,
 						VMClassName:      clusterResources.VMClassName,
 						StorageClassName: clusterResources.StorageClassName,
 						PowerState:       string(vmPowerState),
@@ -872,7 +881,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
@@ -925,7 +934,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PowerState:       string(vmopv1a5.VirtualMachinePowerStateOn),
@@ -1004,7 +1013,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 						Namespace:        vmSvcNamespace,
 						Name:             vmName,
-						ImageName:        linuxImageDisplayName,
+						ImageName:        linuxVMIName,
 						VMClassName:      clusterResources.VMClassName,
 						StorageClassName: clusterResources.StorageClassName,
 						PVCs:             pvcs,
@@ -1046,7 +1055,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
@@ -1129,7 +1138,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
@@ -1214,7 +1223,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
@@ -1300,7 +1309,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
@@ -1356,7 +1365,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
@@ -1536,7 +1545,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					GuestID:          "ubuntu64Guest",
 					StorageClassName: clusterResources.StorageClassName,
@@ -1606,7 +1615,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             []manifestbuilders.PVC{},
@@ -2253,7 +2262,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 					Spec: vmopv1a5.VirtualMachineSpec{
 						ClassName:    clusterResources.VMClassName,
-						ImageName:    linuxImageDisplayName,
+						ImageName:    linuxVMIName,
 						StorageClass: clusterResources.StorageClassName,
 						Volumes: []vmopv1a5.VirtualMachineVolume{
 							{
@@ -2307,7 +2316,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 					Spec: vmopv1a5.VirtualMachineSpec{
 						ClassName:    clusterResources.VMClassName,
-						ImageName:    linuxImageDisplayName,
+						ImageName:    linuxVMIName,
 						StorageClass: clusterResources.StorageClassName,
 						Hardware: &vmopv1a5.VirtualMachineHardwareSpec{
 							SCSIControllers: []vmopv1a5.SCSIControllerSpec{
@@ -2366,7 +2375,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,

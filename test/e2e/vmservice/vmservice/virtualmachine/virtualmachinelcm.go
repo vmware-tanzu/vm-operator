@@ -20,6 +20,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -28,6 +29,7 @@ import (
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -1050,6 +1052,292 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			By("Verifying the VM has only the mandatory policy (match all) and its tag applied")
 			expectedPolicyNames = []string{mandatoryPolicyNameMatchAll}
 			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
+		})
+	})
+
+	Context("PLACEMENT-POLICY-COMBINATIONS", Label("placement-policy", "extended-functional", "experimental"), func() {
+		var (
+			tmpNamespaceName         string
+			tmpNamespaceVMIName      string
+			mandatoryComputePolicyID string
+			optionalComputePolicyID  string
+			mandatoryInfraPolicyName string
+			optionalInfraPolicyName  string
+			tagCategoryID            string
+			mandatoryHostTagID       string
+			mandatoryVMTagID         string
+			optionalHostTagID        string
+			optionalVMTagID          string
+			hostID                   string
+			existingVMName           string
+		)
+
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.IaaSComputePoliciesCapabilityName)
+
+			// Create temporary namespace for isolation.
+			tmpNamespaceName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6))
+			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+			clIDs := []string{vmserviceCLID}
+			vmClassNames := []string{clusterResources.VMClassName}
+			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+			var err error
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, tmpNamespaceName, input.ArtifactFolder)
+			Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
+			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
+
+			By("Resolving VMI name for the namespace")
+			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+			Expect(err).NotTo(HaveOccurred(), "failed to get VMI name in namespace %q", tmpNamespaceName)
+
+			By("Creating tag category for placement policies")
+			tagCategoryName := fmt.Sprintf("placement-policy-test-%s", tmpNamespaceName)
+			tagCategoryID, err = input.WCPClient.CreateTagCategory(tagCategoryName, "Tag category for placement policy E2E test")
+			Expect(err).NotTo(HaveOccurred(), "failed to create tag category")
+			Expect(tagCategoryID).NotTo(BeEmpty(), "tag category ID should be returned")
+
+			By("Creating mandatory policy tags")
+			mandatoryHostTagName := fmt.Sprintf("mandatory-host-tag-%s", tmpNamespaceName)
+			mandatoryHostTagID, err = input.WCPClient.CreateTag(mandatoryHostTagName, "Mandatory host tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create mandatory host tag")
+			Expect(mandatoryHostTagID).NotTo(BeEmpty(), "mandatory host tag ID should be returned")
+
+			mandatoryVMTagName := fmt.Sprintf("mandatory-vm-tag-%s", tmpNamespaceName)
+			mandatoryVMTagID, err = input.WCPClient.CreateTag(mandatoryVMTagName, "Mandatory VM tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create mandatory VM tag")
+			Expect(mandatoryVMTagID).NotTo(BeEmpty(), "mandatory VM tag ID should be returned")
+
+			By("Creating optional policy tags")
+			optionalHostTagName := fmt.Sprintf("optional-host-tag-%s", tmpNamespaceName)
+			optionalHostTagID, err = input.WCPClient.CreateTag(optionalHostTagName, "Optional host tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create optional host tag")
+			Expect(optionalHostTagID).NotTo(BeEmpty(), "optional host tag ID should be returned")
+
+			optionalVMTagName := fmt.Sprintf("optional-vm-tag-%s", tmpNamespaceName)
+			optionalVMTagID, err = input.WCPClient.CreateTag(optionalVMTagName, "Optional VM tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create optional VM tag")
+			Expect(optionalVMTagID).NotTo(BeEmpty(), "optional VM tag ID should be returned")
+
+			By("Getting available host IDs")
+			hostIDs, err := input.WCPClient.ListHostIDs()
+			Expect(err).NotTo(HaveOccurred(), "failed to list host IDs")
+			Expect(hostIDs).NotTo(BeEmpty(), "at least one host should be available")
+			hostID = hostIDs[0]
+
+			By("Assigning tags to the host")
+			Expect(input.WCPClient.AssignTagsToHost([]string{mandatoryHostTagID, optionalHostTagID}, hostID)).To(Succeed(), "failed to assign tags to host")
+
+			By("Creating mandatory compute policy with VM-Host affinity")
+			mandatoryComputePolicySpec := wcp.ComputePolicySpec{
+				Name:        fmt.Sprintf("mandatory-compute-policy-%s", capiutil.RandomString(4)),
+				Description: "Mandatory compute policy for placement test",
+				HostTagID:   mandatoryHostTagID,
+				VMTagID:     mandatoryVMTagID,
+				Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+			}
+			mandatoryComputePolicyID, err = input.WCPClient.CreateComputePolicy(mandatoryComputePolicySpec)
+			Expect(err).NotTo(HaveOccurred(), "failed to create mandatory compute policy")
+			Expect(mandatoryComputePolicyID).NotTo(BeEmpty(), "mandatory compute policy ID should be returned")
+
+			By("Creating optional compute policy with VM-Host affinity")
+			optionalComputePolicySpec := wcp.ComputePolicySpec{
+				Name:        fmt.Sprintf("optional-compute-policy-%s", capiutil.RandomString(4)),
+				Description: "Optional compute policy for placement test",
+				HostTagID:   optionalHostTagID,
+				VMTagID:     optionalVMTagID,
+				Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+			}
+			optionalComputePolicyID, err = input.WCPClient.CreateComputePolicy(optionalComputePolicySpec)
+			Expect(err).NotTo(HaveOccurred(), "failed to create optional compute policy")
+			Expect(optionalComputePolicyID).NotTo(BeEmpty(), "optional compute policy ID should be returned")
+
+			By("Creating mandatory infrastructure policy")
+			mandatoryInfraPolicyName = fmt.Sprintf("mandatory-infra-policy-%s", capiutil.RandomString(4))
+			mandatoryInfraPolicySpec := wcp.InfraPolicySpec{
+				Name:            mandatoryInfraPolicyName,
+				Description:     "Mandatory infrastructure policy for placement test",
+				ComputePolicyID: mandatoryComputePolicyID,
+				EnforcementMode: wcp.InfraPolicyEnforcementModeMandatory,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(mandatoryInfraPolicySpec)).To(Succeed(), "failed to create mandatory infrastructure policy")
+
+			By("Creating optional infrastructure policy")
+			optionalInfraPolicyName = fmt.Sprintf("optional-infra-policy-%s", capiutil.RandomString(4))
+			optionalInfraPolicySpec := wcp.InfraPolicySpec{
+				Name:            optionalInfraPolicyName,
+				Description:     "Optional infrastructure policy for placement test",
+				ComputePolicyID: optionalComputePolicyID,
+				EnforcementMode: wcp.InfraPolicyEnforcementModeOptional,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(optionalInfraPolicySpec)).To(Succeed(), "failed to create optional infrastructure policy")
+
+			By("Applying infrastructure policies to namespace")
+			Expect(input.WCPClient.UpdateNamespaceWithInfraPolicies(tmpNamespaceName, mandatoryInfraPolicyName, optionalInfraPolicyName)).To(Succeed(), "failed to apply infrastructure policies to namespace")
+		})
+
+		When("mandatory and optional policies are applied", func() {
+			It("should create PolicyEvaluation objects with compliant status", func() {
+				By("Creating a VM with explicit optional policy reference")
+				vmName = fmt.Sprintf("placement-test-vm-%s", capiutil.RandomString(4))
+				vmParameters := manifestbuilders.VirtualMachineYaml{
+					Namespace:        tmpNamespaceName,
+					Name:             vmName,
+					ImageName:        tmpNamespaceVMIName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					ResourcePolicy:   clusterResources.VMResourcePolicyName,
+					PowerState:       "PoweredOn",
+					Policies: []vmopv1a5.PolicySpec{
+						{
+							APIVersion: "vsphere.policy.vmware.com/v1alpha1",
+							Kind:       "ComputePolicy",
+							Name:       optionalInfraPolicyName,
+						},
+					},
+				}
+				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+				e2eframework.Logf("Creating VM with policy references:\n%s", string(vmYaml))
+				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM with policies")
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+				By("Verifying PolicyEvaluation is created and populated with mandatory and optional policies")
+				var policyEvaluation vspherepolv1.PolicyEvaluation
+				policyEvaluationName := fmt.Sprintf("vm-%s", vmName)
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      policyEvaluationName,
+					}, &policyEvaluation)).To(Succeed(), "PolicyEvaluation object should exist")
+
+					g.Expect(policyEvaluation.Status.Policies).NotTo(BeEmpty(), "PolicyEvaluation should have policies populated")
+
+					// Status.Policies[].Name is the name of the ComputePolicy CR, which is
+					// derived from the infra policy name, so the prefix check is stable.
+					var mandatoryPolicyFound, optionalPolicyFound bool
+					for _, policy := range policyEvaluation.Status.Policies {
+						if strings.Contains(policy.Name, "mandatory") {
+							mandatoryPolicyFound = true
+							g.Expect(policy.Kind).To(Equal("ComputePolicy"))
+							g.Expect(policy.Tags).To(ContainElement(mandatoryVMTagID))
+						}
+						if strings.Contains(policy.Name, "optional") {
+							optionalPolicyFound = true
+							g.Expect(policy.Kind).To(Equal("ComputePolicy"))
+							g.Expect(policy.Tags).To(ContainElement(optionalVMTagID))
+						}
+					}
+					g.Expect(mandatoryPolicyFound).To(BeTrue(), "mandatory policy should appear in PolicyEvaluation")
+					g.Expect(optionalPolicyFound).To(BeTrue(), "optional policy should appear in PolicyEvaluation")
+				}, config.GetIntervals("default", "wait-policy-evaluation-creation")...).
+					Should(Succeed(), "PolicyEvaluation should be created with expected policies")
+
+				By("Verifying PolicyEvaluation has Ready=True (compliant)")
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      policyEvaluationName,
+					}, &policyEvaluation)).To(Succeed())
+
+					cond := apimeta.FindStatusCondition(policyEvaluation.Status.Conditions, vspherepolv1.ReadyConditionType)
+					g.Expect(cond).NotTo(BeNil(), "Ready condition should be present")
+					g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "PolicyEvaluation should be compliant")
+				}, config.GetIntervals("default", "wait-policy-evaluation-compliant")...).
+					Should(Succeed(), "PolicyEvaluation should be compliant")
+
+				e2eframework.Logf("PolicyEvaluation for VM %s is compliant with %d policies", vmName, len(policyEvaluation.Status.Policies))
+			})
+		})
+
+		When("policies are applied retroactively", func() {
+			It("should create PolicyEvaluation for existing VMs", func() {
+				By("Creating a VM before applying new policies")
+				existingVMName = fmt.Sprintf("existing-vm-%s", capiutil.RandomString(4))
+				vmParameters := manifestbuilders.VirtualMachineYaml{
+					Namespace:        tmpNamespaceName,
+					Name:             existingVMName,
+					ImageName:        tmpNamespaceVMIName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					ResourcePolicy:   clusterResources.VMResourcePolicyName,
+					PowerState:       "PoweredOn",
+				}
+				existingVMYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+				e2eframework.Logf("Creating existing VM:\n%s", string(existingVMYaml))
+				Expect(clusterProxy.CreateWithArgs(ctx, existingVMYaml)).To(Succeed(), "failed to create existing VM")
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
+
+				By("Verifying initial PolicyEvaluation is created with the mandatory policy")
+				existingPEName := fmt.Sprintf("vm-%s", existingVMName)
+				var policyEvaluation vspherepolv1.PolicyEvaluation
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      existingPEName,
+					}, &policyEvaluation)).To(Succeed(), "initial PolicyEvaluation should exist")
+					g.Expect(policyEvaluation.Status.Policies).NotTo(BeEmpty(), "initial PolicyEvaluation should contain the mandatory policy")
+				}, config.GetIntervals("default", "wait-policy-evaluation-creation")...).
+					Should(Succeed(), "initial PolicyEvaluation should be created")
+
+				initialPolicyCount := len(policyEvaluation.Status.Policies)
+				e2eframework.Logf("Existing VM has %d initial policies", initialPolicyCount)
+
+				By("Creating and applying a new retroactive infrastructure policy to the namespace")
+				retroactiveInfraPolicyName := fmt.Sprintf("retroactive-infra-policy-%s", capiutil.RandomString(4))
+				retroactiveComputePolicySpec := wcp.ComputePolicySpec{
+					Name:        fmt.Sprintf("retroactive-compute-policy-%s", capiutil.RandomString(4)),
+					Description: "Retroactive compute policy for placement test",
+					HostTagID:   mandatoryHostTagID,
+					VMTagID:     mandatoryVMTagID,
+					Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+				}
+				retroactiveComputePolicyID, err := input.WCPClient.CreateComputePolicy(retroactiveComputePolicySpec)
+				Expect(err).NotTo(HaveOccurred(), "failed to create retroactive compute policy")
+				Expect(retroactiveComputePolicyID).NotTo(BeEmpty(), "retroactive compute policy ID should be returned")
+
+				retroactiveInfraPolicySpec := wcp.InfraPolicySpec{
+					Name:            retroactiveInfraPolicyName,
+					Description:     "Retroactive infrastructure policy for placement test",
+					ComputePolicyID: retroactiveComputePolicyID,
+					EnforcementMode: wcp.InfraPolicyEnforcementModeMandatory,
+				}
+				Expect(input.WCPClient.CreateInfraPolicy(retroactiveInfraPolicySpec)).To(Succeed(), "failed to create retroactive infrastructure policy")
+				Expect(input.WCPClient.UpdateNamespaceWithInfraPolicies(tmpNamespaceName, mandatoryInfraPolicyName, optionalInfraPolicyName, retroactiveInfraPolicyName)).
+					To(Succeed(), "failed to apply retroactive policy to namespace")
+
+				By("Verifying the existing VM's PolicyEvaluation is updated to include the new policy and remains compliant")
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      existingPEName,
+					}, &policyEvaluation)).To(Succeed())
+
+					g.Expect(policyEvaluation.Status.Policies).To(HaveLen(initialPolicyCount+1),
+						"PolicyEvaluation should have gained one additional policy")
+
+					retroactivePolicyFound := false
+					for _, policy := range policyEvaluation.Status.Policies {
+						if strings.Contains(policy.Name, "retroactive") {
+							retroactivePolicyFound = true
+							break
+						}
+					}
+					g.Expect(retroactivePolicyFound).To(BeTrue(), "retroactive policy should appear in updated PolicyEvaluation")
+
+					cond := apimeta.FindStatusCondition(policyEvaluation.Status.Conditions, vspherepolv1.ReadyConditionType)
+					g.Expect(cond).NotTo(BeNil(), "Ready condition should be present")
+					g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "updated PolicyEvaluation should remain compliant")
+				}, config.GetIntervals("default", "wait-policy-evaluation-update")...).
+					Should(Succeed(), "existing VM should receive the retroactive policy and remain compliant")
+
+				e2eframework.Logf("Existing VM %s received retroactive policy and has %d total policies",
+					existingVMName, len(policyEvaluation.Status.Policies))
+
+				// Delete the VM explicitly so the outer AfterEach namespace teardown is faster.
+				Expect(clusterProxy.DeleteWithArgs(ctx, existingVMYaml)).To(Succeed(), "failed to delete existing VM")
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
+			})
 		})
 	})
 }

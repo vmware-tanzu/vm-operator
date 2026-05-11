@@ -993,6 +993,13 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		return fmt.Errorf("failed to fetch vm properties: %w", err)
 	}
 
+	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("location", reconcileErr, err)
+	}
+
 	//
 	// 2. Get the recent tasks.
 	//
@@ -1028,13 +1035,6 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			return errOrReconcileErr(reconcileErr, err)
 		}
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
-	}
-
-	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
-		if pkgerr.IsNoRequeueError(err) {
-			return errOrReconcileErr(reconcileErr, err)
-		}
-		reconcileErr = getReconcileErr("location", reconcileErr, err)
 	}
 
 	//
@@ -1163,12 +1163,6 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 			"VM is in an unauthorized Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace '%s' to resume reconciliation.",
 			vmCtx.VM.Namespace,
 		)
-
-		// Pause the VM to prevent VM Operator from making conflicting changes in the wrong location
-		if vmCtx.VM.Annotations == nil {
-			vmCtx.VM.Annotations = make(map[string]string)
-		}
-		vmCtx.VM.Annotations[vmopv1.PauseAnnotation] = "true"
 
 		return pkgerr.NoRequeueError{Message: fmt.Errorf(
 			"reconciliation stopped for the VM %s because it is moved to unauthorized Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",

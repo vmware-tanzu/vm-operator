@@ -209,6 +209,7 @@ linters:
           - $all
           - "!$test"
           - "!**/test/builder/*.go"
+          - "!**/test/builder/log/*.go"
           - "!**/matcher.go"
           - "!**/pkg/util/kube/storage.go"
           allow:

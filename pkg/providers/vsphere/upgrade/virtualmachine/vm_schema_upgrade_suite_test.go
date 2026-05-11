@@ -9,12 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/klog/v2"
 )
-
-func init() {
-	klog.SetOutput(GinkgoWriter)
-}
 
 func TestVMSchemaUpgrade(t *testing.T) {
 	RegisterFailHandler(Fail)

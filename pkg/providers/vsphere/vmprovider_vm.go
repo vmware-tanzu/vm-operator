@@ -1121,7 +1121,6 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	if vmCtx.MoVM.ResourcePool == nil {
 		return fmt.Errorf("VM %s has no resource pool assigned", vmCtx.VM.Name)
 	}
-	currentRPMoRef := *vmCtx.MoVM.ResourcePool
 
 	// 2. Get the Namespace's Root Resource Pool MoRef
 	// We use the topology utility to find the RP mapped to this K8s Namespace
@@ -1135,40 +1134,29 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		logger.Error(err, "failed to get expected namespace resource pool")
 		return nil
 	}
+
 	// 3. Validate Ancestry
 	// Check if the VM is in the Root RP or a Child RP (common for VKS)
-	isValid := false
-	// Case A: VM is directly in the Namespace Root RP
-	if currentRPMoRef.Value == expectedRootRPMoID {
-		isValid = true
-	} else {
-		poolObj := object.NewResourcePool(vcClient.VimClient(), currentRPMoRef)
-		var moPool mo.ResourcePool
-		// Fetch only the "parent" property to minimize API overhead
-		err := poolObj.Properties(vmCtx, poolObj.Reference(), []string{"parent"}, &moPool)
-
-		if err == nil && moPool.Parent != nil {
-			// Check if the parent of this child RP is the Namespace Root RP
-			if moPool.Parent.Value == expectedRootRPMoID {
-				isValid = true
-			}
-		}
-	}
+	isValid, err := vcenter.IsVMInValidResourcePool(
+		vmCtx,
+		vcClient.VimClient(),
+		vmCtx.MoVM.ResourcePool.Value,
+		expectedRootRPMoID,
+	)
 
 	// 4. Handle Mismatch
 	if !isValid {
-
 		pkgcnd.MarkFalse(
 			vmCtx.VM,
 			vmopv1.VirtualMachineConditionInAuthorizedLocation,
 			"LocationMismatch",
-			"VM is in an unauthorized Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace '%s' to resume reconciliation.",
+			"VM is in an unauthorized Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
 			vmCtx.VM.Namespace,
 		)
 
-		return pkgerr.NoRequeueError{Message: fmt.Errorf(
+		return pkgerr.NoRequeueError{Message: fmt.Sprintf(
 			"reconciliation stopped for the VM %s because it is moved to unauthorized Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
-			vmCtx.VM.Name, expectedRootRPMoID, currentRPMoRef.Value).Error()}
+			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
 	}
 
 	pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionInAuthorizedLocation)

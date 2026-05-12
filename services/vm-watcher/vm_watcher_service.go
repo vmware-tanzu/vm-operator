@@ -256,8 +256,7 @@ func (s Service) waitForChanges(ctx context.Context) error {
 	w, err := watcher.Start(
 		ctx,
 		vcClient.VimClient(),
-		[]string{"resourcePool",
-			"parent"},
+		nil,
 		nil,
 		s.lookupNamespacedName,
 		moRefWithIDs)

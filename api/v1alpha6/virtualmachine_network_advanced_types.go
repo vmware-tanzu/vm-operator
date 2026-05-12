@@ -110,6 +110,8 @@ const (
 	PNICQueueFeatureReceiveSideScaling PNICQueueFeature = "ReceiveSideScaling"
 )
 
+// This type is introduced to handle the fact that vSphere uses integer encoding 1/2 here, not TRUE/FALSE.
+
 // UDPRSSMode controls whether UDP Receive Side Scaling is enabled on a VMXNet3
 // interface.
 type UDPRSSMode bool

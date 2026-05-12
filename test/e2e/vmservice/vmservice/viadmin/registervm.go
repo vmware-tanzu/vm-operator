@@ -316,7 +316,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 
 			// Unregister all PVCs using the helper function
-			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, input.WCPNamespaceName, vmName, pvcNames, config)
+			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, pvcNames, config)
 
 			// reconfigBeforeRegister changes the VM's resource.yaml, backupVersion to the given value.
 			reconfigBeforeRegister := func(value []string) {
@@ -482,7 +482,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 
 			// Unregister all PVCs using the helper function
-			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, input.WCPNamespaceName, vmName, pvcNames, config)
+			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, pvcNames, config)
 
 			// reconfigBeforeRegister changes the VM's resource.yaml, backupVersion and PVC properties to the given value.
 			reconfigBeforeRegister := func(value []string) {

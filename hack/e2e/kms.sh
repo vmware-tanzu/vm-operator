@@ -24,14 +24,17 @@ find_gateway_ip() {
   #  vm == external-gateway
   # NSX:
   #  vm == external-vm-gateway
-  vm=$(govc find / -type m -name external*gateway)
+  vm=$(govc find / -type m -name external*gateway 2>/dev/null || true)
+  if [ -z "$vm" ]; then
+    return 0
+  fi
 
-  # Use grepcidr if available, otherwise fallback to grep for common management networks
+  # Use grepcidr if available, otherwise fallback to grep for common management networks.
   if command -v grepcidr >/dev/null 2>&1; then
-    govc vm.ip -a -v4 "$vm" | tr ',' '\n' | grepcidr "$mgmtCidr"
+    govc vm.ip -a -v4 "$vm" 2>/dev/null | tr ',' '\n' | grepcidr "$mgmtCidr" || true
   else
-    # Fallback: get first non-169.254.x.x IP (avoid link-local)
-    govc vm.ip -a -v4 "$vm" | tr ',' '\n' | grep -v "^169\.254\." | head -n1
+    # Fallback: get first non-link-local 10.x IP (management network uses 10.0.0.0/8).
+    govc vm.ip -a -v4 "$vm" 2>/dev/null | tr ',' '\n' | grep -v "^169\.254\." | grep "^10\." | head -n1 || true
   fi
 }
 
@@ -52,28 +55,56 @@ install() {
   setup "$2" || echo "KMS setup failed"
 }
 
+# kms_is_green returns 0 if the named provider already exists and has
+# OverallStatus == "green", 1 otherwise.  Safe to call from multiple parallel
+# containers because it is read-only.
+kms_is_green() {
+  local name="$1"
+  local status
+  status=$(govc kms.ls -json "$name" 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('OverallStatus',''))" \
+    2>/dev/null || true)
+  [ "${status}" = "green" ]
+}
+
 # See also: vCenter -> Configure -> Security -> Key Providers
 setup() {
   ip="$1"
 
-  name=gce2e-standard
-  if ! govc kms.ls "$name" 2> /dev/null ; then
-    govc kms.add -n pykmip -a "$ip" "$name"
+  # gce2e-standard requires a running pykmip server on the gateway VM.
+  # Only configure it when a gateway IP is available; skip silently otherwise.
+  if [ -n "${ip:-}" ]; then
+    name=gce2e-standard
+    if kms_is_green "$name"; then
+      echo "KMS provider ${name} already green, skipping setup"
+    else
+      if ! govc kms.ls "$name" 2> /dev/null ; then
+        govc kms.add -n pykmip -a "$ip" "$name"
+      fi
+      crt=$(cat "$crt_dir/pykmip-crt.pem")
+      key=$(cat "$crt_dir/pykmip-key.pem")
+
+      # Note: using the same key pair for the server (pykmip) and client (vCenter)
+      govc kms.trust -server-cert "$crt" -client-cert "$crt" -client-key "$key" "$name"
+    fi
+    govc kms.ls "$name"
+  else
+    echo "Skipping gce2e-standard KMS setup: no gateway IP available"
   fi
-  crt=$(cat "$crt_dir/pykmip-crt.pem")
-  key=$(cat "$crt_dir/pykmip-key.pem")
 
-  # Note: using the same key pair for the server (pykmip) and client (vCenter)
-  govc kms.trust -server-cert "$crt" -client-cert "$crt" -client-key "$key" "$name"
-  govc kms.ls "$name"
-
+  # gce2e-native is a vCenter-native key provider that does not need an external
+  # server. Configure it unconditionally so encryption tests can run even on
+  # testbeds that have no VDS gateway VM (e.g. NSX or minimal testbeds).
   name=gce2e-native
-  if ! govc kms.ls "$name" 2> /dev/null ; then
-    govc kms.add -tpm=false -N "$name"
+  if kms_is_green "$name"; then
+    echo "KMS provider ${name} already green, skipping setup"
+  else
+    if ! govc kms.ls "$name" 2> /dev/null ; then
+      govc kms.add -tpm=false -N "$name"
+    fi
+    # Take a backup (and throw it away), required to activate the provider.
+    govc kms.export -f /dev/null "$name"
   fi
-  # Take a backup (and throw it away), required to activate the provider
-  govc kms.export -f /dev/null "$name"
-
   govc kms.ls "$name"
 }
 

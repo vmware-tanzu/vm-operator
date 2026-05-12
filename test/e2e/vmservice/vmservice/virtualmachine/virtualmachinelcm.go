@@ -676,6 +676,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM with CD-ROM:\n %s", string(vmYaml))
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 
 		By("Verifying network provider CR has an IP assigned for the VM")

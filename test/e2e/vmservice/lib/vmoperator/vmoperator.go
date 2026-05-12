@@ -98,6 +98,37 @@ func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E
 	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(), "Timed out waiting for VirtualMachine %s to be created", vmName)
 }
 
+// WaitForVirtualMachineImageCacheReady waits for VirtualMachineConditionImageCacheReady to become True.
+// This is needed for ISO-type images whose content library files must be cached on the datastore.
+func WaitForVirtualMachineImageCacheReady(ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client, ns, vmName string) {
+	By("Waiting for VirtualMachine image cache to be ready")
+
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		if err != nil {
+			e2eframework.Logf("retry waiting for image cache: %v", err)
+			g.Expect(err).ToNot(HaveOccurred())
+			return
+		}
+
+		for _, cond := range vm.Status.Conditions {
+			if cond.Type == vmopv1a5.VirtualMachineConditionImageCacheReady {
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
+					"VirtualMachineConditionImageCacheReady is %s: %s", cond.Status, cond.Message)
+				return
+			}
+		}
+
+		// Condition not yet present — keep waiting.
+		g.Expect(false).To(BeTrue(),
+			"VirtualMachineConditionImageCacheReady condition not yet present on VM %s/%s",
+			ns, vmName)
+	}, config.GetIntervals("default", "default/wait-virtual-machine-image-creation")...).
+		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
+}
+
 // Utility function to wait for the VM's Status.Class.Name to be updated.
 func WaitForVirtualMachineStatusClassUpdated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, className string) {
 	Eventually(func(g Gomega) bool {

@@ -15,7 +15,7 @@ set -x
 SCRIPT_DIR="$(dirname "${BASH_SOURCE}")"
 GOVC_INSECURE="${GOVC_INSECURE:-1}"
 GOVC_USERNAME="${GOVC_USERNAME:-administrator@vsphere.local}"
-GOVC_PASSWORD="${GOVC_PASSWORD:-Admin!23}"
+GOVC_PASSWORD="${GOVC_PASSWORD:-vmware}"
 GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
 GATEWAY_VM_PASSWORD=${GATEWAY_VM_PASSWORD:-'vmware'}
 
@@ -39,12 +39,16 @@ find_gateway_ip() {
 	mgmtCidr=$2
 	GATEWAY_VM_PATH=$(find_gateway_vm_path)
 	ips=$(GOVC_URL=$vc GOVC_INSECURE=$GOVC_INSECURE GOVC_USERNAME=$GOVC_USERNAME GOVC_PASSWORD=$GOVC_PASSWORD govc vm.ip -a "${GATEWAY_VM_PATH}")
-	# loop over all ips, only return the one starts with '10.' which is
-	# company-level routable ip
+	# loop over all ips, only return the one that is in the management CIDR
 	IFS=',' read -ra ADDR <<< "$ips"
 	for i in "${ADDR[@]}"; do
-		# ignore error when IP not in CIDR
-		echo "$i" | grepcidr "$mgmtCidr" || true
+		if command -v grepcidr >/dev/null 2>&1; then
+			echo "$i" | grepcidr "$mgmtCidr" || true
+		else
+			# fallback: accept any non-link-local IP that starts with a '10.' prefix
+			# (the management network uses 10.0.0.0/8 in standard testbeds)
+			echo "$i" | grep -v "^169\.254\." | grep "^10\." || true
+		fi
 	done
 }
 

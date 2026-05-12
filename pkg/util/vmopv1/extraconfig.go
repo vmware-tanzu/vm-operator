@@ -231,7 +231,7 @@ func decodeSliceVMXField(ctx context.Context, rv reflect.Value, raw string) erro
 			if err != nil {
 				logger.V(1).Info("vmx decode: cannot parse int32 in value, skipping field",
 					"part", p, "raw", raw)
-				return nil
+				return nil //nolint:nilerr // intentional: log and skip rather than propagate
 			}
 			elem := reflect.New(elemType).Elem()
 			elem.SetInt(n)
@@ -368,11 +368,11 @@ func decodePNICQueueFeatures(raw string) []string {
 	}
 
 	var elems []string
-	for bit := 0; bit < vmopv1.PNICFeaturesMaxItems; bit++ {
-		if n&(1<<uint(bit)) == 0 {
+	for bit := uint(0); bit < vmopv1.PNICFeaturesMaxItems; bit++ {
+		if n&(1<<bit) == 0 {
 			continue
 		}
-		power := uint64(1) << uint(bit)
+		power := uint64(1) << bit
 		switch power {
 		case 1:
 			elems = append(elems, string(vmopv1.PNICQueueFeatureLargeReceiveOffload))

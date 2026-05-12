@@ -1145,18 +1145,21 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	)
 
 	// 4. Handle Mismatch
-	if !isValid {
-		pkgcnd.MarkFalse(
-			vmCtx.VM,
-			vmopv1.VirtualMachineConditionInAuthorizedLocation,
-			"LocationMismatch",
-			"VM is in an unauthorized Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
-			vmCtx.VM.Namespace,
-		)
+	if err != nil || !isValid {
+		if !isValid {
+			pkgcnd.MarkFalse(
+				vmCtx.VM,
+				vmopv1.VirtualMachineConditionInAuthorizedLocation,
+				"LocationMismatch",
+				"VM is in an unauthorized Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
+				vmCtx.VM.Namespace,
+			)
 
-		return pkgerr.NoRequeueError{Message: fmt.Sprintf(
-			"reconciliation stopped for the VM %s because it is moved to unauthorized Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
-			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
+			return pkgerr.NoRequeueError{Message: fmt.Sprintf(
+				"reconciliation stopped for the VM %s because it is moved to unauthorized Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
+				vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
+		}
+		return err
 	}
 
 	pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionInAuthorizedLocation)

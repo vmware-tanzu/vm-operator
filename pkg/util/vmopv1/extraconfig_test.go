@@ -195,7 +195,7 @@ var _ = Describe("DecodeVMXFieldValue/[]PNICQueueFeature", func() {
 			}
 		},
 
-		// Zero / unparseable → empty slice (field not set).
+		// Zero / unparsable → empty slice (field not set).
 		Entry("0 → empty", "0", true, nil),
 		Entry("non-integer → empty", "auto", true, nil),
 		Entry("empty string → empty", "", true, nil),

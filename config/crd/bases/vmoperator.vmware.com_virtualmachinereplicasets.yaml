@@ -7829,6 +7829,8 @@ spec:
                               CPUAffinityExclusiveNoStatsEnabled disables per-VM CPU accounting
                               statistics, reducing scheduler overhead for latency-sensitive workloads.
                               Typically set alongside LatencySensitivity=High.
+
+                              When nil, the hypervisor decides the effective value.
                             type: boolean
                           defaultVolumeProvisioningMode:
                             description: |-
@@ -7871,6 +7873,8 @@ spec:
                               HugePages1GEnabled enables 1 GB huge page backing for VM memory, reducing
                               TLB pressure for memory-intensive workloads such as Telco VNFs.
                               Cannot be changed while the VM is powered on.
+
+                              When nil, the hypervisor decides the effective value.
                             type: boolean
                           pNUMANodeAffinity:
                             description: |-
@@ -7889,19 +7893,24 @@ spec:
                               PreferHTEnabled hints to the ESXi scheduler to prefer placing vCPUs on
                               hyperthreads of the same physical core, improving memory locality for
                               latency-sensitive workloads.
+
+                              When nil, the hypervisor decides the effective value.
                             type: boolean
                           timeTrackerLowLatencyEnabled:
                             description: |-
                               TimeTrackerLowLatencyEnabled enables the low-latency time tracking mode,
                               using a higher-resolution timer to reduce scheduling jitter for
                               latency-sensitive workloads. Typically set alongside LatencySensitivity=High.
+
+                              When nil, the hypervisor decides the effective value.
                             type: boolean
                           vmxSwapEnabled:
                             description: |-
                               VMXSwapEnabled controls whether the VMX process memory may be swapped to
                               disk by the host. Set to false to disable VMX swapping, reducing latency
-                              jitter for memory-sensitive workloads. When nil the VMX key is left unset,
-                              preserving the hypervisor default.
+                              jitter for memory-sensitive workloads.
+
+                              When nil, the hypervisor decides the effective value.
                             type: boolean
                         type: object
                       affinity:
@@ -10283,7 +10292,7 @@ spec:
                                             or a non-empty decimal digits string for
                                             VMX pNICFeatures bitmask values (powers
                                             of two such as 1, 2, 4, 8)
-                                          rule: self.matches("^(LargeReceiveOffload|ReceiveSideScaling|^[1-9][0-9]*)$")
+                                          rule: self.matches("^(LargeReceiveOffload|ReceiveSideScaling|[1-9][0-9]*)$")
                                       maxItems: 16
                                       type: array
                                       x-kubernetes-list-type: set
@@ -10294,12 +10303,16 @@ spec:
                                         queues using a hardware-computed hash. Reduces hypervisor CPU overhead
                                         and improves multi-core utilization for high-throughput workloads.
                                         Requires pNIC RSS support.
+
+                                        When nil, the hypervisor decides the effective value.
                                       type: boolean
                                     udpRSSEnabled:
                                       description: |-
                                         UDPRSSEnabled extends RSS to UDP traffic. By default RSS only distributes
                                         TCP flows. Enabling this also distributes UDP flows, improving throughput
                                         for UDP-heavy workloads such as GTP-U tunnels, QUIC, or media streaming.
+
+                                        When nil, the hypervisor decides the effective value.
                                       type: boolean
                                     uptv2Enabled:
                                       description: |-

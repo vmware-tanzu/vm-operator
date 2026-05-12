@@ -169,10 +169,10 @@ func ReconcileSchemaUpgrade(
 
 	if features.TelcoVMServiceAPI {
 		if f := vmopv1util.FeatureVersionTelcoVMServiceAPI; !vmFeatureVersion.Has(f) {
-		if _, err := vmbackfill.ExtraConfigFromMoVM(vm, moVM); err != nil {
-					return fmt.Errorf("backfill extraconfig: %w", err)
-				}
-				if _, err := vmbackfill.NICConfigFromMoVM(vm, moVM); err != nil {
+			if _, err := vmbackfill.ExtraConfigFromMoVM(ctx, vm, moVM); err != nil {
+				return fmt.Errorf("backfill extraconfig: %w", err)
+			}
+			if _, err := vmbackfill.NICConfigFromMoVM(ctx, vm, moVM); err != nil {
 				return fmt.Errorf("backfill nic: %w", err)
 			}
 			vmFeatureVersion.Set(f)

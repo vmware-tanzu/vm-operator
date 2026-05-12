@@ -6,6 +6,7 @@
 package backfill
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -25,9 +26,14 @@ import (
 // vSphere bookkeeping keys from polluting the spec. No entries are appended to
 // spec.advanced.ExtraConfig.
 //
+// Host-default sentinels (auto, default, dontcare) leave the corresponding
+// spec field nil, implementing the nil=auto convention: nil means "let the
+// hypervisor decide."
+//
 // Called once per VM during schema upgrade when FeatureVersionTelcoVMServiceAPI
 // is being set. Returns true if any field was mutated.
 func ExtraConfigFromMoVM(
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) (bool, error) {
 
@@ -35,10 +41,11 @@ func ExtraConfigFromMoVM(
 		return false, nil
 	}
 
-	return backfillAdvancedSpec(vm, moVM.Config.ExtraConfig)
+	return backfillAdvancedSpec(ctx, vm, moVM.Config.ExtraConfig)
 }
 
 func backfillAdvancedSpec(
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	extraConfig []vimtypes.BaseOptionValue) (bool, error) {
 
@@ -66,14 +73,23 @@ func backfillAdvancedSpec(
 			}
 		}
 
+		// Decode into a advancedSpec struct to avoid initialising vm.Spec.Advanced
+		// prematurely. If the raw value is a host-default sentinel (auto,
+		// default, dontcare) the decoded field stays zero and we skip without
+		// touching spec — preserving the nil=auto convention for *bool fields.
+		var advancedSpec vmopv1.VirtualMachineAdvancedSpec
+		advancedSpecFieldValue := reflect.ValueOf(&advancedSpec).Elem().Field(fieldIdx)
+		if err := vmopv1util.DecodeVMXFieldValue(ctx, advancedSpecFieldValue, raw); err != nil {
+			return false, fmt.Errorf("decode vmx field %q: %w", ov.Key, err)
+		}
+		if advancedSpecFieldValue.IsZero() {
+			continue
+		}
+
 		if vm.Spec.Advanced == nil {
 			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 		}
-
-		rv := reflect.ValueOf(vm.Spec.Advanced).Elem().Field(fieldIdx)
-		if err := vmopv1util.DecodeVMXFieldValue(rv, raw); err != nil {
-			return false, fmt.Errorf("decode vmx field %q: %w", ov.Key, err)
-		}
+		reflect.ValueOf(vm.Spec.Advanced).Elem().Field(fieldIdx).Set(advancedSpecFieldValue)
 		mutated = true
 	}
 	return mutated, nil

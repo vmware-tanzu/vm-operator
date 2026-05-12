@@ -6,6 +6,7 @@
 package backfill
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -39,6 +40,7 @@ import (
 // Spec wins: only nil/zero fields are written.
 // Returns true if any field was mutated.
 func NICConfigFromMoVM(
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) (bool, error) {
 
@@ -76,6 +78,7 @@ func NICConfigFromMoVM(
 		}
 
 		if m, err := backfillNICSpec(
+			ctx,
 			vmopv1util.EthernetExtraConfigPrefix(dev.GetVirtualDevice().Key),
 			iface,
 			moVM.Config.ExtraConfig); err != nil {
@@ -117,15 +120,15 @@ func mapVimEthernetToNetworkInterfaceType(
 }
 
 // backfillNICSpec backfills vmxnet3.* spec fields from ExtraConfig using the
-// given prefix (e.g. "ethernet0."). Only applies to VMXNet3 or type-unset NICs.
+// given prefix (e.g. "ethernet0."). Only applies to VMXNet3 NICs.
 func backfillNICSpec(
+	ctx context.Context,
 	prefix string,
 	iface *vmopv1.VirtualMachineNetworkInterfaceSpec,
 	extraConfig []vimtypes.BaseOptionValue) (bool, error) {
 
-	// Only backfill vmxnet3 fields for VMXNet3 (or type-unset) NICs.
-	if iface.Type != "" &&
-		iface.Type != vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3 {
+	// Only backfill vmxnet3 fields for VMXNet3 NICs.
+	if iface.Type != vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3 {
 		return false, nil
 	}
 	mutated := false
@@ -159,14 +162,23 @@ func backfillNICSpec(
 			}
 		}
 
+		// Decode into a nicSpec struct to avoid initialising iface.VMXNet3
+		// prematurely. If the raw value is a host-default sentinel (auto,
+		// default, dontcare) the decoded field stays zero and we skip without
+		// touching spec — preserving the nil=auto convention for *bool fields.
+		var nicSpec vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec
+		nicSpecFieldValue := reflect.ValueOf(&nicSpec).Elem().Field(fieldIdx)
+		if err := vmopv1util.DecodeVMXFieldValue(ctx, nicSpecFieldValue, raw); err != nil {
+			return false, fmt.Errorf("decode vmx nic field %q: %w", ov.Key, err)
+		}
+		if nicSpecFieldValue.IsZero() {
+			continue
+		}
+
 		if iface.VMXNet3 == nil {
 			iface.VMXNet3 = &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{}
 		}
-
-		rv := reflect.ValueOf(iface.VMXNet3).Elem().Field(fieldIdx)
-		if err := vmopv1util.DecodeVMXFieldValue(rv, raw); err != nil {
-			return false, fmt.Errorf("decode vmx nic field %q: %w", ov.Key, err)
-		}
+		reflect.ValueOf(iface.VMXNet3).Elem().Field(fieldIdx).Set(nicSpecFieldValue)
 		mutated = true
 	}
 	return mutated, nil

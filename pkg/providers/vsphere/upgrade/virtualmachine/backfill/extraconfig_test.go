@@ -6,6 +6,8 @@
 package backfill_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -18,6 +20,8 @@ import (
 )
 
 var _ = Describe("BackfillExtraConfigFromMoVM", func() {
+
+	ctx := context.Background()
 
 	moVMWithExtraConfig := func(kvs ...*vimtypes.OptionValue) mo.VirtualMachine {
 		ec := make([]vimtypes.BaseOptionValue, len(kvs))
@@ -47,7 +51,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		func(key, raw string, check func(*vmopv1.VirtualMachineAdvancedSpec)) {
 			moVM = moVMWithExtraConfig(ov(key, raw))
 
-			mutated, err := backfill.ExtraConfigFromMoVM(vm, moVM)
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutated).To(BeTrue(), "expected mutation for key %q", key)
 			Expect(vm.Spec.Advanced).ToNot(BeNil())
@@ -107,7 +111,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		})
 
 		It("returns no mutation", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(vm, moVM)
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Advanced).To(BeNil())
@@ -116,7 +120,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 
 	When("moVM ExtraConfig is empty", func() {
 		It("returns no mutation", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(vm, moVM)
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Advanced).To(BeNil())
@@ -132,7 +136,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		})
 
 		It("does not overwrite the existing value", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(vm, moVM)
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.Advanced.PreferHTEnabled).To(BeTrue())
@@ -148,17 +152,78 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		})
 
 		It("leaves the spec value unchanged", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(vm, moVM)
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.Advanced.VMXSwapEnabled).To(BeFalse())
 		})
 	})
 
+	DescribeTable("auto/default/dontcare sentinels leave spec field nil and report no mutation",
+		func(key, raw string) {
+			moVM = moVMWithExtraConfig(ov(key, raw))
+
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse(),
+				"auto sentinel %q for key %q should not mutate spec", raw, key)
+			// spec.Advanced must stay nil — no empty struct created.
+			Expect(vm.Spec.Advanced).To(BeNil())
+		},
+		Entry("PreferHTEnabled auto",        "numa.vcpu.preferHT",                 "auto"),
+		Entry("PreferHTEnabled AUTO",        "numa.vcpu.preferHT",                 "AUTO"),
+		Entry("PreferHTEnabled DEFAULT",     "numa.vcpu.preferHT",                 "DEFAULT"),
+		Entry("PreferHTEnabled default",     "numa.vcpu.preferHT",                 "default"),
+		Entry("HugePages1GEnabled dontcare", "sched.mem.lpage.enable1GPage",       "dontcare"),
+		Entry("HugePages1GEnabled auto",     "sched.mem.lpage.enable1GPage",       "auto"),
+		Entry("TimeTracker auto",            "timeTracker.lowLatency",             "auto"),
+		Entry("TimeTracker DEFAULT",         "timeTracker.lowLatency",             "DEFAULT"),
+		Entry("CPUAffinity DONTCARE",        "sched.cpu.affinity.exclusiveNoStats","DONTCARE"),
+		Entry("VMXSwap default",             "sched.swap.vmxSwapEnabled",          "default"),
+	)
+
+	When("all vmx-tagged keys carry auto sentinels", func() {
+		BeforeEach(func() {
+			moVM = moVMWithExtraConfig(
+				ov("numa.vcpu.preferHT",                  "DEFAULT"),
+				ov("sched.mem.lpage.enable1GPage",        "auto"),
+				ov("timeTracker.lowLatency",              "auto"),
+				ov("sched.cpu.affinity.exclusiveNoStats", "dontcare"),
+				ov("sched.swap.vmxSwapEnabled",           "auto"),
+			)
+		})
+
+		It("leaves spec.Advanced nil — no empty struct created", func() {
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+			Expect(vm.Spec.Advanced).To(BeNil())
+		})
+	})
+
+	DescribeTable("extended bool forms are accepted",
+		func(key, raw string, wantTrue bool) {
+			moVM = moVMWithExtraConfig(ov(key, raw))
+
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeTrue(), "key %q raw %q should mutate", key, raw)
+			Expect(vm.Spec.Advanced).ToNot(BeNil())
+			Expect(vm.Spec.Advanced.PreferHTEnabled).ToNot(BeNil())
+			Expect(*vm.Spec.Advanced.PreferHTEnabled).To(Equal(wantTrue))
+		},
+		Entry("yes → true",  "numa.vcpu.preferHT", "yes",  true),
+		Entry("no → false",  "numa.vcpu.preferHT", "no",   false),
+		Entry("on → true",   "numa.vcpu.preferHT", "on",   true),
+		Entry("off → false",  "numa.vcpu.preferHT", "off",  false),
+		Entry("1 → true",    "numa.vcpu.preferHT", "1",    true),
+		Entry("0 → false",   "numa.vcpu.preferHT", "0",    false),
+	)
+
 	DescribeTable("unknown / bookkeeping keys are silently dropped",
 		func(key string) {
 			moVM = moVMWithExtraConfig(ov(key, "value"))
-			mutated, err := backfill.ExtraConfigFromMoVM(vm, moVM)
+			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Advanced).To(BeNil())

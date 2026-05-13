@@ -1613,6 +1613,32 @@ func (v validator) validateControllerFields(
 		))
 	}
 
+	if vol.ControllerType != "" && vol.UnitNumber != nil {
+		var maxUnitNumber int32
+		switch vol.ControllerType {
+		case vmopv1.VirtualControllerTypeIDE:
+			maxUnitNumber = 1 // 2 slots: 0, 1
+		case vmopv1.VirtualControllerTypeNVME:
+			// NVMe supports 15 disks in older HW versions, but up to 255 in HW version 21.
+			// Since we don't know the HW version here, we use the maximum possible.
+			maxUnitNumber = 255
+		case vmopv1.VirtualControllerTypeSATA:
+			maxUnitNumber = 29 // 30 slots: 0-29
+		case vmopv1.VirtualControllerTypeSCSI:
+			// PVSCSI supports 64 disks (65 targets), others 15 disks (16 targets).
+			// We use 64 as the maximum possible unit number for SCSI to accommodate PVSCSI.
+			maxUnitNumber = 64
+		}
+
+		if *vol.UnitNumber > maxUnitNumber {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("unitNumber"),
+				*vol.UnitNumber,
+				fmt.Sprintf("maximum unit number for %s controller is %d", vol.ControllerType, maxUnitNumber),
+			))
+		}
+	}
+
 	return allErrs
 }
 

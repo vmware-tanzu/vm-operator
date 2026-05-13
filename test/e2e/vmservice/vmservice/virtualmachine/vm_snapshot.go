@@ -134,7 +134,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	When("VM doesn't have PVC", func() {
 		BeforeEach(func() {
-			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
+			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
 		})
@@ -385,7 +385,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	When("VM has PVC", func() {
 		BeforeEach(func() {
-			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcClusterResources, vmSvcNamespace, vmName, "", []manifestbuilders.PVC{
+			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", []manifestbuilders.PVC{
 				{
 					VolumeName:       "test-vol" + randomString,
 					ClaimName:        "test-claim" + randomString,

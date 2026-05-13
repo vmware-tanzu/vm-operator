@@ -131,7 +131,15 @@ func VerifyVMClassCreate(wcpClient wcp.WorkloadManagementAPI, createSpec wcp.VMC
 }
 
 func VerifyVMClassDeletion(wcpClient wcp.WorkloadManagementAPI, vmClassID string) {
-	Expect(wcpClient.DeleteVMClass(vmClassID)).To(Succeed())
+	err := wcpClient.DeleteVMClass(vmClassID)
+	if err != nil {
+		var dcliErr wcp.DcliError
+		if errors.As(err, &dcliErr) && strings.Contains(dcliErr.Response(), VMClassNotFound) {
+			framework.Logf("VMClass %q already gone during deletion; ignoring", vmClassID)
+			return
+		}
+		Expect(err).ToNot(HaveOccurred(), "failed to delete VMClass %q", vmClassID)
+	}
 
 	// Eventually VMClass should be deleted.
 	Eventually(func(g Gomega) {
@@ -910,15 +918,27 @@ func waitForBackupToComplete(
 // UnregisterPVCVolumes unregisters all PVCs in the provided list using CnsUnregisterVolume.
 // This simulates a backup/restore scenario where the VM on vCenter still has its disks,
 // but the Kubernetes PVC/PV objects are gone.
+// An admin client is used for creating CnsUnregisterVolume objects because the regular
+// supervisor-admin user lacks permission to create resources in the cns.vmware.com API group.
 func UnregisterPVCVolumes(
 	ctx context.Context,
 	svClusterClient ctrlclient.Client,
+	clusterProxy *common.VMServiceClusterProxy,
 	namespace string,
 	vmName string,
 	pvcNames []string,
 	config *config.E2EConfig,
 ) {
 	By("Unregister volumes using CnsUnregisterVolume for each PVC")
+
+	// Obtain an admin client to create CnsUnregisterVolume resources — the regular
+	// supervisor-admin kubeconfig does not have RBAC permission on cns.vmware.com.
+	adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+	Expect(err).ToNot(HaveOccurred(), "failed to get admin cluster proxy for CnsUnregisterVolume creation")
+	defer adminProxy.Dispose(ctx)
+
+	adminClient, err := adminProxy.GetAdminClient()
+	Expect(err).ToNot(HaveOccurred(), "failed to get admin client for CnsUnregisterVolume creation")
 
 	// Create CnsUnregisterVolume resource for each PVC
 	for _, pvcName := range pvcNames {
@@ -940,8 +960,8 @@ func UnregisterPVCVolumes(
 			},
 		}
 
-		// Create the CnsUnregisterVolume resource
-		Expect(svClusterClient.Create(ctx, cnsUnregister)).To(Succeed(), "failed to create CnsUnregisterVolume for PVC %s", pvcName)
+		// Create the CnsUnregisterVolume resource using the admin client.
+		Expect(adminClient.Create(ctx, cnsUnregister)).To(Succeed(), "failed to create CnsUnregisterVolume for PVC %s", pvcName)
 		framework.Logf("Successfully created CnsUnregisterVolume: %s for PVC: %s", unregisterName, pvcName)
 
 		// Wait for the CnsUnregisterVolume status to show unregistered: true
@@ -1019,7 +1039,7 @@ func DeleteVMResource(
 	}
 
 	// Unregister all PVCs using the helper function
-	UnregisterPVCVolumes(ctx, svClusterClient, vmNamespace, vmName, pvcNames, config)
+	UnregisterPVCVolumes(ctx, svClusterClient, clusterProxy, vmNamespace, vmName, pvcNames, config)
 
 	By("Delete only the K8s VM (vSphere VM should remain with the paused annotation applied)")
 	vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -1212,6 +1232,7 @@ func LabelVM(ctx context.Context, config *config.E2EConfig, clusterProxy *common
 func DeployVMWithCloudInit(
 	ctx context.Context,
 	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	e2eConfig *config.E2EConfig,
 	clusterResources *config.Resources,
 	ns, vmName, groupName string,
 	pvcs []manifestbuilders.PVC) {
@@ -1224,11 +1245,13 @@ func DeployVMWithCloudInit(
 	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
 
 	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
+	linuxVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
+	Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, ns)
 
 	vmParameters := manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,
 		Name:             vmName,
-		ImageName:        linuxImageDisplayName,
+		ImageName:        linuxVMIName,
 		VMClassName:      clusterResources.VMClassName,
 		StorageClassName: clusterResources.StorageClassName,
 		SecretName:       secretName,
@@ -1743,6 +1766,12 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 			Verbs:    "get,list,watch",
 		},
 		{
+			Name:     "gce2e-cns-unregister-volumes",
+			APIGroup: "cns.vmware.com",
+			Resource: "cnsunregistervolumes",
+			Verbs:    "create,update,patch,delete,get,list,watch",
+		},
+		{
 			Name:     "gce2e-import-operations",
 			APIGroup: "mobility-operator.vmware.com",
 			Resource: "importoperations",
@@ -1841,6 +1870,7 @@ func CleanupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) erro
 	customRoles := []RBACRole{
 		{Name: "gce2e-crds"},
 		{Name: "gce2e-cns-batch-attachments"},
+		{Name: "gce2e-cns-unregister-volumes"},
 		{Name: "gce2e-import-operations"},
 	}
 

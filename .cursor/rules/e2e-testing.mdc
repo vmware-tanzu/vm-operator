@@ -15,7 +15,7 @@ alwaysApply: false
 **Environment setup** (kubeconfig under `~/.kube/wcp-config`, vars exported — see README for `testbedInfo.json` or a remote URL):
 
 ```bash
-source ./hack/setup-testbed-env.sh <testbedInfo.json|URL> --e2e
+source ./hack/e2e/setup-testbed-env.sh <testbedInfo.json|URL> --e2e
 ```
 
 **Makefile targets** (from repo root):

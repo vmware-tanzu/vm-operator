@@ -1011,7 +1011,7 @@ test-e2e: ## Run e2e tests (auto-detect: prebuilt binary if available, else gink
 test-e2e-prebuilt: ## Run e2e tests using precompiled binary. Used by the E2E container image.
 	@test -x "$(E2E_PREBUILT_BINARY)" || { echo "error: $(E2E_PREBUILT_BINARY) missing or not executable. Run: cd test/e2e/vmservice && go test -c -o ../../../e2e-tests ."; exit 1; }
 	@echo "Running E2E tests (prebuilt $(E2E_PREBUILT_BINARY))..."
-	@$(eval GINKGO_ARGS := --ginkgo.v)
+	@$(eval GINKGO_ARGS := --ginkgo.v --ginkgo.junit-report=$(or $(E2E_ARTIFACT_FOLDER),.)/test-results.xml)
 	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=$(or $(E2E_ARTIFACT_FOLDER),test_logs))
 	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --ginkgo.focus="$(TEST_FOCUS)"))
 	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --ginkgo.skip="$(TEST_SKIP)"))
@@ -1024,7 +1024,7 @@ test-e2e-prebuilt: ## Run e2e tests using precompiled binary. Used by the E2E co
 test-e2e-ginkgo: | $(GINKGO)
 test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
 	@echo "Running E2E tests (ginkgo compile)..."
-	@$(eval GINKGO_ARGS := -v)
+	@$(eval GINKGO_ARGS := -v --junit-report=$(or $(E2E_ARTIFACT_FOLDER),.)/test-results.xml)
 	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=$(or $(E2E_ARTIFACT_FOLDER),test_logs))
 	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --focus="$(TEST_FOCUS)"))
 	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --skip="$(TEST_SKIP)"))

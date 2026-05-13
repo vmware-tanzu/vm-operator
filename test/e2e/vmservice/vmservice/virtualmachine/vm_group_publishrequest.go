@@ -123,8 +123,8 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 	}
 
 	createVMs := func() {
-		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcClusterResources, vmSvcNamespace, vm1Name, vmChildGroupName, nil)
-		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcClusterResources, vmSvcNamespace, vm0Name, vmGroupName, nil)
+		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vm1Name, vmChildGroupName, nil)
+		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vm0Name, vmGroupName, nil)
 		vmoperator.VerifyVirtualMachineGroupLinked(ctx, vmSvcE2EConfig, vmSvcClusterProxy.GetClient(), vmSvcNamespace, vmGroupName, sets.New([]vmopv1a5.GroupMember{
 			{Kind: "VirtualMachine", Name: vm0Name},
 			{Kind: "VirtualMachineGroup", Name: vmChildGroupName},

@@ -62,6 +62,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		imageReady            metav1.Condition
 		storageReady          metav1.Condition
 		linuxImageDisplayName string
+		linuxVMIName          string
 	)
 
 	BeforeEach(func() {
@@ -81,6 +82,10 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = clusterProxy.GetClient()
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+
+		var vmiErr error
+		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
 
 		By("Create a second namespace without VMClass")
 
@@ -144,7 +149,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			vmParameters := manifestbuilders.VirtualMachineYaml{
 				Namespace:        input.WCPNamespaceName,
 				Name:             vmName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				VMClassName:      vmClassName,
 				StorageClassName: clusterResources.StorageClassName,
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,

@@ -72,6 +72,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		vmMemberNames []string
 
 		linuxImageDisplayName string
+		linuxVMIName          string
 	)
 
 	BeforeEach(func() {
@@ -95,6 +96,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+
+		var err error
+		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
 
 		vmgRootYaml = nil
 		vmMemberNames = []string{}
@@ -185,7 +190,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					Namespace:        input.WCPNamespaceName,
 					Name:             vmName,
 					GroupName:        vmgRootName,
-					ImageName:        linuxImageDisplayName,
+					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PowerState:       "PoweredOff",
@@ -313,7 +318,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Namespace:        input.WCPNamespaceName,
 				Name:             vm4Name,
 				PowerState:       "PoweredOn",
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
 			}
@@ -370,7 +375,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				GroupName:        vmgRootName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 			}
 			vm1Yaml := manifestbuilders.GetVirtualMachineYamlA5(vm1Parameters)
 			Expect(clusterProxy.ApplyWithArgs(ctx, vm1Yaml)).To(Succeed(), "failed to update VM %q power state:\n %s", vm1Name, string(vm1Yaml))
@@ -471,7 +476,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Namespace:        input.WCPNamespaceName,
 				Name:             vm1Name,
 				GroupName:        vmgRootName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
 				PowerState:       "PoweredOff",
@@ -485,7 +490,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Namespace:        input.WCPNamespaceName,
 				Name:             vm2Name,
 				GroupName:        vmgChildName,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        linuxVMIName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
 				PowerState:       "PoweredOff",
@@ -589,8 +594,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 	Context("Group placement with affinity and anti-affinity", func() {
 		var (
-			tmpNamespaceName string
-			tmpNamespaceCtx  wcpframework.NamespaceContext
+			tmpNamespaceName    string
+			tmpNamespaceCtx     wcpframework.NamespaceContext
+			tmpNamespaceVMIName string
 
 			createVMWithAffinityAndAntiAffinityFunc = func(vmName, affinityTier string, antiAffinityTiers []string) {
 				GinkgoHelper()
@@ -600,7 +606,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					Name:             vmName,
 					GroupName:        vmgRootName,
 					Labels:           map[string]string{"tier": affinityTier},
-					ImageName:        linuxImageDisplayName,
+					ImageName:        tmpNamespaceVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					Affinity: &vmopv1a5.AffinitySpec{
@@ -676,7 +682,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
-			_, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 			Expect(err).NotTo(HaveOccurred(), "failed to get VMI by display name %q in namespace %q", linuxImageDisplayName, tmpNamespaceName)
 
 			By("Binding all zones to the temporary namespace")
@@ -951,8 +957,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		)
 
 		var (
-			tmpNamespaceName string
-			tmpNamespaceCtx  wcpframework.NamespaceContext
+			tmpNamespaceName    string
+			tmpNamespaceCtx     wcpframework.NamespaceContext
+			tmpNamespaceVMIName string
 		)
 
 		// getVMHostFromVmodlFunc retrieves the host moref value from vSphere directly.
@@ -1058,24 +1065,24 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				}
 			}
 
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        tmpNamespaceName,
-				Name:             vmName,
-				GroupName:        vmgRootName,
-				Labels:           labels,
-				ImageName:        linuxImageDisplayName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
-				Affinity: &vmopv1a5.AffinitySpec{
-					VMAffinity:     affinityLabelSelector,
-					VMAntiAffinity: antiAffinityLabelSelector,
-				},
-			}
-			vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-			e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+		vmParameters := manifestbuilders.VirtualMachineYaml{
+			Namespace:        tmpNamespaceName,
+			Name:             vmName,
+			GroupName:        vmgRootName,
+			Labels:           labels,
+			ImageName:        tmpNamespaceVMIName,
+			VMClassName:      clusterResources.VMClassName,
+			StorageClassName: clusterResources.StorageClassName,
+			PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
+			Affinity: &vmopv1a5.AffinitySpec{
+				VMAffinity:     affinityLabelSelector,
+				VMAntiAffinity: antiAffinityLabelSelector,
+			},
 		}
+		vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+		e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+		Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+	}
 
 		verifyAffinity := func(vmHosts map[string]string, affinedVms []string) {
 			GinkgoHelper()
@@ -1265,7 +1272,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
-			_, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 			Expect(err).NotTo(HaveOccurred(), "failed to get VMI by display name %q in namespace %q", linuxImageDisplayName, tmpNamespaceName)
 
 			By("Binding all zones to the temporary namespace")

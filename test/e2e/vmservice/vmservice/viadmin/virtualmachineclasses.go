@@ -6,6 +6,7 @@ package viadmin
 import (
 	"context"
 	errpkg "errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25/types"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	capiutil "sigs.k8s.io/cluster-api/util"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/kubectl"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -55,8 +57,13 @@ func VIAdminVMClassSpec(ctx context.Context, inputGetter func() VIAdminVMClassSp
 		namespacedVMClassFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSNamespacedVMClass"))
 		vmImageRegistryEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMImageRegistry"))
 		vmClassAsConfigDaynDateFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMClassAsConfigDaynDate"))
+		// Append a random suffix so parallel test runs on the same testbed do not
+		// collide on these cluster-scoped WCP VMClass resources.
+		runSuffix := capiutil.RandomString(4)
 		createSpecE2eTestBestEffortSmall = vmservice.CreateSpecE2eTestBestEffortSmall()
+		createSpecE2eTestBestEffortSmall.ID = fmt.Sprintf("%s-%s", createSpecE2eTestBestEffortSmall.ID, runSuffix)
 		createSpecE2eTestGuaranteedXSmall = vmservice.CreateSpecE2eTestGuaranteedXSmall()
+		createSpecE2eTestGuaranteedXSmall.ID = fmt.Sprintf("%s-%s", createSpecE2eTestGuaranteedXSmall.ID, runSuffix)
 
 		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestBestEffortSmall, createSpecE2eTestBestEffortSmall)
 		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestGuaranteedXSmall, createSpecE2eTestGuaranteedXSmall)

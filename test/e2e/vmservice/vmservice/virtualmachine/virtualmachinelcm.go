@@ -82,6 +82,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmResizeCPUMemoryFssEnabled       bool
 		isoSupportFSSEnabled              bool
 		linuxImageDisplayName             string
+		linuxVMIName                      string
 		linuxImageGuestID                 string
 	)
 
@@ -103,6 +104,10 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		svClusterClient = clusterProxy.GetClient()
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxImageGuestID = vmservice.GetDefaultImageGuestID()
+
+		var err error
+		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
@@ -176,7 +181,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -219,7 +224,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOff",
@@ -289,7 +294,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      vmservice.VMClassE1000,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -340,7 +345,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      vmservice.VMClassVMX22,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -381,7 +386,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -476,7 +481,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      vmClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -517,7 +522,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      vmClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -671,6 +676,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM with CD-ROM:\n %s", string(vmYaml))
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 
 		By("Verifying network provider CR has an IP assigned for the VM")
@@ -779,6 +785,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		var (
 			tagManager                      *tags.Manager
 			tmpNamespaceName                string
+			tmpNamespaceVMIName             string
 			mandatoryPolicyNameMatchAll     string
 			mandatoryPolicyNameMatchByLabel string
 			opPolicyNameMatchByGuestID      string
@@ -806,12 +813,12 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
 			By("Deploying a VM without any explicit policies")
-			vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 			Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
 			vmParameters := manifestbuilders.VirtualMachineYaml{
 				Namespace:        tmpNamespaceName,
 				Name:             vmName,
-				ImageName:        vmiName,
+				ImageName:        tmpNamespaceVMIName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,
@@ -945,7 +952,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				Namespace:        tmpNamespaceName,
 				Name:             vmName,
 				GuestID:          linuxImageGuestID,
-				ImageName:        linuxImageDisplayName,
+				ImageName:        tmpNamespaceVMIName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,

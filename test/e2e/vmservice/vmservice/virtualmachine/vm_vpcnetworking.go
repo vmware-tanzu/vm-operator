@@ -110,6 +110,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		secretName            string
 		vmYaml                []byte
 		linuxImageDisplayName string
+		linuxVMIName          string
 	)
 
 	BeforeEach(func() {
@@ -137,6 +138,10 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 		vm1Name = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		vm2Name = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+
+		var vmiErr error
+		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
 		vm1IP = ""
 		vm2IP = ""
 		secretName = fmt.Sprintf("%s-%s", "secret", capiutil.RandomString(4))
@@ -149,7 +154,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		v1a2vmParameters = manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			VMClassName:      clusterResources.VMClassName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",

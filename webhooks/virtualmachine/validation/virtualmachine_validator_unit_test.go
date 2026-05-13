@@ -8403,7 +8403,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				skipBypassUpgradeCheck: true,
 				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`spec.network.interfaces[0].type: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.network.interfaces: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
 			},
 		),
@@ -8439,7 +8439,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				skipBypassUpgradeCheck: true,
 				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`spec.network.interfaces[0].vmxnet3: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.network.interfaces: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
 			},
 		),
@@ -8469,12 +8469,12 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				skipBypassUpgradeCheck: true,
 				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`spec.network.interfaces[0].vNUMANodeID: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.network.interfaces: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
 			},
 		),
 
-		Entry("allow unrestricted NIC field change when TelcoVMServiceAPI enabled and not yet upgraded",
+		Entry("disallow any interface field change (including non-backfilled fields) when TelcoVMServiceAPI and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
@@ -8492,13 +8492,17 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					if ctx.vm.Spec.Network == nil {
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
 					}
-					// Only DHCP4 changes — not a backfilled field.
+					// DHCP4 is not a backfilled field but the entire interfaces
+					// slice must be unchanged during the upgrade window.
 					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{Name: "eth0", DHCP4: true},
 					}
 				},
 				skipBypassUpgradeCheck: true,
-				expectAllowed:          true,
+				expectAllowed:          false,
+				validate: doValidateWithMsg(
+					`spec.network.interfaces: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
 			},
 		),
 	)

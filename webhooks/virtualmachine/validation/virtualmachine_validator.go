@@ -3539,9 +3539,10 @@ func validateAdvancedVMXFieldsNotChanged(
 	return allErrs
 }
 
-// validateNICBackfilledFieldsNotChanged checks that the per-NIC fields
-// backfilled during schema upgrade (type, vmxnet3, vNUMANodeID) have not
-// changed between the old and new VM for interfaces that exist in both.
+// validateNICBackfilledFieldsNotChanged checks that the spec.network.interfaces
+// slice is identical between old and new during the schema upgrade window.
+// This prevents adding, removing, reordering, and modifying any interface
+// field — including backfilled fields — before the upgrade completes.
 func validateNICBackfilledFieldsNotChanged(
 	specPath *field.Path,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
@@ -3556,26 +3557,9 @@ func validateNICBackfilledFieldsNotChanged(
 		oldIfaces = oldVM.Spec.Network.Interfaces
 	}
 
-	ifacesPath := specPath.Child("network").Child("interfaces")
-
-	for i := 0; i < min(len(newIfaces), len(oldIfaces)); i++ {
-		ifPath := ifacesPath.Index(i)
-		n, o := newIfaces[i], oldIfaces[i]
-
-		if n.Type != o.Type {
-			allErrs = append(allErrs, field.Forbidden(
-				ifPath.Child("type"), notUpgraded))
-		}
-
-		if !equality.Semantic.DeepEqual(n.VMXNet3, o.VMXNet3) {
-			allErrs = append(allErrs, field.Forbidden(
-				ifPath.Child("vmxnet3"), notUpgraded))
-		}
-
-		if !equality.Semantic.DeepEqual(n.VNUMANodeID, o.VNUMANodeID) {
-			allErrs = append(allErrs, field.Forbidden(
-				ifPath.Child("vNUMANodeID"), notUpgraded))
-		}
+	if !equality.Semantic.DeepEqual(newIfaces, oldIfaces) {
+		allErrs = append(allErrs, field.Forbidden(
+			specPath.Child("network").Child("interfaces"), notUpgraded))
 	}
 	return allErrs
 }
@@ -3633,7 +3617,7 @@ func isSystemReservedNetworkDeviceProperty(key string) bool {
 }
 
 func isFirstClassNICAdvancedProperty(key string) bool {
-	m := vmopv1util.NICVMXKeyMap()
+	m := vmopv1util.VMXNet3NICKeyMap()
 	if _, ok := m[key]; ok {
 		return true
 	}

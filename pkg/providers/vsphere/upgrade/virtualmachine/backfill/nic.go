@@ -139,7 +139,7 @@ func backfillNICSpec(
 			continue
 		}
 
-		rest, found := strings.CutPrefix(ov.Key, prefix)
+		propName, found := strings.CutPrefix(ov.Key, prefix)
 		if !found {
 			continue
 		}
@@ -149,7 +149,7 @@ func backfillNICSpec(
 			continue
 		}
 
-		fieldIdx, exists := vmopv1util.NICVMXKeyMap()[rest]
+		fieldIdx, exists := vmopv1util.VMXNet3NICKeyMap()[propName]
 		if !exists {
 			continue
 		}

@@ -63,6 +63,10 @@ const (
 // +kubebuilder:validation:XValidation:rule="self == 'Disabled' || self == 'Adapt' || self == 'Static' || self == 'RateBasedCoalescing' || size(self) < 128",message="must be Disabled, Adapt, Static, RateBasedCoalescing, or any other string shorter than 128 characters"
 type CoalescingScheme string
 
+// CoalescingSchemeMaxLen is the maximum string length accepted by the
+// XValidation rule above for weak-enum passthrough values.
+const CoalescingSchemeMaxLen = 128
+
 const (
 	// CoalescingSchemeDisabled disables interrupt coalescing entirely.
 	// Recommended for latency-sensitive (LS=High) non-DPDK workloads because it
@@ -89,8 +93,11 @@ const (
 // This is a "weak enum": constants are well-known values; the field accepts any string for forward compatibility.
 //
 // +kubebuilder:validation:MaxLength=50
-// +kubebuilder:validation:XValidation:rule="self.matches(\"^(LargeReceiveOffload|ReceiveSideScaling|^[1-9][0-9]*)$\")",message="must be LargeReceiveOffload, ReceiveSideScaling, or a non-empty decimal digits string for VMX pNICFeatures bitmask values (powers of two such as 1, 2, 4, 8)"
+// +kubebuilder:validation:XValidation:rule="self.matches(\"^(LargeReceiveOffload|ReceiveSideScaling|[1-9][0-9]*)$\")",message="must be LargeReceiveOffload, ReceiveSideScaling, or a non-empty decimal digits string for VMX pNICFeatures bitmask values (powers of two such as 1, 2, 4, 8)"
 type PNICQueueFeature string
+
+// PNICFeaturesMaxItems is the MaxItems constraint applied to []PNICQueueFeature fields.
+const PNICFeaturesMaxItems = 16
 
 const (
 	// PNICQueueFeatureLargeReceiveOffload enables large receive offload (LRO).
@@ -101,6 +108,20 @@ const (
 	// across multiple receive queues. Typically set alongside
 	// ctxPerDev=PerQueue for maximum throughput on 100G workloads.
 	PNICQueueFeatureReceiveSideScaling PNICQueueFeature = "ReceiveSideScaling"
+)
+
+// This type is introduced to handle the fact that vSphere uses integer encoding 1/2 here, not TRUE/FALSE.
+
+// UDPRSSMode controls whether UDP Receive Side Scaling is enabled on a VMXNet3
+// interface.
+type UDPRSSMode bool
+
+const (
+	// UDPRSSModeEnabled enables UDP RSS on the interface.
+	UDPRSSModeEnabled UDPRSSMode = true
+
+	// UDPRSSModeDisabled disables UDP RSS on the interface.
+	UDPRSSModeDisabled UDPRSSMode = false
 )
 
 // VirtualMachineNetworkInterfaceVMXNet3Spec contains tuning options specific to
@@ -143,6 +164,8 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// queues using a hardware-computed hash. Reduces hypervisor CPU overhead
 	// and improves multi-core utilization for high-throughput workloads.
 	// Requires pNIC RSS support.
+	//
+	// When nil, the hypervisor decides the effective value.
 	RSSOffloadEnabled *bool `json:"rssOffloadEnabled,omitempty" vmx:"ethernet%d.rssoffload"`
 
 	// +optional
@@ -150,7 +173,9 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// UDPRSSEnabled extends RSS to UDP traffic. By default RSS only distributes
 	// TCP flows. Enabling this also distributes UDP flows, improving throughput
 	// for UDP-heavy workloads such as GTP-U tunnels, QUIC, or media streaming.
-	UDPRSSEnabled *bool `json:"udpRSSEnabled,omitempty" vmx:"ethernet%d.udpRSS"`
+	//
+	// When nil, the hypervisor decides the effective value.
+	UDPRSSEnabled *UDPRSSMode `json:"udpRSSEnabled,omitempty" vmx:"ethernet%d.udpRSS"`
 
 	// +optional
 	// +kubebuilder:validation:MaxItems=16

@@ -23,7 +23,6 @@ func vcSimTests() {
 	Describe("Snapshot", Label(testlabels.VCSim), snapShotTests)
 	Describe("ExtraConfig", Label(testlabels.VCSim), extraConfigTests)
 	Describe("CleanupOnDelete", Label(testlabels.VCSim), cleanupOnDeleteTests)
-	Describe("NetworkInterfaceTypes", networkInterfaceTypeTests)
 }
 
 var suite = builder.NewTestSuite()

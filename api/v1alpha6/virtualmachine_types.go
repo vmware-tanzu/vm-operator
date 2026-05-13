@@ -1207,6 +1207,8 @@ type VirtualMachineAdvancedSpec struct {
 	// PreferHTEnabled hints to the ESXi scheduler to prefer placing vCPUs on
 	// hyperthreads of the same physical core, improving memory locality for
 	// latency-sensitive workloads.
+	//
+	// When nil, the hypervisor decides the effective value.
 	PreferHTEnabled *bool `json:"preferHTEnabled,omitempty" vmx:"numa.vcpu.preferHT"`
 
 	// +optional
@@ -1214,6 +1216,8 @@ type VirtualMachineAdvancedSpec struct {
 	// HugePages1GEnabled enables 1 GB huge page backing for VM memory, reducing
 	// TLB pressure for memory-intensive workloads such as Telco VNFs.
 	// Cannot be changed while the VM is powered on.
+	//
+	// When nil, the hypervisor decides the effective value.
 	HugePages1GEnabled *bool `json:"hugePages1GEnabled,omitempty" vmx:"sched.mem.lpage.enable1GPage"`
 
 	// +optional
@@ -1221,6 +1225,8 @@ type VirtualMachineAdvancedSpec struct {
 	// TimeTrackerLowLatencyEnabled enables the low-latency time tracking mode,
 	// using a higher-resolution timer to reduce scheduling jitter for
 	// latency-sensitive workloads. Typically set alongside LatencySensitivity=High.
+	//
+	// When nil, the hypervisor decides the effective value.
 	TimeTrackerLowLatencyEnabled *bool `json:"timeTrackerLowLatencyEnabled,omitempty" vmx:"timeTracker.lowLatency"`
 
 	// +optional
@@ -1228,14 +1234,17 @@ type VirtualMachineAdvancedSpec struct {
 	// CPUAffinityExclusiveNoStatsEnabled disables per-VM CPU accounting
 	// statistics, reducing scheduler overhead for latency-sensitive workloads.
 	// Typically set alongside LatencySensitivity=High.
+	//
+	// When nil, the hypervisor decides the effective value.
 	CPUAffinityExclusiveNoStatsEnabled *bool `json:"cpuAffinityExclusiveNoStatsEnabled,omitempty" vmx:"sched.cpu.affinity.exclusiveNoStats"`
 
 	// +optional
 
 	// VMXSwapEnabled controls whether the VMX process memory may be swapped to
 	// disk by the host. Set to false to disable VMX swapping, reducing latency
-	// jitter for memory-sensitive workloads. When nil the VMX key is left unset,
-	// preserving the hypervisor default.
+	// jitter for memory-sensitive workloads.
+	//
+	// When nil, the hypervisor decides the effective value.
 	VMXSwapEnabled *bool `json:"vmxSwapEnabled,omitempty" vmx:"sched.swap.vmxSwapEnabled"`
 
 	// +optional

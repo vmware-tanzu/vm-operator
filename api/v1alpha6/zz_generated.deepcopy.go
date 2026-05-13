@@ -2622,7 +2622,7 @@ func (in *VirtualMachineNetworkInterfaceVMXNet3Spec) DeepCopyInto(out *VirtualMa
 	}
 	if in.UDPRSSEnabled != nil {
 		in, out := &in.UDPRSSEnabled, &out.UDPRSSEnabled
-		*out = new(bool)
+		*out = new(UDPRSSMode)
 		**out = **in
 	}
 	if in.PNICFeatures != nil {

@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -115,42 +114,6 @@ const (
 var (
 	ethernetDeviceKeyRE       = regexp.MustCompile(`^ethernet\d+\.(.*)$`)
 	capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
-
-	// firstClassVMAdvancedProperties is the set of vmx keys from first-class VM advanced fields.
-	firstClassVMAdvancedProperties = sync.OnceValue(func() map[string]bool {
-		result := make(map[string]bool)
-		specType := reflect.TypeOf((*vmopv1.VirtualMachineAdvancedSpec)(nil)).Elem()
-		for i := 0; i < specType.NumField(); i++ {
-			field := specType.Field(i)
-			if vmxTag, ok := field.Tag.Lookup("vmx"); ok && vmxTag != "" {
-				result[vmxTag] = true
-			}
-		}
-		return result
-	})
-
-	// firstClassNICAdvancedProperties is the set of vmx key suffixes after ethernet%d. on first-class NIC fields.
-	firstClassNICAdvancedProperties = sync.OnceValue(func() map[string]bool {
-		specType := reflect.TypeOf((*vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec)(nil)).Elem()
-		out := make(map[string]bool)
-		const ethernetPlaceholder = "ethernet%d."
-		for i := 0; i < specType.NumField(); i++ {
-			f := specType.Field(i)
-			vmxTag, ok := f.Tag.Lookup("vmx")
-			if !ok || vmxTag == "" {
-				continue
-			}
-			if !strings.HasPrefix(vmxTag, ethernetPlaceholder) {
-				continue
-			}
-			suffix := strings.TrimPrefix(vmxTag, ethernetPlaceholder)
-			if suffix == "" {
-				continue
-			}
-			out[suffix] = true
-		}
-		return out
-	})
 
 	// systemReservedNetworkDeviceProperties is the set of ethernet device suffixes reserved by the system.
 	systemReservedNetworkDeviceProperties = map[string]bool{
@@ -3455,13 +3418,15 @@ func (v validator) validateImmutableVMAffinity(
 	return allErrs
 }
 
-// validateImmutableFieldsDuringSchemaUpgrade checks the fields that are
+// validateFieldsDuringSchemaUpgrade checks the fields that are
 // backfilled by the schema upgrade are not been modified before the schema
 // upgrade has completed. Currently, the schema upgrade backfills fields below:
 // - vm.Spec.BiosUUID
 // - vm.Spec.InstanceUUID (immutable if set)
 // - vm.Spec.Bootstrap.CloudInit.InstanceID (immutable if set)
 // - vm.Spec.Hardware.*Controllers
+// - vm.Spec.Advanced.{vmx-tagged first-class fields} (TelcoVMServiceAPI)
+// - vm.Spec.Network.Interfaces[i].{Type,VMXNet3,VNUMANodeID} (TelcoVMServiceAPI)
 // Fields that are immutable will not be validated.
 func (v validator) validateFieldsDuringSchemaUpgrade(
 	ctx *pkgctx.WebhookRequestContext,
@@ -3476,6 +3441,13 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 	if !equality.Semantic.DeepEqual(vm.Spec.BiosUUID, oldVM.Spec.BiosUUID) {
 		allErrs = append(allErrs, field.Forbidden(
 			specPath.Child("biosUUID"), notUpgraded))
+	}
+
+	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+		allErrs = append(allErrs,
+			validateAdvancedVMXFieldsNotChanged(specPath, vm.Spec.Advanced, oldVM.Spec.Advanced)...)
+		allErrs = append(allErrs,
+			validateNICBackfilledFieldsNotChanged(specPath, vm, oldVM)...)
 	}
 
 	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
@@ -3529,6 +3501,83 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 	return allErrs
 }
 
+// validateAdvancedVMXFieldsNotChanged checks that each vmx-tagged first-class
+// field in spec.advanced is unchanged between oldAdv and newAdv. Only the
+// vmx-tagged fields are restricted; unrestricted fields such as extraConfig
+// are left alone so users can still modify them during the upgrade window.
+func validateAdvancedVMXFieldsNotChanged(
+	specPath *field.Path,
+	newAdv, oldAdv *vmopv1.VirtualMachineAdvancedSpec) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	advType := reflect.TypeOf(vmopv1.VirtualMachineAdvancedSpec{})
+	advPath := specPath.Child("advanced")
+
+	var newVal, oldVal reflect.Value
+	if newAdv != nil {
+		newVal = reflect.ValueOf(newAdv).Elem()
+	} else {
+		newVal = reflect.Zero(advType)
+	}
+	if oldAdv != nil {
+		oldVal = reflect.ValueOf(oldAdv).Elem()
+	} else {
+		oldVal = reflect.Zero(advType)
+	}
+
+	for _, fieldIdx := range vmopv1util.AdvancedVMXKeyMap() {
+		if !equality.Semantic.DeepEqual(
+			newVal.Field(fieldIdx).Interface(),
+			oldVal.Field(fieldIdx).Interface()) {
+
+			name := jsonFieldName(advType.Field(fieldIdx))
+			allErrs = append(allErrs, field.Forbidden(
+				advPath.Child(name), notUpgraded))
+		}
+	}
+	return allErrs
+}
+
+// validateNICBackfilledFieldsNotChanged checks that the spec.network.interfaces
+// slice is identical between old and new during the schema upgrade window.
+// This prevents adding, removing, reordering, and modifying any interface
+// field — including backfilled fields — before the upgrade completes.
+func validateNICBackfilledFieldsNotChanged(
+	specPath *field.Path,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	var newIfaces, oldIfaces []vmopv1.VirtualMachineNetworkInterfaceSpec
+	if vm.Spec.Network != nil {
+		newIfaces = vm.Spec.Network.Interfaces
+	}
+	if oldVM.Spec.Network != nil {
+		oldIfaces = oldVM.Spec.Network.Interfaces
+	}
+
+	if !equality.Semantic.DeepEqual(newIfaces, oldIfaces) {
+		allErrs = append(allErrs, field.Forbidden(
+			specPath.Child("network").Child("interfaces"), notUpgraded))
+	}
+	return allErrs
+}
+
+// jsonFieldName returns the JSON field name from a struct field's json tag,
+// falling back to the Go field name if the tag is absent or a dash.
+func jsonFieldName(f reflect.StructField) string {
+	tag := f.Tag.Get("json")
+	if tag == "" || tag == "-" {
+		return f.Name
+	}
+	name, _, _ := strings.Cut(tag, ",")
+	if name == "" || name == "-" {
+		return f.Name
+	}
+	return name
+}
+
 // validateBiosUUID validates that a non-empty spec.biosUUID is a valid UUID.
 func (v validator) validateBiosUUID(_ *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
@@ -3542,7 +3591,8 @@ func (v validator) validateBiosUUID(_ *pkgctx.WebhookRequestContext, vm *vmopv1.
 }
 
 func isFirstClassVMAdvancedProperty(key string) bool {
-	return firstClassVMAdvancedProperties()[key]
+	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
+	return ok
 }
 
 // isSystemReservedProperty returns true if the key is reserved and controlled by the system.
@@ -3567,12 +3617,12 @@ func isSystemReservedNetworkDeviceProperty(key string) bool {
 }
 
 func isFirstClassNICAdvancedProperty(key string) bool {
-	firstClassProperties := firstClassNICAdvancedProperties()
-	if firstClassProperties[key] {
+	m := vmopv1util.VMXNet3NICKeyMap()
+	if _, ok := m[key]; ok {
 		return true
 	}
-	if m := ethernetDeviceKeyRE.FindStringSubmatch(key); m != nil {
-		_, ok := firstClassProperties[m[1]]
+	if match := ethernetDeviceKeyRE.FindStringSubmatch(key); match != nil {
+		_, ok := m[match[1]]
 		return ok
 	}
 	return false

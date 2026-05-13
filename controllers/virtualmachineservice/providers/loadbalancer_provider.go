@@ -24,6 +24,10 @@ const (
 	// this Service. Copied from kubernetes pkg/proxy/apis/well_known_labels.go to avoid
 	// k8s dependency.
 	LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"
+
+	// AnnotationServiceNSXHostnamesKey is the NSX LB annotation used to specify
+	// the FQDN for certificate generation.
+	AnnotationServiceNSXHostnamesKey = "nsx.vmware.com/hostname"
 )
 
 // LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer.
@@ -155,6 +159,12 @@ func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context
 	// annotation should be cleared as well
 	if _, ok := vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; !ok {
 		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = ""
+	}
+
+	// When nsx.vmware.com/hostnames is NOT present on the VirtualMachineService,
+	// remove it from the Service as well.
+	if _, ok := vmService.Annotations[AnnotationServiceNSXHostnamesKey]; !ok {
+		res[AnnotationServiceNSXHostnamesKey] = ""
 	}
 
 	return res, nil

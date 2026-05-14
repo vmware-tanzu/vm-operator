@@ -3,7 +3,6 @@
 set -o errexit
 set -o nounset
 set -o pipefail
-set -x
 
 # This script helps you to find out the external-gateway-vm's IP given the
 # vCenter IP. It also installs/uninstalls an httpd proxy on the target vm exposed
@@ -14,16 +13,27 @@ set -x
 
 SCRIPT_DIR="$(dirname "${BASH_SOURCE}")"
 GOVC_INSECURE="${GOVC_INSECURE:-1}"
-GOVC_USERNAME="${GOVC_USERNAME:-administrator@vsphere.local}"
-GOVC_PASSWORD="${GOVC_PASSWORD:-vmware}"
+# GOVC_USERNAME and GOVC_PASSWORD are intentionally NOT defaulted here.
+# They must be passed in by the caller (setup-e2e-testbed.sh exports them
+# from the testbed JSON before invoking this script). Defaulting to 'vmware'
+# would silently override the real testbed credentials and cause govc to fail
+# authentication, making find_gateway_vm_path return empty.
+GOVC_USERNAME="${GOVC_USERNAME:-}"
+GOVC_PASSWORD="${GOVC_PASSWORD:-}"
 GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
-GATEWAY_VM_PASSWORD=${GATEWAY_VM_PASSWORD:-'vmware'}
+GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
 
 
 find_gateway_vm_path() {
 	# This below code is a hack primarily to compensate for the discrepancies that exist in the various testbed deployment
 	# methods
-	vmnames=('external-gateway' 'external-vm-gateway')
+	if [[ -z "${GOVC_USERNAME}" || -z "${GOVC_PASSWORD}" ]]; then
+		echo "find_gateway_vm_path: GOVC_USERNAME or GOVC_PASSWORD not set; cannot authenticate to vCenter" >&2
+		return 1
+	fi
+	# VDS testbeds name the gateway VM "external-gateway-vds"; NSX uses
+	# "external-vm-gateway". Use a suffix wildcard to match all variants.
+	vmnames=('external-gateway*' 'external-vm-gateway*')
 	for vmname in "${vmnames[@]}"; do
 		vmpath=$(GOVC_URL=$vc GOVC_INSECURE=$GOVC_INSECURE GOVC_USERNAME=$GOVC_USERNAME GOVC_PASSWORD=$GOVC_PASSWORD govc find / -type m -name ${vmname})
 		if [[ "${vmpath}" != "" ]]; then

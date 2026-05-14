@@ -16,29 +16,9 @@
 #   source ./hack/e2e/setup-testbed-env.sh ./testbedinfo.json --e2e
 #
 
+set -u
 
-# Determine if the script is being sourced or executed
-if [[ -n "${ZSH_EVAL_CONTEXT:-}" ]]; then
-    if [[ "${ZSH_EVAL_CONTEXT}" =~ "toplevel" ]]; then
-        SCRIPT_SOURCED=false
-    else
-        SCRIPT_SOURCED=true
-    fi
-elif [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-    if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-        SCRIPT_SOURCED=false
-    else
-        SCRIPT_SOURCED=true
-    fi
-else
-    # Fallback
-    if [[ $(basename -- "$0") == "setup-testbed-env.sh" ]]; then
-        SCRIPT_SOURCED=false
-    else
-        SCRIPT_SOURCED=true
-    fi
-fi
-
+SCRIPT_SOURCED=true
 # Function to handle exits gracefully (return if sourced, exit if executed)
 script_exit() {
     local exit_code=${1:-1}
@@ -145,37 +125,31 @@ fi
 
 # Extract vCenter connection details - try multiple JSON path patterns
 # Pattern 1: WCP testbed format with nested vc array
-if echo "$testbed_info" | jq -e '.vc | type == "array" and length > 0' >/dev/null 2>&1; then
-    echo "Using vc array format for vCenter details"
+if echo "$testbed_info" | jq -e '.vc[0]' >/dev/null 2>&1; then
+    echo "Using vc[0] format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vc[0].ip4 // .vc[0].ip // .vc[0].vcenter_ip')
-    export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].root_password // .vc[0].password // .vc[0].vcenter_password')
-    export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r 'if .vc[0].root_password then "root" else (.vc[0].username // .vc[0].vcenter_username // "administrator@vsphere.local") end')
-    export VCSA_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].vimPassword // .vc[0].password // .vc[0].vcenter_password')
-    export VCSA_USERNAME=$(echo "$testbed_info" | jq -r '.vc[0].vimUsername // .vc[0].username // .vc[0].vcenter_username // "administrator@vsphere.local"')
-# Pattern 2: WCP testbed format with nested vc object (e.g. VPC testbed)
-elif echo "$testbed_info" | jq -e '.vc | type == "object" and length > 0' >/dev/null 2>&1; then
-    echo "Using vc object format for vCenter details"
-    export VC_URL=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .ip4 // .ip // .vcenter_ip')
-    export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .root_password // .password // .vcenter_password')
-    export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | if .root_password then "root" else (.username // .vcenter_username // "administrator@vsphere.local") end')
-    export VCSA_PASSWORD=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .vimPassword // .password // .vcenter_password')
-    export VCSA_USERNAME=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .vimUsername // .username // .vcenter_username // "administrator@vsphere.local"')
-# Pattern 3: Direct format with vcenter_ prefixed fields
+    export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].password // .vc[0].vcenter_password')
+    export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc[0].username // .vc[0].vcenter_username // "administrator@vsphere.local"')
+    # vimUsername/vimPassword are the vSphere API (govc) credentials, distinct from
+    # the SSH root credentials stored in username/password.
+    export VC_VIM_USERNAME=$(echo "$testbed_info" | jq -r '.vc[0].vimUsername // .vc[0].username // "administrator@vsphere.local"')
+    export VC_VIM_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].vimPassword // .vc[0].password')
+# Pattern 2: Direct format with vcenter_ prefixed fields
 elif echo "$testbed_info" | jq -e '.vcenter_ip' >/dev/null 2>&1; then
     echo "Using direct vcenter_ format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vcenter_ip')
     export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vcenter_password')
     export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vcenter_username // "administrator@vsphere.local"')
-    export VCSA_PASSWORD="${VC_ROOT_PASSWORD}"
-    export VCSA_USERNAME="${VC_ROOT_USERNAME}"
-# Pattern 4: Simple format (for testing/fallback)
+    export VC_VIM_USERNAME=$(echo "$testbed_info" | jq -r '.vcenter_username // "administrator@vsphere.local"')
+    export VC_VIM_PASSWORD="${VC_ROOT_PASSWORD}"
+# Pattern 3: Simple format (for testing/fallback)
 else
     echo "Using simple format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vc_ip // .vcenter_ip // .testbed_ip')
     export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc_password // .vcenter_password // .password')
     export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc_username // .vcenter_username // .username // "administrator@vsphere.local"')
-    export VCSA_PASSWORD="${VC_ROOT_PASSWORD}"
-    export VCSA_USERNAME="${VC_ROOT_USERNAME}"
+    export VC_VIM_USERNAME="${VC_ROOT_USERNAME}"
+    export VC_VIM_PASSWORD="${VC_ROOT_PASSWORD}"
 fi
 
 # Validate required variables are set and not null
@@ -192,30 +166,24 @@ if [ -z "${VC_ROOT_PASSWORD}" ] || [ "${VC_ROOT_PASSWORD}" = "null" ]; then
 fi
 
 if [ -z "${VC_ROOT_USERNAME}" ] || [ "${VC_ROOT_USERNAME}" = "null" ]; then
-    export VC_ROOT_USERNAME="root"
-fi
-
-if [ -z "${VCSA_PASSWORD}" ] || [ "${VCSA_PASSWORD}" = "null" ]; then
-    export VCSA_PASSWORD="${VC_ROOT_PASSWORD}"
-    if [ -z "${VCSA_USERNAME}" ] || [ "${VCSA_USERNAME}" = "null" ]; then
-        export VCSA_USERNAME="administrator@vsphere.local"
-    fi
+    export VC_ROOT_USERNAME="administrator@vsphere.local"
 fi
 
 echo "Configuration loaded successfully:"
 echo "  VC_URL: ${VC_URL}"
 echo "  VC_ROOT_USERNAME: ${VC_ROOT_USERNAME}"
-echo "  VCSA_USERNAME: ${VCSA_USERNAME}"
 
 # Set up common environment variables for vm-operator E2E tests
 export VCSA_IP="${VC_URL}"
 export SSH_PASSWORD="${VC_ROOT_PASSWORD}"
 export SSH_USERNAME="${VC_ROOT_USERNAME}"
-export GOVC_PASSWORD="${VCSA_PASSWORD}" 
-export GOVC_USERNAME="${VCSA_USERNAME}"
+# govc uses the vSphere API credentials (administrator@vsphere.local), not the SSH root creds.
+export GOVC_USERNAME="${VC_VIM_USERNAME}"
+export GOVC_PASSWORD="${VC_VIM_PASSWORD}"
+export VCSA_PASSWORD="${SSH_PASSWORD}"
 
 # Detect networking type from testbed data
-NETWORKING_TYPE=$(echo "$testbed_data" | jq -r '.deliverable_blob.networking // .networking // if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" then "nsx" else "vds" end')
+NETWORKING_TYPE=$(echo "$testbed_info" | jq -r '.networking // "vds"')
 export NETWORK="${NETWORKING_TYPE}"
 
 # Set test configuration defaults
@@ -311,19 +279,46 @@ export SUPERVISOR_CLUSTER_PASSWORD="${WCP_PASSWORD:-}"
 #   - set up squid proxy on gateway VM and export HTTP_PROXY
 #   - configure KMS key providers (gce2e-native, gce2e-standard)
 if [ "$ENABLE_E2E_KUBECONFIG" = "true" ]; then
-    _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # Resolve the directory containing THIS script, compatible with both bash
+    # (BASH_SOURCE[0]) and zsh. We use a cascade:
+    #  1. bash: BASH_SOURCE[0] gives the actual script path even when sourced
+    #  2. zsh:  $0 gives the script path when sourced with `source`
+    #  3. fallback: search for sibling setup-e2e-testbed.sh relative to cwd
+    _SCRIPT_DIR=""
+    # bash path - evaluated in a subshell to avoid set -u errors in zsh
+    if [ -n "${BASH_VERSION:-}" ]; then
+        _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    elif [ -n "${ZSH_VERSION:-}" ]; then
+        # In zsh, $0 when sourced is the path of the sourced file
+        _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    fi
+    # If still can't find the sibling, search relative to cwd
+    if [ -z "${_SCRIPT_DIR}" ] || [ ! -f "${_SCRIPT_DIR}/setup-e2e-testbed.sh" ]; then
+        for _dir in "$(pwd)/hack/e2e" "$(pwd)"; do
+            if [ -f "${_dir}/setup-e2e-testbed.sh" ]; then
+                _SCRIPT_DIR="${_dir}"
+                break
+            fi
+        done
+    fi
     # shellcheck source=hack/e2e/setup-e2e-testbed.sh
+    export _SCRIPT_DIR
     source "${_SCRIPT_DIR}/setup-e2e-testbed.sh"
 fi
 
 echo ""
 echo "=== Environment Setup Complete ==="
 echo "Data source: ${TESTBED_SOURCE}"
-echo "E2E setup: $(if [ "$ENABLE_E2E_KUBECONFIG" = "true" ]; then echo "Enabled (--e2e)"; else echo "Disabled (use --e2e to enable)"; fi)"
+if [ "${ENABLE_E2E_KUBECONFIG}" = "true" ]; then
+    echo "E2E setup: Enabled (--e2e)"
+else
+    echo "E2E setup: Disabled (use --e2e to enable)"
+fi
 echo ""
 echo "The following variables are now available:"
 echo "  VC_URL/VCSA_IP: ${VC_URL}"
 echo "  VC_ROOT_USERNAME/SSH_USERNAME: ${VC_ROOT_USERNAME}"
+echo "  VC_VIM_USERNAME (govc): ${VC_VIM_USERNAME}"
 echo "  NETWORK: ${NETWORK}"
 echo "  KUBECONFIG: ${KUBECONFIG:-not set}"
 echo "  SUPERVISOR_CLUSTER_IP: ${SUPERVISOR_CLUSTER_IP:-not set}"

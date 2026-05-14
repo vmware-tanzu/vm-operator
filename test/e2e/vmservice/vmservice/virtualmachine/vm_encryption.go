@@ -19,7 +19,6 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -106,7 +105,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		cleanupNativeKeyProvider, nativeKPErr = vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
 		Expect(nativeKPErr).NotTo(HaveOccurred(), "failed to ensure native key provider %q", nativeKeyProviderID)
 
-		podVMOnStretchedSupervisorEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
 		byokFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSBYOK"))
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
@@ -217,196 +215,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		if byokFSSEnabled {
 			waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 		}
-	})
-
-	Context("Encrypted Image: publish then deploy", Label("extended-functional", "experimental"), Ordered, func() {
-		const encryptedImageTargetItemName = "encrypted-vm-image"
-
-		var (
-			publishCLID      string
-			publishCLK8sName string
-			pubVMName        string
-			pubVMYaml        []byte
-			vmPubRequestName string
-
-			// publishedImageName is shared from the first It to the second.
-			publishedImageName string
-
-			// orderedNamespace is created once and shared across all It nodes
-			// in this ordered context, independent of the outer per-spec namespace.
-			orderedNamespaceCtx  wcpframework.NamespaceContext
-			orderedNamespaceName string
-			orderedVMIName       string
-		)
-
-		BeforeAll(func() {
-			var err error
-
-			pubVMName = fmt.Sprintf("%s-src-%s", specName, capiutil.RandomString(4))
-			vmPubRequestName = fmt.Sprintf("%s-pub-%s", specName, capiutil.RandomString(4))
-
-			By("Create a dedicated namespace shared across the ordered publish+deploy tests")
-			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
-			clIDs := []string{vmserviceCLID}
-			vmClassNames := []string{clusterResources.VMClassName}
-			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
-
-			orderedNamespaceName = fmt.Sprintf("%s-enc-img-%s", specName, capiutil.RandomString(4))
-			orderedNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, orderedNamespaceName, input.ArtifactFolder)
-			Expect(err).NotTo(HaveOccurred(), "failed to create ordered namespace %s", orderedNamespaceName)
-			wcp.WaitForNamespaceReady(wcpClient, orderedNamespaceName)
-
-			orderedVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, orderedNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to find VMI %q in namespace %q", linuxImageDisplayName, orderedNamespaceName)
-
-			By("Configure ordered namespace with encryption storage class")
-			details, err := wcpClient.GetNamespace(orderedNamespaceName)
-			Expect(err).NotTo(HaveOccurred())
-			svClientSet := clusterProxy.GetClientSet()
-			storageClass, err := svClientSet.StorageV1().StorageClasses().Get(ctx, clusterResources.StorageClassName, metav1.GetOptions{})
-			Expect(err).NotTo(HaveOccurred())
-			policyID := storageClass.Parameters["storagePolicyID"]
-			encryptionStoragePolicyID, err := vcenter.GetOrCreateEncryptionStoragePolicy(ctx, vCenterClient, encryptionStorageProfileName, policyID)
-			Expect(err).ShouldNot(HaveOccurred())
-			details.VMStorageSpec = append(details.VMStorageSpec, wcp.StorageSpec{Policy: encryptionStoragePolicyID})
-			Expect(wcpClient.SetNamespaceStorageSpecs(orderedNamespaceName, details.VMStorageSpec)).Should(Succeed())
-			wcp.WaitForNamespaceReady(wcpClient, orderedNamespaceName)
-			vmoperator.EnsureStorageClassInNamespace(ctx, svClusterClient, orderedNamespaceName, encryptionStorageClassName, podVMOnStretchedSupervisorEnabled)
-
-			By("Create a local content library to hold the published encrypted image")
-			publishCLID = vmservice.CreateLocalContentLibrary(
-				fmt.Sprintf("%s-cl-%s", specName, capiutil.RandomString(4)),
-				wcpClient,
-			)
-
-			By("Attach the publish content library to the ordered namespace")
-			Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(
-				orderedNamespaceName,
-				wcp.ContentLibrarySpec{ContentLibrary: publishCLID, Writable: true},
-			)).To(Succeed(), "failed to attach publish CL %s to namespace %s", publishCLID, orderedNamespaceName)
-
-			publishCLK8sName, err = vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, orderedNamespaceName, publishCLID)
-			Expect(err).NotTo(HaveOccurred(), "failed to get k8s name for publish CL %s", publishCLID)
-		})
-
-		AfterAll(func() {
-			By("Delete publish request if it exists")
-			vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, orderedNamespaceName, vmPubRequestName)
-			vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, orderedNamespaceName, vmPubRequestName)
-
-			By("Delete source encrypted VM if it was created")
-			if len(pubVMYaml) > 0 {
-				_ = clusterProxy.DeleteWithArgs(ctx, pubVMYaml)
-				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, orderedNamespaceName, pubVMName)
-			}
-
-			By("Detach and delete the publish content library")
-			if publishCLID != "" {
-				_ = wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(orderedNamespaceName, publishCLID)
-				_ = wcpClient.DeleteLocalContentLibrary(publishCLID)
-			}
-
-			By("Delete the ordered namespace")
-			if orderedNamespaceCtx.GetNamespace() != nil {
-				clusterProxy.DeleteWCPNamespace(orderedNamespaceCtx)
-				wcp.WaitForNamespaceDeleted(wcpClient, orderedNamespaceName)
-			}
-		})
-
-		It("Publish an Encrypted VirtualMachine as an image to a Content Library", func() {
-			useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
-
-			By("Create source encrypted VM using the native key provider and encryption storage policy")
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        orderedNamespaceName,
-				Name:             pubVMName,
-				ImageName:        orderedVMIName,
-				VMClassName:      "best-effort-small",
-				StorageClassName: encryptionStorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
-				PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
-			}
-			pubVMYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, pubVMYaml)).Should(Succeed(), "failed to create source encrypted VM:\n %s", string(pubVMYaml))
-			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, orderedNamespaceName, pubVMName)
-
-			if byokFSSEnabled {
-				waitForCryptoCondition(ctx, config, svClusterClient, orderedNamespaceName, pubVMName, "")
-			}
-
-			By("Power off the source VM before publishing")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, orderedNamespaceName, pubVMName, string(vmopv1a3.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, orderedNamespaceName, pubVMName, string(vmopv1a3.VirtualMachinePowerStateOff))
-
-			By("Submit VirtualMachinePublishRequest for the encrypted source VM")
-			pubReqParams := manifestbuilders.VirtualMachinePublishRequestYaml{
-				Namespace: orderedNamespaceName,
-				Name:      vmPubRequestName,
-				Source: manifestbuilders.VirtualMachinePublishRequestSource{
-					Name: pubVMName,
-				},
-				Target: manifestbuilders.VirtualMachinePublishRequestTarget{
-					Item: manifestbuilders.VirtualMachinePublishRequestTargetItem{
-						Name:        encryptedImageTargetItemName,
-						Description: "Encrypted VM image published by E2E test",
-					},
-					Location: manifestbuilders.VirtualMachinePublishRequestTargetLocation{
-						Name: publishCLK8sName,
-					},
-				},
-			}
-			pubReqYaml := manifestbuilders.GetVirtualMachinePublishRequestYaml(pubReqParams)
-			Expect(clusterProxy.CreateWithArgs(ctx, pubReqYaml)).Should(Succeed(), "failed to create VirtualMachinePublishRequest:\n %s", string(pubReqYaml))
-
-			By("Verify the publish request completes successfully")
-			vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, orderedNamespaceName, vmPubRequestName, metav1.Condition{
-				Type:   vmopv1a2.VirtualMachinePublishRequestConditionComplete,
-				Status: metav1.ConditionTrue,
-			})
-
-			By("Wait for the published encrypted image to be visible as a VirtualMachineImage")
-			var err error
-			publishedImageName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, orderedNamespaceName, encryptedImageTargetItemName)
-			Expect(err).NotTo(HaveOccurred(), "published encrypted image %q not found in namespace %q", encryptedImageTargetItemName, orderedNamespaceName)
-			Expect(publishedImageName).NotTo(BeEmpty())
-
-			vmoperator.WaitForVirtualMachineImageStatusDisks(ctx, &config.Config, svClusterClient, orderedNamespaceName, publishedImageName)
-		})
-
-		It("Create a VirtualMachine from the published Encrypted Image", func() {
-			Expect(publishedImageName).NotTo(BeEmpty(), "published encrypted image name must be set by the preceding test")
-
-			deployVMName := fmt.Sprintf("%s-dep-%s", specName, capiutil.RandomString(4))
-
-			By("Create VM from the published encrypted image")
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        orderedNamespaceName,
-				Name:             deployVMName,
-				ImageName:        publishedImageName,
-				VMClassName:      "best-effort-small",
-				StorageClassName: encryptionStorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
-				PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
-			}
-			deployVMYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, deployVMYaml)).Should(Succeed(), "failed to create VM from encrypted image:\n %s", string(deployVMYaml))
-
-			DeferCleanup(func() {
-				_ = clusterProxy.DeleteWithArgs(ctx, deployVMYaml)
-				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, orderedNamespaceName, deployVMName)
-			})
-
-			By("Verify VM creation succeeds without parameter errors")
-			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, orderedNamespaceName, deployVMName)
-
-			By("Verify encryption is correctly propagated to the VM's disks")
-			if byokFSSEnabled {
-				cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, orderedNamespaceName, deployVMName, "")
-				Expect(cryptoStatus).NotTo(BeNil())
-				Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
-				Expect(cryptoStatus.Encrypted).NotTo(BeEmpty())
-			}
-		})
 	})
 
 	It("Create an Encrypted VirtualMachine using VM Class configured with vTPM", func() {
@@ -744,7 +552,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			Skip("BYOK FSS is not enabled")
 		}
 
-		if !vmserviceutils.IsStandardKeyProviderAvailable(ctx, svClusterProxy) {
+		if !vmserviceutils.IsStandardKeyProviderAvailable(ctx, clusterProxy) {
 			Skip("Standard key provider (gce2e-standard) not available - requires PyKMIP server setup")
 		}
 

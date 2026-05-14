@@ -8,7 +8,6 @@
 set -o errexit
 set -o nounset
 set -o pipefail
-set -x
 
 export GOVC_URL # set in main()
 export GOVC_INSECURE=true
@@ -20,11 +19,13 @@ crt_dir="$script_dir/tools/bin"
 find_gateway_ip() {
   mgmtCidr="$1"
 
-  # VDS:
-  #  vm == external-gateway
-  # NSX:
-  #  vm == external-vm-gateway
-  vm=$(govc find / -type m -name external*gateway 2>/dev/null || true)
+  # VDS:  vm == external-gateway-vds (or external-gateway)
+  # NSX:  vm == external-vm-gateway
+  # Use suffix wildcard to match all naming variants.
+  vm=$(govc find / -type m -name 'external-gateway*' 2>/dev/null || true)
+  if [ -z "$vm" ]; then
+    vm=$(govc find / -type m -name 'external-vm-gateway*' 2>/dev/null || true)
+  fi
   if [ -z "$vm" ]; then
     return 0
   fi

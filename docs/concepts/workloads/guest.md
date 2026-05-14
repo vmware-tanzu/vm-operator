@@ -35,7 +35,7 @@ The `VirtualMachine` API directly supports specifying a Cloud-Init [cloud config
 
 === "VirtualMachine"
 
-    ``` yaml
+    ```yaml
     apiVersion: vmoperator.vmware.com/v1alpha6
     kind: VirtualMachine
     metadata:
@@ -76,7 +76,7 @@ The `VirtualMachine` API directly supports specifying a Cloud-Init [cloud config
 
 === "Secret"
 
-    ``` yaml
+    ```yaml
     apiVersion: v1
     kind: Secret
     metadata:

@@ -51,6 +51,9 @@ func ReconcileNetworkInterfaces(
 				ethDev.AddressType = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType
 				ethDev.MacAddress = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress
 				ethDev.ExternalId = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId
+				// Clear SubnetId when the backing changes to avoid a vSphere error:
+				// "device.backing Mismatch detected between DVPG and subnet ID"
+				ethDev.SubnetId = ""
 
 				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 					Device:    editDev,

@@ -158,6 +158,10 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 			When("Edit", func() {
 				BeforeEach(func() {
 					curEthCard := *ethCard.GetVirtualEthernetCard()
+					// Simulate a stale SubnetId on the existing NIC (e.g. from a previous subnet).
+					// This should be cleared when the backing changes to avoid:
+					// "device.backing Mismatch detected between DVPG and subnet ID"
+					curEthCard.SubnetId = "/projects/project-quality/vpcs/foo/subnets/old-subnet"
 
 					ethCard.GetVirtualEthernetCard().Backing = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
 						Port: vimtypes.DistributedVirtualSwitchPortConnection{
@@ -175,13 +179,17 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 					currentEthCards = append(currentEthCards, &curEthCard)
 				})
 
-				It("Returns Edit Operation", func() {
+				It("Returns Edit Operation with SubnetId cleared", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(deviceChanges).To(HaveLen(1))
 					dc0 := deviceChanges[0].GetVirtualDeviceConfigSpec()
 					Expect(dc0.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
 					Expect(dc0.Device.GetVirtualDevice().Backing).To(Equal(ethCard.GetVirtualEthernetCard().Backing))
+					// SubnetId must be cleared to avoid vSphere rejecting the reconfigure with:
+					// "device.backing Mismatch detected between DVPG and subnet ID"
+					editedEthCard := dc0.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+					Expect(editedEthCard.SubnetId).To(BeEmpty())
 				})
 
 				When("Network Interface CR is old and does not have interface name label", func() {
@@ -190,13 +198,15 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 						delete(obj.GetLabels(), network.VMInterfaceNameLabel)
 					})
 
-					It("Returns Edit Operation", func() {
+					It("Returns Edit Operation with SubnetId cleared", func() {
 						Expect(err).ToNot(HaveOccurred())
 
 						Expect(deviceChanges).To(HaveLen(1))
 						dc0 := deviceChanges[0].GetVirtualDeviceConfigSpec()
 						Expect(dc0.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
 						Expect(dc0.Device.GetVirtualDevice().Backing).To(Equal(ethCard.GetVirtualEthernetCard().Backing))
+						editedEthCard := dc0.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+						Expect(editedEthCard.SubnetId).To(BeEmpty())
 					})
 				})
 			})

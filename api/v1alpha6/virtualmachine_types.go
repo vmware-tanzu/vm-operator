@@ -1237,7 +1237,7 @@ type VirtualMachineAdvancedSpec struct {
 	// latency-sensitive workloads.
 	//
 	// When nil, the hypervisor decides the effective value.
-	PreferHTEnabled *bool `json:"preferHTEnabled,omitempty" vmx:"numa.vcpu.preferHT"`
+	PreferHTEnabled *bool `json:"preferHTEnabled,omitempty" vmx:"numa.vcpu.preferHT" vmxmode:"powercycle"`
 
 	// +optional
 
@@ -1246,7 +1246,7 @@ type VirtualMachineAdvancedSpec struct {
 	// Cannot be changed while the VM is powered on.
 	//
 	// When nil, the hypervisor decides the effective value.
-	HugePages1GEnabled *bool `json:"hugePages1GEnabled,omitempty" vmx:"sched.mem.lpage.enable1GPage"`
+	HugePages1GEnabled *bool `json:"hugePages1GEnabled,omitempty" vmx:"sched.mem.lpage.enable1GPage" vmxmode:"poweroff"`
 
 	// +optional
 
@@ -1255,7 +1255,7 @@ type VirtualMachineAdvancedSpec struct {
 	// latency-sensitive workloads. Typically set alongside LatencySensitivity=High.
 	//
 	// When nil, the hypervisor decides the effective value.
-	TimeTrackerLowLatencyEnabled *bool `json:"timeTrackerLowLatencyEnabled,omitempty" vmx:"timeTracker.lowLatency"`
+	TimeTrackerLowLatencyEnabled *bool `json:"timeTrackerLowLatencyEnabled,omitempty" vmx:"timeTracker.lowLatency" vmxmode:"powercycle"`
 
 	// +optional
 
@@ -1264,7 +1264,7 @@ type VirtualMachineAdvancedSpec struct {
 	// Typically set alongside LatencySensitivity=High.
 	//
 	// When nil, the hypervisor decides the effective value.
-	CPUAffinityExclusiveNoStatsEnabled *bool `json:"cpuAffinityExclusiveNoStatsEnabled,omitempty" vmx:"sched.cpu.affinity.exclusiveNoStats"`
+	CPUAffinityExclusiveNoStatsEnabled *bool `json:"cpuAffinityExclusiveNoStatsEnabled,omitempty" vmx:"sched.cpu.affinity.exclusiveNoStats" vmxmode:"powercycle"`
 
 	// +optional
 
@@ -1273,7 +1273,7 @@ type VirtualMachineAdvancedSpec struct {
 	// jitter for memory-sensitive workloads.
 	//
 	// When nil, the hypervisor decides the effective value.
-	VMXSwapEnabled *bool `json:"vmxSwapEnabled,omitempty" vmx:"sched.swap.vmxSwapEnabled"`
+	VMXSwapEnabled *bool `json:"vmxSwapEnabled,omitempty" vmx:"sched.swap.vmxSwapEnabled" vmxmode:"powercycle"`
 
 	// +optional
 
@@ -1283,7 +1283,7 @@ type VirtualMachineAdvancedSpec struct {
 	//
 	// This is distinct from per-NIC virtual NUMA node assignment
 	// (interfaces[].vNUMANodeID), which assigns a NIC to a vNUMA node.
-	PNUMANodeAffinity []int32 `json:"pNUMANodeAffinity,omitempty" vmx:"numa.nodeAffinity"`
+	PNUMANodeAffinity []int32 `json:"pNUMANodeAffinity,omitempty" vmx:"numa.nodeAffinity" vmxmode:"powercycle"`
 
 	// +optional
 	// +listType=map

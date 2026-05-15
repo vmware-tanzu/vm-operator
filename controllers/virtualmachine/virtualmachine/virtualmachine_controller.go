@@ -51,6 +51,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
+	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
 )
 
 const (
@@ -326,6 +327,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		ctx = vmconfig.Register(ctx, diskpromo.New())
 	}
 	ctx = vmconfig.Register(ctx, bootoptions.New())
+
+	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+		ctx = vmconfig.Register(ctx, vmconfextraconfig.New())
+	}
 
 	ctx = ctxop.WithContext(ctx)
 	ctx = ovfcache.JoinContext(ctx, r.Context)

@@ -70,6 +70,7 @@ import (
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	vmconfbootoptions "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
+	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
@@ -2498,6 +2499,19 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	if err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs); err != nil {
 		return err
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if err := vmconfextraconfig.Reconcile(
+			vmCtx,
+			vs.k8sClient,
+			vcClient.VimClient(),
+			vmCtx.VM,
+			vmCtx.MoVM,
+			&createArgs.ConfigSpec); err != nil {
+
+			return err
+		}
 	}
 
 	if err := vs.vmCreateGenConfigSpecChangeBootDiskSize(vmCtx, createArgs); err != nil {

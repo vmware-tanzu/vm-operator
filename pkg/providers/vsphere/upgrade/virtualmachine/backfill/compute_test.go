@@ -38,9 +38,8 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 		BeforeEach(func() {
 			moVM.Config = nil
 		})
-		It("returns false, nil without panicking", func() {
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+		It("returns false without panicking", func() {
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources).To(BeNil())
 			Expect(vm.Spec.CPUAdvanced).To(BeNil())
@@ -57,8 +56,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 		DescribeTable("size.cpu backfilled from Hardware.NumCPU",
 			func(numCPU int32, expectCPU *int64) {
 				moVM.Config.Hardware.NumCPU = numCPU
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectCPU == nil {
 					if vm.Spec.Resources != nil && vm.Spec.Resources.Size != nil {
 						Expect(vm.Spec.Resources.Size.CPU).To(BeNil())
@@ -80,8 +78,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 		DescribeTable("size.memory backfilled from Hardware.MemoryMB (MiB → bytes)",
 			func(memoryMB int32, expectBytes *int64) {
 				moVM.Config.Hardware.MemoryMB = memoryMB
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectBytes == nil {
 					if vm.Spec.Resources != nil && vm.Spec.Resources.Size != nil {
 						Expect(vm.Spec.Resources.Size.Memory).To(BeNil())
@@ -105,8 +102,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
 			}
 			moVM.Config.Hardware.NumCPU = 8
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources.Size.CPU.Value()).To(Equal(int64(2)))
 		})
@@ -117,8 +113,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				Size: &vmopv1.VirtualMachineResourceQuantity{Memory: &q},
 			}
 			moVM.Config.Hardware.MemoryMB = 8192
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources.Size.Memory.Value()).To(Equal(int64(4 * 1024 * 1024 * 1024)))
 		})
@@ -136,8 +131,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 					Reservation: reservation,
 					Limit:       limit,
 				}
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 
 				if expectReqMHz != nil {
 					Expect(vm.Spec.Resources).ToNot(BeNil())
@@ -180,8 +174,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 
 		It("CpuAllocation == nil → no CPU requests/limits backfilled", func() {
 			moVM.Config.CpuAllocation = nil
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources).To(BeNil())
 		})
@@ -194,8 +187,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			moVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 				Reservation: ptr.To(int64(2000)),
 			}
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources.Requests.CPU.Value()).To(Equal(int64(1500)))
 		})
@@ -208,8 +200,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			moVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 				Limit: ptr.To(int64(4000)),
 			}
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources.Limits.CPU.Value()).To(Equal(int64(3000)))
 		})
@@ -220,8 +211,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 					Reservation: reservation,
 					Limit:       limit,
 				}
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 
 				if expectReqBytes != nil {
 					Expect(vm.Spec.Resources).ToNot(BeNil())
@@ -265,8 +255,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			moVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 				Reservation: ptr.To(int64(8192)), // 8 GiB in MiB
 			}
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources.Requests.Memory.Value()).To(Equal(int64(4 * 1024 * 1024 * 1024)))
 		})
@@ -279,8 +268,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			moVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 				Limit: ptr.To(int64(16384)), // 16 GiB in MiB
 			}
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Resources.Limits.Memory.Value()).To(Equal(int64(8 * 1024 * 1024 * 1024)))
 		})
@@ -298,8 +286,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 
 				moVM.Config.LatencySensitivity = &vimtypes.LatencySensitivity{Level: level}
 				moVM.Config.Hardware.SimultaneousThreads = threads
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectLevel == nil {
 					if vm.Spec.CPUAdvanced != nil {
 						Expect(vm.Spec.CPUAdvanced.LatencySensitivity).To(BeNil())
@@ -330,8 +317,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 
 		It("LatencySensitivity == nil → spec field stays nil", func() {
 			moVM.Config.LatencySensitivity = nil
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			if vm.Spec.CPUAdvanced != nil {
 				Expect(vm.Spec.CPUAdvanced.LatencySensitivity).To(BeNil())
@@ -346,8 +332,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				Level: vimtypes.LatencySensitivitySensitivityLevelHigh,
 			}
 			moVM.Config.Hardware.SimultaneousThreads = 2
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.CPUAdvanced.LatencySensitivity).To(Equal(vmopv1.VirtualMachineLatencySensitivityNormal))
 		})
@@ -362,8 +347,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 		DescribeTable("coresPerSocket backfill from Hardware.NumCoresPerSocket",
 			func(numCoresPerSocket *int32, expectCPS *int32) {
 				moVM.Config.Hardware.NumCoresPerSocket = numCoresPerSocket
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectCPS == nil {
 					if vm.Spec.CPUAdvanced != nil && vm.Spec.CPUAdvanced.Topology != nil {
 						Expect(vm.Spec.CPUAdvanced.Topology.CoresPerSocket).To(BeNil())
@@ -390,8 +374,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 					AutoCoresPerNumaNode: autoCores,
 					CoresPerNumaNode:     coresPerNode,
 				}
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectNodeCount == nil {
 					if vm.Spec.CPUAdvanced != nil && vm.Spec.CPUAdvanced.Topology != nil {
 						Expect(vm.Spec.CPUAdvanced.Topology.VNUMANodeCount).To(BeNil())
@@ -423,8 +406,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				moVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
 					VnumaOnCpuHotaddExposed: exposed,
 				}
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectExposed == nil {
 					if vm.Spec.CPUAdvanced != nil && vm.Spec.CPUAdvanced.Topology != nil {
 						Expect(vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd).To(BeNil())
@@ -448,8 +430,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 
 		It("NumaInfo == nil → no NumaInfo-derived topology fields set", func() {
 			moVM.Config.NumaInfo = nil
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 		})
 
@@ -460,8 +441,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				},
 			}
 			moVM.Config.Hardware.NumCoresPerSocket = ptr.To(int32(8))
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.CPUAdvanced.Topology.CoresPerSocket).To(Equal(int32(2)))
 		})
@@ -482,8 +462,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			moVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
 				CoresPerNumaNode: ptr.To(int32(2)),
 			}
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.CPUAdvanced.Topology.VNUMANodeCount).To(Equal(int32(2)))
 		})
@@ -497,8 +476,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			moVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
 				VnumaOnCpuHotaddExposed: ptr.To(true),
 			}
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd).To(BeTrue())
 		})
@@ -515,8 +493,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				checkSpec func(*vmopv1.VirtualMachineCPUAdvancedSpec)) {
 
 				setup(moVM.Config)
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if checkSpec == nil {
 					Expect(mutated).To(BeFalse())
 					return
@@ -580,8 +557,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{}
 				setSpec(vm.Spec.CPUAdvanced)
 				setMoVM(moVM.Config)
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				Expect(mutated).To(BeFalse())
 				checkSpec(vm.Spec.CPUAdvanced)
 			},
@@ -627,8 +603,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				checkSpec func(*vmopv1.VirtualMachineMemoryAdvancedSpec)) {
 
 				setup(moVM.Config)
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if checkSpec == nil {
 					Expect(mutated).To(BeFalse())
 					return
@@ -668,8 +643,7 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{}
 				setSpec(vm.Spec.MemoryAdvanced)
 				setMoVM(moVM.Config)
-				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				Expect(err).ToNot(HaveOccurred())
+				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				Expect(mutated).To(BeFalse())
 				checkSpec(vm.Spec.MemoryAdvanced)
 			},
@@ -696,15 +670,13 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 
 	Context("mutation tracking", func() {
 		It("no fields to backfill → mutated=false", func() {
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 		})
 
 		It("at least one field backfilled → mutated=true", func() {
 			moVM.Config.Hardware.NumCPU = 4
-			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeTrue())
 		})
 	})

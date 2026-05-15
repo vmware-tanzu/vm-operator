@@ -45,6 +45,7 @@ import (
 	vmconfcdrom "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/cdrom"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
+	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
@@ -128,7 +129,8 @@ func (s *Session) UpdateVirtualMachine(
 		updateErr = fmt.Errorf("updating state failed with %w", updateErr)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
+	features := pkgcfg.FromContext(vmCtx).Features
+	if features.BringYourOwnEncryptionKey || features.TelcoVMServiceAPI {
 		for _, r := range vmconfig.FromContext(vmCtx) {
 			if err := r.OnResult(
 				vmCtx,
@@ -1388,6 +1390,25 @@ func reconcileCdrom(
 		configSpec)
 }
 
+func reconcileAdvancedExtraConfig(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling advanced extra config")
+
+	return vmconfextraconfig.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1455,6 +1476,19 @@ func doReconfigure(
 		&configSpec); err != nil {
 
 		return err
+	}
+
+	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+		if err := reconcileAdvancedExtraConfig(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {

@@ -57,9 +57,23 @@ const (
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" //nolint:gosec
 	PCIPassthruMMIOSizeDefault        = "512"
 
+	// ExtraConfigManagedKeysKey is the ExtraConfig key that tracks which
+	// spec.advanced.extraConfig keys have been written by vm-operator, so they
+	// can be removed when the user deletes them from the spec.
+	ExtraConfigManagedKeysKey = "vmservice.extraconfig.managedKeys"
+
 	// ExtraConfig reserved prefixes — vm-operator controls these and users must not set them directly.
-	ExtraConfigReservedPrefixVMService          = "vmservice."
-	ExtraConfigReservedKeyVMXRebootPowerCycle   = "vmx.reboot.powerCycle"
+	ExtraConfigReservedPrefixVMService = "vmservice."
+
+	// ExtraConfigReservedKeyVMXRebootPowerCycle is the VMX key that triggers a
+	// guest power cycle. When this key is set to "TRUE" on a running VM, vSphere
+	// does NOT immediately power-cycle the guest; instead, it schedules the cycle
+	// to take effect on the next guest-initiated restart (or at the next boot if
+	// the VM is not yet running). vSphere automatically removes this key after
+	// the power cycle completes. vm-operator sets this key to "TRUE" whenever a
+	// powercycle-mode first-class VMX field is applied to a running VM, signalling
+	// that the change will become effective only after the guest power-cycles.
+	ExtraConfigReservedKeyVMXRebootPowerCycle = "vmx.reboot.powerCycle"
 
 	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"

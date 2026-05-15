@@ -25,6 +25,7 @@ var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
 	Describe("ConfigSpec", vmConfigSpecTests)
 	Describe("ConnectionState", vmConnectionStateTests)
 	Describe("Create", Label(testlabels.Create), vmCreateTests)
+	Describe("ExtraConfig", vmExtraConfigTests)
 	Describe("Crypto", Label(testlabels.Crypto), vmCryptoTests)
 	Describe("Delete", Label(testlabels.Delete), vmDeleteTests)
 	Describe("Disks", vmDisksTests)

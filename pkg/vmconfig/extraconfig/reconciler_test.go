@@ -172,7 +172,7 @@ var _ = Describe("Reconcile", func() {
 
 	It("clears first-class (PowerCycle) key and injects vmx.reboot.powerCycle when VM is on", func() {
 		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-		// Spec has nil preferHTEnabled — clear intent
+		// Spec has nil PreferHTEnabled — clear intent
 		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: nil}
 		moVM = moVMWithEC("numa.vcpu.preferHT", "TRUE")
 		Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())

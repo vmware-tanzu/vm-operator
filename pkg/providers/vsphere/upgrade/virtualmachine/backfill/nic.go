@@ -27,7 +27,7 @@ import (
 //     defaulting to VMXNet3 for unrecognised device types.
 //   - spec.network.interfaces[i].vmxnet3.*: backfilled from moVM.Config.ExtraConfig
 //     using the device-key-derived ethernetX prefix.
-//   - spec.network.interfaces[i].vNUMANodeID: filled from VirtualDevice.NumaNode.
+//   - spec.network.interfaces[i].vnumaNodeID: filled from VirtualDevice.NumaNode.
 //   - spec.network.interfaces[i].vmxnet3.UPTv2Enabled: filled from
 //     VirtualVmxnet3.Uptv2Enabled.
 //

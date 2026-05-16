@@ -175,7 +175,7 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// for UDP-heavy workloads such as GTP-U tunnels, QUIC, or media streaming.
 	//
 	// When nil, the hypervisor decides the effective value.
-	UDPRSSEnabled *UDPRSSMode `json:"udpRSSEnabled,omitempty" vmx:"ethernet%d.udpRSS"`
+	UDPRSSEnabled *UDPRSSMode `json:"udpRssEnabled,omitempty" vmx:"ethernet%d.udpRSS"`
 
 	// +optional
 	// +kubebuilder:validation:MaxItems=16

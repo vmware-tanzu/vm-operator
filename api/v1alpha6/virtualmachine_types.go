@@ -88,7 +88,7 @@ const (
 
 	// VirtualMachineConditionNetworkConfigSynced indicates whether the VM's
 	// NIC-level properties (interfaces[].vmxnet3, interfaces[].advancedProperties,
-	// interfaces[].vNUMANodeID) are applied to vSphere.
+	// interfaces[].vnumaNodeID) are applied to vSphere.
 	// This condition is marked as False/Pending if changes are detected while the VM is powered on.
 	// The changes will be applied the next time the VM is in a powered off state.
 	//
@@ -1237,7 +1237,7 @@ type VirtualMachineAdvancedSpec struct {
 	// latency-sensitive workloads.
 	//
 	// When nil, the hypervisor decides the effective value.
-	PreferHTEnabled *bool `json:"preferHTEnabled,omitempty" vmx:"numa.vcpu.preferHT" vmxmode:"powercycle"`
+	PreferHTEnabled *bool `json:"preferHtEnabled,omitempty" vmx:"numa.vcpu.preferHT" vmxmode:"powercycle"`
 
 	// +optional
 
@@ -1282,8 +1282,8 @@ type VirtualMachineAdvancedSpec struct {
 	// NUMA node IDs. An empty slice removes any existing affinity constraint.
 	//
 	// This is distinct from per-NIC virtual NUMA node assignment
-	// (interfaces[].vNUMANodeID), which assigns a NIC to a vNUMA node.
-	PNUMANodeAffinity []int32 `json:"pNUMANodeAffinity,omitempty" vmx:"numa.nodeAffinity" vmxmode:"powercycle"`
+	// (interfaces[].vnumaNodeID), which assigns a NIC to a vNUMA node.
+	PNUMANodeAffinity []int32 `json:"pnumaNodeAffinity,omitempty" vmx:"numa.nodeAffinity" vmxmode:"powercycle"`
 
 	// +optional
 	// +listType=map

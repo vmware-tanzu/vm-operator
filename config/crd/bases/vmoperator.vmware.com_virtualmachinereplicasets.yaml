@@ -7876,19 +7876,19 @@ spec:
 
                               When nil, the hypervisor decides the effective value.
                             type: boolean
-                          pNUMANodeAffinity:
+                          pnumaNodeAffinity:
                             description: |-
                               PNUMANodeAffinity pins this VM to the specified physical host NUMA nodes.
                               vSphere scheduler places vCPUs and memory only on the listed physical
                               NUMA node IDs. An empty slice removes any existing affinity constraint.
 
                               This is distinct from per-NIC virtual NUMA node assignment
-                              (interfaces[].vNUMANodeID), which assigns a NIC to a vNUMA node.
+                              (interfaces[].vnumaNodeID), which assigns a NIC to a vNUMA node.
                             items:
                               format: int32
                               type: integer
                             type: array
-                          preferHTEnabled:
+                          preferHtEnabled:
                             description: |-
                               PreferHTEnabled hints to the ESXi scheduler to prefer placing vCPUs on
                               hyperthreads of the same physical core, improving memory locality for
@@ -10366,20 +10366,6 @@ spec:
                                   - VMXNet2
                                   - PCNet32
                                   type: string
-                                vNUMANodeID:
-                                  description: |-
-                                    VNUMANodeID assigns this interface to a specific virtual NUMA node.
-                                    The value must match a virtual NUMA node ID configured in the VM's
-                                    CPU topology (spec.cpuAdvanced.topology.vnumaNodeCount). Co-locating a NIC with the
-                                    vCPUs that process its traffic reduces cross-NUMA memory latency for
-                                    latency-sensitive workloads.
-                                    Requires EFI firmware (spec.hardware.firmware=EFI); Legacy BIOS does
-                                    not support device assignment.
-                                    Requires spec.minHardwareVersion >= 20.
-                                    Cannot be changed while the VM is powered on.
-                                  format: int32
-                                  minimum: 0
-                                  type: integer
                                 vmxnet3:
                                   description: |-
                                     VMXNet3 contains configuration options specific to VMXNet3 interfaces.
@@ -10460,7 +10446,7 @@ spec:
 
                                         When nil, the hypervisor decides the effective value.
                                       type: boolean
-                                    udpRSSEnabled:
+                                    udpRssEnabled:
                                       description: |-
                                         UDPRSSEnabled extends RSS to UDP traffic. By default RSS only distributes
                                         TCP flows. Enabling this also distributes UDP flows, improving throughput
@@ -10483,6 +10469,20 @@ spec:
                                   - message: coalescingParams must have length < 128
                                     rule: '!has(self.coalescingParams) || size(self.coalescingParams)
                                       < 128'
+                                vnumaNodeID:
+                                  description: |-
+                                    VNUMANodeID assigns this interface to a specific virtual NUMA node.
+                                    The value must match a virtual NUMA node ID configured in the VM's
+                                    CPU topology (spec.cpuAdvanced.topology.vnumaNodeCount). Co-locating a NIC with the
+                                    vCPUs that process its traffic reduces cross-NUMA memory latency for
+                                    latency-sensitive workloads.
+                                    Requires EFI firmware (spec.hardware.firmware=EFI); Legacy BIOS does
+                                    not support device assignment.
+                                    Requires spec.minHardwareVersion >= 20.
+                                    Cannot be changed while the VM is powered on.
+                                  format: int32
+                                  minimum: 0
+                                  type: integer
                               required:
                               - name
                               type: object

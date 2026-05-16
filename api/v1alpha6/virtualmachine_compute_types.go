@@ -58,7 +58,7 @@ type VirtualMachineResourcesSpec struct {
 	// Requests is the host-level resource reservation (host guarantee).
 	// requests.cpu is in MHz; requests.memory is in bytes.
 	// Maps to CpuAllocation.Reservation and MemoryAllocation.Reservation.
-	// Changes apply immediately on a powered-on VM (Category 2).
+	// Changes apply immediately on a powered-on VM.
 	Requests *VirtualMachineResourceQuantity `json:"requests,omitempty"`
 
 	// +optional
@@ -67,7 +67,7 @@ type VirtualMachineResourcesSpec struct {
 	// limits.cpu is in MHz (nil = unlimited); limits.memory is in bytes
 	// (nil = unlimited).
 	// Maps to CpuAllocation.Limit and MemoryAllocation.Limit.
-	// Changes apply immediately on a powered-on VM (Category 2).
+	// Changes apply immediately on a powered-on VM.
 	Limits *VirtualMachineResourceQuantity `json:"limits,omitempty"`
 }
 
@@ -109,7 +109,7 @@ type VirtualMachineCPUTopologySpec struct {
 	// CoresPerSocket controls the number of cores per virtual socket,
 	// allowing users to tune the NUMA topology visible to the guest OS.
 	// Maps to ConfigSpec.NumCoresPerSocket.
-	// Requires power-off to apply (Category 1).
+	// Requires power-off to apply.
 	CoresPerSocket *int32 `json:"coresPerSocket,omitempty"`
 
 	// +optional
@@ -120,7 +120,7 @@ type VirtualMachineCPUTopologySpec struct {
 	// Used alongside CoresPerSocket for full CPU topology control.
 	// Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode.
 	// Requires hardware version vmx-20 or later.
-	// Requires power-off to apply (Category 1).
+	// Requires power-off to apply.
 	CoresPerNUMANode *int32 `json:"coresPerNumaNode,omitempty"`
 
 	// +optional
@@ -131,7 +131,7 @@ type VirtualMachineCPUTopologySpec struct {
 	// is configured (CoresPerNUMANode is set).
 	// Maps to ConfigSpec.VirtualNuma.ExposeVnumaOnCpuHotadd.
 	// Requires hardware version vmx-20 or later.
-	// Requires power-off to apply (Category 1).
+	// Requires power-off to apply.
 	ExposeVNUMAOnCPUHotAdd *bool `json:"exposeVnumaOnCpuHotadd,omitempty"`
 }
 
@@ -150,7 +150,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// (requests = size) when set to High or HighWithHyperthreading.
 	// If not set, the VMClass value is used; if VMClass is absent, vSphere
 	// defaults to Normal.
-	// Requires power-off to apply (Category 1).
+	// Requires power-off to apply.
 	LatencySensitivity *VirtualMachineLatencySensitivityLevel `json:"latencySensitivity,omitempty"`
 
 	// +optional
@@ -166,7 +166,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// on (CPU hot-add). Maps to ConfigSpec.CpuHotAddEnabled.
 	// Requires hardware version vmx-20 or later.
 	// Not compatible with LatencySensitivity High or HighWithHyperthreading.
-	// Requires power-off to apply (Category 1).
+	// Requires power-off to apply.
 	HotAddEnabled *bool `json:"hotAddEnabled,omitempty"`
 
 	// +optional
@@ -205,7 +205,7 @@ type VirtualMachineMemoryAdvancedSpec struct {
 	// HotAddEnabled allows memory to be added to the VM while it is powered
 	// on (memory hot-add). Maps to ConfigSpec.MemoryHotAddEnabled.
 	// Requires hardware version vmx-20 or later.
-	// Requires power-off to apply (Category 1).
+	// Requires power-off to apply.
 	HotAddEnabled *bool `json:"hotAddEnabled,omitempty"`
 
 	// +optional
@@ -214,6 +214,6 @@ type VirtualMachineMemoryAdvancedSpec struct {
 	// guest-visible memory size. Required for SR-IOV workloads, which need
 	// full guest RAM pinned on the host.
 	// Maps to ConfigSpec.MemoryReservationLockedToMax.
-	// Requires power-off to apply (Category 1).
+	// Requires power-off to apply.
 	ReservationLockedToMax *bool `json:"reservationLockedToMax,omitempty"`
 }

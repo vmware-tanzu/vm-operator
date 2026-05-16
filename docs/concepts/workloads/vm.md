@@ -841,6 +841,47 @@ The above data does _not_ represent the _observed_ network configuration of the 
 
 `status.extraConfig` lists the effective VM-wide VMX map the operator is managing for observation. Conditions such as `VirtualMachineExtraConfigSynced` and `VirtualMachineNetworkConfigSynced` report whether VM-wide and per-interface advanced settings have been applied.
 
+## Compute Reconfiguration
+
+> **Capability required:** `TelcoVMServiceAPI`. Fields in this section are absent from the CRD schema when the capability is not activated on the Supervisor.
+
+`spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` enable field-level override of compute settings for Telco VNF workloads requiring deterministic scheduling or hardware-pinned resources.
+
+### spec.resources
+
+Overrides the guest-visible compute allocation and host-level resource policies independently of the `VirtualMachineClass`.
+
+| Field | Description |
+|-------|-------------|
+| `size.cpu` | Guest-visible vCPU count (whole number, e.g. `"4"`). Maps to `ConfigSpec.NumCPUs`. |
+| `size.memory` | Guest-visible RAM (e.g. `"8Gi"`). Maps to `ConfigSpec.MemoryMB`. |
+| `requests.cpu` | Host CPU reservation in **MHz** (e.g. `"2000"` for 2 GHz). Maps to `CpuAllocation.Reservation`. |
+| `requests.memory` | Host memory reservation (e.g. `"8Gi"`). Maps to `MemoryAllocation.Reservation`. |
+| `limits.cpu` | Host CPU limit in **MHz**; omit for unlimited. Maps to `CpuAllocation.Limit`. |
+| `limits.memory` | Host memory limit; omit for unlimited. Maps to `MemoryAllocation.Limit`. |
+
+> `requests` and `limits` CPU values are in **MHz**, not Kubernetes millicores. Using the `m` suffix (e.g. `"2000m"`) is rejected by admission.
+
+### spec.cpuAdvanced
+
+| Field | Description |
+|-------|-------------|
+| `latencySensitivity` | CPU scheduler latency class: `Low`, `Normal`, `High`, `HighWithHyperthreading`. `High`/`HighWithHyperthreading` require `requests = size`. Requires power-off. |
+| `topology.coresPerSocket` | Cores per virtual socket (≥ 1). Maps to `ConfigSpec.NumCoresPerSocket`. Requires power-off. |
+| `topology.coresPerNumaNode` | Cores per virtual NUMA node (≥ 1). Sets the number of vNUMA nodes = total vCPUs / value. Requires power-off. |
+| `topology.exposeVnumaOnCpuHotadd` | Expose vNUMA topology when vCPUs are hot-added. Only relevant when `hotAddEnabled` is true and vNUMA is configured. Requires power-off. |
+| `hotAddEnabled` | Allow vCPU hot-add while the VM is powered on. Incompatible with `latencySensitivity` High/HighWithHyperthreading. Requires power-off to enable. |
+| `iommuEnabled` | Enable IOMMU (VT-d / Intel VT-d). Required for SR-IOV and PCI passthrough. Requires EFI firmware. Requires power-off. |
+| `nestedHardwareVirtualizationEnabled` | Expose hardware virtualisation to the guest OS (nested hypervisor / VMX). Requires power-off. |
+| `performanceCountersEnabled` | Enable vPMC so profiling tools inside the guest can access hardware performance counters. Requires power-off. |
+
+### spec.memoryAdvanced
+
+| Field | Description |
+|-------|-------------|
+| `hotAddEnabled` | Allow memory hot-add while the VM is powered on. Requires power-off to enable. |
+| `reservationLockedToMax` | Pin host memory reservation to the full guest RAM size. Required for SR-IOV workloads. Requires power-off. |
+
 ## Storage
 
 A VM deployed from a `VirtualMachineImage` or `ClusterVirtualMachineImage` inherit the disk(s) from those images. Additional storage may also be provided by using [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes).

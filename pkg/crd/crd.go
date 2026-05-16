@@ -334,6 +334,9 @@ func Install( //nolint:gocyclo
 							specFieldPath("network", "interfaces", "[]", "vNUMANodeID"),
 							specFieldPath("network", "interfaces", "[]", "vmxnet3"),
 							specFieldPath("network", "interfaces", "[]", "advancedProperties"),
+							specFieldPath("resources"),
+							specFieldPath("cpuAdvanced"),
+							specFieldPath("memoryAdvanced"),
 							statusFieldPath("extraConfig"),
 						); err != nil {
 

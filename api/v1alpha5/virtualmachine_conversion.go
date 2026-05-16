@@ -127,6 +127,24 @@ func restore_v1alpha6_VirtualMachineNetworkVLANs(dst, src *vmopv1.VirtualMachine
 	dst.Spec.Network.VLANs = src.Spec.Network.VLANs
 }
 
+func restore_v1alpha6_VirtualMachineResources(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Resources != nil {
+		dst.Spec.Resources = src.Spec.Resources.DeepCopy()
+	}
+}
+
+func restore_v1alpha6_VirtualMachineCPUAdvanced(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.CPUAdvanced != nil {
+		dst.Spec.CPUAdvanced = src.Spec.CPUAdvanced.DeepCopy()
+	}
+}
+
+func restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.MemoryAdvanced != nil {
+		dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced.DeepCopy()
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -147,6 +165,9 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
 	restore_v1alpha6_VirtualMachineAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, restored)
+	restore_v1alpha6_VirtualMachineResources(dst, restored)
+	restore_v1alpha6_VirtualMachineCPUAdvanced(dst, restored)
+	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
 
 	// END RESTORE
 

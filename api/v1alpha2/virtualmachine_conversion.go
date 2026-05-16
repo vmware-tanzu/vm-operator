@@ -98,6 +98,24 @@ func restore_v1alpha6_VirtualMachineAdvanced(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Advanced.ExtraConfig = adv.ExtraConfig
 }
 
+func restore_v1alpha6_VirtualMachineResources(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Resources != nil {
+		dst.Spec.Resources = src.Spec.Resources.DeepCopy()
+	}
+}
+
+func restore_v1alpha6_VirtualMachineCPUAdvanced(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.CPUAdvanced != nil {
+		dst.Spec.CPUAdvanced = src.Spec.CPUAdvanced.DeepCopy()
+	}
+}
+
+func restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.MemoryAdvanced != nil {
+		dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced.DeepCopy()
+	}
+}
+
 func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMachine) {
 	if src.Spec.Network == nil || len(src.Spec.Network.Interfaces) == 0 {
 		return
@@ -540,6 +558,9 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, restored)
 	restore_v1alpha6_VirtualMachineCurrentSnapshotName(dst, restored)
+	restore_v1alpha6_VirtualMachineResources(dst, restored)
+	restore_v1alpha6_VirtualMachineCPUAdvanced(dst, restored)
+	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
 
 	// END RESTORE
 

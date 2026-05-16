@@ -1137,4 +1137,106 @@ func TestVirtualMachineConversion(t *testing.T) {
 		}
 		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 	})
+
+	t.Run("spec.resources.size", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Resources: &vmopv1.VirtualMachineResourcesSpec{
+					Size: &vmopv1.VirtualMachineResourceQuantity{
+						CPU:    resource.MustParse("4"),
+						Memory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("spec.resources.requests", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Resources: &vmopv1.VirtualMachineResourcesSpec{
+					Requests: &vmopv1.VirtualMachineResourceQuantity{
+						CPU:    resource.MustParse("2000"),
+						Memory: resource.MustParse("4Gi"),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("spec.resources.limits", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Resources: &vmopv1.VirtualMachineResourcesSpec{
+					Limits: &vmopv1.VirtualMachineResourceQuantity{
+						CPU:    resource.MustParse("4000"),
+						Memory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("spec.resources full", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Resources: &vmopv1.VirtualMachineResourcesSpec{
+					Size: &vmopv1.VirtualMachineResourceQuantity{
+						CPU:    resource.MustParse("8"),
+						Memory: resource.MustParse("16Gi"),
+					},
+					Requests: &vmopv1.VirtualMachineResourceQuantity{
+						CPU:    resource.MustParse("2000"),
+						Memory: resource.MustParse("8Gi"),
+					},
+					Limits: &vmopv1.VirtualMachineResourceQuantity{
+						CPU:    resource.MustParse("4000"),
+						Memory: resource.MustParse("16Gi"),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("spec.cpuAdvanced full", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+					LatencySensitivity: ptrOf(vmopv1.VirtualMachineLatencySensitivityHigh),
+					Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+						CoresPerSocket:         ptrOf(int32(4)),
+						CoresPerNUMANode:       ptrOf(int32(8)),
+						ExposeVNUMAOnCPUHotAdd: ptrOf(true),
+					},
+					HotAddEnabled:                       ptrOf(false),
+					IOMMUEnabled:                        ptrOf(true),
+					NestedHardwareVirtualizationEnabled: ptrOf(true),
+					PerformanceCountersEnabled:          ptrOf(true),
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("spec.memoryAdvanced full", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MemoryAdvanced: &vmopv1.VirtualMachineMemoryAdvancedSpec{
+					HotAddEnabled:          ptrOf(true),
+					ReservationLockedToMax: ptrOf(true),
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
 }

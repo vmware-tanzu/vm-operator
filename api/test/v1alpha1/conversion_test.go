@@ -287,6 +287,10 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				vmSpec.Class = nil
 			}
 
+			vmSpec.Resources = nil
+			vmSpec.CPUAdvanced = nil
+			vmSpec.MemoryAdvanced = nil
+
 			vmSpec.Volumes = nil
 
 			if rs := vmSpec.Reserved; rs != nil {

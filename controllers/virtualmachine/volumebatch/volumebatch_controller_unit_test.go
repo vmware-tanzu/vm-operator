@@ -78,7 +78,6 @@ func unitTestsReconcile() {
 	)
 
 	BeforeEach(func() {
-
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
@@ -150,11 +149,9 @@ func unitTestsReconcile() {
 				Phase: corev1.ClaimBound,
 			},
 		}
-
 	})
 
 	JustBeforeEach(func() {
-
 		ctx = suite.NewUnitTestContextForController()
 
 		// Replace the fake client with our own that has the expected index.
@@ -201,7 +198,6 @@ func unitTestsReconcile() {
 	})
 
 	getCNSBatchAttachmentForVolumeName := func(ctx *builder.UnitTestContextForController, vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVMBatchAttachment {
-
 		GinkgoHelper()
 
 		objectKey := client.ObjectKey{Name: util.CNSBatchAttachmentNameForVM(vm.Name), Namespace: vm.Namespace}
@@ -368,17 +364,16 @@ func unitTestsReconcile() {
 					vm.Spec.Volumes[0].DiskMode = "UnsupportedDiskMode"
 				})
 
-				It("returns NoRequeueError and batch attachment has no volumes", func() {
+				It("returns NoRequeueError and batch attachment is not created", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("unsupported disk mode"))
 					Expect(err.Error()).To(ContainSubstring("UnsupportedDiskMode"))
 					Expect(err.Error()).To(ContainSubstring(volumeName1))
 
-					// Verify batch attachment exists but has no volumes
+					// Verify batch attachment is not created
 					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-					Expect(attachment).NotTo(BeNil())
-					Expect(attachment.Spec.Volumes).To(BeEmpty())
+					Expect(attachment).To(BeNil())
 
 					// Verify VM status volumes is empty
 					Expect(vm.Status.Volumes).To(BeEmpty())
@@ -390,17 +385,16 @@ func unitTestsReconcile() {
 					vm.Spec.Volumes[0].SharingMode = "UnsupportedSharingMode"
 				})
 
-				It("returns NoRequeueError and batch attachment has no volumes", func() {
+				It("returns NoRequeueError and batch attachment is not created", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("unsupported sharing mode"))
 					Expect(err.Error()).To(ContainSubstring("UnsupportedSharingMode"))
 					Expect(err.Error()).To(ContainSubstring(volumeName1))
 
-					// Verify batch attachment exists but has no volumes
+					// Verify batch attachment is not created
 					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
-					Expect(attachment).NotTo(BeNil())
-					Expect(attachment.Spec.Volumes).To(BeEmpty())
+					Expect(attachment).To(BeNil())
 
 					// Verify VM status volumes is empty
 					Expect(vm.Status.Volumes).To(BeEmpty())
@@ -1056,7 +1050,6 @@ func unitTestsReconcile() {
 				})
 
 				It("returns success", func() {
-
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -1072,7 +1065,6 @@ func unitTestsReconcile() {
 				})
 
 				When("Collecting limit and usage information", func() {
-
 					classicDisk1 := func() vmopv1.VirtualMachineVolumeStatus {
 						return vmopv1.VirtualMachineVolumeStatus{
 							Name:     "my-disk-0",
@@ -1106,7 +1098,6 @@ func unitTestsReconcile() {
 					})
 
 					assertBaselineVolStatus := func() {
-
 						GinkgoHelper()
 
 						err := reconciler.ReconcileNormal(volCtx)
@@ -1143,7 +1134,6 @@ func unitTestsReconcile() {
 						})
 
 						assertPVCHasUsage := func() {
-
 							GinkgoHelper()
 
 							Expect(vm.Status.Volumes[3].Used).To(Equal(ptr.To(resource.MustParse("1Gi"))))
@@ -1172,9 +1162,7 @@ func unitTestsReconcile() {
 						})
 
 						When("PVC resource exists with limit or request", func() {
-
 							assertPVCHasLimit := func() {
-
 								GinkgoHelper()
 
 								Expect(vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("20Gi"))))
@@ -1225,7 +1213,6 @@ func unitTestsReconcile() {
 					})
 
 					When("Existing status has crypto info for a PVC", func() {
-
 						newCryptoStatus := func() *vmopv1.VirtualMachineVolumeCryptoStatus {
 							return &vmopv1.VirtualMachineVolumeCryptoStatus{
 								ProviderID: "my-provider-id",
@@ -1234,7 +1221,6 @@ func unitTestsReconcile() {
 						}
 
 						assertPVCHasCrypto := func() {
-
 							GinkgoHelper()
 
 							Expect(vm.Status.Volumes[3].Crypto).To(Equal(newCryptoStatus()))
@@ -1495,6 +1481,64 @@ func unitTestsReconcile() {
 				})
 			})
 
+			When("VM Spec.Volumes has a new volume that causes an error in buildVolumeSpecs", func() {
+				BeforeEach(func() {
+					vmVol1 := *vmVolumeWithPVC1
+
+					// VM Spec has existing volume and a new volume with unsupported disk mode.
+					vmVolWithUnsupportedMode := *vmVolumeWithPVC2
+					vmVolWithUnsupportedMode.DiskMode = "UnsupportedDiskMode"
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVolWithUnsupportedMode)
+					initObjects = append(initObjects, boundPVC1, boundPVC2)
+
+					// Old attachment points to vmVol1.
+					attachment = cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{vmVol1})
+					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
+						cnsv1alpha1.VolumeStatus{
+							Name: vmVol1.Name,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								ClaimName: claimName1,
+								Conditions: []metav1.Condition{
+									{
+										Type:    cnsv1alpha1.ConditionAttached,
+										Status:  metav1.ConditionTrue,
+										Reason:  "True",
+										Message: "",
+									},
+								},
+							},
+						},
+					)
+
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     vmVol1.Name,
+							Attached: true,
+							Type:     vmopv1.VolumeTypeManaged,
+						},
+					}
+
+					initObjects = append(initObjects, attachment)
+				})
+
+				It("returns error and does not update batch attachment or VM status", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unsupported disk mode"))
+
+					// Verify batch attachment is not updated (still has 1 volume)
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.Spec.Volumes).To(HaveLen(1))
+					Expect(attachment.Spec.Volumes[0].Name).To(Equal(vmVolumeWithPVC1.Name))
+
+					// Verify VM status volumes is not updated (still has 1 volume, no -detaching suffix)
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					Expect(vm.Status.Volumes[0].Name).To(Equal(vmVolumeWithPVC1.Name))
+					Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+				})
+			})
+
 			When("existing CnsNodeVMBatchAttachment has detaching volume in status", func() {
 				BeforeEach(func() {
 					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
@@ -1604,7 +1648,8 @@ func unitTestsReconcile() {
 
 func cnsBatchAttachmentForVMVolume(
 	vm *vmopv1.VirtualMachine,
-	vmVols []vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVMBatchAttachment {
+	vmVols []vmopv1.VirtualMachineVolume,
+) *cnsv1alpha1.CnsNodeVMBatchAttachment {
 	batchAttachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
@@ -1632,7 +1677,10 @@ func cnsBatchAttachmentForVMVolume(
 	for _, vmVol := range vmVols {
 		batchAttachment.Spec.Volumes = append(batchAttachment.Spec.Volumes,
 			cnsv1alpha1.VolumeSpec{
-				Name: vmVol.PersistentVolumeClaim.ClaimName,
+				Name: vmVol.Name,
+				PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
+					ClaimName: vmVol.PersistentVolumeClaim.ClaimName,
+				},
 			})
 	}
 
@@ -1644,8 +1692,8 @@ func assertVMVolStatusFromBatchAttachmentStatus(
 	attachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	vmVolStatusIndex,
 	attachmentStatusIndex int,
-	detachingSuffix bool) {
-
+	detachingSuffix bool,
+) {
 	GinkgoHelper()
 
 	Expect(len(vm.Status.Volumes)).To(BeNumerically(">", vmVolStatusIndex), fmt.Sprintf("vm volume status should have len larger than %d", vmVolStatusIndex))
@@ -1668,8 +1716,8 @@ func assertVMVolStatusFromBatchAttachmentSpec(
 	vm *vmopv1.VirtualMachine,
 	attachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 	vmVolStatusIndex,
-	attachmentStatusIndex int) {
-
+	attachmentStatusIndex int,
+) {
 	GinkgoHelper()
 
 	Expect(len(vm.Status.Volumes)).To(BeNumerically(">", vmVolStatusIndex), fmt.Sprintf("vm volume status should have len larger than %d", vmVolStatusIndex))
@@ -1687,8 +1735,8 @@ func assertVMVolStatusFromBatchAttachmentSpec(
 func assertVMVolStatusFromLegacyAttachment(
 	name string,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment,
-	vmVolStatus vmopv1.VirtualMachineVolumeStatus) {
-
+	vmVolStatus vmopv1.VirtualMachineVolumeStatus,
+) {
 	GinkgoHelper()
 
 	diskUUID := attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID]

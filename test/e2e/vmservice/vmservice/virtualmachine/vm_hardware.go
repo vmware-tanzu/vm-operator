@@ -279,20 +279,20 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			wcpClient = input.WCPClient
 			kubeconfigPath := input.ClusterProxy.GetKubeconfigPath()
 
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterClient = clusterProxy.GetClient()
-		svClientSet := clusterProxy.GetClientSet()
+			clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+			svClusterClient = clusterProxy.GetClient()
+			svClientSet := clusterProxy.GetClientSet()
 
-		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, svClientSet, filepath.Join(input.ArtifactFolder, specName))
-		DeferCleanup(cancelPodWatches)
+			cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, svClientSet, filepath.Join(input.ArtifactFolder, specName))
+			DeferCleanup(cancelPodWatches)
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+			linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
-		var vmiErr error
-		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, linuxImageDisplayName)
-		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, vmSvcNamespace)
+			var vmiErr error
+			linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, linuxImageDisplayName)
+			Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, vmSvcNamespace)
 
-		isoSupportFSSEnabled = utils.IsFssEnabled(ctx,
+			isoSupportFSSEnabled = utils.IsFssEnabled(ctx,
 				svClusterClient,
 				config.GetVariable("VMOPNamespace"),
 				config.GetVariable("VMOPDeploymentName"),
@@ -2307,7 +2307,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
 					Should(Succeed(), "Timed out waiting for shared disk volume verification")
 
-				By("Assertion 4: Verifying PVC for shared disk is created and bound")
+				By("Verifying PVC for shared disk is created and bound")
 				Eventually(func(g Gomega) {
 					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())

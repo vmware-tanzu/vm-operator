@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -29,9 +30,10 @@ type reconciler struct{}
 var _ vmconfig.Reconciler = reconciler{}
 
 const (
-	ReasonTaskError = "DiskPromotionTaskError"
-	ReasonPending   = "DiskPromotionPending"
-	ReasonRunning   = "DiskPromotionRunning"
+	ReasonTaskError          = "DiskPromotionTaskError"
+	ReasonTaskTransientError = "DiskPromotionTaskTransientError"
+	ReasonPending            = "DiskPromotionPending"
+	ReasonRunning            = "DiskPromotionRunning"
 
 	PromoteDisksTaskKey = "VirtualMachine.promoteDisks"
 )
@@ -124,6 +126,37 @@ func (r reconciler) Reconcile(
 			switch t.State {
 
 			case vimtypes.TaskInfoStateError:
+				// A transient fault (e.g. ConcurrentAccess) means a competing
+				// vSphere operation was in flight when this task was attempted.
+				// The fault is self-resolving once that operation finishes —
+				// no operator action is required.
+				//
+				// Continuing the loop instead of returning allows the next
+				// reconcile to issue a fresh PromoteDisks task without waiting
+				// for the errored task to expire from RecentTask (~10 minutes).
+				// Two invariants ensure this does not create duplicate tasks:
+				//
+				//   1. If a PromoteDisks task is still running, the loop
+				//      returns early above before reaching obj.PromoteDisks.
+				//   2. If the competing operation is still running, the
+				//      runningTaskInfo guard below blocks obj.PromoteDisks
+				//      until it completes.
+				//
+				// Ordering in RecentTask is also not a concern. All transient-
+				// errored tasks are skipped regardless of how many exist or
+				// where they appear. Any running or successful PromoteDisks
+				// task encountered anywhere in the loop still returns early
+				// and takes precedence.
+				if fault.IsTransientError(t.Error) {
+					pkgcond.MarkFalse(
+						vm,
+						vmopv1.VirtualMachineDiskPromotionSynced,
+						ReasonTaskTransientError,
+						"%s",
+						t.Error.LocalizedMessage)
+					continue
+				}
+
 				pkgcond.MarkFalse(
 					vm,
 					vmopv1.VirtualMachineDiskPromotionSynced,

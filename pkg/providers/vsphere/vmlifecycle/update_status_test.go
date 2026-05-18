@@ -2087,6 +2087,30 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
+			When("VMSharedDisks feature is enabled and a classic disk has multi-writer sharing", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+					d := vmCtx.MoVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+					b := d.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+					b.Sharing = string(vimtypes.VirtualDiskSharingSharingMultiWriter)
+					b.DiskMode = string(vimtypes.VirtualDiskModeIndependent_persistent)
+				})
+				Specify("status.volumes includes SharingMode and DiskMode for the classic disk", func() {
+					var disk100 *vmopv1.VirtualMachineVolumeStatus
+					for i := range vmCtx.VM.Status.Volumes {
+						if vmCtx.VM.Status.Volumes[i].DiskUUID == "100" {
+							disk100 = &vmCtx.VM.Status.Volumes[i]
+							break
+						}
+					}
+					Expect(disk100).ToNot(BeNil())
+					Expect(disk100.SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
+					Expect(disk100.DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
+				})
+			})
+
 			When("vm.status.volumes does not have pvcs, but one of the classic disks is already converted to FCD", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {

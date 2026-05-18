@@ -13,7 +13,7 @@ import "k8s.io/apimachinery/pkg/api/resource"
 // Requires the TelcoVMServiceAPI supervisor capability.
 type VirtualMachineResourceQuantity struct {
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="type(self) != string || !self.matches('^-?[0-9]+(\\.[0-9]+)?m$')",message="CPU must be a whole number without the 'm' (milli) suffix: use '4' for 4 vCPUs or '2000' for 2000 MHz, not '4000m' or '2000m'"
+	// +kubebuilder:validation:XValidation:rule="type(self) != string || !self.endsWith('m')",message="CPU must be a whole number (e.g. '4' for vCPUs or '2000' for 2000 MHz). The 'm' (milli) suffix is not supported."
 
 	// CPU is a CPU resource quantity.
 	//

@@ -2240,11 +2240,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Name:      importedVMName,
 				}))
 
-				By("Assertion 1: Verifying VM is imported and powers on")
+				By("Verifying VM is imported and powers on")
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
 				e2eframework.Logf("Imported VM %s is powered on", importedVMName)
 
-				By("Assertion 2: Verifying shared SCSI controller in VM status")
+				By("Verifying shared SCSI controller in VM status")
 				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, map[vmopv1a5.VirtualControllerType]int{
 					vmopv1a5.VirtualControllerTypeIDE:  2,
 					vmopv1a5.VirtualControllerTypeSCSI: 2,
@@ -2282,7 +2282,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, condition)
 				}
 
-				By("Assertion 3: Verifying shared disk volume has MultiWriter sharing mode")
+				By("Verifying shared disk volume has MultiWriter sharing mode")
 				Eventually(func(g Gomega) {
 					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())

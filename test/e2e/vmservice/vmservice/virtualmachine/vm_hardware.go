@@ -14,15 +14,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
-	govc "github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,7 +29,6 @@ import (
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -1812,190 +1808,56 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vCenterAdminClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create vCenter client")
 
-				// Get the WCP cluster MoID and find resources.
-				zones := &topologyv1.ZoneList{}
-				listOpts := &ctrlclient.ListOptions{Namespace: vmSvcNamespace}
-				err = svClusterClient.List(ctx, zones, listOpts)
-				Expect(err).ToNot(HaveOccurred(), "failed to list zones bound with namespace %s", vmSvcNamespace)
-				Expect(len(zones.Items)).
-					To(BeNumerically(">", 0), "Expected to have at least one zone bound with namespace %s", vmSvcNamespace)
-				azName := zones.Items[0].Spec.Zone.Name
-				az := &topologyv1.AvailabilityZone{}
-				err = svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: azName}, az)
-				Expect(err).ToNot(HaveOccurred())
-
-				clusterMoID = az.Spec.ClusterComputeResourceMoId
-				if clusterMoID == "" && len(az.Spec.ClusterComputeResourceMoIDs) > 0 {
-					clusterMoID = az.Spec.ClusterComputeResourceMoIDs[0]
-				}
-
-				Expect(clusterMoID).ToNot(BeEmpty(), "Expected to have at least one cluster MoID in AvailabilityZone %s", azName)
-				e2eframework.Logf("WCP cluster MoID: %s", clusterMoID)
-
+				clusterMoID = GetClusterMoIDForNamespace(ctx, svClusterClient, vmSvcNamespace)
 				brownfieldVMName = fmt.Sprintf("brownfield-vm-hardware-%s", capiutil.RandomString(4))
 			})
 
 			AfterEach(func() {
-				if brownfieldVMMoID != "" {
-					By(fmt.Sprintf("Cleaning up brownfield VM %s (%s) in vCenter", brownfieldVMName, brownfieldVMMoID))
-					vm := object.NewVirtualMachine(vCenterAdminClient, vimtypes.ManagedObjectReference{
-						Type:  "VirtualMachine",
-						Value: brownfieldVMMoID,
-					})
-
-					e2eframework.Logf("Found brownfield VM %s (MoID: %s), deleting it", brownfieldVMName, brownfieldVMMoID)
-
-					powerState, err := vm.PowerState(ctx)
-					if err == nil && powerState == vimtypes.VirtualMachinePowerStatePoweredOn {
-						task, err := vm.PowerOff(ctx)
-						if err != nil {
-							e2eframework.Logf("Failed to power off VM %s: %v", brownfieldVMName, err)
-						} else {
-							err := task.Wait(ctx)
-							if err != nil {
-								e2eframework.Logf("Failed to wait for VM %s power off: %v", brownfieldVMName, err)
-							}
-						}
-					}
-
-					destroyTask, err := vm.Destroy(ctx)
-					if err == nil {
-						err := destroyTask.Wait(ctx)
-						if err != nil {
-							e2eframework.Logf("Failed to wait for VM %s destruction: %v", brownfieldVMName, err)
-						} else {
-							e2eframework.Logf("Deleted brownfield VM %s", brownfieldVMName)
-						}
-					} else {
-						e2eframework.Logf("Failed to destroy VM %s: %v", brownfieldVMName, err)
-					}
-				}
-
-				if importOperation != nil {
-					err := svClusterClient.Delete(ctx, importOperation)
-					if err != nil && !apierrors.IsNotFound(err) {
-						Expect(err).ToNot(HaveOccurred(), "Failed to delete ImportOperation")
-					}
-				}
-
+				CleanupBrownfieldVM(ctx, BrownfieldVMCleanupInput{
+					VCenterAdminClient: vCenterAdminClient,
+					BrownfieldVMName:   brownfieldVMName,
+					BrownfieldVMMoID:   brownfieldVMMoID,
+					ImportOperation:    importOperation,
+					SVClusterClient:    svClusterClient,
+				})
 				vcenter.LogoutVimClient(vCenterAdminClient)
 			})
 
 			It("Import brownfield VM with hardware should succeed", func() {
 				By("Creating a brownfield VM by deploying from content library template using govmomi")
-				// Create REST client for content library operations.
-				restClient, err := vcenter.NewRestClient(ctx, vCenterAdminClient, testbed.AdminUsername, testbed.AdminPassword)
-				Expect(err).ToNot(HaveOccurred(), "Failed to create REST client")
 
-				// Find the photon image in the VirtualMachineImage CRs.
-				By("Finding photon template in content library")
+				result := ImportBrownfieldVM(ImportBrownfieldVMInput{
+					Ctx:              ctx,
+					Config:           config,
+					VCenterAdminClient: vCenterAdminClient,
+					SVClusterClient:  svClusterClient,
+					Namespace:        vmSvcNamespace,
+					ClusterMoID:      clusterMoID,
+					BrownfieldVMName: brownfieldVMName,
+					StorageClassName: clusterResources.StorageClassName,
+					VMClassName:      clusterResources.VMClassName,
+					ImportOpName:     fmt.Sprintf("import-%s", vmName),
+				})
+				brownfieldVMMoID = result.BrownfieldVMMoID
+				importedVMName := result.ImportedVMName
 
-				photonImageDisplayName := "photon-5.0"
-				photonImageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, photonImageDisplayName)
-				Expect(err).ToNot(HaveOccurred(), "Failed to find photon image")
+				// Retrieve the ImportOperation CR for cleanup.
+				importOperation = &mopv1a2.ImportOperation{}
+				_ = svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vmSvcNamespace,
+					Name:      fmt.Sprintf("import-%s", vmName),
+				}, importOperation)
 
-				photonImage := vmopv1a5.VirtualMachineImage{}
-				err = svClusterClient.Get(ctx, ctrlclient.ObjectKey{
-					Name:      photonImageName,
-					Namespace: input.WCPNamespaceName,
-				}, &photonImage)
-				Expect(err).ToNot(HaveOccurred(), "Failed to get photon image")
+				By("Adding additional hardware to the brownfield VM using govmomi")
 
-				libraryItemID := photonImage.Status.ProviderItemID
-				Expect(libraryItemID).ToNot(BeEmpty(), "Photon image has no ProviderItemID")
-				e2eframework.Logf("Found photon image %s with library item ID: %s", photonImageName, libraryItemID)
-
-				// Setup finder to get cluster and resources.
-				finder := find.NewFinder(vCenterAdminClient, false)
-				ccr, err := finder.ClusterComputeResource(ctx, clusterMoID)
-				Expect(err).ToNot(HaveOccurred(), "Failed to get cluster compute resource")
-				datastores, err := ccr.Datastores(ctx)
-				Expect(err).ToNot(HaveOccurred(), "Failed to get datastores")
-				Expect(len(datastores)).To(BeNumerically(">", 0), "Expected to have at least one datastore")
-
-				// Filter for shared datastores by checking the summary.
-				var datastore *object.Datastore
-
-				for _, ds := range datastores {
-					var dsMO mo.Datastore
-
-					err := ds.Properties(ctx, ds.Reference(), []string{"summary"}, &dsMO)
-					if err != nil {
-						continue
-					}
-
-					// Check if datastore is shared (accessible by multiple hosts)
-					// MultipleHostAccess indicates a shared datastore
-					if dsMO.Summary.MultipleHostAccess != nil && *dsMO.Summary.MultipleHostAccess {
-						datastore = ds
-
-						e2eframework.Logf("Found shared datastore: %s (type: %s)", dsMO.Summary.Name, dsMO.Summary.Type)
-
-						break
-					}
-				}
-
-				// Fallback to first datastore if no shared datastore found.
-				if datastore == nil {
-					datastore = datastores[0]
-					e2eframework.Logf("No shared datastore found, using first datastore: %s", datastore.Name())
-				}
-
-				// Get cluster resource pool.
-				resourcePool, err := ccr.ResourcePool(ctx)
-				Expect(err).ToNot(HaveOccurred(), "Failed to get cluster resource pool")
-
-				// Deploy VM from content library using govmomi's vcenter library.
-				By(fmt.Sprintf("Deploying VM %s from content library item %s", brownfieldVMName, libraryItemID))
-
-				// Create vcenter manager for deployment.
-				vcenterManager := govc.NewManager(restClient)
-
-				// Create deployment spec
-				deploySpec := govc.Deploy{
-					DeploymentSpec: govc.DeploymentSpec{
-						Name:               brownfieldVMName,
-						DefaultDatastoreID: datastore.Reference().Value,
-						AcceptAllEULA:      true,
-					},
-					Target: govc.Target{
-						ResourcePoolID: resourcePool.Reference().Value,
-					},
-				}
-
-				// Deploy the VM from the library item.
-				deployedVMRef, err := vcenterManager.DeployLibraryItem(ctx, libraryItemID, deploySpec)
-				Expect(err).ToNot(HaveOccurred(), "Failed to deploy VM from content library")
-				Expect(deployedVMRef).ToNot(BeNil(), "Deployed VM reference is nil")
-
-				brownfieldVMMoID = deployedVMRef.Value
-				e2eframework.Logf("Deployed brownfield VM %s with MoID: %s", brownfieldVMName, brownfieldVMMoID)
-
-				// Get the deployed VM object.
 				brownfieldVM := object.NewVirtualMachine(vCenterAdminClient, vimtypes.ManagedObjectReference{
 					Type:  "VirtualMachine",
 					Value: brownfieldVMMoID,
 				})
 
-				// Power on the VM.
-				By("Powering on the brownfield VM")
-
-				powerOnTask, err := brownfieldVM.PowerOn(ctx)
-				Expect(err).ToNot(HaveOccurred(), "Failed to power on VM")
-				err = powerOnTask.Wait(ctx)
-				Expect(err).ToNot(HaveOccurred(), "Failed to wait for VM power on")
-				e2eframework.Logf("Brownfield VM powered on")
-
-				By("Adding additional hardware to the brownfield VM using govmomi")
-				// We'll add various hardware components to test the import properly detects them:
-				// - Additional SCSI controller (ParaVirtual)
-				// - SATA controller
-				// - Additional disk on the new SCSI controller
-
-				// Get current VM devices
 				var moVM mo.VirtualMachine
 
-				err = brownfieldVM.Properties(ctx, brownfieldVM.Reference(), []string{"config.hardware.device", "datastore"}, &moVM)
+				err := brownfieldVM.Properties(ctx, brownfieldVM.Reference(), []string{"config.hardware.device", "datastore"}, &moVM)
 				Expect(err).ToNot(HaveOccurred(), "Failed to get VM properties")
 
 				var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
@@ -2082,59 +1944,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				reconfigTask, err := brownfieldVM.Reconfigure(ctx, configSpec)
 				Expect(err).ToNot(HaveOccurred(), "Failed to reconfigure VM with new hardware")
-				err = reconfigTask.Wait(ctx)
-				Expect(err).ToNot(HaveOccurred(), "Failed to wait for VM reconfiguration")
+				Expect(reconfigTask.Wait(ctx)).To(Succeed(), "Failed to wait for VM reconfiguration")
 				e2eframework.Logf("Successfully added hardware to brownfield VM")
-
-				// Now import the brownfield VM using ImportOperation.
-				By("Creating ImportOperation to import the brownfield VM")
-
-				importOpName := fmt.Sprintf("import-%s", vmName)
-				importOperation = &mopv1a2.ImportOperation{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      importOpName,
-						Namespace: vmSvcNamespace,
-					},
-					Spec: mopv1a2.ImportOperationSpec{
-						VirtualMachineID: brownfieldVMMoID,
-						StorageClass:     clusterResources.StorageClassName,
-					},
-				}
-
-				Expect(svClusterClient.Create(ctx, importOperation)).To(Succeed(), "Failed to create ImportOperation")
-				e2eframework.Logf("Created ImportOperation: %s", importOpName)
-
-				// Wait for ImportOperation to complete.
-				By("Waiting for ImportOperation to complete")
-
-				var importedVMName string
-
-				Eventually(func(g Gomega) {
-					err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{
-						Namespace: vmSvcNamespace,
-						Name:      importOpName,
-					}, importOperation)
-					g.Expect(err).ToNot(HaveOccurred(), "Failed to get ImportOperation")
-
-					// Check if operation completed.
-					for _, cond := range importOperation.Status.Conditions {
-						if cond.Type == "VirtualMachineCreated" && cond.Status == metav1.ConditionTrue {
-							importedVMName = importOperation.Status.VirtualMachineName
-							g.Expect(importedVMName).ToNot(BeEmpty(), "ImportOperation completed but VirtualMachineName is empty")
-
-							return
-						}
-
-						if cond.Type == "Failed" && cond.Status == metav1.ConditionTrue {
-							Fail(fmt.Sprintf("ImportOperation failed: %s", cond.Message))
-						}
-					}
-
-					g.Expect(false).To(BeTrue(), "ImportOperation not yet complete")
-				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).
-					Should(Succeed(), "Timed out waiting for ImportOperation to complete")
-
-				e2eframework.Logf("ImportOperation completed, imported VM name: %s", importedVMName)
 
 				vmYamls = append(vmYamls, manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace: vmSvcNamespace,

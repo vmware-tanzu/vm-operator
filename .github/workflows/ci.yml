@@ -195,7 +195,7 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.26.3' # TODO (brito-rafa) GO-2026-4986, GO-2026-4982, GO-2026-4980, GO-2026-4977, GO-2026-4971
+        go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'

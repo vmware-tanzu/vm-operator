@@ -12,8 +12,15 @@ set -o pipefail
 export GOVC_URL # set in main()
 export GOVC_INSECURE=true
 GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
-GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-vmware}"
+# GATEWAY_VM_PASSWORD must be set by the caller (setup-e2e-testbed.sh passes
+# the discovered password). No default — empty fails fast.
+GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
 script_dir="$(dirname "$0")"
+
+# Common SSH/SCP options for all connections to the gateway VM.
+# -T: no PTY (avoids "Too many authentication failures" from the SSH agent)
+# PubkeyAuthentication=no: force password auth, don't offer agent keys
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password"
 crt_dir="$script_dir/tools/bin"
 
 find_gateway_ip() {
@@ -40,20 +47,29 @@ find_gateway_ip() {
 }
 
 install() {
-  if [ ! -e "$crt_dir/pykmip-crt.pem" ] ; then
-    mkdir -p "$crt_dir"
-    openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
-            -subj "/C=US/ST=CA/L=PA/O=Broadcom/OU=VCF/CN=pykmip" \
-            -keyout "$crt_dir"/pykmip-key.pem -out "$crt_dir"/pykmip-crt.pem
+  # gce2e-standard requires pykmip running on the gateway VM.
+  # Skip if already green (idempotent for parallel runners).
+  if kms_is_green "gce2e-standard"; then
+    echo "KMS provider gce2e-standard already green, skipping pykmip install"
+  else
+    if [ ! -e "$crt_dir/pykmip-crt.pem" ] ; then
+      mkdir -p "$crt_dir"
+      openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+              -subj "/C=US/ST=CA/L=PA/O=Broadcom/OU=VCF/CN=pykmip" \
+              -keyout "$crt_dir"/pykmip-key.pem -out "$crt_dir"/pykmip-crt.pem
+    fi
+
+    target="$1@$2"
+    password=$3
+
+    sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
+    sshpass -p "$password" ssh -T $SSH_OPTS "$target" /bin/bash ./install-pykmip.sh \
+      || echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
   fi
 
-  target="$1@$2"
-  password=$3
-
-  sshpass -p "$password" scp -o PubkeyAuthentication=no -o StrictHostKeyChecking=no "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
-  sshpass -p "$password" ssh -o PubkeyAuthentication=no -o StrictHostKeyChecking=no "$target" /bin/bash ./install-pykmip.sh
-
-  setup "$2" || echo "KMS setup failed"
+  # setup() configures vCenter key providers; kms_is_green checks inside
+  # each block make it safe to call from multiple parallel runners.
+  setup "$2"
 }
 
 # kms_is_green returns 0 if the named provider already exists and has

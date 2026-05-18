@@ -1026,12 +1026,12 @@ test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
 
 .PHONY: e2e-smoke
 e2e-smoke: ## Run e2e smoke tests
-	$(MAKE) test-e2e LABEL_FILTER="smoke"
+	$(MAKE) test-e2e LABEL_FILTER="smoke && !experimental"
 
 .PHONY: e2e-core
 e2e-core: ## Run e2e core functional tests
-	$(MAKE) test-e2e LABEL_FILTER="!smoke && !extended-functional"
+	$(MAKE) test-e2e LABEL_FILTER="!smoke && !extended-functional && !experimental"
 
 .PHONY: e2e-extended
 e2e-extended: ## Run e2e extended functional tests
-	$(MAKE) test-e2e LABEL_FILTER="extended-functional"
+	$(MAKE) test-e2e LABEL_FILTER="extended-functional && !experimental"

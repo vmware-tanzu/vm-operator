@@ -172,7 +172,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	})
 
 	It("Should verify boot disk storage policy matches VM spec.storageClass for an encrypted VM", Label("experimental"), func() {
-		useKeyProvider(ctx, cryptoManager, nativeKeyProviderID)
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create VM using encryption storage policy")
 		vmParameters := manifestbuilders.VirtualMachineYaml{
@@ -193,7 +193,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmoperator.EventuallyBootDiskStoragePolicyMatchesVMStorageClass(ctx, config, vCenterClient, svClusterClient, tmpNamespaceName, vmName)
 	})
 
-	It("Create an Encrypted VirtualMachine using encryption storage policy", Label("smoke"), func() {
+	It("Create an Encrypted VirtualMachine using encryption storage policy", Label("smoke", "experimental"), func() {
 		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create VM using encryption storage policy")

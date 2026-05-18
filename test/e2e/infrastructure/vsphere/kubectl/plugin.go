@@ -115,12 +115,23 @@ func (k *KubectlPlugin) Login() error {
 		args = append(args, "--tanzu-kubernetes-cluster-namespace", k.tanzuKubernetesClusterNamespace)
 	}
 
+	// Build the child environment explicitly. goexpect.Spawn with SetEnv
+	// replaces the entire environment, so every variable the plugin needs must
+	// be listed here. NO_PROXY / no_proxy must be forwarded alongside the
+	// proxy vars so that kubectl-vsphere bypasses the proxy for the supervisor
+	// cluster IP, which is a direct internal address (not routed via squid).
+	noProxy := os.Getenv("NO_PROXY")
+	if noProxy == "" {
+		noProxy = os.Getenv("no_proxy")
+	}
 	kcmd, errch, err := expect.Spawn("kubectl-vsphere "+strings.Join(args, " "), 2*time.Minute, //nolint:mnd
 		expect.Tee(&noopWriteCloser{os.Stdout}),
 		expect.SetEnv([]string{
 			"KUBECONFIG=" + k.kubeconfigPath,
 			"HTTP_PROXY=" + os.Getenv("HTTP_PROXY"),
 			"HTTPS_PROXY=" + os.Getenv("HTTPS_PROXY"),
+			"NO_PROXY=" + noProxy,
+			"no_proxy=" + noProxy,
 			"PATH=" + filepath.Dir(kubectlPath),
 		}),
 	)

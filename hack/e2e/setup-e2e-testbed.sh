@@ -77,28 +77,93 @@ if [ -n "${VC_URL:-}" ] && command -v govc >/dev/null 2>&1; then
         echo "Gateway VM IP: ${GATEWAY_IP}"
 
         # Install squid proxy on gateway and export HTTP_PROXY, which is required
-        # by some tests.
-        echo "Installing squid proxy on gateway VM..."
-        GOVC_USERNAME="${VC_VIM_USERNAME:-${VC_ROOT_USERNAME}}" GOVC_PASSWORD="${VC_VIM_PASSWORD:-${VC_ROOT_PASSWORD}}" \
-            "${SCRIPT_DIR}/proxy.sh" install "${VC_URL}" "${MGMT_CIDR}" 2>/dev/null \
-            || echo "⚠ Proxy install failed (may already be set up)"
-        export HTTP_PROXY="${GATEWAY_IP}:3128"
-        export HTTPS_PROXY="${GATEWAY_IP}:3128"
-        export GATEWAY_IP="${GATEWAY_IP}"
-        # Build NO_PROXY from the concrete IPs we know about so that kubectl
-        # and any other tools in the shell can still reach them directly.
-        # We avoid hardcoding CIDRs — just use the actual addresses from the testbed.
-        _no_proxy_addrs="localhost,127.0.0.1,${VC_URL:-},${SUPERVISOR_CLUSTER_IP:-}"
-        export NO_PROXY="${_no_proxy_addrs}"
-        export no_proxy="${_no_proxy_addrs}"
-        echo "✓ HTTP_PROXY set to ${HTTP_PROXY}"
-        echo "  NO_PROXY: ${NO_PROXY}"
+        # by some tests. Multiple e2e runner containers may start in parallel
+        # against the same testbed; proxy.sh install uses a remote flock so only
+        # one runner reconfigures squid. All runners then call proxy.sh wait to
+        # confirm port 3128 is reachable from this container before setting
+        # HTTP_PROXY, ensuring it is never exported pointing at a dead proxy.
+        # The gateway VM uses the same Nimbus-managed password as the vCenter
+        # host. Try old_password first (Nimbus may not have rotated it yet on
+        # the gateway), then fall back to the current password.
+        echo "Probing gateway VM SSH password..."
+        _gw_password=""
+        # Use a function so SSH options are individual args in all shells
+        # (avoids zsh's no-word-split behavior for unquoted variables).
+        _gw_ssh_probe() {
+            sshpass -p "$1" ssh -T \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -o PubkeyAuthentication=no \
+                -o PreferredAuthentications=password \
+                -o ConnectTimeout=5 \
+                "root@${GATEWAY_IP}" "echo ok" >/dev/null 2>&1
+        }
+        for _pw in "${VC_ROOT_OLD_PASSWORD:-}" "${VC_ROOT_PASSWORD:-}"; do
+            [ -z "${_pw}" ] && continue
+            if _gw_ssh_probe "${_pw}"; then
+                _gw_password="${_pw}"
+                echo "✓ Gateway VM SSH password found"
+                break
+            fi
+        done
+        if [ -z "${_gw_password}" ]; then
+            echo "⚠ Could not authenticate to gateway VM — skipping proxy install"
+        else
+            # Fix DNS for packages.vcfd.broadcom.net on the gateway VM.
+            # The gateway VM's systemd-resolved has a known bug where it cannot
+            # handle TCP-mode DNS responses (which packages.vcfd.broadcom.net
+            # triggers due to its large response). This causes pip to fail when
+            # trying to reach the internal Broadcom package mirror. Work around
+            # it by resolving the hostname locally and writing it to /etc/hosts
+            # on the gateway VM.
+            echo "Fixing DNS for packages.vcfd.broadcom.net on gateway VM..."
+            _pkg_host="packages.vcfd.broadcom.net"
+            _pkg_ip=$(dig "${_pkg_host}" A +short 2>/dev/null | grep -v '\.$' | head -1 || true)
+            if [ -n "${_pkg_ip}" ]; then
+                _hosts_entry="${_pkg_ip} ${_pkg_host} vsphere-docker-virtual.${_pkg_host} wcp-gc-docker-local.${_pkg_host} vsphere-docker-dev-local.${_pkg_host} vcf-kubernetes-service-dev-docker-local.${_pkg_host}"
+                sshpass -p "${_gw_password}" ssh -T \
+                    -o StrictHostKeyChecking=no \
+                    -o UserKnownHostsFile=/dev/null \
+                    -o PubkeyAuthentication=no \
+                    -o PreferredAuthentications=password \
+                    "root@${GATEWAY_IP}" \
+                    "sed -i '/${_pkg_host}/d' /etc/hosts && echo '${_hosts_entry}' >> /etc/hosts" \
+                    && echo "✓ DNS fix applied on gateway VM (${_pkg_host} → ${_pkg_ip})" \
+                    || echo "⚠ Could not apply DNS fix on gateway VM"
+            else
+                echo "⚠ Could not resolve ${_pkg_host} locally — skipping DNS fix"
+            fi
+
+            echo "Installing squid proxy on gateway VM..."
+            GOVC_USERNAME="${VC_VIM_USERNAME:-${VC_ROOT_USERNAME}}" GOVC_PASSWORD="${VC_VIM_PASSWORD:-${VC_ROOT_PASSWORD}}" \
+                GATEWAY_VM_PASSWORD="${_gw_password}" \
+                "${SCRIPT_DIR}/proxy.sh" install "${VC_URL}" "${MGMT_CIDR}"
+        fi
+        echo "Waiting for proxy to be reachable from runner..."
+        if [ -n "${_gw_password}" ] && \
+                GOVC_USERNAME="${VC_VIM_USERNAME:-${VC_ROOT_USERNAME}}" GOVC_PASSWORD="${VC_VIM_PASSWORD:-${VC_ROOT_PASSWORD}}" \
+                "${SCRIPT_DIR}/proxy.sh" wait "${VC_URL}" "${MGMT_CIDR}"; then
+            export HTTP_PROXY="${GATEWAY_IP}:3128"
+            export HTTPS_PROXY="${GATEWAY_IP}:3128"
+            export GATEWAY_IP="${GATEWAY_IP}"
+            # Build NO_PROXY from the concrete IPs we know about so that kubectl
+            # and any other tools in the shell can still reach them directly.
+            # We avoid hardcoding CIDRs — just use the actual addresses from the testbed.
+            _no_proxy_addrs="localhost,127.0.0.1,${VC_URL:-},${SUPERVISOR_CLUSTER_IP:-}"
+            export NO_PROXY="${_no_proxy_addrs}"
+            export no_proxy="${_no_proxy_addrs}"
+            echo "✓ HTTP_PROXY set to ${HTTP_PROXY}"
+            echo "  NO_PROXY: ${NO_PROXY}"
+        else
+            echo "⚠ Proxy not reachable after install — HTTP_PROXY will not be set"
+        fi
 
         # Full KMS install: deploys pykmip on the gateway VM then registers both
         # gce2e-standard (KMIP) and gce2e-native key providers with vCenter.
         echo "Setting up KMS key providers (with pykmip on gateway VM)..."
         GOVC_USERNAME="${VC_VIM_USERNAME:-${VC_ROOT_USERNAME}}" GOVC_PASSWORD="${VC_VIM_PASSWORD:-${VC_ROOT_PASSWORD}}" \
-            "${SCRIPT_DIR}/kms.sh" install "${GOVC_URL}" "${MGMT_CIDR}" 2>/dev/null \
+            GATEWAY_VM_PASSWORD="${_gw_password}" \
+            "${SCRIPT_DIR}/kms.sh" install "${GOVC_URL}" "${MGMT_CIDR}" \
             && echo "✓ KMS key providers configured" \
             || echo "⚠ KMS install failed (may already be configured)"
     else

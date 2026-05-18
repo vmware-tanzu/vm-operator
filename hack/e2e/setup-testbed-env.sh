@@ -129,6 +129,7 @@ if echo "$testbed_info" | jq -e '.vc[0]' >/dev/null 2>&1; then
     echo "Using vc[0] format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vc[0].ip4 // .vc[0].ip // .vc[0].vcenter_ip')
     export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].password // .vc[0].vcenter_password')
+    export VC_ROOT_OLD_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].old_password // ""')
     export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc[0].username // .vc[0].vcenter_username // "administrator@vsphere.local"')
     # vimUsername/vimPassword are the vSphere API (govc) credentials, distinct from
     # the SSH root credentials stored in username/password.
@@ -139,6 +140,7 @@ elif echo "$testbed_info" | jq -e '.vcenter_ip' >/dev/null 2>&1; then
     echo "Using direct vcenter_ format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vcenter_ip')
     export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vcenter_password')
+    export VC_ROOT_OLD_PASSWORD=$(echo "$testbed_info" | jq -r '.vcenter_old_password // ""')
     export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vcenter_username // "administrator@vsphere.local"')
     export VC_VIM_USERNAME=$(echo "$testbed_info" | jq -r '.vcenter_username // "administrator@vsphere.local"')
     export VC_VIM_PASSWORD="${VC_ROOT_PASSWORD}"
@@ -147,6 +149,7 @@ else
     echo "Using simple format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vc_ip // .vcenter_ip // .testbed_ip')
     export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc_password // .vcenter_password // .password')
+    export VC_ROOT_OLD_PASSWORD=""
     export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc_username // .vcenter_username // .username // "administrator@vsphere.local"')
     export VC_VIM_USERNAME="${VC_ROOT_USERNAME}"
     export VC_VIM_PASSWORD="${VC_ROOT_PASSWORD}"

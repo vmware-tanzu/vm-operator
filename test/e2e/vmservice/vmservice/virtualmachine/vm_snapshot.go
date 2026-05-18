@@ -5,16 +5,21 @@ package virtualmachine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/vim25"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
@@ -447,5 +452,113 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcE2EConfig, vmSvcNamespace,
 				vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage")
 		})
+	})
+
+	When("VM is imported from vCenter (brownfield)", Label("extended-functional", "experimental"), func() {
+		var (
+			vCenterAdminClient *vim25.Client
+			brownfieldVMName   string
+			brownfieldVMMoID   string
+			importedVMName     string
+			importOperation    *mopv1a2.ImportOperation
+		)
+
+		BeforeEach(func() {
+			kubeconfigPath := vmSvcClusterProxy.GetKubeconfigPath()
+			vCenterHostname := vcenter.GetVCPNIDFromKubeconfigFile(ctx, kubeconfigPath)
+
+			var err error
+
+			vCenterAdminClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
+			Expect(err).ToNot(HaveOccurred(), "Failed to create vCenter admin client")
+
+			brownfieldVMName = fmt.Sprintf("brownfield-vm-snapshot-%s", randomString)
+		})
+
+		AfterEach(func() {
+			if importedVMName != "" {
+				vmoperator.VerifyVMDeleted(ctx, vmSvcClusterProxy.GetClient(),
+					vmSvcE2EConfig, vmSvcNamespace, importedVMName)
+			}
+
+			CleanupBrownfieldVM(ctx, BrownfieldVMCleanupInput{
+				VCenterAdminClient: vCenterAdminClient,
+				BrownfieldVMName:   brownfieldVMName,
+				BrownfieldVMMoID:   brownfieldVMMoID,
+				ImportOperation:    importOperation,
+				SVClusterClient:    svClusterClient,
+			})
+
+			vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot1Name,
+				})
+
+			vcenter.LogoutVimClient(vCenterAdminClient)
+		})
+
+		It("snapshot on an imported brownfield VM should succeed and quota should be calculated correctly",
+			func() {
+				clusterMoID := GetClusterMoIDForNamespace(ctx, svClusterClient, vmSvcNamespace)
+
+				importOpName := fmt.Sprintf("import-snapshot-%s", randomString)
+				result := ImportBrownfieldVM(ImportBrownfieldVMInput{
+					Ctx:                ctx,
+					Config:             vmSvcE2EConfig,
+					VCenterAdminClient: vCenterAdminClient,
+					SVClusterClient:    svClusterClient,
+					Namespace:          vmSvcNamespace,
+					ClusterMoID:        clusterMoID,
+					BrownfieldVMName:   brownfieldVMName,
+					StorageClassName:   vmSvcClusterResources.StorageClassName,
+					VMClassName:        vmSvcClusterResources.VMClassName,
+					ImportOpName:       importOpName,
+				})
+				brownfieldVMMoID = result.BrownfieldVMMoID
+				importedVMName = result.ImportedVMName
+
+				// Keep a reference to the ImportOperation for cleanup.
+				importOperation = &mopv1a2.ImportOperation{}
+				_ = svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vmSvcNamespace,
+					Name:      importOpName,
+				}, importOperation)
+
+				By("Waiting for the imported VM to power on")
+				vmoperator.WaitForVirtualMachinePowerState(
+					ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+
+				By("Creating a snapshot on the imported brownfield VM")
+				vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot1Name,
+					VMName:    importedVMName,
+				})
+
+				By("Verifying VirtualMachineSnapshotReady condition becomes true")
+				vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+					vmSvcClusterProxy.GetClient(),
+					vmSvcNamespace,
+					vmSnapshot1Name,
+					vmopv1a5.VirtualMachinePowerStateOff,
+					false,
+					[]vmopv1a5.VirtualMachineSnapshotReference{})
+
+				By("Verifying the snapshot is reflected in the VM's snapshot status")
+				vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+					vmSvcClusterProxy.GetClient(),
+					vmSvcNamespace,
+					importedVMName,
+					vmSnapshotReference(vmSnapshot1Name),
+					[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+					vmopv1a5.VirtualMachinePowerStateOn)
+
+				By("Verifying snapshot storage quota is calculated correctly")
+				vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
+					vmSvcE2EConfig, vmSvcNamespace,
+					vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage",
+					vmSnapshot1Name)
+			})
 	})
 }

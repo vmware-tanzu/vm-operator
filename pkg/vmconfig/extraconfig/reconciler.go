@@ -237,7 +237,7 @@ func (r reconciler) OnResult(
 	if resultErr != nil {
 		conditions.MarkFalse(
 			vm,
-			vmopv1.VirtualMachineConditionExtraConfigSynced,
+			vmopv1.VirtualMachineExtraConfigSynced,
 			ReasonError,
 			"%v", resultErr)
 		return nil
@@ -272,17 +272,17 @@ func (r reconciler) OnResult(
 	case len(s.Deferred) > 0:
 		conditions.MarkFalse(
 			vm,
-			vmopv1.VirtualMachineConditionExtraConfigSynced,
+			vmopv1.VirtualMachineExtraConfigSynced,
 			ReasonPowerOffRequired,
 			"VM power off required to apply: %s", strings.Join(s.Deferred, ", "))
 	case s.PowerCyclePending || powerCycleOnVM:
 		conditions.MarkFalse(
 			vm,
-			vmopv1.VirtualMachineConditionExtraConfigSynced,
+			vmopv1.VirtualMachineExtraConfigSynced,
 			ReasonPowerCyclePending,
 			"applied changes take effect on next power cycle")
 	default:
-		conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionExtraConfigSynced)
+		conditions.MarkTrue(vm, vmopv1.VirtualMachineExtraConfigSynced)
 	}
 
 	return nil

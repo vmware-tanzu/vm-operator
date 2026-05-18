@@ -360,7 +360,7 @@ var _ = Describe("OnResult", func() {
 		moVM = moVMWithEC(
 			"numa.vcpu.preferHT", "TRUE",
 			"tools.guest.desktop.autolock", "FALSE", // class-derived, not in spec
-			"disk.enableUUID", "TRUE",               // internal
+			"disk.enableUUID", "TRUE", // internal
 			"foo", "bar",
 			vsphereconst.ExtraConfigManagedKeysKey, "foo",
 		)
@@ -380,7 +380,7 @@ var _ = Describe("OnResult", func() {
 
 func findCond(vm *vmopv1.VirtualMachine) *metav1.Condition {
 	for i := range vm.Status.Conditions {
-		if vm.Status.Conditions[i].Type == vmopv1.VirtualMachineConditionExtraConfigSynced {
+		if vm.Status.Conditions[i].Type == vmopv1.VirtualMachineExtraConfigSynced {
 			return &vm.Status.Conditions[i]
 		}
 	}

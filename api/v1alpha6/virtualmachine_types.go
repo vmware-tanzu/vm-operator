@@ -73,7 +73,7 @@ const (
 	// controllers match the desired state specified in the spec.
 	VirtualMachineHardwareControllersVerified = "VirtualMachineHardwareControllersVerified"
 
-	// VirtualMachineConditionExtraConfigSynced status indicates whether a VM's extraConfig
+	// VirtualMachineExtraConfigSynced status indicates whether a VM's extraConfig
 	// (which includes spec.advanced.extraConfig and first-class advanced fields) has been
 	// successfully applied to vSphere. This condition is marked as False/Pending if changes
 	// are detected while the VM is powered on. The changes will be applied the next time the
@@ -84,9 +84,9 @@ const (
 	//  - Some properties can be modified while the VM is running and take effect immediately.
 	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
 	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
-	VirtualMachineConditionExtraConfigSynced = "VirtualMachineExtraConfigSynced"
+	VirtualMachineExtraConfigSynced = "VirtualMachineExtraConfigSynced"
 
-	// VirtualMachineConditionNetworkConfigSynced indicates whether the VM's
+	// VirtualMachineNetworkConfigSynced indicates whether the VM's
 	// NIC-level properties (interfaces[].vmxnet3, interfaces[].advancedProperties,
 	// interfaces[].vnumaNodeID) are applied to vSphere.
 	// This condition is marked as False/Pending if changes are detected while the VM is powered on.
@@ -97,7 +97,7 @@ const (
 	//  - Some properties can be modified while the VM is running and take effect immediately.
 	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
 	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
-	VirtualMachineConditionNetworkConfigSynced = "VirtualMachineNetworkConfigSynced"
+	VirtualMachineNetworkConfigSynced = "VirtualMachineNetworkConfigSynced"
 
 	// VirtualMachineHardwareVolumesVerified indicates that the VM's hardware
 	// volumes match the desired state specified in the spec.

@@ -962,16 +962,17 @@ func errOrReconcileErr(reconcileErr, err error) error {
 // updateVirtualMachine performs the following operations in the stated order:
 //
 //  1. Fetch properties
-//  2. Fetch recent tasks
-//  3. Fetch attached tags
-//  4. Fetch volume info
-//  5. Reconcile status
-//  6. Reconcile schema upgrade
-//  7. Reconcile backup state
-//  8. Reconcile snapshot revert
-//  9. Reconcile config
-//  10. Reconcile power state
-//  11. Reconcile snapshot create
+//  2. Reconcile location
+//  3. Fetch recent tasks
+//  4. Fetch attached tags
+//  5. Fetch volume info
+//  6. Reconcile status
+//  7. Reconcile schema upgrade
+//  8. Reconcile backup state
+//  9. Reconcile snapshot revert
+//  10. Reconcile config
+//  11. Reconcile power state
+//  12. Reconcile snapshot create
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -993,6 +994,9 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		return fmt.Errorf("failed to fetch vm properties: %w", err)
 	}
 
+	//
+	// 2. Reconcile location
+	//
 	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
 			return errOrReconcileErr(reconcileErr, err)
@@ -1001,7 +1005,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 2. Get the recent tasks.
+	// 3. Get the recent tasks.
 	//
 	ctxWithRecentTaskInfo, err := vs.getRecentTaskInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1010,7 +1014,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
-	// 3. Get the attached tags.
+	// 4. Get the attached tags.
 	//
 	ctxWithAttachedTags, err := vs.getTags(vmCtx, vcClient)
 	if err != nil {
@@ -1019,7 +1023,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithAttachedTags
 
 	//
-	// 4. Get the volume info.
+	// 5. Get the volume info.
 	//
 	ctxWithVolumeInfo, err := vs.getVolumeInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1028,7 +1032,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithVolumeInfo
 
 	//
-	// 5. Reconcile status
+	// 6. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1038,7 +1042,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 6. Reconcile schema upgrade
+	// 7. Reconcile schema upgrade
 	//
 	//    It is important that this step occurs *after* the status is
 	//    reconciled. This is because reconciling the status builds information
@@ -1052,7 +1056,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 7. Reconcile backup state (VKS nodes excluded)
+	// 8. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1062,7 +1066,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 8. Reconcile snapshot revert
+	// 9. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
@@ -1074,7 +1078,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 9. Reconcile config
+	// 10. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1091,7 +1095,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 10. Reconcile power state
+	// 11. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1101,7 +1105,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 11. Reconcile snapshot create
+	// 12. Reconcile snapshot create
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
@@ -1117,13 +1121,10 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcClient *vcclient.Client) error {
 	logger := pkglog.FromContextOrDefault(vmCtx)
-	// 1. Get the VM's current Resource Pool from properties already fetched
 	if vmCtx.MoVM.ResourcePool == nil {
-		return fmt.Errorf("VM %s has no resource pool assigned", vmCtx.VM.Name)
+		return fmt.Errorf("VM %s is not assigned to any resource pools", vmCtx.VM.Name)
 	}
 
-	// 2. Get the Namespace's Root Resource Pool MoRef
-	// We use the topology utility to find the RP mapped to this K8s Namespace
 	_, expectedRootRPMoID, err := topology.GetNamespaceFolderAndRPMoID(
 		vmCtx,
 		vs.k8sClient,
@@ -1131,38 +1132,37 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		vmCtx.VM.Namespace,
 	)
 	if err != nil {
-		logger.Error(err, "failed to get expected namespace resource pool")
-		return nil
+		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
 
-	// 3. Validate Ancestry
-	// Check if the VM is in the Root RP or a Child RP (common for VKS)
+	// Check if the VM is in the Root RP or a Child RP
 	isValid, err := vcenter.IsVMInValidResourcePool(
 		vmCtx,
 		vcClient.VimClient(),
 		vmCtx.MoVM.ResourcePool.Value,
 		expectedRootRPMoID,
 	)
-
-	// 4. Handle Mismatch
-	if err != nil || !isValid {
-		if !isValid {
-			pkgcnd.MarkFalse(
-				vmCtx.VM,
-				vmopv1.VirtualMachineInAuthorizedLocation,
-				"LocationMismatch",
-				"VM is in an unauthorized Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
-				vmCtx.VM.Namespace,
-			)
-
-			return pkgerr.NoRequeueError{Message: fmt.Sprintf(
-				"reconciliation stopped for the VM %s because it is moved to unauthorized Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
-				vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
-		}
+	if err != nil {
+		logger.Error(err, "failed to validate VM resource pool")
 		return err
 	}
 
-	pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineInAuthorizedLocation)
+	// Handle Mismatch
+	if !isValid {
+		pkgcnd.MarkFalse(
+			vmCtx.VM,
+			vmopv1.VirtualMachineInAuthorizedLocation,
+			"LocationMismatch",
+			"VM is in an invalid Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
+			vmCtx.VM.Namespace,
+		)
+
+		return pkgerr.NoRequeueError{Message: fmt.Sprintf(
+			"reconciliation stopped for the VM %s because it is moved to invalid Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
+			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
+	}
+
+	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInAuthorizedLocation)
 	return nil
 }
 

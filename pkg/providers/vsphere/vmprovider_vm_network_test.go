@@ -306,22 +306,11 @@ func vmNetworkTests() {
 				It("should succeed", func() {
 					err := createOrUpdateVM(ctx, vmProvider, vm)
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
 					Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 					By("simulate successful network provider reconcile", func() {
 						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[0], 0)
-					})
-
-					{
-						// TODO: We should create all the interface CRs up front.
-						err := createOrUpdateVM(ctx, vmProvider, vm)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
-						Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
-					}
-
-					By("simulate successful network provider reconcile", func() {
 						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[1], 1)
 					})
 
@@ -490,7 +479,7 @@ func vmNetworkTests() {
 					It("should succeed", func() {
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
 						Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 						By("simulate successful network provider reconcile", func() {
@@ -537,8 +526,8 @@ func vmNetworkTests() {
 							vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 							err = createOrUpdateVM(ctx, vmProvider, vm)
 							Expect(err).To(HaveOccurred())
-							Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
-							Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+							Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+							Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 						})
 
 						By("simulate successful network provider reconcile on added interface", func() {
@@ -686,22 +675,11 @@ func vmNetworkTests() {
 					It("should succeed", func() {
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
 						Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 						By("simulate successful network provider reconcile", func() {
 							np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[0], 0)
-						})
-
-						{
-							// TODO: We should create all the interface CRs up front.
-							err := createOrUpdateVM(ctx, vmProvider, vm)
-							Expect(err).To(HaveOccurred())
-							Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
-							Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
-						}
-
-						By("simulate successful network provider reconcile", func() {
 							np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[1], 1)
 						})
 
@@ -749,8 +727,8 @@ func vmNetworkTests() {
 							vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 							err = createOrUpdateVM(ctx, vmProvider, vm)
 							Expect(err).To(HaveOccurred())
-							Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
-							Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+							Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+							Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 						})
 
 						By("simulate successful network provider reconcile on updated interface", func() {
@@ -826,7 +804,7 @@ func vmNetworkTests() {
 							vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 							err = createOrUpdateVM(ctx, vmProvider, vm)
 							Expect(err).To(HaveOccurred())
-							Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+							Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
 							Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 						})
 

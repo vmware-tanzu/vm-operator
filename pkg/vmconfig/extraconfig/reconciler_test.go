@@ -329,7 +329,8 @@ var _ = Describe("OnResult", func() {
 		Expect(cond.Reason).To(Equal(vmconfextraconfig.ReasonPowerCyclePending))
 	})
 
-	It("persists PowerCyclePending when vmx.reboot.powerCycle already on VM", func() {
+	It("persists PowerCyclePending when vmx.reboot.powerCycle already on powered-on VM", func() {
+		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
 		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
 		moVM = moVMWithEC(
 			"numa.vcpu.preferHT", "TRUE",
@@ -339,6 +340,20 @@ var _ = Describe("OnResult", func() {
 		cond := findCond(vm)
 		Expect(cond).ToNot(BeNil())
 		Expect(cond.Reason).To(Equal(vmconfextraconfig.ReasonPowerCyclePending))
+	})
+
+	It("sets True when vmx.reboot.powerCycle is on VM but VM is powered off", func() {
+		// VM is off: config fully applied, ESXi clears the flag on next boot automatically.
+		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
+		moVM = moVMWithEC(
+			"numa.vcpu.preferHT", "TRUE",
+			vsphereconst.ExtraConfigReservedKeyVMXRebootPowerCycle, "TRUE",
+		)
+		reconcileAndOnResult(nil)
+		cond := findCond(vm)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 	})
 
 	It("status.ExtraConfig omits first-class keys not yet on the VM (observed-based)", func() {

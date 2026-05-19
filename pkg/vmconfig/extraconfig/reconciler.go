@@ -262,8 +262,14 @@ func (r reconciler) OnResult(
 	}
 
 	// Set VirtualMachineExtraConfigSynced condition.
+	//
+	// powerCycleOnVM tracks whether a prior cycle left vmx.reboot.powerCycle=TRUE
+	// on the VM. When the VM is already powered off, all config has been applied
+	// and ESXi will clear the flag automatically on the next boot — nothing more
+	// is required from the user, so we treat it as synced.
+	vmPoweredOn := vm.Status.PowerState == vmopv1.VirtualMachinePowerStateOn
 	var powerCycleOnVM bool
-	if moVM.Config != nil {
+	if vmPoweredOn && moVM.Config != nil {
 		_, powerCycleOnVM = pkgutil.OptionValues(moVM.Config.ExtraConfig).GetString(
 			vsphereconst.ExtraConfigReservedKeyVMXRebootPowerCycle)
 	}

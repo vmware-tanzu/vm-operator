@@ -111,6 +111,11 @@ type ImportBrownfieldVMInput struct {
 	VMClassName string
 	// ImportOpName is the name to give the ImportOperation CR.
 	ImportOpName string
+	// BeforePowerOn, if non-nil, is called after the VM is deployed from the
+	// content library and before it is powered on. Use it for cold
+	// reconfigurations (e.g. adding shared disks with multi-writer mode) that
+	// require the VM to be in a powered-off state.
+	BeforePowerOn func(ctx context.Context, vm *object.VirtualMachine) error
 }
 
 // ImportBrownfieldVM deploys a photon VM from content-library into vCenter (bypassing
@@ -203,6 +208,11 @@ func ImportBrownfieldVM(input ImportBrownfieldVMInput) BrownfieldVMResult {
 		Type:  "VirtualMachine",
 		Value: brownfieldVMMoID,
 	})
+
+	if input.BeforePowerOn != nil {
+		By("Running pre-power-on reconfigure hook")
+		Expect(input.BeforePowerOn(ctx, brownfieldVMObj)).To(Succeed(), "Pre-power-on reconfigure hook failed")
+	}
 
 	By("Powering on the brownfield VM")
 

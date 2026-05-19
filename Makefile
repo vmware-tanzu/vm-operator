@@ -1008,30 +1008,20 @@ test-e2e: ## Run e2e tests (auto-detect: prebuilt binary if available, else gink
 	fi
 
 .PHONY: test-e2e-prebuilt
-test-e2e-prebuilt: ## Run e2e tests using precompiled binary. Used by the E2E container image.
-	@test -x "$(E2E_PREBUILT_BINARY)" || { echo "error: $(E2E_PREBUILT_BINARY) missing or not executable. Run: cd test/e2e/vmservice && go test -c -o ../../../e2e-tests ."; exit 1; }
-	@echo "Running E2E tests (prebuilt $(E2E_PREBUILT_BINARY))..."
-	@$(eval GINKGO_ARGS := --ginkgo.v --ginkgo.junit-report=$(or $(E2E_ARTIFACT_FOLDER),.)/test-results.xml)
-	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=$(or $(E2E_ARTIFACT_FOLDER),test_logs))
-	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --ginkgo.focus="$(TEST_FOCUS)"))
-	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --ginkgo.skip="$(TEST_SKIP)"))
-	$(if $(LABEL_FILTER),$(eval GINKGO_ARGS += --ginkgo.label-filter="$(LABEL_FILTER)"))
-	$(if $(FLAKE_ATTEMPTS),$(eval GINKGO_ARGS += --ginkgo.flake-attempts=$(FLAKE_ATTEMPTS)))
-	$(if $(E2E_NAMESPACE),$(eval export E2E_NAMESPACE=$(E2E_NAMESPACE)))
-	$(E2E_PREBUILT_BINARY) $(E2E_ARGS) $(GINKGO_ARGS)
+test-e2e-prebuilt: ## Run e2e tests using precompiled binary
+	@test -x "$(E2E_PREBUILT_BINARY)" || { echo "error: $(E2E_PREBUILT_BINARY) missing or not executable."; exit 1; }
+	@ROOT_DIR=$(ROOT_DIR) \
+	    E2E_PREBUILT_BINARY=$(E2E_PREBUILT_BINARY) \
+	    E2E_ARTIFACT_FOLDER=$(E2E_ARTIFACT_FOLDER) \
+	    ./hack/e2e/run-e2e.sh prebuilt
 
 .PHONY: test-e2e-ginkgo
 test-e2e-ginkgo: | $(GINKGO)
 test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
-	@echo "Running E2E tests (ginkgo compile)..."
-	@$(eval GINKGO_ARGS := -v --junit-report=$(or $(E2E_ARTIFACT_FOLDER),.)/test-results.xml)
-	@$(eval E2E_ARGS := -e2e.e2e-config="$(ROOT_DIR)test/e2e/vmservice/config/wcp.yaml" -e2e.artifactFolder=$(or $(E2E_ARTIFACT_FOLDER),test_logs))
-	$(if $(TEST_FOCUS),$(eval GINKGO_ARGS += --focus="$(TEST_FOCUS)"))
-	$(if $(TEST_SKIP),$(eval GINKGO_ARGS += --skip="$(TEST_SKIP)"))
-	$(if $(LABEL_FILTER),$(eval GINKGO_ARGS += --label-filter="$(LABEL_FILTER)"))
-	$(if $(FLAKE_ATTEMPTS),$(eval GINKGO_ARGS += --flake-attempts=$(FLAKE_ATTEMPTS)))
-	$(if $(E2E_NAMESPACE),$(eval export E2E_NAMESPACE=$(E2E_NAMESPACE)))
-	$(GINKGO) $(GINKGO_ARGS) ./test/e2e/vmservice/... -- $(E2E_ARGS)
+	@ROOT_DIR=$(ROOT_DIR) \
+	    GINKGO_BIN=$(GINKGO) \
+	    E2E_ARTIFACT_FOLDER=$(E2E_ARTIFACT_FOLDER) \
+	    ./hack/e2e/run-e2e.sh ginkgo
 
 .PHONY: e2e-smoke
 e2e-smoke: ## Run e2e smoke tests

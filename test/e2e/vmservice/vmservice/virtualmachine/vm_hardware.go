@@ -2033,8 +2033,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}
 			})
 
-			It("Import brownfield VM with shared SCSI controller and shared disk should succeed", Label("experimental"), func() {
-				By("Creating a brownfield VM by deploying from content library template using govmomi")
+		It("Import brownfield VM with shared SCSI controller and shared disk should succeed", Label("experimental"), func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.MultiWriterDiskVMotionCapabilityName)
+
+			By("Creating a brownfield VM by deploying from content library template using govmomi")
 				restClient, err := vcenter.NewRestClient(ctx, vCenterAdminClient, testbed.AdminUsername, testbed.AdminPassword)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create REST client")
 

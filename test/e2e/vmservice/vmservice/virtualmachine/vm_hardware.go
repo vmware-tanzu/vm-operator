@@ -2034,7 +2034,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 
 			It("Import brownfield VM with shared SCSI controller and shared disk should succeed", Label("experimental"), func() {
-				//skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.MultiWriterDiskVMotionCapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.MultiWriterDiskVMotionCapabilityName)
 
 				importOpName := fmt.Sprintf("import-shared-disk-%s", capiutil.RandomString(4))
 

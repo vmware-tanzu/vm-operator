@@ -26,7 +26,6 @@ func ReconcileNetworkInterfaces(
 	results *NetworkInterfaceResults,
 	currentEthCards object.VirtualDeviceList,
 ) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
-
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
 	for idx, r := range results.Results {
@@ -51,6 +50,12 @@ func ReconcileNetworkInterfaces(
 				ethDev.AddressType = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType
 				ethDev.MacAddress = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress
 				ethDev.ExternalId = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId
+
+				// Clear SubnetID when the backing changes to ensure we don't have a
+				// mismatch between the subnet ID and the port group specified in the
+				// backing. The subnetID is populated by the platform automatically when
+				// the network adapter is connected to a subnet.
+				ethDev.SubnetId = ""
 
 				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 					Device:    editDev,
@@ -89,8 +94,8 @@ func findExistingEthCardForOrphanedCR(
 	_ context.Context,
 	interfaceName string,
 	orphanedObjects []ctrlclient.Object,
-	currentEthCards object.VirtualDeviceList) int {
-
+	currentEthCards object.VirtualDeviceList,
+) int {
 	findMatchFn := func(obj ctrlclient.Object) int {
 		switch netIf := obj.(type) {
 		case *netopv1alpha1.NetworkInterface:
@@ -137,8 +142,8 @@ func findExistingEthCardForOrphanedCR(
 
 func FindMatchingEthCard(
 	currentEthCards object.VirtualDeviceList,
-	ethCard vimtypes.BaseVirtualEthernetCard) int {
-
+	ethCard vimtypes.BaseVirtualEthernetCard,
+) int {
 	ethDev := ethCard.GetVirtualEthernetCard()
 	matchingIdx := -1
 

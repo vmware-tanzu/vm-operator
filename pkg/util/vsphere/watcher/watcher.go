@@ -37,6 +37,7 @@ func DefaultWatchedPropertyPaths() []string {
 	return []string{
 		"config.annotation",
 
+		"config.changeTrackingEnabled",
 		"config.extraConfig",
 		"config.hardware.device",
 		"config.keyId",

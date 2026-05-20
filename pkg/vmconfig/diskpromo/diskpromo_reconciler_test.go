@@ -476,26 +476,106 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						})
 					})
 
-					When("there promote disks is called while already running", func() {
+				When("there promote disks is called while already running", func() {
+					BeforeEach(func() {
+						ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+							{
+								State:         vimtypes.TaskInfoStateRunning,
+								DescriptionId: diskpromo.PromoteDisksTaskKey,
+							},
+						})
+					})
+					It("should mark the condition as running", func() {
+						Expect(err).ToNot(HaveOccurred())
+						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+						Expect(c.Message).To(Equal("Promotion is running"))
+					})
+				})
+
+				When("a previous promote disks task failed with a transient error", func() {
+					transientTaskInfo := vimtypes.TaskInfo{
+						State:         vimtypes.TaskInfoStateError,
+						DescriptionId: diskpromo.PromoteDisksTaskKey,
+						Error: &vimtypes.LocalizedMethodFault{
+							Fault:            &vimtypes.ConcurrentAccess{},
+							LocalizedMessage: "concurrent access",
+						},
+					}
+
+					When("no other tasks are running", func() {
 						BeforeEach(func() {
 							ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+								transientTaskInfo,
+							})
+						})
+						It("should issue a new promote disks task", func() {
+							Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+						})
+					})
+
+					When("a competing task is still running", func() {
+						BeforeEach(func() {
+							ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+								transientTaskInfo,
+								{
+									State:         vimtypes.TaskInfoStateRunning,
+									DescriptionId: "fake.concurrent.task",
+								},
+							})
+						})
+						It("should wait and mark pending", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+						})
+					})
+
+					When("a promote disks task is already running", func() {
+						BeforeEach(func() {
+							ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+								transientTaskInfo,
 								{
 									State:         vimtypes.TaskInfoStateRunning,
 									DescriptionId: diskpromo.PromoteDisksTaskKey,
 								},
 							})
 						})
-						It("should mark the condition as running", func() {
+						It("should wait and mark running", func() {
 							Expect(err).ToNot(HaveOccurred())
 							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 							Expect(c).ToNot(BeNil())
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
 							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
-							Expect(c.Message).To(Equal("Promotion is running"))
 						})
 					})
 
-					When("VM has no child disks and no existing condition", func() {
+					When("multiple transient errors are present", func() {
+						BeforeEach(func() {
+							ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+								transientTaskInfo,
+								transientTaskInfo,
+							})
+						})
+						It("should issue a new promote disks task", func() {
+							Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+						})
+					})
+				})
+
+				When("VM has no child disks and no existing condition", func() {
 						BeforeEach(func() {
 							// Remove all child disks
 							moVM.Config.Hardware.Device = nil

@@ -176,6 +176,14 @@ func GetVirtualMachineYamlA5(vmYaml VirtualMachineYaml) []byte {
 	return vmYamlBytes
 }
 
+// GetVirtualMachineYamlA6 returns a v1alpha6 VirtualMachine YAML from a templated fixture.
+func GetVirtualMachineYamlA6(vmYaml VirtualMachineYaml) []byte {
+	vmYamlIn := fixtures.ReadFile(vmYamlDir, "v1a6singlevm.yaml.in")
+	vmYamlBytes, _ := ReadVirtualMachineTemplate(vmYaml, vmYamlIn)
+
+	return vmYamlBytes
+}
+
 // GetPersistentVolumeClaimYaml renders a single PersistentVolumeClaim manifest from
 // the same PVC fields used by GetVirtualMachineYamlA5 (see createPvcsFromSpec).
 func GetPersistentVolumeClaimYaml(pvc PVC) []byte {

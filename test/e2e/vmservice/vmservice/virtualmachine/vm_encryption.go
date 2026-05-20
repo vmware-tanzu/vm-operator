@@ -119,10 +119,10 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).NotTo(HaveOccurred(), "failed to get the VM Image name in namespace %q", tmpNamespaceName)
 
 		By(utils.E2EEncryptionStorageProfileName + " should exist")
-		Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient, 
-			wcpClient, clusterProxy.GetClientSet(), svClusterClient, *config, 
+		Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient,
+			wcpClient, clusterProxy.GetClientSet(), svClusterClient, *config,
 			tmpNamespaceName, clusterResources.StorageClassName)).
-			To(Succeed(), "failed to ensure encryption storage in namespace %s", 
+			To(Succeed(), "failed to ensure encryption storage in namespace %s",
 				tmpNamespaceName)
 
 		defaultKeyProviderID, err = cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
@@ -154,6 +154,28 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		_ = cryptoManager.SetDefaultKmsClusterId(ctx, defaultKeyProviderID, nil)
 
 		vcenter.LogoutVimClient(vCenterClient)
+	})
+
+	It("Should verify boot disk storage policy matches VM spec.storageClass for an encrypted VM", Label("experimental"), func() {
+		useKeyProvider(ctx, cryptoManager, nativeKeyProviderID)
+
+		By("Create VM using encryption storage policy")
+		vmParameters := manifestbuilders.VirtualMachineYaml{
+			Namespace:        tmpNamespaceName,
+			Name:             vmName,
+			ImageName:        vmiName,
+			VMClassName:      "best-effort-small",
+			StorageClassName: utils.E2EEncryptionStorageClassName,
+			ResourcePolicy:   clusterResources.VMResourcePolicyName,
+			PowerState:       "PoweredOn",
+		}
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		By("Verifying boot disk storage policy matches spec.storageClass for encrypted VM")
+		vmoperator.EventuallyBootDiskStoragePolicyMatchesVMStorageClass(ctx, config, vCenterClient, svClusterClient, tmpNamespaceName, vmName)
 	})
 
 	It("Create an Encrypted VirtualMachine using encryption storage policy", Label("smoke"), func() {

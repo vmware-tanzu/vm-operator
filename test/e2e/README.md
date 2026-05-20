@@ -38,7 +38,7 @@ test/e2e/
 1. **Access to a WCP cluster** with VM Operator deployed
 2. **vSphere environment** with proper permissions
 3. **Kubeconfig** for the WCP supervisor cluster
-4. **Go 1.21+** installed locally
+4. **Go 1.26+** installed locally
 
 ### Configuration
 

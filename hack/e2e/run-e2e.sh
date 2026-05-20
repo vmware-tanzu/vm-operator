@@ -15,13 +15,17 @@
 #              "prebuilt" - executes an existing compiled test binary.
 #
 # Environment Variables (usually passed by Makefile):
-#   TEST_FOCUS      - Regex to filter specific tests to run.
-#   TEST_SKIP       - Regex to skip specific tests.
-#   LABEL_FILTER    - Ginkgo label filter expression.
-#   FLAKE_ATTEMPTS  - Number of times to retry flaky tests.
-#   E2E_NAMESPACE   - The K8s namespace to target for testing.
-#   ROOT_DIR        - Project root directory (defaults to ./).
-#   GINKGO_BIN      - Path to the ginkgo executable (for ginkgo mode).
+#   TEST_FOCUS          - Regex to filter specific tests to run.
+#   TEST_SKIP           - Regex to skip specific tests.
+#   LABEL_FILTER        - Ginkgo label filter expression.
+#   FLAKE_ATTEMPTS      - Number of times to retry flaky tests.
+#   E2E_NAMESPACE       - The K8s namespace to target for testing.
+#   GINKGO_TIMEOUT      - Ginkgo suite timeout (default: 2h). Ginkgo uses this to
+#                         shut down gracefully and write the JUnit report. Set this
+#                         below the CI container wall-clock limit so Ginkgo exits
+#                         cleanly before the container scheduler kills the process.
+#   ROOT_DIR            - Project root directory (defaults to ./).
+#   GINKGO_BIN          - Path to the ginkgo executable (for ginkgo mode).
 #   E2E_PREBUILT_BINARY - Path to the compiled test binary (for prebuilt mode).
 #   E2E_ARTIFACT_FOLDER - Directory to store test results/logs.
 ################################################################################
@@ -37,15 +41,20 @@ PREBUILT_BIN="${E2E_PREBUILT_BINARY:-}"
 ROOT_DIR="${ROOT_DIR:-./}"
 ARTIFACT_FOLDER="${E2E_ARTIFACT_FOLDER:-test_logs}"
 REPORT_DIR="${E2E_ARTIFACT_FOLDER:-.}"
+# Ginkgo suite-level timeout. Ginkgo shuts down gracefully when this elapses,
+# writing the JUnit report and running AfterSuite cleanup before exiting.
+# Keep this below the CI container wall-clock limit so the report is written
+# before the container scheduler force-kills the process.
+GINKGO_TIMEOUT="${GINKGO_TIMEOUT:-2h}"
 
 # Define the flag prefix based on mode
 # Prebuilt binaries require the "--ginkgo." prefix for ginkgo-specific flags
 PREFIX=""
 [ "$MODE" = "prebuilt" ] && PREFIX="ginkgo."
 
-# 1. Initialize Ginkgo Args with verbosity and junit-report
-# Logic: --[ginkgo.]v --[ginkgo.]junit-report=...
-GINKGO_ARGS=("--${PREFIX}v" "--${PREFIX}junit-report=${REPORT_DIR}/test-results.xml")
+# 1. Initialize Ginkgo Args with verbosity, timeout, and junit-report
+# Logic: --[ginkgo.]v --[ginkgo.]timeout=... --[ginkgo.]junit-report=...
+GINKGO_ARGS=("--${PREFIX}v" "--${PREFIX}timeout=${GINKGO_TIMEOUT}" "--${PREFIX}junit-report=${REPORT_DIR}/test-results.xml")
 
 # 2. Map Environment Variables to Ginkgo Flags
 # Syntax: "ENV_VAR_NAME:flag-name"
@@ -82,7 +91,7 @@ if [ "$MODE" = "prebuilt" ]; then
     exec "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}"
 else
     echo "Running E2E tests (ginkgo CLI)..."
-    echo "$GINKGO_BIN ${GINKGO_ARGS[*]} ./test/e2e/vmservice -- $E2E_ARGS"
+    echo "$GINKGO_BIN ${GINKGO_ARGS[*]} ./test/e2e/vmservice/... -- $E2E_ARGS"
     # shellcheck disable=SC2086
-    exec "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice -- $E2E_ARGS
+    exec "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS
 fi

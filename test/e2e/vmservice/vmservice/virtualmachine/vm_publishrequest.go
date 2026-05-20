@@ -247,25 +247,47 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
 			})
 
-			It("should have expected condition when the published target item already exists in the content library", func() {
-				Expect(tarLocationCLIsAttached).To(BeTrue(), "target location content library is not attached to the namespace")
+		It("should have expected condition when the published target item already exists in the content library", func() {
+			// Attach the target CL as writable — this test is self-sufficient and
+			// does not rely on the smoke test having run first.
+			if !tarLocationCLIsAttached {
+				Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(input.WCPNamespaceName, wcp.ContentLibrarySpec{
+					ContentLibrary: targetLocationCLID,
+					Writable:       true,
+				})).To(Succeed(), "failed to attach content library '%s' to namespace '%s'", targetLocationCLID, input.WCPNamespaceName)
+				tarLocationCLIsAttached = true
+			}
 
-				// Reset this before any error occurs below to ensure the CL will be deleted in AfterEach().
-				keepTargetLocationCLAttached = false
+			// Reset this before any error occurs below to ensure the CL will be deleted in AfterEach().
+			keepTargetLocationCLAttached = false
 
-				targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, input.WCPNamespaceName, targetLocationCLID)
-				Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
+			targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, input.WCPNamespaceName, targetLocationCLID)
+			Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
 
-				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
-
-				vmPubCondition := metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionTargetValid,
-					Status: metav1.ConditionFalse,
-					Reason: vmopv1a2.TargetItemAlreadyExistsReason,
-				}
-				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
+			// Publish the VM once so that the target item exists in the CL.
+			firstPubReqName := fmt.Sprintf("%s-first", vmPublishRequestName)
+			firstPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, firstPubReqName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
+			createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, firstPubReqBuilder)
+			vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, firstPubReqName, metav1.Condition{
+				Type:   vmopv1a2.VirtualMachinePublishRequestConditionComplete,
+				Status: metav1.ConditionTrue,
 			})
+			DeferCleanup(func() {
+				vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, firstPubReqName)
+				vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, firstPubReqName)
+			})
+
+			// Now publish again with the same target item name — expect duplicate error.
+			vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
+			createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+
+			vmPubCondition := metav1.Condition{
+				Type:   vmopv1a2.VirtualMachinePublishRequestConditionTargetValid,
+				Status: metav1.ConditionFalse,
+				Reason: vmopv1a2.TargetItemAlreadyExistsReason,
+			}
+			vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
+		})
 		})
 
 		Context("Inventory Content Library", Ordered, func() {

@@ -128,7 +128,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		g.Expect(false).To(BeTrue(),
 			"VirtualMachineConditionImageCacheReady condition not yet present on VM %s/%s",
 			ns, vmName)
-	}, config.GetIntervals("default", "default/wait-virtual-machine-image-creation")...).
+	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 

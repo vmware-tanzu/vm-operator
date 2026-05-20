@@ -228,6 +228,80 @@ func verifyCreatedControllersCount(
 		Should(BeTrue(), "Timed out waiting for VirtualMachines %s to be updated", vmName)
 }
 
+// addSharedMultiWriterDisk cold-adds a ParaVirtual SCSI controller with
+// physical bus sharing (bus 1) and a 10 MB multi-writer shared disk backed by
+// storagePolicyID to vm. The VM must be powered off; multi-writer shared disks
+// require a cold reconfigure to avoid "Incompatible device backing" errors.
+func addSharedMultiWriterDisk(ctx context.Context, vm *object.VirtualMachine, storagePolicyID string) error {
+	var moVM mo.VirtualMachine
+	if err := vm.Properties(ctx, vm.Reference(), []string{"config.hardware.device", "datastore"}, &moVM); err != nil {
+		return err
+	}
+
+	Expect(moVM.Datastore).ToNot(BeEmpty(), "VM has no datastores")
+	datastoreRef := moVM.Datastore[0]
+
+	sharedScsiController := &vimtypes.ParaVirtualSCSIController{
+		VirtualSCSIController: vimtypes.VirtualSCSIController{
+			SharedBus: vimtypes.VirtualSCSISharingPhysicalSharing,
+			VirtualController: vimtypes.VirtualController{
+				BusNumber: 1,
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key: -1,
+				},
+			},
+		},
+	}
+
+	sharedDisk := &vimtypes.VirtualDisk{
+		VirtualDevice: vimtypes.VirtualDevice{
+			Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+				DiskMode: string(vimtypes.VirtualDiskModePersistent),
+				Sharing:  string(vimtypes.VirtualDiskSharingSharingMultiWriter),
+				VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+					Datastore: &datastoreRef,
+				},
+			},
+			ControllerKey: sharedScsiController.Key,
+			UnitNumber:    vimtypes.NewInt32(0),
+		},
+		CapacityInBytes: 10 * 1024 * 1024,
+	}
+
+	configSpec := vimtypes.VirtualMachineConfigSpec{
+		DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+			&vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				Device:    sharedScsiController,
+			},
+			// EZT (Eager Zeroed Thick) allocation avoids "Incompatible device backing"
+			// errors that occur with thin provisioning on multi-writer shared disks.
+			&vimtypes.VirtualDeviceConfigSpec{
+				Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+				Device:        sharedDisk,
+				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+					&vimtypes.VirtualMachineDefinedProfileSpec{
+						ProfileId: storagePolicyID,
+					},
+				},
+			},
+		},
+		ExtraConfig: []vimtypes.BaseOptionValue{
+			&vimtypes.OptionValue{
+				Key:   "test.shared.disk.import",
+				Value: "true",
+			},
+		},
+	}
+
+	task, err := vm.Reconfigure(ctx, configSpec)
+	if err != nil {
+		return err
+	}
+	return task.Wait(ctx)
+}
+
 func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput) {
 	const (
 		specName              = "vm-hardware"
@@ -2050,82 +2124,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					ImportOpName:       importOpName,
 					BeforePowerOn: func(ctx context.Context, vm *object.VirtualMachine) error {
 						By("Adding shared SCSI controller with physical sharing mode and shared disk")
-
-						var moVM mo.VirtualMachine
-						if err := vm.Properties(ctx, vm.Reference(), []string{"config.hardware.device", "datastore"}, &moVM); err != nil {
-							return err
-						}
-
-						var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
-
-						sharedScsiController := &vimtypes.ParaVirtualSCSIController{
-							VirtualSCSIController: vimtypes.VirtualSCSIController{
-								SharedBus: vimtypes.VirtualSCSISharingPhysicalSharing,
-								VirtualController: vimtypes.VirtualController{
-									BusNumber: 1,
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: -1,
-									},
-								},
-							},
-						}
-
-						deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-							Device:    sharedScsiController,
-						})
-
-						e2eframework.Logf("Adding ParaVirtual SCSI controller with physical sharing on bus 1")
-
-						Expect(moVM.Datastore).ToNot(BeEmpty(), "VM has no datastores")
-						datastoreRef := moVM.Datastore[0]
-
-						sharedDisk := &vimtypes.VirtualDisk{
-							VirtualDevice: vimtypes.VirtualDevice{
-								Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-									DiskMode: string(vimtypes.VirtualDiskModePersistent),
-									Sharing:  string(vimtypes.VirtualDiskSharingSharingMultiWriter),
-									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-										Datastore: &datastoreRef,
-									},
-								},
-								ControllerKey: sharedScsiController.Key,
-								UnitNumber:    vimtypes.NewInt32(0),
-							},
-							CapacityInBytes: 10 * 1024 * 1024,
-						}
-
-						// Use the EZT storage policy created in BeforeAll. EZT (Eager Zeroed Thick)
-						// allocation is required for multi-writer shared disks - this avoids
-						// "Incompatible device backing" errors that occur with thin provisioning.
-						deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-							Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
-							FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
-							Device:        sharedDisk,
-							Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-								&vimtypes.VirtualMachineDefinedProfileSpec{
-									ProfileId: eztStoragePolicyID,
-								},
-							},
-						})
-
-						e2eframework.Logf("Adding 10MB shared disk on shared SCSI controller")
-
-						configSpec := vimtypes.VirtualMachineConfigSpec{
-							DeviceChange: deviceChanges,
-							ExtraConfig: []vimtypes.BaseOptionValue{
-								&vimtypes.OptionValue{
-									Key:   "test.shared.disk.import",
-									Value: "true",
-								},
-							},
-						}
-
-						task, err := vm.Reconfigure(ctx, configSpec)
-						if err != nil {
-							return err
-						}
-						if err := task.Wait(ctx); err != nil {
+						if err := addSharedMultiWriterDisk(ctx, vm, eztStoragePolicyID); err != nil {
 							return err
 						}
 						e2eframework.Logf("Successfully added shared SCSI controller and shared disk to brownfield VM")
@@ -2162,17 +2161,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					foundSharedController := false
-					for _, controller := range vm.Spec.Hardware.SCSIControllers {
-						if controller.BusNumber == 1 &&
-							controller.SharingMode == vmopv1a5.VirtualControllerSharingModePhysical {
-							foundSharedController = true
-							e2eframework.Logf("Found shared SCSI controller: bus=%d, sharingMode=%s",
-								controller.BusNumber, controller.SharingMode)
-							break
-						}
+					idx := slices.IndexFunc(vm.Spec.Hardware.SCSIControllers, func(c vmopv1a5.SCSIControllerSpec) bool {
+						return c.BusNumber == 1 && c.SharingMode == vmopv1a5.VirtualControllerSharingModePhysical
+					})
+					g.Expect(idx).To(BeNumerically(">=", 0), "Expected to find shared SCSI controller with physical sharing mode")
+					if idx >= 0 {
+						c := vm.Spec.Hardware.SCSIControllers[idx]
+						e2eframework.Logf("Found shared SCSI controller: bus=%d, sharingMode=%s", c.BusNumber, c.SharingMode)
 					}
-					g.Expect(foundSharedController).To(BeTrue(), "Expected to find shared SCSI controller with physical sharing mode")
 				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
 					Should(Succeed(), "Timed out waiting for shared controller verification")
 
@@ -2195,23 +2191,19 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					foundSharedDisk := false
-					for _, vol := range vm.Status.Volumes {
-						if vol.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
-							*vol.ControllerBusNumber == 1 &&
-							*vol.UnitNumber == 0 {
-
-							e2eframework.Logf("Found shared disk volume: name=%s, sharingMode=%s, controllerBus=%d, unit=%d",
-								vol.Name, vol.SharingMode, *vol.ControllerBusNumber, *vol.UnitNumber)
-
-							g.Expect(vol.SharingMode).To(Equal(vmopv1a5.VolumeSharingModeMultiWriter),
-								"Expected shared disk to have sharingMode=MultiWriter")
-
-							foundSharedDisk = true
-							break
-						}
+					idx := slices.IndexFunc(vm.Status.Volumes, func(v vmopv1a5.VirtualMachineVolumeStatus) bool {
+						return v.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
+							*v.ControllerBusNumber == 1 &&
+							*v.UnitNumber == 0
+					})
+					g.Expect(idx).To(BeNumerically(">=", 0), "Expected to find shared disk on SCSI bus 1 unit 0")
+					if idx >= 0 {
+						vol := vm.Status.Volumes[idx]
+						e2eframework.Logf("Found shared disk volume: name=%s, sharingMode=%s, controllerBus=%d, unit=%d",
+							vol.Name, vol.SharingMode, *vol.ControllerBusNumber, *vol.UnitNumber)
+						g.Expect(vol.SharingMode).To(Equal(vmopv1a5.VolumeSharingModeMultiWriter),
+							"Expected shared disk to have sharingMode=MultiWriter")
 					}
-					g.Expect(foundSharedDisk).To(BeTrue(), "Expected to find shared disk on SCSI bus 1 unit 0")
 				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
 					Should(Succeed(), "Timed out waiting for shared disk volume verification")
 
@@ -2220,27 +2212,26 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					for _, vol := range vm.Status.Volumes {
-						if vol.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
-							*vol.ControllerBusNumber == 1 &&
-							*vol.UnitNumber == 0 {
+					idx := slices.IndexFunc(vm.Status.Volumes, func(v vmopv1a5.VirtualMachineVolumeStatus) bool {
+						return v.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
+							*v.ControllerBusNumber == 1 &&
+							*v.UnitNumber == 0
+					})
+					g.Expect(idx).To(BeNumerically(">=", 0), "Expected to find shared disk volume for PVC verification")
+					if idx >= 0 {
+						vol := vm.Status.Volumes[idx]
+						pvc := &corev1.PersistentVolumeClaim{}
+						g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+							Namespace: vmSvcNamespace,
+							Name:      vol.Name,
+						}, pvc)).To(Succeed(), "Failed to get PVC %s", vol.Name)
 
-							pvc := &corev1.PersistentVolumeClaim{}
-							err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{
-								Namespace: vmSvcNamespace,
-								Name:      vol.Name,
-							}, pvc)
-							g.Expect(err).ToNot(HaveOccurred(), "Failed to get PVC %s", vol.Name)
+						e2eframework.Logf("PVC %s annotations: %v", vol.Name, pvc.Annotations)
+						e2eframework.Logf("PVC %s spec: storageClass=%s, volumeMode=%v, accessModes=%v",
+							vol.Name, *pvc.Spec.StorageClassName, *pvc.Spec.VolumeMode, pvc.Spec.AccessModes)
 
-							e2eframework.Logf("PVC %s annotations: %v", vol.Name, pvc.Annotations)
-							e2eframework.Logf("PVC %s spec: storageClass=%s, volumeMode=%v, accessModes=%v",
-								vol.Name, *pvc.Spec.StorageClassName, *pvc.Spec.VolumeMode, pvc.Spec.AccessModes)
-
-							g.Expect(pvc.Status.Phase).To(Equal(corev1.ClaimBound),
-								"Expected PVC %s to be bound", vol.Name)
-
-							break
-						}
+						g.Expect(pvc.Status.Phase).To(Equal(corev1.ClaimBound),
+							"Expected PVC %s to be bound", vol.Name)
 					}
 				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
 					Should(Succeed(), "Timed out waiting for PVC verification")

@@ -1,0 +1,22 @@
+{
+    "navigations":
+    [
+        {
+            "name": "Getting Started",
+            "url": "/index.html",
+            "hidden": false
+        },
+        {
+            "name": "VM Service",
+            "hidden": false,
+            "navigations":
+            [
+                {
+                    "name": "API Reference",
+                    "url": "/api-docs.html",
+                    "hidden": false
+                }
+            ]
+        }
+    ]
+}

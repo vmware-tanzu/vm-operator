@@ -101,21 +101,15 @@ func restore_v1alpha6_VirtualMachineAdvanced(dst, src *vmopv1.VirtualMachine) {
 }
 
 func restore_v1alpha6_VirtualMachineResources(dst, src *vmopv1.VirtualMachine) {
-	if src.Spec.Resources != nil {
-		dst.Spec.Resources = src.Spec.Resources.DeepCopy()
-	}
+	dst.Spec.Resources = src.Spec.Resources
 }
 
 func restore_v1alpha6_VirtualMachineCPUAdvanced(dst, src *vmopv1.VirtualMachine) {
-	if src.Spec.CPUAdvanced != nil {
-		dst.Spec.CPUAdvanced = src.Spec.CPUAdvanced.DeepCopy()
-	}
+	dst.Spec.CPUAdvanced = src.Spec.CPUAdvanced
 }
 
 func restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, src *vmopv1.VirtualMachine) {
-	if src.Spec.MemoryAdvanced != nil {
-		dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced.DeepCopy()
-	}
+	dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced
 }
 
 func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMachine) {

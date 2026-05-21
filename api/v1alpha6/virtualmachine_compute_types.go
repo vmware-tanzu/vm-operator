@@ -169,7 +169,6 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// Requires full CPU and memory reservation (requests = size)
 	// when set to High or HighWithHyperthreading.
 	// When unset, the setting is cleared, reverting to the vSphere default.
-	// Requires power-off to apply.
 	LatencySensitivity *VirtualMachineLatencySensitivityLevel `json:"latencySensitivity,omitempty"`
 
 	// +optional
@@ -184,7 +183,6 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// HotAddEnabled allows vCPUs to be added to the VM while it is powered
 	// on (CPU hot-add). Maps to ConfigSpec.CpuHotAddEnabled.
 	// Requires hardware version vmx-20 or later.
-	// Not compatible with LatencySensitivity High or HighWithHyperthreading.
 	// Requires power-off to apply.
 	HotAddEnabled *bool `json:"hotAddEnabled,omitempty"`
 
@@ -194,6 +192,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// (VT-d / IOMMU) for this VM. Required for SR-IOV and PCI passthrough
 	// workloads. Requires EFI firmware (spec.bootOptions.firmware = "efi").
 	// Maps to ConfigSpec.Flags.VvtdEnabled.
+	// Requires power-off to apply.
 	IOMMUEnabled *bool `json:"iommuEnabled,omitempty"`
 
 	// +optional
@@ -203,6 +202,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// hypervisor or use hardware VMX instructions. Required for nested
 	// virtualization workloads.
 	// Maps to ConfigSpec.NestedHVEnabled.
+	// Requires power-off to apply.
 	NestedHardwareVirtualizationEnabled *bool `json:"nestedHardwareVirtualizationEnabled,omitempty"`
 
 	// +optional
@@ -211,6 +211,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// counters (vPMC), allowing profiling tools inside the guest OS to
 	// access hardware performance counter data.
 	// Maps to ConfigSpec.VPMCEnabled.
+	// Requires power-off to apply.
 	PerformanceCountersEnabled *bool `json:"performanceCountersEnabled,omitempty"`
 
 	// +optional

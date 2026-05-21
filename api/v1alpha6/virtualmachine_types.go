@@ -1169,7 +1169,8 @@ type VirtualMachineSpec struct {
 
 	// +optional
 
-	// CPUAdvanced describes advanced CPU scheduling configuration for this VM.
+	// CPUAdvanced describes advanced CPU scheduling and topology configuration
+	// for this VM.
 	//
 	// Requires the TelcoVMServiceAPI supervisor capability.
 	CPUAdvanced *VirtualMachineCPUAdvancedSpec `json:"cpuAdvanced,omitempty"`

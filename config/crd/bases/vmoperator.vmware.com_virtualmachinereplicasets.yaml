@@ -9355,7 +9355,8 @@ spec:
                         type: string
                       cpuAdvanced:
                         description: |-
-                          CPUAdvanced describes advanced CPU scheduling configuration for this VM.
+                          CPUAdvanced describes advanced CPU scheduling and topology configuration
+                          for this VM.
 
                           Requires the TelcoVMServiceAPI supervisor capability.
                         properties:
@@ -9379,11 +9380,9 @@ spec:
                               LatencySensitivity sets the vSphere CPU scheduler latency sensitivity
                               level. Maps to ConfigSpec.LatencySensitivity.Level and
                               ConfigSpec.SimultaneousThreads (for HighWithHyperthreading).
-                              Use High or HighWithHyperthreading for Telco VNF workloads requiring
-                              deterministic scheduling. Requires full CPU and memory reservation
-                              (requests = size) when set to High or HighWithHyperthreading.
-                              If not set, the VMClass value is used; if VMClass is absent, vSphere
-                              defaults to Normal.
+                              Requires full CPU and memory reservation (requests = size)
+                              when set to High or HighWithHyperthreading.
+                              When unset, the setting is cleared, reverting to the vSphere default.
                               Requires power-off to apply.
                             enum:
                             - Low
@@ -9408,15 +9407,14 @@ spec:
                             type: boolean
                           reservationLockedToMax:
                             description: |-
-                              ReservationLockedToMax, when true, automatically calculates the CPU
-                              resource reservation to guarantee full CPU capacity on the placed host.
-                              The reservation is calculated as:
-                                physicalCores * (hostCoreMHz - toleranceMHz)
-                              where physicalCores = numCPUs / simultaneousThreads (1 if unset).
-                              Any explicit value in spec.resources.requests.cpu is overridden when
-                              this flag is true.
-                              When false or unset, spec.resources.requests.cpu is used for reservation.
+                              ReservationLockedToMax pins the host CPU reservation to guarantee full
+                              CPU capacity on the placed host. Overrides any explicit value in
+                              spec.resources.requests.cpu when set.
+                              When false or unset, spec.resources.requests.cpu is used for the
+                              CPU reservation.
                               Maps to ConfigSpec.CpuAllocation.ReservationLockedToMax.
+                              Requires hardware version vmx-23 or later.
+                              Requires power-off to apply.
                             type: boolean
                           topology:
                             description: |-
@@ -9427,10 +9425,9 @@ spec:
                               coresPerSocket:
                                 description: |-
                                   CoresPerSocket controls the number of cores per virtual socket.
-                                  When set, maps to ConfigSpec.NumCoresPerSocket.
-                                  When unset, the controller sends zero to vSphere which removes any
-                                  manually configured size and uses the vSphere default cores-per-socket
-                                  behavior.
+                                  When unset, any explicit cores-per-socket configuration is cleared,
+                                  reverting to the vSphere default.
+                                  Maps to ConfigSpec.NumCoresPerSocket.
                                   Requires power-off to apply.
                                 format: int32
                                 minimum: 1
@@ -9438,8 +9435,10 @@ spec:
                               exposeVnumaOnCpuHotadd:
                                 description: |-
                                   ExposeVNUMAOnCPUHotAdd controls vNUMA exposure when CPU hot-add occurs.
-                                  When true, vSphere considers exposing virtual NUMA to the VM during hot-add.
-                                  When false or unset, vSphere enforces a single virtual NUMA node during hot-add.
+                                  When true, virtual NUMA topology is exposed to the guest when vCPUs are
+                                  hot-added.
+                                  When false or unset, a single virtual NUMA node is presented to the guest
+                                  during hot-add regardless of configured topology.
                                   Only relevant when cpuAdvanced.hotAddEnabled is true.
                                   Maps to ConfigSpec.VirtualNuma.ExposeVnumaOnCpuHotadd.
                                   Requires hardware version vmx-20 or later.
@@ -9447,30 +9446,29 @@ spec:
                                 type: boolean
                               numaFixedAutoAffinityEnabled:
                                 description: |-
-                                  NUMAFixedAutoAffinityEnabled, when true, enables fixed affinity between
-                                  the VM's vCPUs and physical NUMA nodes on the host. vCPUs are placed
-                                  equally across N = total vCPU count / CoresPerSocket virtual NUMA nodes;
-                                  when CoresPerSocket is unset, all vCPUs are placed on a single physical
-                                  NUMA node. The affinity is established at each power-on and live migration.
-                                  Overrides any vNUMA settings set via VNUMANodeCount; when both are set,
-                                  the fixed affinity takes precedence.
-                                  When false or unset, the controller sends false to vSphere, disabling
-                                  fixed affinity.
+                                  NUMAFixedAutoAffinityEnabled enables fixed affinity between the VM's
+                                  vCPUs and physical NUMA nodes on the host. vCPUs are distributed equally
+                                  across (total vCPU count / CoresPerSocket) virtual NUMA nodes; when
+                                  CoresPerSocket is unset, all vCPUs are placed on a single physical NUMA
+                                  node. The affinity is established at each power-on and live migration.
+                                  Mutually exclusive with VNUMANodeCount.
+                                  When false or unset, fixed affinity is disabled.
                                   Maps to ConfigSpec.NUMAFixedAutoAffinityEnabled.
+                                  Requires hardware version vmx-23 or later.
                                   Requires power-off to apply.
                                 type: boolean
                               vnumaNodeCount:
                                 description: |-
-                                  VNUMANodeCount sets the number of virtual NUMA nodes.
-                                  The controller configures vSphere with coresPerNumaNode =
-                                  total vCPU count / VNUMANodeCount (integer division); the vCPU count
+                                  VNUMANodeCount sets the number of virtual NUMA nodes. vSphere derives
+                                  coresPerNumaNode as total vCPU count / VNUMANodeCount; the vCPU count
                                   should be evenly divisible by VNUMANodeCount for a balanced topology.
-                                  When unset, clears any manual vNUMA override and enables automatic vNUMA sizing.
-                                  Must be set together with CoresPerSocket.
                                   The derived coresPerNumaNode must be a multiple or divisor of
                                   CoresPerSocket; the VM will fail to power on if this constraint is
                                   violated.
-                                  Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode (derived).
+                                  When unset, any manual vNUMA configuration is cleared, enabling automatic
+                                  vNUMA sizing.
+                                  Must be set together with CoresPerSocket.
+                                  Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode.
                                   Requires hardware version vmx-20 or later.
                                   Requires power-off to apply.
                                 format: int32

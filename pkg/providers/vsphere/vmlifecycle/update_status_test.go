@@ -2041,6 +2041,8 @@ var _ = Describe("UpdateStatus", func() {
 								UnitNumber:          ptr.To[int32](3),
 								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 								ControllerBusNumber: ptr.To[int32](0),
+								DiskMode:            vmopv1.VolumeDiskModePersistent,
+								SharingMode:         vmopv1.VolumeSharingModeNone,
 							},
 							{
 								Name:       pkgutil.GeneratePVCName("disk", "101"),
@@ -2051,6 +2053,8 @@ var _ = Describe("UpdateStatus", func() {
 								Requested:  kubeutil.BytesToResource(1 * oneGiBInBytes),
 								Used:       kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 								UnitNumber: ptr.To[int32](0),
+								DiskMode:    vmopv1.VolumeDiskModePersistent,
+								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
 							{
 								Name:       pkgutil.GeneratePVCName("disk", "102"),
@@ -2061,6 +2065,8 @@ var _ = Describe("UpdateStatus", func() {
 								Requested:  kubeutil.BytesToResource(2 * oneGiBInBytes),
 								Used:       kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 								UnitNumber: ptr.To[int32](0),
+								DiskMode:    vmopv1.VolumeDiskModePersistent,
+								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
 							{
 								Name:       pkgutil.GeneratePVCName("disk", "103"),
@@ -2071,6 +2077,8 @@ var _ = Describe("UpdateStatus", func() {
 								Requested:  kubeutil.BytesToResource(3 * oneGiBInBytes),
 								Used:       kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 								UnitNumber: ptr.To[int32](0),
+								DiskMode:    vmopv1.VolumeDiskModePersistent,
+								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
 							{
 								Name:       pkgutil.GeneratePVCName("disk", "104"),
@@ -2081,9 +2089,35 @@ var _ = Describe("UpdateStatus", func() {
 								Requested:  kubeutil.BytesToResource(4 * oneGiBInBytes),
 								Used:       kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
 								UnitNumber: ptr.To[int32](0),
+								DiskMode:    vmopv1.VolumeDiskModePersistent,
+								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
 						}))
 					})
+				})
+			})
+
+			When("VMSharedDisks feature is enabled and a classic disk has multi-writer sharing", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMSharedDisks = true
+					})
+					d := vmCtx.MoVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+					b := d.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+					b.Sharing = string(vimtypes.VirtualDiskSharingSharingMultiWriter)
+					b.DiskMode = string(vimtypes.VirtualDiskModeIndependent_persistent)
+				})
+				Specify("status.volumes includes SharingMode and DiskMode for the classic disk", func() {
+					var disk100 *vmopv1.VirtualMachineVolumeStatus
+					for i := range vmCtx.VM.Status.Volumes {
+						if vmCtx.VM.Status.Volumes[i].DiskUUID == "100" {
+							disk100 = &vmCtx.VM.Status.Volumes[i]
+							break
+						}
+					}
+					Expect(disk100).ToNot(BeNil())
+					Expect(disk100.SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter))
+					Expect(disk100.DiskMode).To(Equal(vmopv1.VolumeDiskModeIndependentPersistent))
 				})
 			})
 
@@ -2112,6 +2146,8 @@ var _ = Describe("UpdateStatus", func() {
 							UnitNumber:          ptr.To[int32](3),
 							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							ControllerBusNumber: ptr.To[int32](0),
+							DiskMode:            vmopv1.VolumeDiskModePersistent,
+							SharingMode:         vmopv1.VolumeSharingModeNone,
 						},
 					))
 
@@ -2136,6 +2172,8 @@ var _ = Describe("UpdateStatus", func() {
 							UnitNumber:          ptr.To[int32](3),
 							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							ControllerBusNumber: ptr.To[int32](0),
+							DiskMode:            vmopv1.VolumeDiskModePersistent,
+							SharingMode:         vmopv1.VolumeSharingModeNone,
 						},
 						{
 							Name:       pkgutil.GeneratePVCName("disk", "101"),
@@ -2146,6 +2184,8 @@ var _ = Describe("UpdateStatus", func() {
 							Requested:  kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Used:       kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
 							UnitNumber: ptr.To[int32](0),
+							DiskMode:    vmopv1.VolumeDiskModePersistent,
+							SharingMode: vmopv1.VolumeSharingModeNone,
 						},
 						{
 							Name:       pkgutil.GeneratePVCName("disk", "102"),
@@ -2156,6 +2196,8 @@ var _ = Describe("UpdateStatus", func() {
 							Requested:  kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Used:       kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
 							UnitNumber: ptr.To[int32](0),
+							DiskMode:    vmopv1.VolumeDiskModePersistent,
+							SharingMode: vmopv1.VolumeSharingModeNone,
 						},
 						{
 							Name:       pkgutil.GeneratePVCName("disk", "103"),
@@ -2166,6 +2208,8 @@ var _ = Describe("UpdateStatus", func() {
 							Requested:  kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Used:       kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
 							UnitNumber: ptr.To[int32](0),
+							DiskMode:    vmopv1.VolumeDiskModePersistent,
+							SharingMode: vmopv1.VolumeSharingModeNone,
 						},
 						{
 							Name:       pkgutil.GeneratePVCName("disk", "104"),
@@ -2176,6 +2220,8 @@ var _ = Describe("UpdateStatus", func() {
 							Requested:  kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Used:       kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
 							UnitNumber: ptr.To[int32](0),
+							DiskMode:    vmopv1.VolumeDiskModePersistent,
+							SharingMode: vmopv1.VolumeSharingModeNone,
 						},
 					}))
 				})

@@ -1488,6 +1488,12 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 					vm.Status.Volumes[diskIndex].ControllerBusNumber = &c.Bus
 					vm.Status.Volumes[diskIndex].ControllerType = c.Type
 				}
+				if diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode); err == nil {
+					vm.Status.Volumes[diskIndex].DiskMode = diskMode
+				}
+				if sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing); err == nil {
+					vm.Status.Volumes[diskIndex].SharingMode = sharingMode
+				}
 			}
 
 			// Classic disk should be converted to PVC in the end.
@@ -1533,6 +1539,12 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				if c, ok := info.Controllers[di.ControllerKey]; ok {
 					volStatus.ControllerBusNumber = &c.Bus
 					volStatus.ControllerType = c.Type
+				}
+				if diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode); err == nil {
+					volStatus.DiskMode = diskMode
+				}
+				if sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing); err == nil {
+					volStatus.SharingMode = sharingMode
 				}
 			}
 

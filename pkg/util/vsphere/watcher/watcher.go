@@ -76,6 +76,7 @@ func DefaultWatchedPropertyPaths() []string {
 		"summary.runtime.host",
 		"summary.runtime.powerState",
 		"resourcePool",
+		"parent",
 
 		// This property changes whether or not the storage has been updated.
 		// "summary.storage.timestamp",

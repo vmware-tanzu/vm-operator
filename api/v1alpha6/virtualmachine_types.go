@@ -116,9 +116,9 @@ const (
 	// not the guest is reporting the expected IP address(es).
 	VirtualMachineGuestNetworkConfigSynced = "VirtualMachineGuestNetworkConfigSynced"
 
-	// VirtualMachineInAuthorizedLocation indicates that the VM is in the expected location in the vCenter inventory.
+	// VirtualMachineInValidLocation indicates that the VM is in the expected location in the vCenter inventory.
 	// This condition is set when a VM is detected to be in the incorrect folder or resource pool based on its namespace.
-	VirtualMachineInAuthorizedLocation = "VirtualMachineInAuthorizedLocation"
+	VirtualMachineInValidLocation = "VirtualMachineInValidLocation"
 )
 
 const (

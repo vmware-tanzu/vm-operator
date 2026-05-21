@@ -1132,8 +1132,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		vmCtx.VM.Namespace,
 	)
 	if err != nil {
-		logger.Error(err, "failed to get expected namespace resource pool")
-		return nil
+		return fmt.Errorf("failed to get expected namespace resource pool: %s", err)
 	}
 
 	// Check if the VM is in the Root RP or a Child RP
@@ -1152,7 +1151,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	if !isValid {
 		pkgcnd.MarkFalse(
 			vmCtx.VM,
-			vmopv1.VirtualMachineInAuthorizedLocation,
+			vmopv1.VirtualMachineInValidLocation,
 			"LocationMismatch",
 			"VM is in an invalid Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
 			vmCtx.VM.Namespace,
@@ -1163,7 +1162,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
 	}
 
-	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInAuthorizedLocation)
+	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
 	return nil
 }
 

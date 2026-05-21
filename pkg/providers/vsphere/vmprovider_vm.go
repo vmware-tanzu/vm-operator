@@ -1132,7 +1132,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		vmCtx.VM.Namespace,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to get expected namespace resource pool: %s", err)
+		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
 
 	// Check if the VM is in the Root RP or a Child RP

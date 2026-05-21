@@ -260,7 +260,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			if vmSpec.Class != nil {
 				vmSpec.Class = nil
 			}
-
 		},
 		func(msg *json.RawMessage, c randfill.Continue) {
 			*msg = []byte(`{"foo":"bar"}`)

@@ -280,7 +280,7 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				vmSpec.Class = nil
 			}
 
-		if bs := vmSpec.Bootstrap; bs != nil {
+			if bs := vmSpec.Bootstrap; bs != nil {
 				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
 					sysPrep := vmSpec.Bootstrap.Sysprep
 

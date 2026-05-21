@@ -11,6 +11,7 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -161,4 +162,31 @@ func findChildRP(
 	}
 
 	return childRP, nil
+}
+
+func IsVMInValidResourcePool(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	currentRPMoID string,
+	expectedRootRPMoID string) (bool, error) {
+
+	// Case A: Direct match
+	if currentRPMoID == expectedRootRPMoID {
+		return true, nil
+	}
+	// Case B: Check if current pool's parent is the root
+	poolObj := object.NewResourcePool(vimClient,
+		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: currentRPMoID})
+
+	var moPool mo.ResourcePool
+	err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent"}, &moPool)
+	if err != nil {
+		return false, err
+	}
+
+	if moPool.Parent != nil && moPool.Parent.Value == expectedRootRPMoID {
+		return true, nil
+	}
+
+	return false, nil
 }

@@ -101,7 +101,7 @@ WEBHOOK_ROOT      ?= $(MANIFEST_ROOT)/webhook
 RBAC_ROOT         ?= $(MANIFEST_ROOT)/rbac
 
 # Image URL to use all building/pushing image targets
-BASE_IMAGE ?= gcr.io/distroless/base-debian12
+BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
 IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}

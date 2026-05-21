@@ -8,14 +8,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/types"
 
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
@@ -129,6 +136,77 @@ func CreateAndVerifyVMA5(ctx context.Context, vmParameters manifestbuilders.Virt
 
 	Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
 	vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+}
+
+func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid string, expectedProperties []manifestbuilders.KeyValueOrSecretKeySelectorPair) {
+	vmMoRef := types.ManagedObjectReference{
+		Type:  string(types.ManagedObjectTypeVirtualMachine),
+		Value: vmmoid,
+	}
+
+	propCollector := property.DefaultCollector(vCenterClient)
+	var vmMO mo.VirtualMachine
+	err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.vAppConfig"}, &vmMO)
+	Expect(err).To(Succeed(), "Failed to retrieve VM properties from vCenter")
+	Expect(vmMO.Config).ToNot(BeNil(), "VM should have a config")
+	Expect(vmMO.Config.VAppConfig).ToNot(BeNil(), "VM should have vAppConfig when VAppConfig bootstrap is used")
+
+	vAppConfigInfo := vmMO.Config.VAppConfig.GetVmConfigInfo()
+	Expect(vAppConfigInfo).ToNot(BeNil(), "VM should have vAppConfig info")
+
+	// Get actual properties from the VM
+	actualProperties := vAppConfigInfo.Property
+	Expect(actualProperties).ToNot(BeEmpty(), "VM should have vApp properties")
+
+	// Create a map of actual properties for easier lookup
+	actualPropsMap := make(map[string]types.VAppPropertyInfo)
+	for _, prop := range actualProperties {
+		actualPropsMap[prop.Id] = prop
+	}
+
+	// Verify each expected property is correctly set
+	for _, expectedProp := range expectedProperties {
+		By(fmt.Sprintf("Verifying vApp property: %s", expectedProp.Key))
+
+		// Check that the property exists
+		actualProp, exists := actualPropsMap[expectedProp.Key]
+		Expect(exists).To(BeTrue(), fmt.Sprintf("Expected vApp property '%s' should exist on VM", expectedProp.Key))
+
+		// User-configurable properties
+		if actualProp.UserConfigurable != nil && *actualProp.UserConfigurable {
+			// Handle both non-empty values and explicitly empty values (like string-empty test case)
+			switch propType := actualProp.Type; propType {
+			case "password":
+				Expect(actualProp.Value).To(BeEmpty(), "password should not be exposed via vAppConfig")
+			case "boolean":
+				// Normalize boolean values - vApp config stores as "True" or "False"
+				expectedLower := strings.ToLower(strings.TrimSpace(expectedProp.Value.Value))
+				Expect(expectedLower).Should(Or(Equal("true"), Equal("false")))
+				switch expectedLower {
+				case "true":
+					Expect(actualProp.Value).To(Equal("True"),
+						fmt.Sprintf("Boolean property '%s' should be 'True', got '%s'", expectedProp.Key, actualProp.Value))
+				case "false":
+					Expect(actualProp.Value).To(Equal("False"),
+						fmt.Sprintf("Boolean property '%s' should be 'False', got '%s'", expectedProp.Key, actualProp.Value))
+				}
+			case "int":
+				fallthrough
+			case "string":
+				fallthrough
+			default:
+				// For non-boolean properties, do direct string comparison
+				// Note: vApp properties may trim whitespace, so we trim expected values too
+				expectedTrimmed := strings.TrimSpace(expectedProp.Value.Value)
+				Expect(actualProp.Value).To(Equal(expectedTrimmed),
+					fmt.Sprintf("Property '%s' of type %s, should have value '%s', got '%s'", expectedProp.Key, actualProp.Type, expectedTrimmed, actualProp.Value))
+			}
+		} else {
+			// for non-userconfigurable properties, check actualProp.Defaultvalue as actualProp.Value is empty
+			Expect(actualProp.DefaultValue).To(Equal(expectedProp.Value.Value),
+				"Non-UserConfigurable value not as expected for key %s, expected: %s, got: %s", expectedProp.Key, expectedProp.Value.Value, actualProp.DefaultValue)
+		}
+	}
 }
 
 func verifyLoginAndRunCmds(ctx context.Context, vmIp string, cmds []string, expectedOutput []string) {
@@ -434,11 +512,167 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		It("should successfully apply vAppConfig properties to VM and be able to register VM from backup", func() {
 			CreateAndVerifyVM(ctx, v1a2vmParameters, true)
 
-			// TODO: Verify the vAppConfig properties are actually applied to the VM.
+			// Verify that the vAppConfig properties are actually applied to the VM
+			vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			expectedProperties := *v1a2vmParameters.Bootstrap.VAppConfig.Properties
+			verifyVAppConfigs(ctx, vCenterClient, vmmoid, expectedProperties)
 
 			if vmServiceBackupRestoreEnabled {
 				vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, nil, clusterProxy, config, svClusterClient, wcpClient)
 			}
+		})
+
+		When("Multiple vAppConfigs specified", func() {
+			BeforeEach(func() {
+				// Use the OVF image from content library that contains more properties to test
+				ovfImageName := "photon-ova-vappconfig-test"
+				imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, ovfImageName)
+				Expect(err).NotTo(HaveOccurred(), "Failed to get the OVF image name %q in namespace %q", ovfImageName, input.WCPNamespaceName)
+
+				v1a2vmParameters.ImageName = imageName
+				v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{
+					// LinuxPrep is needed here for VM to get a valid IP address.
+					LinuxPrep: &manifestbuilders.LinuxPrep{},
+					VAppConfig: &manifestbuilders.VAppConfig{
+						Properties: &[]manifestbuilders.KeyValueOrSecretKeySelectorPair{
+							// Basic property types
+							{
+								Key: "string-valid",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "test-value-updated",
+								},
+							},
+							{
+								Key: "string-empty",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "",
+								},
+							},
+							{
+								Key: "string-trimmed",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "hello-updated",
+								},
+							},
+
+							{
+								Key: "string-padding-user-configurable",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "hello-world",
+								},
+							},
+							{
+								Key: "password-valid",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "updated-secret-password",
+								},
+							},
+							{
+								Key: "bool-user-configurable-1",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "false",
+								},
+							},
+
+							{
+								Key: "bool-user-configurable-2",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "true",
+								},
+							},
+
+							{
+								Key: "bool-user-configurable-3",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "False",
+								},
+							},
+
+							{
+								Key: "bool-user-configurable-4",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "True",
+								},
+							},
+							{
+								Key: "int-user-configurable-1",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "10",
+								},
+							},
+
+							{
+								Key: "int-user-configurable-2",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "-10",
+								},
+							},
+
+							{
+								Key: "int-user-configurable-3",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "42",
+								},
+							},
+
+							{
+								Key: "int-user-configurable-4",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "-42",
+								},
+							},
+							{
+								Key: "int-positive",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "42",
+								},
+							},
+							{
+								Key: "int-negative",
+								Value: manifestbuilders.ValueOrSecretKeySelector{
+									Value: "-42",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should successfully apply vAppConfig properties to VM", Label("experimental"), func() {
+				CreateAndVerifyVM(ctx, v1a2vmParameters, true)
+
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1a2.VirtualMachinePowerStateOn))
+
+				// Verify that the vAppConfig properties are actually applied to the VM
+				vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+
+				// Get the expected properties from the VM parameters
+				expectedProperties := *v1a2vmParameters.Bootstrap.VAppConfig.Properties
+				// append more props that are present in the ovf, but are user-configurable = false
+				expectedProperties = append(expectedProperties, []manifestbuilders.KeyValueOrSecretKeySelectorPair{
+					{
+						Key: "string-padding",
+						Value: manifestbuilders.ValueOrSecretKeySelector{
+							Value: "hello",
+						},
+					},
+					{
+						Key: "bool-true",
+						Value: manifestbuilders.ValueOrSecretKeySelector{
+							Value: "True", // vc converts all booleans to strings with capitalized first letter
+						},
+					},
+					{
+						Key: "bool-false",
+						Value: manifestbuilders.ValueOrSecretKeySelector{
+							Value: "False", // vc converts all booleans to strings with capitalized first letter
+						},
+					},
+				}...)
+				verifyVAppConfigs(ctx, vCenterClient, vmmoid, expectedProperties)
+			})
 		})
 	})
 

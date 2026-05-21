@@ -1158,7 +1158,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		)
 
 		return pkgerr.NoRequeueError{Message: fmt.Sprintf(
-			"reconciliation stopped for the VM %s because it is moved to invalid Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
+			"reconciliation paused for the VM %s because it is moved to invalid Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
 			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
 	}
 

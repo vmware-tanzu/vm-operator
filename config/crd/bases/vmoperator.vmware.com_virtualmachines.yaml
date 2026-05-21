@@ -15140,43 +15140,84 @@ spec:
                       access hardware performance counter data.
                       Maps to ConfigSpec.VPMCEnabled.
                     type: boolean
+                  reservationLockedToMax:
+                    description: |-
+                      ReservationLockedToMax, when true, automatically calculates the CPU
+                      resource reservation to guarantee full CPU capacity on the placed host.
+                      The reservation is calculated as:
+                        physicalCores * (hostCoreMHz - toleranceMHz)
+                      where physicalCores = numCPUs / simultaneousThreads (1 if unset).
+                      Any explicit value in spec.resources.requests.cpu is overridden when
+                      this flag is true.
+                      When false or unset, spec.resources.requests.cpu is used for reservation.
+                      Maps to ConfigSpec.CpuAllocation.ReservationLockedToMax.
+                    type: boolean
                   topology:
                     description: |-
                       Topology describes CPU topology configuration (cores per socket,
                       cores per NUMA node, vNUMA exposure on hot-add). All sub-fields are
                       optional and used together to define the guest CPU layout.
                     properties:
-                      coresPerNumaNode:
-                        description: |-
-                          CoresPerNUMANode sets the number of cores per virtual NUMA node.
-                          When set, virtual NUMA node count = total vCPU count / CoresPerNUMANode.
-                          Used alongside CoresPerSocket for full CPU topology control.
-                          Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode.
-                          Requires hardware version vmx-20 or later.
-                          Requires power-off to apply.
-                        format: int32
-                        minimum: 1
-                        type: integer
                       coresPerSocket:
                         description: |-
-                          CoresPerSocket controls the number of cores per virtual socket,
-                          allowing users to tune the NUMA topology visible to the guest OS.
-                          Maps to ConfigSpec.NumCoresPerSocket.
+                          CoresPerSocket controls the number of cores per virtual socket.
+                          When set, maps to ConfigSpec.NumCoresPerSocket.
+                          When unset, the controller sends zero to vSphere which removes any
+                          manually configured size and uses the vSphere default cores-per-socket
+                          behavior.
                           Requires power-off to apply.
                         format: int32
                         minimum: 1
                         type: integer
                       exposeVnumaOnCpuHotadd:
                         description: |-
-                          ExposeVNUMAOnCPUHotAdd controls whether virtual NUMA topology is
-                          exposed to the guest when vCPUs are hot-added.
-                          Only relevant when cpuAdvanced.hotAddEnabled is true and virtual NUMA
-                          is configured (CoresPerNUMANode is set).
+                          ExposeVNUMAOnCPUHotAdd controls vNUMA exposure when CPU hot-add occurs.
+                          When true, vSphere considers exposing virtual NUMA to the VM during hot-add.
+                          When false or unset, vSphere enforces a single virtual NUMA node during hot-add.
+                          Only relevant when cpuAdvanced.hotAddEnabled is true.
                           Maps to ConfigSpec.VirtualNuma.ExposeVnumaOnCpuHotadd.
                           Requires hardware version vmx-20 or later.
                           Requires power-off to apply.
                         type: boolean
+                      numaFixedAutoAffinityEnabled:
+                        description: |-
+                          NUMAFixedAutoAffinityEnabled, when true, enables fixed affinity between
+                          the VM's vCPUs and physical NUMA nodes on the host. vCPUs are placed
+                          equally across N = total vCPU count / CoresPerSocket virtual NUMA nodes;
+                          when CoresPerSocket is unset, all vCPUs are placed on a single physical
+                          NUMA node. The affinity is established at each power-on and live migration.
+                          Overrides any vNUMA settings set via VNUMANodeCount; when both are set,
+                          the fixed affinity takes precedence.
+                          When false or unset, the controller sends false to vSphere, disabling
+                          fixed affinity.
+                          Maps to ConfigSpec.NUMAFixedAutoAffinityEnabled.
+                          Requires power-off to apply.
+                        type: boolean
+                      vnumaNodeCount:
+                        description: |-
+                          VNUMANodeCount sets the number of virtual NUMA nodes.
+                          The controller configures vSphere with coresPerNumaNode =
+                          total vCPU count / VNUMANodeCount (integer division); the vCPU count
+                          should be evenly divisible by VNUMANodeCount for a balanced topology.
+                          When unset, clears any manual vNUMA override and enables automatic vNUMA sizing.
+                          Must be set together with CoresPerSocket.
+                          The derived coresPerNumaNode must be a multiple or divisor of
+                          CoresPerSocket; the VM will fail to power on if this constraint is
+                          violated.
+                          Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode (derived).
+                          Requires hardware version vmx-20 or later.
+                          Requires power-off to apply.
+                        format: int32
+                        minimum: 1
+                        type: integer
                     type: object
+                    x-kubernetes-validations:
+                    - message: vnumaNodeCount requires coresPerSocket to also be set
+                      rule: '!has(self.vnumaNodeCount) || has(self.coresPerSocket)'
+                    - message: vnumaNodeCount cannot be set when numaFixedAutoAffinityEnabled
+                        is true
+                      rule: '!has(self.numaFixedAutoAffinityEnabled) || !self.numaFixedAutoAffinityEnabled
+                        || !has(self.vnumaNodeCount)'
                 type: object
               crypto:
                 description: Crypto describes the desired encryption state of the
@@ -16063,7 +16104,7 @@ spec:
                           description: |-
                             VNUMANodeID assigns this interface to a specific virtual NUMA node.
                             The value must match a virtual NUMA node ID configured in the VM's
-                            CPU topology (spec.cpu.coresPerNumaNode). Co-locating a NIC with the
+                            CPU topology (spec.cpuAdvanced.topology.vnumaNodeCount). Co-locating a NIC with the
                             vCPUs that process its traffic reduces cross-NUMA memory latency for
                             latency-sensitive workloads.
                             Requires EFI firmware (spec.hardware.firmware=EFI); Legacy BIOS does
@@ -16511,7 +16552,7 @@ spec:
                       limits.cpu is in MHz (nil = unlimited); limits.memory is in bytes
                       (nil = unlimited).
                       Maps to CpuAllocation.Limit and MemoryAllocation.Limit.
-                      Changes apply immediately on a powered-on VM.
+                      Can be reconfigured while the VM is powered on.
                     properties:
                       cpu:
                         anyOf:
@@ -16540,7 +16581,7 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          Memory is a memory resource quantity (e.g. "8Gi").
+                          Memory is a memory resource quantity in bytes (e.g. "8Gi").
 
                           For spec.resources.size, maps to ConfigSpec.MemoryMB (guest-visible).
                           For spec.resources.requests and spec.resources.limits, maps to
@@ -16553,7 +16594,7 @@ spec:
                       Requests is the host-level resource reservation (host guarantee).
                       requests.cpu is in MHz; requests.memory is in bytes.
                       Maps to CpuAllocation.Reservation and MemoryAllocation.Reservation.
-                      Changes apply immediately on a powered-on VM.
+                      Can be reconfigured while the VM is powered on.
                     properties:
                       cpu:
                         anyOf:
@@ -16582,7 +16623,7 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          Memory is a memory resource quantity (e.g. "8Gi").
+                          Memory is a memory resource quantity in bytes (e.g. "8Gi").
 
                           For spec.resources.size, maps to ConfigSpec.MemoryMB (guest-visible).
                           For spec.resources.requests and spec.resources.limits, maps to
@@ -16624,7 +16665,7 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          Memory is a memory resource quantity (e.g. "8Gi").
+                          Memory is a memory resource quantity in bytes (e.g. "8Gi").
 
                           For spec.resources.size, maps to ConfigSpec.MemoryMB (guest-visible).
                           For spec.resources.requests and spec.resources.limits, maps to

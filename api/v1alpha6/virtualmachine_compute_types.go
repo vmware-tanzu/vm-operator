@@ -25,16 +25,16 @@ type VirtualMachineResourceQuantity struct {
 	// represents a host-level CPU allocation in MHz (e.g. "2000" for
 	// 2 GHz). Maps to CpuAllocation.Reservation and CpuAllocation.Limit
 	// respectively.
-	CPU resource.Quantity `json:"cpu,omitempty"`
+	CPU *resource.Quantity `json:"cpu,omitempty"`
 
 	// +optional
 
-	// Memory is a memory resource quantity (e.g. "8Gi").
+	// Memory is a memory resource quantity in bytes (e.g. "8Gi").
 	//
 	// For spec.resources.size, maps to ConfigSpec.MemoryMB (guest-visible).
 	// For spec.resources.requests and spec.resources.limits, maps to
 	// MemoryAllocation.Reservation and MemoryAllocation.Limit respectively.
-	Memory resource.Quantity `json:"memory,omitempty"`
+	Memory *resource.Quantity `json:"memory,omitempty"`
 }
 
 // VirtualMachineResourcesSpec describes the desired compute resource
@@ -58,7 +58,7 @@ type VirtualMachineResourcesSpec struct {
 	// Requests is the host-level resource reservation (host guarantee).
 	// requests.cpu is in MHz; requests.memory is in bytes.
 	// Maps to CpuAllocation.Reservation and MemoryAllocation.Reservation.
-	// Changes apply immediately on a powered-on VM.
+	// Can be reconfigured while the VM is powered on.
 	Requests *VirtualMachineResourceQuantity `json:"requests,omitempty"`
 
 	// +optional
@@ -67,7 +67,7 @@ type VirtualMachineResourcesSpec struct {
 	// limits.cpu is in MHz (nil = unlimited); limits.memory is in bytes
 	// (nil = unlimited).
 	// Maps to CpuAllocation.Limit and MemoryAllocation.Limit.
-	// Changes apply immediately on a powered-on VM.
+	// Can be reconfigured while the VM is powered on.
 	Limits *VirtualMachineResourceQuantity `json:"limits,omitempty"`
 }
 
@@ -78,10 +78,6 @@ type VirtualMachineResourcesSpec struct {
 type VirtualMachineLatencySensitivityLevel string
 
 const (
-	// VirtualMachineLatencySensitivityLow configures the CPU scheduler to
-	// favor throughput over latency.
-	VirtualMachineLatencySensitivityLow VirtualMachineLatencySensitivityLevel = "Low"
-
 	// VirtualMachineLatencySensitivityNormal is the default scheduling mode.
 	VirtualMachineLatencySensitivityNormal VirtualMachineLatencySensitivityLevel = "Normal"
 
@@ -102,33 +98,58 @@ const (
 // VirtualMachineCPUTopologySpec describes the guest CPU topology.
 //
 // Requires the TelcoVMServiceAPI supervisor capability.
+// +kubebuilder:validation:XValidation:rule="!has(self.vnumaNodeCount) || has(self.coresPerSocket)",message="vnumaNodeCount requires coresPerSocket to also be set"
+// +kubebuilder:validation:XValidation:rule="!has(self.numaFixedAutoAffinityEnabled) || !self.numaFixedAutoAffinityEnabled || !has(self.vnumaNodeCount)",message="vnumaNodeCount cannot be set when numaFixedAutoAffinityEnabled is true"
 type VirtualMachineCPUTopologySpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 
-	// CoresPerSocket controls the number of cores per virtual socket,
-	// allowing users to tune the NUMA topology visible to the guest OS.
-	// Maps to ConfigSpec.NumCoresPerSocket.
+	// CoresPerSocket controls the number of cores per virtual socket.
+	// When set, maps to ConfigSpec.NumCoresPerSocket.
+	// When unset, the controller sends zero to vSphere which removes any
+	// manually configured size and uses the vSphere default cores-per-socket
+	// behavior.
 	// Requires power-off to apply.
 	CoresPerSocket *int32 `json:"coresPerSocket,omitempty"`
 
 	// +optional
+
+	// NUMAFixedAutoAffinityEnabled, when true, enables fixed affinity between
+	// the VM's vCPUs and physical NUMA nodes on the host. vCPUs are placed
+	// equally across N = total vCPU count / CoresPerSocket virtual NUMA nodes;
+	// when CoresPerSocket is unset, all vCPUs are placed on a single physical
+	// NUMA node. The affinity is established at each power-on and live migration.
+	// Overrides any vNUMA settings set via VNUMANodeCount; when both are set,
+	// the fixed affinity takes precedence.
+	// When false or unset, the controller sends false to vSphere, disabling
+	// fixed affinity.
+	// Maps to ConfigSpec.NUMAFixedAutoAffinityEnabled.
+	// Requires power-off to apply.
+	NUMAFixedAutoAffinityEnabled *bool `json:"numaFixedAutoAffinityEnabled,omitempty"`
+
+	// +optional
 	// +kubebuilder:validation:Minimum=1
 
-	// CoresPerNUMANode sets the number of cores per virtual NUMA node.
-	// When set, virtual NUMA node count = total vCPU count / CoresPerNUMANode.
-	// Used alongside CoresPerSocket for full CPU topology control.
-	// Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode.
+	// VNUMANodeCount sets the number of virtual NUMA nodes.
+	// The controller configures vSphere with coresPerNumaNode =
+	// total vCPU count / VNUMANodeCount (integer division); the vCPU count
+	// should be evenly divisible by VNUMANodeCount for a balanced topology.
+	// When unset, clears any manual vNUMA override and enables automatic vNUMA sizing.
+	// Must be set together with CoresPerSocket.
+	// The derived coresPerNumaNode must be a multiple or divisor of
+	// CoresPerSocket; the VM will fail to power on if this constraint is
+	// violated.
+	// Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode (derived).
 	// Requires hardware version vmx-20 or later.
 	// Requires power-off to apply.
-	CoresPerNUMANode *int32 `json:"coresPerNumaNode,omitempty"`
+	VNUMANodeCount *int32 `json:"vnumaNodeCount,omitempty"`
 
 	// +optional
 
-	// ExposeVNUMAOnCPUHotAdd controls whether virtual NUMA topology is
-	// exposed to the guest when vCPUs are hot-added.
-	// Only relevant when cpuAdvanced.hotAddEnabled is true and virtual NUMA
-	// is configured (CoresPerNUMANode is set).
+	// ExposeVNUMAOnCPUHotAdd controls vNUMA exposure when CPU hot-add occurs.
+	// When true, vSphere considers exposing virtual NUMA to the VM during hot-add.
+	// When false or unset, vSphere enforces a single virtual NUMA node during hot-add.
+	// Only relevant when cpuAdvanced.hotAddEnabled is true.
 	// Maps to ConfigSpec.VirtualNuma.ExposeVnumaOnCpuHotadd.
 	// Requires hardware version vmx-20 or later.
 	// Requires power-off to apply.
@@ -193,6 +214,19 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// access hardware performance counter data.
 	// Maps to ConfigSpec.VPMCEnabled.
 	PerformanceCountersEnabled *bool `json:"performanceCountersEnabled,omitempty"`
+
+	// +optional
+
+	// ReservationLockedToMax, when true, automatically calculates the CPU
+	// resource reservation to guarantee full CPU capacity on the placed host.
+	// The reservation is calculated as:
+	//   physicalCores * (hostCoreMHz - toleranceMHz)
+	// where physicalCores = numCPUs / simultaneousThreads (1 if unset).
+	// Any explicit value in spec.resources.requests.cpu is overridden when
+	// this flag is true.
+	// When false or unset, spec.resources.requests.cpu is used for reservation.
+	// Maps to ConfigSpec.CpuAllocation.ReservationLockedToMax.
+	ReservationLockedToMax *bool `json:"reservationLockedToMax,omitempty"`
 }
 
 // VirtualMachineMemoryAdvancedSpec describes advanced memory configuration

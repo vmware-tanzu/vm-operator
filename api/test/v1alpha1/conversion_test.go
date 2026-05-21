@@ -6,12 +6,14 @@ package v1alpha1_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
@@ -287,10 +289,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				vmSpec.Class = nil
 			}
 
-			vmSpec.Resources = nil
-			vmSpec.CPUAdvanced = nil
-			vmSpec.MemoryAdvanced = nil
-
 			vmSpec.Volumes = nil
 
 			if rs := vmSpec.Reserved; rs != nil {
@@ -355,6 +353,18 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 		},
 		func(msg *json.RawMessage, c randfill.Continue) {
 			*msg = []byte(`{"foo":"bar"}`)
+		},
+		func(q *vmopv1.VirtualMachineResourceQuantity, c randfill.Continue) {
+			// CPU must be a whole number (no 'm' suffix) due to the CEL validation rule.
+			if c.Bool() {
+				cpu := resource.MustParse(fmt.Sprintf("%d", c.Intn(10000)+1))
+				q.CPU = &cpu
+			}
+			// Memory is a byte quantity.
+			if c.Bool() {
+				mem := resource.MustParse(fmt.Sprintf("%dMi", c.Intn(65536)+1))
+				q.Memory = &mem
+			}
 		},
 	}
 }

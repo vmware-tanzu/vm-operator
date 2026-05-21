@@ -20,6 +20,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -318,6 +319,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		clusterResources               *e2eConfig.Resources
 		vCenterClient                  *vim25.Client
 		vmYamls                        [][]byte
+		pvcsYamls                      [][]byte
 		vmName                         string
 		isoSupportFSSEnabled           bool
 		allDisksArePVCapabilityEnabled bool
@@ -444,6 +446,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 		BeforeEach(func() {
 			vmYamls = [][]byte{}
+			pvcsYamls = [][]byte{}
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		})
 
@@ -496,6 +499,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			for _, vmYaml := range vmYamls {
 				_ = clusterProxy.DeleteWithArgs(ctx, vmYaml)
+			}
+
+			for _, pvcYaml := range pvcsYamls {
+				_ = clusterProxy.DeleteWithArgs(ctx, pvcYaml)
 			}
 		})
 
@@ -2422,6 +2429,111 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						vmopv1a5.VirtualControllerTypeIDE:  2,
 					},
 				)
+			})
+		})
+
+		Describe("VM with late-binding PVC powers on", Label("experimental", "core-functional"), func() {
+			const wffcSpecName = "wffc-poweron"
+
+			var (
+				wffcPVC    manifestbuilders.PVC
+				wffcVMName string
+				wffcSCName string
+			)
+
+			BeforeAll(func() {
+				skipper.SkipUnlessInfraIs(config.InfraConfig.InfraName, consts.WCP)
+
+				wffcSCName = clusterResources.StorageClassName + "-latebinding"
+
+				By("Verifying the late-binding storage class exists and uses WaitForFirstConsumer mode")
+				svClientSet := clusterProxy.GetClientSet()
+				sc, err := svClientSet.StorageV1().StorageClasses().
+					Get(ctx, wffcSCName, metav1.GetOptions{})
+				if err != nil {
+					Skip(fmt.Sprintf("storage class %q not found — skipping WFFC late-binding test: %v",
+						wffcSCName, err))
+				}
+				if sc.VolumeBindingMode == nil ||
+					*sc.VolumeBindingMode != storagev1.VolumeBindingWaitForFirstConsumer {
+					Skip(fmt.Sprintf(
+						"storage class %q has binding mode %v (not WaitForFirstConsumer) — skipping WFFC test",
+						wffcSCName, sc.VolumeBindingMode))
+				}
+
+				By("Ensuring the WFFC storage class is associated with the test namespace")
+				podVMOnStretchedSupervisorEnabled := utils.IsFssEnabled(ctx, svClusterClient,
+					config.GetVariable("VMOPNamespace"),
+					config.GetVariable("VMOPDeploymentName"),
+					config.GetVariable("VMOPManagerCommand"),
+					config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
+				utils.EnsureStorageClassInNamespace(ctx, svClusterClient, vmSvcNamespace,
+					wffcSCName, podVMOnStretchedSupervisorEnabled, *config)
+			})
+
+			BeforeEach(func() {
+				wffcVMName = fmt.Sprintf("%s-%s", wffcSpecName, capiutil.RandomString(4))
+
+				volumePrefix := fmt.Sprintf("%s-pvc-%s", wffcVMName, capiutil.RandomString(4))
+				wffcPVC = manifestbuilders.PVC{
+					Namespace:        vmSvcNamespace,
+					VolumeName:       fmt.Sprintf("%s-volume", volumePrefix),
+					ClaimName:        fmt.Sprintf("%s-claim", volumePrefix),
+					StorageClassName: wffcSCName,
+					RequestSize:      "1Mi",
+				}
+			})
+
+			It("should bind the PVC and power on the VM within a reasonable timeout", func() {
+				By("Pre-creating a standalone PVC backed by the WFFC storage class")
+				pvcYaml := manifestbuilders.GetPersistentVolumeClaimYaml(wffcPVC)
+				Expect(clusterProxy.ApplyWithArgs(ctx, pvcYaml)).To(Succeed(),
+					"failed to pre-create WFFC PVC %q", wffcPVC.ClaimName)
+				pvcsYamls = append(pvcsYamls, pvcYaml)
+
+				By("Verifying the PVC remains Pending before any consumer is created")
+				Consistently(func(g Gomega) {
+					pvc := &corev1.PersistentVolumeClaim{}
+					g.Expect(svClusterClient.Get(ctx, types.NamespacedName{
+						Namespace: vmSvcNamespace,
+						Name:      wffcPVC.ClaimName,
+					}, pvc)).To(Succeed(), "failed to get PVC %q", wffcPVC.ClaimName)
+					g.Expect(pvc.Status.Phase).To(Equal(corev1.ClaimPending),
+						"WFFC PVC %q should remain Pending until a consumer is created, but got phase: %s",
+						wffcPVC.ClaimName, pvc.Status.Phase)
+				}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).
+					Should(Succeed(), "WFFC PVC %q unexpectedly bound before VM was created", wffcPVC.ClaimName)
+
+				By("Creating a VirtualMachine that references the WFFC PVC")
+				wffcVMYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+					Namespace:        vmSvcNamespace,
+					Name:             wffcVMName,
+					ImageName:        linuxVMIName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					PVCs:             []manifestbuilders.PVC{wffcPVC},
+				})
+				vmYamls = append(vmYamls, wffcVMYaml)
+				Expect(clusterProxy.ApplyWithArgs(ctx, wffcVMYaml)).To(Succeed(),
+					"failed to create VirtualMachine %q with WFFC PVC", wffcVMName)
+
+				backfilledVolumes := getBackfilledVolumes(ctx, config, 
+					svClusterClient, vmSvcNamespace, wffcVMName, 
+					allDisksArePVCapabilityEnabled)
+				expectedVolumes := append([]string{wffcPVC.VolumeName}, backfilledVolumes...)
+				waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, wffcVMName, expectedVolumes)
+
+				By("Verifying the WFFC PVC is bound after the VM powers on")
+				pvc := &corev1.PersistentVolumeClaim{}
+				err := svClusterClient.Get(ctx, types.NamespacedName{
+					Namespace: vmSvcNamespace,
+					Name:      wffcPVC.ClaimName,
+				}, pvc)
+				Expect(err).ToNot(HaveOccurred(), "failed to get PVC %q", wffcPVC.ClaimName)
+				// This assertion should not fail if the VM has powered on with late-binding PVCs.
+				Expect(pvc.Status.Phase).To(Equal(corev1.ClaimBound),
+					"expected PVC %q to be bound, but got phase: %s",
+					wffcPVC.ClaimName, pvc.Status.Phase)
 			})
 		})
 	})

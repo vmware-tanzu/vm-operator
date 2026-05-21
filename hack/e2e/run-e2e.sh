@@ -45,7 +45,7 @@ PREFIX=""
 
 # 1. Initialize Ginkgo Args with verbosity and junit-report
 # Logic: --[ginkgo.]v --[ginkgo.]junit-report=...
-GINKGO_ARGS="--${PREFIX}v --${PREFIX}junit-report=${REPORT_DIR}/test-results.xml"
+GINKGO_ARGS=("--${PREFIX}v" "--${PREFIX}junit-report=${REPORT_DIR}/test-results.xml")
 
 # 2. Map Environment Variables to Ginkgo Flags
 # Syntax: "ENV_VAR_NAME:flag-name"
@@ -62,7 +62,7 @@ for pair in "${FLAG_MAP[@]}"; do
     
     # Check if the environment variable is set and not empty
     if [ -n "${!ENV_VAR:-}" ]; then
-        GINKGO_ARGS="$GINKGO_ARGS --${PREFIX}${FLAG_NAME}=${!ENV_VAR}"
+        GINKGO_ARGS+=("--${PREFIX}${FLAG_NAME}=${!ENV_VAR}")
     fi
 done
 
@@ -77,10 +77,12 @@ E2E_ARGS="-e2e.e2e-config=${ROOT_DIR}test/e2e/vmservice/config/wcp.yaml -e2e.art
 # 5. Execute
 if [ "$MODE" = "prebuilt" ]; then
     echo "Running E2E tests (prebuilt: $PREBUILT_BIN)..."
+    echo "$PREBUILT_BIN $E2E_ARGS ${GINKGO_ARGS[*]}"
     # shellcheck disable=SC2086
-    exec "$PREBUILT_BIN" $E2E_ARGS $GINKGO_ARGS
+    exec "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}"
 else
     echo "Running E2E tests (ginkgo CLI)..."
+    echo "$GINKGO_BIN ${GINKGO_ARGS[*]} ./test/e2e/vmservice -- $E2E_ARGS"
     # shellcheck disable=SC2086
-    exec "$GINKGO_BIN" $GINKGO_ARGS ./test/e2e/vmservice/... -- $E2E_ARGS
+    exec "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice -- $E2E_ARGS
 fi

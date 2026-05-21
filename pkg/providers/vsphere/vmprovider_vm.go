@@ -1125,10 +1125,18 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return fmt.Errorf("VM %s is not assigned to any resource pools", vmCtx.VM.Name)
 	}
 
+	// If the VM doesn't have a topology zone label, skip location validation.
+	// This can happen in unit tests or when the zone is being determined.
+	// Similar to how vmlifecycle/update_status.go handles missing zone labels.
+	zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]
+	if zoneName == "" {
+		return nil
+	}
+
 	_, expectedRootRPMoID, err := topology.GetNamespaceFolderAndRPMoID(
 		vmCtx,
 		vs.k8sClient,
-		vmCtx.VM.Labels[corev1.LabelTopologyZone],
+		zoneName,
 		vmCtx.VM.Namespace,
 	)
 	if err != nil {

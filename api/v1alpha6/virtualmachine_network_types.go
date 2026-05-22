@@ -198,7 +198,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 
 	// VNUMANodeID assigns this interface to a specific virtual NUMA node.
 	// The value must match a virtual NUMA node ID configured in the VM's
-	// CPU topology (spec.cpu.coresPerNumaNode). Co-locating a NIC with the
+	// CPU topology (spec.cpuAdvanced.topology.vnumaNodeCount). Co-locating a NIC with the
 	// vCPUs that process its traffic reduces cross-NUMA memory latency for
 	// latency-sensitive workloads.
 	// Requires EFI firmware (spec.hardware.firmware=EFI); Legacy BIOS does

@@ -251,6 +251,9 @@ var _ = Describe("Install", func() {
 				Entry("network interface vNUMANodeID", "network.interfaces.[].vNUMANodeID"),
 				Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
 				Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
+				Entry("resources", "resources"),
+				Entry("cpuAdvanced", "cpuAdvanced"),
+				Entry("memoryAdvanced", "memoryAdvanced"),
 			)
 
 			DescribeTable("vm api should not have status fields",
@@ -435,6 +438,9 @@ var _ = Describe("Install", func() {
 				Entry("network interface vNUMANodeID", "network.interfaces.[].vNUMANodeID"),
 				Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
 				Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
+				Entry("resources", "resources"),
+				Entry("cpuAdvanced", "cpuAdvanced"),
+				Entry("memoryAdvanced", "memoryAdvanced"),
 			)
 			DescribeTable("vm api should have status fields",
 				func(field string) {

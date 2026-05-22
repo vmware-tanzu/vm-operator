@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
@@ -191,6 +192,208 @@ func TestVirtualMachineConversion(t *testing.T) {
 									Type: vmopv1.VirtualMachineNetworkInterfaceTypeE1000e,
 								},
 							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.resources.size",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Resources: &vmopv1.VirtualMachineResourcesSpec{
+							Size: &vmopv1.VirtualMachineResourceQuantity{
+								CPU:    ptr.To(resource.MustParse("4")),
+								Memory: ptr.To(resource.MustParse("8Gi")),
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.resources.requests",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Resources: &vmopv1.VirtualMachineResourcesSpec{
+							Requests: &vmopv1.VirtualMachineResourceQuantity{
+								CPU:    ptr.To(resource.MustParse("2000")),
+								Memory: ptr.To(resource.MustParse("4Gi")),
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.resources.limits",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Resources: &vmopv1.VirtualMachineResourcesSpec{
+							Limits: &vmopv1.VirtualMachineResourceQuantity{
+								CPU:    ptr.To(resource.MustParse("4000")),
+								Memory: ptr.To(resource.MustParse("8Gi")),
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.resources size + requests + limits",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Resources: &vmopv1.VirtualMachineResourcesSpec{
+							Size: &vmopv1.VirtualMachineResourceQuantity{
+								CPU:    ptr.To(resource.MustParse("8")),
+								Memory: ptr.To(resource.MustParse("16Gi")),
+							},
+							Requests: &vmopv1.VirtualMachineResourceQuantity{
+								CPU:    ptr.To(resource.MustParse("2000")),
+								Memory: ptr.To(resource.MustParse("8Gi")),
+							},
+							Limits: &vmopv1.VirtualMachineResourceQuantity{
+								CPU:    ptr.To(resource.MustParse("4000")),
+								Memory: ptr.To(resource.MustParse("16Gi")),
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.cpuAdvanced.latencySensitivity=High",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							LatencySensitivity: ptr.To(vmopv1.VirtualMachineLatencySensitivityHigh),
+						},
+					},
+				},
+			},
+			{
+				name: "spec.cpuAdvanced.latencySensitivity=HighWithHyperthreading",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							LatencySensitivity: ptr.To(vmopv1.VirtualMachineLatencySensitivityHighWithHyperthreading),
+						},
+					},
+				},
+			},
+			{
+				name: "spec.cpuAdvanced.topology",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+								CoresPerSocket:         ptr.To(int32(4)),
+								VNUMANodeCount:         ptr.To(int32(8)),
+								ExposeVNUMAOnCPUHotAdd: ptr.To(true),
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "spec.cpuAdvanced.nestedHardwareVirtualizationEnabled",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							NestedHardwareVirtualizationEnabled: ptr.To(true),
+						},
+					},
+				},
+			},
+			{
+				name: "spec.cpuAdvanced.performanceCountersEnabled",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							PerformanceCountersEnabled: ptr.To(true),
+						},
+					},
+				},
+			},
+		{
+			name: "spec.cpuAdvanced full",
+			hub: &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+						LatencySensitivity: ptr.To(vmopv1.VirtualMachineLatencySensitivityHigh),
+						Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+							CoresPerSocket:               ptr.To(int32(2)),
+							NUMAFixedAutoAffinityEnabled: ptr.To(true),
+						},
+						HotAddEnabled:                       ptr.To(false),
+						IOMMUEnabled:                        ptr.To(true),
+						NestedHardwareVirtualizationEnabled: ptr.To(true),
+						PerformanceCountersEnabled:          ptr.To(true),
+						ReservationLockedToMax:              ptr.To(true),
+					},
+				},
+			},
+		},
+		{
+			name: "spec.cpuAdvanced.topology.numaFixedAutoAffinityEnabled",
+			hub: &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+						Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+							NUMAFixedAutoAffinityEnabled: ptr.To(true),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "spec.cpuAdvanced.reservationLockedToMax",
+			hub: &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+						ReservationLockedToMax: ptr.To(true),
+					},
+				},
+			},
+		},
+		{
+			name: "spec.memoryAdvanced.reservationLockedToMax=true",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						MemoryAdvanced: &vmopv1.VirtualMachineMemoryAdvancedSpec{
+							ReservationLockedToMax: ptr.To(true),
+						},
+					},
+				},
+			},
+			{
+				name: "spec.memoryAdvanced hotAddEnabled + reservationLockedToMax",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						MemoryAdvanced: &vmopv1.VirtualMachineMemoryAdvancedSpec{
+							HotAddEnabled:          ptr.To(true),
+							ReservationLockedToMax: ptr.To(false),
+						},
+					},
+				},
+			},
+			{
+				name: "spec.resources + spec.cpuAdvanced + spec.memoryAdvanced combined",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Resources: &vmopv1.VirtualMachineResourcesSpec{
+							Size: &vmopv1.VirtualMachineResourceQuantity{
+								CPU:    ptr.To(resource.MustParse("4")),
+								Memory: ptr.To(resource.MustParse("8Gi")),
+							},
+							Requests: &vmopv1.VirtualMachineResourceQuantity{
+								Memory: ptr.To(resource.MustParse("8Gi")),
+							},
+						},
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							LatencySensitivity: ptr.To(vmopv1.VirtualMachineLatencySensitivityHighWithHyperthreading),
+							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+								CoresPerSocket: ptr.To(int32(2)),
+							},
+							IOMMUEnabled: ptr.To(true),
+						},
+						MemoryAdvanced: &vmopv1.VirtualMachineMemoryAdvancedSpec{
+							ReservationLockedToMax: ptr.To(true),
 						},
 					},
 				},

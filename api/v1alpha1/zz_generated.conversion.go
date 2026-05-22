@@ -2147,6 +2147,9 @@ func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	// WARNING: in.GroupName requires manual conversion: does not exist in peer-type
 	// WARNING: in.Hardware requires manual conversion: does not exist in peer-type
 	// WARNING: in.Policies requires manual conversion: does not exist in peer-type
+	// WARNING: in.Resources requires manual conversion: does not exist in peer-type
+	// WARNING: in.CPUAdvanced requires manual conversion: does not exist in peer-type
+	// WARNING: in.MemoryAdvanced requires manual conversion: does not exist in peer-type
 	return nil
 }
 

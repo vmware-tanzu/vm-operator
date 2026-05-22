@@ -1161,6 +1161,30 @@ type VirtualMachineSpec struct {
 	//
 	// Valid policy types are: ComputePolicy.
 	Policies []PolicySpec `json:"policies,omitempty"`
+
+	// +optional
+
+	// Resources describes the desired compute resource allocation for this VM.
+	// When set, these values override the corresponding fields from the
+	// VirtualMachineClass via field-level merge.
+	//
+	// Requires the TelcoVMServiceAPI supervisor capability.
+	Resources *VirtualMachineResourcesSpec `json:"resources,omitempty"`
+
+	// +optional
+
+	// CPUAdvanced describes advanced CPU scheduling and topology configuration
+	// for this VM.
+	//
+	// Requires the TelcoVMServiceAPI supervisor capability.
+	CPUAdvanced *VirtualMachineCPUAdvancedSpec `json:"cpuAdvanced,omitempty"`
+
+	// +optional
+
+	// MemoryAdvanced describes advanced memory configuration for this VM.
+	//
+	// Requires the TelcoVMServiceAPI supervisor capability.
+	MemoryAdvanced *VirtualMachineMemoryAdvancedSpec `json:"memoryAdvanced,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options

@@ -1079,6 +1079,18 @@ func restore_v1alpha6_VirtualMachineAdvanced(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Advanced.ExtraConfig = adv.ExtraConfig
 }
 
+func restore_v1alpha6_VirtualMachineResources(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Resources = src.Spec.Resources
+}
+
+func restore_v1alpha6_VirtualMachineCPUAdvanced(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.CPUAdvanced = src.Spec.CPUAdvanced
+}
+
+func restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced
+}
+
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha6_Conditions(
 	dst *vmopv1.VirtualMachine) []metav1.Condition {
 
@@ -1350,6 +1362,9 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	restore_v1alpha6_VirtualMachineAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineCurrentSnapshotName(dst, restored)
+	restore_v1alpha6_VirtualMachineResources(dst, restored)
+	restore_v1alpha6_VirtualMachineCPUAdvanced(dst, restored)
+	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
 
 	// END RESTORE
 

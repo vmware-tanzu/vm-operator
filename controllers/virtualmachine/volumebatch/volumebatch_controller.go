@@ -67,9 +67,7 @@ const (
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
-	var (
-		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controllerName))
-	)
+	controllerNameShort := fmt.Sprintf("%s-controller", strings.ToLower(controllerName))
 
 	// Set up field index for CnsNodeVmAttachment by NodeUUID to efficiently query legacy attachments
 	if err := mgr.GetFieldIndexer().IndexField(
@@ -160,7 +158,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			return fmt.Errorf(
 				"failed to start VirtualMachine watch "+
 					"for CnsRegisterVolume: %w", err)
-
 		}
 	}
 
@@ -208,7 +205,8 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
+	vmProvider providers.VirtualMachineProviderInterface,
+) *Reconciler {
 	return &Reconciler{
 		Context:    ctx,
 		Client:     client,
@@ -392,12 +390,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	// Process volumes and create/update batch attachment.
 	// filter Volume spec that doesn't cause error and return them
 	// for constructing the VM's volumeStatus.
-	filteredVolumeSpecsForBatch, processErr :=
-		r.processBatchAttachmentAndFilterVolumeSpecs(
-			ctx,
-			volumeSpecsForBatch,
-			batchAttachment,
-		)
+	filteredVolumeSpecsForBatch, processErr := r.processBatchAttachmentAndFilterVolumeSpecs(
+		ctx,
+		volumeSpecsForBatch,
+		batchAttachment,
+	)
 	if processErr != nil {
 		ctx.Logger.Error(processErr, "Error processing CnsNodeVMBatchAttachments")
 		// Keep going to return aggregated error below.
@@ -466,7 +463,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 func (r *Reconciler) getBatchAttachmentForVM(
 	ctx *pkgctx.VolumeContext,
 ) (*cnsv1alpha1.CnsNodeVMBatchAttachment, error) {
-
 	attachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
 
 	if err := r.Client.Get(ctx, client.ObjectKey{
@@ -496,7 +492,6 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	vmVolumeSpecsForBatch []vmopv1.VirtualMachineVolume,
 	batchAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
 ) ([]cnsv1alpha1.VolumeSpec, error) {
-
 	var (
 		toBeBuiltPvcVols  = make([]vmopv1.VirtualMachineVolume, 0)
 		existingVolVolKey = sets.New[string]()
@@ -567,6 +562,14 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	volumeSpecs, err := r.buildVolumeSpecs(toBeBuiltPvcVols, ctx.VM.Status.Hardware)
 	if err != nil {
 		retErr = errOrNoRequeueErr(retErr, err)
+		// If we failed to build the volume specs (e.g. waiting for a controller),
+		// we must abort the batch update to avoid detaching existing volumes.
+		// Return the existing volume specs so the VM status doesn't mark them as detaching.
+		var existingSpecs []cnsv1alpha1.VolumeSpec
+		if batchAttachment != nil {
+			existingSpecs = batchAttachment.Spec.Volumes
+		}
+		return existingSpecs, retErr
 	}
 
 	// Create or update batch attachment.
@@ -601,7 +604,6 @@ func (r *Reconciler) getPVC(
 	ctx *pkgctx.VolumeContext,
 	pvcName string,
 ) (corev1.PersistentVolumeClaim, error) {
-
 	pvc := corev1.PersistentVolumeClaim{}
 	pvcKey := client.ObjectKey{
 		Namespace: ctx.VM.Namespace,
@@ -619,8 +621,8 @@ func (r *Reconciler) getPVC(
 // CnsNodeVMBatchAttachment.
 func (r *Reconciler) createOrUpdateBatchAttachment(
 	ctx *pkgctx.VolumeContext,
-	volumeSpecs []cnsv1alpha1.VolumeSpec) error {
-
+	volumeSpecs []cnsv1alpha1.VolumeSpec,
+) error {
 	// Validate the volume specs before attempting to create/update
 	if err := r.validateVolumeSpecs(ctx, volumeSpecs); err != nil {
 		return fmt.Errorf("volume spec validation failed: %w", err)
@@ -661,7 +663,6 @@ func (r *Reconciler) createOrUpdateBatchAttachment(
 
 			return nil
 		})
-
 	if err != nil {
 		return fmt.Errorf("failed to create or patch CnsNodeVMBatchAttachment %s: %w",
 			attachmentName, err)
@@ -685,7 +686,6 @@ func (r *Reconciler) buildVolumeSpecs(
 	volumes []vmopv1.VirtualMachineVolume,
 	hardware *vmopv1.VirtualMachineHardwareStatus,
 ) ([]cnsv1alpha1.VolumeSpec, error) {
-
 	// Return nil and wait for next reconcile when the status is updated if
 	// hardware is nil Or noops when there is no volumes to be attached.
 	if hardware == nil || len(volumes) == 0 {
@@ -771,8 +771,8 @@ func (r *Reconciler) buildVolumeSpecs(
 
 func (r *Reconciler) applyApplicationTypePresets(
 	vol *vmopv1.VirtualMachineVolume,
-	cnsSpec *cnsv1alpha1.VolumeSpec) error {
-
+	cnsSpec *cnsv1alpha1.VolumeSpec,
+) error {
 	switch vol.ApplicationType {
 	case vmopv1.VolumeApplicationTypeOracleRAC:
 		// OracleRAC preset: diskMode=IndependentPersistent, sharingMode=MultiWriter
@@ -807,7 +807,6 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 	volumeSpecs []cnsv1alpha1.VolumeSpec,
 	existingVMManagedVolStatus map[string]vmopv1.VirtualMachineVolumeStatus,
 ) []vmopv1.VirtualMachineVolumeStatus {
-
 	// Update VM.Status.Volumes based on the batch attachment status
 	volumeStatuses := make([]vmopv1.VirtualMachineVolumeStatus, 0, len(ctx.VM.Status.Volumes))
 
@@ -875,7 +874,6 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 				ctx,
 				attachVolStatus.PersistentVolumeClaim.ClaimName,
 				&vmVolStatus); err != nil {
-
 				ctx.Logger.Error(err, "failed to get volume status limit")
 			}
 		}
@@ -895,8 +893,8 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 
 func (r *Reconciler) updateVolumeStatusWithPVCInfo(
 	ctx *pkgctx.VolumeContext,
-	pvcName string, status *vmopv1.VirtualMachineVolumeStatus) error {
-
+	pvcName string, status *vmopv1.VirtualMachineVolumeStatus,
+) error {
 	pvc := &corev1.PersistentVolumeClaim{}
 	pvcKey := client.ObjectKey{
 		Namespace: ctx.VM.Namespace,
@@ -940,7 +938,6 @@ func (r *Reconciler) handlePVCWithWFFC(
 	volume vmopv1.VirtualMachineVolume,
 	pvc corev1.PersistentVolumeClaim,
 ) error {
-
 	if volume.PersistentVolumeClaim.InstanceVolumeClaim != nil {
 		return nil
 	}
@@ -1038,8 +1035,8 @@ func (r *Reconciler) validateVolumeSpecs(_ *pkgctx.VolumeContext, _ []cnsv1alpha
 
 func (r *Reconciler) deleteOrphanedAttachments(
 	ctx *pkgctx.VolumeContext,
-	attachments []cnsv1alpha1.CnsNodeVmAttachment) error {
-
+	attachments []cnsv1alpha1.CnsNodeVmAttachment,
+) error {
 	var retErr error
 
 	for i := range attachments {
@@ -1062,8 +1059,8 @@ func (r *Reconciler) deleteOrphanedAttachments(
 
 func (r *Reconciler) attachmentsToDelete(
 	ctx *pkgctx.VolumeContext,
-	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment) []cnsv1alpha1.CnsNodeVmAttachment {
-
+	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
+) []cnsv1alpha1.CnsNodeVmAttachment {
 	if len(attachments) == 0 {
 		return nil
 	}
@@ -1104,7 +1101,6 @@ func getVolumeStatusesWithDetachingVolumeInLegacyAttachment(
 	ctx *pkgctx.VolumeContext,
 	orphanedAttachmentsMap map[string]cnsv1alpha1.CnsNodeVmAttachment,
 ) []vmopv1.VirtualMachineVolumeStatus {
-
 	// Maintain mapping of diskUUID -> attachment.
 	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachmentsMap))
 	for _, attachment := range orphanedAttachmentsMap {
@@ -1140,7 +1136,6 @@ func getVolumeStatusWithDetachingVolumeFromBatchAttachment(
 	existingAttachVolStatus map[string]cnsv1alpha1.VolumeStatus,
 	volumeSpecs []cnsv1alpha1.VolumeSpec,
 ) []vmopv1.VirtualMachineVolumeStatus {
-
 	var volumeStatuses []vmopv1.VirtualMachineVolumeStatus
 
 	attachVolSpecNames := sets.New[string]()
@@ -1166,8 +1161,8 @@ func getVolumeStatusWithDetachingVolumeFromBatchAttachment(
 
 func attachmentStatusToVolumeStatus(
 	volName string,
-	volStatus cnsv1alpha1.VolumeStatus) vmopv1.VirtualMachineVolumeStatus {
-
+	volStatus cnsv1alpha1.VolumeStatus,
+) vmopv1.VirtualMachineVolumeStatus {
 	attached := false
 	messages := []string{}
 
@@ -1199,8 +1194,8 @@ func attachmentStatusToVolumeStatus(
 
 func legacyAttachmentToVolumeStatus(
 	volumeName string,
-	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1.VirtualMachineVolumeStatus {
-
+	attachment cnsv1alpha1.CnsNodeVmAttachment,
+) vmopv1.VirtualMachineVolumeStatus {
 	return vmopv1.VirtualMachineVolumeStatus{
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,
@@ -1219,7 +1214,6 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 	existingVMManagedVolStatus map[string]vmopv1.VirtualMachineVolumeStatus,
 	vmVolumeSpecsForLegacy []vmopv1.VirtualMachineVolume,
 ) []vmopv1.VirtualMachineVolumeStatus {
-
 	var volumeStatuses []vmopv1.VirtualMachineVolumeStatus
 
 	// Maintain the mapping of LegacyAttachmentName -> Attachment.
@@ -1246,7 +1240,6 @@ func (r *Reconciler) getVMVolStatusesFromLegacyAttachments(
 					ctx,
 					vol.PersistentVolumeClaim.ClaimName,
 					&vmVolStatus); err != nil {
-
 					ctx.Logger.Error(err, "failed to get volume status limit")
 				}
 
@@ -1288,7 +1281,6 @@ func updateVMVolumeStatus(
 	ctx *pkgctx.VolumeContext,
 	v1, v2 []vmopv1.VirtualMachineVolumeStatus,
 ) {
-
 	// Remove any managed volumes from the existing status.
 	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
@@ -1312,7 +1304,6 @@ func categorizeVolumeSpecs(
 	ctx *pkgctx.VolumeContext,
 	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
 ) (forBatch, forLegacy []vmopv1.VirtualMachineVolume) {
-
 	// Filter volumes that have PVC source and are not already tracked
 	// by legacy CnsNodeVmAttachment
 	volumeSpecsForBatch := []vmopv1.VirtualMachineVolume{}
@@ -1356,8 +1347,8 @@ func categorizeVolumeSpecs(
 // info from existing VM managed volume status.
 func updateVolumeStatusWithExistingVMStatus(
 	vmVolStatus *vmopv1.VirtualMachineVolumeStatus,
-	existingVMManagedVolStatusMap map[string]vmopv1.VirtualMachineVolumeStatus) {
-
+	existingVMManagedVolStatusMap map[string]vmopv1.VirtualMachineVolumeStatus,
+) {
 	existingVolStatus := existingVMManagedVolStatusMap[vmVolStatus.Name]
 
 	vmVolStatus.Used = existingVolStatus.Used

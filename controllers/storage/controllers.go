@@ -42,7 +42,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	}
 
-	if features.StoragePolicyMutability {
+	if features.StoragePolicyMutability && features.PVCStoragePolicyMutability {
 		if err := volumeattributesclass.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VolumeAttributesClass controller: %w", err)
 		}

@@ -100,8 +100,9 @@ func GetStoragePolicyStatus(
 		return infrav1.StoragePolicyStatus{}, err
 	}
 
-	// Collect volume attributes class name only if capability is enabled.
-	if pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+	// Collect volume attributes class name only if capability and FSS are enabled.
+	if pkgcfg.FromContext(ctx).Features.StoragePolicyMutability &&
+		pkgcfg.FromContext(ctx).Features.PVCStoragePolicyMutability {
 		if err := getVolumeAttributesClassName(
 			ctx,
 			k8sClient,

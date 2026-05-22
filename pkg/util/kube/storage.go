@@ -213,9 +213,10 @@ func GetStoragePolicyID(
 		objName = vm.Spec.VolumeAttributesClassName
 		objKind = internal.VolumeAttributesClassKind
 
-		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability ||
+			!pkgcfg.FromContext(ctx).Features.PVCStoragePolicyMutability {
 			return "", fmt.Errorf(
-				"%s %q object is specified but capability is not enabled", 
+				"%s %q object is specified but capability is not enabled",
 				objKind, objName,
 			)
 		}
@@ -305,7 +306,8 @@ func IsEncryptedStorageProfile(
 
 	foundStorageProfile := false
 
-	if pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+	if pkgcfg.FromContext(ctx).Features.StoragePolicyMutability &&
+		pkgcfg.FromContext(ctx).Features.PVCStoragePolicyMutability {
 		var volumeAttributesClasses storagev1.VolumeAttributesClassList
 		if err := k8sClient.List(ctx, &volumeAttributesClasses); err != nil {
 			return false, err

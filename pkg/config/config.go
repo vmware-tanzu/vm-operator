@@ -188,6 +188,7 @@ type FeatureStates struct {
 	BringYourOwnEncryptionKey   bool // FSS_WCP_VMSERVICE_BYOK
 	SVAsyncUpgrade              bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
 	FastDeploy                  bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
+	PVCStoragePolicyMutability  bool // FSS_VM_PVC_STORAGE_POLICY_MUTABILITY
 	MutableNetworks             bool
 	VMGroups                    bool
 	ImmutableClasses            bool

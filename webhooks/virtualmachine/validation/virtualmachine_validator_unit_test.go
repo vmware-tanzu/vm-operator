@@ -1726,6 +1726,7 @@ func unitTestsValidateCreate() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.PodVMOnStretchedSupervisor = true
 				config.Features.StoragePolicyMutability = true
+				config.Features.PVCStoragePolicyMutability = true
 			})
 		})
 
@@ -1825,11 +1826,38 @@ func unitTestsValidateCreate() {
 			),
 		)
 
-		Context("StoragePolicyMutability is disabled", func() {
+		Context("StoragePolicyMutability capability is disabled", func() {
 
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 					config.Features.StoragePolicyMutability = false
+					config.Features.PVCStoragePolicyMutability = true
+				})
+			})
+
+			DescribeTable("VAC create", doTest,
+				Entry("block create if VAC is specified",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							storageClass := builder.DummyStorageClassWithID("id-from-storageclass")
+							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+							ctx.vm.Spec.StorageClass = storageClass.Name
+
+							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+						},
+						validate: doValidateWithMsg(
+							`spec.volumeAttributesClassName: Invalid value: "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`),
+					},
+				),
+			)
+		})
+
+		Context("FSS PVCStoragePolicyMutability is disabled", func() {
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.StoragePolicyMutability = true
+					config.Features.PVCStoragePolicyMutability = false
 				})
 			})
 

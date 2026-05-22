@@ -104,6 +104,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_BYOK", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_SUPERVISOR_ASYNC_UPGRADE", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_FAST_DEPLOY", "true")).To(Succeed())
+					Expect(os.Setenv("FSS_VM_PVC_STORAGE_POLICY_MUTABILITY", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_PODVMONSTRETCHEDSUPERVISOR", "false")).To(Succeed())
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
 					Expect(os.Setenv("POWERED_ON_VM_HAS_IP_REQUEUE_DELAY", "126h")).To(Succeed())
@@ -151,16 +152,17 @@ var _ = Describe(
 						WebhookSecretVolumeMountPath: pkgcfg.Default().WebhookSecretVolumeMountPath,
 						CRDCleanupEnabled:            true,
 						Features: pkgcfg.FeatureStates{
-							InstanceStorage:           false,
-							K8sWorkloadMgmtAPI:        true,
-							VMResize:                  true,
-							VMResizeCPUMemory:         true,
-							VMImportNewNet:            true,
-							VMIncrementalRestore:      true,
-							BringYourOwnEncryptionKey: true,
-							SVAsyncUpgrade:            false, // Capability gate so tested below
-							WorkloadDomainIsolation:   true,
-							FastDeploy:                true,
+							InstanceStorage:            false,
+							K8sWorkloadMgmtAPI:         true,
+							VMResize:                   true,
+							VMResizeCPUMemory:          true,
+							VMImportNewNet:             true,
+							VMIncrementalRestore:       true,
+							BringYourOwnEncryptionKey:  true,
+							SVAsyncUpgrade:             false, // Capability gate so tested below
+							WorkloadDomainIsolation:    true,
+							FastDeploy:                 true,
+							PVCStoragePolicyMutability: true,
 						},
 						CreateVMRequeueDelay:         125 * time.Hour,
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,

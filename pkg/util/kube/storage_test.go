@@ -192,11 +192,11 @@ var _ = Describe("GetStoragePolicyID", func() {
 			})
 		})
 
-		When("StoragePolicyMutability feature is enabled", func() {
+		When("StoragePolicyMutability feature and FSS PVCStoragePolicyMutability are enabled", func() {
 			BeforeEach(func() {
 				ctx = pkgcfg.WithConfig(pkgcfg.Config{
 					PodNamespace: fakeString,
-					Features:     pkgcfg.FeatureStates{StoragePolicyMutability: true},
+					Features:     pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 				})
 			})
 
@@ -811,14 +811,15 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 		})
 	})
 
-	Context("when StoragePolicyMutability feature is enabled", func() {
+	Context("when StoragePolicyMutability feature and FSS PVCStoragePolicyMutability are enabled", func() {
 		var vac storagev1.VolumeAttributesClass
 
 		BeforeEach(func() {
 			ctx = pkgcfg.WithConfig(pkgcfg.Config{
 				PodNamespace: fakeString,
 				Features: pkgcfg.FeatureStates{
-					StoragePolicyMutability: true,
+					StoragePolicyMutability:    true,
+					PVCStoragePolicyMutability: true,
 				},
 			})
 			vac = storagev1.VolumeAttributesClass{

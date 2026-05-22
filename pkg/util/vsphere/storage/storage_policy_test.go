@@ -293,10 +293,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 					
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {
@@ -400,10 +400,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					})
 				})
 
-				Context("when StoragePolicyMutability capability is enabled", func() {
+				Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 					BeforeEach(func() {
 						ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+							Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 						})
 					})
 					It("should return the policy status with the VAC", func() {
@@ -469,10 +469,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {
@@ -538,10 +538,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {
@@ -608,10 +608,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {
@@ -678,10 +678,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {
@@ -752,10 +752,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {
@@ -826,10 +826,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {
@@ -925,10 +925,10 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 						)
 					})
 
-					Context("when StoragePolicyMutability capability is enabled", func() {
+					Context("when StoragePolicyMutability capability and FSS PVCStoragePolicyMutability are enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
-								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true},
+								Features: pkgcfg.FeatureStates{StoragePolicyMutability: true, PVCStoragePolicyMutability: true},
 							})
 						})
 						It("should return the policy status", func() {

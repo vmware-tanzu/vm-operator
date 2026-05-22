@@ -90,10 +90,12 @@ func (w *readinessWorker) ProcessProbeResult(ctx *proberctx.ProbeContext, res pr
 	// We only send event when either the condition type is added or its status changes, not
 	// if either its reason, severity, or message changes.
 	if c := conditions.Get(vm, condition.Type); c == nil || c.Status != condition.Status {
+		// Event is used instead of Eventf because go vet's printf analyzer enforces
+		// constant format strings on Eventf callers since controller-runtime v0.24.0.
 		if condition.Status == metav1.ConditionTrue {
-			w.recorder.Eventf(vm, readyReason, "")
+			w.recorder.Event(vm, readyReason, "")
 		} else {
-			w.recorder.Eventf(vm, condition.Reason, condition.Message)
+			w.recorder.Event(vm, condition.Reason, condition.Message)
 		}
 		// Log the time when the VM changes its readiness condition.
 		ctx.Logger.Info("VM resource READINESS probe condition updated",

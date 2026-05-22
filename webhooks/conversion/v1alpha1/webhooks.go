@@ -14,43 +14,37 @@ import (
 
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a1.VirtualMachine{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a1.VirtualMachine{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a1.VirtualMachineClass{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a1.VirtualMachineClass{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a1.VirtualMachineImage{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a1.VirtualMachineImage{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a1.VirtualMachinePublishRequest{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a1.VirtualMachinePublishRequest{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a1.VirtualMachineService{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a1.VirtualMachineService{}).
 		Complete(); err != nil {
 
 		return err
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a1.VirtualMachineSetResourcePolicy{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a1.VirtualMachineSetResourcePolicy{}).
 		Complete(); err != nil {
 
 		return err

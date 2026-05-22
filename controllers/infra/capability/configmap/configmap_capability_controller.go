@@ -53,7 +53,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		cache,
 		ctrl.Log.WithName("controllers").WithName(controllerName),
-		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		record.New(mgr.GetEventRecorderFor(controllerNameLong)), //nolint:staticcheck
 	)
 
 	// This controller is also run on the non-leaders (webhooks) pods too

@@ -61,7 +61,7 @@ func AddToManager(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledItemTypeName),
-		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		record.New(mgr.GetEventRecorderFor(controllerNameLong)), // nolint:staticcheck
 		ctx.VMProvider,
 		controlledItemTypeName,
 	)

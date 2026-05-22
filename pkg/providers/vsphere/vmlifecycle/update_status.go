@@ -525,10 +525,12 @@ func reconcileStatusProbe(
 	// Emit event when the condition is added or its status changes.
 	if c := conditions.Get(vmCtx.VM, cond.Type); c == nil || c.Status != cond.Status {
 		recorder := vmoprecord.FromContext(vmCtx)
+		// Event is used instead of Eventf because go vet's printf analyzer enforces
+		// constant format strings on Eventf callers since controller-runtime v0.24.0.
 		if cond.Status == metav1.ConditionTrue {
-			recorder.Eventf(vmCtx.VM, probeReasonReady, "")
+			recorder.Event(vmCtx.VM, probeReasonReady, "")
 		} else {
-			recorder.Eventf(vmCtx.VM, cond.Reason, cond.Message)
+			recorder.Event(vmCtx.VM, cond.Reason, cond.Message)
 		}
 
 		// Log the time when the VM changes its readiness condition.

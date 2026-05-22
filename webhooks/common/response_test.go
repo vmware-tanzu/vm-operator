@@ -80,7 +80,7 @@ var _ = Describe(
 
 			DescribeTable("", wellKnownError,
 				Entry("NotFound", apierrors.NewNotFound(gr, ""), http.StatusNotFound),
-				Entry("Gone", apierrors.NewGone("gone"), http.StatusGone),
+				Entry("Gone", apierrors.NewGone("gone"), http.StatusGone), // nolint:staticcheck
 				Entry("ResourceExpired", apierrors.NewResourceExpired("expired"), http.StatusGone),
 				Entry("ServiceUnavailable", apierrors.NewServiceUnavailable("unavailable"), http.StatusServiceUnavailable),
 				Entry("ServiceUnavailable", apierrors.NewServiceUnavailable("unavailable"), http.StatusServiceUnavailable),

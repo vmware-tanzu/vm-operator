@@ -186,6 +186,34 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			Expect(vm.Spec.Resources).To(BeNil())
 		})
 
+		It("spec.resources.requests.cpu already set → not overwritten (spec wins)", func() {
+			existing := resource.NewQuantity(1500, resource.DecimalSI)
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{CPU: existing},
+			}
+			moVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+				Reservation: ptr.To(int64(2000)),
+			}
+			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+			Expect(vm.Spec.Resources.Requests.CPU.Value()).To(Equal(int64(1500)))
+		})
+
+		It("spec.resources.limits.cpu already set → not overwritten (spec wins)", func() {
+			existing := resource.NewQuantity(3000, resource.DecimalSI)
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Limits: &vmopv1.VirtualMachineResourceQuantity{CPU: existing},
+			}
+			moVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+				Limit: ptr.To(int64(4000)),
+			}
+			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+			Expect(vm.Spec.Resources.Limits.CPU.Value()).To(Equal(int64(3000)))
+		})
+
 		DescribeTable("memory allocation backfill (MiB → bytes)",
 			func(reservation, limit *int64, expectReqBytes, expectLimitBytes *int64) {
 				moVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
@@ -228,6 +256,34 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			Entry("Limit=-1 → no backfill (unlimited)",
 				nil, ptr.To(int64(-1)), nil, nil),
 		)
+
+		It("spec.resources.requests.memory already set → not overwritten (spec wins)", func() {
+			existing := resource.MustParse("4Gi")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &existing},
+			}
+			moVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+				Reservation: ptr.To(int64(8192)), // 8 GiB in MiB
+			}
+			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+			Expect(vm.Spec.Resources.Requests.Memory.Value()).To(Equal(int64(4 * 1024 * 1024 * 1024)))
+		})
+
+		It("spec.resources.limits.memory already set → not overwritten (spec wins)", func() {
+			existing := resource.MustParse("8Gi")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: &existing},
+			}
+			moVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+				Limit: ptr.To(int64(16384)), // 16 GiB in MiB
+			}
+			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+			Expect(vm.Spec.Resources.Limits.Memory.Value()).To(Equal(int64(8 * 1024 * 1024 * 1024)))
+		})
 	})
 
 	// ------------------------------------------------------------------ //
@@ -409,6 +465,43 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.CPUAdvanced.Topology.CoresPerSocket).To(Equal(int32(2)))
 		})
+
+		It("spec.cpuAdvanced.topology.vnumaNodeCount already set → not overwritten (spec wins)", func() {
+			// Pre-set size.cpu to suppress the size backfill that NumCPU=8 would otherwise trigger.
+			cpu := resource.MustParse("8")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &cpu},
+			}
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+					VNUMANodeCount: ptr.To(int32(2)),
+				},
+			}
+			// moVM would derive vnumaNodeCount=4 (8 CPUs / 2 coresPerNode) — but spec wins
+			moVM.Config.Hardware.NumCPU = 8
+			moVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
+				CoresPerNumaNode: ptr.To(int32(2)),
+			}
+			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+			Expect(*vm.Spec.CPUAdvanced.Topology.VNUMANodeCount).To(Equal(int32(2)))
+		})
+
+		It("spec.cpuAdvanced.topology.exposeVnumaOnCpuHotadd already set → not overwritten (spec wins)", func() {
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+					ExposeVNUMAOnCPUHotAdd: ptr.To(true),
+				},
+			}
+			moVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
+				VnumaOnCpuHotaddExposed: ptr.To(true),
+			}
+			mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutated).To(BeFalse())
+			Expect(*vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd).To(BeTrue())
+		})
 	})
 
 	// ------------------------------------------------------------------ //
@@ -477,6 +570,50 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				nil,
 			),
 		)
+
+		DescribeTable("spec field already set → not overwritten (spec wins)",
+			func(
+				setSpec func(*vmopv1.VirtualMachineCPUAdvancedSpec),
+				setMoVM func(*vimtypes.VirtualMachineConfigInfo),
+				checkSpec func(*vmopv1.VirtualMachineCPUAdvancedSpec),
+			) {
+				vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{}
+				setSpec(vm.Spec.CPUAdvanced)
+				setMoVM(moVM.Config)
+				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mutated).To(BeFalse())
+				checkSpec(vm.Spec.CPUAdvanced)
+			},
+			Entry("hotAddEnabled already true → not overwritten",
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) { s.HotAddEnabled = ptr.To(true) },
+				func(ci *vimtypes.VirtualMachineConfigInfo) { ci.CpuHotAddEnabled = ptr.To(true) },
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) { Expect(s.HotAddEnabled).To(HaveValue(BeTrue())) },
+			),
+			Entry("iommuEnabled already true → not overwritten",
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) { s.IOMMUEnabled = ptr.To(true) },
+				func(ci *vimtypes.VirtualMachineConfigInfo) { ci.Flags.VvtdEnabled = ptr.To(true) },
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) { Expect(s.IOMMUEnabled).To(HaveValue(BeTrue())) },
+			),
+			Entry("nestedHardwareVirtualizationEnabled already true → not overwritten",
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) {
+					s.NestedHardwareVirtualizationEnabled = ptr.To(true)
+				},
+				func(ci *vimtypes.VirtualMachineConfigInfo) { ci.NestedHVEnabled = ptr.To(true) },
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) {
+					Expect(s.NestedHardwareVirtualizationEnabled).To(HaveValue(BeTrue()))
+				},
+			),
+			Entry("performanceCountersEnabled already true → not overwritten",
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) {
+					s.PerformanceCountersEnabled = ptr.To(true)
+				},
+				func(ci *vimtypes.VirtualMachineConfigInfo) { ci.VPMCEnabled = ptr.To(true) },
+				func(s *vmopv1.VirtualMachineCPUAdvancedSpec) {
+					Expect(s.PerformanceCountersEnabled).To(HaveValue(BeTrue()))
+				},
+			),
+		)
 	})
 
 	// ------------------------------------------------------------------ //
@@ -519,6 +656,36 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			Entry("MemoryReservationLockedToMax=false → no backfill",
 				func(ci *vimtypes.VirtualMachineConfigInfo) { ci.MemoryReservationLockedToMax = ptr.To(false) },
 				nil,
+			),
+		)
+
+		DescribeTable("spec field already set → not overwritten (spec wins)",
+			func(
+				setSpec func(*vmopv1.VirtualMachineMemoryAdvancedSpec),
+				setMoVM func(*vimtypes.VirtualMachineConfigInfo),
+				checkSpec func(*vmopv1.VirtualMachineMemoryAdvancedSpec),
+			) {
+				vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{}
+				setSpec(vm.Spec.MemoryAdvanced)
+				setMoVM(moVM.Config)
+				mutated, err := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mutated).To(BeFalse())
+				checkSpec(vm.Spec.MemoryAdvanced)
+			},
+			Entry("hotAddEnabled already true → not overwritten",
+				func(s *vmopv1.VirtualMachineMemoryAdvancedSpec) { s.HotAddEnabled = ptr.To(true) },
+				func(ci *vimtypes.VirtualMachineConfigInfo) { ci.MemoryHotAddEnabled = ptr.To(true) },
+				func(s *vmopv1.VirtualMachineMemoryAdvancedSpec) {
+					Expect(s.HotAddEnabled).To(HaveValue(BeTrue()))
+				},
+			),
+			Entry("reservationLockedToMax already true → not overwritten",
+				func(s *vmopv1.VirtualMachineMemoryAdvancedSpec) { s.ReservationLockedToMax = ptr.To(true) },
+				func(ci *vimtypes.VirtualMachineConfigInfo) { ci.MemoryReservationLockedToMax = ptr.To(true) },
+				func(s *vmopv1.VirtualMachineMemoryAdvancedSpec) {
+					Expect(s.ReservationLockedToMax).To(HaveValue(BeTrue()))
+				},
 			),
 		)
 	})

@@ -17189,20 +17189,107 @@ spec:
                     description: CPU describes the observed CPU allocation of the
                       VM.
                     properties:
+                      coresPerSocket:
+                        description: |-
+                          CoresPerSocket describes the observed number of cores per virtual socket.
+                          Maps to VirtualHardware.numCoresPerSocket.
+                        format: int32
+                        type: integer
+                      hotAddEnabled:
+                        description: |-
+                          HotAddEnabled describes whether CPU hot-add is observed as enabled.
+                          Maps to VirtualMachineConfigInfo.cpuHotAddEnabled.
+                        type: boolean
+                      iommuEnabled:
+                        description: |-
+                          IOMMUEnabled describes whether Intel VT-d (IOMMU) is observed as enabled.
+                          Maps to VirtualMachineFlagInfo.vvtdEnabled.
+                        type: boolean
+                      latencySensitivity:
+                        description: |-
+                          LatencySensitivity describes the observed CPU scheduler latency
+                          sensitivity level as reported by vSphere (e.g. "low", "normal", "high").
+                          An empty string indicates the field is not available or not set.
+                          Maps to VirtualMachineConfigInfo.latencySensitivity.level.
+                        type: string
+                      limit:
+                        description: |-
+                          Limit describes the observed CPU limit in MHz. A nil value indicates
+                          no limit is set (unlimited). Maps to CpuAllocation.Limit.
+                        format: int64
+                        type: integer
+                      nestedHardwareVirtualizationEnabled:
+                        description: |-
+                          NestedHardwareVirtualizationEnabled describes whether nested hardware
+                          virtualization is observed as enabled.
+                          Maps to VirtualMachineConfigInfo.nestedHVEnabled.
+                        type: boolean
+                      performanceCountersEnabled:
+                        description: |-
+                          PerformanceCountersEnabled describes whether virtual CPU performance
+                          counters are observed as enabled.
+                          Maps to VirtualMachineConfigInfo.vPMCEnabled.
+                        type: boolean
                       reservation:
                         description: Reservation describes the observed CPU reservation
                           in MHz.
                         format: int64
                         type: integer
+                      simultaneousThreads:
+                        description: |-
+                          SimultaneousThreads describes the observed number of SMT (simultaneous
+                          multithreading) threads per core. A value of 2 indicates hyperthreading
+                          is enabled. Maps to VirtualHardware.simultaneousThreads.
+                        format: int32
+                        type: integer
                       total:
                         description: Total describes the observed number of processors.
                         format: int32
                         type: integer
+                      vnuma:
+                        description: |-
+                          VNUMA describes the observed vNUMA topology of the VM.
+                          Maps to VirtualMachineConfigInfo.numaInfo.
+                        properties:
+                          autoCoresPerNumaNode:
+                            description: |-
+                              AutoCoresPerNumaNode describes whether the number of cores per vNUMA
+                              node is determined automatically by vSphere.
+                              Maps to VirtualMachineVirtualNumaInfo.autoCoresPerNumaNode.
+                            type: boolean
+                          coresPerNumaNode:
+                            description: |-
+                              CoresPerNumaNode describes the observed number of cores per vNUMA node.
+                              When zero, vNUMA node sizing is determined automatically by vSphere.
+                              Maps to VirtualMachineVirtualNumaInfo.coresPerNumaNode.
+                            format: int32
+                            type: integer
+                          exposeVnumaOnCpuHotadd:
+                            description: |-
+                              ExposeVNUMAOnCPUHotAdd describes whether the vNUMA topology is exposed
+                              to the guest when CPU hot-add is enabled.
+                              Maps to VirtualMachineVirtualNumaInfo.vnumaOnCpuHotaddExposed.
+                            type: boolean
+                        type: object
                     type: object
                   memory:
                     description: Memory describes the observed memory allocation of
                       the VM.
                     properties:
+                      hotAddEnabled:
+                        description: |-
+                          HotAddEnabled describes whether memory hot-add is observed as enabled.
+                          Maps to VirtualMachineConfigInfo.memoryHotAddEnabled.
+                        type: boolean
+                      limit:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Limit describes the observed memory limit. A nil value indicates no
+                          limit is set (unlimited). Maps to MemoryAllocation.Limit.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
                       reservation:
                         anyOf:
                         - type: integer
@@ -17210,6 +17297,12 @@ spec:
                         description: Reservation describes the observed memory reservation.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
+                      reservationLockedToMax:
+                        description: |-
+                          ReservationLockedToMax describes whether the memory reservation is
+                          observed as locked to the VM's memory size.
+                          Maps to VirtualMachineConfigInfo.memoryReservationLockedToMax.
+                        type: boolean
                       total:
                         anyOf:
                         - type: integer

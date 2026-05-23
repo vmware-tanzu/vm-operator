@@ -5,6 +5,8 @@
 package validation
 
 import (
+	"fmt"
+
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -23,20 +25,18 @@ func (v validator) validateComputeConfig(
 	specPath := field.NewPath("spec")
 
 	if !pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+		notEnabled := fmt.Sprintf(featureNotEnabled, "VM Compute Config (via TelcoVMServiceAPI)")
 		if vm.Spec.Resources != nil {
 			allErrs = append(allErrs, field.Forbidden(
-				specPath.Child("resources"),
-				"requires TelcoVMServiceAPI supervisor capability"))
+				specPath.Child("resources"), notEnabled))
 		}
 		if vm.Spec.CPUAdvanced != nil {
 			allErrs = append(allErrs, field.Forbidden(
-				specPath.Child("cpuAdvanced"),
-				"requires TelcoVMServiceAPI supervisor capability"))
+				specPath.Child("cpuAdvanced"), notEnabled))
 		}
 		if vm.Spec.MemoryAdvanced != nil {
 			allErrs = append(allErrs, field.Forbidden(
-				specPath.Child("memoryAdvanced"),
-				"requires TelcoVMServiceAPI supervisor capability"))
+				specPath.Child("memoryAdvanced"), notEnabled))
 		}
 		return allErrs
 	}

@@ -60,7 +60,7 @@ var _ = Describe(
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources: Forbidden:"),
+						validate:      doValidateWithMsg("spec.resources: Forbidden: the VM Compute Config (via TelcoVMServiceAPI) feature is not enabled"),
 					},
 				),
 				Entry("spec.cpuAdvanced non-nil without capability → rejected",
@@ -72,7 +72,7 @@ var _ = Describe(
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced: Forbidden:"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced: Forbidden: the VM Compute Config (via TelcoVMServiceAPI) feature is not enabled"),
 					},
 				),
 				Entry("spec.memoryAdvanced non-nil without capability → rejected",
@@ -84,7 +84,7 @@ var _ = Describe(
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.memoryAdvanced: Forbidden:"),
+						validate:      doValidateWithMsg("spec.memoryAdvanced: Forbidden: the VM Compute Config (via TelcoVMServiceAPI) feature is not enabled"),
 					},
 				),
 				Entry("spec.resources with valid values when capability enabled → accepted",
@@ -117,7 +117,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.size.cpu"),
+						validate:      doValidateWithMsg("spec.resources.size.cpu: Invalid value", "must be greater than 0 when set"),
 					},
 				),
 				Entry("size.memory = 0 → rejected",
@@ -128,7 +128,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.size.memory"),
+						validate:      doValidateWithMsg("spec.resources.size.memory: Invalid value", "must be greater than 0 when set"),
 					},
 				),
 				Entry("size.cpu > 0 → accepted",
@@ -159,7 +159,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.limits.cpu"),
+						validate:      doValidateWithMsg("spec.resources.limits.cpu: Invalid value", "must be greater than 0 when set (nil = unlimited)"),
 					},
 				),
 				Entry("limits.memory = 0 → rejected",
@@ -170,14 +170,17 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.limits.memory"),
+						validate:      doValidateWithMsg("spec.resources.limits.memory: Invalid value", "must be greater than 0 when set (nil = unlimited)"),
 					},
 				),
-				Entry("limits.cpu > 0 → accepted",
+				Entry("limits.cpu and limits.memory > 0 → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Limits: &vmopv1.VirtualMachineResourceQuantity{CPU: q("4000")},
+								Limits: &vmopv1.VirtualMachineResourceQuantity{
+									CPU:    q("4000"),
+									Memory: q("16Gi"),
+								},
 							}
 						},
 						expectAllowed: true,
@@ -202,7 +205,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.requests.cpu"),
+						validate:      doValidateWithMsg("spec.resources.requests.cpu: Invalid value", "must be less than or equal to limits.cpu"),
 					},
 				),
 				Entry("requests.cpu ≤ limits.cpu → accepted",
@@ -225,7 +228,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.requests.memory"),
+						validate:      doValidateWithMsg("spec.resources.requests.memory: Invalid value", "must be less than or equal to size.memory"),
 					},
 				),
 				Entry("requests.memory = size.memory → accepted",
@@ -248,7 +251,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.size.memory"),
+						validate:      doValidateWithMsg("spec.resources.size.memory: Invalid value", "must be less than or equal to limits.memory"),
 					},
 				),
 				Entry("size.memory ≤ limits.memory → accepted",
@@ -284,7 +287,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity: Invalid value", "requires full memory reservation"),
 					},
 				),
 				Entry("High + requests.memory == size.memory → accepted",
@@ -325,7 +328,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity: Invalid value", "requires full memory reservation"),
 					},
 				),
 				Entry("HighWithHyperthreading + requests.memory != size.memory → rejected",
@@ -340,7 +343,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity: Invalid value", "requires full memory reservation"),
 					},
 				),
 				Entry("Normal → no full-reservation check",
@@ -374,7 +377,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.reservationLockedToMax"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.reservationLockedToMax: Invalid value: true: mutually exclusive with spec.resources.requests.cpu"),
 					},
 				),
 				Entry("cpuAdvanced.reservationLockedToMax=true + requests.cpu nil → accepted",
@@ -398,7 +401,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.memoryAdvanced.reservationLockedToMax"),
+						validate:      doValidateWithMsg("spec.memoryAdvanced.reservationLockedToMax: Invalid value: true: mutually exclusive with spec.resources.requests.memory"),
 					},
 				),
 				Entry("memoryAdvanced.reservationLockedToMax=true + requests.memory nil → accepted",
@@ -431,7 +434,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount: Invalid value", "requires coresPerSocket to be set"),
 					},
 				),
 				Entry("size.cpu % vnumaNodeCount != 0 → rejected (uneven division)",
@@ -448,7 +451,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount: Invalid value", "size.cpu must be evenly divisible by vnumaNodeCount"),
 					},
 				),
 				Entry("coresPerNumaNode neither multiple nor divisor of coresPerSocket → rejected",
@@ -466,7 +469,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount: Invalid value", "derived coresPerNumaNode must be a multiple or divisor of coresPerSocket"),
 					},
 				),
 				Entry("coresPerNumaNode is a divisor of coresPerSocket → accepted",
@@ -530,7 +533,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.exposeVnumaOnCpuHotadd"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.exposeVnumaOnCpuHotadd: Invalid value: true: requires cpuAdvanced.hotAddEnabled to be true"),
 					},
 				),
 				Entry("vnumaNodeCount set + hotAddEnabled=true + exposeVnumaOnCpuHotadd unset → rejected",
@@ -545,7 +548,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount: Invalid value", "requires cpuAdvanced.topology.exposeVnumaOnCpuHotadd=true when cpuAdvanced.hotAddEnabled=true"),
 					},
 				),
 				Entry("vnumaNodeCount set + hotAddEnabled=true + exposeVnumaOnCpuHotadd=true → accepted",
@@ -604,7 +607,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources: Forbidden:"),
+						validate:      doValidateWithMsg("spec.resources: Forbidden: modifying this VM is not allowed until it is upgraded"),
 					},
 				),
 				Entry("spec.cpuAdvanced changed → rejected",
@@ -617,7 +620,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced: Forbidden:"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced: Forbidden: modifying this VM is not allowed until it is upgraded"),
 					},
 				),
 				Entry("spec.memoryAdvanced changed → rejected",
@@ -630,7 +633,7 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.memoryAdvanced: Forbidden:"),
+						validate:      doValidateWithMsg("spec.memoryAdvanced: Forbidden: modifying this VM is not allowed until it is upgraded"),
 					},
 				),
 				Entry("compute fields unchanged during upgrade window → accepted",

@@ -26,6 +26,7 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsunregistervolumev1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/cnsunregistervolume/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	vspherepolv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 )
 
 // InitScheme adds scheme to each API typed resources.
@@ -130,5 +131,10 @@ func addSchemes(sc *runtime.Scheme) {
 	err = apiextensionsv1.AddToScheme(sc)
 	if err != nil {
 		e2eframework.Failf("unable add apiextensions v1 to scheme: %v", err)
+	}
+
+	err = vspherepolv1alpha1.AddToScheme(sc)
+	if err != nil {
+		e2eframework.Failf("unable to add vsphere-policy v1alpha1 APIs to scheme: %v", err)
 	}
 }

@@ -65,6 +65,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/vsphere-policy v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
 	github.com/vmware/govmomi v0.55.0-alpha.0.0.20260518191903-48ab34adb211
 	golang.org/x/crypto v0.50.0

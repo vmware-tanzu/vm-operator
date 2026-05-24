@@ -2056,7 +2056,7 @@ func (d *wcpDcliClient) UpdateNamespaceWithNetworks(namespaceName, networkProvid
 
 // CreateTagCategory creates a new tag category with the given name and description.
 func (d *wcpDcliClient) CreateTagCategory(name, description string) (string, error) {
-	cmd := fmt.Sprintf("com vmware cis tagging category create --cardinality MULTIPLE --name %s --description %s", name, description)
+	cmd := fmt.Sprintf("com vmware cis tagging category create --cardinality MULTIPLE --name %s --description %q", name, description)
 
 	resp, err := d.dcliClient.RunDCLICommand(cmd)
 	if err != nil {
@@ -2071,7 +2071,7 @@ func (d *wcpDcliClient) CreateTagCategory(name, description string) (string, err
 
 // CreateTag creates a new tag with the given name, description and category ID.
 func (d *wcpDcliClient) CreateTag(name, description, categoryID string) (string, error) {
-	cmd := fmt.Sprintf("com vmware cis tagging tag create --name %s --description %s --category-id %s", name, description, categoryID)
+	cmd := fmt.Sprintf("com vmware cis tagging tag create --name %s --description %q --category-id %s", name, description, categoryID)
 
 	resp, err := d.dcliClient.RunDCLICommand(cmd)
 	if err != nil {

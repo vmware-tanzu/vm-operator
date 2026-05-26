@@ -943,6 +943,7 @@ var VMUpdatePropertiesSelector = []string{
 	"runtime",
 	"snapshot",
 	"summary",
+	"parent",
 }
 
 func getReconcileErr(msg string, reconcileErr, err error) error {
@@ -1134,9 +1135,9 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 }
 
 func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcClient *vcclient.Client) error {
-	logger := pkglog.FromContextOrDefault(vmCtx)
+	vmCtx.Logger.V(4).Info("Reconciling VirtualMachine location")
 	if vmCtx.MoVM.ResourcePool == nil {
-		return fmt.Errorf("VM %s is not assigned to any resource pools", vmCtx.VM.Name)
+		return fmt.Errorf("VM is not assigned to any resource pools")
 	}
 
 	// If the VM doesn't have a topology zone label, skip location validation.
@@ -1147,7 +1148,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return nil
 	}
 
-	_, expectedRootRPMoID, err := topology.GetNamespaceFolderAndRPMoID(
+	expectedFolder, expectedRootRPMoID, err := topology.GetNamespaceFolderAndRPMoID(
 		vmCtx,
 		vs.k8sClient,
 		zoneName,
@@ -1157,16 +1158,14 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
 
-	// Check if the VM is in the Root RP or a Child RP
-	isValid, err := vcenter.IsVMInValidResourcePool(
-		vmCtx,
-		vcClient.VimClient(),
-		vmCtx.MoVM.ResourcePool.Value,
-		expectedRootRPMoID,
-	)
-	if err != nil {
-		logger.Error(err, "failed to validate VM resource pool")
-		return err
+	var isValid bool
+
+	isVMInCorrectRP, err := isVMInInvalidRP(vmCtx, expectedRootRPMoID, vcClient)
+	isVMInCorrectFolder, err := isVMInInvalidFolder(vmCtx, expectedFolder)
+	if !isVMInCorrectRP || !isVMInCorrectFolder {
+		isValid = false
+	} else {
+		isValid = true
 	}
 
 	// Handle Mismatch
@@ -1186,6 +1185,43 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 
 	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
 	return nil
+}
+
+func isVMInInvalidRP(
+	vmCtx pkgctx.VirtualMachineContext,
+	expectedRootRPMoID string,
+	vcClient *vcclient.Client) (bool, error) {
+
+	if vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
+		fmt.Println("vm is in namespace")
+		return true, nil
+	}
+
+	moPool, err := vcenter.GetResourcePoolParent(
+		vmCtx,
+		vcClient.VimClient(),
+		vmCtx.MoVM.ResourcePool.Value,
+	)
+	if err != nil {
+		//logger.Error(err, "failed to validate VM resource pool")
+		return false, err
+	}
+	if moPool.Parent != nil && moPool.Parent.Value == expectedRootRPMoID {
+		fmt.Println("vm is in child RP of namespace")
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func isVMInInvalidFolder(
+	vmCtx pkgctx.VirtualMachineContext,
+	expectedFolder string) (bool, error) {
+
+	if vmCtx.MoVM.Parent.Value == expectedFolder {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (vs *vSphereVMProvider) reconcileStatus(

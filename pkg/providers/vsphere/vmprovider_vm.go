@@ -964,11 +964,11 @@ func errOrReconcileErr(reconcileErr, err error) error {
 // updateVirtualMachine performs the following operations in the stated order:
 //
 //  1. Fetch properties
-//  2. Reconcile location
-//  3. Fetch recent tasks
-//  4. Fetch attached tags
-//  5. Fetch volume info
-//  6. Reconcile status
+//  2. Fetch recent tasks
+//  3. Fetch attached tags
+//  4. Fetch volume info
+//  5. Reconcile status
+//  6. Reconcile location
 //  7. Reconcile schema upgrade
 //  8. Reconcile backup state
 //  9. Reconcile snapshot revert
@@ -997,17 +997,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 2. Reconcile location
-	//
-	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
-		if pkgerr.IsNoRequeueError(err) {
-			return errOrReconcileErr(reconcileErr, err)
-		}
-		reconcileErr = getReconcileErr("location", reconcileErr, err)
-	}
-
-	//
-	// 3. Get the recent tasks.
+	// 2. Get the recent tasks.
 	//
 	ctxWithRecentTaskInfo, err := vs.getRecentTaskInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1016,7 +1006,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
-	// 4. Get the attached tags.
+	// 3. Get the attached tags.
 	//
 	ctxWithAttachedTags, err := vs.getTags(vmCtx, vcClient)
 	if err != nil {
@@ -1025,7 +1015,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithAttachedTags
 
 	//
-	// 5. Get the volume info.
+	// 4. Get the volume info.
 	//
 	ctxWithVolumeInfo, err := vs.getVolumeInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1034,13 +1024,23 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithVolumeInfo
 
 	//
-	// 6. Reconcile status
+	// 5. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
 			return errOrReconcileErr(reconcileErr, err)
 		}
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
+	}
+
+	//
+	// 6. Reconcile location
+	//
+	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("location", reconcileErr, err)
 	}
 
 	//
@@ -1143,7 +1143,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	// If the VM doesn't have a topology zone label, skip location validation.
 	// This can happen in unit tests or when the zone is being determined.
 	// Similar to how vmlifecycle/update_status.go handles missing zone labels.
-	zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]
+	zoneName := vmCtx.VM.Status.Zone
 	if zoneName == "" {
 		return nil
 	}
@@ -1158,42 +1158,39 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
 
-	var isValid bool
-
-	isVMInCorrectRP, err := isVMInInvalidRP(vmCtx, expectedRootRPMoID, vcClient)
-	isVMInCorrectFolder, err := isVMInInvalidFolder(vmCtx, expectedFolder)
-	if !isVMInCorrectRP || !isVMInCorrectFolder {
-		isValid = false
-	} else {
-		isValid = true
-	}
+	isVMInCorrectRP, err := isVMInValidRP(vmCtx, expectedRootRPMoID, vcClient)
+	isVMInCorrectFolder, err := isVMInValidFolder(vmCtx, expectedFolder, vcClient)
+	currentCond := pkgcnd.Get(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
 
 	// Handle Mismatch
-	if !isValid {
-		pkgcond.MarkFalse(
-			vmCtx.VM,
-			vmopv1.VirtualMachineInValidLocation,
-			"LocationMismatch",
-			"VM is in an invalid Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
-			vmCtx.VM.Namespace,
-		)
+	if !isVMInCorrectRP || !isVMInCorrectFolder {
+		if currentCond.Status != metav1.ConditionFalse {
+			pkgcnd.MarkFalse(
+				vmCtx.VM,
+				vmopv1.VirtualMachineInValidLocation,
+				"LocationMismatch",
+				"VM is in an invalid ResourcePool or Folder. Move the VM back to the Right RP/Folder hierarchy for namespace %s to resume reconciliation.",
+				vmCtx.VM.Namespace,
+			)
+		}
 
 		return pkgerr.NoRequeueError{Message: fmt.Sprintf(
-			"reconciliation paused for the VM %s because it is moved to invalid Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
-			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
+			"reconciliation paused for the VM %s because it is moved to invalid ResourcePool/Folder. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s,Expected Folder MoRef: %s, Current Folder MoRef: %s. Move the VM back to the Right RP/Folder hierarchy for namespace %s to resume reconciliation.",
+			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value, expectedFolder, vmCtx.MoVM.Parent.Value, vmCtx.VM.Namespace)}
 	}
 
-	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
+	if currentCond.Status != metav1.ConditionTrue {
+		pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
+	}
 	return nil
 }
 
-func isVMInInvalidRP(
+func isVMInValidRP(
 	vmCtx pkgctx.VirtualMachineContext,
 	expectedRootRPMoID string,
 	vcClient *vcclient.Client) (bool, error) {
 
 	if vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
-		fmt.Println("vm is in namespace")
 		return true, nil
 	}
 
@@ -1203,22 +1200,32 @@ func isVMInInvalidRP(
 		vmCtx.MoVM.ResourcePool.Value,
 	)
 	if err != nil {
-		//logger.Error(err, "failed to validate VM resource pool")
 		return false, err
 	}
 	if moPool.Parent != nil && moPool.Parent.Value == expectedRootRPMoID {
-		fmt.Println("vm is in child RP of namespace")
 		return true, nil
 	}
 
 	return false, nil
 }
 
-func isVMInInvalidFolder(
+func isVMInValidFolder(
 	vmCtx pkgctx.VirtualMachineContext,
-	expectedFolder string) (bool, error) {
+	expectedFolder string,
+	vcClient *vcclient.Client) (bool, error) {
 
 	if vmCtx.MoVM.Parent.Value == expectedFolder {
+		return true, nil
+	}
+	moPool, err := vcenter.GetFolderParent(
+		vmCtx,
+		vcClient.VimClient(),
+		vmCtx.MoVM.Parent.Value,
+	)
+	if err != nil {
+		return false, err
+	}
+	if moPool.Parent != nil && moPool.Parent.Value == expectedFolder {
 		return true, nil
 	}
 	return false, nil

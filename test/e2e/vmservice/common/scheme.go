@@ -1,5 +1,6 @@
 // Copyright (c) 2019-2024 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+
 package common
 
 import (
@@ -11,6 +12,7 @@ import (
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -21,7 +23,6 @@ import (
 	imageregistryv1alpha2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	mopv1alpha2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-	vpcv1alpha1 "github.com/vmware-tanzu/vm-operator/external/nsx-operator/api/vpc/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsunregistervolumev1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/cnsunregistervolume/v1alpha1"

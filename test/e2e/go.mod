@@ -70,10 +70,10 @@ require (
 	golang.org/x/crypto v0.51.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.36.0
+	k8s.io/api v0.36.1
 	k8s.io/apiextensions-apiserver v0.36.0
-	k8s.io/apimachinery v0.36.0
-	k8s.io/client-go v0.36.0
+	k8s.io/apimachinery v0.36.1
+	k8s.io/client-go v0.36.1
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubernetes v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/cluster-api v1.12.5
@@ -83,7 +83,7 @@ require (
 
 require (
 	github.com/pkg/errors v0.9.1 // indirect
-	k8s.io/streaming v0.36.0 // indirect
+	k8s.io/streaming v0.36.1 // indirect
 	k8s.io/utils v0.0.0-20260319190234-28399d86e0b5 // indirect
 )
 
@@ -181,11 +181,11 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/apiserver v0.36.0 // indirect
-	k8s.io/component-base v0.36.0 // indirect
-	k8s.io/component-helpers v0.36.0 // indirect
+	k8s.io/apiserver v0.36.1 // indirect
+	k8s.io/component-base v0.36.1 // indirect
+	k8s.io/component-helpers v0.36.1 // indirect
 	k8s.io/controller-manager v0.0.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260330154417-16be699c7b31 // indirect
+	k8s.io/kube-openapi v0.0.0-20260520065146-aa012df4f4af // indirect
 	k8s.io/kubectl v0.0.0 // indirect
 	k8s.io/kubelet v0.0.0 // indirect
 	k8s.io/mount-utils v0.0.0 // indirect

@@ -180,3 +180,20 @@ func GetResourcePoolParent(
 
 	return moPool, nil
 }
+
+func GetFolderParent(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	currentFolderMoID string) (mo.Folder, error) {
+
+	folderObj := object.NewFolder(vimClient,
+		vimtypes.ManagedObjectReference{Type: "Folder", Value: currentFolderMoID})
+
+	var moFolder mo.Folder
+	err := folderObj.Properties(ctx, folderObj.Reference(), []string{"parent"}, &moFolder)
+	if err != nil {
+		return mo.Folder{}, fmt.Errorf("failed to fetch parent properties for folder %s: %w",
+			currentFolderMoID, err)
+	}
+	return moFolder, nil
+}

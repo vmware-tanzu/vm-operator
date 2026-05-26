@@ -16,9 +16,29 @@
 #   source ./hack/e2e/setup-testbed-env.sh ./testbedinfo.json --e2e
 #
 
-set -u
 
-SCRIPT_SOURCED=true
+# Determine if the script is being sourced or executed
+if [[ -n "${ZSH_EVAL_CONTEXT:-}" ]]; then
+    if [[ "${ZSH_EVAL_CONTEXT}" =~ "toplevel" ]]; then
+        SCRIPT_SOURCED=false
+    else
+        SCRIPT_SOURCED=true
+    fi
+elif [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+        SCRIPT_SOURCED=false
+    else
+        SCRIPT_SOURCED=true
+    fi
+else
+    # Fallback
+    if [[ $(basename -- "$0") == "setup-testbed-env.sh" ]]; then
+        SCRIPT_SOURCED=false
+    else
+        SCRIPT_SOURCED=true
+    fi
+fi
+
 # Function to handle exits gracefully (return if sourced, exit if executed)
 script_exit() {
     local exit_code=${1:-1}
@@ -125,23 +145,37 @@ fi
 
 # Extract vCenter connection details - try multiple JSON path patterns
 # Pattern 1: WCP testbed format with nested vc array
-if echo "$testbed_info" | jq -e '.vc[0]' >/dev/null 2>&1; then
-    echo "Using vc[0] format for vCenter details"
+if echo "$testbed_info" | jq -e '.vc | type == "array" and length > 0' >/dev/null 2>&1; then
+    echo "Using vc array format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vc[0].ip4 // .vc[0].ip // .vc[0].vcenter_ip')
-    export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].password // .vc[0].vcenter_password')
-    export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc[0].username // .vc[0].vcenter_username // "administrator@vsphere.local"')
-# Pattern 2: Direct format with vcenter_ prefixed fields
+    export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].root_password // .vc[0].password // .vc[0].vcenter_password')
+    export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r 'if .vc[0].root_password then "root" else (.vc[0].username // .vc[0].vcenter_username // "administrator@vsphere.local") end')
+    export VCSA_PASSWORD=$(echo "$testbed_info" | jq -r '.vc[0].vimPassword // .vc[0].password // .vc[0].vcenter_password')
+    export VCSA_USERNAME=$(echo "$testbed_info" | jq -r '.vc[0].vimUsername // .vc[0].username // .vc[0].vcenter_username // "administrator@vsphere.local"')
+# Pattern 2: WCP testbed format with nested vc object (e.g. VPC testbed)
+elif echo "$testbed_info" | jq -e '.vc | type == "object" and length > 0' >/dev/null 2>&1; then
+    echo "Using vc object format for vCenter details"
+    export VC_URL=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .ip4 // .ip // .vcenter_ip')
+    export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .root_password // .password // .vcenter_password')
+    export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | if .root_password then "root" else (.username // .vcenter_username // "administrator@vsphere.local") end')
+    export VCSA_PASSWORD=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .vimPassword // .password // .vcenter_password')
+    export VCSA_USERNAME=$(echo "$testbed_info" | jq -r '.vc | to_entries | .[0].value | .vimUsername // .username // .vcenter_username // "administrator@vsphere.local"')
+# Pattern 3: Direct format with vcenter_ prefixed fields
 elif echo "$testbed_info" | jq -e '.vcenter_ip' >/dev/null 2>&1; then
     echo "Using direct vcenter_ format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vcenter_ip')
     export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vcenter_password')
     export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vcenter_username // "administrator@vsphere.local"')
-# Pattern 3: Simple format (for testing/fallback)
+    export VCSA_PASSWORD="${VC_ROOT_PASSWORD}"
+    export VCSA_USERNAME="${VC_ROOT_USERNAME}"
+# Pattern 4: Simple format (for testing/fallback)
 else
     echo "Using simple format for vCenter details"
     export VC_URL=$(echo "$testbed_info" | jq -r '.vc_ip // .vcenter_ip // .testbed_ip')
     export VC_ROOT_PASSWORD=$(echo "$testbed_info" | jq -r '.vc_password // .vcenter_password // .password')
     export VC_ROOT_USERNAME=$(echo "$testbed_info" | jq -r '.vc_username // .vcenter_username // .username // "administrator@vsphere.local"')
+    export VCSA_PASSWORD="${VC_ROOT_PASSWORD}"
+    export VCSA_USERNAME="${VC_ROOT_USERNAME}"
 fi
 
 # Validate required variables are set and not null
@@ -158,22 +192,30 @@ if [ -z "${VC_ROOT_PASSWORD}" ] || [ "${VC_ROOT_PASSWORD}" = "null" ]; then
 fi
 
 if [ -z "${VC_ROOT_USERNAME}" ] || [ "${VC_ROOT_USERNAME}" = "null" ]; then
-    export VC_ROOT_USERNAME="administrator@vsphere.local"
+    export VC_ROOT_USERNAME="root"
+fi
+
+if [ -z "${VCSA_PASSWORD}" ] || [ "${VCSA_PASSWORD}" = "null" ]; then
+    export VCSA_PASSWORD="${VC_ROOT_PASSWORD}"
+    if [ -z "${VCSA_USERNAME}" ] || [ "${VCSA_USERNAME}" = "null" ]; then
+        export VCSA_USERNAME="administrator@vsphere.local"
+    fi
 fi
 
 echo "Configuration loaded successfully:"
 echo "  VC_URL: ${VC_URL}"
 echo "  VC_ROOT_USERNAME: ${VC_ROOT_USERNAME}"
+echo "  VCSA_USERNAME: ${VCSA_USERNAME}"
 
 # Set up common environment variables for vm-operator E2E tests
 export VCSA_IP="${VC_URL}"
 export SSH_PASSWORD="${VC_ROOT_PASSWORD}"
 export SSH_USERNAME="${VC_ROOT_USERNAME}"
-export GOVC_PASSWORD="${SSH_PASSWORD}" 
-export VCSA_PASSWORD="${SSH_PASSWORD}"
+export GOVC_PASSWORD="${VCSA_PASSWORD}" 
+export GOVC_USERNAME="${VCSA_USERNAME}"
 
 # Detect networking type from testbed data
-NETWORKING_TYPE=$(echo "$testbed_info" | jq -r '.networking // "vds"')
+NETWORKING_TYPE=$(echo "$testbed_data" | jq -r '.deliverable_blob.networking // .networking // if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" then "nsx" else "vds" end')
 export NETWORK="${NETWORKING_TYPE}"
 
 # Set test configuration defaults

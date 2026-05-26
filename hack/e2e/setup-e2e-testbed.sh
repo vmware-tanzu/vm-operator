@@ -14,8 +14,6 @@
 #   source ./hack/e2e/setup-e2e-testbed.sh
 #
 
-set -uo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MGMT_CIDR='10.0.0.0/8'
 
@@ -56,11 +54,11 @@ fi
 # ---------------------------------------------------------------------------
 GATEWAY_IP=""
 if [ -n "${VC_URL:-}" ] && command -v govc >/dev/null 2>&1; then
-    export GOVC_URL="${VC_ROOT_USERNAME}:${VC_ROOT_PASSWORD}@${VC_URL}"
+    export GOVC_URL="${VC_URL}"
     export GOVC_INSECURE=true
 
     echo "Discovering gateway VM IP via govc..."
-    GATEWAY_IP=$(GOVC_USERNAME="${VC_ROOT_USERNAME}" GOVC_PASSWORD="${VC_ROOT_PASSWORD}" \
+    GATEWAY_IP=$(GOVC_USERNAME="${GOVC_USERNAME}" GOVC_PASSWORD="${GOVC_PASSWORD}" \
         "${SCRIPT_DIR}/proxy.sh" gateway "${VC_URL}" "${MGMT_CIDR}" 2>/dev/null || true)
 
     if [ -n "${GATEWAY_IP:-}" ] && [ "${GATEWAY_IP}" != "null" ]; then
@@ -69,7 +67,7 @@ if [ -n "${VC_URL:-}" ] && command -v govc >/dev/null 2>&1; then
         # Install squid proxy on gateway and export HTTP_PROXY.
         # Tests using VerifyLoginAndRunCmdsInVDSSetup require HTTP_PROXY to be set.
         echo "Installing squid proxy on gateway VM..."
-        GOVC_USERNAME="${VC_ROOT_USERNAME}" GOVC_PASSWORD="${VC_ROOT_PASSWORD}" \
+        GOVC_USERNAME="${GOVC_USERNAME}" GOVC_PASSWORD="${GOVC_PASSWORD}" \
             "${SCRIPT_DIR}/proxy.sh" install "${VC_URL}" "${MGMT_CIDR}" 2>/dev/null \
             || echo "⚠ Proxy install failed (may already be set up)"
         export HTTP_PROXY="${GATEWAY_IP}:3128"
@@ -80,7 +78,7 @@ if [ -n "${VC_URL:-}" ] && command -v govc >/dev/null 2>&1; then
         # Full KMS install: deploys pykmip on the gateway VM then registers both
         # gce2e-standard (KMIP) and gce2e-native key providers with vCenter.
         echo "Setting up KMS key providers (with pykmip on gateway VM)..."
-        GOVC_USERNAME="${VC_ROOT_USERNAME}" GOVC_PASSWORD="${VC_ROOT_PASSWORD}" \
+        GOVC_USERNAME="${GOVC_USERNAME}" GOVC_PASSWORD="${GOVC_PASSWORD}" \
             "${SCRIPT_DIR}/kms.sh" install "${GOVC_URL}" "${MGMT_CIDR}" 2>/dev/null \
             && echo "✓ KMS key providers configured" \
             || echo "⚠ KMS install failed (may already be configured)"
@@ -90,7 +88,7 @@ if [ -n "${VC_URL:-}" ] && command -v govc >/dev/null 2>&1; then
         # Without a gateway VM, we can still configure the native key provider
         # directly on vCenter (no pykmip / gce2e-standard).
         echo "Setting up KMS native key provider only..."
-        GOVC_USERNAME="${VC_ROOT_USERNAME}" GOVC_PASSWORD="${VC_ROOT_PASSWORD}" \
+        GOVC_USERNAME="${GOVC_USERNAME}" GOVC_PASSWORD="${GOVC_PASSWORD}" \
             "${SCRIPT_DIR}/kms.sh" setup "${GOVC_URL}" "${MGMT_CIDR}" 2>/dev/null \
             && echo "✓ KMS native key provider configured" \
             || echo "⚠ KMS setup failed"

@@ -63,7 +63,8 @@ install() {
     password=$3
 
     sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
-    sshpass -p "$password" ssh -T $SSH_OPTS "$target" /bin/bash ./install-pykmip.sh \
+    sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
+      "PIP_INDEX_URL=${PIP_INDEX_URL:-} /bin/bash ./install-pykmip.sh" \
       || echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
   fi
 

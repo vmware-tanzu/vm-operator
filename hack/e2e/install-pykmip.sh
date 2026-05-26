@@ -17,10 +17,17 @@ set -x
 if ! type -p pykmip-server >/dev/null ; then
   if ! type -p pip3 >/dev/null ; then
     python3 -m ensurepip
-    pip3 install --upgrade pip
+    pip3 install --upgrade \
+      ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
+      pip
   fi
 
-  pip3 install pykmip
+  # PIP_INDEX_URL can be set by the caller to redirect pip to an internal
+  # package mirror (e.g. a corporate Artifactory instance). If unset, pip
+  # uses its default index (public PyPI).
+  pip3 install \
+    ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
+    pykmip
 
   # currently by default there are no shared ciphers between
   # vCenter/qClient + pykmip, patch the default TLS1.2 suite for now.

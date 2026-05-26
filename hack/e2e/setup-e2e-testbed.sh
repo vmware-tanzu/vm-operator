@@ -151,12 +151,15 @@ if [ -n "${VC_URL:-}" ] && command -v govc >/dev/null 2>&1; then
             export HTTP_PROXY="${GATEWAY_IP}:3128"
             export HTTPS_PROXY="${GATEWAY_IP}:3128"
             export GATEWAY_IP="${GATEWAY_IP}"
+            export GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
+            export GATEWAY_VM_PASSWORD="${_gw_password}"
             # Build NO_PROXY from the concrete IPs we know about so that kubectl
             # and any other tools can still reach them directly.
             _no_proxy_addrs="localhost,127.0.0.1,${VC_URL:-},${SUPERVISOR_CLUSTER_IP:-}"
             export NO_PROXY="${_no_proxy_addrs}"
             export no_proxy="${_no_proxy_addrs}"
             echo "✓ HTTP_PROXY set to ${HTTP_PROXY}"
+            echo "  GATEWAY_VM_USERNAME: ${GATEWAY_VM_USERNAME}"
             echo "  NO_PROXY: ${NO_PROXY}"
         else
             echo "⚠ Gateway VM not reachable via SSH — HTTP_PROXY will not be set"

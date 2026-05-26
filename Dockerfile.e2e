@@ -71,6 +71,12 @@ ARG GOVC_DOWNLOAD_URL=https://github.com/vmware/govmomi/releases/download/v0.53.
 RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
     chmod +x /usr/local/bin/govc
 
+# PIP_INDEX_URL overrides the pip package index used when install-pykmip.sh runs
+# on the testbed gateway VM. Defaults to empty (public PyPI). Build systems that
+# cannot reach public PyPI should set this to an internal mirror at image build time.
+ARG PIP_INDEX_URL=""
+ENV PIP_INDEX_URL="${PIP_INDEX_URL}"
+
 # kubectl is always staged into the build context as ./kubectl before docker build runs.
 # This is to support passing the kubectl binary from the build system.
 COPY kubectl /usr/local/bin/kubectl

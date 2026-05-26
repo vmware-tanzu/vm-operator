@@ -225,7 +225,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Expect(err).ToNot(HaveOccurred(), "failed to get the VMI name in namespace %q", wcpNamespaceName)
 
 		By("Waiting for Photon image content to be fully downloaded")
-		vmoperator.WaitForVirtualMachineImageStatusDisks(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, photonVMIName)
+		vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, photonVMIName)
 
 		By("Deploying a Photon VM under the common WCP namespace to make it available for all test specs")
 
@@ -246,7 +246,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			Expect(err).ToNot(HaveOccurred(), "failed to get the VMI name in namespace %q", wcpNamespaceName)
 
 			By("Waiting for Windows image content to be fully downloaded")
-			vmoperator.WaitForVirtualMachineImageStatusDisks(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsVMIName)
+			vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsVMIName)
 
 			By("Deploying a Windows VM with the minimal Sysprep config")
 			// Keep Windows VM name under 15 chars so hostName inherited from vmName can adhere to

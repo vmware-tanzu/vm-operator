@@ -34,11 +34,7 @@ func ComputeConfigFromMoVM(
 	}
 
 	ci := moVM.Config
-	mutated := false
-
-	if backfillSize(vm, ci) {
-		mutated = true
-	}
+	mutated := backfillSize(vm, ci)
 	if backfillAllocation(vm, ci) {
 		mutated = true
 	}

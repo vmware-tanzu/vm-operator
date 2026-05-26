@@ -164,29 +164,19 @@ func findChildRP(
 	return childRP, nil
 }
 
-func IsVMInValidResourcePool(
+func GetResourcePoolParent(
 	ctx context.Context,
 	vimClient *vim25.Client,
-	currentRPMoID string,
-	expectedRootRPMoID string) (bool, error) {
+	currentRPMoID string) (mo.ResourcePool, error) {
 
-	// Case A: Direct match
-	if currentRPMoID == expectedRootRPMoID {
-		return true, nil
-	}
-	// Case B: Check if current pool's parent is the root
 	poolObj := object.NewResourcePool(vimClient,
 		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: currentRPMoID})
 
 	var moPool mo.ResourcePool
 	err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent"}, &moPool)
 	if err != nil {
-		return false, err
+		return mo.ResourcePool{}, err
 	}
 
-	if moPool.Parent != nil && moPool.Parent.Value == expectedRootRPMoID {
-		return true, nil
-	}
-
-	return false, nil
+	return moPool, nil
 }

@@ -173,7 +173,7 @@ func GetResourcePoolParent(
 		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: currentRPMoID})
 
 	var moPool mo.ResourcePool
-	err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent"}, &moPool)
+	err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent", "name"}, &moPool)
 	if err != nil {
 		return mo.ResourcePool{}, err
 	}
@@ -190,7 +190,7 @@ func GetFolderParent(
 		vimtypes.ManagedObjectReference{Type: "Folder", Value: currentFolderMoID})
 
 	var moFolder mo.Folder
-	err := folderObj.Properties(ctx, folderObj.Reference(), []string{"parent"}, &moFolder)
+	err := folderObj.Properties(ctx, folderObj.Reference(), []string{"parent", "name"}, &moFolder)
 	if err != nil {
 		return mo.Folder{}, fmt.Errorf("failed to fetch parent properties for folder %s: %w",
 			currentFolderMoID, err)

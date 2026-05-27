@@ -222,4 +222,118 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		ethCards = object.VirtualDeviceList(vmMO.Config.Hardware.Device).SelectByType((*types.VirtualEthernetCard)(nil))
 		Expect(ethCards).To(HaveLen(2), "VM config should have two EthernetCards")
 	})
+
+	It("Should allow network interface to be moved to a different subnet when mutability cap is enabled", Label("smoke"), func() {
+		if !isVMMutableNetworksCapEnabled {
+			Skip("VM Mutable Networks capability is not enabled")
+		}
+
+		if !vmoperator.IsNetworkNsxtVPC(ctx, svClusterClient, config) {
+			Skip("Test requires VPC networking environment to create SubnetSet")
+		}
+
+		subnetSetName := "custom-subnetset"
+
+		By("Creating custom SubnetSet")
+		Eventually(func(g Gomega) {
+			sYaml := utils.CreateSubnetOrSubnetSetYaml(utils.SubnetSetKind, subnetSetName, input.WCPNamespaceName, utils.DHCPConfig, true)
+			g.Expect(clusterProxy.CreateWithArgs(ctx, sYaml)).To(Succeed(), "failed to create the SubnetSet: %s", string(sYaml))
+		}, config.GetIntervals("default", "wait-subnet-creation")...).Should(Succeed(), "Timed out in creating SubnetSet")
+		vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
+
+		DeferCleanup(func() {
+			vmoperator.DeleteSubnetOrSubnetSet(ctx, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
+			vmoperator.WaitForSubnetOrSubnetSetToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
+		})
+
+		vmParameters := manifestbuilders.VirtualMachineYaml{
+			Namespace:        input.WCPNamespaceName,
+			Name:             vmName,
+			ImageName:        linuxVMIName,
+			VMClassName:      clusterResources.VMClassName,
+			StorageClassName: clusterResources.StorageClassName,
+			PowerState:       "PoweredOff",
+		}
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+
+		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
+
+		vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+		propCollector := property.DefaultCollector(vCenterClient)
+
+		var vmMO mo.VirtualMachine
+		Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)).To(Succeed())
+		ethCards := object.VirtualDeviceList(vmMO.Config.Hardware.Device).SelectByType((*types.VirtualEthernetCard)(nil))
+		Expect(ethCards).To(HaveLen(1), "VM config should have one EthernetCard")
+
+		By("Change network interface to a different subnet")
+
+		key := ctrlclient.ObjectKey{Name: vmName, Namespace: input.WCPNamespaceName}
+		Eventually(func() bool {
+			vm := &vmopv1a3.VirtualMachine{}
+
+			err := svClusterClient.Get(ctx, key, vm)
+			if err != nil {
+				e2eframework.Logf("retry due to: %v", err)
+				return false
+			}
+
+			Expect(vm.Spec.Network).ToNot(BeNil())
+			Expect(vm.Spec.Network.Interfaces).To(HaveLen(1))
+
+			// Change the network name to the custom SubnetSet
+			vm.Spec.Network.Interfaces[0].Network.Name = subnetSetName
+			vm.Spec.Network.Interfaces[0].Network.Kind = utils.SubnetSetKind
+			vm.Spec.Network.Interfaces[0].Network.APIVersion = "crd.nsx.vmware.com/v1alpha1"
+
+			err = svClusterClient.Update(ctx, vm)
+			if err != nil {
+				e2eframework.Logf("retry due to: %v", err)
+				return false
+			}
+
+			return true
+		}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(BeTrue(), "Timed out updating VirtualMachine %s to change subnet", vmName)
+
+		By("Wait for VM to be reconfigured with updated EthernetCard")
+		Eventually(func(g Gomega) {
+			g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)).To(Succeed())
+			ethCards := object.VirtualDeviceList(vmMO.Config.Hardware.Device).SelectByType((*types.VirtualEthernetCard)(nil))
+			g.Expect(ethCards).To(HaveLen(1), "VM should still have one EthernetCard configured")
+			// We can add validation here to actually check the ethCard.  For now, just validate that
+			// the reconfiguring the NIC to connect to a different network succeeds.
+		}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed(), "VM reconfigured with updated EthernetCard")
+
+		By("Power on VM")
+		Eventually(func() bool {
+			vm := &vmopv1a3.VirtualMachine{}
+			err := svClusterClient.Get(ctx, key, vm)
+			if err != nil {
+				e2eframework.Logf("retry due to: %v", err)
+				return false
+			}
+
+			vm.Spec.PowerState = vmopv1a3.VirtualMachinePowerStateOn
+
+			err = svClusterClient.Update(ctx, vm)
+			if err != nil {
+				e2eframework.Logf("retry due to: %v", err)
+				return false
+			}
+
+			return true
+		}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(BeTrue(), "Timed out updating VirtualMachine %s PowerState to On", vmName)
+
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+		vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+		By("Powered On VM should still have one EthernetCard configured")
+		Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)).To(Succeed())
+		ethCards = object.VirtualDeviceList(vmMO.Config.Hardware.Device).SelectByType((*types.VirtualEthernetCard)(nil))
+		Expect(ethCards).To(HaveLen(1), "VM config should have one EthernetCard")
+	})
 }

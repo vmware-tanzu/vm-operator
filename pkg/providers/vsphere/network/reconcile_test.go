@@ -68,10 +68,20 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 							PortgroupKey: "pg-1",
 						},
 					}
-				case builder.NetworkEnvNSXT, builder.NetworkEnvVPC:
+				case builder.NetworkEnvNSXT:
 					ethCard.GetVirtualEthernetCard().MacAddress = "my-mac"
 					ethCard.GetVirtualEthernetCard().AddressType = string(vimtypes.VirtualEthernetCardMacTypeAssigned)
 					ethCard.GetVirtualEthernetCard().ExternalId = "my-ext-id"
+					ethCard.GetVirtualEthernetCard().Backing = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+						Port: vimtypes.DistributedVirtualSwitchPortConnection{
+							PortgroupKey: "pg-1",
+						},
+					}
+				case builder.NetworkEnvVPC:
+					ethCard.GetVirtualEthernetCard().MacAddress = "my-mac"
+					ethCard.GetVirtualEthernetCard().AddressType = string(vimtypes.VirtualEthernetCardMacTypeAssigned)
+					ethCard.GetVirtualEthernetCard().ExternalId = "my-ext-id"
+					ethCard.GetVirtualEthernetCard().SubnetId = "/projects/my-project/vpcs/foo/subnets/old-subnet"
 					ethCard.GetVirtualEthernetCard().Backing = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
 						Port: vimtypes.DistributedVirtualSwitchPortConnection{
 							PortgroupKey: "pg-1",
@@ -182,6 +192,7 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 					dc0 := deviceChanges[0].GetVirtualDeviceConfigSpec()
 					Expect(dc0.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
 					Expect(dc0.Device.GetVirtualDevice().Backing).To(Equal(ethCard.GetVirtualEthernetCard().Backing))
+					Expect(dc0.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().SubnetId).To(BeEmpty())
 				})
 
 				When("Network Interface CR is old and does not have interface name label", func() {
@@ -197,6 +208,7 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 						dc0 := deviceChanges[0].GetVirtualDeviceConfigSpec()
 						Expect(dc0.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
 						Expect(dc0.Device.GetVirtualDevice().Backing).To(Equal(ethCard.GetVirtualEthernetCard().Backing))
+						Expect(dc0.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().SubnetId).To(BeEmpty())
 					})
 				})
 			})

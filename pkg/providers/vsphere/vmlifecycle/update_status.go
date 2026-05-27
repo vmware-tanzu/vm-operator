@@ -599,6 +599,27 @@ func findInterfaceContainingIP(ip string, ifaces []vmopv1.VirtualMachineNetworkI
 	return -1
 }
 
+// primaryIPsInNICData returns true when the per-NIC data from gi.Net[] is
+// either absent (nothing to cross-check) or already contains every non-empty
+// primary IP. When gi.IpAddress (fast, summary scalar set by vCenter) and
+// gi.Net[] (slow, per-NIC data published by VMware Tools) diverge across a
+// reconcile loop this returns false, preventing a premature Synced condition.
+func primaryIPsInNICData(
+	ip4, ip6 string,
+	ifaces []vmopv1.VirtualMachineNetworkInterfaceStatus) bool {
+
+	if len(ifaces) == 0 {
+		return true
+	}
+	if ip4 != "" && findInterfaceContainingIP(ip4, ifaces) < 0 {
+		return false
+	}
+	if ip6 != "" && findInterfaceContainingIP(ip6, ifaces) < 0 {
+		return false
+	}
+	return true
+}
+
 // extractIPsFromInterface extracts IP addresses of the specified family from an interface.
 func extractIPsFromInterface(iface vmopv1.VirtualMachineNetworkInterfaceStatus, isIPv4Required bool, validatePrimaryIP func(string) net.IP) []string {
 	var result []string
@@ -1228,11 +1249,21 @@ func updateGuestNetworkStatus(
 		//             - The VM has IPv4 but not IPv6 and vice versa
 		//             - The network may be disabled, not have interfaces, etc.
 		if primaryIP4 != "" || primaryIP6 != "" {
-			c := conditions.TrueCondition(
-				vmopv1.VirtualMachineGuestNetworkConfigSynced)
-			c.Reason = "Synced"
-			c.Message = fmt.Sprintf("IPv4=%q, IPv6=%q", primaryIP4, primaryIP6)
-			conditions.Set(vm, c)
+			if primaryIPsInNICData(primaryIP4, primaryIP6, ifaceStatuses) {
+				c := conditions.TrueCondition(
+					vmopv1.VirtualMachineGuestNetworkConfigSynced)
+				c.Reason = "Synced"
+				c.Message = fmt.Sprintf(
+					"IPv4=%q, IPv6=%q", primaryIP4, primaryIP6)
+				conditions.Set(vm, c)
+			} else {
+				conditions.MarkFalse(vm,
+					vmopv1.VirtualMachineGuestNetworkConfigSynced,
+					"NotSynced",
+					"guest primary IPs (IPv4=%q, IPv6=%q)"+
+						" not yet reflected in per-NIC data",
+					primaryIP4, primaryIP6)
+			}
 		} else {
 			conditions.MarkFalse(
 				vm,

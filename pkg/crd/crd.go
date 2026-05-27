@@ -344,13 +344,56 @@ func Install( //nolint:gocyclo
 						}
 					}
 
+					if !features.WorkloadIPv6 {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("network", "interfaces", "[]", "ipamModes"),
+						); err != nil {
+
+							return err
+						}
+					}
+
 					return nil
 				}); err != nil {
 
 				return err
 			}
 
-		// case "VirtualMachineService":
+		case "VirtualMachineService":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				true,
+				c,
+				k,
+				func(
+					kind string,
+					obj *unstructured.Unstructured,
+					shouldRemoveFields bool) error {
+
+					if !features.WorkloadIPv6 {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("ipFamilies"),
+							specFieldPath("ipFamilyPolicy"),
+						); err != nil {
+
+							return err
+						}
+					}
+
+					return nil
+				}); err != nil {
+
+				return err
+			}
 		// case "VirtualMachineSetResourcePolicy":
 		case "VirtualMachineSnapshot":
 			if err := updateOrDeleteUnstructured(

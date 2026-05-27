@@ -170,7 +170,7 @@ var _ = Describe("Install", func() {
 		client = nil
 	})
 
-	assertField := func(expected bool, fields ...string) {
+	assertFieldForCRD := func(crdName string, expected bool, fields ...string) {
 		GinkgoHelper()
 
 		obj := unstructured.Unstructured{
@@ -178,7 +178,7 @@ var _ = Describe("Install", func() {
 		}
 		obj.SetAPIVersion("apiextensions.k8s.io/v1")
 		obj.SetKind("CustomResourceDefinition")
-		obj.SetName("virtualmachines.vmoperator.vmware.com")
+		obj.SetName(crdName)
 
 		Expect(client.Get(
 			ctx,
@@ -202,6 +202,16 @@ var _ = Describe("Install", func() {
 			}
 		}
 		Expect(hasField).To(Equal(expected))
+	}
+
+	assertField := func(expected bool, fields ...string) {
+		GinkgoHelper()
+		assertFieldForCRD("virtualmachines.vmoperator.vmware.com", expected, fields...)
+	}
+
+	assertVMSvcField := func(expected bool, fields ...string) {
+		GinkgoHelper()
+		assertFieldForCRD("virtualmachineservices.vmoperator.vmware.com", expected, fields...)
 	}
 
 	When("no crds are installed", func() {
@@ -251,9 +261,19 @@ var _ = Describe("Install", func() {
 				Entry("network interface vNUMANodeID", "network.interfaces.[].vNUMANodeID"),
 				Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
 				Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
+				Entry("network interface ipamModes", "network.interfaces.[].ipamModes"),
 				Entry("resources", "resources"),
 				Entry("cpuAdvanced", "cpuAdvanced"),
 				Entry("memoryAdvanced", "memoryAdvanced"),
+			)
+
+			DescribeTable("vm service api should not have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertVMSvcField(false, fields...)
+				},
+				Entry("ipFamilies", "ipFamilies"),
+				Entry("ipFamilyPolicy", "ipFamilyPolicy"),
 			)
 
 			DescribeTable("vm api should not have status fields",
@@ -534,6 +554,34 @@ var _ = Describe("Install", func() {
 				Entry("volumes controllerBusNumber", "volumes.[].controllerBusNumber"),
 				Entry("volumes controllerType", "volumes.[].controllerType"),
 				Entry("hardware controllers", "hardware.controllers"),
+			)
+		})
+
+		When("WorkloadIPv6 is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.WorkloadIPv6 = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
+			})
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("network interface ipamModes", "network.interfaces.[].ipamModes"),
+			)
+			DescribeTable("vm service api should have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertVMSvcField(true, fields...)
+				},
+				Entry("ipFamilies", "ipFamilies"),
+				Entry("ipFamilyPolicy", "ipFamilyPolicy"),
 			)
 		})
 

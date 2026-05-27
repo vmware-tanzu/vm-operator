@@ -551,6 +551,18 @@ func GetVMSetResourcePolicy(
 	return resourcePolicy, nil
 }
 
+func GetVMSetResourcePolicies(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineSetResourcePolicyList, error) {
+
+	resourcePolicies := &vmopv1.VirtualMachineSetResourcePolicyList{}
+	if err := k8sClient.List(vmCtx, resourcePolicies, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
+		return nil, err
+	}
+
+	return resourcePolicies, nil
+}
+
 // AddInstanceStorageVolumes checks if VM class is configured with instance storage volumes and appends the
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(

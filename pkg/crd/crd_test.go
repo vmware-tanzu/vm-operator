@@ -214,6 +214,39 @@ var _ = Describe("Install", func() {
 		assertFieldForCRD("virtualmachineservices.vmoperator.vmware.com", expected, fields...)
 	}
 
+	assertCELRulesContaining := func(crdName string, celPath []string, fieldRef string, expectPresent bool) {
+		GinkgoHelper()
+
+		obj := unstructured.Unstructured{Object: map[string]any{}}
+		obj.SetAPIVersion("apiextensions.k8s.io/v1")
+		obj.SetKind("CustomResourceDefinition")
+		obj.SetName(crdName)
+		Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(&obj), &obj)).To(Succeed())
+
+		versions, _, err := unstructured.NestedSlice(obj.Object, "spec", "versions")
+		Expect(err).ToNot(HaveOccurred())
+
+		found := false
+		for j := range versions {
+			v := versions[j].(map[string]any)
+			rules, _, _ := unstructured.NestedSlice(v, celPath...)
+			for _, r := range rules {
+				ruleMap, ok := r.(map[string]any)
+				if !ok {
+					continue
+				}
+				if ruleText, _ := ruleMap["rule"].(string); strings.Contains(ruleText, fieldRef) {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		Expect(found).To(Equal(expectPresent))
+	}
+
 	When("no crds are installed", func() {
 		When("no capabilities are enabled", func() {
 			It("should get the expected crds", func() {
@@ -275,6 +308,33 @@ var _ = Describe("Install", func() {
 				Entry("ipFamilies", "ipFamilies"),
 				Entry("ipFamilyPolicy", "ipFamilyPolicy"),
 			)
+
+			It("vm api should not have CEL rules referencing vmxnet3", func() {
+				assertCELRulesContaining(
+					"virtualmachines.vmoperator.vmware.com",
+					specCELPath("network.interfaces.[]"),
+					"vmxnet3",
+					false,
+				)
+			})
+
+			It("vm api should not have CEL rules referencing ipamModes", func() {
+				assertCELRulesContaining(
+					"virtualmachines.vmoperator.vmware.com",
+					specCELPath("network.interfaces.[]"),
+					"ipamModes",
+					false,
+				)
+			})
+
+			It("vm service api should not have CEL rules referencing ipFamilies", func() {
+				assertCELRulesContaining(
+					"virtualmachineservices.vmoperator.vmware.com",
+					specCELPath(""),
+					"ipFamilies",
+					false,
+				)
+			})
 
 			DescribeTable("vm api should not have status fields",
 				func(field string) {
@@ -469,6 +529,15 @@ var _ = Describe("Install", func() {
 				},
 				Entry("extraConfig", "extraConfig"),
 			)
+
+			It("vm api should have CEL rules referencing vmxnet3", func() {
+				assertCELRulesContaining(
+					"virtualmachines.vmoperator.vmware.com",
+					specCELPath("network.interfaces.[]"),
+					"vmxnet3",
+					true,
+				)
+			})
 		})
 
 		When("VM shared disks (OracleRAC) is enabled", func() {
@@ -583,6 +652,24 @@ var _ = Describe("Install", func() {
 				Entry("ipFamilies", "ipFamilies"),
 				Entry("ipFamilyPolicy", "ipFamilyPolicy"),
 			)
+
+			It("vm api should have CEL rules referencing ipamModes", func() {
+				assertCELRulesContaining(
+					"virtualmachines.vmoperator.vmware.com",
+					specCELPath("network.interfaces.[]"),
+					"ipamModes",
+					true,
+				)
+			})
+
+			It("vm service api should have CEL rules referencing ipFamilies", func() {
+				assertCELRulesContaining(
+					"virtualmachineservices.vmoperator.vmware.com",
+					specCELPath(""),
+					"ipFamilies",
+					true,
+				)
+			})
 		})
 
 		When("fast deploy is enabled", func() {
@@ -940,6 +1027,19 @@ func specFieldPath(fieldPath string) []string {
 func statusFieldPath(fieldPath string) []string {
 	fieldNames := strings.Split(fieldPath, ".")
 	return buildFieldPath("status", fieldNames...)
+}
+
+// specCELPath returns the path to x-kubernetes-validations for a schema object
+// relative to a CRD version entry. An empty fieldPath returns the spec-level
+// validations path; otherwise fieldPath is a dot-separated chain where "[]"
+// denotes array items (e.g. "network.interfaces.[]").
+func specCELPath(fieldPath string) []string {
+	if fieldPath == "" {
+		return []string{"schema", "openAPIV3Schema", "properties", "spec", "x-kubernetes-validations"}
+	}
+	fieldNames := strings.Split(fieldPath, ".")
+	path := buildFieldPath("spec", fieldNames...)
+	return append(path, "x-kubernetes-validations")
 }
 
 func buildFieldPath(parentField string, fieldNames ...string) []string {

@@ -90,7 +90,7 @@ func SemanticDiff(
 
 		decodedDesired := reflect.New(fieldType).Elem()
 		if err := vmopv1util.DecodeVMXFieldValue(ctx, decodedDesired, desiredStr); err != nil {
-			log.V(1).Error(err, "unsupported field type for VMX decode; emitting entry unconditionally",
+			log.V(1).Error(err, "unsupported field type for VMX decode; treating desired as zero-value",
 				"key", kv.Key)
 		}
 		desiredValue := decodedDesired.Interface()

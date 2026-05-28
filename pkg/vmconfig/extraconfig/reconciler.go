@@ -151,7 +151,7 @@ func (r reconciler) Reconcile(
 	if advanced == nil {
 		advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 	}
-	for _, entry := range extraconfig.TranslateFirstClass(advanced) {
+	for _, entry := range extraconfig.TranslateFirstClass(ctx, advanced) {
 		kv := entry.GetOptionValue()
 		if kv == nil {
 			continue
@@ -246,8 +246,13 @@ func (r reconciler) OnResult(
 	if moVM.Config != nil {
 		observed := pkgutil.OptionValues(moVM.Config.ExtraConfig)
 		firstClassKeys := vmopv1util.AdvancedVMXKeyMap()
-		var statusEC []vmopv1common.KeyValuePair
+		sortedKeys := make([]string, 0, len(firstClassKeys))
 		for k := range firstClassKeys {
+			sortedKeys = append(sortedKeys, k)
+		}
+		sort.Strings(sortedKeys)
+		var statusEC []vmopv1common.KeyValuePair
+		for _, k := range sortedKeys {
 			if v, ok := observed.GetString(k); ok && v != "" {
 				statusEC = append(statusEC, vmopv1common.KeyValuePair{Key: k, Value: v})
 			}

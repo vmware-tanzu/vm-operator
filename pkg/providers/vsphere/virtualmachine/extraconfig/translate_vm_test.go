@@ -5,6 +5,9 @@
 package extraconfig_test
 
 import (
+	"context"
+	"reflect"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -18,13 +21,14 @@ import (
 const numFirstClassKeys = 6
 
 var _ = Describe("TranslateFirstClass", func() {
+	ctx := context.Background()
 
 	It("returns nil for nil input", func() {
-		Expect(extraconfig.TranslateFirstClass(nil)).To(BeNil())
+		Expect(extraconfig.TranslateFirstClass(ctx, nil)).To(BeNil())
 	})
 
 	It("returns one entry per first-class key (all empty) for empty spec", func() {
-		ov := extraconfig.TranslateFirstClass(&vmopv1.VirtualMachineAdvancedSpec{})
+		ov := extraconfig.TranslateFirstClass(ctx, &vmopv1.VirtualMachineAdvancedSpec{})
 		Expect(ov).To(HaveLen(numFirstClassKeys))
 		for _, bov := range ov {
 			kv := bov.GetOptionValue()
@@ -36,7 +40,7 @@ var _ = Describe("TranslateFirstClass", func() {
 		adv := &vmopv1.VirtualMachineAdvancedSpec{
 			PreferHTEnabled: ptr.To(true),
 		}
-		ov := extraconfig.TranslateFirstClass(adv)
+		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
 		val, ok := ov.GetString("numa.vcpu.preferHT")
 		Expect(ok).To(BeTrue())
@@ -47,7 +51,7 @@ var _ = Describe("TranslateFirstClass", func() {
 		adv := &vmopv1.VirtualMachineAdvancedSpec{
 			HugePages1GEnabled: ptr.To(false),
 		}
-		ov := extraconfig.TranslateFirstClass(adv)
+		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
 		val, ok := ov.GetString("sched.mem.lpage.enable1GPage")
 		Expect(ok).To(BeTrue())
@@ -58,7 +62,7 @@ var _ = Describe("TranslateFirstClass", func() {
 		adv := &vmopv1.VirtualMachineAdvancedSpec{
 			PNUMANodeAffinity: []int32{0, 1, 3},
 		}
-		ov := extraconfig.TranslateFirstClass(adv)
+		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
 		val, ok := ov.GetString("numa.nodeAffinity")
 		Expect(ok).To(BeTrue())
@@ -70,7 +74,7 @@ var _ = Describe("TranslateFirstClass", func() {
 			PreferHTEnabled:    nil,
 			HugePages1GEnabled: ptr.To(true),
 		}
-		ov := extraconfig.TranslateFirstClass(adv)
+		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
 		val, ok := ov.GetString("numa.vcpu.preferHT")
 		Expect(ok).To(BeTrue())
@@ -81,11 +85,20 @@ var _ = Describe("TranslateFirstClass", func() {
 		adv := &vmopv1.VirtualMachineAdvancedSpec{
 			PNUMANodeAffinity: []int32{},
 		}
-		ov := extraconfig.TranslateFirstClass(adv)
+		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
 		val, ok := ov.GetString("numa.nodeAffinity")
 		Expect(ok).To(BeTrue())
 		Expect(val).To(Equal(""))
+	})
+
+	It("does not emit an entry for a field with an unsupported type", func() {
+		// Verify that TranslateFieldValue returns ok=false for kinds that are
+		// not handled, so TranslateFirstClass skips the entry rather than
+		// emitting "" (which would clear the VMX key).
+		var n int
+		_, ok := extraconfig.TranslateFieldValue(reflect.ValueOf(&n).Elem())
+		Expect(ok).To(BeFalse(), "plain int (reflect.Int) is not a supported VMX field kind")
 	})
 
 	It("encodes all six first-class fields when set", func() {
@@ -97,7 +110,7 @@ var _ = Describe("TranslateFirstClass", func() {
 			VMXSwapEnabled:                     ptr.To(false),
 			PNUMANodeAffinity:                  []int32{0},
 		}
-		ov := extraconfig.TranslateFirstClass(adv)
+		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
 	})
 })

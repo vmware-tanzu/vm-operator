@@ -234,6 +234,21 @@ var _ = Describe("DecodeVMXFieldValue/[]PNICQueueFeature", func() {
 	)
 })
 
+var _ = Describe("EncodeVMXSliceStringField/PNICQueueFeature bitmask cap", func() {
+	elemType := reflect.TypeOf(vmopv1.PNICQueueFeatureLargeReceiveOffload)
+
+	It("masks out bits beyond PNICFeaturesMaxItems to match the decoder", func() {
+		// bit 16 (65536) is outside bits 0–15; the decoder silently drops it.
+		// The encoder must apply the same cap so that encode→decode is idempotent.
+		Expect(vmopv1util.EncodeVMXSliceStringField(elemType, []string{"65536"})).To(BeEmpty())
+	})
+
+	It("preserves in-range bits unchanged", func() {
+		// bit 15 (32768) is the highest supported bit; it must survive the cap.
+		Expect(vmopv1util.EncodeVMXSliceStringField(elemType, []string{"32768"})).To(Equal("32768"))
+	})
+})
+
 var _ = Describe("DecodeVMXFieldValue/*UDPRSSMode", func() {
 	udpRSSField := func() reflect.Value {
 		var s struct{ F *vmopv1.UDPRSSMode }
@@ -264,5 +279,33 @@ var _ = Describe("DecodeVMXFieldValue/*UDPRSSMode", func() {
 		Entry("TRUE → nil", "TRUE", true, vmopv1.UDPRSSMode(false)),
 		Entry("FALSE → nil", "FALSE", true, vmopv1.UDPRSSMode(false)),
 		Entry("junk → nil", "junk", true, vmopv1.UDPRSSMode(false)),
+	)
+})
+
+var _ = Describe("EncodeVMXSliceStringField / DecodeVMXFieldValue round-trip (unregistered type)", func() {
+	// myStr is an unregistered named string type with no custom encoder or decoder.
+	type myStr string
+
+	sliceField := func() reflect.Value {
+		var s struct{ F []myStr }
+		return reflect.ValueOf(&s).Elem().Field(0)
+	}
+	elemType := reflect.TypeOf(myStr(""))
+
+	DescribeTable("encode then decode returns the original slice",
+		func(vals []string, wantRaw string) {
+			encoded := vmopv1util.EncodeVMXSliceStringField(elemType, vals)
+			Expect(encoded).To(Equal(wantRaw))
+
+			rv := sliceField()
+			Expect(vmopv1util.DecodeVMXFieldValue(context.Background(), rv, encoded)).To(Succeed())
+			Expect(rv.Len()).To(Equal(len(vals)))
+			for i, v := range vals {
+				Expect(rv.Index(i).String()).To(Equal(v))
+			}
+		},
+		Entry("single value", []string{"alpha"}, "alpha"),
+		Entry("two values", []string{"alpha", "beta"}, "alpha,beta"),
+		Entry("three values", []string{"a", "b", "c"}, "a,b,c"),
 	)
 })

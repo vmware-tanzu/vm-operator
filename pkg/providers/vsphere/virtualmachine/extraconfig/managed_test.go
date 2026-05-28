@@ -133,7 +133,7 @@ var _ = Describe("TranslateFirstClass + SemanticDiff round-trip", func() {
 		)
 
 		// Assembly: TranslateFirstClass + bag key.
-		allDesiredEC := pkgutil.OptionValues(nil).Merge(extraconfig.TranslateFirstClass(adv)...).
+		allDesiredEC := pkgutil.OptionValues(nil).Merge(extraconfig.TranslateFirstClass(ctx, adv)...).
 			Merge(&vimtypes.OptionValue{Key: "custom.key", Value: "v"})
 
 		out := extraconfig.SemanticDiff(ctx, observed, allDesiredEC)

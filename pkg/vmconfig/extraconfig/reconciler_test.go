@@ -366,6 +366,25 @@ var _ = Describe("OnResult", func() {
 		}
 	})
 
+	It("status.ExtraConfig is sorted by key when multiple first-class keys are present", func() {
+		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+			PreferHTEnabled:                   ptr.To(true),
+			TimeTrackerLowLatencyEnabled:      ptr.To(true),
+			CPUAffinityExclusiveNoStatsEnabled: ptr.To(true),
+		}
+		moVM = moVMWithEC(
+			"numa.vcpu.preferHT", "TRUE",
+			"timeTracker.lowLatency", "TRUE",
+			"sched.cpu.affinity.exclusiveNoStats", "TRUE",
+		)
+		reconcileAndOnResult(nil)
+		Expect(vm.Status.ExtraConfig).To(Equal([]vmopv1common.KeyValuePair{
+			{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+			{Key: "sched.cpu.affinity.exclusiveNoStats", Value: "TRUE"},
+			{Key: "timeTracker.lowLatency", Value: "TRUE"},
+		}))
+	})
+
 	It("populates status.ExtraConfig with only user-controlled keys", func() {
 		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 			PreferHTEnabled: ptr.To(true),

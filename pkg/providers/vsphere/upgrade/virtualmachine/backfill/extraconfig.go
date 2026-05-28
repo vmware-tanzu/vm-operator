@@ -6,13 +6,13 @@ package backfill
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -34,10 +34,10 @@ import (
 func ExtraConfigFromMoVM(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine) (bool, error) {
+	moVM mo.VirtualMachine) bool {
 
 	if moVM.Config == nil {
-		return false, nil
+		return false
 	}
 
 	return backfillAdvancedSpec(ctx, vm, moVM.Config.ExtraConfig)
@@ -46,8 +46,9 @@ func ExtraConfigFromMoVM(
 func backfillAdvancedSpec(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	extraConfig []vimtypes.BaseOptionValue) (bool, error) {
+	extraConfig []vimtypes.BaseOptionValue) bool {
 
+	log := pkglog.FromContextOrDefault(ctx)
 	mutated := false
 	for _, bov := range extraConfig {
 		ov, ok := bov.(*vimtypes.OptionValue)
@@ -79,7 +80,8 @@ func backfillAdvancedSpec(
 		var advancedSpec vmopv1.VirtualMachineAdvancedSpec
 		advancedSpecFieldValue := reflect.ValueOf(&advancedSpec).Elem().Field(fieldIdx)
 		if err := vmopv1util.DecodeVMXFieldValue(ctx, advancedSpecFieldValue, raw); err != nil {
-			return false, fmt.Errorf("decode vmx field %q: %w", ov.Key, err)
+			log.V(1).Error(err, "cannot decode vmx field; skipping", "key", ov.Key)
+			continue
 		}
 		if advancedSpecFieldValue.IsZero() {
 			continue
@@ -91,5 +93,5 @@ func backfillAdvancedSpec(
 		reflect.ValueOf(vm.Spec.Advanced).Elem().Field(fieldIdx).Set(advancedSpecFieldValue)
 		mutated = true
 	}
-	return mutated, nil
+	return mutated
 }

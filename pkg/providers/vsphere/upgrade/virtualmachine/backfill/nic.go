@@ -6,7 +6,6 @@ package backfill
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -41,13 +41,13 @@ import (
 func NICConfigFromMoVM(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine) (bool, error) {
+	moVM mo.VirtualMachine) bool {
 
 	if moVM.Config == nil {
-		return false, nil
+		return false
 	}
 	if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 {
-		return false, nil
+		return false
 	}
 
 	ethDevs := collectEthernetDevicesFromMoVM(moVM)
@@ -76,13 +76,11 @@ func NICConfigFromMoVM(
 			mutated = true
 		}
 
-		if m, err := backfillNICSpec(
+		if backfillNICSpec(
 			ctx,
 			vmopv1util.EthernetExtraConfigPrefix(dev.GetVirtualDevice().Key),
 			iface,
-			moVM.Config.ExtraConfig); err != nil {
-			return false, err
-		} else if m {
+			moVM.Config.ExtraConfig) {
 			mutated = true
 		}
 
@@ -94,7 +92,7 @@ func NICConfigFromMoVM(
 		}
 	}
 
-	return mutated, nil
+	return mutated
 }
 
 func mapVimEthernetToNetworkInterfaceType(
@@ -124,12 +122,13 @@ func backfillNICSpec(
 	ctx context.Context,
 	prefix string,
 	iface *vmopv1.VirtualMachineNetworkInterfaceSpec,
-	extraConfig []vimtypes.BaseOptionValue) (bool, error) {
+	extraConfig []vimtypes.BaseOptionValue) bool {
 
 	// Only backfill vmxnet3 fields for VMXNet3 NICs.
 	if iface.Type != vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3 {
-		return false, nil
+		return false
 	}
+	log := pkglog.FromContextOrDefault(ctx)
 	mutated := false
 
 	for _, bov := range extraConfig {
@@ -168,7 +167,8 @@ func backfillNICSpec(
 		var nicSpec vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec
 		nicSpecFieldValue := reflect.ValueOf(&nicSpec).Elem().Field(fieldIdx)
 		if err := vmopv1util.DecodeVMXFieldValue(ctx, nicSpecFieldValue, raw); err != nil {
-			return false, fmt.Errorf("decode vmx nic field %q: %w", ov.Key, err)
+			log.V(1).Error(err, "cannot decode vmx nic field; skipping", "key", ov.Key)
+			continue
 		}
 		if nicSpecFieldValue.IsZero() {
 			continue
@@ -180,7 +180,7 @@ func backfillNICSpec(
 		reflect.ValueOf(iface.VMXNet3).Elem().Field(fieldIdx).Set(nicSpecFieldValue)
 		mutated = true
 	}
-	return mutated, nil
+	return mutated
 }
 
 // backfillVNUMANodeID populates iface.VNUMANodeID from dev.NumaNode when the

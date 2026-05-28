@@ -393,9 +393,12 @@ func decodeSliceVMXField(ctx context.Context, rv reflect.Value, raw string) erro
 			rv.Set(slice)
 			return nil
 		}
-		// No registered decoder: store raw as a single-element slice.
-		slice := reflect.MakeSlice(rv.Type(), 1, 1)
-		slice.Index(0).SetString(raw)
+		// No registered decoder: split by comma to match the comma-join encoding.
+		parts := strings.Split(raw, ",")
+		slice := reflect.MakeSlice(rv.Type(), len(parts), len(parts))
+		for i, p := range parts {
+			slice.Index(i).SetString(strings.TrimSpace(p))
+		}
 		rv.Set(slice)
 	default:
 		return fmt.Errorf("unsupported slice element kind %v for vmx decode", elemType.Kind())
@@ -584,6 +587,7 @@ func encodePNICQueueFeatures(vals []string) string {
 			}
 		}
 	}
+	n &= (1 << vmopv1.PNICFeaturesMaxItems) - 1
 	if n == 0 {
 		return ""
 	}

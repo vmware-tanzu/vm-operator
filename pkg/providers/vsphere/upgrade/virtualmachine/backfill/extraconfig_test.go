@@ -50,8 +50,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		func(key, raw string, check func(*vmopv1.VirtualMachineAdvancedSpec)) {
 			moVM = moVMWithExtraConfig(ov(key, raw))
 
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeTrue(), "expected mutation for key %q", key)
 			Expect(vm.Spec.Advanced).ToNot(BeNil())
 			check(vm.Spec.Advanced)
@@ -110,8 +109,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		})
 
 		It("returns no mutation", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Advanced).To(BeNil())
 		})
@@ -119,8 +117,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 
 	When("moVM ExtraConfig is empty", func() {
 		It("returns no mutation", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Advanced).To(BeNil())
 		})
@@ -135,8 +132,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		})
 
 		It("does not overwrite the existing value", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.Advanced.PreferHTEnabled).To(BeTrue())
 		})
@@ -151,8 +147,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		})
 
 		It("leaves the spec value unchanged", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(*vm.Spec.Advanced.VMXSwapEnabled).To(BeFalse())
 		})
@@ -162,8 +157,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		func(key, raw string) {
 			moVM = moVMWithExtraConfig(ov(key, raw))
 
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse(),
 				"auto sentinel %q for key %q should not mutate spec", raw, key)
 			// spec.Advanced must stay nil — no empty struct created.
@@ -193,8 +187,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		})
 
 		It("leaves spec.Advanced nil — no empty struct created", func() {
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Advanced).To(BeNil())
 		})
@@ -204,8 +197,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 		func(key, raw string, wantTrue bool) {
 			moVM = moVMWithExtraConfig(ov(key, raw))
 
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeTrue(), "key %q raw %q should mutate", key, raw)
 			Expect(vm.Spec.Advanced).ToNot(BeNil())
 			Expect(vm.Spec.Advanced.PreferHTEnabled).ToNot(BeNil())
@@ -222,8 +214,7 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 	DescribeTable("unknown / bookkeeping keys are silently dropped",
 		func(key string) {
 			moVM = moVMWithExtraConfig(ov(key, "value"))
-			mutated, err := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
-			Expect(err).ToNot(HaveOccurred())
+			mutated := backfill.ExtraConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
 			Expect(vm.Spec.Advanced).To(BeNil())
 		},

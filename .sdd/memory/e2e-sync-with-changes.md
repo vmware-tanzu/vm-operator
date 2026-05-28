@@ -1,0 +1,16 @@
+# E2E tests stay aligned with code changes
+
+When changing VM Operator behavior that is observable on a WCP supervisor cluster (APIs, controllers, webhooks, defaults, validation, VM lifecycle or platform integration), **treat `test/e2e` as part of the same deliverable**:
+
+- **Add** E2E coverage when introducing or materially changing user-facing or cluster-observable behavior that this suite is meant to guard, or when fixing a gap a regression would have caught.
+- **Update** existing specs when expectations, labels, status, or workflows under test change.
+- **Delete** (or replace) scenarios and helpers when removing features or obsolete flows; drop fixtures and manifest patterns that become dead.
+
+Prefer extending existing suites under `test/e2e/vmservice/` (see `vmservice/virtualmachine/`), correct Ginkgo `Label(...)` usage, and shared helpers (`lib/vmoperator`, `manifestbuilders`, `infrastructure/vsphere`) per `test/e2e/README.md`.
+
+
+When the change set is **only** new or extended E2E coverage (no product or API contract change), **do not** modify code under `./pkg` or `./api` unless you find a potential bug. Limit the diff to `test/e2e`, E2E-only helpers, test-only manifests, and test-run documentation. If a test truly requires new product or API surface, ship that behavior and the tests together in one change set instead of coupling a test-only PR to `pkg` / `api` edits.
+
+**Do not** land product-only changes that clearly require E2E updates without adjusting tests in the same effort (unless the team has explicitly scoped E2E as follow-up — then say so in the PR/summary).
+
+How to run and write tests (commands, labels, config): **`test/e2e/README.md`**. Cheatsheet when editing E2E files: **`e2e-testing.md`**.

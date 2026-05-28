@@ -15,7 +15,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
@@ -160,7 +160,7 @@ func PatchSnapshotSuccessStatus(
 	snap.Status.PowerState = vmPowerState
 	snap.Status.PowerState = vmopv1util.ConvertPowerState(logger, snapNode.State)
 
-	pkgcnd.MarkTrue(snap, vmopv1.VirtualMachineSnapshotCreatedCondition)
+	pkgcond.MarkTrue(snap, vmopv1.VirtualMachineSnapshotCreatedCondition)
 
 	if err := k8sClient.Status().Patch(ctx, snap, snapPatch); err != nil {
 		return fmt.Errorf(

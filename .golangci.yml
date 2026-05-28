@@ -180,6 +180,10 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/pkg/crd
         - alias: pkgcfg
           pkg: github.com/vmware-tanzu/vm-operator/pkg/config
+        - alias: pkgcond
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/conditions
+        - alias: pkgconst
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/constants
         - alias: pkgctx
           pkg: github.com/vmware-tanzu/vm-operator/pkg/context
         - alias: pkgerr
@@ -200,6 +204,8 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/pkg/prober/context
         - alias: clsutil
           pkg: github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/library
+        - alias: kubeutil
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube
 
     depguard:
       rules:

@@ -22,7 +22,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
@@ -159,10 +159,10 @@ func GetImage(
 }
 
 func IsImageReady(img vmopv1.VirtualMachineImage) error {
-	if !pkgcnd.IsTrue(&img, vmopv1.ReadyConditionType) {
+	if !pkgcond.IsTrue(&img, vmopv1.ReadyConditionType) {
 		return fmt.Errorf(
 			"image condition is not ready: %v",
-			pkgcnd.Get(&img, vmopv1.ReadyConditionType))
+			pkgcond.Get(&img, vmopv1.ReadyConditionType))
 	}
 	if img.Spec.ProviderRef == nil || img.Spec.ProviderRef.Name == "" {
 		return errors.New("image provider ref is empty")
@@ -307,7 +307,7 @@ func VirtualMachineImageCacheToItemMapper(
 
 		// Do not reconcile anything unless the OVF for this VMI Cache resource
 		// is ready.
-		if !pkgcnd.IsTrue(obj, vmopv1.VirtualMachineImageCacheConditionHardwareReady) {
+		if !pkgcond.IsTrue(obj, vmopv1.VirtualMachineImageCacheConditionHardwareReady) {
 			return nil
 		}
 

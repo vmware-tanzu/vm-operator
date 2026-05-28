@@ -1,0 +1,6 @@
+---
+description: Rules for creating a new git commit message.
+alwaysApply: true
+---
+
+Follow the rules in `../../.sdd/memory/commit-message-standards.md`.

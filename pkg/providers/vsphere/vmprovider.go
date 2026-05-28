@@ -31,7 +31,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
@@ -266,7 +266,7 @@ func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeploy(
 			"failed to createOrPatch image cache resource: %w", err)
 	}
 
-	hardwareReadyCondition := pkgcnd.Get(
+	hardwareReadyCondition := pkgcond.Get(
 		vmiCache,
 		vmopv1.VirtualMachineImageCacheConditionHardwareReady)
 

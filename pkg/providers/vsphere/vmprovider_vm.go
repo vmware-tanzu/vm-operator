@@ -39,7 +39,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -844,14 +844,14 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	if err != nil {
 		ctx.Logger.Error(err, "CreateVirtualMachine failed")
-		pkgcnd.MarkError(
+		pkgcond.MarkError(
 			ctx.VM,
 			vmopv1.VirtualMachineConditionCreated,
 			"Error",
 			err)
 
 		if pkgcfg.FromContext(ctx).Features.FastDeploy {
-			pkgcnd.MarkError(
+			pkgcond.MarkError(
 				ctx.VM,
 				vmopv1.VirtualMachineConditionPlacementReady,
 				"Error",
@@ -862,7 +862,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	}
 
 	ctx.VM.Status.UniqueID = moRef.Reference().Value
-	pkgcnd.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
+	pkgcond.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
 		if zoneName := args.ZoneName; zoneName != "" {
@@ -906,7 +906,7 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 	objPatch := ctrlclient.MergeFrom(ctx.VM.DeepCopy())
 
 	if vimErr != nil {
-		pkgcnd.MarkError(
+		pkgcond.MarkError(
 			ctx.VM,
 			vmopv1.VirtualMachineConditionCreated,
 			"Error",
@@ -922,7 +922,7 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 		}
 
 		ctx.VM.Status.UniqueID = moRef.Reference().Value
-		pkgcnd.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
+		pkgcond.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
 	}
 
 	if err := vs.k8sClient.Status().Patch(ctx, ctx.VM, objPatch); err != nil {
@@ -1157,7 +1157,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 
 	// Handle Mismatch
 	if !isValid {
-		pkgcnd.MarkFalse(
+		pkgcond.MarkFalse(
 			vmCtx.VM,
 			vmopv1.VirtualMachineInValidLocation,
 			"LocationMismatch",
@@ -1170,7 +1170,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
 	}
 
-	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
+	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
 	return nil
 }
 
@@ -1621,13 +1621,13 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 	defer func() {
 		if retErr != nil {
-			pkgcnd.MarkError(
+			pkgcond.MarkError(
 				vmCtx.VM,
 				vmopv1.VirtualMachineConditionPlacementReady,
 				"NotReady",
 				retErr)
 		} else {
-			pkgcnd.MarkTrue(
+			pkgcond.MarkTrue(
 				vmCtx.VM,
 				vmopv1.VirtualMachineConditionPlacementReady)
 		}
@@ -1659,7 +1659,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 			return fmt.Errorf("failed to update VM group linked condition: %w", err)
 		}
 
-		if !pkgcnd.IsTrue(
+		if !pkgcond.IsTrue(
 			vmCtx.VM,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 		) {
@@ -1743,7 +1743,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		}
 	}
 
-	if !pkgcnd.IsTrue(
+	if !pkgcond.IsTrue(
 		&memberStatus,
 		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 	) {
@@ -1992,7 +1992,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 			l.DatastoreID == datastoreID &&
 			l.ProfileID == profileID {
 
-			if c := pkgcnd.Get(l, vmopv1.ReadyConditionType); c != nil {
+			if c := pkgcond.Get(l, vmopv1.ReadyConditionType); c != nil {
 				switch c.Status {
 				case metav1.ConditionTrue:
 
@@ -2030,11 +2030,11 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 						vmCtx.Logger.Info("got cached file names",
 							"cachedFileNames", createArgs.CachedFileNames)
 
-						readyCond := pkgcnd.TrueCondition(vmopv1.VirtualMachineConditionImageCacheReady)
+						readyCond := pkgcond.TrueCondition(vmopv1.VirtualMachineConditionImageCacheReady)
 						readyCond.Message = fmt.Sprintf(
 							"VirtualMachineImageCache location %s:%s was ready at %s",
 							datacenterID, datastoreID, c.LastTransitionTime.Format(time.RFC3339))
-						pkgcnd.Set(vmCtx.VM, readyCond)
+						pkgcond.Set(vmCtx.VM, readyCond)
 
 						return nil
 					}
@@ -2256,7 +2256,7 @@ func (vs *vSphereVMProvider) vmCreateGetVirtualMachineImage(
 	default:
 		if !SkipVMImageCLProviderCheck {
 			err := fmt.Errorf("unsupported image provider kind: %s", providerRef.Kind)
-			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, "NotSupported", err)
+			pkgcond.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, "NotSupported", err)
 			return err
 		}
 		// Testing only: we'll clone the source VM found in the Inventory.
@@ -2335,20 +2335,20 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		// This will be true in WCP.
 		if cfg.StorageClassRequired {
 			err := fmt.Errorf("StorageClass is required but not specified")
-			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "StorageClassRequired", err)
+			pkgcond.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "StorageClassRequired", err)
 			return err
 		}
 
 		// Testing only for standalone gce2e.
 		if cfg.Datastore == "" {
 			err := fmt.Errorf("no Datastore provided in configuration")
-			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err)
+			pkgcond.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err)
 			return err
 		}
 
 		datastore, err := vcClient.Finder().Datastore(vmCtx, cfg.Datastore)
 		if err != nil {
-			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err)
+			pkgcond.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err)
 			return fmt.Errorf("failed to find Datastore %s: %w", cfg.Datastore, err)
 		}
 
@@ -2358,7 +2358,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 	vmStorage, err := storage.GetVMStorageData(vmCtx, vs.k8sClient)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
-		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, "%s", msg)
+		pkgcond.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, "%s", msg)
 		return err
 	}
 
@@ -2376,7 +2376,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		vmCtx, vcClient, storageProfileID)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
-		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, "%s", msg)
+		pkgcond.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, "%s", msg)
 		return err
 	}
 
@@ -2384,7 +2384,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 	createArgs.StorageProvisioning = provisioningType
 	createArgs.StorageProfileID = storageProfileID
 	createArgs.IsEncryptedStorageProfile = isEnc
-	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady)
+	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady)
 
 	return nil
 }
@@ -2395,7 +2395,7 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 	createArgs *VMCreateArgs) error {
 
 	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
-		pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+		pkgcond.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
 		return nil
 	}
 
@@ -2406,13 +2406,13 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 		vcClient.VimClient(),
 		vcClient.Finder())
 	if err != nil {
-		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady,
+		pkgcond.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady,
 			"NotReady", "%v", err)
 		return err
 	}
 
 	createArgs.NetworkDevices = devices
-	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
 
 	return nil
 }

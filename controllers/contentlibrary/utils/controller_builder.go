@@ -23,13 +23,13 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -297,7 +297,7 @@ func (r *Reconciler) ReconcileNormal(
 			// underlying library item.
 			clItemSecurityCompliance := cliStatus.SecurityCompliance
 			if clItemSecurityCompliance == nil || !*clItemSecurityCompliance {
-				pkgcnd.MarkFalse(
+				pkgcond.MarkFalse(
 					vmiStatus,
 					vmopv1.ReadyConditionType,
 					vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason,
@@ -311,7 +311,7 @@ func (r *Reconciler) ReconcileNormal(
 			// Check if the item is ready and skip the image content sync if
 			// not.
 			if !IsItemReady(cliStatus.Conditions) {
-				pkgcnd.MarkFalse(
+				pkgcond.MarkFalse(
 					vmiStatus,
 					vmopv1.ReadyConditionType,
 					vmopv1.VirtualMachineImageProviderNotReadyReason,
@@ -331,7 +331,7 @@ func (r *Reconciler) ReconcileNormal(
 				vmiObj,
 				vmiStatus); syncErr == nil {
 
-				pkgcnd.MarkTrue(vmiStatus, vmopv1.ReadyConditionType)
+				pkgcond.MarkTrue(vmiStatus, vmopv1.ReadyConditionType)
 			}
 
 			didSync = true
@@ -508,7 +508,7 @@ func (r *Reconciler) syncImageContent(
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, cliObj, vmiObj)
 	if err != nil {
 		if !pkgerr.WatchVMICacheIfNotReady(err, cliObj) {
-			pkgcnd.MarkFalse(
+			pkgcond.MarkFalse(
 				vmiStatus,
 				vmopv1.ReadyConditionType,
 				vmopv1.VirtualMachineImageNotSyncedReason,

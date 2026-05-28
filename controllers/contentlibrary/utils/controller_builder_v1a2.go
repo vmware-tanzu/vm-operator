@@ -23,7 +23,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -291,7 +291,7 @@ func (r *ReconcilerV1A2) ReconcileNormal(
 			// underlying library item.
 			clItemSecurityCompliance := cliStatus.SecurityCompliance
 			if clItemSecurityCompliance == nil || !*clItemSecurityCompliance {
-				pkgcnd.MarkFalse(
+				pkgcond.MarkFalse(
 					vmiStatus,
 					vmopv1.ReadyConditionType,
 					vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason,
@@ -305,7 +305,7 @@ func (r *ReconcilerV1A2) ReconcileNormal(
 			// Check if the item is ready and skip the image content sync if
 			// not.
 			if !IsV1A2ItemReady(cliStatus.Conditions) {
-				pkgcnd.MarkFalse(
+				pkgcond.MarkFalse(
 					vmiStatus,
 					vmopv1.ReadyConditionType,
 					vmopv1.VirtualMachineImageProviderNotReadyReason,
@@ -325,14 +325,14 @@ func (r *ReconcilerV1A2) ReconcileNormal(
 				vmiObj,
 				vmiStatus); syncErr == nil {
 
-				pkgcnd.MarkTrue(vmiStatus, vmopv1.ReadyConditionType)
+				pkgcond.MarkTrue(vmiStatus, vmopv1.ReadyConditionType)
 			} else {
 
 				// If the sync error is due to the VMI Cache not being ready,
 				// watch VMI Cache for updates to trigger reconciliation.
 				pkgerr.WatchVMICacheIfNotReady(syncErr, cliObj)
 
-				pkgcnd.MarkError(
+				pkgcond.MarkError(
 					vmiStatus,
 					vmopv1.ReadyConditionType,
 					vmopv1.VirtualMachineImageNotSyncedReason,

@@ -28,6 +28,7 @@ source ./hack/e2e/setup-testbed-env.sh <testbedInfo.json|URL> --e2e
 | Extended | `make e2e-extended` |
 
 **Prebuilt vs compile:** `make test-e2e` auto-detects `./e2e-tests` vs `test-e2e-ginkgo`. Prebuilt binaries need `-e2e.*` and `--ginkgo.*` in **one** argv block (no `--` separator); splitting with `--` drops Ginkgo filters.
+The prebuild binary is really intended to be used by the E2E Docker container to make it slim. You should really use the ginkgo cli locally.
 
 **Common filters** (passed through Makefile — see README for full list):
 

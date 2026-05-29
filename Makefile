@@ -113,6 +113,9 @@ E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
 
 E2E_KUBECTL_VERSION ?= v1.36.0
 
+PACKER_PLUGIN_VSPHERE_REPO ?= https://github.com/vmware/packer-plugin-vsphere.git
+PACKER_PLUGIN_VSPHERE_REF  ?= v2.1.1
+
 # Code coverage files
 COVERAGE_FILE ?= cover.out
 
@@ -959,6 +962,15 @@ e2e-image-build: ## Build E2E test container image
 		echo "Downloading kubectl $(E2E_KUBECTL_VERSION)..."; \
 		curl -fsSL "https://dl.k8s.io/release/$(E2E_KUBECTL_VERSION)/bin/linux/amd64/kubectl" -o kubectl && chmod +x kubectl; \
 	fi
+	@# Stage packer-plugin-vsphere source into the build context so the Dockerfile
+	@# can compile it without needing git credentials inside the Docker build.
+	@# Re-clone if the directory is absent or the checked-out ref doesn't match.
+	@if [ ! -d packer-plugin-vsphere-src ] || \
+	    ! git -C packer-plugin-vsphere-src describe --tags --exact-match 2>/dev/null | grep -qF "$(PACKER_PLUGIN_VSPHERE_REF)"; then \
+		echo "Cloning packer-plugin-vsphere $(PACKER_PLUGIN_VSPHERE_REF)..."; \
+		rm -rf packer-plugin-vsphere-src; \
+		git clone --depth=1 --branch $(PACKER_PLUGIN_VSPHERE_REF) $(PACKER_PLUGIN_VSPHERE_REPO) packer-plugin-vsphere-src; \
+	fi
 	$(CRI_BIN) build \
 	  -f Dockerfile.e2e \
 	  -t "$(E2E_IMAGE):$(IMAGE_TAG)" \
@@ -995,7 +1007,7 @@ e2e-image-remove: ## Remove E2E test container image
 #   LABEL_FILTER           - Ginkgo label filter (e.g., "smoke", "!extended-functional")
 #   FLAKE_ATTEMPTS         - Number of retry attempts for flaky tests
 #   E2E_PREBUILT_BINARY    - Path to `go test -c` output (default: $(ROOT_DIR)e2e-tests)
-#   E2E_ARTIFACT_FOLDER    - Directory for test artifacts/logs (default: test_logs)
+#   E2E_ARTIFACT_FOLDER    - Directory for test artifacts/logs (default: /tmp/test_logs)
 #   E2E_ARGS               - Override all e2e binary arguments (e.g. from CI pipelines)
 
 E2E_PREBUILT_BINARY ?= $(ROOT_DIR)e2e-tests
@@ -1026,12 +1038,12 @@ test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
 
 .PHONY: e2e-smoke
 e2e-smoke: ## Run e2e smoke tests
-	$(MAKE) test-e2e LABEL_FILTER="smoke"
+	$(MAKE) test-e2e LABEL_FILTER="smoke && !experimental"
 
 .PHONY: e2e-core
 e2e-core: ## Run e2e core functional tests
-	$(MAKE) test-e2e LABEL_FILTER="!smoke && !extended-functional"
+	$(MAKE) test-e2e LABEL_FILTER="!smoke && !extended-functional && !experimental"
 
 .PHONY: e2e-extended
 e2e-extended: ## Run e2e extended functional tests
-	$(MAKE) test-e2e LABEL_FILTER="extended-functional"
+	$(MAKE) test-e2e LABEL_FILTER="extended-functional && !experimental"

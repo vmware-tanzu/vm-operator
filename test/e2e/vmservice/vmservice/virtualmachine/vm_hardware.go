@@ -1919,6 +1919,97 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName:   clusterResources.StorageClassName,
 					VMClassName:        clusterResources.VMClassName,
 					ImportOpName:       fmt.Sprintf("import-%s", vmName),
+					BeforePowerOn: func(ctx context.Context, brownfieldVM *object.VirtualMachine) error {
+						By("Adding additional hardware to the brownfield VM before power-on and import")
+
+						var moVM mo.VirtualMachine
+						if err := brownfieldVM.Properties(ctx, brownfieldVM.Reference(),
+							[]string{"config.hardware.device", "datastore"}, &moVM); err != nil {
+							return fmt.Errorf("failed to get VM properties: %w", err)
+						}
+
+						var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+
+						// Add a ParaVirtual SCSI controller (bus 1).
+						pvscsiController := &vimtypes.ParaVirtualSCSIController{
+							VirtualSCSIController: vimtypes.VirtualSCSIController{
+								SharedBus: vimtypes.VirtualSCSISharingNoSharing,
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 1,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: -1,
+									},
+								},
+							},
+						}
+						deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device:    pvscsiController,
+						})
+						e2eframework.Logf("Adding ParaVirtual SCSI controller (bus 1)")
+
+						// Add a SATA controller (bus 0).
+						sataController := &vimtypes.VirtualAHCIController{
+							VirtualSATAController: vimtypes.VirtualSATAController{
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 0,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: -2,
+									},
+								},
+							},
+						}
+						deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device:    sataController,
+						})
+						e2eframework.Logf("Adding SATA controller (bus 0)")
+
+						// Add a 5MB disk attached to the new SCSI controller.
+						if len(moVM.Datastore) == 0 {
+							return fmt.Errorf("VM has no datastores")
+						}
+						datastoreRef := moVM.Datastore[0]
+						disk := &vimtypes.VirtualDisk{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+									DiskMode:        string(vimtypes.VirtualDiskModePersistent),
+									ThinProvisioned: new(true),
+									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+										Datastore: &datastoreRef,
+									},
+								},
+								ControllerKey: pvscsiController.Key,
+								UnitNumber:    vimtypes.NewInt32(0),
+							},
+							CapacityInBytes: 5 * 1024 * 1024, // 5MB
+						}
+						deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+							Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+							Device:        disk,
+						})
+						e2eframework.Logf("Adding 5MB disk on new SCSI controller")
+
+						configSpec := vimtypes.VirtualMachineConfigSpec{
+							DeviceChange: deviceChanges,
+							ExtraConfig: []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
+									Key:   "test.brownfield.import",
+									Value: "true",
+								},
+							},
+						}
+						reconfigTask, err := brownfieldVM.Reconfigure(ctx, configSpec)
+						if err != nil {
+							return fmt.Errorf("failed to reconfigure VM with new hardware: %w", err)
+						}
+						if err := reconfigTask.Wait(ctx); err != nil {
+							return fmt.Errorf("failed to wait for VM reconfiguration: %w", err)
+						}
+						e2eframework.Logf("Successfully added hardware to brownfield VM")
+						return nil
+					},
 				})
 				brownfieldVMMoID = result.BrownfieldVMMoID
 				importedVMName := result.ImportedVMName
@@ -1929,105 +2020,6 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Namespace: vmSvcNamespace,
 					Name:      fmt.Sprintf("import-%s", vmName),
 				}, importOperation)
-
-				By("Adding additional hardware to the brownfield VM using govmomi")
-
-				brownfieldVM := object.NewVirtualMachine(vCenterAdminClient, vimtypes.ManagedObjectReference{
-					Type:  "VirtualMachine",
-					Value: brownfieldVMMoID,
-				})
-
-				var moVM mo.VirtualMachine
-
-				err := brownfieldVM.Properties(ctx, brownfieldVM.Reference(), []string{"config.hardware.device", "datastore"}, &moVM)
-				Expect(err).ToNot(HaveOccurred(), "Failed to get VM properties")
-
-				var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
-
-				// Add a ParaVirtual SCSI controller (bus 1).
-				// Use negative key so vCenter assigns it automatically.
-				pvscsiController := &vimtypes.ParaVirtualSCSIController{
-					VirtualSCSIController: vimtypes.VirtualSCSIController{
-						SharedBus: vimtypes.VirtualSCSISharingNoSharing,
-						VirtualController: vimtypes.VirtualController{
-							BusNumber: 1,
-							VirtualDevice: vimtypes.VirtualDevice{
-								Key: -1,
-							},
-						},
-					},
-				}
-
-				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-					Device:    pvscsiController,
-				})
-
-				e2eframework.Logf("Adding ParaVirtual SCSI controller (bus 1)")
-
-				// Add a SATA controller (bus 0).
-				// Use negative key so vCenter assigns it automatically.
-				sataController := &vimtypes.VirtualAHCIController{
-					VirtualSATAController: vimtypes.VirtualSATAController{
-						VirtualController: vimtypes.VirtualController{
-							BusNumber: 0,
-							VirtualDevice: vimtypes.VirtualDevice{
-								Key: -2,
-							},
-						},
-					},
-				}
-
-				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-					Device:    sataController,
-				})
-
-				e2eframework.Logf("Adding SATA controller (bus 0)")
-
-				// Add a small disk (5MB) attached to the new SCSI controller.
-				// Get the datastore for the disk
-				Expect(moVM.Datastore).ToNot(BeEmpty(), "VM has no datastores")
-				datastoreRef := moVM.Datastore[0]
-
-				disk := &vimtypes.VirtualDisk{
-					VirtualDevice: vimtypes.VirtualDevice{
-						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-							DiskMode:        string(vimtypes.VirtualDiskModePersistent),
-							ThinProvisioned: new(true),
-							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-								Datastore: &datastoreRef,
-							},
-						},
-						ControllerKey: pvscsiController.Key,
-						UnitNumber:    vimtypes.NewInt32(0),
-					},
-					CapacityInBytes: 5 * 1024 * 1024, // 5MB
-				}
-
-				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
-					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
-					Device:        disk,
-				})
-
-				e2eframework.Logf("Adding 5MB disk on new SCSI controller")
-
-				// Reconfigure the VM with the new devices.
-				configSpec := vimtypes.VirtualMachineConfigSpec{
-					DeviceChange: deviceChanges,
-					ExtraConfig: []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "test.brownfield.import",
-							Value: "true",
-						},
-					},
-				}
-
-				reconfigTask, err := brownfieldVM.Reconfigure(ctx, configSpec)
-				Expect(err).ToNot(HaveOccurred(), "Failed to reconfigure VM with new hardware")
-				Expect(reconfigTask.Wait(ctx)).To(Succeed(), "Failed to wait for VM reconfiguration")
-				e2eframework.Logf("Successfully added hardware to brownfield VM")
 
 				vmYamls = append(vmYamls, manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace: vmSvcNamespace,
@@ -2517,8 +2509,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				Expect(clusterProxy.ApplyWithArgs(ctx, wffcVMYaml)).To(Succeed(),
 					"failed to create VirtualMachine %q with WFFC PVC", wffcVMName)
 
-				backfilledVolumes := getBackfilledVolumes(ctx, config, 
-					svClusterClient, vmSvcNamespace, wffcVMName, 
+				backfilledVolumes := getBackfilledVolumes(ctx, config,
+					svClusterClient, vmSvcNamespace, wffcVMName,
 					allDisksArePVCapabilityEnabled)
 				expectedVolumes := append([]string{wffcPVC.VolumeName}, backfilledVolumes...)
 				waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, wffcVMName, expectedVolumes)

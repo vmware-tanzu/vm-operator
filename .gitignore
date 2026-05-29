@@ -72,7 +72,9 @@ infrastructure-components.yaml
 /kind-cluster-info-dump
 
 # E2E tests
-test/e2e/**/test_logs
+**/test_logs
+**/test-results.xml
+**/vsphere-plugin.zip
 e2e-tests
 kubectl
-**/test-results.xml
+packer-plugin-vsphere-src/

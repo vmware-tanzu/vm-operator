@@ -208,10 +208,17 @@ func (d *wcpDcliClient) CreateNamespacePermissions(principal Principal, namespac
 		principal.Type,
 	)
 
-	// We don't really care about the STDOUT of this command.
-	_, err := d.dcliClient.RunDCLICommand(cmd)
+	stdout, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		// Treat AlreadyExists as success — this can happen on FlakeAttempts retries
+		// when the previous attempt created the permission before failing at a later step.
+		if strings.Contains(string(stdout), "errors.AlreadyExists") {
+			return nil
+		}
+		return err
+	}
 
-	return err
+	return nil
 }
 
 func (d *wcpDcliClient) RemoveNamespacePermissions(principal Principal, namespace string) error {
@@ -1899,6 +1906,20 @@ func (d *wcpDcliClient) DeleteKeyProvider(provider string) error {
 
 	return nil
 }
+
+// BackupKeyProvider exports (backs up) a native key provider. vCenter requires
+// a backup before the provider can be used for encryption.
+func (d *wcpDcliClient) BackupKeyProvider(provider string) error {
+	cmd := fmt.Sprintf("%s kms providers export --provider %s", cryptoManager, provider)
+	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
+		return DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+	return nil
+}
+
 
 // AssignLicenseEntitlement assigns the given license entitlement to the cluster using the dcli cis command.
 func (d *wcpDcliClient) AssignLicenseEntitlement(signedEntitlement string) (string, error) {

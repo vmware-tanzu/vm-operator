@@ -120,6 +120,7 @@ Tests are organized using Ginkgo labels for easy filtering:
 - `smoke` - Quick validation tests
 - `core-functional` - Core feature tests
 - `extended-functional` - Advanced feature tests
+- `experimental` - Excluded from all CI targets; requires infrastructure unavailable in the standard `vds_standard_medium` testbed (e.g. encryption-capable storage)
 
 ## Configuration
 

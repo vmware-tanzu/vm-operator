@@ -25,8 +25,11 @@ const (
 	configChangeCmd    = "sed -i s/%s/%s/g /etc/ssh/sshd_config"
 	restartServiceCmd  = "systemctl restart sshd"
 
-	// Path to the example template files in the packer-plugin-vsphere repo.
-	pluginDirTemplateExamplePath = "examples/builder/vsphere-supervisor"
+	// templatesDirName is the directory (relative to REPO_ROOT) that contains
+	// the Packer HCL templates for the vsphere-supervisor builder.
+	// Templates are bundled in this repo under test/e2e/vmservice/vmserviceapp/templates/
+	// so no external plugin source checkout is needed at runtime.
+	templatesDirName = "test/e2e/vmservice/vmserviceapp/templates"
 )
 
 // PackerBuildCmdOpts contains the options to run a packer build command.
@@ -64,14 +67,16 @@ func RunPackerBuildCmd(ctx context.Context, opts PackerBuildCmdOpts) ([]byte, er
 	return cmd.Output()
 }
 
-// GetTemplatePathInPackerPluginDir returns the path to the given template file in PACKER_PLUGIN_DIR_PATH.
+// GetTemplatePathInPackerPluginDir returns the path to the given Packer HCL
+// template file. Templates are bundled in this repo under
+// test/e2e/vmservice/vmserviceapp/templates/ and located via REPO_ROOT.
 func GetTemplatePathInPackerPluginDir(templateName string) (string, error) {
-	pluginDirPath := os.Getenv("PACKER_PLUGIN_DIR_PATH")
-	if pluginDirPath == "" {
-		return "", errors.New("PACKER_PLUGIN_DIR_PATH is empty")
+	repoRoot := os.Getenv("REPO_ROOT")
+	if repoRoot == "" {
+		return "", errors.New("REPO_ROOT is empty")
 	}
 
-	path := filepath.Join(pluginDirPath, pluginDirTemplateExamplePath, templateName)
+	path := filepath.Join(repoRoot, templatesDirName, templateName)
 	if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: path is built from known template dir
 		return path, nil
 	} else if os.IsNotExist(err) {

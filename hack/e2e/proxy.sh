@@ -3,7 +3,6 @@
 set -o errexit
 set -o nounset
 set -o pipefail
-set -x
 
 # This script helps you to find out the external-gateway-vm's IP given the
 # vCenter IP. It also installs/uninstalls an httpd proxy on the target vm exposed
@@ -14,21 +13,41 @@ set -x
 
 SCRIPT_DIR="$(dirname "${BASH_SOURCE}")"
 GOVC_INSECURE="${GOVC_INSECURE:-1}"
-GOVC_USERNAME="${GOVC_USERNAME:-administrator@vsphere.local}"
-GOVC_PASSWORD="${GOVC_PASSWORD:-vmware}"
+# GOVC_USERNAME and GOVC_PASSWORD are intentionally NOT defaulted here.
+# They must be passed in by the caller (setup-e2e-testbed.sh exports them
+# from the testbed JSON before invoking this script). Defaulting to 'vmware'
+# would silently override the real testbed credentials and cause govc to fail
+# authentication, making find_gateway_vm_path return empty.
+GOVC_USERNAME="${GOVC_USERNAME:-}"
+GOVC_PASSWORD="${GOVC_PASSWORD:-}"
 GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
-GATEWAY_VM_PASSWORD=${GATEWAY_VM_PASSWORD:-'vmware'}
+# GATEWAY_VM_PASSWORD must be set by the caller (e.g. setup-e2e-testbed.sh
+# passes VC_ROOT_PASSWORD). No default — an empty password fails fast with a
+# clear SSH auth error rather than silently using a wrong credential.
+GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
+
+# Common SSH/SCP options used for all connections to the gateway VM.
+# PubkeyAuthentication=no prevents the SSH agent from offering keys before
+# the password, which causes "Too many authentication failures" when the
+# agent holds several keys and the server's MaxAuthTries is low.
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password"
 
 
 find_gateway_vm_path() {
 	# This below code is a hack primarily to compensate for the discrepancies that exist in the various testbed deployment
 	# methods
-	vmnames=('external-gateway' 'external-vm-gateway')
+	if [[ -z "${GOVC_USERNAME}" || -z "${GOVC_PASSWORD}" ]]; then
+		echo "find_gateway_vm_path: GOVC_USERNAME or GOVC_PASSWORD not set; cannot authenticate to vCenter" >&2
+		return 1
+	fi
+	# VDS testbeds name the gateway VM "external-gateway-vds"; NSX uses
+	# "external-vm-gateway". Use a suffix wildcard to match all variants.
+	vmnames=('external-gateway*' 'external-vm-gateway*')
 	for vmname in "${vmnames[@]}"; do
-		vmpath=$(GOVC_URL=$vc GOVC_INSECURE=$GOVC_INSECURE GOVC_USERNAME=$GOVC_USERNAME GOVC_PASSWORD=$GOVC_PASSWORD govc find / -type m -name ${vmname})
+		vmpath=$(GOVC_URL=$vc GOVC_INSECURE=$GOVC_INSECURE GOVC_USERNAME=$GOVC_USERNAME GOVC_PASSWORD=$GOVC_PASSWORD govc find / -type m -name "${vmname}" | head -n1)
 		if [[ "${vmpath}" != "" ]]; then
-		echo ${vmpath}
-		break
+			echo "${vmpath}"
+			break
 		fi
 	done
 }
@@ -52,37 +71,69 @@ find_gateway_ip() {
 	done
 }
 
-# installs httpd proxy on the specified remote Linux machine with predefined configuration file
+# Installs squid proxy on the specified remote Linux machine.
+# Uses a remote flock so that when multiple e2e runner containers start in
+# parallel against the same testbed only one runner reconfigures squid; the
+# others acquire the lock, see squid already listening, and exit cleanly.
+# All runners must still call wait_for_proxy() afterwards to block until port
+# 3128 is reachable from the runner container before proceeding.
 install() {
 	user=$1
 	ip=$2
 	password=$3
-	sshpass -p "$password" scp -o StrictHostKeyChecking=no ${SCRIPT_DIR}/install-squid.sh $user@$ip:/root/install-squid.sh
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip /root/install-squid.sh install
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip /root/install-squid.sh stop
-	# Reason for the pkill is that on ubuntu squid systemctl restart is not reliable to refresh the process.
-	# Without this the process originally started by the default package install continues and cause failure to process the updated squid config
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip pkill -e squid* || true # ignore not found
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip netstat -tunlp | grep 3128 || true  # ignore not found
 
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip 'cat > /etc/squid/squid.conf' < ${SCRIPT_DIR}/squid.conf
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip 'cat /etc/squid/squid.conf'
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip /root/install-squid.sh start
-	# Wait for squid to start listening on port 3128 (timeout after 60s)
-	echo "Waiting for squid to start listening on port 3128..."
-	for i in $(seq 1 60); do
-		if sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip netstat -tunlp 2>/dev/null | grep -q 3128; then
-			echo "Squid is listening on port 3128 after ${i}s"
-			break
+	# Stage the installer script and squid config onto the gateway VM.
+	sshpass -p "$password" scp $SSH_OPTS \
+		"${SCRIPT_DIR}/install-squid.sh" "$user@$ip:/root/install-squid.sh"
+	sshpass -p "$password" scp $SSH_OPTS \
+		"${SCRIPT_DIR}/squid.conf" "$user@$ip:/root/squid.conf.new"
+
+	# Run the install under a remote exclusive lock (/var/lock/squid-install.lock).
+	# The first runner to acquire the lock does the real work; every subsequent
+	# runner sees squid already listening and exits without touching anything.
+	sshpass -p "$password" ssh -T $SSH_OPTS "$user@$ip" bash <<'REMOTE'
+		set -euo pipefail
+		(
+			flock -x 200
+			if netstat -tunlp 2>/dev/null | grep -q 3128; then
+				echo "Squid already listening on 3128 — skipping install (another runner set it up)"
+				exit 0
+			fi
+			/root/install-squid.sh install
+			# Stop any stale process before applying the new config.
+			# Failures (process not found) are intentionally ignored.
+			systemctl stop squid 2>/dev/null || true
+			pkill -e squid* 2>/dev/null || true
+			cp /root/squid.conf.new /etc/squid/squid.conf
+			cat /etc/squid/squid.conf
+			/root/install-squid.sh start
+			for i in $(seq 1 60); do
+				if netstat -tunlp 2>/dev/null | grep -q 3128; then
+					echo "Squid listening on 3128 after ${i}s"
+					exit 0
+				fi
+				[ "$i" -eq 60 ] && { echo "ERROR: timeout waiting for squid to start"; exit 1; }
+				sleep 1
+			done
+		) 200>/var/lock/squid-install.lock
+REMOTE
+}
+
+# Blocks until port 3128 on the gateway VM is reachable from THIS runner
+# container (max 120s). Called by every parallel runner after install() so
+# that runners which lost the flock race still wait for the winner to finish
+# starting squid before HTTP_PROXY is set and tests begin.
+wait_for_proxy() {
+	ip=$1
+	echo "Waiting for proxy at ${ip}:3128 to be reachable from runner..."
+	for i in $(seq 1 120); do
+		if nc -z -w2 "${ip}" 3128 2>/dev/null; then
+			echo "Proxy at ${ip}:3128 reachable after ${i}s"
+			return 0
 		fi
-		if [ $i -eq 60 ]; then
-			echo "Timeout waiting for squid to start on port 3128"
-			exit 1
-		fi
+		[ "$i" -eq 120 ] && { echo "ERROR: proxy at ${ip}:3128 not reachable after 120s"; return 1; }
 		sleep 1
 	done
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip ps -elf | grep squid
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip netstat -tunlp | grep 3128
 }
 
 # stops httpd on the specified remote Linux machine
@@ -90,12 +141,12 @@ uninstall() {
 	user=$1
 	ip=$2
 	password=$3
-	sshpass -p "$password" scp -o StrictHostKeyChecking=no ${SCRIPT_DIR}/install-squid.sh $user@$ip:/root/install-squid.sh
-	sshpass -p "$password" ssh -o StrictHostKeyChecking=no $user@$ip /root/install-squid.sh stop
+	sshpass -p "$password" scp $SSH_OPTS "${SCRIPT_DIR}/install-squid.sh" "$user@$ip:/root/install-squid.sh"
+	sshpass -p "$password" ssh -T $SSH_OPTS "$user@$ip" /root/install-squid.sh stop
 }
 
 usage() {
-	echo "./proxy.sh [install|uninstall|gateway] [vCenter IP] [Management Network CIDR]"
+	echo "./proxy.sh [install|uninstall|wait|gateway] [vCenter IP] [Management Network CIDR]"
 	exit 1
 }
 
@@ -123,6 +174,11 @@ To set up your proxy for gce2e, source the following-
 			export HTTP_PROXY=$gatewayIp:3128
 			export HTTPS_PROXY=$gatewayIp:3128
 EOF
+			;;
+		"wait")
+			gatewayIp=$(find_gateway_ip $2 $3)
+			hasGateway $gatewayIp
+			wait_for_proxy ${gatewayIp}
 			;;
 		"uninstall")
 			gatewayIp=$(find_gateway_ip $2 $3)

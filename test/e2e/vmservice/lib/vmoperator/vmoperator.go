@@ -128,7 +128,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		g.Expect(false).To(BeTrue(),
 			"VirtualMachineConditionImageCacheReady condition not yet present on VM %s/%s",
 			ns, vmName)
-	}, config.GetIntervals("default", "default/wait-virtual-machine-image-creation")...).
+	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 
@@ -574,6 +574,38 @@ func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framewor
 		fmt.Sprintf("failed to wait for vm image %s to have Status.Disks populated", imageName))
 }
 
+// WaitForOVFVirtualMachineImageReady waits for a namespace-scoped OVF VirtualMachineImage to
+// have both Status.Disks and Status.ProviderContentVersion populated.
+//
+// Use this (instead of WaitForVirtualMachineImageStatusDisks) when the caller is about to create
+// a VM from the image and FastDeploy is enabled: the validating webhook rejects VMs whose OVF
+// image has an empty ProviderContentVersion. For Inventory-CL images (type=VM) ProviderContentVersion
+// is never set by the controller, but the webhook already skips the check for non-OVF images,
+// so WaitForVirtualMachineImageStatusDisks is sufficient there.
+func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.Config,
+	client ctrlclient.Client, namespace, imageName string) {
+	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
+		config.GetVariable("VMOPNamespace"),
+		config.GetVariable("VMOPDeploymentName"),
+		config.GetVariable("VMOPManagerCommand"),
+		config.GetVariable("EnvFSSVMImageRegistry"))
+	if !vmImageRegistryFss {
+		namespace = ""
+	}
+
+	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
+
+	Eventually(func(g Gomega) {
+		vmi := &vmopv1a3.VirtualMachineImage{}
+		g.Expect(client.Get(ctx, objKey, vmi)).To(Succeed())
+		g.Expect(vmi.Status.Disks).ToNot(BeEmpty())
+		// ProviderContentVersion must be non-empty before the validating webhook
+		// will allow a VM referencing this OVF image to be created.
+		g.Expect(vmi.Status.ProviderContentVersion).ToNot(BeEmpty())
+	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).Should(Succeed(),
+		fmt.Sprintf("failed to wait for OVF vm image %s to have Status.Disks and Status.ProviderContentVersion populated", imageName))
+}
+
 // Utility function to get a ClusterVirtualMachineImage k8s object's name by its display name.
 func WaitForClusterVirtualMachineImageName(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, imageDisplayName string) (string, error) {
@@ -825,6 +857,9 @@ func VerifyVirtualMachineWebConsoleRequestStatus(ctx context.Context, config *co
 
 func DeleteVirtualMachinePublishRequest(ctx context.Context, client ctrlclient.Client, ns, vmPubName string) {
 	vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, client, ns, vmPubName)
+	if apierrors.IsNotFound(err) {
+		return
+	}
 	Expect(err).ToNot(HaveOccurred())
 	Expect(client.Delete(ctx, vmPub)).To(Succeed())
 }

@@ -35,9 +35,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
+	
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
+	vmserviceutils "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -197,6 +199,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(vmservice.EnsureVMClassPresent(wcpClient, vmClassName)).To(Succeed())
 	Expect(vmservice.EnsureNamespaceHasAccess(wcpClient, vmClassName, wcpNamespaceName)).To(Succeed())
 
+	By("Ensure encryption key providers are configured for encryption tests")
+	vmserviceutils.EnsureEncryptionKeyProviders(ctx, svClusterProxy)
+
 	if os.Getenv("RUN_CANONICAL_TEST") == runCanonicalTestEnvValue {
 		// Deploy an Ubuntu VM for verifying Canonical image
 		By("Ensure the Canonical Ubuntu image is available in the WCP namespace")
@@ -219,6 +224,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		photonVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, photonImageDisplayName)
 		Expect(err).ToNot(HaveOccurred(), "failed to get the VMI name in namespace %q", wcpNamespaceName)
 
+		By("Waiting for Photon image content to be fully downloaded")
+		vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, photonVMIName)
+
 		By("Deploying a Photon VM under the common WCP namespace to make it available for all test specs")
 
 		linuxVMName = fmt.Sprintf("common-photon-vm-%s", capiutil.RandomString(4))
@@ -236,6 +244,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			windowsImageDisplayName := config.InfraConfig.ManagementClusterConfig.Resources.WindowsImageDisplayName
 			windowsVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsImageDisplayName)
 			Expect(err).ToNot(HaveOccurred(), "failed to get the VMI name in namespace %q", wcpNamespaceName)
+
+			By("Waiting for Windows image content to be fully downloaded")
+			vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsVMIName)
 
 			By("Deploying a Windows VM with the minimal Sysprep config")
 			// Keep Windows VM name under 15 chars so hostName inherited from vmName can adhere to

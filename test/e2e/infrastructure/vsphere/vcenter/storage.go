@@ -6,8 +6,10 @@ package vcenter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
 	"github.com/vmware/govmomi/pbm/types"
@@ -310,4 +312,64 @@ func clusterConfiguredWithVsand(ctx context.Context, cluster *object.ClusterComp
 	}
 
 	return false, nil
+}
+
+// NativeKeyProviderManager is implemented by anything that can create and
+// delete a native key provider by name (e.g. the WCP dcli client).
+type NativeKeyProviderManager interface {
+	CreateKeyProvider(provider string) error
+	DeleteKeyProvider(provider string) error
+	// BackupKeyProvider exports (backs up) the native key provider. vCenter
+	// requires a backup before the provider can be used for encryption.
+	BackupKeyProvider(provider string) error
+}
+
+// EnsureNativeKeyProvider ensures a native (vSphere-native) key provider with
+// the given providerID exists. It first checks for the provider via the vSphere
+// KMIP API (a read-only SOAP call), and if absent, creates it using the
+// supplied NativeKeyProviderManager. After creation it also backs up the
+// provider and enables encryption on all hosts, both of which are required by
+// vCenter before any VM can be encrypted with the provider. It returns a
+// cleanup function that deletes the provider if (and only if) this call created
+// it.
+func EnsureNativeKeyProvider(ctx context.Context, client *vim25.Client, mgr NativeKeyProviderManager, providerID string) (func(), error) {
+	m := crypto.NewManagerKmip(client)
+	existing, err := m.ListKmipServers(ctx, nil)
+	if err != nil {
+		return func() {}, err
+	}
+
+	alreadyExists := false
+	for _, c := range existing {
+		if c.ClusterId.Id == providerID {
+			alreadyExists = true
+			break
+		}
+	}
+
+	if !alreadyExists {
+		if err := mgr.CreateKeyProvider(providerID); err != nil {
+			return func() {}, err
+		}
+	}
+
+	// vCenter requires the native key provider to be backed up before it can
+	// be used for encryption. This is idempotent — backing up an already-backed
+	// up provider is a no-op.
+	if err := mgr.BackupKeyProvider(providerID); err != nil {
+		if !alreadyExists {
+			_ = mgr.DeleteKeyProvider(providerID)
+		}
+		return func() {}, fmt.Errorf("failed to backup key provider %q: %w", providerID, err)
+	}
+
+	if alreadyExists {
+		// Pre-existing provider — nothing to clean up.
+		return func() {}, nil
+	}
+
+	cleanup := func() {
+		_ = mgr.DeleteKeyProvider(providerID)
+	}
+	return cleanup, nil
 }

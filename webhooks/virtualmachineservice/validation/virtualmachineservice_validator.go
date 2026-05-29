@@ -26,6 +26,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
@@ -204,6 +205,21 @@ func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, vmService *vm
 					),
 				)
 			}
+		}
+	}
+
+	if !pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+		if len(vmService.Spec.IPFamilies) > 0 {
+			allErrs = append(allErrs, field.Forbidden(
+				specPath.Child("ipFamilies"),
+				"the WorkloadIPv6 feature is not enabled",
+			))
+		}
+		if vmService.Spec.IPFamilyPolicy != nil {
+			allErrs = append(allErrs, field.Forbidden(
+				specPath.Child("ipFamilyPolicy"),
+				"the WorkloadIPv6 feature is not enabled",
+			))
 		}
 	}
 

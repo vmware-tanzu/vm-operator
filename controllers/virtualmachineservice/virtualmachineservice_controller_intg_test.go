@@ -16,6 +16,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -385,6 +386,19 @@ func intgTestsReconcile() {
 			Context("RequireDualStack with empty ipFamilies", func() {
 				BeforeEach(func() {
 					vmServiceName = "test-vm-service-require-empty-ipf"
+					// RequireDualStack is a dual-stack field; the controller only propagates
+					// it to the Service when WorkloadIPv6 is enabled. Enable it here so
+					// that the envtest single-stack cluster rejects the Service, which is
+					// what this spec is asserting.
+					pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = true
+					})
+				})
+
+				AfterEach(func() {
+					pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = false
+					})
 				})
 
 				It("does not create a child Service", func() {

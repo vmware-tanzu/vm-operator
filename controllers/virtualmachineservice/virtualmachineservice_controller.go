@@ -412,22 +412,26 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 		service.Spec.LoadBalancerIP = vmService.Spec.LoadBalancerIP
 		service.Spec.LoadBalancerSourceRanges = vmService.Spec.LoadBalancerSourceRanges
 
-		// Set IPFamilies and IPFamilyPolicy for dual-stack support
-		// These fields only apply to ClusterIP and LoadBalancer types
-		// They are wiped when type is ExternalName
-		if vmService.Spec.Type != vmopv1.VirtualMachineServiceTypeExternalName {
-			// Only overwrite when the VirtualMachineService specifies ipFamilies so we do not clear
-			// values defaulted or stored by the apiserver when the CR omits them.
-			if len(vmService.Spec.IPFamilies) > 0 {
-				service.Spec.IPFamilies = vmService.Spec.IPFamilies
+		// IPFamilies and IPFamilyPolicy are dual-stack fields gated by the WorkloadIPv6 capability.
+		// When the capability is disabled, existing values on the Service are left untouched so that
+		// live dual-stack Services continue to function without unexpected changes.
+		if pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+			// These fields only apply to ClusterIP and LoadBalancer types;
+			// they are wiped when type is ExternalName.
+			if vmService.Spec.Type != vmopv1.VirtualMachineServiceTypeExternalName {
+				// Only overwrite when the VirtualMachineService specifies ipFamilies so we do not clear
+				// values defaulted or stored by the apiserver when the CR omits them.
+				if len(vmService.Spec.IPFamilies) > 0 {
+					service.Spec.IPFamilies = vmService.Spec.IPFamilies
+				}
+				if vmService.Spec.IPFamilyPolicy != nil {
+					service.Spec.IPFamilyPolicy = vmService.Spec.IPFamilyPolicy
+				}
+			} else {
+				// Clear IPFamilies and IPFamilyPolicy for ExternalName services
+				service.Spec.IPFamilies = nil
+				service.Spec.IPFamilyPolicy = nil
 			}
-			if vmService.Spec.IPFamilyPolicy != nil {
-				service.Spec.IPFamilyPolicy = vmService.Spec.IPFamilyPolicy
-			}
-		} else {
-			// Clear IPFamilies and IPFamilyPolicy for ExternalName services
-			service.Spec.IPFamilies = nil
-			service.Spec.IPFamilyPolicy = nil
 		}
 
 		if service.Spec.Type == corev1.ServiceTypeLoadBalancer {

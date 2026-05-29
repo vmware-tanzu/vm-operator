@@ -1050,6 +1050,10 @@ spec:
             - message: each ipFamilies entry must be IPv4 or IPv6
               rule: '!has(self.ipFamilies) || self.ipFamilies.all(f, f == ''IPv4''
                 || f == ''IPv6'')'
+            - message: the primary IP family may not be changed or removed once set
+              rule: self.type == 'ExternalName' || !has(oldSelf.ipFamilies) || size(oldSelf.ipFamilies)
+                == 0 || (has(self.ipFamilies) && size(self.ipFamilies) > 0 && self.ipFamilies[0]
+                == oldSelf.ipFamilies[0])
           status:
             description: |-
               VirtualMachineServiceStatus defines the observed state of

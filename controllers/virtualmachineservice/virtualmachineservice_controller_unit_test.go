@@ -195,7 +195,10 @@ func unitTestsReconcile() {
 			})
 
 			Context("IPFamilies and IPFamilyPolicy", func() {
-				It("Copies IPFamilies to Service spec", func() {
+				It("Copies IPFamilies to Service spec when WorkloadIPv6 is enabled", func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = true
+					})
 					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
 					err := reconciler.ReconcileNormal(vmServiceCtx)
 					Expect(err).NotTo(HaveOccurred())
@@ -204,7 +207,10 @@ func unitTestsReconcile() {
 					Expect(service.Spec.IPFamilies).To(ContainElements(corev1.IPv4Protocol, corev1.IPv6Protocol))
 				})
 
-				It("Copies IPFamilyPolicy to Service spec", func() {
+				It("Copies IPFamilyPolicy to Service spec when WorkloadIPv6 is enabled", func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = true
+					})
 					policy := corev1.IPFamilyPolicyPreferDualStack
 					vmService.Spec.IPFamilyPolicy = &policy
 					err := reconciler.ReconcileNormal(vmServiceCtx)
@@ -214,7 +220,33 @@ func unitTestsReconcile() {
 					Expect(*service.Spec.IPFamilyPolicy).To(Equal(corev1.IPFamilyPolicyPreferDualStack))
 				})
 
-				It("Clears IPFamilies and IPFamilyPolicy for ExternalName services", func() {
+				It("does not propagate IPFamilies to Service when WorkloadIPv6 is disabled", func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = false
+					})
+					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+					Expect(service.Spec.IPFamilies).To(BeEmpty())
+				})
+
+				It("does not propagate IPFamilyPolicy to Service when WorkloadIPv6 is disabled", func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = false
+					})
+					policy := corev1.IPFamilyPolicyPreferDualStack
+					vmService.Spec.IPFamilyPolicy = &policy
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+					Expect(service.Spec.IPFamilyPolicy).To(BeNil())
+				})
+
+				It("Clears IPFamilies and IPFamilyPolicy for ExternalName services when WorkloadIPv6 is enabled", func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = true
+					})
 					vmService.Spec.Type = vmopv1.VirtualMachineServiceTypeExternalName
 					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
 					policy := corev1.IPFamilyPolicySingleStack
@@ -463,6 +495,13 @@ func unitTestsReconcile() {
 			var labelSelector, vmLabels map[string]string
 			var vm1, vm2, vm3 *vmopv1.VirtualMachine
 
+			// All endpoint tests exercise dual-stack IPFamily propagation and filtering.
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.WorkloadIPv6 = true
+				})
+			})
+
 			BeforeEach(func() {
 				endpoints = &corev1.Endpoints{}
 				labelSelector = map[string]string{"my-app": "dummy-label"}
@@ -703,6 +742,12 @@ func unitTestsReconcile() {
 				var ipv4VM *vmopv1.VirtualMachine
 				var ipv6VM *vmopv1.VirtualMachine
 
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = true
+					})
+				})
+
 				BeforeEach(func() {
 					dualStackVM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
@@ -781,6 +826,12 @@ func unitTestsReconcile() {
 				var dualStackVM *vmopv1.VirtualMachine
 				var ipv4VM *vmopv1.VirtualMachine
 				var ipv6VM *vmopv1.VirtualMachine
+
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.WorkloadIPv6 = true
+					})
+				})
 
 				BeforeEach(func() {
 					dualStackVM = &vmopv1.VirtualMachine{
@@ -1123,6 +1174,12 @@ func unitTestsReconcile() {
 			var vm1 *vmopv1.VirtualMachine
 			var labelSelector, vmLabels map[string]string
 
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.WorkloadIPv6 = true
+				})
+			})
+
 			BeforeEach(func() {
 				labelSelector = map[string]string{"my-app": "dummy-label"}
 				vmLabels = map[string]string{"my-app": "dummy-label", "other": "label"}
@@ -1185,6 +1242,57 @@ func unitTestsReconcile() {
 					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 					Expect(endpoints.Subsets).ToNot(BeEmpty())
 				})
+			})
+		})
+
+		Context("Endpoint generation with WorkloadIPv6 disabled", func() {
+			var endpoints *corev1.Endpoints
+			var vm1 *vmopv1.VirtualMachine
+
+			BeforeEach(func() {
+				// WorkloadIPv6 is false by default; do not set it here to verify
+				// that endpoint generation still works when IPv6 capability is off.
+				endpoints = &corev1.Endpoints{}
+				vmService.Spec.Selector = map[string]string{"app": "test"}
+				vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{vmServicePort1}
+				// VMS has no ipFamilies/ipFamilyPolicy (webhook prevents setting them when
+				// WorkloadIPv6 is disabled).
+
+				vm1 = &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-vm",
+						Namespace: vmService.Namespace,
+						Labels:    map[string]string{"app": "test"},
+					},
+					Status: vmopv1.VirtualMachineStatus{
+						Network: &vmopv1.VirtualMachineNetworkStatus{
+							PrimaryIP4: "10.0.0.1",
+						},
+					},
+				}
+				initObjects = append(initObjects, vm1)
+			})
+
+			JustBeforeEach(func() {
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+				select {
+				case <-ctx.Events:
+				default:
+				}
+			})
+
+			It("generates IPv4 endpoints after apiserver defaults IPFamilies to [IPv4]", func() {
+				// Simulate what the k8s apiserver does for any new Service (default to [IPv4]).
+				// In production the apiserver writes IPFamilies=[IPv4] on create; the next
+				// reconcile generates endpoints using those families.
+				simulateAPIServerDefaultedIPFamilies(ctx, objKey)
+
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+
+				Expect(endpoints.Subsets).To(HaveLen(1))
+				Expect(endpoints.Subsets[0].Addresses).To(HaveLen(1))
+				Expect(endpoints.Subsets[0].Addresses[0].IP).To(Equal("10.0.0.1"))
 			})
 		})
 	})

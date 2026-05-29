@@ -1309,6 +1309,41 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		})
 
 		Context("IPAMModes", func() {
+			// IPFamilyPolicy is a WorkloadIPv6 capability feature; enable it for all
+			// sub-contexts that verify the field is properly propagated to NetOP.
+			BeforeEach(func() {
+				testConfig.WithWorkloadIPv6 = true
+			})
+
+			Context("WorkloadIPv6 capability disabled", func() {
+				BeforeEach(func() {
+					testConfig.WithWorkloadIPv6 = false
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:      interfaceName,
+							Network:   &common.PartialObjectRef{Name: networkName},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+						},
+					}
+				})
+
+				It("does not set IPFamilyPolicy on NetworkInterface CR", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+					By("verify NetworkInterface CR does not have IPFamilyPolicy set", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.IPFamilyPolicy).To(Equal(netopv1alpha1.NetworkInterfaceIPFamilyPolicy("")))
+					})
+				})
+			})
+
 			Context("IPv4Only policy", func() {
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
@@ -2564,6 +2599,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			DescribeTableSubtree("interface spec with IPAMModes",
 				func(modes []corev1.IPFamily, expected netopv1alpha1.NetworkInterfaceIPFamilyPolicy) {
 					BeforeEach(func() {
+						testConfig.WithWorkloadIPv6 = true
 						vm.Spec.Network.Interfaces[0].IPAMModes = modes
 					})
 

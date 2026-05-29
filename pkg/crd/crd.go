@@ -342,6 +342,41 @@ func Install( //nolint:gocyclo
 
 							return err
 						}
+						if err := removeValidationRules(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specCELPath("network", "interfaces", "[]"),
+							"vmxnet3",
+						); err != nil {
+
+							return err
+						}
+					}
+
+					if !features.WorkloadIPv6 {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("network", "interfaces", "[]", "ipamModes"),
+						); err != nil {
+
+							return err
+						}
+						if err := removeValidationRules(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specCELPath("network", "interfaces", "[]"),
+							"ipamModes",
+						); err != nil {
+
+							return err
+						}
 					}
 
 					return nil
@@ -350,7 +385,49 @@ func Install( //nolint:gocyclo
 				return err
 			}
 
-		// case "VirtualMachineService":
+		case "VirtualMachineService":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				true,
+				c,
+				k,
+				func(
+					kind string,
+					obj *unstructured.Unstructured,
+					shouldRemoveFields bool) error {
+
+					if !features.WorkloadIPv6 {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("ipFamilies"),
+							specFieldPath("ipFamilyPolicy"),
+						); err != nil {
+
+							return err
+						}
+						if err := removeValidationRules(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specCELPath(),
+							"ipFamilies",
+							"ipFamilyPolicy",
+						); err != nil {
+
+							return err
+						}
+					}
+
+					return nil
+				}); err != nil {
+
+				return err
+			}
 		// case "VirtualMachineSetResourcePolicy":
 		case "VirtualMachineSnapshot":
 			if err := updateOrDeleteUnstructured(
@@ -604,4 +681,95 @@ func statusFieldPath(fieldNames ...string) []string {
 		result = append(result, "properties", name)
 	}
 	return result
+}
+
+// specCELPath returns the path to the x-kubernetes-validations array for a
+// spec schema object, relative to a CRD version entry. With no arguments it
+// returns the spec-level validations path. With arguments it returns the
+// validations path for the schema at that field path (use "[]" for array
+// items, e.g. "network", "interfaces", "[]").
+func specCELPath(fieldNames ...string) []string {
+	if len(fieldNames) == 0 {
+		return []string{"schema", "openAPIV3Schema", "properties", "spec", "x-kubernetes-validations"}
+	}
+	return append(specFieldPath(fieldNames...), "x-kubernetes-validations")
+}
+
+// removeValidationRules removes x-kubernetes-validations entries from the
+// schema object at validationsPath that reference (by "self.<fieldName>"
+// substring match) any of the given fieldNames. This prevents the
+// kube-apiserver from rejecting a CRD because a CEL rule references a field
+// that was removed from the schema.
+func removeValidationRules(
+	ctx context.Context,
+	k string,
+	c *unstructured.Unstructured,
+	shouldRemove bool,
+	validationsPath []string,
+	fieldNames ...string) error {
+
+	if !shouldRemove {
+		return nil
+	}
+
+	versions, _, err := unstructured.NestedSlice(c.Object, "spec", "versions")
+	if err != nil {
+		return fmt.Errorf("failed to get crd %s versions: %w", k, err)
+	}
+
+	changed := false
+	for i := range versions {
+		v := versions[i].(map[string]any)
+
+		existing, _, _ := unstructured.NestedSlice(v, validationsPath...)
+		if len(existing) == 0 {
+			continue
+		}
+
+		versionChanged := false
+		var filtered []interface{}
+		for _, entry := range existing {
+			ruleMap, ok := entry.(map[string]interface{})
+			if !ok {
+				filtered = append(filtered, entry)
+				continue
+			}
+			ruleText, _ := ruleMap["rule"].(string)
+
+			references := false
+			for _, fieldName := range fieldNames {
+				// Use "self.<fieldName>" to avoid substring false-positives
+				// (e.g. matching "type" inside "type(self)").
+				if strings.Contains(ruleText, "self."+fieldName) {
+					references = true
+					break
+				}
+			}
+			if references {
+				versionChanged = true
+				changed = true
+			} else {
+				filtered = append(filtered, entry)
+			}
+		}
+
+		if versionChanged {
+			if len(filtered) == 0 {
+				unstructured.RemoveNestedField(v, validationsPath...)
+			} else if err := unstructured.SetNestedSlice(v, filtered, validationsPath...); err != nil {
+				return fmt.Errorf("failed to update CEL rules for crd %q: %w", k, err)
+			}
+		}
+	}
+
+	if changed {
+		pkglog.FromContextOrDefault(ctx).Info(
+			"Removing CRD CEL rules referencing removed fields",
+			"kind", k,
+			"fields", strings.Join(fieldNames, ","))
+		if err := unstructured.SetNestedSlice(c.Object, versions, "spec", "versions"); err != nil {
+			return fmt.Errorf("failed to update versions for crd %q: %w", k, err)
+		}
+	}
+	return nil
 }

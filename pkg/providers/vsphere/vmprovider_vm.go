@@ -1150,12 +1150,12 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return err
 	}
 
-	isVMInCorrectRP, err := isVMInValidRP(vmCtx, expectedRootRPMoID, vcClient, resourcePolicies)
-	isVMInCorrectFolder, err := isVMInValidFolder(vmCtx, expectedFolder, vcClient, resourcePolicies)
+	isVMInValidRP, err := validateVMResourcePool(vmCtx, expectedRootRPMoID, vcClient, resourcePolicies)
+	isVMInValidFolder, err := validateVMFolder(vmCtx, expectedFolder, vcClient, resourcePolicies)
 	currentCond := pkgcnd.Get(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
 
 	// Handle Mismatch
-	if !isVMInCorrectRP || !isVMInCorrectFolder {
+	if !isVMInValidRP || !isVMInValidFolder {
 		if currentCond == nil || currentCond.Status != metav1.ConditionFalse {
 			pkgcnd.MarkFalse(
 				vmCtx.VM,
@@ -1177,7 +1177,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	return nil
 }
 
-func isVMInValidRP(
+func validateVMResourcePool(
 	vmCtx pkgctx.VirtualMachineContext,
 	expectedRootRPMoID string,
 	vcClient *vcclient.Client,
@@ -1187,7 +1187,7 @@ func isVMInValidRP(
 		return true, nil
 	}
 
-	moPool, err := vcenter.GetResourcePoolParent(
+	moPool, err := vcenter.GetParentResourcePool(
 		vmCtx,
 		vcClient.VimClient(),
 		vmCtx.MoVM.ResourcePool.Value,
@@ -1206,7 +1206,7 @@ func isVMInValidRP(
 	return false, nil
 }
 
-func isVMInValidFolder(
+func validateVMFolder(
 	vmCtx pkgctx.VirtualMachineContext,
 	expectedFolder string,
 	vcClient *vcclient.Client,
@@ -1215,7 +1215,7 @@ func isVMInValidFolder(
 	if vmCtx.MoVM.Parent.Value == expectedFolder {
 		return true, nil
 	}
-	moFolder, err := vcenter.GetFolderParent(
+	moFolder, err := vcenter.GetParentFolder(
 		vmCtx,
 		vcClient.VimClient(),
 		vmCtx.MoVM.Parent.Value,

@@ -164,7 +164,7 @@ func findChildRP(
 	return childRP, nil
 }
 
-func GetResourcePoolParent(
+func GetParentResourcePool(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	currentRPMoID string) (mo.ResourcePool, error) {
@@ -181,7 +181,7 @@ func GetResourcePoolParent(
 	return moPool, nil
 }
 
-func GetFolderParent(
+func GetParentFolder(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	currentFolderMoID string) (mo.Folder, error) {

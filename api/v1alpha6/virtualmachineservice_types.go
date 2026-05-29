@@ -82,7 +82,7 @@ type LoadBalancerIngress struct {
 // +kubebuilder:validation:XValidation:rule="self.type != 'ExternalName' || ((!has(self.ipFamilies) || size(self.ipFamilies) == 0) && !has(self.ipFamilyPolicy))",message="ipFamilies and ipFamilyPolicy may not be set when type is ExternalName"
 // +kubebuilder:validation:XValidation:rule="!has(self.ipFamilies) || size(self.ipFamilies) < 2 || self.ipFamilies[0] != self.ipFamilies[1]",message="ipFamilies must not contain duplicate entries"
 // +kubebuilder:validation:XValidation:rule="!has(self.ipFamilies) || self.ipFamilies.all(f, f == 'IPv4' || f == 'IPv6')",message="each ipFamilies entry must be IPv4 or IPv6"
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.ipFamilies) || (has(self.ipFamilies) && self.ipFamilies[0] == oldSelf.ipFamilies[0])",message="the primary IP family may not be changed or removed once set"
+// +kubebuilder:validation:XValidation:rule="self.type == 'ExternalName' || !has(oldSelf.ipFamilies) || size(oldSelf.ipFamilies) == 0 || (has(self.ipFamilies) && size(self.ipFamilies) > 0 && self.ipFamilies[0] == oldSelf.ipFamilies[0])",message="the primary IP family may not be changed or removed once set"
 
 // VirtualMachineServiceSpec defines the desired state of VirtualMachineService.
 type VirtualMachineServiceSpec struct {

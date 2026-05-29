@@ -28,6 +28,13 @@ RUN go mod download
 # Pre-compile test binaries for faster execution  
 RUN cd test/e2e/vmservice && go test -c -o /vm-operator/e2e-tests .
 
+# Compile packer-plugin-vsphere from source.
+# The source is staged into the build context before docker build runs .
+# For local/public builds the default is the public GitHub repo, cloned by
+# the vm-operator Makefile's e2e-image-build target if not already present.
+COPY packer-plugin-vsphere-src/ /packer-plugin-vsphere-src/
+RUN go build -C /packer-plugin-vsphere-src -o /usr/local/bin/packer-plugin-vsphere main.go
+
 # Runtime stage - minimal image with compiled tests
 FROM ${BASE_IMAGE} AS runtime
 
@@ -64,12 +71,21 @@ RUN tdnf update -y && \
         && \
     rm -rf /var/cache/tdnf
 
-# Install govc - required by hack/kms.sh and hack/proxy.sh for gateway VM discovery and KMS setup.
-# The default URL points to the public GitHub release. This is configurable to support overrides
-# by the build system.
+# Install pre-built tool binaries. Public GitHub/HashiCorp URLs are the defaults;
+# override each ARG in the Cayman Makefile to use internal Artifactory mirrors.
+
+# govc — required by hack/kms.sh and hack/proxy.sh for gateway VM discovery.
 ARG GOVC_DOWNLOAD_URL=https://github.com/vmware/govmomi/releases/download/v0.53.0/govc_Linux_x86_64.tar.gz
 RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
     chmod +x /usr/local/bin/govc
+
+# packer — required by vmserviceapp E2E tests.
+ARG PACKER_DOWNLOAD_URL=https://releases.hashicorp.com/packer/1.9.1/packer_1.9.1_linux_amd64.zip
+RUN curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip && \
+    unzip /tmp/packer.zip -d /tmp/packer && \
+    mv /tmp/packer/packer /usr/local/bin/packer && \
+    chmod 0755 /usr/local/bin/packer && \
+    rm -rf /tmp/packer.zip /tmp/packer
 
 # PIP_INDEX_URL overrides the pip package index used when install-pykmip.sh runs
 # on the testbed gateway VM. Defaults to empty (public PyPI). Build systems that
@@ -109,10 +125,18 @@ WORKDIR /vm-operator
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/e2e/ ./hack/e2e/
 RUN chmod +x /vm-operator/hack/e2e/*.sh
 
+COPY --from=builder /usr/local/bin/packer-plugin-vsphere /usr/local/bin/packer-plugin-vsphere
+
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/config/ ./test/e2e/vmservice/config/
 COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/fixtures/ ./test/e2e/fixtures/
+COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/vmserviceapp/templates/ ./test/e2e/vmservice/vmserviceapp/templates/
+
+# REPO_ROOT tells vmserviceapp tests where to find bundled Packer HCL templates.
+# PACKER_PLUGIN_DIR_PATH tells Packer where to find the vsphere plugin binary.
+ENV REPO_ROOT=/vm-operator
+ENV PACKER_PLUGIN_DIR_PATH=/usr/local/bin
 
 # Switch to non-root user for runtime
 USER vmoperator

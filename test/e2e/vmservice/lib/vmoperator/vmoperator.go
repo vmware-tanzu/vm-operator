@@ -857,6 +857,9 @@ func VerifyVirtualMachineWebConsoleRequestStatus(ctx context.Context, config *co
 
 func DeleteVirtualMachinePublishRequest(ctx context.Context, client ctrlclient.Client, ns, vmPubName string) {
 	vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, client, ns, vmPubName)
+	if apierrors.IsNotFound(err) {
+		return
+	}
 	Expect(err).ToNot(HaveOccurred())
 	Expect(client.Delete(ctx, vmPub)).To(Succeed())
 }

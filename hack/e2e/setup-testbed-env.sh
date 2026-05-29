@@ -192,7 +192,7 @@ export SSH_USERNAME="${VC_ROOT_USERNAME}"
 # govc uses the vSphere API credentials (administrator@vsphere.local), not the SSH root creds.
 export GOVC_USERNAME="${VC_VIM_USERNAME}"
 export GOVC_PASSWORD="${VC_VIM_PASSWORD}"
-export VCSA_PASSWORD="${SSH_PASSWORD}"
+export VCSA_PASSWORD="${VC_VIM_PASSWORD}"
 
 # Detect networking type from testbed data.
 # Check the UTS deliverable_blob first (has explicit .networking), then the

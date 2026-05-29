@@ -77,3 +77,4 @@ infrastructure-components.yaml
 **/vsphere-plugin.zip
 e2e-tests
 kubectl
+packer-plugin-vsphere-src/

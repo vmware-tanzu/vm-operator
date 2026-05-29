@@ -113,6 +113,9 @@ E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
 
 E2E_KUBECTL_VERSION ?= v1.36.0
 
+PACKER_PLUGIN_VSPHERE_REPO ?= https://github.com/vmware/packer-plugin-vsphere.git
+PACKER_PLUGIN_VSPHERE_REF  ?= v2.1.1
+
 # Code coverage files
 COVERAGE_FILE ?= cover.out
 
@@ -958,6 +961,12 @@ e2e-image-build: ## Build E2E test container image
 	@if [ ! -s kubectl ]; then \
 		echo "Downloading kubectl $(E2E_KUBECTL_VERSION)..."; \
 		curl -fsSL "https://dl.k8s.io/release/$(E2E_KUBECTL_VERSION)/bin/linux/amd64/kubectl" -o kubectl && chmod +x kubectl; \
+	fi
+	@# Stage packer-plugin-vsphere source into the build context so the Dockerfile
+	@# can compile it without needing git credentials inside the Docker build.
+	@if [ ! -d packer-plugin-vsphere-src ]; then \
+		echo "Cloning packer-plugin-vsphere $(PACKER_PLUGIN_VSPHERE_REF)..."; \
+		git clone --depth=1 --branch $(PACKER_PLUGIN_VSPHERE_REF) $(PACKER_PLUGIN_VSPHERE_REPO) packer-plugin-vsphere-src; \
 	fi
 	$(CRI_BIN) build \
 	  -f Dockerfile.e2e \

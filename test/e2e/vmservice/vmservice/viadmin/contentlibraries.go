@@ -123,12 +123,30 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 		})
 
 		It("Should associate then disassociate content library", func() {
+			// Re-snapshot CLs at test time to avoid using stale IDs from CLs
+			// created and deleted by parallel test runners since BeforeEach ran.
+			currentCLs, err := wcpClient.ListContentLibraries()
+			Expect(err).NotTo(HaveOccurred(), "failed to re-list content libraries")
+			// Keep only CLs that were present in both the original snapshot and
+			// now, so we never try to associate a CL that no longer exists.
+			var stableCLs []string
+			for _, id := range cls {
+				for _, cur := range currentCLs {
+					if id == cur {
+						stableCLs = append(stableCLs, id)
+						break
+					}
+				}
+			}
+			Expect(len(stableCLs)).Should(BeNumerically(">=", 2),
+				"expected at least 2 stable content libraries but found %d", len(stableCLs))
+
 			// Associate content libraries.
-			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, cls)
+			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, stableCLs)
 
 			// Disassociate content libraries and verify removed CLs are not associated to the namespace.
-			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, cls[0:1])
-			vmservice.CheckCLDisassociation(wcpClient, nsContext.GetNamespace().Name, cls[1:])
+			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, stableCLs[0:1])
+			vmservice.CheckCLDisassociation(wcpClient, nsContext.GetNamespace().Name, stableCLs[1:])
 			/* TODO (dramdass): Figure out how/if dcli supports update to empty list or use set instead of update
 			cls = []string{""}
 			VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, cls)

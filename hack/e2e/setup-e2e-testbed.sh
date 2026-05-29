@@ -48,11 +48,14 @@ if [ -n "${WCP_IP:-}" ]; then
     _extract_dir="/tmp/vsphere-plugin-$$"
     if curl --max-time 60 --retry 3 --retry-delay 5 -LOk "${_plugin_url}" 2>/dev/null; then
         mkdir -p "${_extract_dir}"
-        unzip -o vsphere-plugin.zip -d "${_extract_dir}" >/dev/null 2>&1
-        # Just export PATH to wherever the binaries landed — no moving, no sudo.
-        export PATH="${_extract_dir}/bin:${PATH}"
+        if unzip -o vsphere-plugin.zip -d "${_extract_dir}" >/dev/null 2>&1; then
+            # Just export PATH to wherever the binaries landed — no moving, no sudo.
+            export PATH="${_extract_dir}/bin:${PATH}"
+            echo "✓ kubectl-vsphere available at ${_extract_dir}/bin"
+        else
+            echo "⚠ Failed to unzip kubectl-vsphere plugin"
+        fi
         rm -f vsphere-plugin.zip
-        echo "✓ kubectl-vsphere available at ${_extract_dir}/bin"
     else
         echo "⚠ Failed to download kubectl-vsphere plugin from ${WCP_IP} (${_plugin_os})"
     fi

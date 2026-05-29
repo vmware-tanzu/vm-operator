@@ -18,7 +18,13 @@
 
 set -u
 
-SCRIPT_SOURCED=true
+# Detect whether the script is being sourced or executed directly.
+# When sourced, script_exit uses 'return' so the caller's shell stays alive.
+if [[ "${BASH_SOURCE[0]:-}" == "${0:-}" ]]; then
+    SCRIPT_SOURCED=false
+else
+    SCRIPT_SOURCED=true
+fi
 # Function to handle exits gracefully (return if sourced, exit if executed)
 script_exit() {
     local exit_code=${1:-1}
@@ -178,7 +184,8 @@ if [ -z "${VC_ROOT_PASSWORD}" ] || [ "${VC_ROOT_PASSWORD}" = "null" ]; then
 fi
 
 if [ -z "${VC_ROOT_USERNAME}" ] || [ "${VC_ROOT_USERNAME}" = "null" ]; then
-    export VC_ROOT_USERNAME="administrator@vsphere.local"
+    # VC_ROOT_PASSWORD is the SSH/root credential; default the username to root.
+    export VC_ROOT_USERNAME="root"
 fi
 
 echo "Configuration loaded successfully:"

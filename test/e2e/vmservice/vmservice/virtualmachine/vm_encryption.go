@@ -104,6 +104,12 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		var nativeKPErr error
 		cleanupNativeKeyProvider, nativeKPErr = vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
 		Expect(nativeKPErr).NotTo(HaveOccurred(), "failed to ensure native key provider %q", nativeKeyProviderID)
+		DeferCleanup(func() {
+			if cleanupNativeKeyProvider != nil {
+				cleanupNativeKeyProvider()
+				cleanupNativeKeyProvider = nil
+			}
+		})
 
 		byokFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSBYOK"))
 
@@ -162,11 +168,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}
 
 		_ = cryptoManager.SetDefaultKmsClusterId(ctx, defaultKeyProviderID, nil)
-
-		if cleanupNativeKeyProvider != nil {
-			cleanupNativeKeyProvider()
-			cleanupNativeKeyProvider = nil
-		}
 
 		vcenter.LogoutVimClient(vCenterClient)
 	})

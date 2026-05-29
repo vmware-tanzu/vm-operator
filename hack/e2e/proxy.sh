@@ -44,10 +44,10 @@ find_gateway_vm_path() {
 	# "external-vm-gateway". Use a suffix wildcard to match all variants.
 	vmnames=('external-gateway*' 'external-vm-gateway*')
 	for vmname in "${vmnames[@]}"; do
-		vmpath=$(GOVC_URL=$vc GOVC_INSECURE=$GOVC_INSECURE GOVC_USERNAME=$GOVC_USERNAME GOVC_PASSWORD=$GOVC_PASSWORD govc find / -type m -name ${vmname})
+		vmpath=$(GOVC_URL=$vc GOVC_INSECURE=$GOVC_INSECURE GOVC_USERNAME=$GOVC_USERNAME GOVC_PASSWORD=$GOVC_PASSWORD govc find / -type m -name "${vmname}" | head -n1)
 		if [[ "${vmpath}" != "" ]]; then
-		echo ${vmpath}
-		break
+			echo "${vmpath}"
+			break
 		fi
 	done
 }

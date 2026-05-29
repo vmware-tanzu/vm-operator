@@ -208,10 +208,17 @@ func (d *wcpDcliClient) CreateNamespacePermissions(principal Principal, namespac
 		principal.Type,
 	)
 
-	// We don't really care about the STDOUT of this command.
-	_, err := d.dcliClient.RunDCLICommand(cmd)
+	stdout, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		// Treat AlreadyExists as success — this can happen on FlakeAttempts retries
+		// when the previous attempt created the permission before failing at a later step.
+		if strings.Contains(string(stdout), "errors.AlreadyExists") {
+			return nil
+		}
+		return err
+	}
 
-	return err
+	return nil
 }
 
 func (d *wcpDcliClient) RemoveNamespacePermissions(principal Principal, namespace string) error {

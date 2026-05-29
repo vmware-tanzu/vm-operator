@@ -964,8 +964,11 @@ e2e-image-build: ## Build E2E test container image
 	fi
 	@# Stage packer-plugin-vsphere source into the build context so the Dockerfile
 	@# can compile it without needing git credentials inside the Docker build.
-	@if [ ! -d packer-plugin-vsphere-src ]; then \
+	@# Re-clone if the directory is absent or the checked-out ref doesn't match.
+	@if [ ! -d packer-plugin-vsphere-src ] || \
+	    ! git -C packer-plugin-vsphere-src describe --tags --exact-match 2>/dev/null | grep -qF "$(PACKER_PLUGIN_VSPHERE_REF)"; then \
 		echo "Cloning packer-plugin-vsphere $(PACKER_PLUGIN_VSPHERE_REF)..."; \
+		rm -rf packer-plugin-vsphere-src; \
 		git clone --depth=1 --branch $(PACKER_PLUGIN_VSPHERE_REF) $(PACKER_PLUGIN_VSPHERE_REPO) packer-plugin-vsphere-src; \
 	fi
 	$(CRI_BIN) build \

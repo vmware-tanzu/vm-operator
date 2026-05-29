@@ -39,8 +39,11 @@ func EnsureEncryptionKeyProviders(ctx context.Context, clusterProxy wcpframework
 
 	framework.Byf("Checking KMS key provider %q", nativeKeyProviderID)
 	if keyProviderExists(ctx, cryptoManager, nativeKeyProviderID) {
-		status, _ := cryptoManager.GetClusterStatus(ctx, nativeKeyProviderID)
-		framework.Byf("Native key provider %q status: %s", nativeKeyProviderID, status.OverallStatus)
+		if status, err := cryptoManager.GetClusterStatus(ctx, nativeKeyProviderID); err == nil {
+			framework.Byf("Native key provider %q status: %s", nativeKeyProviderID, status.OverallStatus)
+		} else {
+			framework.Byf("WARNING: failed to get status for native key provider %q: %v", nativeKeyProviderID, err)
+		}
 	} else {
 		framework.Byf("WARNING: native key provider %q not found — "+
 			"encryption tests will attempt to create it in their own BeforeEach", nativeKeyProviderID)
@@ -48,8 +51,11 @@ func EnsureEncryptionKeyProviders(ctx context.Context, clusterProxy wcpframework
 
 	framework.Byf("Checking KMS key provider %q", standardKeyProviderID)
 	if keyProviderExists(ctx, cryptoManager, standardKeyProviderID) {
-		status, _ := cryptoManager.GetClusterStatus(ctx, standardKeyProviderID)
-		framework.Byf("Standard key provider %q status: %s", standardKeyProviderID, status.OverallStatus)
+		if status, err := cryptoManager.GetClusterStatus(ctx, standardKeyProviderID); err == nil {
+			framework.Byf("Standard key provider %q status: %s", standardKeyProviderID, status.OverallStatus)
+		} else {
+			framework.Byf("WARNING: failed to get status for standard key provider %q: %v", standardKeyProviderID, err)
+		}
 	} else {
 		framework.Byf("Standard key provider %q not found — "+
 			"tests requiring it will be skipped (VDS testbed with gateway needed)", standardKeyProviderID)
@@ -96,6 +102,9 @@ func VerifyKeyProviderStatus(ctx context.Context, cryptoManager *crypto.ManagerK
 	Eventually(func(g Gomega) {
 		status, err := cryptoManager.GetClusterStatus(ctx, providerID)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get status for key provider %s", providerID)
+		if err != nil {
+			return
+		}
 
 		// Native providers start as "red" until a key is generated on first use.
 		expectedStatuses := []types.ManagedEntityStatus{types.ManagedEntityStatusGreen}

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script installs and configures a Native and Standard (PyKMIP) Key Provider for use by vCenter.
-# To run directly (default vds password below, nsx password is generated):
+# To run directly:
 # % export GOVC_URL="Administrator@vsphere.local:${vc_pass}@${vc_host}"
 # % GATEWAY_VM_PASSWORD=vmware ./hack/kms.sh install
 
@@ -29,9 +29,9 @@ find_gateway_ip() {
   # VDS:  vm == external-gateway-vds (or external-gateway)
   # NSX:  vm == external-vm-gateway
   # Use suffix wildcard to match all naming variants.
-  vm=$(govc find / -type m -name 'external-gateway*' 2>/dev/null || true)
+  vm=$(govc find / -type m -name 'external-gateway*' 2>/dev/null | head -n1 || true)
   if [ -z "$vm" ]; then
-    vm=$(govc find / -type m -name 'external-vm-gateway*' 2>/dev/null || true)
+    vm=$(govc find / -type m -name 'external-vm-gateway*' 2>/dev/null | head -n1 || true)
   fi
   if [ -z "$vm" ]; then
     return 0
@@ -59,13 +59,17 @@ install() {
               -keyout "$crt_dir"/pykmip-key.pem -out "$crt_dir"/pykmip-crt.pem
     fi
 
-    target="$1@$2"
-    password=$3
+    if [ -n "$2" ]; then
+      target="$1@$2"
+      password=$3
 
-    sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
-    sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
-      "PIP_INDEX_URL=${PIP_INDEX_URL:-} /bin/bash ./install-pykmip.sh" \
-      || echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
+      sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
+      sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
+        "PIP_INDEX_URL=${PIP_INDEX_URL:-} /bin/bash ./install-pykmip.sh" \
+        || echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
+    else
+      echo "⚠ No gateway IP available — skipping pykmip install for gce2e-standard"
+    fi
   fi
 
   # setup() configures vCenter key providers; kms_is_green checks inside

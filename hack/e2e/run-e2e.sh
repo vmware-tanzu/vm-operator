@@ -40,7 +40,7 @@ GINKGO_BIN="${GINKGO_BIN:-ginkgo}"
 PREBUILT_BIN="${E2E_PREBUILT_BINARY:-}"
 ROOT_DIR="${ROOT_DIR:-./}"
 ARTIFACT_FOLDER="${E2E_ARTIFACT_FOLDER:-test_logs}"
-REPORT_DIR="${E2E_ARTIFACT_FOLDER:-.}"
+REPORT_DIR="${ARTIFACT_FOLDER}"
 # Ginkgo suite-level timeout. Ginkgo shuts down gracefully when this elapses,
 # writing the JUnit report and running AfterSuite cleanup before exiting.
 # Keep this below the CI container wall-clock limit so the report is written

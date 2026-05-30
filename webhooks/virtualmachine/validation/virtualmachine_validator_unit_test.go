@@ -8330,7 +8330,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				skipBypassUpgradeCheck: true,
 				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`spec.advanced.preferHTEnabled: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.advanced.preferHtEnabled: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
 			},
 		),
@@ -8352,7 +8352,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				skipBypassUpgradeCheck: true,
 				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`spec.advanced.pNUMANodeAffinity: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.advanced.pnumaNodeAffinity: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
 			},
 		),
@@ -8444,7 +8444,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			},
 		),
 
-		Entry("disallow interfaces[i].vNUMANodeID change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow interfaces[i].vnumaNodeID change when TelcoVMServiceAPI and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false

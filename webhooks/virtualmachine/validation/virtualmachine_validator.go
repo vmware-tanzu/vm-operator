@@ -45,7 +45,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
-	vsphereconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
@@ -154,21 +153,6 @@ var (
 		"wakeonpcktrcv":               true,
 	}
 
-	// systemReservedExtraConfigKeys is the set of exact extraConfig keys reserved by the system.
-	systemReservedExtraConfigKeys = map[string]bool{
-		vsphereconst.ExtraConfigReservedKeyVMXRebootPowerCycle: true,
-		vsphereconst.ExtraConfigReservedProfileID:              true,
-		vsphereconst.ExtraConfigRunContainerKey:                true,
-		vsphereconst.ExtraConfigVMServiceNamespacedName:        true,
-		vsphereconst.GOSCPendingExtraConfigKey:                 true,
-		vsphereconst.GOSCIgnoreToolsCheckExtraConfigKey:        true,
-	}
-
-	// systemReservedExtraConfigPrefixes is the set of extraConfig key prefixes reserved by the system.
-	systemReservedExtraConfigPrefixes = []string{
-		vsphereconst.ExtraConfigReservedPrefixVMService,
-		vsphereconst.ExtraConfigGuestInfoPrefix,
-	}
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -2142,7 +2126,7 @@ func (v validator) validateAdvancedExtraConfig(
 				fmt.Sprintf(extraConfigUseSpecNetworkInterfacesFmt, kv.Key)))
 			continue
 		}
-		if isSystemReservedProperty(kv.Key) {
+		if vmopv1util.IsSystemReservedExtraConfigKey(kv.Key) {
 			allErrs = append(allErrs, field.Forbidden(keyPath,
 				fmt.Sprintf(extraConfigReservedForSystemFmt, kv.Key)))
 			continue
@@ -3595,22 +3579,6 @@ func isFirstClassVMAdvancedProperty(key string) bool {
 	return ok
 }
 
-// isSystemReservedProperty returns true if the key is reserved and controlled by the system.
-func isSystemReservedProperty(key string) bool {
-	// Check exact keys first (fastest lookup)
-	if systemReservedExtraConfigKeys[key] {
-		return true
-	}
-
-	// Check prefixes
-	for _, prefix := range systemReservedExtraConfigPrefixes {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-
-	return false
-}
 
 func isSystemReservedNetworkDeviceProperty(key string) bool {
 	return systemReservedNetworkDeviceProperties[key]

@@ -57,9 +57,14 @@ const (
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" //nolint:gosec
 	PCIPassthruMMIOSizeDefault        = "512"
 
+	// ExtraConfigManagedKeysKey is the ExtraConfig key that tracks which
+	// spec.advanced.extraConfig keys have been written by vm-operator, so they
+	// can be removed when the user deletes them from the spec.
+	ExtraConfigManagedKeysKey = "vmservice.extraconfig.managedKeys"
+
 	// ExtraConfig reserved prefixes — vm-operator controls these and users must not set them directly.
-	ExtraConfigReservedPrefixVMService          = "vmservice."
-	ExtraConfigReservedKeyVMXRebootPowerCycle   = "vmx.reboot.powerCycle"
+	ExtraConfigReservedPrefixVMService        = "vmservice."
+	ExtraConfigReservedKeyVMXRebootPowerCycle = "vmx.reboot.powerCycle"
 
 	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"

@@ -2360,6 +2360,213 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(result.IPConfigs).To(BeEmpty())
 				})
 			})
+
+			Context("IPAMModes", func() {
+				// InterfaceIPType is a WorkloadIPv6 feature; enable the gate for all
+				// sub-contexts that verify it is propagated to SubnetPort.
+				BeforeEach(func() {
+					testConfig.WithWorkloadIPv6 = true
+				})
+
+				simulateReadySubnetPort := func(ctx *builder.TestContextForVCSim, name, namespace string, ipType vpcv1alpha1.IPAddressType, dhcpDeactivated bool, ips []vpcv1alpha1.NetworkInterfaceIPAddress) {
+					subnetPort := &vpcv1alpha1.SubnetPort{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      name,
+							Namespace: namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+					// Verify InterfaceIPType was set on the Spec by vm-operator.
+					Expect(subnetPort.Spec.InterfaceIPType).To(Equal(ipType))
+					subnetPort.Status.Attachment.ID = interfaceID
+					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+					subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet = dhcpDeactivated
+					subnetPort.Status.NetworkInterfaceConfig.IPAddresses = ips
+					subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+						{Type: vpcv1alpha1.Ready, Status: corev1.ConditionTrue},
+					}
+					Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+				}
+
+				Context("WorkloadIPv6 disabled", func() {
+					BeforeEach(func() {
+						testConfig.WithWorkloadIPv6 = false
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:      interfaceName,
+								Network:   &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+							},
+						}
+					})
+
+					It("does not set InterfaceIPType on SubnetPort", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressType("")))
+					})
+				})
+
+				Context("IPv4 static allocation", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:      interfaceName,
+								Network:   &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+							},
+						}
+					})
+
+					It("sets InterfaceIPType=IPv4 and returns static IPv4 IP config", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						By("simulate successful NSX Operator reconcile with static IPv4 IP", func() {
+							simulateReadySubnetPort(ctx,
+								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
+								vpcv1alpha1.IPAddressTypeIPv4,
+								true,
+								[]vpcv1alpha1.NetworkInterfaceIPAddress{
+									{IPAddress: "192.168.1.10/24", Gateway: "192.168.1.1"},
+								})
+						})
+
+						results, err = network.CreateAndWaitForNetworkInterfaces(
+							vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, nil, networkSpec)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(results.Results).To(HaveLen(1))
+						result := results.Results[0]
+						Expect(result.DHCP4).To(BeFalse())
+						Expect(result.DHCP6).To(BeFalse())
+						Expect(result.IPConfigs).To(HaveLen(1))
+						Expect(result.IPConfigs[0].IsIPv4).To(BeTrue())
+					})
+				})
+
+				Context("IPv6 DHCP", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:      interfaceName,
+								Network:   &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+							},
+						}
+					})
+
+					It("sets InterfaceIPType=IPv6 and returns DHCP6 when DHCP is active", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						By("simulate NSX Operator reconcile: DHCP active, no static IPs", func() {
+							simulateReadySubnetPort(ctx,
+								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
+								vpcv1alpha1.IPAddressTypeIPv6,
+								false,
+								nil)
+						})
+
+						results, err = network.CreateAndWaitForNetworkInterfaces(
+							vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, nil, networkSpec)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(results.Results).To(HaveLen(1))
+						result := results.Results[0]
+						Expect(result.DHCP4).To(BeFalse())
+						Expect(result.DHCP6).To(BeTrue())
+						Expect(result.IPConfigs).To(BeEmpty())
+					})
+				})
+
+				Context("DualStack DHCP", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{
+									corev1.IPv4Protocol,
+									corev1.IPv6Protocol,
+								},
+							},
+						}
+					})
+
+					It("sets InterfaceIPType=IPv4IPv6 and returns DHCP4+DHCP6 when DHCP is active", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						By("simulate NSX Operator reconcile: DHCP active, no static IPs", func() {
+							simulateReadySubnetPort(ctx,
+								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
+								vpcv1alpha1.IPAddressTypeIPv4IPv6,
+								false,
+								nil)
+						})
+
+						results, err = network.CreateAndWaitForNetworkInterfaces(
+							vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, nil, networkSpec)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(results.Results).To(HaveLen(1))
+						result := results.Results[0]
+						Expect(result.DHCP4).To(BeTrue())
+						Expect(result.DHCP6).To(BeTrue())
+						Expect(result.IPConfigs).To(BeEmpty())
+					})
+				})
+
+				Context("DualStack mixed mode (static IPv4 + DHCPv6)", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{
+									corev1.IPv4Protocol,
+									corev1.IPv6Protocol,
+								},
+							},
+						}
+					})
+
+					It("sets InterfaceIPType=IPv4IPv6, returns static v4 config and DHCP6", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						By("simulate NSX Operator reconcile: static IPv4 allocated, DHCP active for subnet", func() {
+							simulateReadySubnetPort(ctx,
+								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
+								vpcv1alpha1.IPAddressTypeIPv4IPv6,
+								false,
+								[]vpcv1alpha1.NetworkInterfaceIPAddress{
+									{IPAddress: "192.168.1.10/24", Gateway: "192.168.1.1"},
+								})
+						})
+
+						results, err = network.CreateAndWaitForNetworkInterfaces(
+							vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, nil, networkSpec)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(results.Results).To(HaveLen(1))
+						result := results.Results[0]
+						Expect(result.DHCP4).To(BeFalse())
+						Expect(result.DHCP6).To(BeTrue())
+						Expect(result.IPConfigs).To(HaveLen(1))
+						Expect(result.IPConfigs[0].IsIPv4).To(BeTrue())
+					})
+				})
+			})
 		})
 	})
 })
@@ -3000,6 +3207,46 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Entry("Multiple addresses (only first is used)", []string{"192.168.1.100/24", "192.168.1.101/24"}, macAddress0, "192.168.1.100"),
 				Entry("Only MAC address", []string{}, macAddress0, ""),
 				Entry("Invalid IP address skipped", []string{"256.256.256.256/24", "192.168.1.100/24"}, macAddress0, "192.168.1.100"),
+			)
+
+			Context("WorkloadIPv6 disabled", func() {
+				BeforeEach(func() {
+					testConfig.WithWorkloadIPv6 = false
+					vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv4Protocol}
+				})
+
+				It("does not set InterfaceIPType on SubnetPort", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+					Expect(devices).To(BeEmpty())
+
+					subnetPort := &vpcv1alpha1.SubnetPort{}
+					Expect(ctx.Client.Get(ctx, interfaceKey0, subnetPort)).To(Succeed())
+					Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressType("")))
+				})
+			})
+
+			DescribeTableSubtree("interface spec with IPAMModes",
+				func(modes []corev1.IPFamily, expected vpcv1alpha1.IPAddressType) {
+					BeforeEach(func() {
+						testConfig.WithWorkloadIPv6 = true
+						vm.Spec.Network.Interfaces[0].IPAMModes = modes
+					})
+
+					It("SubnetPort InterfaceIPType is set", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+						Expect(devices).To(BeEmpty())
+
+						subnetPort := &vpcv1alpha1.SubnetPort{}
+						Expect(ctx.Client.Get(ctx, interfaceKey0, subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(expected))
+					})
+				},
+				Entry("None", []corev1.IPFamily{}, vpcv1alpha1.IPAddressType("")),
+				Entry("IPv4", []corev1.IPFamily{corev1.IPv4Protocol}, vpcv1alpha1.IPAddressTypeIPv4),
+				Entry("IPv6", []corev1.IPFamily{corev1.IPv6Protocol}, vpcv1alpha1.IPAddressTypeIPv6),
+				Entry("Dual", []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, vpcv1alpha1.IPAddressTypeIPv4IPv6),
 			)
 
 			Context("Default to SubnetSet", func() {

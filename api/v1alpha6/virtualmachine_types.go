@@ -119,6 +119,22 @@ const (
 	// VirtualMachineInValidLocation indicates that the VM is in the expected location in the vCenter inventory.
 	// This condition is set when a VM is detected to be in the incorrect folder or resource pool based on its namespace.
 	VirtualMachineInValidLocation = "VirtualMachineInValidLocation"
+
+	// VirtualMachineConditionComputeConfigSynced indicates whether the VM's
+	// compute configuration (spec.resources, spec.cpuAdvanced, spec.memoryAdvanced)
+	// is applied to vSphere.
+	//
+	// This condition is marked as False/Pending if the VM is powered on and the
+	// changes require a power-off to take effect. The changes will be applied the
+	// next time the VM is in a powered off state.
+	//
+	// It is important to note that the effectiveness of configuration changes
+	// depends on the specific property being set:
+	//
+	//  - Some properties can be modified while the VM is running and take effect immediately.
+	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
+	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
+	VirtualMachineConditionComputeConfigSynced = "VirtualMachineComputeConfigSynced"
 )
 
 const (

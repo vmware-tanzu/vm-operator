@@ -383,6 +383,37 @@ type VirtualMachineHardwareSpec struct {
 	SCSIControllers []SCSIControllerSpec `json:"scsiControllers,omitempty"`
 }
 
+// VirtualMachineVNUMATopologyStatus describes the observed virtual NUMA topology
+// of the VM as reported by vSphere. vNUMA topology is a VM-level concept that
+// spans both CPU and memory; it is surfaced here as part of the CPU status because
+// NUMA nodes are primarily defined by their CPU core assignments.
+type VirtualMachineVNUMATopologyStatus struct {
+	// +optional
+
+	// CoresPerNumaNode describes the observed number of cores per vNUMA node.
+	// When zero, vNUMA node sizing is determined automatically by vSphere.
+	// Maps to VirtualMachineVirtualNumaInfo.coresPerNumaNode.
+	CoresPerNumaNode *int32 `json:"coresPerNumaNode,omitempty"`
+
+	// +optional
+
+	// AutoCoresPerNumaNode describes whether the number of cores per vNUMA
+	// node is determined automatically by vSphere.
+	// Maps to VirtualMachineVirtualNumaInfo.autoCoresPerNumaNode.
+	AutoCoresPerNumaNode *bool `json:"autoCoresPerNumaNode,omitempty"`
+
+	// +optional
+
+	// ExposeVNUMAOnCPUHotAdd describes whether the vNUMA topology is exposed
+	// to the guest when CPU hot-add is enabled.
+	// Maps to VirtualMachineVirtualNumaInfo.vnumaOnCpuHotaddExposed.
+	ExposeVNUMAOnCPUHotAdd *bool `json:"exposeVnumaOnCpuHotadd,omitempty"`
+}
+
+// VirtualMachineCPUAllocationStatus describes the observed CPU configuration of the VM.
+// Despite "Allocation" in the type name (a historical reference to the resource reservation
+// and limit fields), this struct covers the full observed CPU configuration as surfaced
+// in the VM's status under status.hardware.cpu.
 type VirtualMachineCPUAllocationStatus struct {
 	// +optional
 
@@ -393,8 +424,71 @@ type VirtualMachineCPUAllocationStatus struct {
 
 	// Reservation describes the observed CPU reservation in MHz.
 	Reservation int64 `json:"reservation,omitempty"`
+
+	// +optional
+
+	// Limit describes the observed CPU limit in MHz. A nil value indicates
+	// no limit is set (unlimited). Maps to CpuAllocation.Limit.
+	Limit *int64 `json:"limit,omitempty"`
+
+	// +optional
+
+	// CoresPerSocket describes the observed number of cores per virtual socket.
+	// Maps to VirtualHardware.numCoresPerSocket.
+	CoresPerSocket *int32 `json:"coresPerSocket,omitempty"`
+
+	// +optional
+
+	// SimultaneousThreads describes the observed number of SMT (simultaneous
+	// multithreading) threads per core. A value of 2 indicates hyperthreading
+	// is enabled. Maps to VirtualHardware.simultaneousThreads.
+	SimultaneousThreads *int32 `json:"simultaneousThreads,omitempty"`
+
+	// +optional
+
+	// LatencySensitivity describes the observed CPU scheduler latency
+	// sensitivity level as reported by vSphere (e.g. "low", "normal", "high").
+	// An empty string indicates the field is not available or not set.
+	// Maps to VirtualMachineConfigInfo.latencySensitivity.level.
+	LatencySensitivity string `json:"latencySensitivity,omitempty"`
+
+	// +optional
+
+	// HotAddEnabled describes whether CPU hot-add is observed as enabled.
+	// Maps to VirtualMachineConfigInfo.cpuHotAddEnabled.
+	HotAddEnabled *bool `json:"hotAddEnabled,omitempty"`
+
+	// +optional
+
+	// IOMMUEnabled describes whether Intel VT-d (IOMMU) is observed as enabled.
+	// Maps to VirtualMachineFlagInfo.vvtdEnabled.
+	IOMMUEnabled *bool `json:"iommuEnabled,omitempty"`
+
+	// +optional
+
+	// NestedHardwareVirtualizationEnabled describes whether nested hardware
+	// virtualization is observed as enabled.
+	// Maps to VirtualMachineConfigInfo.nestedHVEnabled.
+	NestedHardwareVirtualizationEnabled *bool `json:"nestedHardwareVirtualizationEnabled,omitempty"`
+
+	// +optional
+
+	// PerformanceCountersEnabled describes whether virtual CPU performance
+	// counters are observed as enabled.
+	// Maps to VirtualMachineConfigInfo.vPMCEnabled.
+	PerformanceCountersEnabled *bool `json:"performanceCountersEnabled,omitempty"`
+
+	// +optional
+
+	// VNUMA describes the observed vNUMA topology of the VM.
+	// Maps to VirtualMachineConfigInfo.numaInfo.
+	VNUMA *VirtualMachineVNUMATopologyStatus `json:"vnuma,omitempty"`
 }
 
+// VirtualMachineMemoryAllocationStatus describes the observed memory configuration of the VM.
+// Despite "Allocation" in the type name (a historical reference to the resource reservation
+// and limit fields), this struct covers the full observed memory configuration as surfaced
+// in the VM's status under status.hardware.memory.
 type VirtualMachineMemoryAllocationStatus struct {
 	// +optional
 
@@ -405,6 +499,25 @@ type VirtualMachineMemoryAllocationStatus struct {
 
 	// Reservation describes the observed memory reservation.
 	Reservation *resource.Quantity `json:"reservation,omitempty"`
+
+	// +optional
+
+	// Limit describes the observed memory limit. A nil value indicates no
+	// limit is set (unlimited). Maps to MemoryAllocation.Limit.
+	Limit *resource.Quantity `json:"limit,omitempty"`
+
+	// +optional
+
+	// ReservationLockedToMax describes whether the memory reservation is
+	// observed as locked to the VM's memory size.
+	// Maps to VirtualMachineConfigInfo.memoryReservationLockedToMax.
+	ReservationLockedToMax *bool `json:"reservationLockedToMax,omitempty"`
+
+	// +optional
+
+	// HotAddEnabled describes whether memory hot-add is observed as enabled.
+	// Maps to VirtualMachineConfigInfo.memoryHotAddEnabled.
+	HotAddEnabled *bool `json:"hotAddEnabled,omitempty"`
 }
 
 type VirtualMachineVGPUType string

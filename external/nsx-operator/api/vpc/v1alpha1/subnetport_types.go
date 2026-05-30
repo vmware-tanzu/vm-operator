@@ -7,6 +7,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type StaticIPAllocationType string
+
+const (
+	StaticIPAllocationTypeIPv4     StaticIPAllocationType = "IPv4"
+	StaticIPAllocationTypeIPv6     StaticIPAllocationType = "IPv6"
+	StaticIPAllocationTypeIPv4IPv6 StaticIPAllocationType = "IPv4IPv6"
+	StaticIPAllocationTypeNone     StaticIPAllocationType = "None"
+)
+
 // +kubebuilder:validation:XValidation:rule="!has(self.subnetSet) || !has(self.subnet)",message="Only one of subnet or subnetSet can be specified or both set to empty in which case default SubnetSet for VM will be used"
 // SubnetPortSpec defines the desired state of SubnetPort.
 type SubnetPortSpec struct {
@@ -16,6 +25,18 @@ type SubnetPortSpec struct {
 	SubnetSet string `json:"subnetSet,omitempty"`
 	// AddressBindings defines static address bindings used for the SubnetPort.
 	AddressBindings []PortAddressBinding `json:"addressBindings,omitempty"`
+	// InterfaceIPType decides the address families of static IP allocation, when
+	// DHCP or SLAAC is not activated on the Subnet. It will be ignored when
+	// StaticIPAllocationType is set.
+	// +kubebuilder:validation:Enum=IPv4;IPv6;IPv4IPv6
+	InterfaceIPType IPAddressType `json:"interfaceIPType,omitempty"`
+	// StaticIPAllocationType explicitly requests static IP allocation of the
+	// specified the address families. In a mixed-mode Subnet (where both DHCP
+	// and static allocation are enabled), use this to define which families
+	// should be allocated from the static IP pools. This field is only valid
+	// when static allocation is enabled on the Subnet.
+	// +kubebuilder:validation:Enum=IPv4;IPv6;IPv4IPv6;None
+	StaticIPAllocationType StaticIPAllocationType `json:"staticIPAllocationType,omitempty"`
 }
 
 // PortAddressBinding defines static addresses for the Port.

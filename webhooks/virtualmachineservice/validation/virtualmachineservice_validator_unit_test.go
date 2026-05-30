@@ -8,12 +8,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -245,6 +248,62 @@ func unitTestsValidateCreate() {
 			},
 		),
 	)
+
+	When("WorkloadIPv6 capability is disabled", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.WorkloadIPv6 = false
+			})
+		})
+
+		It("should deny ipFamilies when set", func() {
+			ctx.vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmService)
+			Expect(err).ToNot(HaveOccurred())
+			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeFalse())
+			Expect(string(response.Result.Reason)).To(ContainSubstring("spec.ipFamilies: Forbidden: the WorkloadIPv6 feature is not enabled"))
+		})
+
+		It("should deny ipFamilyPolicy when set", func() {
+			policy := corev1.IPFamilyPolicyPreferDualStack
+			ctx.vmService.Spec.IPFamilyPolicy = &policy
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmService)
+			Expect(err).ToNot(HaveOccurred())
+			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeFalse())
+			Expect(string(response.Result.Reason)).To(ContainSubstring("spec.ipFamilyPolicy: Forbidden: the WorkloadIPv6 feature is not enabled"))
+		})
+
+		It("should allow when ipFamilies and ipFamilyPolicy are unset", func() {
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmService)
+			Expect(err).ToNot(HaveOccurred())
+			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeTrue())
+		})
+	})
+
+	When("WorkloadIPv6 capability is enabled", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.WorkloadIPv6 = true
+			})
+		})
+
+		It("should allow ipFamilies and ipFamilyPolicy when set", func() {
+			policy := corev1.IPFamilyPolicyPreferDualStack
+			ctx.vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+			ctx.vmService.Spec.IPFamilyPolicy = ptr.To(policy)
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmService)
+			Expect(err).ToNot(HaveOccurred())
+			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeTrue())
+		})
+	})
 }
 
 func unitTestsValidateUpdate() {

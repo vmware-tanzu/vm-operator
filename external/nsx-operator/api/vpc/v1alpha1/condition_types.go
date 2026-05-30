@@ -14,6 +14,7 @@ const (
 	AutoSnatEnabled            ConditionType = "AutoSnatEnabled"
 	ExternalIPBlocksConfigured ConditionType = "ExternalIPBlocksConfigured"
 	DeleteFailure              ConditionType = "DeletionFailed"
+	UpdateFailure              ConditionType = "UpdateFailed"
 )
 
 // Condition defines condition of custom resource.

@@ -2913,6 +2913,62 @@ func unitTestsValidateCreate() {
 				},
 			),
 
+			Entry("disallow spec.network.interfaces[i].ipamModes when WorkloadIPv6 capability is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadIPv6 = false
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:      "eth0",
+									IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].ipamModes: Forbidden: the WorkloadIPv6 feature is not enabled`,
+					),
+				},
+			),
+
+			Entry("allow spec.network.interfaces[i].ipamModes when WorkloadIPv6 capability is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadIPv6 = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:      "eth0",
+									IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow empty ipamModes when WorkloadIPv6 capability is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadIPv6 = false
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0"},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
 			Entry("allow valid VLANs parameter",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

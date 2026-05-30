@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -756,7 +757,12 @@ func createNetOPNetworkInterface(
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
 
-		netIf.Spec.IPFamilyPolicy = IPAMModesToNetOPInterfaceIPFamilyPolicy(interfaceSpec.IPAMModes)
+		// IPFamilyPolicy is a new field introduced for IPv6 support.
+		// Only set it when the WorkloadIPv6 capability is active so that this
+		// field is not sent to NetOP when IPv6 is disabled.
+		if pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+			netIf.Spec.IPFamilyPolicy = IPAMModesToNetOPInterfaceIPFamilyPolicy(interfaceSpec.IPAMModes)
+		}
 
 		return nil
 	})
@@ -838,6 +844,33 @@ func IPAMModesToNetOPInterfaceIPFamilyPolicy(ipamModes []corev1.IPFamily) netopv
 		return netopv1alpha1.NetworkInterfaceIPFamilyPolicyIPv4Only
 	default:
 		// No modes so use NetOP default.
+		return ""
+	}
+}
+
+// IPAMModesToVPCInterfaceIPType maps spec IPAMModes (Kubernetes IP families) to
+// the VPC SubnetPort InterfaceIPType. When both families are present it returns
+// IPv4IPv6. When no modes are specified it returns "" (VPC default applies).
+func IPAMModesToVPCInterfaceIPType(ipamModes []corev1.IPFamily) vpcv1alpha1.IPAddressType {
+	hasV4, hasV6 := false, false
+	for _, f := range ipamModes {
+		switch f {
+		case corev1.IPv4Protocol:
+			hasV4 = true
+		case corev1.IPv6Protocol:
+			hasV6 = true
+		}
+	}
+
+	switch {
+	case hasV4 && hasV6:
+		return vpcv1alpha1.IPAddressTypeIPv4IPv6
+	case hasV6:
+		return vpcv1alpha1.IPAddressTypeIPv6
+	case hasV4:
+		return vpcv1alpha1.IPAddressTypeIPv4
+	default:
+		// No modes so use VPC default.
 		return ""
 	}
 }
@@ -1200,6 +1233,13 @@ func createVPCNetworkInterface(
 			}
 		}
 
+		// InterfaceIPType is a new field introduced for IPv6 support.
+		// Only set it when the WorkloadIPv6 capability is active so that this
+		// field is not sent to NSX operator when IPv6 is disabled.
+		if pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+			subnetPort.Spec.InterfaceIPType = IPAMModesToVPCInterfaceIPType(interfaceSpec.IPAMModes)
+		}
+
 		return nil
 	})
 
@@ -1275,13 +1315,36 @@ func vpcSubnetPortToResult(
 		result.IPConfigs = append(result.IPConfigs, ipConfig)
 	}
 
-	// TBD: What behavior do we want for an NoIPAM subnet but user specified addresses?
-	if len(result.IPConfigs) == 0 {
-		if !subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet {
-			result.DHCP4 = true
-		} else {
-			result.NoIPAM = true
+	// DHCPDeactivatedOnSubnet only indicates whether the Subnet has DHCP
+	// enabled, not which families the guest should use. Enable DHCP for each
+	// family in InterfaceIPType that has no static IP already allocated.
+	if !subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet {
+		hasStaticV4 := slices.ContainsFunc(result.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return c.IsIPv4 })
+		hasStaticV6 := slices.ContainsFunc(result.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return !c.IsIPv4 })
+		switch subnetPort.Spec.InterfaceIPType {
+		case vpcv1alpha1.IPAddressTypeIPv6:
+			if !hasStaticV6 {
+				result.DHCP6 = true
+			}
+		case vpcv1alpha1.IPAddressTypeIPv4IPv6:
+			if !hasStaticV4 {
+				result.DHCP4 = true
+			}
+			if !hasStaticV6 {
+				result.DHCP6 = true
+			}
+		default:
+			// TODO: when InterfaceIPType is unset, we cannot distinguish IPv6-only
+			// or dual-stack DHCP subnets. DHCP4 is set as a safe fallback to
+			// preserve existing behavior. A proper fix requires NSX-operator to
+			// expose per-family DHCP status.
+			if !hasStaticV4 {
+				result.DHCP4 = true
+			}
 		}
+	} else if len(result.IPConfigs) == 0 {
+		// TBD: What behavior do we want for a NoIPAM subnet when user specified addresses?
+		result.NoIPAM = true
 	}
 
 	return result, nil

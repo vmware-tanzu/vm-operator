@@ -116,6 +116,10 @@ const (
 	// defined in the Supervisor capabilities CRD for enabling different network
 	// providers in different namespaces.
 	CapabilityKeyPerNamespaceNetworkProvider = "supports_per_namespace_network_provider"
+
+	// CapabilityKeyWorkloadIPv6 is the name of the capability key defined in
+	// the Supervisor capabilities CRD for IPv6 support for VM service workloads.
+	CapabilityKeyWorkloadIPv6 = "supports_workload_ipv6"
 )
 
 var (
@@ -286,6 +290,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.TelcoVMServiceAPI = capStatus.Activated
 		case CapabilityKeyPerNamespaceNetworkProvider:
 			fs.PerNamespaceNetworkProvider = capStatus.Activated
+		case CapabilityKeyWorkloadIPv6:
+			fs.WorkloadIPv6 = capStatus.Activated
 		}
 
 	}

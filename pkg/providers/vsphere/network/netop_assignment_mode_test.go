@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -98,6 +99,22 @@ var _ = Describe("NetOP assignment mode helpers",
 			Entry("dual stack order v6 v4",
 				[]corev1.IPFamily{corev1.IPv6Protocol, corev1.IPv4Protocol},
 				netopv1alpha1.NetworkInterfaceIPFamilyPolicyDualStack),
+		)
+
+		DescribeTable("IPAMModesToVPCInterfaceIPType",
+			func(modes []corev1.IPFamily, want vpcv1alpha1.IPAddressType) {
+				Expect(network.IPAMModesToVPCInterfaceIPType(modes)).To(Equal(want))
+			},
+			Entry("nil slice returns empty string", []corev1.IPFamily(nil), vpcv1alpha1.IPAddressType("")),
+			Entry("empty slice returns empty string", []corev1.IPFamily{}, vpcv1alpha1.IPAddressType("")),
+			Entry("IPv4 only", []corev1.IPFamily{corev1.IPv4Protocol}, vpcv1alpha1.IPAddressTypeIPv4),
+			Entry("IPv6 only", []corev1.IPFamily{corev1.IPv6Protocol}, vpcv1alpha1.IPAddressTypeIPv6),
+			Entry("dual stack order v4 v6",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol},
+				vpcv1alpha1.IPAddressTypeIPv4IPv6),
+			Entry("dual stack order v6 v4",
+				[]corev1.IPFamily{corev1.IPv6Protocol, corev1.IPv4Protocol},
+				vpcv1alpha1.IPAddressTypeIPv4IPv6),
 		)
 
 	})

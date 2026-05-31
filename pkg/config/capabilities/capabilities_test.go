@@ -180,34 +180,38 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVlanSubinterface: {
 							Activated: true,
 						},
-						capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
-							Activated: true,
-						},
-					}
-					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
-				})
-				When("the capabilities are not different", func() {
-					BeforeEach(func() {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.BringYourOwnEncryptionKey = true
-							config.Features.TKGMultipleCL = true
-							config.Features.WorkloadDomainIsolation = true
-							config.Features.MutableNetworks = true
-							config.Features.VMGroups = true
-							config.Features.ImmutableClasses = true
-							config.Features.VMSnapshots = true
-							config.Features.InventoryContentLibrary = true
-							config.Features.VMPlacementPolicies = true
-							config.Features.VMWaitForFirstConsumerPVC = true
-							config.Features.VMSharedDisks = true
-							config.Features.GuestCustomizationVCDParity = true
-							config.Features.VSpherePolicies = true
-							config.Features.VMAffinityDuringExecution = true
-							config.Features.StoragePolicyMutability = true
-							config.Features.VMVlanSubinterface = true
-							config.Features.PerNamespaceNetworkProvider = true
-						})
+					capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
+						Activated: true,
+					},
+					capabilities.CapabilityKeyVMOwnedVolumes: {
+						Activated: true,
+					},
+				}
+				Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
+			})
+			When("the capabilities are not different", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.BringYourOwnEncryptionKey = true
+						config.Features.TKGMultipleCL = true
+						config.Features.WorkloadDomainIsolation = true
+						config.Features.MutableNetworks = true
+						config.Features.VMGroups = true
+						config.Features.ImmutableClasses = true
+						config.Features.VMSnapshots = true
+						config.Features.InventoryContentLibrary = true
+						config.Features.VMPlacementPolicies = true
+						config.Features.VMWaitForFirstConsumerPVC = true
+						config.Features.VMSharedDisks = true
+						config.Features.GuestCustomizationVCDParity = true
+						config.Features.VSpherePolicies = true
+						config.Features.VMAffinityDuringExecution = true
+						config.Features.StoragePolicyMutability = true
+						config.Features.VMVlanSubinterface = true
+						config.Features.PerNamespaceNetworkProvider = true
+						config.Features.VMOwnedVolumes = true
 					})
+				})
 					Specify("capabilities did not change", func() {
 						Expect(changed).To(BeFalse())
 					})
@@ -259,13 +263,16 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
 					})
-					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
-					})
+				Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
 				})
+				Specify(capabilities.CapabilityKeyVMOwnedVolumes, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeTrue())
+				})
+			})
 
-				When("the capabilities are different", func() {
-					Specify("capabilities changed", func() {
+			When("the capabilities are different", func() {
+				Specify("capabilities changed", func() {
 						Expect(changed).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
@@ -316,13 +323,16 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeTrue())
 					})
-					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
-					})
+				Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
+				})
+				Specify(capabilities.CapabilityKeyVMOwnedVolumes, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeTrue())
 				})
 			})
+		})
 
-			Context("with false capabilities", func() {
+		Context("with false capabilities", func() {
 				BeforeEach(func() {
 					obj := capv1.Capabilities{
 						ObjectMeta: metav1.ObjectMeta{
@@ -381,19 +391,22 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVlanSubinterface: {
 							Activated: false,
 						},
-						capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
-							Activated: false,
-						},
-					}
-					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
+					capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
+						Activated: false,
+					},
+					capabilities.CapabilityKeyVMOwnedVolumes: {
+						Activated: false,
+					},
+				}
+				Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
+			})
+			When("the capabilities are not different", func() {
+				Specify("capabilities did not change", func() {
+					Expect(changed).To(BeFalse())
 				})
-				When("the capabilities are not different", func() {
-					Specify("capabilities did not change", func() {
-						Expect(changed).To(BeFalse())
-					})
-					Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
-					})
+				Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
+				})
 					Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
 					})
@@ -439,26 +452,29 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
 					})
-					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
+				Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
+				})
+				Specify(capabilities.CapabilityKeyVMOwnedVolumes, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeFalse())
+				})
+			})
+
+			When("the capabilities are different", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.BringYourOwnEncryptionKey = true
+						config.Features.TKGMultipleCL = true
+						config.Features.WorkloadDomainIsolation = true
+						config.Features.MutableNetworks = true
+						config.Features.VMGroups = true
+						config.Features.VMWaitForFirstConsumerPVC = true
+						config.Features.VMSharedDisks = true
+						config.Features.GuestCustomizationVCDParity = true
+						config.Features.StoragePolicyMutability = true
+						config.Features.VMVlanSubinterface = true
 					})
 				})
-
-				When("the capabilities are different", func() {
-					BeforeEach(func() {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.BringYourOwnEncryptionKey = true
-							config.Features.TKGMultipleCL = true
-							config.Features.WorkloadDomainIsolation = true
-							config.Features.MutableNetworks = true
-							config.Features.VMGroups = true
-							config.Features.VMWaitForFirstConsumerPVC = true
-							config.Features.VMSharedDisks = true
-							config.Features.GuestCustomizationVCDParity = true
-							config.Features.StoragePolicyMutability = true
-							config.Features.VMVlanSubinterface = true
-						})
-					})
 					Specify("capabilities changed", func() {
 						Expect(changed).To(BeTrue())
 					})
@@ -507,16 +523,19 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyStoragePolicyMutability, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.StoragePolicyMutability).To(BeFalse())
 					})
-					Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
-					})
-					Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
-					})
+				Specify(capabilities.CapabilityKeyVlanSubinterface, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.VMVlanSubinterface).To(BeFalse())
+				})
+				Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
+				})
+				Specify(capabilities.CapabilityKeyVMOwnedVolumes, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeFalse())
 				})
 			})
 		})
 	})
+})
 })
 
 var _ = Describe("UpdateCapabilitiesFeatures", func() {
@@ -846,6 +865,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVMOwnedVolumes, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVMOwnedVolumes] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VMOwnedVolumes=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -913,6 +945,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyPerNamespaceNetworkProvider: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVMOwnedVolumes: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -940,9 +975,10 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.VSpherePolicies = true
 					config.Features.VMAffinityDuringExecution = true
-					config.Features.StoragePolicyMutability = true
-					config.Features.VMVlanSubinterface = true
-					config.Features.PerNamespaceNetworkProvider = true
+				config.Features.StoragePolicyMutability = true
+				config.Features.VMVlanSubinterface = true
+				config.Features.PerNamespaceNetworkProvider = true
+				config.Features.VMOwnedVolumes = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -1000,6 +1036,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVMOwnedVolumes, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -1020,11 +1059,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.StoragePolicyMutability = false
 					config.Features.VMVlanSubinterface = false
 					config.Features.PerNamespaceNetworkProvider = false
+					config.Features.VMOwnedVolumes = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMOwnedVolumes=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1076,6 +1116,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyPerNamespaceNetworkProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVMOwnedVolumes, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMOwnedVolumes).To(BeFalse())
 			})
 		})
 	})

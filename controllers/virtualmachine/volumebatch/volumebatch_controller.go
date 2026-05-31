@@ -231,6 +231,9 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmbatchattachments,verbs=create;delete;get;list;watch;patch;update
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmbatchattachments/status,verbs=get;list
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmattachments,verbs=delete;get;list;watch
+// +kubebuilder:rbac:groups=cns.vmware.com,resources=csivolumeinfos,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=cns.vmware.com,resources=csivolumeinfos/status,verbs=get;patch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;patch
 
 // Reconcile reconciles a VirtualMachine object and processes the volumes for batch attachment.
 func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
@@ -347,7 +350,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	}
 
 	// Get legacy CnsNodeVmAttachments for this VM. We need to handle
-	// detachments via this resource for the brownfield VMs.
+	// detachments via this resource for the VMs not using the VM-owned storage path.
 	attachmentsToDelete := r.attachmentsToDelete(ctx, legacyAttachments)
 
 	// Delete attachments for this VM that exist but are not currently referenced in the Spec.
@@ -398,6 +401,16 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	if processErr != nil {
 		ctx.Logger.Error(processErr, "Error processing CnsNodeVMBatchAttachments")
 		// Keep going to return aggregated error below.
+	}
+
+	// Drive the VM-owned storage attach path for volumes where
+	// CSI has signaled AttachMethod=Reconfig. Only runs when the feature gate
+	// is on and the VM is VM-owned.
+	if vmOwnedErr := r.reconcileVMOwnedAttachVolumes(ctx, batchAttachment); vmOwnedErr != nil {
+		ctx.Logger.Error(vmOwnedErr, "Error reconciling VM-owned attach volumes")
+		if processErr == nil {
+			processErr = vmOwnedErr
+		}
 	}
 
 	// Record the volumes currently in status so we can log what's removed.
@@ -558,6 +571,31 @@ func (r *Reconciler) processBatchAttachmentAndFilterVolumeSpecs(
 	// Remaining existing batch keys are no longer referenced in the
 	// VM spec so they are going to be removed.
 	toRemovePvcVolVolKey := existingVolVolKey
+
+	// For VM-owned VMs: run the ownership-transfer detach path for volumes
+	// that are leaving the BA spec. Extract just the volume names from the
+	// colon-separated "volName:pvcName" key format.
+	removedVolNames := make([]string, 0, toRemovePvcVolVolKey.Len())
+	for key := range toRemovePvcVolVolKey {
+		if idx := len(key); idx > 0 {
+			// Extract volName from "volName:pvcName".
+			for i := 0; i < len(key); i++ {
+				if key[i] == ':' {
+					removedVolNames = append(removedVolNames, key[:i])
+					break
+				}
+			}
+		}
+	}
+	if detachErr := r.reconcileVMOwnedDetachVolumes(ctx, batchAttachment, removedVolNames); detachErr != nil {
+		retErr = errOrNoRequeueErr(retErr, detachErr)
+		// Return existing specs on VM-owned detach failure so the volumes are
+		// not immediately removed from the BA spec — the retry will re-attempt.
+		if batchAttachment != nil {
+			return batchAttachment.Spec.Volumes, retErr
+		}
+		return nil, retErr
+	}
 
 	volumeSpecs, err := r.buildVolumeSpecs(toBeBuiltPvcVols, ctx.VM.Status.Hardware)
 	if err != nil {
@@ -1335,7 +1373,7 @@ func categorizeVolumeSpecs(
 			}
 		}
 
-		// Only include greenfield volumes that are not tracked by
+		// Only include VM-owned volumes that are not tracked by
 		// legacy CnsNodeVmAttachment or those whose PVCs have been changed.
 		volumeSpecsForBatch = append(volumeSpecsForBatch, vol)
 	}

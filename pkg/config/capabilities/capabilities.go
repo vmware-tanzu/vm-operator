@@ -116,6 +116,11 @@ const (
 	// defined in the Supervisor capabilities CRD for enabling different network
 	// providers in different namespaces.
 	CapabilityKeyPerNamespaceNetworkProvider = "supports_per_namespace_network_provider"
+
+	// CapabilityKeyVMOwnedVolumes is the name of the capability key defined in
+	// the Supervisor capabilities CRD for enabling VM-owned volume lifecycle
+	// management (ownership-transfer attach/detach path).
+	CapabilityKeyVMOwnedVolumes = "supports_VM_service_VM_owned_volumes"
 )
 
 var (
@@ -286,6 +291,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.TelcoVMServiceAPI = capStatus.Activated
 		case CapabilityKeyPerNamespaceNetworkProvider:
 			fs.PerNamespaceNetworkProvider = capStatus.Activated
+		case CapabilityKeyVMOwnedVolumes:
+			fs.VMOwnedVolumes = capStatus.Activated
 		}
 
 	}

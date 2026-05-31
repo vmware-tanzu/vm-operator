@@ -45,6 +45,7 @@ var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
 	Describe("Snapshot", Label(testlabels.Snapshot), vmSnapshotTests)
 	Describe("Storage", vmStorageTests)
 	Describe("UnmanagedVolumes", vmUnmanagedVolumesTests)
+	Describe("VolumeOps", vmVolumeOpsTests)
 	Describe("Upgrade", vmUpgradeTests)
 	Describe("VKS", Label(testlabels.VKS), vmVKSTests)
 	Describe("WebConsole", vmWebConsoleTests)

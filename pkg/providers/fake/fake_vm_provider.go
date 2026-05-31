@@ -67,6 +67,13 @@ type funcs struct {
 	DeleteSnapshotFn           func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
 	GetSnapshotSizeFn          func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+
+	GetVirtualDiskByUUIDFn func(ctx context.Context, vm *vmopv1.VirtualMachine,
+		diskUUID string) (*providers.VirtualDiskInfo, error)
+	AddExistingDiskToVMFn func(ctx context.Context, vm *vmopv1.VirtualMachine,
+		diskPath string, controllerKey, unitNumber int32, diskMode string) error
+	RemoveDiskFromVMFn func(ctx context.Context, vm *vmopv1.VirtualMachine,
+		diskUUID string) error
 }
 
 type VMProvider struct {
@@ -480,6 +487,53 @@ func (s *VMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.Vi
 	defer s.Unlock()
 	if s.SyncVMSnapshotTreeStatusFn != nil {
 		return s.SyncVMSnapshotTreeStatusFn(ctx, vm)
+	}
+	return nil
+}
+
+func (s *VMProvider) GetVirtualDiskByUUID(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	diskUUID string) (*providers.VirtualDiskInfo, error) {
+
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if fn := s.GetVirtualDiskByUUIDFn; fn != nil {
+		return fn(ctx, vm, diskUUID)
+	}
+	return nil, nil
+}
+
+func (s *VMProvider) AddExistingDiskToVM(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	diskPath string,
+	controllerKey, unitNumber int32,
+	diskMode string) error {
+
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if fn := s.AddExistingDiskToVMFn; fn != nil {
+		return fn(ctx, vm, diskPath, controllerKey, unitNumber, diskMode)
+	}
+	return nil
+}
+
+func (s *VMProvider) RemoveDiskFromVM(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	diskUUID string) error {
+
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if fn := s.RemoveDiskFromVMFn; fn != nil {
+		return fn(ctx, vm, diskUUID)
 	}
 	return nil
 }

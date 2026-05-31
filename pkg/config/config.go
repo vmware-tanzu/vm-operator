@@ -204,6 +204,7 @@ type FeatureStates struct {
 	VMVlanSubinterface          bool
 	TelcoVMServiceAPI           bool
 	PerNamespaceNetworkProvider bool
+	VMOwnedVolumes              bool // FSS_WCP_VM_OWNED_VOLUMES
 }
 
 type InstanceStorage struct {

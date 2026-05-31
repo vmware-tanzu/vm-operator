@@ -11013,15 +11013,73 @@ func commonCreateAndUpdateValidations(
 					},
 				),
 				Entry("should allow params string with non-RateBasedCoalescing",
-					testParams{
-						setup: func(ctx *unitValidatingWebhookContext) {
-							setupCoalescingTest(ctx, vmopv1.CoalescingSchemeStatic, "64,64,64")
-						},
-						expectAllowed: true,
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupCoalescingTest(ctx, vmopv1.CoalescingSchemeStatic, "64,64,64")
 					},
-				),
-			)
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	})
+
+	Describe("VM-owned storage annotation immutability", func() {
+		var (
+			annotCtx *unitValidatingWebhookContext
+		)
+
+		BeforeEach(func() {
+			annotCtx = newUnitTestContextForValidatingWebhook(true)
 		})
 
+		doAnnotTest := func(oldAnnotVal, newAnnotVal string, expectAllowed bool) {
+			GinkgoHelper()
+
+			if annotCtx.oldVM.Annotations == nil {
+				annotCtx.oldVM.Annotations = make(map[string]string)
+			}
+			if annotCtx.vm.Annotations == nil {
+				annotCtx.vm.Annotations = make(map[string]string)
+			}
+			if oldAnnotVal != "" {
+				annotCtx.oldVM.Annotations[pkgconst.VMOwnedVolumesAnnotation] = oldAnnotVal
+			} else {
+				delete(annotCtx.oldVM.Annotations, pkgconst.VMOwnedVolumesAnnotation)
+			}
+			if newAnnotVal != "" {
+				annotCtx.vm.Annotations[pkgconst.VMOwnedVolumesAnnotation] = newAnnotVal
+			} else {
+				delete(annotCtx.vm.Annotations, pkgconst.VMOwnedVolumesAnnotation)
+			}
+
+			var err error
+			annotCtx.WebhookRequestContext.Obj, err = builder.ToUnstructured(annotCtx.vm)
+			Expect(err).ToNot(HaveOccurred())
+			annotCtx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(annotCtx.oldVM)
+			Expect(err).ToNot(HaveOccurred())
+
+			response := annotCtx.ValidateUpdate(&annotCtx.WebhookRequestContext)
+			if expectAllowed {
+				Expect(response.Allowed).To(BeTrue())
+			} else {
+				Expect(response.Allowed).To(BeFalse())
+				Expect(response.Result.Message).To(ContainSubstring("annotation is immutable once set"))
+			}
+		}
+
+		It("should reject removal of the annotation once set", func() {
+			doAnnotTest("true", "", false)
+		})
+		It("should reject changing the annotation value once set", func() {
+			doAnnotTest("true", "false", false)
+		})
+		It("should allow annotation to remain unchanged", func() {
+			doAnnotTest("true", "true", true)
+		})
+		It("should allow VM without annotation if never set", func() {
+			doAnnotTest("", "", true)
+		})
 	})
 }

@@ -75,6 +75,18 @@ type QuiesceSpec struct {
 }
 
 const (
+	// VirtualMachineSnapshotDeletedCondition signals that the underlying
+	// vCenter snapshot has been successfully deleted. CSI watches for this
+	// condition to begin its PVC re-evaluation phase during snapshot deletion.
+	VirtualMachineSnapshotDeletedCondition = "SnapshotDeleted"
+
+	// CSISnapshotFinalizer is managed by CSI and holds the VirtualMachineSnapshot
+	// CR open until all affected PVCs have been re-evaluated after snapshot
+	// deletion.
+	CSISnapshotFinalizer = "csi.vsphere.vmware.com/snapshot"
+)
+
+const (
 	// VirtualMachineSnapshotReadyCondition represents the condition
 	// that the virtual machine snapshot is ready.
 	// It's ready only when both VirtualMachineSnapshotCreatedCondition
@@ -152,6 +164,26 @@ type VirtualMachineSnapshotStatus struct {
 	// Storage describes the observed amount of storage used by a
 	// VirtualMachineSnapshot, including the space for FCDs.
 	Storage *VirtualMachineSnapshotStorageStatus `json:"storage,omitempty"`
+
+	// +optional
+
+	// Disks lists the VM-owned volumes that were attached to the VM at
+	// snapshot time. Populated by vm-operator after the vCenter snapshot is
+	// created. Used by downstream workflows to determine which volumes a
+	// snapshot retains so that re-registration decisions can be made
+	// accurately without querying the vCenter snapshot tree for every PVC.
+	Disks []VirtualMachineSnapshotDisk `json:"disks,omitempty"`
+}
+
+// VirtualMachineSnapshotDisk identifies a disk captured in a snapshot.
+type VirtualMachineSnapshotDisk struct {
+	// ID is the disk UUID (VirtualDisk.Backing.Uuid). Used to look up the
+	// corresponding CsiVolumeInfo via its disk-uuid label.
+	ID string `json:"id"`
+
+	// Key is the VirtualDisk controller key from the snapshot's device
+	// configuration.
+	Key int32 `json:"key"`
 }
 
 // VirtualMachineSnapshotStorageStatus defines the observed state of a

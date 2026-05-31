@@ -15,6 +15,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -94,6 +95,37 @@ var _ = Describe("GetCVIByVolumeID", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cvi).ToNot(BeNil())
 		Expect(cvi.Spec.VolumeID).To(Equal(volumeID))
+	})
+})
+
+var _ = Describe("ShouldUseVMOwnedStoragePath", func() {
+	makeVM := func(annotated bool) *vmopv1.VirtualMachine {
+		vm := &vmopv1.VirtualMachine{}
+		if annotated {
+			vm.Annotations = map[string]string{pkgconst.VMOwnedVolumesAnnotation: "true"}
+		}
+		return vm
+	}
+
+	It("returns false when feature gate is disabled", func() {
+		ctx := pkgcfg.UpdateContext(suite, func(c *pkgcfg.Config) {
+			c.Features.VMOwnedVolumes = false
+		})
+		Expect(vmopv1util.ShouldUseVMOwnedStoragePath(ctx, makeVM(true))).To(BeFalse())
+	})
+
+	It("returns false when VM is not VM-owned", func() {
+		ctx := pkgcfg.UpdateContext(suite, func(c *pkgcfg.Config) {
+			c.Features.VMOwnedVolumes = true
+		})
+		Expect(vmopv1util.ShouldUseVMOwnedStoragePath(ctx, makeVM(false))).To(BeFalse())
+	})
+
+	It("returns true when feature gate is enabled and VM is VM-owned", func() {
+		ctx := pkgcfg.UpdateContext(suite, func(c *pkgcfg.Config) {
+			c.Features.VMOwnedVolumes = true
+		})
+		Expect(vmopv1util.ShouldUseVMOwnedStoragePath(ctx, makeVM(true))).To(BeTrue())
 	})
 })
 

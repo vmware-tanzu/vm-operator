@@ -74,6 +74,8 @@ type funcs struct {
 		diskPath string, controllerKey, unitNumber int32, diskMode string) error
 	RemoveDiskFromVMFn func(ctx context.Context, vm *vmopv1.VirtualMachine,
 		diskUUID string) error
+	GetSnapshotDeviceConfigFn func(ctx context.Context, vm *vmopv1.VirtualMachine,
+		snapshotName string) ([]vimtypes.BaseVirtualDevice, error)
 }
 
 type VMProvider struct {
@@ -536,6 +538,24 @@ func (s *VMProvider) RemoveDiskFromVM(
 		return fn(ctx, vm, diskUUID)
 	}
 	return nil
+}
+
+// GetSnapshotDeviceConfig returns the virtual device list from a snapshot's
+// saved configuration. Returns nil by default unless GetSnapshotDeviceConfigFn
+// is set.
+func (s *VMProvider) GetSnapshotDeviceConfig(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	snapshotName string,
+) ([]vimtypes.BaseVirtualDevice, error) {
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if fn := s.GetSnapshotDeviceConfigFn; fn != nil {
+		return fn(ctx, vm, snapshotName)
+	}
+	return nil, nil
 }
 
 func NewVMProvider() *VMProvider {

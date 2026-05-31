@@ -6,10 +6,12 @@ package volumebatch
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -135,11 +137,14 @@ func (r *Reconciler) reconcileVMOwnedAttach(
 			"controllerKey", controllerKey,
 			"unitNumber", unitNumber)
 
+		start := time.Now()
 		if err := r.VMProvider.AddExistingDiskToVM(ctx, ctx.VM, diskPath,
 			controllerKey, unitNumber, diskMode); err != nil {
+			r.vmOwnedMetrics.RecordReconfigError(ctx.VM.Name, ctx.VM.Namespace, "attach")
 			return fmt.Errorf("ReconfigVM to add disk %s to VM %s failed: %w",
 				diskPath, ctx.VM.Name, err)
 		}
+		r.vmOwnedMetrics.RecordReconfigDuration(ctx.VM.Name, ctx.VM.Namespace, time.Since(start))
 
 		// Re-read to get the live diskPath after attachment.
 		existing, err = r.VMProvider.GetVirtualDiskByUUID(ctx, ctx.VM, diskUUID)
@@ -156,10 +161,20 @@ func (r *Reconciler) reconcileVMOwnedAttach(
 			"diskUUID", diskUUID, "vmName", ctx.VM.Name)
 	}
 
+	// Cross-check: verify the disk UUID from the live device matches what the
+	// BA and CVI record. The lookup by UUID implicitly guarantees a match, but
+	// an explicit check provides defense-in-depth per spec A.6.
+	if existing.DiskUUID != diskUUID {
+		return fmt.Errorf(
+			"disk UUID mismatch on VM %s: expected %s, got %s",
+			ctx.VM.Name, diskUUID, existing.DiskUUID)
+	}
+
 	// Transition CVI from TRANSFERRING_TO_VM to VM_MANAGED.
 	cviPatch := client.MergeFrom(cvi.DeepCopy())
 	cvi.Status.OwnershipState = cnsv1alpha1.OwnershipStateVMManaged
 	cvi.Status.DiskPath = existing.DiskPath
+	cvi.Status.VMInstanceUUID = ctx.VM.Status.BiosUUID
 	logger.Info("Transitioning CsiVolumeInfo to VM_MANAGED",
 		"cviName", cvi.Name,
 		"diskUUID", diskUUID,
@@ -182,6 +197,10 @@ func (r *Reconciler) reconcileVMOwnedAttach(
 			"volumeName", volStatus.Name)
 	}
 
+	// Update vm.status.volumes to reflect the now-attached volume.
+	updateVMStatusForVMOwnedAttach(ctx.VM, volStatus.Name, diskUUID)
+
+	r.vmOwnedMetrics.RecordAttach(ctx.VM.Name, ctx.VM.Namespace)
 	logger.Info("VM-owned attach completed",
 		"vmName", ctx.VM.Name,
 		"pvcName", pvcName,
@@ -458,10 +477,13 @@ func (r *Reconciler) reconcileVMOwnedDetach(
 	// Remove the disk from the VM, preserving the VMDK file.
 	logger.Info("Calling ReconfigVM to remove disk from VM",
 		"diskUUID", cvi.Status.DiskUUID, "vmName", ctx.VM.Name)
+	start := time.Now()
 	if err := r.VMProvider.RemoveDiskFromVM(ctx, ctx.VM, cvi.Status.DiskUUID); err != nil {
 		// C.3 failure — revert CVI to VM_MANAGED so the volume is still tracked.
 		logger.Error(err, "ReconfigVM disk remove failed; reverting CVI to VM_MANAGED",
 			"diskUUID", cvi.Status.DiskUUID, "vmName", ctx.VM.Name)
+
+		r.vmOwnedMetrics.RecordReconfigError(ctx.VM.Name, ctx.VM.Namespace, "detach")
 
 		revertPatch := client.MergeFrom(cvi.DeepCopy())
 		cvi.Status.OwnershipState = cnsv1alpha1.OwnershipStateVMManaged
@@ -486,6 +508,8 @@ func (r *Reconciler) reconcileVMOwnedDetach(
 		return fmt.Errorf("failed to remove disk %s from VM %s: %w",
 			cvi.Status.DiskUUID, ctx.VM.Name, err)
 	}
+	r.vmOwnedMetrics.RecordReconfigDuration(ctx.VM.Name, ctx.VM.Namespace, time.Since(start))
+	r.vmOwnedMetrics.RecordDetach(ctx.VM.Name, ctx.VM.Namespace)
 
 	return r.finalizeVMOwnedDetach(ctx, ba, cvi, pvc, volName)
 }
@@ -506,9 +530,23 @@ func (r *Reconciler) finalizeVMOwnedDetach(
 		logger.Error(err, "Failed to clear DetachBlocked condition", "volumeName", volName)
 	}
 
+	// Remove the volume entry from vm.status.volumes now that the disk is no
+	// longer on the VM.
+	removeVMStatusVolume(ctx.VM, volName)
+
 	logger.Info("VM-owned detach completed for volume; CSI will complete re-registration",
 		"volumeName", volName, "cviName", cvi.Name, "vmName", ctx.VM.Name)
 	return nil
+}
+
+// removeVMStatusVolume removes the named volume from vm.status.volumes.
+func removeVMStatusVolume(vm *vmopv1.VirtualMachine, volName string) {
+	for i, v := range vm.Status.Volumes {
+		if v.Name == volName {
+			vm.Status.Volumes = append(vm.Status.Volumes[:i], vm.Status.Volumes[i+1:]...)
+			return
+		}
+	}
 }
 
 // setDetachBlockedCondition patches the BA CR-level condition to signal that
@@ -574,4 +612,208 @@ func (r *Reconciler) pvcNameFromBASpec(ba *cnsv1alpha1.CnsNodeVMBatchAttachment,
 		}
 	}
 	return ""
+}
+
+// reconcileVMOwnedReAdoption handles the re-adoption of snapshot-retained
+// volumes that have been re-attached to the VM by a snapshot revert (Workflow
+// E). It detects volumes that are in vm.spec.volumes but absent from BA
+// spec while their CsiVolumeInfo is in VM_MANAGED state with vmName="",
+// which is the snapshot-retained + re-adopted condition.
+//
+// The re-adoption runs in two reconcile passes:
+//
+//	Pass 1: Verify disk is on VM and wait for vm.status.hardware.controllers to
+//	        be repopulated after the revert wiped vm.status. Returns a requeue
+//	        result if not ready.
+//	Pass 2: After status is populated, resolves controllerKey, updates CVI,
+//	        writes the BA spec/status, and labels the PVC.
+//
+// This function is idempotent: if the volume is already in BA.spec.volumes or
+// the CVI is not in the re-adoption state, it is skipped.
+func (r *Reconciler) reconcileVMOwnedReAdoption(
+	ctx *pkgctx.VolumeContext,
+	ba *cnsv1alpha1.CnsNodeVMBatchAttachment,
+) (ctrl.Result, error) {
+	if !pkgcfg.FromContext(ctx).Features.VMOwnedVolumes {
+		return ctrl.Result{}, nil
+	}
+	if !vmopv1util.IsVMOwnedStorageVM(ctx.VM) {
+		return ctrl.Result{}, nil
+	}
+	if ba == nil {
+		return ctrl.Result{}, nil
+	}
+
+	logger := pkglog.FromContextOrDefault(ctx)
+
+	// Build a set of volume names already present in the BA spec so we can
+	// detect candidates quickly.
+	baSpecNames := make(map[string]struct{}, len(ba.Spec.Volumes))
+	for _, v := range ba.Spec.Volumes {
+		baSpecNames[v.Name] = struct{}{}
+	}
+
+	for _, vol := range ctx.VM.Spec.Volumes {
+		if vol.PersistentVolumeClaim == nil {
+			continue
+		}
+		// Skip volumes already tracked in BA spec.
+		if _, ok := baSpecNames[vol.Name]; ok {
+			continue
+		}
+
+		pvcName := vol.PersistentVolumeClaim.ClaimName
+		pvc, pv, err := r.getPVCAndPV(ctx, pvcName)
+		if err != nil {
+			// PVC/PV not yet ready; continue to the next volume.
+			logger.Info("Could not fetch PVC/PV for re-adoption candidate; skipping",
+				"volumeName", vol.Name, "pvcName", pvcName, "error", err.Error())
+			continue
+		}
+
+		cvi, err := vmopv1util.GetCVIByVolumeID(ctx, r.Client, ctx.VM.Namespace,
+			pv.Spec.CSI.VolumeHandle)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf(
+				"failed to get CsiVolumeInfo for PVC %s during re-adoption: %w", pvcName, err)
+		}
+		if cvi == nil {
+			// No CVI means this is a legacy (non-VM-owned) volume.
+			continue
+		}
+
+		// Re-adoption condition: VM_MANAGED with vmName="" (snapshot-retained).
+		if cvi.Status.OwnershipState != cnsv1alpha1.OwnershipStateVMManaged ||
+			cvi.Status.VMName != "" {
+			continue
+		}
+
+		logger.Info("Detected re-adoption candidate for snapshot-retained volume",
+			"volumeName", vol.Name,
+			"pvcName", pvcName,
+			"diskUUID", cvi.Status.DiskUUID,
+			"vmName", ctx.VM.Name)
+
+		result, err := r.reconcileVMOwnedSingleReAdoption(ctx, ba, vol, pvc, cvi)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if result.Requeue || result.RequeueAfter > 0 {
+			return result, nil
+		}
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// reconcileVMOwnedSingleReAdoption drives the re-adoption of a single
+// snapshot-retained volume back to VM_MANAGED state.
+func (r *Reconciler) reconcileVMOwnedSingleReAdoption(
+	ctx *pkgctx.VolumeContext,
+	ba *cnsv1alpha1.CnsNodeVMBatchAttachment,
+	vol vmopv1.VirtualMachineVolume,
+	pvc *corev1.PersistentVolumeClaim,
+	cvi *cnsv1alpha1.CsiVolumeInfo,
+) (ctrl.Result, error) {
+	logger := pkglog.FromContextOrDefault(ctx)
+
+	// Verify the disk is on the VM before proceeding.
+	diskInfo, err := r.VMProvider.GetVirtualDiskByUUID(ctx, ctx.VM, cvi.Status.DiskUUID)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to verify disk %s on VM %s during re-adoption: %w",
+			cvi.Status.DiskUUID, ctx.VM.Name, err)
+	}
+	if diskInfo == nil {
+		// Disk not yet visible; vSphere may not have published the updated
+		// hardware config after the revert. Requeue.
+		logger.Info("Disk not yet visible on VM during re-adoption; requeuing",
+			"diskUUID", cvi.Status.DiskUUID, "vmName", ctx.VM.Name)
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Wait for vm.status.hardware.controllers and vm.status.biosUUID to be
+	// repopulated after the revert wiped vm.status. The BA controllerKey must
+	// be resolved from the hardware status, and vmInstanceUUID comes from
+	// BiosUUID.
+	if ctx.VM.Status.Hardware == nil || len(ctx.VM.Status.Hardware.Controllers) == 0 ||
+		ctx.VM.Status.BiosUUID == "" {
+		logger.Info("VM hardware status not yet repopulated; requeuing for re-adoption",
+			"vmName", ctx.VM.Name, "volumeName", vol.Name)
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Resolve controllerKey from vm.status.hardware.controllers using the
+	// live disk device's controller key.
+	controllerKey := diskInfo.ControllerKey
+	unitNumber := diskInfo.UnitNumber
+
+	// Update CVI: vmName, vmInstanceUUID, diskPath.
+	cviPatch := client.MergeFrom(cvi.DeepCopy())
+	cvi.Status.VMName = ctx.VM.Name
+	cvi.Status.VMInstanceUUID = ctx.VM.Status.BiosUUID
+	cvi.Status.DiskPath = diskInfo.DiskPath
+	logger.Info("Re-adopting volume into CsiVolumeInfo as VM_MANAGED",
+		"cviName", cvi.Name,
+		"vmName", ctx.VM.Name,
+		"diskUUID", cvi.Status.DiskUUID,
+		"diskPath", diskInfo.DiskPath)
+	if err := r.Client.Status().Patch(ctx, cvi, cviPatch); err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to patch CsiVolumeInfo %s for re-adoption: %w", cvi.Name, err)
+	}
+
+	// Add vol to BA.spec.volumes.
+	baPatch := client.MergeFrom(ba.DeepCopy())
+	ba.Spec.Volumes = append(ba.Spec.Volumes, cnsv1alpha1.VolumeSpec{
+		Name: vol.Name,
+		PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
+			ClaimName:     pvc.Name,
+			DiskMode:      cnsv1alpha1.Persistent,
+			SharingMode:   cnsv1alpha1.SharingNone,
+			ControllerKey: &controllerKey,
+			UnitNumber:    &unitNumber,
+		},
+	})
+	if err := r.Client.Patch(ctx, ba, baPatch); err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to add re-adopted volume %s to BA spec: %w", vol.Name, err)
+	}
+
+	// Add BA.status.volumes entry with AttachMethod=Reconfig condition.
+	baStatusPatch := client.MergeFrom(ba.DeepCopy())
+	ba.Status.VolumeStatus = append(ba.Status.VolumeStatus, cnsv1alpha1.VolumeStatus{
+		Name: vol.Name,
+		PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+			ClaimName:   pvc.Name,
+			CnsVolumeID: cvi.Spec.VolumeID,
+			DiskUUID:    cvi.Status.DiskUUID,
+			Conditions: []metav1.Condition{
+				{
+					Type:               cnsv1alpha1.ConditionAttachMethod,
+					Status:             metav1.ConditionTrue,
+					Reason:             cnsv1alpha1.ReasonReconfig,
+					LastTransitionTime: metav1.Now(),
+				},
+			},
+		},
+	})
+	if err := r.Client.Status().Patch(ctx, ba, baStatusPatch); err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to update BA status for re-adopted volume %s: %w", vol.Name, err)
+	}
+
+	// Label PVC as vm-owned (replacing retained-by-snapshot).
+	if err := r.labelPVCVolumeOwnership(ctx, pvc, pkgconst.PVCOwnershipVMOwned); err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to label PVC %s as vm-owned during re-adoption: %w", pvc.Name, err)
+	}
+
+	r.vmOwnedMetrics.RecordReAdoption(ctx.VM.Name, ctx.VM.Namespace)
+	logger.Info("Re-adoption completed for snapshot-retained volume",
+		"volumeName", vol.Name,
+		"pvcName", pvc.Name,
+		"diskUUID", cvi.Status.DiskUUID,
+		"vmName", ctx.VM.Name)
+	return ctrl.Result{}, nil
 }

@@ -13,6 +13,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 )
 
@@ -24,6 +25,24 @@ func IsVMOwnedStorageVM(vm *vmopv1.VirtualMachine) bool {
 		return false
 	}
 	return vm.Annotations[pkgconst.VMOwnedVolumesAnnotation] == "true"
+}
+
+// ShouldUseVMOwnedStoragePath returns true when both the VMOwnedVolumes
+// feature gate is enabled in the context config AND the VM has the VM-owned
+// storage annotation. This is the canonical guard used by all controllers and
+// webhooks to determine whether to enter the new ownership-transfer code path.
+//
+// Callers that already have the config in scope may check these two conditions
+// directly, but this helper is preferred for readability and to avoid the
+// risk of forgetting one of the two checks.
+func ShouldUseVMOwnedStoragePath(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+) bool {
+	if !pkgcfg.FromContext(ctx).Features.VMOwnedVolumes {
+		return false
+	}
+	return IsVMOwnedStorageVM(vm)
 }
 
 // cviNameForVolumeID returns the deterministic CsiVolumeInfo name for a given

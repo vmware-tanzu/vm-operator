@@ -125,4 +125,10 @@ type VirtualMachineProviderInterface interface {
 	// path; no file is deleted.
 	RemoveDiskFromVM(ctx context.Context, vm *vmopv1.VirtualMachine,
 		diskUUID string) error
+
+	// GetSnapshotDeviceConfig returns the virtual device list recorded in a
+	// vCenter snapshot's saved configuration. Used to capture the diskPath for
+	// each VM-owned volume before the snapshot is deleted (D.2).
+	GetSnapshotDeviceConfig(ctx context.Context, vm *vmopv1.VirtualMachine,
+		snapshotName string) ([]vimtypes.BaseVirtualDevice, error)
 }

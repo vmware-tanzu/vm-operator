@@ -36,6 +36,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -161,6 +162,21 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	}
 
+	if pkgcfg.FromContext(ctx).Features.VMOwnedVolumes {
+		// Watch for VirtualMachineSnapshot deletions to re-trigger reconcile
+		// on VMs that may have a DetachBlocked volume waiting for the snapshot
+		// to be removed before ReconfigVM can succeed.
+		if err := c.Watch(source.Kind(
+			mgr.GetCache(),
+			&vmopv1.VirtualMachineSnapshot{},
+			handler.TypedEnqueueRequestsFromMapFunc(
+				snapshotToVMMapper(ctx, mgr.GetClient())),
+		)); err != nil {
+			return fmt.Errorf(
+				"failed to start VirtualMachine watch for VirtualMachineSnapshot: %w", err)
+		}
+	}
+
 	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs ||
 		pkgcfg.FromContext(ctx).Features.InstanceStorage {
 
@@ -200,6 +216,33 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	return nil
 }
 
+// snapshotToVMMapper returns a mapper that enqueues a reconcile request for
+// the VirtualMachine referenced by a VirtualMachineSnapshot event. Used to
+// re-trigger reconcile when a snapshot is deleted so that VMs with
+// DetachBlocked volumes can retry the detach.
+func snapshotToVMMapper(
+	ctx context.Context,
+	c client.Client,
+) func(context.Context, *vmopv1.VirtualMachineSnapshot) []reconcile.Request {
+	return func(_ context.Context, snap *vmopv1.VirtualMachineSnapshot) []reconcile.Request {
+		if snap.Spec.VMName == "" {
+			return nil
+		}
+
+		vm := &vmopv1.VirtualMachine{}
+		if err := c.Get(ctx, client.ObjectKey{
+			Name:      snap.Spec.VMName,
+			Namespace: snap.Namespace,
+		}, vm); err != nil {
+			return nil
+		}
+
+		return []reconcile.Request{
+			{NamespacedName: client.ObjectKeyFromObject(vm)},
+		}
+	}
+}
+
 func NewReconciler(
 	ctx context.Context,
 	client client.Client,
@@ -208,22 +251,25 @@ func NewReconciler(
 	vmProvider providers.VirtualMachineProviderInterface,
 ) *Reconciler {
 	return &Reconciler{
-		Context:    ctx,
-		Client:     client,
-		logger:     logger,
-		recorder:   recorder,
-		VMProvider: vmProvider,
+		Context:        ctx,
+		Client:         client,
+		logger:         logger,
+		recorder:       recorder,
+		VMProvider:     vmProvider,
+		vmOwnedMetrics: metrics.NewVMOwnedVolumeMetrics(),
 	}
 }
 
 var _ reconcile.Reconciler = &Reconciler{}
 
+// Reconciler reconciles VirtualMachine objects for batch volume processing.
 type Reconciler struct {
 	client.Client
 	Context    context.Context
 	logger     logr.Logger
 	recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
+	vmOwnedMetrics *metrics.VMOwnedVolumeMetrics
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -413,7 +459,45 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		}
 	}
 
-	// Record the volumes currently in status so we can log what's removed.
+	// Re-adopt snapshot-retained volumes that were re-attached to the VM by
+	// a snapshot revert. Only runs when the feature gate is on and the VM is
+	// VM-owned.
+	if reAdoptResult, reAdoptErr := r.reconcileVMOwnedReAdoption(ctx, batchAttachment); reAdoptErr != nil {
+		ctx.Logger.Error(reAdoptErr, "Error reconciling VM-owned re-adoption volumes")
+		if processErr == nil {
+			processErr = reAdoptErr
+		}
+	} else if reAdoptResult.Requeue || reAdoptResult.RequeueAfter > 0 {
+		return errOrNoRequeueErr(deleteErr, processErr)
+	}
+
+	r.reconcileVolumeStatusUpdate(
+		ctx,
+		batchAttachment,
+		filteredVolumeSpecsForBatch,
+		legacyAttachments,
+		attachmentsToDelete,
+		existingVMManagedVolStatus,
+		volumeSpecsForLegacy,
+	)
+
+	return errOrNoRequeueErr(deleteErr, processErr)
+}
+
+// reconcileVolumeStatusUpdate updates vm.status.volumes by merging batch and
+// legacy volume statuses. It also logs any volumes that were removed from the
+// status. Extracted to keep ReconcileNormal's cyclomatic complexity manageable.
+func (r *Reconciler) reconcileVolumeStatusUpdate(
+	ctx *pkgctx.VolumeContext,
+	batchAttachment *cnsv1alpha1.CnsNodeVMBatchAttachment,
+	filteredVolumeSpecsForBatch []cnsv1alpha1.VolumeSpec,
+	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
+	attachmentsToDelete []cnsv1alpha1.CnsNodeVmAttachment,
+	existingVMManagedVolStatus map[string]vmopv1.VirtualMachineVolumeStatus,
+	volumeSpecsForLegacy []vmopv1.VirtualMachineVolume,
+) {
+	// Snapshot the managed-volume UUIDs before the update so we can log
+	// which volumes were removed from the status.
 	beforeStatusVolumes := make(map[string]string, len(ctx.VM.Spec.Volumes))
 	for _, vol := range ctx.VM.Status.Volumes {
 		if vol.Type == vmopv1.VolumeTypeManaged {
@@ -443,31 +527,28 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		volumeStatusesForLegacy,
 	)
 
-	if len(beforeStatusVolumes) > 0 {
-		for _, vol := range ctx.VM.Status.Volumes {
-			if vol.Type != vmopv1.VolumeTypeManaged {
-				continue
-			}
-
-			name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
-			// Might not know the UUID before being attached, but also the volume
-			// spec can be updated with a different PVC. Remove entries with an
-			// empty UUID but we could just do this by name, with the potential
-			// for missing actual removals.
-			uuid, ok := beforeStatusVolumes[name]
-			if ok && (uuid == "" || uuid == vol.DiskUUID) {
-				delete(beforeStatusVolumes, name)
-			}
+	if len(beforeStatusVolumes) == 0 {
+		return
+	}
+	for _, vol := range ctx.VM.Status.Volumes {
+		if vol.Type != vmopv1.VolumeTypeManaged {
+			continue
 		}
-
-		if len(beforeStatusVolumes) > 0 {
-			ctx.Logger.Info("Removing detached volumes from VM Status",
-				"removedCount", len(beforeStatusVolumes),
-				"removedVolumes", beforeStatusVolumes)
+		name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
+		// Might not know the UUID before being attached, but also the volume
+		// spec can be updated with a different PVC. Remove entries with an
+		// empty UUID but we could just do this by name, with the potential
+		// for missing actual removals.
+		uuid, ok := beforeStatusVolumes[name]
+		if ok && (uuid == "" || uuid == vol.DiskUUID) {
+			delete(beforeStatusVolumes, name)
 		}
 	}
-
-	return errOrNoRequeueErr(deleteErr, processErr)
+	if len(beforeStatusVolumes) > 0 {
+		ctx.Logger.Info("Removing detached volumes from VM Status",
+			"removedCount", len(beforeStatusVolumes),
+			"removedVolumes", beforeStatusVolumes)
+	}
 }
 
 // getBatchAttachmentForVM returns the CnsNodeVMBatchAttachment resource for the

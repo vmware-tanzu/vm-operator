@@ -37,6 +37,11 @@ func unitVMOwnedStorageTests() {
 		Label(testlabels.Controller, testlabels.API),
 		unitVMOwnedStorageReconcile,
 	)
+	Describe(
+		"VM-owned Re-adoption",
+		Label(testlabels.Controller, testlabels.API),
+		unitVMOwnedReAdoptionReconcile,
+	)
 }
 
 func unitVMOwnedStorageReconcile() {
@@ -293,7 +298,7 @@ func unitVMOwnedStorageReconcile() {
 		})
 	})
 
-	Context("VM-owned detach path", func() {
+	Context("VM-owned detach path", func() { //nolint:dupl
 		When("a VM-owned volume is VM_MANAGED and is removed from vm.spec.volumes", func() {
 			BeforeEach(func() {
 				// Set CVI to VM_MANAGED (attached state).
@@ -342,6 +347,260 @@ func unitVMOwnedStorageReconcile() {
 					// The detach failure should propagate.
 					Expect(err).To(HaveOccurred())
 				})
+			})
+		})
+	})
+}
+
+// unitVMOwnedReAdoptionReconcile tests the re-adoption path (E.4) for
+// snapshot-retained volumes that are re-attached by a snapshot revert.
+func unitVMOwnedReAdoptionReconcile() {
+	const (
+		ns           = "readopt-ns"
+		vmName       = "readopt-vm"
+		pvcName      = "pvc-ret-1"
+		pvName       = "pv-ret-1"
+		volumeHandle = "cns-vol-ret-1"
+		diskUUID     = "6000C29-ret-1"
+		diskPath     = "[ds1] readopt-ns/vm/disk-snap.vmdk"
+		volName      = "ret-volume-1"
+	)
+
+	var (
+		reconciler     *volumebatch.Reconciler
+		fakeVMProvider *providerfake.VMProvider
+		volCtx         *pkgctx.VolumeContext
+		fakeClient     client.Client
+
+		vm  *vmopv1.VirtualMachine
+		pvc *corev1.PersistentVolumeClaim
+		pv  *corev1.PersistentVolume
+		cvi *cnsv1alpha1.CsiVolumeInfo
+		ba  *cnsv1alpha1.CnsNodeVMBatchAttachment
+
+		testCtx *builder.UnitTestContextForController
+	)
+
+	makeVM := func() *vmopv1.VirtualMachine {
+		un := int32(0)
+		return &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmName,
+				Namespace: ns,
+				Annotations: map[string]string{
+					pkgconst.VMOwnedVolumesAnnotation: "true",
+				},
+			},
+			Status: vmopv1.VirtualMachineStatus{
+				InstanceUUID: "instance-uuid-ret",
+				BiosUUID:     "bios-uuid-ret",
+				UniqueID:     "unique-id-ret",
+				Hardware: &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							Type:      vmopv1.VirtualControllerTypeSCSI,
+							BusNumber: un,
+						},
+					},
+				},
+			},
+			Spec: vmopv1.VirtualMachineSpec{
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name: volName,
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvcName,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	BeforeEach(func() {
+		// VM with VM-owned annotation + the retained volume in spec.
+		vm = makeVM()
+
+		// PVC bound to PV.
+		pvc = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: pvcName, Namespace: ns},
+			Spec: corev1.PersistentVolumeClaimSpec{VolumeName: pvName},
+		}
+
+		pv = &corev1.PersistentVolume{
+			ObjectMeta: metav1.ObjectMeta{Name: pvName},
+			Spec: corev1.PersistentVolumeSpec{
+				PersistentVolumeSource: corev1.PersistentVolumeSource{
+					CSI: &corev1.CSIPersistentVolumeSource{VolumeHandle: volumeHandle},
+				},
+			},
+		}
+
+		// CVI in snapshot-retained state: VM_MANAGED, vmName="".
+		cvi = &cnsv1alpha1.CsiVolumeInfo{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "csi-volume-info-" + volumeHandle,
+				Namespace: ns,
+				Labels:    map[string]string{cnsv1alpha1.CVIDiskUUIDLabel: diskUUID},
+			},
+			Status: cnsv1alpha1.CsiVolumeInfoStatus{
+				OwnershipState: cnsv1alpha1.OwnershipStateVMManaged,
+				VMName:         "", // snapshot-retained
+				DiskUUID:       diskUUID,
+				DiskPath:       diskPath,
+			},
+		}
+
+		// BA with no entry for the retained volume (was removed in C.5).
+		ba = &cnsv1alpha1.CnsNodeVMBatchAttachment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmName,
+				Namespace: ns,
+			},
+			Spec: cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
+				InstanceUUID: "instance-uuid-ret",
+			},
+		}
+
+		cfg := pkgcfg.FromContext(suite)
+		cfg.Features.VMOwnedVolumes = true
+
+		scheme := builder.NewScheme()
+		fakeClient = fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(vm, pvc, pv, cvi, ba).
+			WithStatusSubresource(cvi, ba).
+			Build()
+
+		fakeVMProvider = &providerfake.VMProvider{}
+
+		volCtx = &pkgctx.VolumeContext{
+			Context: pkgcfg.NewContextWithDefaultConfig(),
+			Logger:  log.Log,
+			VM:      vm,
+		}
+		// Enable the feature gate in the reconcile context.
+		volCtx.Context = pkgcfg.UpdateContext(volCtx.Context, func(config *pkgcfg.Config) {
+			config.Features.VMOwnedVolumes = true
+		})
+
+		testCtx = nil
+		reconciler = volumebatch.NewReconciler(
+			suite,
+			fakeClient,
+			log.Log,
+			nil,
+			fakeVMProvider,
+		)
+	})
+
+	AfterEach(func() {
+		if testCtx != nil {
+			testCtx.AfterEach()
+		}
+	})
+
+	Context("snapshot-retained volume in vm.spec.volumes but not in BA spec", func() {
+		When("disk is on VM and hardware.controllers is populated", func() {
+			BeforeEach(func() {
+				fakeVMProvider.GetVirtualDiskByUUIDFn = func(_ context.Context,
+					_ *vmopv1.VirtualMachine, _ string) (*providers.VirtualDiskInfo, error) {
+					return &providers.VirtualDiskInfo{
+						DiskUUID:      diskUUID,
+						DiskPath:      diskPath,
+						ControllerKey: 2000,
+						UnitNumber:    0,
+					}, nil
+				}
+			})
+
+			It("should add the volume to BA spec and update CVI vmName", func() {
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				updatedBA := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
+				Expect(fakeClient.Get(volCtx, client.ObjectKey{
+					Name: vmName, Namespace: ns,
+				}, updatedBA)).To(Succeed())
+
+				names := make([]string, 0, len(updatedBA.Spec.Volumes))
+				for _, v := range updatedBA.Spec.Volumes {
+					names = append(names, v.Name)
+				}
+				Expect(names).To(ContainElement(volName))
+
+				updatedCVI := &cnsv1alpha1.CsiVolumeInfo{}
+				Expect(fakeClient.Get(volCtx, client.ObjectKey{
+					Name: "csi-volume-info-" + volumeHandle, Namespace: ns,
+				}, updatedCVI)).To(Succeed())
+				Expect(updatedCVI.Status.VMName).To(Equal(vmName))
+			})
+		})
+
+		When("hardware.controllers is empty (status not yet repopulated)", func() {
+			BeforeEach(func() {
+				vm.Status.Hardware = nil
+				fakeVMProvider.GetVirtualDiskByUUIDFn = func(_ context.Context,
+					_ *vmopv1.VirtualMachine, _ string) (*providers.VirtualDiskInfo, error) {
+					return &providers.VirtualDiskInfo{
+						DiskUUID:      diskUUID,
+						DiskPath:      diskPath,
+						ControllerKey: 2000,
+						UnitNumber:    0,
+					}, nil
+				}
+			})
+
+			It("should not adopt the volume yet (requeue expected)", func() {
+				// ReconcileNormal returns early due to requeue; no error.
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				// BA spec should still be empty (no volume added).
+				updatedBA := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
+				Expect(fakeClient.Get(volCtx, client.ObjectKey{
+					Name: vmName, Namespace: ns,
+				}, updatedBA)).To(Succeed())
+				Expect(updatedBA.Spec.Volumes).To(BeEmpty())
+			})
+		})
+
+		When("feature gate is disabled", func() {
+			BeforeEach(func() {
+				volCtx.Context = pkgcfg.UpdateContext(volCtx.Context, func(config *pkgcfg.Config) {
+					config.Features.VMOwnedVolumes = false
+				})
+			})
+
+			It("does not modify the BA", func() {
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				updatedBA := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
+				Expect(fakeClient.Get(volCtx, client.ObjectKey{
+					Name: vmName, Namespace: ns,
+				}, updatedBA)).To(Succeed())
+				Expect(updatedBA.Spec.Volumes).To(BeEmpty())
+			})
+		})
+
+		When("VM does not have VM-owned storage annotation", func() {
+			BeforeEach(func() {
+				delete(vm.Annotations, pkgconst.VMOwnedVolumesAnnotation)
+				fakeVMProvider.GetVirtualDiskByUUIDFn = func(_ context.Context,
+					_ *vmopv1.VirtualMachine, _ string) (*providers.VirtualDiskInfo, error) {
+					return &providers.VirtualDiskInfo{DiskUUID: diskUUID}, nil
+				}
+			})
+
+			It("does not modify the BA", func() {
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				updatedBA := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
+				Expect(fakeClient.Get(volCtx, client.ObjectKey{
+					Name: vmName, Namespace: ns,
+				}, updatedBA)).To(Succeed())
+				Expect(updatedBA.Spec.Volumes).To(BeEmpty())
 			})
 		})
 	})

@@ -19,6 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -95,12 +97,49 @@ func (v validator) ValidateDelete(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	var fieldErrs field.ErrorList
+
 	if isInstanceStorageLabelPresent(ctx.Obj.GetLabels()) {
 		fieldErrs = append(fieldErrs, field.Forbidden(labelPath,
 			fmt.Sprintf(operationNotAllowedOnPVC, admissionv1.Delete)))
 	}
 
+	// Block deletion of PVCs that are retained by VirtualMachineSnapshots.
+	// This is a fast-path check using the PVC label set by CSI when the
+	// volume transitions to the snapshot-retained state. If the webhook is
+	// unavailable, the CVI finalizer + PVC protection finalizer provide
+	// defense-in-depth and ensure cleanup happens correctly.
+	fieldErrs = append(fieldErrs, v.validatePVCDeleteSnapshotRetention(ctx)...)
+
 	return common.BuildValidationResponse(ctx, nil, convertToStringArray(fieldErrs), nil)
+}
+
+// validatePVCDeleteSnapshotRetention rejects PVC DELETE requests when the PVC
+// carries the retained-by-snapshot label. The label is the authoritative
+// fast-path indicator set by CSI when the volume enters the snapshot-retained
+// steady state (ownershipState=VM_MANAGED, vmName="").
+//
+// The check is O(1): it reads only the labels on the incoming admission
+// request object without any API-server round-trips.
+func (v validator) validatePVCDeleteSnapshotRetention(
+	ctx *pkgctx.WebhookRequestContext,
+) field.ErrorList {
+	if !pkgcfg.FromContext(ctx).Features.VMOwnedVolumes {
+		return nil
+	}
+
+	labels := ctx.Obj.GetLabels()
+	if labels[pkgconst.PVCVolumeOwnershipLabel] != pkgconst.PVCOwnershipRetainedBySnapshot {
+		return nil
+	}
+
+	pvcName := ctx.Obj.GetName()
+	return field.ErrorList{
+		field.Forbidden(
+			field.NewPath("metadata", "name"),
+			fmt.Sprintf("cannot delete PVC %s: retained by VirtualMachineSnapshot(s). "+
+				"Delete the retaining snapshot(s) first.", pvcName),
+		),
+	}
 }
 
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {

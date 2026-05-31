@@ -120,7 +120,7 @@ const (
 	// CapabilityKeyVMOwnedVolumes is the name of the capability key defined in
 	// the Supervisor capabilities CRD for enabling VM-owned volume lifecycle
 	// management (ownership-transfer attach/detach path).
-	CapabilityKeyVMOwnedVolumes = "supports_VM_service_VM_owned_volumes"
+	CapabilityKeyVMOwnedVolumes = "supports_vm_owned_volumes"
 )
 
 var (

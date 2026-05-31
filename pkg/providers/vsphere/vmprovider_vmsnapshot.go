@@ -16,6 +16,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/serializer/yaml"
@@ -38,6 +39,8 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmconfunmanagedvolsfil "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
+
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 )
 
 // DeleteSnapshot deletes the snapshot from the VM.
@@ -121,6 +124,55 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 
 	total, _, err := virtualmachine.GetSnapshotSize(vmCtx, moVM, &vmSnapshot.Snapshot)
 	return total, err
+}
+
+// GetSnapshotDeviceConfig returns the virtual device list from a vCenter
+// snapshot's saved configuration. Used to capture diskPaths for VM-owned
+// volumes before the snapshot's vCenter record is deleted (D.2).
+//
+// Returns nil when no snapshot with the given name exists on the VM.
+func (vs *vSphereVMProvider) GetSnapshotDeviceConfig(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	snapshotName string,
+) ([]vimtypes.BaseVirtualDevice, error) {
+
+	vmCtx := pkgctx.NewVirtualMachineContext(
+		pkgctx.WithVCOpID(ctx, vm, "getSnapshotDeviceConfig"),
+		vm,
+	)
+	ctx = vmCtx.Context
+
+	vcClient, err := vs.getVcClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vCenter client: %w", err)
+	}
+
+	vcVM, err := vs.getVM(vmCtx, vcClient, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VM %q: %w", vmCtx.VM.Name, err)
+	}
+
+	moVMObj := mo.VirtualMachine{}
+	if err := vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVMObj); err != nil {
+		return nil, fmt.Errorf("failed to fetch snapshot property on VM %q: %w",
+			vmCtx.VM.Name, err)
+	}
+
+	snapNode, err := virtualmachine.FindSnapshot(moVMObj, snapshotName)
+	if err != nil || snapNode == nil {
+		return nil, nil
+	}
+
+	// Fetch the snapshot object's device config.
+	snapRef := snapNode.Snapshot
+	var moSnap mo.VirtualMachineSnapshot
+	if err := vcVM.Properties(ctx, snapRef, []string{"config.hardware.device"}, &moSnap); err != nil {
+		return nil, fmt.Errorf("failed to fetch device config from snapshot %q: %w",
+			snapshotName, err)
+	}
+
+	return moSnap.Config.Hardware.Device, nil
 }
 
 // SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
@@ -411,6 +463,13 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	// TODO (AKP): Move the parsing VM spec code above this section so we can
 	// bail out if it's not a VM that we can restore.
 
+	// Capture the volumes present on the VM before restoring the snapshot
+	// spec. The difference between pre- and post-revert volumes determines
+	// which volumes were dropped by the revert (C.5 in the VM-owned storage
+	// ownership-transfer workflow).
+	preRevertVolumes := make([]vmopv1.VirtualMachineVolume, len(vmCtx.VM.Spec.Volumes))
+	copy(preRevertVolumes, vmCtx.VM.Spec.Volumes)
+
 	// Restore VM spec and metadata from the snapshot.
 	logger.Info("Starting VM spec and metadata restoration from snapshot",
 		"beforeRestoreAnnotations", vmCtx.VM.Annotations,
@@ -437,6 +496,16 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		"afterRestoreLabels", vmCtx.VM.Labels,
 		"afterRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshotName)
 
+	// Signal CSI about any VM-owned volumes that were dropped by the revert.
+	// This updates the BA so CSI can re-evaluate the volume ownership state.
+	if err := vs.handleRevertInducedDrops(
+		vmCtx, preRevertVolumes, vmCtx.VM.Spec.Volumes); err != nil {
+		// Non-fatal: log and continue. The BA will be corrected on the next
+		// reconcile via the volumebatch controller's re-adoption path.
+		logger.Error(err, "Failed to signal revert-induced volume drops; "+
+			"volumebatch controller will reconcile on next pass")
+	}
+
 	logger.Info("Successfully completed reverted snapshot")
 
 	// Return a NoRequeue error so the updateVirtualMachine func exit
@@ -446,6 +515,127 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	// the updated VM spec, labels, and annotations. The VM status
 	// will be updated in the subsequent reconcile loop.
 	return ErrSnapshotRevert
+}
+
+// handleRevertInducedDrops signals CSI about volumes that were removed from
+// the VM by a snapshot revert operation. For each dropped volume it patches
+// the BA with a VolumeDetached=True/DroppedBySnapshotRevert condition and
+// removes the volume from the BA spec.
+//
+// vSphere already removed the disks during the revert so no ReconfigVM call is
+// issued. The diskPath on CVI is preserved (it holds the last-known value;
+// the JIT resolution model does not require it to be updated here).
+//
+// This function is idempotent: volumes already absent from the BA spec or that
+// already carry the DroppedBySnapshotRevert condition are skipped.
+func (vs *vSphereVMProvider) handleRevertInducedDrops(
+	vmCtx pkgctx.VirtualMachineContext,
+	preRevertVolumes []vmopv1.VirtualMachineVolume,
+	postRevertVolumes []vmopv1.VirtualMachineVolume,
+) error {
+	if !pkgcfg.FromContext(vmCtx).Features.VMOwnedVolumes {
+		return nil
+	}
+	if !vmopv1util.IsVMOwnedStorageVM(vmCtx.VM) {
+		return nil
+	}
+
+	// Build a set of volume names in the post-revert spec.
+	postRevertNames := make(map[string]struct{}, len(postRevertVolumes))
+	for _, v := range postRevertVolumes {
+		postRevertNames[v.Name] = struct{}{}
+	}
+
+	// Compute the dropped set: volumes in pre but not in post.
+	var droppedNames []string
+	for _, v := range preRevertVolumes {
+		if _, ok := postRevertNames[v.Name]; !ok {
+			droppedNames = append(droppedNames, v.Name)
+		}
+	}
+
+	if len(droppedNames) == 0 {
+		return nil
+	}
+
+	logger := pkglog.FromContextOrDefault(vmCtx)
+	logger.Info("Revert dropped VM-owned volumes; signaling CSI via BA",
+		"vmName", vmCtx.VM.Name,
+		"droppedCount", len(droppedNames),
+		"droppedVolumes", droppedNames)
+
+	// Look up the BA for this VM.
+	ba := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
+	baKey := ctrlclient.ObjectKey{
+		Name:      pkgutil.CNSBatchAttachmentNameForVM(vmCtx.VM.Name),
+		Namespace: vmCtx.VM.Namespace,
+	}
+	if err := vs.k8sClient.Get(vmCtx, baKey, ba); err != nil {
+		if apierrors.IsNotFound(err) {
+			// No BA yet; nothing to update.
+			return nil
+		}
+		return fmt.Errorf("failed to get CnsNodeVMBatchAttachment %s: %w", baKey.Name, err)
+	}
+
+	// Capture the original state for both patches before making in-memory
+	// changes. The status subresource and main resource patches must each
+	// compute their diff from the pre-mutation state.
+	baOriginal := ba.DeepCopy()
+
+	for _, volName := range droppedNames {
+		// Set condition VolumeDetached=True, reason=DroppedBySnapshotRevert in BA status.
+		for i, volStatus := range ba.Status.VolumeStatus {
+			if volStatus.Name != volName {
+				continue
+			}
+			// Check idempotency.
+			alreadySet := false
+			for _, c := range volStatus.PersistentVolumeClaim.Conditions {
+				if c.Type == cnsv1alpha1.ConditionDetached &&
+					c.Reason == cnsv1alpha1.ReasonDroppedBySnapshotRevert {
+					alreadySet = true
+					break
+				}
+			}
+			if !alreadySet {
+				ba.Status.VolumeStatus[i].PersistentVolumeClaim.Conditions = append(
+					ba.Status.VolumeStatus[i].PersistentVolumeClaim.Conditions,
+					metav1.Condition{
+						Type:               cnsv1alpha1.ConditionDetached,
+						Status:             metav1.ConditionTrue,
+						Reason:             cnsv1alpha1.ReasonDroppedBySnapshotRevert,
+						LastTransitionTime: metav1.Now(),
+					},
+				)
+			}
+		}
+
+		// Remove the volume from the BA spec.
+		filtered := ba.Spec.Volumes[:0]
+		for _, specVol := range ba.Spec.Volumes {
+			if specVol.Name != volName {
+				filtered = append(filtered, specVol)
+			}
+		}
+		ba.Spec.Volumes = filtered
+
+		logger.Info("Signaled revert-induced drop for volume",
+			"volumeName", volName,
+			"vmName", vmCtx.VM.Name)
+	}
+
+	// Patch spec first (main resource), then status (status subresource).
+	// Both diffs are computed against the original pre-mutation state.
+	if err := vs.k8sClient.Patch(vmCtx, ba, ctrlclient.MergeFrom(baOriginal)); err != nil {
+		return fmt.Errorf("failed to patch BA spec for revert-induced drops: %w", err)
+	}
+
+	if err := vs.k8sClient.Status().Patch(vmCtx, ba, ctrlclient.MergeFrom(baOriginal)); err != nil {
+		return fmt.Errorf("failed to patch BA status for revert-induced drops: %w", err)
+	}
+
+	return nil
 }
 
 // performSnapshotRevert executes the actual snapshot revert operation.

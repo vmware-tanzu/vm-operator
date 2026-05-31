@@ -38,6 +38,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -1568,10 +1569,27 @@ func (v validator) validateVolumes(
 				vol,
 				volPath)...)
 
+		// For new dependent-persistent volumes on VMs using the VM-owned storage path, run the
+		// ownership-transfer pre-validation checks when the feature gate is on.
+		isNewVolume := oldVM != nil && oldVolumesMap[vol.Name] == nil
+		if isNewVolume &&
+			pkgcfg.FromContext(ctx).Features.VMOwnedVolumes &&
+			vmopv1util.IsVMOwnedStorageVM(vm) &&
+			vol.DiskMode == vmopv1.VolumeDiskModePersistent {
+
+			allErrs = append(allErrs,
+				v.validateVMOwnedAttach(ctx, vm, vol, volPath)...)
+		}
+
 	}
 
 	allErrs = append(allErrs,
 		v.validateBackfilledVolumesNotRemoved(ctx, vm, oldVM, volumesPath)...)
+
+	// For VM-owned storage VMs, reject volume mutations while a snapshot
+	// creation is in progress (prevents a TOCTOU race with disk recording).
+	allErrs = append(allErrs,
+		v.validateVolumeMutationsDuringSnapshot(ctx, vm, oldVM)...)
 
 	return allErrs
 }
@@ -2612,6 +2630,16 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
+	// The VM-owned storage annotation is immutable. Once stamped at VM creation it
+	// must not be removed or changed, as it is the authoritative signal for
+	// the volume ownership-transfer path.
+	if oldVM.Annotations[pkgconst.VMOwnedVolumesAnnotation] != "" &&
+		vm.Annotations[pkgconst.VMOwnedVolumesAnnotation] != oldVM.Annotations[pkgconst.VMOwnedVolumesAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(
+			annotationPath.Key(pkgconst.VMOwnedVolumesAnnotation),
+			"annotation is immutable once set"))
+	}
+
 	for k := range anno2extraconfig.AnnotationsToExtraConfigKeys {
 		if vm.Annotations[k] != oldVM.Annotations[k] {
 			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(k), modifyAnnotationNotAllowedForNonAdmin))
@@ -3144,7 +3172,7 @@ func (v validator) validateBootOrder(
 }
 
 func (v validator) validateSnapshot(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine,
 	oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
@@ -3182,7 +3210,142 @@ func (v validator) validateSnapshot(
 		allErrs = append(allErrs, field.Forbidden(snapshotPath, "snapshot revert is not allowed for VKS nodes"))
 	}
 
+	// Reject revert requests that target a snapshot that is being deleted.
+	// A snapshot in deletion may already have had its vCenter snapshot removed
+	// (by vm-operator's finalizer) making it an unstable revert target.
+	if oldVM != nil && oldVM.Spec.CurrentSnapshotName == "" && vm.Spec.CurrentSnapshotName != "" {
+		allErrs = append(allErrs, v.validateSnapshotRevert(ctx, vm)...)
+	}
+
 	return allErrs
+}
+
+// validateVolumeMutationsDuringSnapshot rejects changes to vm.spec.volumes on
+// VM-owned storage VMs while any snapshot creation for the VM is in progress.
+// This prevents a TOCTOU race between disk recording at snapshot time and a
+// concurrent volume add/remove.
+//
+// The check is only relevant when the VMOwnedVolumes feature gate is enabled
+// and the VM has the VM-owned storage annotation. Non-VM-owned-storage VMs are
+// not subject to this constraint.
+func (v validator) validateVolumeMutationsDuringSnapshot(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine,
+) field.ErrorList {
+	if oldVM == nil {
+		// Create requests are validated elsewhere.
+		return nil
+	}
+	if !pkgcfg.FromContext(ctx).Features.VMOwnedVolumes {
+		return nil
+	}
+	if !vmopv1util.IsVMOwnedStorageVM(vm) {
+		return nil
+	}
+
+	// Compare volumes: if unchanged there is nothing to block.
+	oldVols := make(map[string]struct{}, len(oldVM.Spec.Volumes))
+	for _, v := range oldVM.Spec.Volumes {
+		oldVols[v.Name] = struct{}{}
+	}
+	newVols := make(map[string]struct{}, len(vm.Spec.Volumes))
+	for _, v := range vm.Spec.Volumes {
+		newVols[v.Name] = struct{}{}
+	}
+	volumesChanged := len(oldVols) != len(newVols)
+	if !volumesChanged {
+		for n := range newVols {
+			if _, ok := oldVols[n]; !ok {
+				volumesChanged = true
+				break
+			}
+		}
+	}
+	if !volumesChanged {
+		return nil
+	}
+
+	// List VirtualMachineSnapshot CRs owned by this VM to check for an
+	// in-progress snapshot creation. The list is bounded to the VM's namespace
+	// and is filtered by the VM owner label (set by the snapshot controller).
+	snapList := &vmopv1.VirtualMachineSnapshotList{}
+	if err := v.client.List(ctx, snapList,
+		ctrlclient.InNamespace(vm.Namespace),
+		ctrlclient.MatchingLabels{vmopv1.VMNameForSnapshotLabel: vm.Name},
+	); err != nil {
+		// Non-fatal: fail open to avoid blocking legitimate operations when
+		// the API server is slow.
+		pkglog.FromContextOrDefault(ctx).Error(err,
+			"Failed to list VirtualMachineSnapshots for volume mutation check",
+			"vmName", vm.Name)
+		return nil
+	}
+
+	for i := range snapList.Items {
+		snap := &snapList.Items[i]
+		if !snap.DeletionTimestamp.IsZero() {
+			// Snapshot being deleted is not a blocker.
+			continue
+		}
+		// A snapshot with a non-true Created condition is still being created.
+		created := false
+		for _, c := range snap.Status.Conditions {
+			if c.Type == vmopv1.VirtualMachineSnapshotCreatedCondition &&
+				c.Status == "True" {
+				created = true
+				break
+			}
+		}
+		if !created {
+			return field.ErrorList{
+				field.Forbidden(
+					field.NewPath("spec", "volumes"),
+					fmt.Sprintf("cannot modify volumes while snapshot %s creation is in progress",
+						snap.Name),
+				),
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateSnapshotRevert rejects a revert request when the target
+// VirtualMachineSnapshot is currently being deleted. A snapshot with a
+// non-zero deletionTimestamp is not a stable revert target because its vCenter
+// snapshot may already have been removed.
+func (v validator) validateSnapshotRevert(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+) field.ErrorList {
+	snapshotPath := field.NewPath("spec", "currentSnapshotName")
+
+	snapObj := &vmopv1.VirtualMachineSnapshot{}
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{
+		Name:      vm.Spec.CurrentSnapshotName,
+		Namespace: vm.Namespace,
+	}, snapObj); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Snapshot not found — allow; the VM controller will surface the
+			// error when it tries to execute the revert.
+			return nil
+		}
+		return field.ErrorList{
+			field.InternalError(snapshotPath,
+				fmt.Errorf("failed to look up snapshot %s: %w",
+					vm.Spec.CurrentSnapshotName, err)),
+		}
+	}
+
+	if !snapObj.DeletionTimestamp.IsZero() {
+		return field.ErrorList{
+			field.Forbidden(snapshotPath,
+				fmt.Sprintf("cannot revert to snapshot %s: snapshot is being deleted",
+					vm.Spec.CurrentSnapshotName)),
+		}
+	}
+
+	return nil
 }
 
 func (v validator) validateGroupName(
@@ -3630,4 +3793,110 @@ func isFirstClassNICAdvancedProperty(key string) bool {
 
 func isNetworkDeviceProperty(key string) bool {
 	return ethernetDeviceKeyRE.MatchString(key)
+}
+
+// validateVMOwnedAttach runs additional pre-validation for a new
+// dependent-persistent volume being attached to a VM using the VM-owned storage path:
+//
+//  1. Rejects if the CsiVolumeInfo shows the volume is already attached to a
+//     different VM (concurrent attach protection).
+//  2. Rejects if the CsiVolumeInfo is in a transient state targeting a
+//     different VM.
+//
+// Checks intentionally deferred to the CSI reconciler / CNS layer:
+//   - VolumeSnapshot CRs on the PVC (CNS validates no FCD snapshots during
+//     CnsUnregisterVolume — A.3).
+//   - Linked clone detection (CNS validates during CnsUnregisterVolume — A.3).
+//
+// This check only runs when VMOwnedVolumes is enabled and the VM has VM-owned storage enabled.
+func (v validator) validateVMOwnedAttach(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+	volPath *field.Path,
+) field.ErrorList {
+	if vol.PersistentVolumeClaim == nil || vol.PersistentVolumeClaim.ClaimName == "" {
+		return nil
+	}
+
+	var allErrs field.ErrorList
+	pvcPath := volPath.Child("persistentVolumeClaim", "claimName")
+	pvcName := vol.PersistentVolumeClaim.ClaimName
+
+	// NOTE: The spec (A.1) requires rejecting attach if any VolumeSnapshot CR
+	// references the PVC (no FCD snapshots allowed before ownership transfer).
+	// This check is intentionally deferred to the CSI reconciler layer rather
+	// than enforced here because:
+	//   1. The snapshot.storage.k8s.io VolumeSnapshot types are not registered
+	//      in vm-operator's scheme.
+	//   2. CSI's CnsUnregisterVolume call (A.3) authoritatively validates that
+	//      no FCD snapshots exist — it is the canonical enforcement point.
+	//   3. CNS returns a fault if snapshots or CBT are present, which CSI
+	//      surfaces on the BA status.
+	// The webhook validates concurrent-attach protection via CVI state below.
+
+	// Check concurrent attach via CVI. Resolve the PVC → PV → volumeHandle to
+	// get the deterministic CVI name.
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      pvcName,
+	}, pvc); err != nil {
+		if apierrors.IsNotFound(err) {
+			return allErrs
+		}
+		return allErrs // Do not block on API error; reconciler will catch it.
+	}
+
+	if pvc.Spec.VolumeName == "" {
+		// PVC not yet bound — no CVI exists, nothing to check.
+		return allErrs
+	}
+
+	pv := &corev1.PersistentVolume{}
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{
+		Name: pvc.Spec.VolumeName,
+	}, pv); err != nil {
+		return allErrs
+	}
+
+	if pv.Spec.CSI == nil || pv.Spec.CSI.VolumeHandle == "" {
+		return allErrs
+	}
+
+	cvi := &cnsv1alpha1.CsiVolumeInfo{}
+	cviKey := ctrlclient.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      "csi-volume-info-" + pv.Spec.CSI.VolumeHandle,
+	}
+	if err := v.client.Get(ctx, cviKey, cvi); err != nil {
+		if apierrors.IsNotFound(err) {
+			return allErrs // No CVI — volume not in VM-owned storage path, skip.
+		}
+		return allErrs
+	}
+
+	// Reject if the volume is VM_MANAGED by a different VM.
+	if cvi.Status.OwnershipState == cnsv1alpha1.OwnershipStateVMManaged &&
+		cvi.Status.VMName != "" &&
+		cvi.Status.VMName != vm.Name {
+
+		allErrs = append(allErrs, field.Forbidden(
+			pvcPath,
+			fmt.Sprintf("PVC is already attached to VM %q; detach it first",
+				cvi.Status.VMName)))
+	}
+
+	// Reject if CVI is in a transient state attached to a different VM.
+	if cvi.Status.OwnershipState == cnsv1alpha1.OwnershipStateTransferringToVM &&
+		cvi.Status.VMName != "" &&
+		cvi.Status.VMName != vm.Name {
+
+		allErrs = append(allErrs, field.Forbidden(
+			pvcPath,
+			fmt.Sprintf("PVC attach is in progress on VM %q",
+				cvi.Status.VMName)))
+	}
+
+	return allErrs
 }

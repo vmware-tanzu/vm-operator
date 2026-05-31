@@ -20,10 +20,14 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -37,6 +41,14 @@ func unitTests() {
 			testlabels.API,
 		),
 		unitTestsReconcile,
+	)
+	Describe(
+		"RecordRetainedVMOwnedDisks",
+		Label(
+			testlabels.Controller,
+			testlabels.API,
+		),
+		unitTestsRecordRetainedVMOwnedDisks,
 	)
 }
 
@@ -715,4 +727,223 @@ func addSnapshotToChildren(vmSnapshot *vmopv1.VirtualMachineSnapshot, children .
 	for _, child := range children {
 		vmSnapshot.Status.Children = append(vmSnapshot.Status.Children, *vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(child))
 	}
+}
+
+// unitTestsRecordRetainedVMOwnedDisks tests the recordRetainedVMOwnedDisks
+// function indirectly via ReconcileNormal.
+func unitTestsRecordRetainedVMOwnedDisks() {
+	const (
+		dummyVMUUID = "unique-vm-id"
+		namespace   = "test-namespace"
+		diskUUID1   = "6000C29-d1"
+		diskUUID2   = "6000C29-d2"
+		volumeID1   = "vol-abc-d1"
+		volumeID2   = "vol-abc-d2"
+	)
+
+	var (
+		initObjects []client.Object
+		ctx         *builder.UnitTestContextForController
+		reconciler  *virtualmachinesnapshot.Reconciler
+		vmSnap      *vmopv1.VirtualMachineSnapshot
+		vm          *vmopv1.VirtualMachine
+		ba          *cnsv1alpha1.CnsNodeVMBatchAttachment
+		cvi1, cvi2  *cnsv1alpha1.CsiVolumeInfo
+		snapKey     types.NamespacedName
+	)
+
+	// makeCVI builds a CsiVolumeInfo in VM_MANAGED state with the given diskUUID.
+	makeCVI := func(name, diskUUID string) *cnsv1alpha1.CsiVolumeInfo {
+		return &cnsv1alpha1.CsiVolumeInfo{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+				Labels:    map[string]string{cnsv1alpha1.CVIDiskUUIDLabel: diskUUID},
+			},
+			Status: cnsv1alpha1.CsiVolumeInfoStatus{
+				OwnershipState: cnsv1alpha1.OwnershipStateVMManaged,
+				VMName:         vm.Name,
+				DiskUUID:       diskUUID,
+			},
+		}
+	}
+
+	// makeBA builds a minimal CnsNodeVMBatchAttachment.
+	makeBA := func() *cnsv1alpha1.CnsNodeVMBatchAttachment {
+		ck1 := int32(2000)
+		ck2 := int32(2001)
+		un1 := int32(0)
+		un2 := int32(1)
+		return &cnsv1alpha1.CnsNodeVMBatchAttachment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pkgutil.CNSBatchAttachmentNameForVM(vm.Name),
+				Namespace: namespace,
+			},
+			Spec: cnsv1alpha1.CnsNodeVMBatchAttachmentSpec{
+				Volumes: []cnsv1alpha1.VolumeSpec{
+					{
+						Name: "vol-d1",
+						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
+							ClaimName:     "pvc-d1",
+							ControllerKey: &ck1,
+							UnitNumber:    &un1,
+						},
+					},
+					{
+						Name: "vol-d2",
+						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
+							ClaimName:     "pvc-d2",
+							ControllerKey: &ck2,
+							UnitNumber:    &un2,
+						},
+					},
+				},
+			},
+			Status: cnsv1alpha1.CnsNodeVMBatchAttachmentStatus{
+				VolumeStatus: []cnsv1alpha1.VolumeStatus{
+					{
+						Name: "vol-d1",
+						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+							ClaimName:   "pvc-d1",
+							CnsVolumeID: volumeID1,
+							DiskUUID:    diskUUID1,
+						},
+					},
+					{
+						Name: "vol-d2",
+						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+							ClaimName:   "pvc-d2",
+							CnsVolumeID: volumeID2,
+							DiskUUID:    diskUUID2,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	BeforeEach(func() {
+		initObjects = nil
+		vm = builder.DummyBasicVirtualMachine("dummy-vm", namespace)
+		vm.Status.UniqueID = dummyVMUUID
+		vm.Annotations = map[string]string{
+			pkgconst.VMOwnedVolumesAnnotation: "true",
+		}
+		vmSnap = builder.DummyVirtualMachineSnapshot(namespace, "snap-1", vm.Name)
+		conditions.MarkTrue(vmSnap, vmopv1.VirtualMachineSnapshotCreatedCondition)
+		ba = makeBA()
+		cvi1 = makeCVI("csi-volume-info-"+volumeID1, diskUUID1)
+		cvi2 = makeCVI("csi-volume-info-"+volumeID2, diskUUID2)
+		snapKey = types.NamespacedName{Namespace: namespace, Name: vmSnap.Name}
+	})
+
+	JustBeforeEach(func() {
+		ctx = suite.NewUnitTestContextForController(initObjects...)
+		fakeProvider := ctx.VMProvider.(*providerfake.VMProvider)
+		fakeProvider.GetSnapshotSizeFn = func(_ context.Context, _ string, _ *vmopv1.VirtualMachine) (int64, error) {
+			return 0, nil
+		}
+		reconciler = virtualmachinesnapshot.NewReconciler(
+			ctx,
+			ctx.Client,
+			ctx.Logger,
+			ctx.Recorder,
+			ctx.VMProvider,
+		)
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+		initObjects = nil
+		reconciler = nil
+	})
+
+	Context("VM-owned storage VM", func() {
+		BeforeEach(func() {
+			initObjects = append(initObjects, vm, vmSnap, ba, cvi1, cvi2)
+		})
+
+		When("feature gate is enabled", func() {
+			BeforeEach(func() {
+				cfg := pkgcfg.FromContext(suite)
+				cfg.Features.VMOwnedVolumes = true
+				_ = cfg
+			})
+
+			It("populates status.disks with the VM-owned volumes", func() {
+				_, err := reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: snapKey})
+				Expect(err).ToNot(HaveOccurred())
+
+				snap := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, snapKey, snap)).To(Succeed())
+				Expect(snap.Status.Disks).To(HaveLen(2))
+				diskIDs := []string{snap.Status.Disks[0].ID, snap.Status.Disks[1].ID}
+				Expect(diskIDs).To(ContainElements(diskUUID1, diskUUID2))
+			})
+
+			It("adds the CSI finalizer when disks are present", func() {
+				_, err := reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: snapKey})
+				Expect(err).ToNot(HaveOccurred())
+
+				snap := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, snapKey, snap)).To(Succeed())
+				Expect(snap.Finalizers).To(ContainElement(vmopv1.CSISnapshotFinalizer))
+			})
+
+			It("is idempotent when status.disks is already set", func() {
+				// Pre-populate the disks field.
+				vmSnap.Status.Disks = []vmopv1.VirtualMachineSnapshotDisk{
+					{ID: diskUUID1, Key: 2000},
+				}
+				Expect(ctx.Client.Status().Update(ctx, vmSnap)).To(Succeed())
+
+				_, err := reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: snapKey})
+				Expect(err).ToNot(HaveOccurred())
+
+				snap := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, snapKey, snap)).To(Succeed())
+				// Should retain the pre-populated value unchanged.
+				Expect(snap.Status.Disks).To(HaveLen(1))
+				Expect(snap.Status.Disks[0].ID).To(Equal(diskUUID1))
+			})
+		})
+
+		When("feature gate is disabled", func() {
+			BeforeEach(func() {
+				cfg := pkgcfg.FromContext(suite)
+				cfg.Features.VMOwnedVolumes = false
+				_ = cfg
+			})
+
+			It("does not populate status.disks", func() {
+				_, err := reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: snapKey})
+				Expect(err).ToNot(HaveOccurred())
+
+				snap := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, snapKey, snap)).To(Succeed())
+				Expect(snap.Status.Disks).To(BeEmpty())
+			})
+		})
+	})
+
+	Context("non-VM-owned-storage VM", func() {
+		BeforeEach(func() {
+			// Remove the VM-owned annotation.
+			delete(vm.Annotations, pkgconst.VMOwnedVolumesAnnotation)
+			initObjects = append(initObjects, vm, vmSnap, ba, cvi1, cvi2)
+			cfg := pkgcfg.FromContext(suite)
+			cfg.Features.VMOwnedVolumes = true
+			_ = cfg
+		})
+
+		It("does not populate status.disks", func() {
+			_, err := reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: snapKey})
+			Expect(err).ToNot(HaveOccurred())
+
+			snap := &vmopv1.VirtualMachineSnapshot{}
+			Expect(ctx.Client.Get(ctx, snapKey, snap)).To(Succeed())
+			Expect(snap.Status.Disks).To(BeEmpty())
+		})
+	})
 }

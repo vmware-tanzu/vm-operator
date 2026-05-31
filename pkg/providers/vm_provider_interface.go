@@ -37,6 +37,23 @@ type VMGroupPlacement struct {
 	VMMembers []*vmopv1.VirtualMachine
 }
 
+// VirtualDiskInfo contains metadata about a virtual disk device on a VM.
+type VirtualDiskInfo struct {
+	// DiskUUID is the backing disk UUID (VirtualDisk.Backing.Uuid).
+	DiskUUID string
+
+	// DiskPath is the datastore path to the VMDK file
+	// (VirtualDisk.Backing.FileName).
+	DiskPath string
+
+	// ControllerKey is the device key of the storage controller the disk is
+	// attached to.
+	ControllerKey int32
+
+	// UnitNumber is the unit number of the disk on its controller.
+	UnitNumber int32
+}
+
 // VirtualMachineProviderInterface is a pluggable interface for VM Providers.
 type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
@@ -91,4 +108,27 @@ type VirtualMachineProviderInterface interface {
 	GetSnapshotSize(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	// SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
 	SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.VirtualMachine) error
+
+	// GetVirtualDiskByUUID returns the VirtualDiskInfo for a disk identified by
+	// its backing UUID, or nil when no disk with that UUID is attached to the VM.
+	GetVirtualDiskByUUID(ctx context.Context, vm *vmopv1.VirtualMachine,
+		diskUUID string) (*VirtualDiskInfo, error)
+
+	// AddExistingDiskToVM adds an already-existing VMDK to the VM as a plain
+	// virtual disk. Used by the VM-owned storage ownership-transfer attach path after
+	// CSI has unregistered the FCD.
+	AddExistingDiskToVM(ctx context.Context, vm *vmopv1.VirtualMachine,
+		diskPath string, controllerKey, unitNumber int32, diskMode string) error
+
+	// RemoveDiskFromVM removes a disk from the VM identified by its backing UUID,
+	// preserving the VMDK file on the datastore. Used by the VM-owned storage detach
+	// path; no file is deleted.
+	RemoveDiskFromVM(ctx context.Context, vm *vmopv1.VirtualMachine,
+		diskUUID string) error
+
+	// GetSnapshotDeviceConfig returns the virtual device list recorded in a
+	// vCenter snapshot's saved configuration. Used to capture the diskPath for
+	// each VM-owned volume before the snapshot is deleted (D.2).
+	GetSnapshotDeviceConfig(ctx context.Context, vm *vmopv1.VirtualMachine,
+		snapshotName string) ([]vimtypes.BaseVirtualDevice, error)
 }

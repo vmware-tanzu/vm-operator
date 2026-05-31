@@ -84,6 +84,14 @@ rules:
 - apiGroups:
   - cns.vmware.com
   resources:
+  - cnsnodebatchvmattachments
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cns.vmware.com
+  resources:
   - cnsnodevmattachments
   - cnsnodevmbatchattachments
   - storagepolicyusages
@@ -116,6 +124,22 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - cns.vmware.com
+  resources:
+  - csivolumeinfos
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - cns.vmware.com
+  resources:
+  - csivolumeinfos/status
+  verbs:
+  - get
+  - patch
 - apiGroups:
   - cns.vmware.com
   resources:

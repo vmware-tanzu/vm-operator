@@ -295,6 +295,9 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 				return admission.Denied(err.Error())
 			}
 		}
+		if pkgcfg.FromContext(ctx).Features.VMOwnedVolumes {
+			SetVMOwnedStorageAnnotation(ctx, m.client, modified)
+		}
 
 		// Iterate over the externally registered mutate functions.
 		var rangeErr error
@@ -763,6 +766,25 @@ func ResolveImageNameOnCreate(
 	}
 
 	return false, nil
+}
+
+// SetVMOwnedStorageAnnotation stamps the VM-owned storage annotation on VMs created while
+// the VMOwnedVolumes feature gate is enabled. The annotation is the authoritative
+// signal that all volume operations on this VM use the new ownership-transfer
+// path. It is set once at creation and must not be modified afterward.
+func SetVMOwnedStorageAnnotation(
+	_ *pkgctx.WebhookRequestContext,
+	_ ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) bool {
+
+	if vm.Annotations == nil {
+		vm.Annotations = make(map[string]string)
+	}
+	if vm.Annotations[constants.VMOwnedVolumesAnnotation] == "true" {
+		return false
+	}
+	vm.Annotations[constants.VMOwnedVolumesAnnotation] = "true"
+	return true
 }
 
 func SetCreatedAtAnnotations(

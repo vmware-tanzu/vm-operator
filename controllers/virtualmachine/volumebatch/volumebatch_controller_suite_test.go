@@ -29,7 +29,12 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	})
 
 func TestBatchVolume(t *testing.T) {
-	suite.Register(t, "Volume batch controller suite", intgTests, unitTests)
+	suite.Register(t, "Volume batch controller suite", intgTests, combinedUnitTests)
+}
+
+func combinedUnitTests() {
+	unitTests()
+	unitVMOwnedStorageTests()
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

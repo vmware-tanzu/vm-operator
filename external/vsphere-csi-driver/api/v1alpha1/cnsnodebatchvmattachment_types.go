@@ -54,6 +54,29 @@ const (
 	ReasonDetachFailed = "DetachFailed"
 	// ReasonFailed reflects that the CR instance is not yet ready.
 	ReasonFailed = "Failed"
+
+	// ReasonDroppedBySnapshotRevert signals that a volume was removed from the
+	// VM by a snapshot revert operation rather than an explicit user detach.
+	ReasonDroppedBySnapshotRevert = "DroppedBySnapshotRevert"
+
+	// ReasonDetachBlocked signals that detach of one or more volumes could not
+	// complete because a vSphere snapshot retains the disk.
+	ReasonDetachBlocked = "DetachBlocked"
+
+	// ConditionAttachMethod is a per-volume condition type that communicates
+	// the attach path from CSI to vm-operator.
+	ConditionAttachMethod = "AttachMethod"
+
+	// ReasonReconfig indicates that vm-operator should add the existing disk
+	// to the VM via ReconfigVM (VM-owned storage ownership-transfer path).
+	ReasonReconfig = "Reconfig"
+
+	// ReasonCnsAttach indicates the legacy CNS-based attach path.
+	ReasonCnsAttach = "CnsAttach"
+
+	// ConditionReconfigCompleted is a per-volume condition type set by
+	// vm-operator after a successful ReconfigVM disk operation.
+	ConditionReconfigCompleted = "ReconfigCompleted"
 )
 
 // SharingMode is the sharing mode of the virtual disk.
@@ -147,6 +170,11 @@ type PersistentVolumeClaimStatus struct {
 
 	// DiskUUID is the ID obtained when volume is attached to a VM.
 	DiskUUID string `json:"diskUUID,omitempty"`
+	// +optional
+
+	// DiskPath is the datastore path to the VMDK file. Set by CSI after
+	// CnsUnregisterVolume for the VM-owned storage ownership-transfer attach path.
+	DiskPath string `json:"diskPath,omitempty"`
 	// +optional
 
 	// Conditions describes any conditions associated with this volume.

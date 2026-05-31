@@ -871,7 +871,7 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, legacyAttachment1, legacyPVC1)
 				})
 
-				It("should treat volume as greenfield and create batch attachment", func() {
+				It("should treat volume as VM-owned and create batch attachment", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
 

@@ -391,6 +391,33 @@ spec:
                   - type
                   type: object
                 type: array
+              disks:
+                description: |-
+                  Disks lists the VM-owned volumes that were attached to the VM at
+                  snapshot time. Populated by vm-operator after the vCenter snapshot is
+                  created. Used by downstream workflows to determine which volumes a
+                  snapshot retains so that re-registration decisions can be made
+                  accurately without querying the vCenter snapshot tree for every PVC.
+                items:
+                  description: VirtualMachineSnapshotDisk identifies a disk captured
+                    in a snapshot.
+                  properties:
+                    id:
+                      description: |-
+                        ID is the disk UUID (VirtualDisk.Backing.Uuid). Used to look up the
+                        corresponding CsiVolumeInfo via its disk-uuid label.
+                      type: string
+                    key:
+                      description: |-
+                        Key is the VirtualDisk controller key from the snapshot's device
+                        configuration.
+                      format: int32
+                      type: integer
+                  required:
+                  - id
+                  - key
+                  type: object
+                type: array
               powerState:
                 description: |-
                   PowerState represents the observed power state of the virtual

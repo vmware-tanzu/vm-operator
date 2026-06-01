@@ -19,6 +19,7 @@ import (
 )
 
 var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
+	Describe("ChangeBlockTracking", vmCBTTests)
 	Describe("CNS", vmCNSTests)
 	Describe("Cleanup", vmCleanupTests)
 	Describe("ConfigSpec", vmConfigSpecTests)

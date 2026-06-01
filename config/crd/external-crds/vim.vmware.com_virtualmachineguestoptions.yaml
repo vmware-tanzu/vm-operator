@@ -1,0 +1,622 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+  name: virtualmachineguestoptions.vim.vmware.com
+spec:
+  group: vim.vmware.com
+  names:
+    kind: VirtualMachineGuestOptions
+    listKind: VirtualMachineGuestOptionsList
+    plural: virtualmachineguestoptions
+    shortNames:
+    - vmguestoptions
+    singular: virtualmachineguestoptions
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          VirtualMachineGuestOptions is the schema for the
+          VirtualMachineGuestOptions API and
+          represents the desired state and observed status of a
+          VirtualMachineGuestOptions resource.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              id:
+                description: |-
+                  ID is the desired guest ID for which to get the guest options,
+                  ex.: OtherLinux64.
+                type: string
+            required:
+            - id
+            type: object
+          status:
+            properties:
+              family:
+                description: |-
+                  Family is the family to which this guest OS belongs (e.g.,
+                  "Windows", "Linux").
+                type: string
+              fullName:
+                description: |-
+                  FullName is the full descriptive name of the guest OS (e.g.,
+                  "Windows 2000 Professional").
+                type: string
+              hardwareVersions:
+                description: |-
+                  HardwareVersions contains the list of hardware versions for which this
+                  guest is valid and the guest's options for that version.
+                items:
+                  properties:
+                    defaultSecureBoot:
+                      description: |-
+                        DefaultSecureBoot indicates whether Secure Boot should be enabled by
+                        default for this guest. Only meaningful when virtual EFI firmware is in
+                        use.
+                      type: boolean
+                    diskUuidEnabled:
+                      description: |-
+                        DiskUuidEnabled indicates whether disk UUID should be enabled by
+                        default for this guest.
+                      type: boolean
+                    hardwareVersion:
+                      description: |-
+                        HardwareVersion is the hardware version to which these guest options
+                        apply, ex.: vmx-19.
+                      type: string
+                    ich7mRecommended:
+                      description: |-
+                        Ich7mRecommended indicates whether an I/O Controller Hub is recommended
+                        for this guest.
+                      type: boolean
+                    numRecommendedCoresPerSocket:
+                      description: |-
+                        NumRecommendedCoresPerSocket is the recommended number of cores per
+                        socket for this guest.
+                      format: int32
+                      type: integer
+                    numRecommendedPhysicalSockets:
+                      description: |-
+                        NumRecommendedPhysicalSockets is the recommended number of sockets for
+                        this guest.
+                      format: int32
+                      type: integer
+                    numSupportedCoresPerSocket:
+                      description: |-
+                        NumSupportedCoresPerSocket is the maximum number of cores per socket
+                        supported for this guest.
+                      format: int32
+                      type: integer
+                    numSupportedFloppyDevices:
+                      description: |-
+                        NumSupportedFloppyDevices is the maximum number of floppy devices
+                        supported by this guest.
+                      format: int32
+                      type: integer
+                    numSupportedPhysicalSockets:
+                      description: |-
+                        NumSupportedPhysicalSockets is the maximum number of sockets supported
+                        for this guest.
+                      format: int32
+                      type: integer
+                    persistentMemoryColdGrowthGranularity:
+                      description: |-
+                        PersistentMemoryColdGrowthGranularity is the granularity for
+                        virtual NVDIMM cold-growth operations.
+                      properties:
+                        default:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Default is the default value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        max:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Max is the maximum value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        min:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Min is the minimum value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        valueIsReadonly:
+                          description: |-
+                            ValueIsReadonly indicates whether or not a user can modify a value
+                            belonging to this option type.
+                          type: boolean
+                      required:
+                      - default
+                      - max
+                      - min
+                      type: object
+                    persistentMemoryColdGrowthSupported:
+                      description: |-
+                        PersistentMemoryColdGrowthSupported indicates support for virtual NVDIMM
+                        cold-growth (capacity increase while powered off) for this guest.
+                      type: boolean
+                    persistentMemoryHotAddSupported:
+                      description: |-
+                        PersistentMemoryHotAddSupported indicates support for persistent memory
+                        hot-add for this guest.
+                      type: boolean
+                    persistentMemoryHotGrowthGranularity:
+                      description: |-
+                        PersistentMemoryHotGrowthGranularity is the granularity for
+                        virtual NVDIMM hot-growth operations.
+                      properties:
+                        default:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Default is the default value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        max:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Max is the maximum value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        min:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Min is the minimum value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        valueIsReadonly:
+                          description: |-
+                            ValueIsReadonly indicates whether or not a user can modify a value
+                            belonging to this option type.
+                          type: boolean
+                      required:
+                      - default
+                      - max
+                      - min
+                      type: object
+                    persistentMemoryHotGrowthSupported:
+                      description: |-
+                        PersistentMemoryHotGrowthSupported indicates support for virtual NVDIMM
+                        hot-growth (capacity increase while powered on) for this guest.
+                      type: boolean
+                    persistentMemoryHotRemoveSupported:
+                      description: |-
+                        PersistentMemoryHotRemoveSupported indicates support for persistent
+                        memory hot-remove for this guest.
+                      type: boolean
+                    persistentMemorySupported:
+                      description: |-
+                        PersistentMemorySupported indicates support for persistent memory
+                        (virtual NVDIMM) for this guest.
+                      type: boolean
+                    recommended3D:
+                      description: |-
+                        Recommended3D indicates whether 3D graphics are recommended for this
+                        guest.
+                      type: boolean
+                    recommendedCdromController:
+                      description: |-
+                        RecommendedCdromController is the recommended default CD-ROM controller
+                        type for this guest.
+                      type: string
+                    recommendedColorDepth:
+                      description: |-
+                        RecommendedColorDepth is the recommended default color depth for this
+                        guest.
+                      format: int32
+                      type: integer
+                    recommendedDiskController:
+                      description: |-
+                        RecommendedDiskController is the recommended default disk controller
+                        type for this guest.
+                      type: string
+                    recommendedDiskSize:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: RecommendedDiskSize is the recommended default
+                        disk size for this guest.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    recommendedEthernetCard:
+                      description: |-
+                        RecommendedEthernetCard is the recommended default ethernet adapter type
+                        for this guest.
+                      enum:
+                      - VirtualE1000e
+                      - VirtualE1000e
+                      - VirtualPCNet32
+                      - VirtualSriovEthernetCard
+                      - VirtualVmxnet
+                      - VirtualVmxnet2
+                      - VirtualVmxnet3
+                      - VirtualVmxnet3Vrdma
+                      type: string
+                    recommendedFirmware:
+                      description: RecommendedFirmware is the recommended firmware
+                        type for this guest.
+                      enum:
+                      - BIOS
+                      - EFI
+                      type: string
+                    recommendedMem:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: RecommendedMem is the recommended default memory
+                        size for this guest.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    recommendedPersistentMemory:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: |-
+                        RecommendedPersistentMemory is the recommended default persistent memory
+                        size for this guest.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    recommendedSCSIController:
+                      description: |-
+                        RecommendedSCSIController is the recommended default SCSI controller
+                        type for this guest.
+                      type: string
+                    recommendedTPM20:
+                      description: |-
+                        RecommendedTPM20 indicates whether TPM 2.0 is recommended for this
+                        guest.
+                      type: boolean
+                    recommendedUSBController:
+                      description: |-
+                        RecommendedUSBController is the recommended default USB controller type
+                        for this guest.
+                      type: string
+                    smcRecommended:
+                      description: |-
+                        SmcRecommended indicates whether SMC (Apple hardware) is recommended
+                        for this guest.
+                      type: boolean
+                    smcRequired:
+                      description: SmcRequired indicates that this guest requires
+                        an SMC (Apple hardware).
+                      type: boolean
+                    supportLevel:
+                      description: |-
+                        SupportLevel indicates the support level for this guest OS.
+
+                        Valid values are:
+                          - Deprecated
+                          - Experimental
+                          - Legacy
+                          - Supported
+                          - TechPreview
+                          - Terminated
+                          - Unsupported
+                      enum:
+                      - Deprecated
+                      - Experimental
+                      - Legacy
+                      - Supported
+                      - TechPreview
+                      - Terminated
+                      - Unsupported
+                      type: string
+                    supportedDiskControllers:
+                      description: |-
+                        SupportedDiskControllers lists supported disk controller types for this
+                        guest.
+                      items:
+                        description: |-
+                          VirtualControllerType identifies the concrete type of a virtual
+                          controller device in a virtual machine.
+                        type: string
+                      type: array
+                    supportedEthernetCards:
+                      description: |-
+                        SupportedEthernetCards lists supported ethernet adapter types for this
+                        guest.
+                      items:
+                        description: |-
+                          EthernetCardType identifies the concrete type of a virtual Ethernet
+                          card in a virtual machine.
+                        enum:
+                        - VirtualE1000e
+                        - VirtualE1000e
+                        - VirtualPCNet32
+                        - VirtualSriovEthernetCard
+                        - VirtualVmxnet
+                        - VirtualVmxnet2
+                        - VirtualVmxnet3
+                        - VirtualVmxnet3Vrdma
+                        type: string
+                      type: array
+                    supportedFirmware:
+                      description: SupportedFirmware lists supported firmware types
+                        for this guest.
+                      items:
+                        description: |-
+                          Firmware identifies the firmware used to boot a virtual machine.
+                          It corresponds to
+                          vim.vm.GuestOsDescriptor.GuestOsDescriptorFirmwareType.
+                        enum:
+                        - BIOS
+                        - EFI
+                        type: string
+                      type: array
+                    supportedForCreate:
+                      description: |-
+                        SupportedForCreate indicates whether this guest OS can be selected
+                        during VM creation.
+                      type: boolean
+                    supportedMaxCPUs:
+                      description: |-
+                        SupportedMaxCPUs is the maximum number of processors (virtual CPUs)
+                        supported for this guest.
+                      format: int32
+                      type: integer
+                    supportedMaxMem:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: SupportedMaxMem is the maximum memory supported
+                        for this guest.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    supportedMaxPersistentMemory:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: |-
+                        SupportedMaxPersistentMemory is the maximum total persistent memory
+                        supported for this guest across all virtual NVDIMM devices.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    supportedMinMem:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: SupportedMinMem is the minimum memory required
+                        for this guest.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    supportedMinPersistentMemory:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: |-
+                        SupportedMinPersistentMemory is the minimum persistent memory supported
+                        for this guest.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    supportedNumDisks:
+                      description: SupportedNumDisks is the number of disks supported
+                        for this guest.
+                      format: int32
+                      type: integer
+                    supportedUSBControllerList:
+                      description: |-
+                        SupportedUSBControllerList lists supported USB controller types for this
+                        guest.
+                      items:
+                        type: string
+                      type: array
+                    supports3D:
+                      description: Supports3D indicates whether this guest supports
+                        3D graphics.
+                      type: boolean
+                    supportsCpuHotAdd:
+                      description: |-
+                        SupportsCpuHotAdd indicates whether CPUs can be added to this guest
+                        while the virtual machine is running.
+                      type: boolean
+                    supportsCpuHotRemove:
+                      description: |-
+                        SupportsCpuHotRemove indicates whether CPUs can be removed from this
+                        guest while the virtual machine is running.
+                      type: boolean
+                    supportsHotPlugPCI:
+                      description: |-
+                        SupportsHotPlugPCI indicates whether this guest supports hot-plug of
+                        PCI devices.
+                      type: boolean
+                    supportsMemoryHotAdd:
+                      description: |-
+                        SupportsMemoryHotAdd indicates whether memory can be added to this
+                        guest while the virtual machine is running.
+                      type: boolean
+                    supportsPvscsiControllerForBoot:
+                      description: |-
+                        SupportsPvscsiControllerForBoot indicates whether this guest can use
+                        a PVSCSI controller as the boot adapter.
+                      type: boolean
+                    supportsSecureBoot:
+                      description: |-
+                        SupportsSecureBoot indicates whether Secure Boot is supported for this
+                        guest. Only meaningful when virtual EFI firmware is in use.
+                      type: boolean
+                    supportsSlaveDisk:
+                      description: |-
+                        SupportsSlaveDisk indicates whether this guest supports a disk
+                        configured as a slave.
+                      type: boolean
+                    supportsTPM20:
+                      description: SupportsTPM20 indicates whether TPM 2.0 is supported
+                        for this guest.
+                      type: boolean
+                    supportsVMI:
+                      description: |-
+                        SupportsVMI indicates whether this guest supports the virtual machine
+                        interface.
+                      type: boolean
+                    supportsWakeOnLan:
+                      description: SupportsWakeOnLan indicates whether this guest
+                        supports Wake-on-LAN.
+                      type: boolean
+                    usbRecommended:
+                      description: |-
+                        UsbRecommended indicates whether a USB controller is recommended for
+                        this guest.
+                      type: boolean
+                    vRAMSize:
+                      description: |-
+                        VRAMSize describes the video RAM size limits supported by this
+                        guest.
+                      properties:
+                        default:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Default is the default value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        max:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Max is the maximum value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        min:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Min is the minimum value.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        valueIsReadonly:
+                          description: |-
+                            ValueIsReadonly indicates whether or not a user can modify a value
+                            belonging to this option type.
+                          type: boolean
+                      required:
+                      - default
+                      - max
+                      - min
+                      type: object
+                    vbsSupported:
+                      description: |-
+                        VbsSupported indicates support for Virtualization-based security for
+                        this guest.
+                      properties:
+                        default:
+                          description: Default is the default value for this option.
+                          type: boolean
+                        supported:
+                          description: Supported indicates whether this option is
+                            supported.
+                          type: boolean
+                        valueIsReadonly:
+                          description: |-
+                            ValueIsReadonly indicates whether or not a user can modify a value
+                            belonging to this option type.
+                          type: boolean
+                      type: object
+                    vsgxRemoteAttestationSupported:
+                      description: |-
+                        VsgxRemoteAttestationSupported indicates support for Intel SGX remote
+                        attestation for this guest.
+                      type: boolean
+                    vsgxSupported:
+                      description: |-
+                        VsgxSupported indicates support for Intel Software Guard Extensions
+                        (SGX) for this guest.
+                      properties:
+                        default:
+                          description: Default is the default value for this option.
+                          type: boolean
+                        supported:
+                          description: Supported indicates whether this option is
+                            supported.
+                          type: boolean
+                        valueIsReadonly:
+                          description: |-
+                            ValueIsReadonly indicates whether or not a user can modify a value
+                            belonging to this option type.
+                          type: boolean
+                      type: object
+                    vvtdSupported:
+                      description: |-
+                        VvtdSupported indicates support for Intel Virtualization Technology for
+                        Directed I/O (VT-d) for this guest.
+                      properties:
+                        default:
+                          description: Default is the default value for this option.
+                          type: boolean
+                        supported:
+                          description: Supported indicates whether this option is
+                            supported.
+                          type: boolean
+                        valueIsReadonly:
+                          description: |-
+                            ValueIsReadonly indicates whether or not a user can modify a value
+                            belonging to this option type.
+                          type: boolean
+                      type: object
+                    vwdtSupported:
+                      description: |-
+                        VwdtSupported indicates support for a virtual watchdog timer for this
+                        guest.
+                      type: boolean
+                    wakeOnLanEthernetCard:
+                      description: |-
+                        WakeOnLanEthernetCard lists the NIC types supported by this guest that
+                        also support Wake-on-LAN.
+                      items:
+                        description: |-
+                          EthernetCardType identifies the concrete type of a virtual Ethernet
+                          card in a virtual machine.
+                        enum:
+                        - VirtualE1000e
+                        - VirtualE1000e
+                        - VirtualPCNet32
+                        - VirtualSriovEthernetCard
+                        - VirtualVmxnet
+                        - VirtualVmxnet2
+                        - VirtualVmxnet3
+                        - VirtualVmxnet3Vrdma
+                        type: string
+                      type: array
+                  required:
+                  - hardwareVersion
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - hardwareVersion
+                x-kubernetes-list-type: map
+            required:
+            - fullName
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

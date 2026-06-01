@@ -416,6 +416,9 @@ generate-go: ## Generate golang sources
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/infra/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/vim/api/... \
+		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 	$(MAKE) -C ./pkg/util/cloudinit/schema $@
 	$(MAKE) -C ./pkg/util/netplan/schema $@
 
@@ -490,6 +493,11 @@ generate-external-manifests: ## Generate manifests for the external types for te
 		output:none
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/infra/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
+		output:none
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/vim/api/... \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none

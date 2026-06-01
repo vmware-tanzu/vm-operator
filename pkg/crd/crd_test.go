@@ -35,6 +35,7 @@ var (
 		"contentsources.vmoperator.vmware.com",
 		"virtualmachineclassbindings.vmoperator.vmware.com",
 		"virtualmachineclasses.vmoperator.vmware.com",
+		"virtualmachinereservedprofiles.vmoperator.vmware.com",
 		"virtualmachineimages.vmoperator.vmware.com",
 		"virtualmachinepublishrequests.vmoperator.vmware.com",
 		"virtualmachinereplicasets.vmoperator.vmware.com",

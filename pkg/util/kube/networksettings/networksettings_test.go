@@ -53,7 +53,7 @@ var _ = Describe("GetProviderType", func() {
 			})
 		})
 
-		It("returns the global config value without a client call", func() {
+		It("returns the global network provider config value", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(pkgcfg.NetworkProviderTypeVDS))
 		})

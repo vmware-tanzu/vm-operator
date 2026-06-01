@@ -39,6 +39,7 @@ import (
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -57,6 +58,7 @@ const (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages/status,verbs=get;list;watch
+// +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networksettings,verbs=get;list;watch
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
@@ -122,7 +124,6 @@ func init() {
 	MutateOnCreateFuncs.Store(
 		"create.vmoperator.vmware.com/set-default-controllers",
 		(MutateOnCreateFn)(SetDefaultControllers))
-
 
 	MutateOnUpdateFuncs.Store(
 		"update.vmoperator.vmware.com/set-default-cdrom-image-kind",
@@ -267,7 +268,10 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	case admissionv1.Create:
 		// SetCreatedAtAnnotations always mutates the VM on create.
 		wasMutated = true
-		AddDefaultNetworkInterface(ctx, m.client, modified)
+
+		if _, err := AddDefaultNetworkInterface(ctx, m.client, modified); err != nil {
+			return admission.Denied(err.Error())
+		}
 		SetDefaultPowerState(ctx, m.client, modified)
 		SetDefaultCdromImgKindOnCreate(ctx, modified)
 		SetImageNameFromCdrom(ctx, modified)
@@ -340,7 +344,9 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		}
 
 		if pkgcfg.FromContext(ctx).Features.MutableNetworks {
-			if ok := SetDefaultNetworkOnUpdate(ctx, m.client, modified); ok {
+			if ok, err := SetDefaultNetworkOnUpdate(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			} else if ok {
 				wasMutated = true
 			}
 		}
@@ -513,10 +519,16 @@ func setDefaultNetworkInterfaceNetwork(
 
 func getDefaultNetworkRef(
 	ctx *pkgctx.WebhookRequestContext,
-	client ctrlclient.Client) (bool, common.PartialObjectRef) {
+	client ctrlclient.Client,
+	namespace string) (bool, common.PartialObjectRef, error) {
+
+	providerType, err := netsetutil.GetProviderType(ctx, client, namespace)
+	if err != nil {
+		return false, common.PartialObjectRef{}, err
+	}
 
 	kind, apiVersion, netName := "", "", ""
-	switch pkgcfg.FromContext(ctx).NetworkProviderType {
+	switch providerType {
 	case pkgcfg.NetworkProviderTypeNSXT:
 		kind = "VirtualNetwork"
 		apiVersion = ncpv1alpha1.SchemeGroupVersion.String()
@@ -532,7 +544,7 @@ func getDefaultNetworkRef(
 			netName = defaultNamedNetwork
 		}
 	default:
-		return false, common.PartialObjectRef{}
+		return false, common.PartialObjectRef{}, nil
 	}
 
 	return true, common.PartialObjectRef{
@@ -541,22 +553,21 @@ func getDefaultNetworkRef(
 			APIVersion: apiVersion,
 		},
 		Name: netName,
-	}
+	}, nil
 }
 
-// AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
-// and no NetworkInterface is specified.
-// Return true if default NetworkInterface is added, otherwise return false.
+// AddDefaultNetworkInterface adds a default network interface to a VM when
+// no interfaces are specified, or back-fills the network ref on existing
+// interfaces that are missing one.
+//
+// Returns (true, nil) when the VM was mutated. When the
+// PerNamespaceNetworkProvider capability is enabled and NetworkSettings/default
+// is absent, an error is returned and the caller should deny admission via
+// networkErrResponse.
 func AddDefaultNetworkInterface(
 	ctx *pkgctx.WebhookRequestContext,
 	client ctrlclient.Client,
-	vm *vmopv1.VirtualMachine) bool {
-
-	ok, networkRef := getDefaultNetworkRef(ctx, client)
-	if !ok {
-		// TODO(BV): This really can't fail but will need to change for provider migrated namespaces.
-		return false
-	}
+	vm *vmopv1.VirtualMachine) (bool, error) {
 
 	if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 {
 		// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have
@@ -564,17 +575,26 @@ func AddDefaultNetworkInterface(
 		// two for version conversion, but they do mean slightly different things, and kind of
 		// complicated to know what to do like if the annotation is removed.
 		if _, ok := vm.Annotations[v1alpha1.NoDefaultNicAnnotation]; ok {
-			return false
+			return false, nil
 		}
 
+		// Skip lookup entirely when networking is disabled — no NIC will be
+		// created, so there is nothing to reject admission over.
 		if vm.Spec.Network != nil && vm.Spec.Network.Disabled {
-			return false
+			return false, nil
+		}
+
+		ok, networkRef, err := getDefaultNetworkRef(ctx, client, vm.Namespace)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
 		}
 
 		if vm.Spec.Network == nil {
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
 		}
-
 		// Add the default interface.
 		vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 			{
@@ -582,34 +602,16 @@ func AddDefaultNetworkInterface(
 				Network: &networkRef,
 			},
 		}
-
-		return true
+		return true, nil
 	}
 
-	var updated bool
-	if vm.Spec.Network != nil {
-		for i := range vm.Spec.Network.Interfaces {
-			if ok := setDefaultNetworkInterfaceNetwork(vm, i, networkRef); ok {
-				updated = true
-			}
-		}
+	// Back-fill the network ref on existing interfaces, even when Disabled.
+	ok, networkRef, err := getDefaultNetworkRef(ctx, client, vm.Namespace)
+	if err != nil {
+		return false, err
 	}
-
-	return updated
-}
-
-func SetDefaultNetworkOnUpdate(
-	ctx *pkgctx.WebhookRequestContext,
-	client ctrlclient.Client,
-	vm *vmopv1.VirtualMachine) bool {
-
-	if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 || vm.Spec.Network.Disabled {
-		return false
-	}
-
-	ok, networkRef := getDefaultNetworkRef(ctx, client)
 	if !ok {
-		return false
+		return false, nil
 	}
 
 	var updated bool
@@ -618,8 +620,36 @@ func SetDefaultNetworkOnUpdate(
 			updated = true
 		}
 	}
+	return updated, nil
+}
 
-	return updated
+// SetDefaultNetworkOnUpdate back-fills the network ref on existing interfaces
+// during an update. Returns an error when PerNamespaceNetworkProvider is
+// enabled and NetworkSettings is absent (consistent with create).
+func SetDefaultNetworkOnUpdate(
+	ctx *pkgctx.WebhookRequestContext,
+	client ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (bool, error) {
+
+	if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 {
+		return false, nil
+	}
+
+	ok, networkRef, err := getDefaultNetworkRef(ctx, client, vm.Namespace)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+
+	var updated bool
+	for i := range vm.Spec.Network.Interfaces {
+		if ok := setDefaultNetworkInterfaceNetwork(vm, i, networkRef); ok {
+			updated = true
+		}
+	}
+	return updated, nil
 }
 
 // getProviderConfigMap is used in e2e tests.

@@ -28,10 +28,10 @@ var (
 )
 
 // GetProviderType returns the NetworkProviderType for the given namespace. When the
-// PerNamespaceNetworkProvider capability is not enabled, return provide type that is
-// specified by the NETWORK_PROVIDER envvar. When the capability is enabled fetch the
-// NetworkSettings in the namespace and return the corresponding NetworkProviderType
-// value.
+// PerNamespaceNetworkProvider capability is not enabled, return provider type that is
+// specified globally by the NETWORK_PROVIDER envvar. When the capability is enabled
+// fetch the NetworkSettings in the namespace and return the corresponding
+// NetworkProviderType value.
 func GetProviderType(
 	ctx context.Context,
 	reader ctrlclient.Reader,

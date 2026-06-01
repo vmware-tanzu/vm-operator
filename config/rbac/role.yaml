@@ -240,6 +240,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - netoperator.vmware.com
+  resources:
+  - networksettings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - storage.k8s.io
   resources:
   - storageclasses

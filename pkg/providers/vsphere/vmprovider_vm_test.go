@@ -49,6 +49,7 @@ var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
 	Describe("VKS", Label(testlabels.VKS), vmVKSTests)
 	Describe("WebConsole", vmWebConsoleTests)
 	Describe("Zone", vmZoneTests)
+	Describe("Location", vmLocationTests)
 })
 
 // getVMHomeDisk gets the VM's "home" disk. It makes some assumptions about the backing and disk name.

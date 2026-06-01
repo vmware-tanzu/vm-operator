@@ -1150,9 +1150,16 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return err
 	}
 
-	isVMInValidRP, err := validateVMResourcePool(vmCtx, expectedRootRPMoID, vcClient, resourcePolicies)
-	isVMInValidFolder, err := validateVMFolder(vmCtx, expectedFolder, vcClient, resourcePolicies)
 	currentCond := pkgcnd.Get(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
+
+	isVMInValidRP, err := validateVMResourcePool(vmCtx, expectedRootRPMoID, vcClient, resourcePolicies)
+	if err != nil {
+		return fmt.Errorf("failed to validate VM resource pool: %w", err)
+	}
+	isVMInValidFolder, err := validateVMFolder(vmCtx, expectedFolder, vcClient, resourcePolicies)
+	if err != nil {
+		return fmt.Errorf("failed to validate VM folder: %w", err)
+	}
 
 	// Handle Mismatch
 	if !isVMInValidRP || !isVMInValidFolder {

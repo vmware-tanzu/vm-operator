@@ -54,12 +54,12 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	)
 
 	var (
-		input            VMLocationSpecInput
-		config           *e2eConfig.E2EConfig
-		clusterProxy     *common.VMServiceClusterProxy
-		svClusterClient  ctrlclient.Client
+		input              VMLocationSpecInput
+		config             *e2eConfig.E2EConfig
+		clusterProxy       *common.VMServiceClusterProxy
+		svClusterClient    ctrlclient.Client
 		vCenterAdminClient *vim25.Client
-		clusterResources *e2eConfig.Resources
+		clusterResources   *e2eConfig.Resources
 
 		vmName       string
 		linuxVMIName string
@@ -196,7 +196,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	When("VM is created in the correct namespace RP and folder", Label("core-functional"), func() {
+	When("VM is created in the correct namespace RP and folder", Label("vmrelocation"), func() {
 		It("sets VirtualMachineInValidLocation condition to True", func() {
 			createVM()
 
@@ -208,7 +208,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace RP hierarchy", Label("core-functional"), func() {
+	When("VM is moved outside the namespace RP hierarchy", Label("vmrelocation"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -227,8 +227,21 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName)
 
 			By("Retrieving the cluster root RP to use as an invalid location")
-			finder := vcenter.NewVcsimFinder(ctx, vCenterAdminClient)
-			clusterRPRef := vcenter.GetClusterResourcePool(ctx, finder)
+			// 1. Resolve the specific Cluster MoID for the active Supervisor context
+			kubeconfigPath := clusterProxy.GetKubeconfigPath()
+			clusterMoID := vcenter.GetClusterMoIDFromKubeconfigFile(ctx, kubeconfigPath)
+
+			// 2. Create an explicit ManagedObjectReference using the real Cluster ID
+			clusterMoRef := vimtypes.ManagedObjectReference{
+				Type:  "ClusterComputeResource",
+				Value: clusterMoID,
+			}
+			clusterRef := object.NewClusterComputeResource(vCenterAdminClient, clusterMoRef)
+
+			// 3. Extract the root Resource Pool from the verified cluster
+			clusterRP, err := clusterRef.ResourcePool(ctx)
+			Expect(err).ToNot(HaveOccurred(), "Failed to get the root Resource Pool for cluster %s", clusterMoID)
+			clusterRPRef := clusterRP.Reference()
 			e2eframework.Logf("cluster root RP MoID: %s", clusterRPRef.Value)
 
 			By("Relocating VM to the cluster root RP (outside the namespace RP hierarchy)")

@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 )
 
@@ -75,7 +75,7 @@ func WatchVMICacheIfNotReady(err error, obj metav1.Object) bool {
 	obj.SetLabels(labels)
 
 	if vm, ok := obj.(*vmopv1.VirtualMachine); ok {
-		pkgcnd.MarkFalse(
+		pkgcond.MarkFalse(
 			vm,
 			vmopv1.VirtualMachineConditionImageCacheReady,
 			"NotReady",

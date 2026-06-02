@@ -23,7 +23,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -207,7 +207,7 @@ var _ = Describe("Reconcile",
 						Expect(err).ToNot(HaveOccurred())
 
 						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-						condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+						condition := pkgcond.Get(vmiStatus, vmopv1.ReadyConditionType)
 						Expect(condition).ToNot(BeNil())
 						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 						Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderNotReadyReason))
@@ -306,7 +306,7 @@ var _ = Describe("Reconcile",
 						Expect(err).ToNot(HaveOccurred())
 
 						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-						condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+						condition := pkgcond.Get(vmiStatus, vmopv1.ReadyConditionType)
 						Expect(condition).ToNot(BeNil())
 						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 						Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason))
@@ -329,7 +329,7 @@ var _ = Describe("Reconcile",
 						Expect(err).To(MatchError("sync-error"))
 
 						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-						condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+						condition := pkgcond.Get(vmiStatus, vmopv1.ReadyConditionType)
 						Expect(condition).ToNot(BeNil())
 						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 						Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageNotSyncedReason))
@@ -357,7 +357,7 @@ var _ = Describe("Reconcile",
 								pkgconst.VMICacheLabelKey, vmicName))
 
 							_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-							condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+							condition := pkgcond.Get(vmiStatus, vmopv1.ReadyConditionType)
 							Expect(condition).To(BeNil())
 						})
 					})
@@ -811,6 +811,6 @@ func assertVMImageFromCLItem(
 		Expect(vmiStatus.ProviderItemID).To(BeEquivalentTo(cliSpec.UUID))
 		Expect(vmiStatus.ProviderContentVersion).To(Equal(cliStatus.ContentVersion))
 		Expect(vmiStatus.Type).To(BeEquivalentTo(cliStatus.Type))
-		Expect(pkgcnd.IsTrue(vmiStatus, vmopv1.ReadyConditionType)).To(BeTrue())
+		Expect(pkgcond.IsTrue(vmiStatus, vmopv1.ReadyConditionType)).To(BeTrue())
 	})
 }

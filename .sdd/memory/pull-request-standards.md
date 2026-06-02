@@ -1,10 +1,14 @@
----
-description: 
-alwaysApply: true
----
+# Pull requests
 
-generate md format.
-format:
+## Reviewing
+
+* Submitting a pull request using AI tooling does not obviate a reviewer of the responsibility to validate the generated comments. It is **not** the responsibility of the change's author to spend time determining which feedback is actually valid.
+
+## Template
+
+The following content after the `BEGIN TEMPLATE` line and before the `END TEMPLATE` line is the template for submitting a pull-request description in GitHub:
+
+<!-- BEGIN TEMPLATE -->
 <!--
 Thanks for sending a pull request!
 
@@ -54,3 +58,5 @@ Write your release note:
 ```release-note
 
 ```
+<!-- END TEMPLATE -->
+

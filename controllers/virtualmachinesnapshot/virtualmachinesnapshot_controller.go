@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -200,13 +200,13 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 	// Only start calculating the used capacity and sync CSI volume
 	// after the snapshot is created.
-	if !pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) {
+	if !pkgcond.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) {
 		return ctrl.Result{}, nil
 	}
 
 	ensureCSIVolumeSyncAnnotation(vmSnapshot)
 
-	pkgcnd.MarkFalse(
+	pkgcond.MarkFalse(
 		vmSnapshot,
 		vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition,
 		vmopv1.VirtualMachineSnapshotCSIVolumeSyncInProgressReason,
@@ -323,18 +323,18 @@ func reconcileSnapshotReadyCondition(vmSnapshot *vmopv1.VirtualMachineSnapshot) 
 		return
 	}
 
-	created := pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
-	synced := pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
+	created := pkgcond.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+	synced := pkgcond.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
 	switch {
 	case !created:
-		pkgcnd.MarkFalse(
+		pkgcond.MarkFalse(
 			vmSnapshot,
 			vmopv1.VirtualMachineSnapshotReadyCondition,
 			vmopv1.VirtualMachineSnapshotWaitingForCreationReason,
 			"Snapshot is not ready because it doesn't have created condition",
 		)
 	case !synced:
-		pkgcnd.MarkFalse(
+		pkgcond.MarkFalse(
 			vmSnapshot,
 			vmopv1.VirtualMachineSnapshotReadyCondition,
 			vmopv1.VirtualMachineSnapshotWaitingForCSISyncReason,
@@ -343,7 +343,7 @@ func reconcileSnapshotReadyCondition(vmSnapshot *vmopv1.VirtualMachineSnapshot) 
 	default:
 		// Only when the snapshot is created and the CSI volume sync is completed,
 		// mark the snapshot as ready.
-		pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+		pkgcond.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 	}
 }
 
@@ -394,7 +394,7 @@ func (r *Reconciler) calculateUsedCapacity(ctx *pkgctx.VirtualMachineSnapshotCon
 	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
 		constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
 
-		if !pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition) {
+		if !pkgcond.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition) {
 			// Add storageClasses referenced by the VM to the queue so their
 			// corresponding SPUs could be synced to update their requested/used
 			// capacity.
@@ -404,7 +404,7 @@ func (r *Reconciler) calculateUsedCapacity(ctx *pkgctx.VirtualMachineSnapshotCon
 				ctx.StorageClassesToSync.Insert(requested.StorageClass)
 			}
 
-			pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
+			pkgcond.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
 		} else {
 			// In most of the cases, we just need to update the used capacity of
 			// the SPU that has same StorageClass as VM.

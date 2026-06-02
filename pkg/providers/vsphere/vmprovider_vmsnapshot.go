@@ -25,7 +25,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
-	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -162,7 +162,7 @@ func markSnapshotInProgress(
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
 
 	// Set the InProgress condition to prevent concurrent operations
-	pkgcnd.MarkFalse(
+	pkgcond.MarkFalse(
 		vmSnapshot,
 		vmopv1.VirtualMachineSnapshotCreatedCondition,
 		vmopv1.VirtualMachineSnapshotCreationInProgressReason,
@@ -185,7 +185,7 @@ func markSnapshotFailed(vmCtx pkgctx.VirtualMachineContext,
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
 
 	// Mark the snapshot as failed.
-	pkgcnd.MarkError(
+	pkgcond.MarkError(
 		vmSnapshot,
 		vmopv1.VirtualMachineSnapshotCreatedCondition,
 		vmopv1.VirtualMachineSnapshotCreationFailedReason,
@@ -282,7 +282,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		// This handles the case where a previous revert
 		// failed and the user removed spec.currentSnapshot
 		// to abort the revert.
-		pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineSnapshotRevertSucceeded)
+		pkgcond.Delete(vmCtx.VM, vmopv1.VirtualMachineSnapshotRevertSucceeded)
 
 		return nil
 	}
@@ -297,7 +297,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
 		message := "Skipping snapshot revert for VKS node"
 
-		pkgcnd.MarkFalse(vmCtx.VM,
+		pkgcond.MarkFalse(vmCtx.VM,
 			vmopv1.VirtualMachineSnapshotRevertSucceeded,
 			vmopv1.VirtualMachineSnapshotRevertSkippedReason,
 			"%s",
@@ -321,7 +321,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		err := fmt.Errorf(
 			"failed to get snapshot object %q: %w", desiredSnapshotName, err)
 
-		pkgcnd.MarkError(vmCtx.VM,
+		pkgcond.MarkError(vmCtx.VM,
 			vmopv1.VirtualMachineSnapshotRevertSucceeded,
 			vmopv1.VirtualMachineSnapshotRevertFailedReason,
 			err,
@@ -333,12 +333,12 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	// Check if the snapshot is ready. This is to ensure that the snapshot
 	// as reconciled by VM operator and is not an out-of-band, or in-progress
 	// snapshot.
-	if !pkgcnd.IsTrue(obj, vmopv1.VirtualMachineSnapshotReadyCondition) {
+	if !pkgcond.IsTrue(obj, vmopv1.VirtualMachineSnapshotReadyCondition) {
 		err := fmt.Errorf(
 			"skipping revert for not-ready snapshot %q",
 			desiredSnapshotName)
 
-		pkgcnd.MarkError(vmCtx.VM,
+		pkgcond.MarkError(vmCtx.VM,
 			vmopv1.VirtualMachineSnapshotRevertSucceeded,
 			vmopv1.VirtualMachineSnapshotRevertSkippedReason,
 			err,
@@ -353,7 +353,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		err := fmt.Errorf("failed to find vSphere snapshot %q: %w",
 			desiredSnapshotName, err)
 
-		pkgcnd.MarkError(vmCtx.VM,
+		pkgcond.MarkError(vmCtx.VM,
 			vmopv1.VirtualMachineSnapshotRevertSucceeded,
 			vmopv1.VirtualMachineSnapshotRevertFailedReason,
 			err,
@@ -388,7 +388,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	// Set the VM snapshot revert in progress condition.
 	// This condition will be cleared once the revert is successful,
 	// since the Status is wiped out after a revert.
-	pkgcnd.MarkFalse(vmCtx.VM,
+	pkgcond.MarkFalse(vmCtx.VM,
 		vmopv1.VirtualMachineSnapshotRevertSucceeded,
 		vmopv1.VirtualMachineSnapshotRevertInProgressReason,
 		"%s",
@@ -423,7 +423,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		err := fmt.Errorf(
 			"failed to restore vm spec and metadata from snapshot: %w", err)
 
-		pkgcnd.MarkError(vmCtx.VM,
+		pkgcond.MarkError(vmCtx.VM,
 			vmopv1.VirtualMachineSnapshotRevertSucceeded,
 			vmopv1.VirtualMachineSnapshotRevertFailedInvalidVMManifestReason,
 			err,
@@ -516,7 +516,7 @@ func (vs *vSphereVMProvider) performSnapshotRevert(
 
 		// The condition reason and message are based on the error
 		// encountered. It would be cleared once the revert is successful.
-		pkgcnd.MarkFalse(vmCtx.VM,
+		pkgcond.MarkFalse(vmCtx.VM,
 			vmopv1.VirtualMachineSnapshotRevertSucceeded,
 			vmopv1.VirtualMachineSnapshotRevertTaskFailedReason,
 			"%s",
@@ -829,7 +829,7 @@ func ReconcileCurrentSnapshot(
 	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
 
 		if vmCtx.VM.Spec.PromoteDisksMode != vmopv1.VirtualMachinePromoteDisksModeDisabled &&
-			!pkgcnd.IsTrue(vmCtx.VM, vmopv1.VirtualMachineDiskPromotionSynced) {
+			!pkgcond.IsTrue(vmCtx.VM, vmopv1.VirtualMachineDiskPromotionSynced) {
 			logger.Info("Skipping snapshot as required condition is not ready",
 				"condition", vmopv1.VirtualMachineDiskPromotionSynced)
 			return nil
@@ -841,13 +841,13 @@ func ReconcileCurrentSnapshot(
 	// delta caused by snapshot creation.
 	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
 
-		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsfil.Condition) {
+		if !pkgcond.IsTrue(vmCtx.VM, vmconfunmanagedvolsfil.Condition) {
 			logger.Info("Skipping snapshot as required condition is not ready",
 				"condition", vmconfunmanagedvolsfil.Condition)
 			return nil
 		}
 
-		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
+		if !pkgcond.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
 			logger.Info("Skipping snapshot as required condition is not ready",
 				"condition", vmconfunmanagedvolsreg.Condition)
 			return nil
@@ -869,7 +869,7 @@ func ReconcileCurrentSnapshot(
 	for _, snapshot := range vmSnapshots {
 
 		// Skip snapshots that are already created.
-		if pkgcnd.IsTrue(
+		if pkgcond.IsTrue(
 			&snapshot,
 			vmopv1.VirtualMachineSnapshotCreatedCondition) {
 
@@ -920,7 +920,7 @@ func ReconcileCurrentSnapshot(
 	}
 
 	// If the oldest snapshot is in progress, wait for it to complete
-	if pkgcnd.GetReason(
+	if pkgcond.GetReason(
 		snapshotToProcess,
 		vmopv1.VirtualMachineSnapshotReadyCondition) ==
 		vmopv1.VirtualMachineSnapshotCreationInProgressReason {

@@ -237,6 +237,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateComputeConfig(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, nil)...)
@@ -342,6 +343,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateComputeConfig(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, oldVM)...)
@@ -3448,6 +3450,8 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 			validateAdvancedVMXFieldsNotChanged(specPath, vm.Spec.Advanced, oldVM.Spec.Advanced)...)
 		allErrs = append(allErrs,
 			validateNICBackfilledFieldsNotChanged(specPath, vm, oldVM)...)
+		allErrs = append(allErrs,
+			validateComputeConfigBackfilledFieldsNotChanged(specPath, vm, oldVM)...)
 	}
 
 	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {

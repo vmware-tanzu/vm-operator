@@ -175,6 +175,9 @@ func ReconcileSchemaUpgrade(
 			if _, err := vmbackfill.NICConfigFromMoVM(ctx, vm, moVM); err != nil {
 				return fmt.Errorf("unexpected nic backfill error: %w", err)
 			}
+			if _, err := vmbackfill.ComputeConfigFromMoVM(ctx, vm, moVM); err != nil {
+				return fmt.Errorf("unexpected compute config backfill error: %w", err)
+			}
 			vmFeatureVersion.Set(f)
 		}
 	}

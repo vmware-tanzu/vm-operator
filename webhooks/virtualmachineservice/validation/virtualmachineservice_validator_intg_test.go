@@ -106,6 +106,11 @@ func intgTestsValidateCreate() {
 
 	Describe("CRD schema and CEL (ipFamilies and ipFamilyPolicy)", func() {
 		BeforeEach(func() {
+			// WorkloadIPv6 must be enabled so the validating webhook does not reject
+			// requests that set ipFamilies or ipFamilyPolicy before CEL can run.
+			// (CEL enforces schema rules from the CRD itself and runs before the
+			// validating webhook; however the "allows" test in this block requires
+			// that the webhook also permits the request.)
 			pkgcfg.UpdateContext(suite, func(config *pkgcfg.Config) {
 				config.Features.WorkloadIPv6 = true
 			})
@@ -225,6 +230,8 @@ func intgTestsValidateUpdate() {
 
 	Describe("CEL: ipFamilies primary family immutability", func() {
 		BeforeEach(func() {
+			// WorkloadIPv6 must be enabled so the validating webhook does not reject
+			// requests that set ipFamilies before CEL can enforce the immutability rule.
 			pkgcfg.UpdateContext(suite, func(config *pkgcfg.Config) {
 				config.Features.WorkloadIPv6 = true
 			})

@@ -131,6 +131,10 @@ func unitTestsReconcile() {
 			Logger:    ctx.Logger.WithName(vmService.Name),
 			VMService: vmService,
 		}
+
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.WorkloadIPv6 = true
+		})
 	})
 
 	AfterEach(func() {
@@ -196,9 +200,6 @@ func unitTestsReconcile() {
 
 			Context("IPFamilies and IPFamilyPolicy", func() {
 				It("Copies IPFamilies to Service spec when WorkloadIPv6 is enabled", func() {
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.WorkloadIPv6 = true
-					})
 					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
 					err := reconciler.ReconcileNormal(vmServiceCtx)
 					Expect(err).NotTo(HaveOccurred())
@@ -208,9 +209,6 @@ func unitTestsReconcile() {
 				})
 
 				It("Copies IPFamilyPolicy to Service spec when WorkloadIPv6 is enabled", func() {
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.WorkloadIPv6 = true
-					})
 					policy := corev1.IPFamilyPolicyPreferDualStack
 					vmService.Spec.IPFamilyPolicy = &policy
 					err := reconciler.ReconcileNormal(vmServiceCtx)
@@ -244,9 +242,6 @@ func unitTestsReconcile() {
 				})
 
 				It("Clears IPFamilies and IPFamilyPolicy for ExternalName services when WorkloadIPv6 is enabled", func() {
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.WorkloadIPv6 = true
-					})
 					vmService.Spec.Type = vmopv1.VirtualMachineServiceTypeExternalName
 					vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
 					policy := corev1.IPFamilyPolicySingleStack
@@ -495,13 +490,6 @@ func unitTestsReconcile() {
 			var labelSelector, vmLabels map[string]string
 			var vm1, vm2, vm3 *vmopv1.VirtualMachine
 
-			// All endpoint tests exercise dual-stack IPFamily propagation and filtering.
-			JustBeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.WorkloadIPv6 = true
-				})
-			})
-
 			BeforeEach(func() {
 				endpoints = &corev1.Endpoints{}
 				labelSelector = map[string]string{"my-app": "dummy-label"}
@@ -742,12 +730,6 @@ func unitTestsReconcile() {
 				var ipv4VM *vmopv1.VirtualMachine
 				var ipv6VM *vmopv1.VirtualMachine
 
-				JustBeforeEach(func() {
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.WorkloadIPv6 = true
-					})
-				})
-
 				BeforeEach(func() {
 					dualStackVM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
@@ -826,12 +808,6 @@ func unitTestsReconcile() {
 				var dualStackVM *vmopv1.VirtualMachine
 				var ipv4VM *vmopv1.VirtualMachine
 				var ipv6VM *vmopv1.VirtualMachine
-
-				JustBeforeEach(func() {
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.WorkloadIPv6 = true
-					})
-				})
 
 				BeforeEach(func() {
 					dualStackVM = &vmopv1.VirtualMachine{
@@ -930,20 +906,15 @@ func unitTestsReconcile() {
 				})
 
 				JustBeforeEach(func() {
-					// First reconciliation: Service created, but no VMs yet
+					// First reconciliation: Service created, but no VMs yet.
+					// The outer JustBeforeEach already consumed the OpCreate event.
 					err := reconciler.ReconcileNormal(vmServiceCtx)
 					Expect(err).NotTo(HaveOccurred())
-					// Service may be created or updated depending on test execution order
-					// Drain any events (Create or Update) to ensure event channel is ready
-					select {
-					case <-ctx.Events:
-					default:
-					}
 					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
-					// Initially, endpoints should be empty
+					// Initially, endpoints should be empty.
 					Expect(endpoints.Subsets).To(BeEmpty())
 
-					// Now create a VM that matches the selector (simulating VM created after service)
+					// Now create a VM that matches the selector (simulating VM created after service).
 					newVM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "new-vm",
@@ -1174,12 +1145,6 @@ func unitTestsReconcile() {
 			var vm1 *vmopv1.VirtualMachine
 			var labelSelector, vmLabels map[string]string
 
-			JustBeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.WorkloadIPv6 = true
-				})
-			})
-
 			BeforeEach(func() {
 				labelSelector = map[string]string{"my-app": "dummy-label"}
 				vmLabels = map[string]string{"my-app": "dummy-label", "other": "label"}
@@ -1250,8 +1215,6 @@ func unitTestsReconcile() {
 			var vm1 *vmopv1.VirtualMachine
 
 			BeforeEach(func() {
-				// WorkloadIPv6 is false by default; do not set it here to verify
-				// that endpoint generation still works when IPv6 capability is off.
 				endpoints = &corev1.Endpoints{}
 				vmService.Spec.Selector = map[string]string{"app": "test"}
 				vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{vmServicePort1}
@@ -1274,11 +1237,11 @@ func unitTestsReconcile() {
 			})
 
 			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.WorkloadIPv6 = false
+				})
 				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
-				select {
-				case <-ctx.Events:
-				default:
-				}
+				Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpCreate)))
 			})
 
 			It("generates IPv4 endpoints after apiserver defaults IPFamilies to [IPv4]", func() {

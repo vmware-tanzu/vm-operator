@@ -408,10 +408,10 @@ func intgTestsReconcile() {
 
 					svcKey := client.ObjectKeyFromObject(vmService)
 					svc := &corev1.Service{}
-					Consistently(func(g Gomega) {
-						err := ctx.Client.Get(ctx, svcKey, svc)
-						g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-					}).Should(Succeed())
+				Consistently(func(g Gomega) {
+					err := ctx.Client.Get(ctx, svcKey, svc)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				}, "3s").Should(Succeed())
 				})
 			})
 		})

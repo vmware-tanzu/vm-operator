@@ -35,6 +35,7 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
@@ -77,6 +78,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	_ = vspherepolv1.AddToScheme(opts.Scheme)
 	_ = appv1a1.AddToScheme(opts.Scheme)
 	_ = infrav1.AddToScheme(opts.Scheme)
+	_ = vimv1.AddToScheme(opts.Scheme)
 
 	//
 	// VM Op

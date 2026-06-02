@@ -173,6 +173,8 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1
         - alias: infrav1
           pkg: github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1
+        - alias: vimv1
+          pkg: github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1
 
         - alias: proxyaddr
           pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr

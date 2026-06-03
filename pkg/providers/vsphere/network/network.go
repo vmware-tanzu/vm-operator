@@ -756,7 +756,12 @@ func createNetOPNetworkInterface(
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
 
-		netIf.Spec.IPFamilyPolicy = IPAMModesToNetOPInterfaceIPFamilyPolicy(interfaceSpec.IPAMModes)
+		// IPFamilyPolicy is a new field introduced for IPv6 support.
+		// Only set it when the WorkloadIPv6 capability is active so that this
+		// field is not sent to NetOP when IPv6 is disabled.
+		if pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+			netIf.Spec.IPFamilyPolicy = IPAMModesToNetOPInterfaceIPFamilyPolicy(interfaceSpec.IPAMModes)
+		}
 
 		return nil
 	})

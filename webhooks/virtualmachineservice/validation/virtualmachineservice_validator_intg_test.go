@@ -12,6 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -104,6 +105,22 @@ func intgTestsValidateCreate() {
 	)
 
 	Describe("CRD schema and CEL (ipFamilies and ipFamilyPolicy)", func() {
+		BeforeEach(func() {
+			// WorkloadIPv6 must be enabled so the validating webhook does not reject
+			// requests that set ipFamilies or ipFamilyPolicy before CEL can run.
+			// (CEL enforces schema rules from the CRD itself and runs before the
+			// validating webhook; however the "allows" test in this block requires
+			// that the webhook also permits the request.)
+			pkgcfg.UpdateContext(suite, func(config *pkgcfg.Config) {
+				config.Features.WorkloadIPv6 = true
+			})
+		})
+		AfterEach(func() {
+			pkgcfg.UpdateContext(suite, func(config *pkgcfg.Config) {
+				config.Features.WorkloadIPv6 = false
+			})
+		})
+
 		It("allows LoadBalancer with dual-stack ipFamilies and PreferDualStack policy", func() {
 			vmSvc := ctx.vmService.DeepCopy()
 			vmSvc.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
@@ -208,6 +225,39 @@ func intgTestsValidateUpdate() {
 	When("update is performed without spec changes", func() {
 		It("should allow the request", func() {
 			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Describe("CEL: ipFamilies primary family immutability", func() {
+		BeforeEach(func() {
+			// WorkloadIPv6 must be enabled so the validating webhook does not reject
+			// requests that set ipFamilies before CEL can enforce the immutability rule.
+			pkgcfg.UpdateContext(suite, func(config *pkgcfg.Config) {
+				config.Features.WorkloadIPv6 = true
+			})
+		})
+		AfterEach(func() {
+			pkgcfg.UpdateContext(suite, func(config *pkgcfg.Config) {
+				config.Features.WorkloadIPv6 = false
+			})
+		})
+
+		It("rejects changing the primary IP family", func() {
+			ctx.vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
+			Expect(ctx.Client.Update(ctx, ctx.vmService)).To(Succeed())
+
+			ctx.vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv6Protocol}
+			updateErr := ctx.Client.Update(ctx, ctx.vmService)
+			Expect(apierrors.IsInvalid(updateErr)).To(BeTrue())
+			Expect(updateErr.Error()).To(ContainSubstring("primary IP family may not be changed or removed once set"))
+		})
+
+		It("allows adding a secondary IP family without changing the primary", func() {
+			ctx.vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol}
+			Expect(ctx.Client.Update(ctx, ctx.vmService)).To(Succeed())
+
+			ctx.vmService.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+			Expect(ctx.Client.Update(ctx, ctx.vmService)).To(Succeed())
 		})
 	})
 }

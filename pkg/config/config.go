@@ -204,6 +204,7 @@ type FeatureStates struct {
 	VMVlanSubinterface          bool
 	TelcoVMServiceAPI           bool
 	PerNamespaceNetworkProvider bool
+	WorkloadIPv6                bool
 }
 
 type InstanceStorage struct {

@@ -1236,6 +1236,13 @@ func (v validator) validateNetworkInterfaceSpec(
 			interfacePath.Child("advancedProperties"), interfaceSpec.AdvancedProperties)...)
 	}
 
+	if len(interfaceSpec.IPAMModes) > 0 && !pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+		allErrs = append(allErrs, field.Forbidden(
+			interfacePath.Child("ipamModes"),
+			fmt.Sprintf(featureNotEnabled, "WorkloadIPv6"),
+		))
+	}
+
 	// Validate VMXNet3 configuration if present
 	if interfaceSpec.VMXNet3 != nil {
 		if interfaceSpec.Type != vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3 {

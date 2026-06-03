@@ -147,6 +147,9 @@ type VCSimTestConfig struct {
 	// WithoutNativeKeyProvider disables the creation of the native key provider
 	// in vcsim.
 	WithoutNativeKeyProvider bool
+
+	// WithWorkloadIPv6 enables the WorkloadIPv6 feature flag.
+	WithWorkloadIPv6 bool
 }
 
 type TestContextForVCSim struct {
@@ -589,6 +592,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.Features.WorkloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
 		cc.Features.VMIncrementalRestore = config.WithVMIncrementalRestore
 		cc.Features.VMSnapshots = config.WithVMSnapshots
+		cc.Features.WorkloadIPv6 = config.WithWorkloadIPv6
 	})
 }
 

@@ -17,6 +17,8 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
+// defaultNetworkSettingsName is the well known name of the NetworkSettings
+// in each namespace.
 const defaultNetworkSettingsName = "default"
 
 var (

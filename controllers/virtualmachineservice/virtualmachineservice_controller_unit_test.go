@@ -16,6 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
@@ -1356,8 +1358,18 @@ func nsxtLBProviderTestsReconcile() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
+			config.Features.PerNamespaceNetworkProvider = true
 		})
+
+		ns := netopv1alpha1.NetworkSettings{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "default",
+				Namespace: vmService.Namespace,
+			},
+			Provider: netopv1alpha1.NetworkProviderVPC,
+		}
+		Expect(ctx.Client.Create(ctx, &ns)).To(Succeed())
+
 		reconciler = virtualmachineservice.NewReconciler(
 			ctx,
 			ctx.Client,

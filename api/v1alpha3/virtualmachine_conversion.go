@@ -139,6 +139,26 @@ func Convert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_VirtualMach
 	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha3_VirtualMachineNetworkInterfaceSpec(in, out, s)
 }
 
+// Convert_v1alpha3_VirtualMachineNetworkInterfaceSpec_To_v1alpha6_VirtualMachineNetworkInterfaceSpec converts
+// the spoke type to the hub. The auto-generated conversion maps spoke false to hub &false via
+// Convert_bool_To_Pointer_bool; we override to map false→nil so that a spoke user who never set
+// DHCP4/6 round-trips back to hub nil rather than &false.
+func Convert_v1alpha3_VirtualMachineNetworkInterfaceSpec_To_v1alpha6_VirtualMachineNetworkInterfaceSpec(
+	in *VirtualMachineNetworkInterfaceSpec, out *vmopv1.VirtualMachineNetworkInterfaceSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha3_VirtualMachineNetworkInterfaceSpec_To_v1alpha6_VirtualMachineNetworkInterfaceSpec(in, out, s); err != nil {
+		return err
+	}
+	// autoConvert maps false → &false; remap to nil so old-version false ≡ hub nil.
+	if out.DHCP4 != nil && !*out.DHCP4 {
+		out.DHCP4 = nil
+	}
+	if out.DHCP6 != nil && !*out.DHCP6 {
+		out.DHCP6 = nil
+	}
+	return nil
+}
+
 func restore_v1alpha6_VirtualMachineAdvanced(dst, src *vmopv1.VirtualMachine) {
 	adv := src.Spec.Advanced
 	if adv == nil {
@@ -191,6 +211,16 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
 		dstIface.VMXNet3 = srcIface.VMXNet3
 		dstIface.AdvancedProperties = srcIface.AdvancedProperties
+		// DHCP4/DHCP6 ptr.To(false) is lost on down-conversion (bool false ≡ nil).
+		// Restore it only when the basic conversion gave nil (spoke had zero value)
+		// and the annotation recorded an explicit &false. If the spoke explicitly set
+		// true (dst = &true), we keep the spoke's intent and do not overwrite.
+		if dstIface.DHCP4 == nil && srcIface.DHCP4 != nil && !*srcIface.DHCP4 {
+			dstIface.DHCP4 = srcIface.DHCP4
+		}
+		if dstIface.DHCP6 == nil && srcIface.DHCP6 != nil && !*srcIface.DHCP6 {
+			dstIface.DHCP6 = srcIface.DHCP6
+		}
 	}
 }
 

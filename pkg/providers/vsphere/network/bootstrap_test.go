@@ -126,25 +126,35 @@ var _ = Describe("InterfaceBootstrap", func() {
 	})
 
 	Context("DHCP4", func() {
-		When("spec=true, initial=false", func() {
+		When("spec=*true, initial=false", func() {
 			BeforeEach(func() {
-				interfaceSpec.DHCP4 = true
+				interfaceSpec.DHCP4 = ptr.To(true)
 			})
 			It("enables DHCP4", func() {
 				Expect(bootstrap.DHCP4).To(BeTrue())
 			})
 		})
 
-		When("spec=false, initial=true", func() {
+		When("spec=nil, initial=true", func() {
 			BeforeEach(func() {
 				initial.DHCP4 = true
 			})
-			It("cannot disable — stays enabled (locks current TODO behavior)", func() {
+			It("defers to provider — stays enabled", func() {
 				Expect(bootstrap.DHCP4).To(BeTrue())
 			})
 		})
 
-		When("spec=false, initial=false", func() {
+		When("spec=*false, initial=true", func() {
+			BeforeEach(func() {
+				initial.DHCP4 = true
+				interfaceSpec.DHCP4 = ptr.To(false)
+			})
+			It("user intent overrides provider — disables DHCP4", func() {
+				Expect(bootstrap.DHCP4).To(BeFalse())
+			})
+		})
+
+		When("spec=nil, initial=false", func() {
 			It("stays disabled", func() {
 				Expect(bootstrap.DHCP4).To(BeFalse())
 			})
@@ -152,25 +162,35 @@ var _ = Describe("InterfaceBootstrap", func() {
 	})
 
 	Context("DHCP6", func() {
-		When("spec=true, initial=false", func() {
+		When("spec=*true, initial=false", func() {
 			BeforeEach(func() {
-				interfaceSpec.DHCP6 = true
+				interfaceSpec.DHCP6 = ptr.To(true)
 			})
 			It("enables DHCP6", func() {
 				Expect(bootstrap.DHCP6).To(BeTrue())
 			})
 		})
 
-		When("spec=false, initial=true", func() {
+		When("spec=nil, initial=true", func() {
 			BeforeEach(func() {
 				initial.DHCP6 = true
 			})
-			It("cannot disable — stays enabled (locks current TODO behavior)", func() {
+			It("defers to provider — stays enabled", func() {
 				Expect(bootstrap.DHCP6).To(BeTrue())
 			})
 		})
 
-		When("spec=false, initial=false", func() {
+		When("spec=*false, initial=true", func() {
+			BeforeEach(func() {
+				initial.DHCP6 = true
+				interfaceSpec.DHCP6 = ptr.To(false)
+			})
+			It("user intent overrides provider — disables DHCP6", func() {
+				Expect(bootstrap.DHCP6).To(BeFalse())
+			})
+		})
+
+		When("spec=nil, initial=false", func() {
 			It("stays disabled", func() {
 				Expect(bootstrap.DHCP6).To(BeFalse())
 			})
@@ -714,7 +734,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 					SubnetMask: "255.255.255.0",
 				},
 			}
-			interfaceSpec.DHCP4 = true
+			interfaceSpec.DHCP4 = ptr.To(true)
 		})
 		It("spec DHCP4=true overrides StaticPool initial", func() {
 			Expect(bootstrap.DHCP4).To(BeTrue())

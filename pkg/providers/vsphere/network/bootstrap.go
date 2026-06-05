@@ -105,17 +105,14 @@ func InterfaceBootstrap(
 		bootstrap.MTU = *interfaceSpec.MTU
 	}
 
-	// TODO: There is currently no way to unset DHCP flags if the network interface
-	// CR has set them. The interface spec DHCP4/6 fields probably should have been
-	// pointers, but changing that now is kind of a conversion pain.
-	// However, a reasonable behavior to expect from the network provider is to not
-	// enable DHCP got an IP address for that family was specified, but we could also
-	// enforce that here, and/or add NoIPAM to our interface spec.
-	if interfaceSpec.DHCP4 {
-		bootstrap.DHCP4 = true
+	// When DHCP4 or DHCP6 is explicitly set (non-nil), the user intent
+	// overrides whatever the network provider determined. A nil value defers
+	// to the network provider result already in bootstrap.DHCP4/6.
+	if interfaceSpec.DHCP4 != nil {
+		bootstrap.DHCP4 = *interfaceSpec.DHCP4
 	}
-	if interfaceSpec.DHCP6 {
-		bootstrap.DHCP6 = true
+	if interfaceSpec.DHCP6 != nil {
+		bootstrap.DHCP6 = *interfaceSpec.DHCP6
 	}
 
 	if len(interfaceSpec.Addresses) > 0 {

@@ -188,8 +188,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 									GuestDeviceName: "eth40",
 									MACAddr:         "00:11:22:33:44:58",
 									Addresses:       []string{"1.1.1.11", "2.2.2.22"},
-									DHCP4:           true,
-									DHCP6:           true,
+									DHCP4:           ptrOf(true),
+									DHCP6:           ptrOf(true),
 									Gateway4:        "1.1.1.1",
 									Gateway6:        "2.2.2.2",
 									MTU:             ptrOf[int64](9000),
@@ -607,51 +607,51 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
-		{
-			name: "spec.cpuAdvanced full",
-			hub: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-						LatencySensitivity: ptrOf(vmopv1.VirtualMachineLatencySensitivityHigh),
-						Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-							CoresPerSocket:               ptrOf(int32(4)),
-							NUMAFixedAutoAffinityEnabled: ptrOf(true),
-							VNUMANodeCount:               ptrOf(int32(8)),
-							ExposeVNUMAOnCPUHotAdd:       ptrOf(true),
-						},
-						HotAddEnabled:                       ptrOf(false),
-						IOMMUEnabled:                        ptrOf(true),
-						NestedHardwareVirtualizationEnabled: ptrOf(true),
-						PerformanceCountersEnabled:          ptrOf(true),
-						ReservationLockedToMax:              ptrOf(true),
-					},
-				},
-			},
-		},
-		{
-			name: "spec.cpuAdvanced.topology.numaFixedAutoAffinityEnabled",
-			hub: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-						Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-							NUMAFixedAutoAffinityEnabled: ptrOf(true),
+			{
+				name: "spec.cpuAdvanced full",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							LatencySensitivity: ptrOf(vmopv1.VirtualMachineLatencySensitivityHigh),
+							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+								CoresPerSocket:               ptrOf(int32(4)),
+								NUMAFixedAutoAffinityEnabled: ptrOf(true),
+								VNUMANodeCount:               ptrOf(int32(8)),
+								ExposeVNUMAOnCPUHotAdd:       ptrOf(true),
+							},
+							HotAddEnabled:                       ptrOf(false),
+							IOMMUEnabled:                        ptrOf(true),
+							NestedHardwareVirtualizationEnabled: ptrOf(true),
+							PerformanceCountersEnabled:          ptrOf(true),
+							ReservationLockedToMax:              ptrOf(true),
 						},
 					},
 				},
 			},
-		},
-		{
-			name: "spec.cpuAdvanced.reservationLockedToMax",
-			hub: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-						ReservationLockedToMax: ptrOf(true),
+			{
+				name: "spec.cpuAdvanced.topology.numaFixedAutoAffinityEnabled",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+								NUMAFixedAutoAffinityEnabled: ptrOf(true),
+							},
+						},
 					},
 				},
 			},
-		},
-		{
-			name: "spec.memoryAdvanced full",
+			{
+				name: "spec.cpuAdvanced.reservationLockedToMax",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							ReservationLockedToMax: ptrOf(true),
+						},
+					},
+				},
+			},
+			{
+				name: "spec.memoryAdvanced full",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
 						MemoryAdvanced: &vmopv1.VirtualMachineMemoryAdvancedSpec{
@@ -920,5 +920,44 @@ func TestVirtualMachineConversion(t *testing.T) {
 				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a3.VirtualMachine{})
 			})
 		})
+	})
+
+	t.Run("spec.network.interfaces.dhcp-spoke-override", func(t *testing.T) {
+		// Verify that when hub has DHCP4=*false the spoke user can override it
+		// to true and the up-conversion produces *true, not *false.
+		// The restore guard must not overwrite a spoke-expressed true with the
+		// annotation's false.
+		g := NewWithT(t)
+
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Network: &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", DHCP4: ptrOf(false), DHCP6: ptrOf(false)},
+					},
+				},
+			},
+		}
+
+		var spoke vmopv1a3.VirtualMachine
+		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+
+		// Spoke reflects down-conversion: both are false (zero value).
+		g.Expect(spoke.Spec.Network.Interfaces[0].DHCP4).To(BeFalse())
+		g.Expect(spoke.Spec.Network.Interfaces[0].DHCP6).To(BeFalse())
+
+		// Spoke user explicitly enables DHCP.
+		spoke.Spec.Network.Interfaces[0].DHCP4 = true
+		spoke.Spec.Network.Interfaces[0].DHCP6 = true
+
+		var hubAfter vmopv1.VirtualMachine
+		g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+
+		// Hub must reflect the spoke user's intent (*true), not the annotation's *false.
+		iface := hubAfter.Spec.Network.Interfaces[0]
+		g.Expect(iface.DHCP4).NotTo(BeNil(), "DHCP4 must not be nil")
+		g.Expect(*iface.DHCP4).To(BeTrue(), "DHCP4 must be *true after spoke override")
+		g.Expect(iface.DHCP6).NotTo(BeNil(), "DHCP6 must not be nil")
+		g.Expect(*iface.DHCP6).To(BeTrue(), "DHCP6 must be *true after spoke override")
 	})
 }

@@ -2391,8 +2391,6 @@ func unitTestsValidateCreate() {
 										"192.168.1.100/24",
 										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
 									},
-									DHCP4:    false,
-									DHCP6:    false,
 									Gateway4: "192.168.1.1",
 									Gateway6: "2605:a601:a0ba:720:2ce6::1",
 								},
@@ -2415,8 +2413,6 @@ func unitTestsValidateCreate() {
 										"192.168.1.100/24",
 										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
 									},
-									DHCP4:    false,
-									DHCP6:    false,
 									Gateway4: "None",
 									Gateway6: "None",
 								},
@@ -2443,8 +2439,6 @@ func unitTestsValidateCreate() {
 										"192.168.1.100/24",
 										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
 									},
-									DHCP4:    false,
-									DHCP6:    false,
 									Gateway4: "192.168.1.1",
 									Gateway6: "2605:a601:a0ba:720:2ce6::1",
 									MTU:      ptr.To[int64](9000),
@@ -2498,8 +2492,8 @@ func unitTestsValidateCreate() {
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
 									Name:  "eth0",
-									DHCP4: true,
-									DHCP6: true,
+									DHCP4: ptr.To(true),
+									DHCP6: ptr.To(true),
 								},
 							},
 						}
@@ -2520,8 +2514,8 @@ func unitTestsValidateCreate() {
 										"192.168.1.100/24",
 										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
 									},
-									DHCP4:    true,
-									DHCP6:    true,
+									DHCP4:    ptr.To(true),
+									DHCP6:    ptr.To(true),
 									Gateway4: "192.168.1.1",
 									Gateway6: "2605:a601:a0ba:720:2ce6::1",
 								},
@@ -8551,7 +8545,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					// DHCP4 is not a backfilled field but the entire interfaces
 					// slice must be unchanged during the upgrade window.
 					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
-						{Name: "eth0", DHCP4: true},
+						{Name: "eth0", DHCP4: ptr.To(true)},
 					}
 				},
 				skipBypassUpgradeCheck: true,

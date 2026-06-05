@@ -1,6 +1,6 @@
 module github.com/vmware-tanzu/vm-operator/test/e2e
 
-go 1.26.4
+go 1.26.3
 
 replace (
 	github.com/onsi/ginkgo/v2 => github.com/onsi/ginkgo/v2 v2.28.1

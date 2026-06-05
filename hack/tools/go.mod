@@ -1,6 +1,6 @@
 module github.com/vmware-tanzu/vm-operator/hack/tools
 
-go 1.26.4
+go 1.26.3
 
 // The version of Ginkgo must match the one from ../../go.mod.
 require github.com/onsi/ginkgo/v2 v2.28.1

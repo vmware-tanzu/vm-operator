@@ -198,12 +198,12 @@ func createDeleteExistResourcePoolChild() {
 				Expect(err).To(HaveOccurred())
 			})
 
-		By("NoOp when child does not exist", func() {
-			err := vcenter.DeleteChildResourcePool(ctx, ctx.VCClient.Client, parentRPMoID, childName)
-			Expect(err).ToNot(HaveOccurred())
+			By("NoOp when child does not exist", func() {
+				err := vcenter.DeleteChildResourcePool(ctx, ctx.VCClient.Client, parentRPMoID, childName)
+				Expect(err).ToNot(HaveOccurred())
+			})
 		})
 	})
-})
 }
 
 func getParentResourcePoolTests() {

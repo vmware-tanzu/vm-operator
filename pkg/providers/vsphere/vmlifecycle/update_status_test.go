@@ -1424,6 +1424,146 @@ var _ = Describe("UpdateStatus", func() {
 				})
 			})
 
+			When("gi.IpAddress and per-NIC IP (gi.Net[]) disagree", func() {
+				// Simulates the re-import race: vCenter updates gi.IpAddress via
+				// the NSX portgroup assignment before VMware Tools inside the guest
+				// publishes the updated IP to gi.Net[].
+
+				// makeStaleNIC returns a single-NIC gi.Net[] whose reported IP
+				// differs from the summary gi.IpAddress.
+				makeStaleNIC := func(ip string) []vimtypes.GuestNicInfo {
+					return []vimtypes.GuestNicInfo{
+						{
+							DeviceConfigId: 4000,
+							MacAddress:     "00:50:56:00:00:01",
+							IpConfig: &vimtypes.NetIpConfigInfo{
+								IpAddress: []vimtypes.NetIpConfigInfoIpAddress{
+									{IpAddress: ip, State: "preferred"},
+								},
+							},
+						},
+					}
+				}
+
+				assertStaleCondition := func(primaryIP string) {
+					GinkgoHelper()
+					cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal("NotSynced"))
+					Expect(cond.Message).To(
+						ContainSubstring("not yet reflected in per-NIC data"))
+					Expect(cond.Message).To(ContainSubstring(primaryIP))
+				}
+
+				When("primary IP is IPv4", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = validIP4
+						vmCtx.MoVM.Guest.Net = makeStaleNIC("10.0.0.1")
+					})
+
+					It("should set VirtualMachineGuestNetworkConfigSynced condition to False", func() {
+						assertStaleCondition(validIP4)
+					})
+				})
+
+				When("primary IP is IPv6", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = validIP6
+						vmCtx.MoVM.Guest.Net = makeStaleNIC("FD00:F53B:82E4::99")
+					})
+
+					It("should set VirtualMachineGuestNetworkConfigSynced condition to False", func() {
+						assertStaleCondition(validIP6)
+					})
+				})
+			})
+
+			When("gi.IpAddress and per-NIC IP (gi.Net[]) agree", func() {
+				// makeMatchingNIC returns a single-NIC gi.Net[] that contains
+				// every provided IP, mirroring what VMware Tools would publish
+				// once it catches up with the vCenter summary.
+				makeMatchingNIC := func(ips ...string) []vimtypes.GuestNicInfo {
+					addrs := make([]vimtypes.NetIpConfigInfoIpAddress, len(ips))
+					for i, ip := range ips {
+						addrs[i] = vimtypes.NetIpConfigInfoIpAddress{
+							IpAddress: ip,
+							State:     "preferred",
+						}
+					}
+					return []vimtypes.GuestNicInfo{
+						{
+							DeviceConfigId: 4000,
+							MacAddress:     "00:50:56:00:00:01",
+							IpConfig: &vimtypes.NetIpConfigInfo{
+								IpAddress: addrs,
+							},
+						},
+					}
+				}
+
+				When("primary IP is IPv4", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = validIP4
+						vmCtx.MoVM.Guest.Net = makeMatchingNIC(validIP4)
+					})
+
+					It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(ContainSubstring("IPv4=\"192.168.0.2\""))
+					})
+				})
+
+				When("primary IP is IPv6", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Guest.IpAddress = validIP6
+						vmCtx.MoVM.Guest.Net = makeMatchingNIC(validIP6)
+					})
+
+					It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(ContainSubstring("IPv6=\"FD00:F53B:82E4::54\""))
+					})
+				})
+
+				When("primary IPs are both IPv4 and IPv6", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						vmCtx.MoVM.Guest.IpAddress = validIP4
+						vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+							ExtraConfig: []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
+									Key:   "guestinfo.local-ipv4",
+									Value: validIP4,
+								},
+								&vimtypes.OptionValue{
+									Key:   "guestinfo.local-ipv6",
+									Value: validIP6,
+								},
+							},
+						}
+						vmCtx.MoVM.Guest.Net = makeMatchingNIC(validIP4, validIP6)
+					})
+
+					It("should set VirtualMachineGuestNetworkConfigSynced condition to True", func() {
+						cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineGuestNetworkConfigSynced)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+						Expect(cond.Reason).To(Equal("Synced"))
+						Expect(cond.Message).To(ContainSubstring("IPv4=\"192.168.0.2\""))
+						Expect(cond.Message).To(ContainSubstring("IPv6=\"FD00:F53B:82E4::54\""))
+					})
+				})
+			})
+
 			When("guest property is nil", func() {
 				BeforeEach(func() {
 					vmCtx.MoVM.Guest = nil
@@ -2045,50 +2185,50 @@ var _ = Describe("UpdateStatus", func() {
 								SharingMode:         vmopv1.VolumeSharingModeNone,
 							},
 							{
-								Name:       pkgutil.GeneratePVCName("disk", "101"),
-								DiskUUID:   "101",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(1 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(1 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
+								Name:        pkgutil.GeneratePVCName("disk", "101"),
+								DiskUUID:    "101",
+								Type:        vmopv1.VolumeTypeClassic,
+								Attached:    true,
+								Limit:       kubeutil.BytesToResource(1 * oneGiBInBytes),
+								Requested:   kubeutil.BytesToResource(1 * oneGiBInBytes),
+								Used:        kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+								UnitNumber:  ptr.To[int32](0),
 								DiskMode:    vmopv1.VolumeDiskModePersistent,
 								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
 							{
-								Name:       pkgutil.GeneratePVCName("disk", "102"),
-								DiskUUID:   "102",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(2 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(2 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
+								Name:        pkgutil.GeneratePVCName("disk", "102"),
+								DiskUUID:    "102",
+								Type:        vmopv1.VolumeTypeClassic,
+								Attached:    true,
+								Limit:       kubeutil.BytesToResource(2 * oneGiBInBytes),
+								Requested:   kubeutil.BytesToResource(2 * oneGiBInBytes),
+								Used:        kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+								UnitNumber:  ptr.To[int32](0),
 								DiskMode:    vmopv1.VolumeDiskModePersistent,
 								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
 							{
-								Name:       pkgutil.GeneratePVCName("disk", "103"),
-								DiskUUID:   "103",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(3 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(3 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
+								Name:        pkgutil.GeneratePVCName("disk", "103"),
+								DiskUUID:    "103",
+								Type:        vmopv1.VolumeTypeClassic,
+								Attached:    true,
+								Limit:       kubeutil.BytesToResource(3 * oneGiBInBytes),
+								Requested:   kubeutil.BytesToResource(3 * oneGiBInBytes),
+								Used:        kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+								UnitNumber:  ptr.To[int32](0),
 								DiskMode:    vmopv1.VolumeDiskModePersistent,
 								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
 							{
-								Name:       pkgutil.GeneratePVCName("disk", "104"),
-								DiskUUID:   "104",
-								Type:       vmopv1.VolumeTypeClassic,
-								Attached:   true,
-								Limit:      kubeutil.BytesToResource(4 * oneGiBInBytes),
-								Requested:  kubeutil.BytesToResource(4 * oneGiBInBytes),
-								Used:       kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
-								UnitNumber: ptr.To[int32](0),
+								Name:        pkgutil.GeneratePVCName("disk", "104"),
+								DiskUUID:    "104",
+								Type:        vmopv1.VolumeTypeClassic,
+								Attached:    true,
+								Limit:       kubeutil.BytesToResource(4 * oneGiBInBytes),
+								Requested:   kubeutil.BytesToResource(4 * oneGiBInBytes),
+								Used:        kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+								UnitNumber:  ptr.To[int32](0),
 								DiskMode:    vmopv1.VolumeDiskModePersistent,
 								SharingMode: vmopv1.VolumeSharingModeNone,
 							},
@@ -2176,50 +2316,50 @@ var _ = Describe("UpdateStatus", func() {
 							SharingMode:         vmopv1.VolumeSharingModeNone,
 						},
 						{
-							Name:       pkgutil.GeneratePVCName("disk", "101"),
-							DiskUUID:   "101",
-							Type:       vmopv1.VolumeTypeClassic,
-							Attached:   true,
-							Limit:      kubeutil.BytesToResource(1 * oneGiBInBytes),
-							Requested:  kubeutil.BytesToResource(1 * oneGiBInBytes),
-							Used:       kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
-							UnitNumber: ptr.To[int32](0),
+							Name:        pkgutil.GeneratePVCName("disk", "101"),
+							DiskUUID:    "101",
+							Type:        vmopv1.VolumeTypeClassic,
+							Attached:    true,
+							Limit:       kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Requested:   kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Used:        kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+							UnitNumber:  ptr.To[int32](0),
 							DiskMode:    vmopv1.VolumeDiskModePersistent,
 							SharingMode: vmopv1.VolumeSharingModeNone,
 						},
 						{
-							Name:       pkgutil.GeneratePVCName("disk", "102"),
-							DiskUUID:   "102",
-							Type:       vmopv1.VolumeTypeClassic,
-							Attached:   true,
-							Limit:      kubeutil.BytesToResource(2 * oneGiBInBytes),
-							Requested:  kubeutil.BytesToResource(2 * oneGiBInBytes),
-							Used:       kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
-							UnitNumber: ptr.To[int32](0),
+							Name:        pkgutil.GeneratePVCName("disk", "102"),
+							DiskUUID:    "102",
+							Type:        vmopv1.VolumeTypeClassic,
+							Attached:    true,
+							Limit:       kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Requested:   kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Used:        kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+							UnitNumber:  ptr.To[int32](0),
 							DiskMode:    vmopv1.VolumeDiskModePersistent,
 							SharingMode: vmopv1.VolumeSharingModeNone,
 						},
 						{
-							Name:       pkgutil.GeneratePVCName("disk", "103"),
-							DiskUUID:   "103",
-							Type:       vmopv1.VolumeTypeClassic,
-							Attached:   true,
-							Limit:      kubeutil.BytesToResource(3 * oneGiBInBytes),
-							Requested:  kubeutil.BytesToResource(3 * oneGiBInBytes),
-							Used:       kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
-							UnitNumber: ptr.To[int32](0),
+							Name:        pkgutil.GeneratePVCName("disk", "103"),
+							DiskUUID:    "103",
+							Type:        vmopv1.VolumeTypeClassic,
+							Attached:    true,
+							Limit:       kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Requested:   kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Used:        kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							UnitNumber:  ptr.To[int32](0),
 							DiskMode:    vmopv1.VolumeDiskModePersistent,
 							SharingMode: vmopv1.VolumeSharingModeNone,
 						},
 						{
-							Name:       pkgutil.GeneratePVCName("disk", "104"),
-							DiskUUID:   "104",
-							Type:       vmopv1.VolumeTypeClassic,
-							Attached:   true,
-							Limit:      kubeutil.BytesToResource(4 * oneGiBInBytes),
-							Requested:  kubeutil.BytesToResource(4 * oneGiBInBytes),
-							Used:       kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
-							UnitNumber: ptr.To[int32](0),
+							Name:        pkgutil.GeneratePVCName("disk", "104"),
+							DiskUUID:    "104",
+							Type:        vmopv1.VolumeTypeClassic,
+							Attached:    true,
+							Limit:       kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Requested:   kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Used:        kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+							UnitNumber:  ptr.To[int32](0),
 							DiskMode:    vmopv1.VolumeDiskModePersistent,
 							SharingMode: vmopv1.VolumeSharingModeNone,
 						},

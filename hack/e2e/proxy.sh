@@ -14,14 +14,14 @@ set -o pipefail
 SCRIPT_DIR="$(dirname "${BASH_SOURCE}")"
 GOVC_INSECURE="${GOVC_INSECURE:-1}"
 # GOVC_USERNAME and GOVC_PASSWORD are intentionally NOT defaulted here.
-# They must be passed in by the caller (setup-e2e-testbed.sh exports them
+# They must be passed in by the caller (setup-testbed-env.sh exports them
 # from the testbed JSON before invoking this script). Defaulting to 'vmware'
 # would silently override the real testbed credentials and cause govc to fail
 # authentication, making find_gateway_vm_path return empty.
 GOVC_USERNAME="${GOVC_USERNAME:-}"
 GOVC_PASSWORD="${GOVC_PASSWORD:-}"
 GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
-# GATEWAY_VM_PASSWORD must be set by the caller (e.g. setup-e2e-testbed.sh
+# GATEWAY_VM_PASSWORD must be set by the caller (e.g. setup-testbed-env.sh
 # passes VC_ROOT_PASSWORD). No default — an empty password fails fast with a
 # clear SSH auth error rather than silently using a wrong credential.
 GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"

@@ -12,7 +12,7 @@ set -o pipefail
 export GOVC_URL # set in main()
 export GOVC_INSECURE=true
 GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
-# GATEWAY_VM_PASSWORD must be set by the caller (setup-e2e-testbed.sh passes
+# GATEWAY_VM_PASSWORD must be set by the caller (setup-testbed-env.sh passes
 # the discovered password). No default — empty fails fast.
 GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
 script_dir="$(dirname "$0")"

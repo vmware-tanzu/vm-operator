@@ -523,15 +523,14 @@ func applyInterfaceSpecToResult(
 		result.MTU = *interfaceSpec.MTU
 	}
 
-	// TODO: There is currently no way to unset DHCP flags if NetOP has set them.
-	// For example, if NetOP sets both DHCP4 and DHCP6, but user only wants DHCP4,
-	// they cannot disable DHCP6. Consider adding explicit unset mechanism (e.g.,
-	// using pointer types or separate "disable" flags) in the future.
-	if interfaceSpec.DHCP4 {
-		result.DHCP4 = true
+	// When DHCP4 or DHCP6 is explicitly set (non-nil), the user intent
+	// overrides whatever the network provider determined. A nil value defers
+	// to the network provider result already in result.DHCP4/6.
+	if interfaceSpec.DHCP4 != nil {
+		result.DHCP4 = *interfaceSpec.DHCP4
 	}
-	if interfaceSpec.DHCP6 {
-		result.DHCP6 = true
+	if interfaceSpec.DHCP6 != nil {
+		result.DHCP6 = *interfaceSpec.DHCP6
 	}
 
 	if len(interfaceSpec.Addresses) > 0 {
@@ -872,6 +871,41 @@ func IPAMModesToVPCInterfaceIPType(ipamModes []corev1.IPFamily) vpcv1alpha1.IPAd
 	default:
 		// No modes so use VPC default.
 		return ""
+	}
+}
+
+// IPAMModesToVPCStaticIPAllocationType derives which IP families should be
+// allocated from a static IP pool.
+//
+// A family is included as static only when its DHCP flag is explicitly set to
+// false (ptr.To(false)). This conservative rule avoids inferring intent from
+// the zero/nil value:
+//   - nil  → not specified; leave StaticIPAllocationType unset so NSX derives
+//     allocation from subnet configuration.
+//   - true  → DHCP requested; exclude family from static allocation.
+//   - false → static requested; include family in static allocation.
+//
+// When both flags are nil (nothing specified), the result is "" so that NSX
+// uses its own subnet-level defaults (brownfield safe).
+func IPAMModesToVPCStaticIPAllocationType(
+	ipamModes []corev1.IPFamily,
+	dhcp4, dhcp6 *bool,
+) vpcv1alpha1.StaticIPAllocationType {
+	if len(ipamModes) == 0 || (dhcp4 == nil && dhcp6 == nil) {
+		// No explicit DHCP intent: let NSX derive from subnet configuration.
+		return ""
+	}
+	wantsStaticV4 := dhcp4 != nil && !*dhcp4 && slices.Contains(ipamModes, corev1.IPv4Protocol)
+	wantsStaticV6 := dhcp6 != nil && !*dhcp6 && slices.Contains(ipamModes, corev1.IPv6Protocol)
+	switch {
+	case wantsStaticV4 && wantsStaticV6:
+		return vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6
+	case wantsStaticV4:
+		return vpcv1alpha1.StaticIPAllocationTypeIPv4
+	case wantsStaticV6:
+		return vpcv1alpha1.StaticIPAllocationTypeIPv6
+	default:
+		return vpcv1alpha1.StaticIPAllocationTypeNone
 	}
 }
 
@@ -1233,11 +1267,16 @@ func createVPCNetworkInterface(
 			}
 		}
 
-		// InterfaceIPType is a new field introduced for IPv6 support.
-		// Only set it when the WorkloadIPv6 capability is active so that this
-		// field is not sent to NSX operator when IPv6 is disabled.
+		// InterfaceIPType and StaticIPAllocationType are new fields introduced
+		// for IPv6 support. Only set them when the WorkloadIPv6 capability is
+		// active so they are not sent to NSX operator when IPv6 is disabled.
 		if pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
 			subnetPort.Spec.InterfaceIPType = IPAMModesToVPCInterfaceIPType(interfaceSpec.IPAMModes)
+			subnetPort.Spec.StaticIPAllocationType = IPAMModesToVPCStaticIPAllocationType(
+				interfaceSpec.IPAMModes,
+				interfaceSpec.DHCP4,
+				interfaceSpec.DHCP6,
+			)
 		}
 
 		return nil
@@ -1263,13 +1302,14 @@ func createAndWaitVPCNetworkInterface(
 		return nil, err
 	}
 
-	return vpcSubnetPortToResult(vmCtx, vimClient, clusterMoRef, subnetPort)
+	return vpcSubnetPortToResult(vmCtx, vimClient, clusterMoRef, interfaceSpec, subnetPort)
 }
 
 func vpcSubnetPortToResult(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
+	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec,
 	subnetPort *vpcv1alpha1.SubnetPort) (*NetworkInterfaceResult, error) {
 
 	var backing object.NetworkReference
@@ -1313,6 +1353,14 @@ func vpcSubnetPortToResult(
 		}
 
 		result.IPConfigs = append(result.IPConfigs, ipConfig)
+	}
+
+	// Fail-fast: if the user explicitly requested DHCPv4 but the subnet has
+	// DHCP deactivated, the VM cannot be bootstrapped as intended.
+	if interfaceSpec != nil &&
+		interfaceSpec.DHCP4 != nil && *interfaceSpec.DHCP4 &&
+		subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet {
+		return nil, fmt.Errorf("interface %s: DHCP4 requested but DHCPv4 is deactivated on subnet", subnetPort.Name)
 	}
 
 	// DHCPDeactivatedOnSubnet only indicates whether the Subnet has DHCP

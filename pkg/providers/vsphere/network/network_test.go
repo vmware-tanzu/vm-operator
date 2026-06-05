@@ -105,7 +105,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name:    "eth0",
 						Network: &common.PartialObjectRef{Name: networkName},
-						DHCP6:   true,
+						DHCP6:   ptr.To(true),
 					},
 				}
 			})
@@ -1110,7 +1110,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							Name: networkName,
 						},
 						Addresses: []string{"2001:db8::100/64"},
-						DHCP4:     true,
+						DHCP4:     ptr.To(true),
 					},
 				}
 			})
@@ -1180,7 +1180,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							Name: networkName,
 						},
 						Addresses: []string{"192.168.1.100/24"},
-						DHCP6:     true,
+						DHCP6:     ptr.To(true),
 					},
 				}
 			})
@@ -2368,7 +2368,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					testConfig.WithWorkloadIPv6 = true
 				})
 
-				simulateReadySubnetPort := func(ctx *builder.TestContextForVCSim, name, namespace string, ipType vpcv1alpha1.IPAddressType, dhcpDeactivated bool, ips []vpcv1alpha1.NetworkInterfaceIPAddress) {
+				simulateReadySubnetPort := func(ctx *builder.TestContextForVCSim, name, namespace string, ipType vpcv1alpha1.IPAddressType, staticAllocType vpcv1alpha1.StaticIPAllocationType, dhcpDeactivated bool, ips []vpcv1alpha1.NetworkInterfaceIPAddress) {
 					subnetPort := &vpcv1alpha1.SubnetPort{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      name,
@@ -2376,8 +2376,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						},
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
-					// Verify InterfaceIPType was set on the Spec by vm-operator.
+					// Verify InterfaceIPType and StaticIPAllocationType were set on the Spec by vm-operator.
 					Expect(subnetPort.Spec.InterfaceIPType).To(Equal(ipType))
+					Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(staticAllocType))
 					subnetPort.Status.Attachment.ID = interfaceID
 					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
 					subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet = dhcpDeactivated
@@ -2400,7 +2401,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						}
 					})
 
-					It("does not set InterfaceIPType on SubnetPort", func() {
+					It("does not set InterfaceIPType or StaticIPAllocationType on SubnetPort", func() {
 						Expect(err).To(HaveOccurred())
 						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
 
@@ -2412,6 +2413,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
 						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressType("")))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationType("")))
 					})
 				})
 
@@ -2434,6 +2436,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							simulateReadySubnetPort(ctx,
 								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
 								vpcv1alpha1.IPAddressTypeIPv4,
+								vpcv1alpha1.StaticIPAllocationTypeIPv4,
 								true,
 								[]vpcv1alpha1.NetworkInterfaceIPAddress{
 									{IPAddress: "192.168.1.10/24", Gateway: "192.168.1.1"},
@@ -2472,6 +2475,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							simulateReadySubnetPort(ctx,
 								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
 								vpcv1alpha1.IPAddressTypeIPv6,
+								vpcv1alpha1.StaticIPAllocationTypeIPv6,
 								false,
 								nil)
 						})
@@ -2510,6 +2514,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							simulateReadySubnetPort(ctx,
 								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
 								vpcv1alpha1.IPAddressTypeIPv4IPv6,
+								vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6,
 								false,
 								nil)
 						})
@@ -2548,6 +2553,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							simulateReadySubnetPort(ctx,
 								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
 								vpcv1alpha1.IPAddressTypeIPv4IPv6,
+								vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6,
 								false,
 								[]vpcv1alpha1.NetworkInterfaceIPAddress{
 									{IPAddress: "192.168.1.10/24", Gateway: "192.168.1.1"},
@@ -2564,6 +2570,191 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(result.DHCP6).To(BeTrue())
 						Expect(result.IPConfigs).To(HaveLen(1))
 						Expect(result.IPConfigs[0].IsIPv4).To(BeTrue())
+					})
+				})
+
+				Context("DualStack, DHCP4=true DHCP6=nil (v4 DHCP explicit, v6 unspecified)", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{
+									corev1.IPv4Protocol,
+									corev1.IPv6Protocol,
+								},
+								DHCP4: ptr.To(true),
+							},
+						}
+					})
+
+					It("sets StaticIPAllocationType=None (v6 unknown, conservative)", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeNone))
+					})
+				})
+
+				Context("DualStack, DHCP4=true DHCP6=false (v4 DHCP, v6 explicit static)", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{
+									corev1.IPv4Protocol,
+									corev1.IPv6Protocol,
+								},
+								DHCP4: ptr.To(true),
+								DHCP6: ptr.To(false),
+							},
+						}
+					})
+
+					It("sets StaticIPAllocationType=IPv6 (static only for v6, DHCP for v4)", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeIPv6))
+					})
+				})
+
+				Context("DualStack, DHCP4=nil DHCP6=true (v4 unspecified, v6 DHCP explicit)", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{
+									corev1.IPv4Protocol,
+									corev1.IPv6Protocol,
+								},
+								DHCP6: ptr.To(true),
+							},
+						}
+					})
+
+					It("sets StaticIPAllocationType=None (v4 unknown, conservative)", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeNone))
+					})
+				})
+
+				Context("DualStack, DHCP4=false DHCP6=true (v4 explicit static, v6 DHCP)", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{
+									corev1.IPv4Protocol,
+									corev1.IPv6Protocol,
+								},
+								DHCP4: ptr.To(false),
+								DHCP6: ptr.To(true),
+							},
+						}
+					})
+
+					It("sets StaticIPAllocationType=IPv4 (static only for v4, DHCP for v6)", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeIPv4))
+					})
+				})
+
+				Context("DualStack, DHCP4=true DHCP6=true (user wants DHCP for both)", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{
+									corev1.IPv4Protocol,
+									corev1.IPv6Protocol,
+								},
+								DHCP4: ptr.To(true),
+								DHCP6: ptr.To(true),
+							},
+						}
+					})
+
+					It("sets StaticIPAllocationType=None (DHCP for both families)", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeNone))
+					})
+				})
+
+				Context("DHCP4=true requested on subnet with DHCPDeactivatedOnSubnet", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:      interfaceName,
+								Network:   &common.PartialObjectRef{Name: networkName},
+								IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+								DHCP4:     ptr.To(true),
+							},
+						}
+					})
+
+					It("returns an error when DHCP is deactivated on the subnet", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						By("simulate NSX Operator reconcile: DHCP deactivated on subnet", func() {
+							simulateReadySubnetPort(ctx,
+								network.VPCCRName(vm.Name, networkName, interfaceName), vm.Namespace,
+								vpcv1alpha1.IPAddressTypeIPv4,
+								vpcv1alpha1.StaticIPAllocationTypeNone,
+								true, // DHCPDeactivatedOnSubnet = true
+								nil)
+						})
+
+						_, err = network.CreateAndWaitForNetworkInterfaces(
+							vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, nil, networkSpec)
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(ContainSubstring("DHCP4 requested but DHCPv4 is deactivated on subnet")))
 					})
 				})
 			})

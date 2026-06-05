@@ -188,8 +188,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 									GuestDeviceName: "eth40",
 									MACAddr:         "00:11:22:33:44:58",
 									Addresses:       []string{"1.1.1.11", "2.2.2.22"},
-									DHCP4:           true,
-									DHCP6:           true,
+									DHCP4:           ptrOf(true),
+									DHCP6:           ptrOf(true),
 									Gateway4:        "1.1.1.1",
 									Gateway6:        "2.2.2.2",
 									MTU:             ptrOf[int64](9000),
@@ -607,51 +607,51 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
-		{
-			name: "spec.cpuAdvanced full",
-			hub: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-						LatencySensitivity: ptrOf(vmopv1.VirtualMachineLatencySensitivityHigh),
-						Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-							CoresPerSocket:               ptrOf(int32(4)),
-							NUMAFixedAutoAffinityEnabled: ptrOf(true),
-							VNUMANodeCount:               ptrOf(int32(8)),
-							ExposeVNUMAOnCPUHotAdd:       ptrOf(true),
-						},
-						HotAddEnabled:                       ptrOf(false),
-						IOMMUEnabled:                        ptrOf(true),
-						NestedHardwareVirtualizationEnabled: ptrOf(true),
-						PerformanceCountersEnabled:          ptrOf(true),
-						ReservationLockedToMax:              ptrOf(true),
-					},
-				},
-			},
-		},
-		{
-			name: "spec.cpuAdvanced.topology.numaFixedAutoAffinityEnabled",
-			hub: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-						Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-							NUMAFixedAutoAffinityEnabled: ptrOf(true),
+			{
+				name: "spec.cpuAdvanced full",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							LatencySensitivity: ptrOf(vmopv1.VirtualMachineLatencySensitivityHigh),
+							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+								CoresPerSocket:               ptrOf(int32(4)),
+								NUMAFixedAutoAffinityEnabled: ptrOf(true),
+								VNUMANodeCount:               ptrOf(int32(8)),
+								ExposeVNUMAOnCPUHotAdd:       ptrOf(true),
+							},
+							HotAddEnabled:                       ptrOf(false),
+							IOMMUEnabled:                        ptrOf(true),
+							NestedHardwareVirtualizationEnabled: ptrOf(true),
+							PerformanceCountersEnabled:          ptrOf(true),
+							ReservationLockedToMax:              ptrOf(true),
 						},
 					},
 				},
 			},
-		},
-		{
-			name: "spec.cpuAdvanced.reservationLockedToMax",
-			hub: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-						ReservationLockedToMax: ptrOf(true),
+			{
+				name: "spec.cpuAdvanced.topology.numaFixedAutoAffinityEnabled",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+								NUMAFixedAutoAffinityEnabled: ptrOf(true),
+							},
+						},
 					},
 				},
 			},
-		},
-		{
-			name: "spec.memoryAdvanced full",
+			{
+				name: "spec.cpuAdvanced.reservationLockedToMax",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
+							ReservationLockedToMax: ptrOf(true),
+						},
+					},
+				},
+			},
+			{
+				name: "spec.memoryAdvanced full",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
 						MemoryAdvanced: &vmopv1.VirtualMachineMemoryAdvancedSpec{

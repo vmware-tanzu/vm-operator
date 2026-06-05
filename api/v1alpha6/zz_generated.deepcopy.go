@@ -2635,6 +2635,16 @@ func (in *VirtualMachineNetworkInterfaceSpec) DeepCopyInto(out *VirtualMachineNe
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.DHCP4 != nil {
+		in, out := &in.DHCP4, &out.DHCP4
+		*out = new(bool)
+		**out = **in
+	}
+	if in.DHCP6 != nil {
+		in, out := &in.DHCP6, &out.DHCP6
+		*out = new(bool)
+		**out = **in
+	}
 	if in.MTU != nil {
 		in, out := &in.MTU, &out.MTU
 		*out = new(int64)

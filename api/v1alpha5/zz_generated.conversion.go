@@ -4377,8 +4377,12 @@ func autoConvert_v1alpha5_VirtualMachineNetworkInterfaceSpec_To_v1alpha6_Virtual
 	out.GuestDeviceName = in.GuestDeviceName
 	out.MACAddr = in.MACAddr
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))
-	out.DHCP4 = in.DHCP4
-	out.DHCP6 = in.DHCP6
+	if err := v1.Convert_bool_To_Pointer_bool(&in.DHCP4, &out.DHCP4, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_bool_To_Pointer_bool(&in.DHCP6, &out.DHCP6, s); err != nil {
+		return err
+	}
 	out.Gateway4 = in.Gateway4
 	out.Gateway6 = in.Gateway6
 	out.MTU = (*int64)(unsafe.Pointer(in.MTU))
@@ -4399,8 +4403,12 @@ func autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_Virtual
 	out.GuestDeviceName = in.GuestDeviceName
 	out.MACAddr = in.MACAddr
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))
-	out.DHCP4 = in.DHCP4
-	out.DHCP6 = in.DHCP6
+	if err := v1.Convert_Pointer_bool_To_bool(&in.DHCP4, &out.DHCP4, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_bool_To_bool(&in.DHCP6, &out.DHCP6, s); err != nil {
+		return err
+	}
 	out.Gateway4 = in.Gateway4
 	out.Gateway6 = in.Gateway6
 	out.MTU = (*int64)(unsafe.Pointer(in.MTU))

@@ -15,6 +15,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 var _ = Describe("NetOP assignment mode helpers",
@@ -115,6 +116,66 @@ var _ = Describe("NetOP assignment mode helpers",
 			Entry("dual stack order v6 v4",
 				[]corev1.IPFamily{corev1.IPv6Protocol, corev1.IPv4Protocol},
 				vpcv1alpha1.IPAddressTypeIPv4IPv6),
+		)
+
+		DescribeTable("IPAMModesToVPCStaticIPAllocationType",
+			func(modes []corev1.IPFamily, dhcp4, dhcp6 *bool, want vpcv1alpha1.StaticIPAllocationType) {
+				Expect(network.IPAMModesToVPCStaticIPAllocationType(modes, dhcp4, dhcp6)).To(Equal(want))
+			},
+			// Brownfield: nil/empty modes always returns unset regardless of DHCP flags.
+			Entry("nil modes returns empty (brownfield)",
+				[]corev1.IPFamily(nil), (*bool)(nil), (*bool)(nil), vpcv1alpha1.StaticIPAllocationType("")),
+			Entry("empty modes returns empty (brownfield)",
+				[]corev1.IPFamily{}, (*bool)(nil), (*bool)(nil), vpcv1alpha1.StaticIPAllocationType("")),
+			// Both nil → no explicit intent → NSX derives.
+			Entry("IPv4 only, both nil → unset",
+				[]corev1.IPFamily{corev1.IPv4Protocol}, (*bool)(nil), (*bool)(nil),
+				vpcv1alpha1.StaticIPAllocationType("")),
+			Entry("dual stack, both nil → unset",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, (*bool)(nil), (*bool)(nil),
+				vpcv1alpha1.StaticIPAllocationType("")),
+			// DHCP4=false (explicit static) cases.
+			Entry("IPv4 only, DHCP4=false → static IPv4",
+				[]corev1.IPFamily{corev1.IPv4Protocol}, ptr.To(false), (*bool)(nil),
+				vpcv1alpha1.StaticIPAllocationTypeIPv4),
+			Entry("IPv4 only, DHCP4=true → None",
+				[]corev1.IPFamily{corev1.IPv4Protocol}, ptr.To(true), (*bool)(nil),
+				vpcv1alpha1.StaticIPAllocationTypeNone),
+			// DHCP6=false (explicit static) cases.
+			Entry("IPv6 only, DHCP6=false → static IPv6",
+				[]corev1.IPFamily{corev1.IPv6Protocol}, (*bool)(nil), ptr.To(false),
+				vpcv1alpha1.StaticIPAllocationTypeIPv6),
+			Entry("IPv6 only, DHCP6=true → None",
+				[]corev1.IPFamily{corev1.IPv6Protocol}, (*bool)(nil), ptr.To(true),
+				vpcv1alpha1.StaticIPAllocationTypeNone),
+			// Dual stack: only explicitly-static families are included.
+			Entry("dual stack, DHCP4=true, DHCP6=nil → None (v4 DHCP, v6 unknown)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, ptr.To(true), (*bool)(nil),
+				vpcv1alpha1.StaticIPAllocationTypeNone),
+			Entry("dual stack, DHCP4=false, DHCP6=nil → IPv4 (v4 static, v6 unknown)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, ptr.To(false), (*bool)(nil),
+				vpcv1alpha1.StaticIPAllocationTypeIPv4),
+			Entry("dual stack, DHCP4=nil, DHCP6=true → None (v4 unknown, v6 DHCP)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, (*bool)(nil), ptr.To(true),
+				vpcv1alpha1.StaticIPAllocationTypeNone),
+			Entry("dual stack, DHCP4=nil, DHCP6=false → IPv6 (v4 unknown, v6 static)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, (*bool)(nil), ptr.To(false),
+				vpcv1alpha1.StaticIPAllocationTypeIPv6),
+			Entry("dual stack, DHCP4=false, DHCP6=false → IPv4IPv6 (both static)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, ptr.To(false), ptr.To(false),
+				vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6),
+			Entry("dual stack, DHCP4=true, DHCP6=true → None (both DHCP)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, ptr.To(true), ptr.To(true),
+				vpcv1alpha1.StaticIPAllocationTypeNone),
+			Entry("dual stack, DHCP4=true, DHCP6=false → IPv6 (v4 DHCP, v6 static)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, ptr.To(true), ptr.To(false),
+				vpcv1alpha1.StaticIPAllocationTypeIPv6),
+			Entry("dual stack, DHCP4=false, DHCP6=true → IPv4 (v4 static, v6 DHCP)",
+				[]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}, ptr.To(false), ptr.To(true),
+				vpcv1alpha1.StaticIPAllocationTypeIPv4),
+			Entry("dual stack order v6 v4, DHCP4=false, DHCP6=false → IPv4IPv6",
+				[]corev1.IPFamily{corev1.IPv6Protocol, corev1.IPv4Protocol}, ptr.To(false), ptr.To(false),
+				vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6),
 		)
 
 	})

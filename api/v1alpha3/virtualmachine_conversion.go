@@ -191,6 +191,16 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
 		dstIface.VMXNet3 = srcIface.VMXNet3
 		dstIface.AdvancedProperties = srcIface.AdvancedProperties
+		// DHCP4/DHCP6 ptr.To(false) is lost on down-conversion (bool false ≡ nil).
+		// Restore it only when the basic conversion gave nil (spoke had zero value)
+		// and the annotation recorded an explicit &false. If the spoke explicitly set
+		// true (dst = &true), we keep the spoke's intent and do not overwrite.
+		if dstIface.DHCP4 == nil && srcIface.DHCP4 != nil && !*srcIface.DHCP4 {
+			dstIface.DHCP4 = srcIface.DHCP4
+		}
+		if dstIface.DHCP6 == nil && srcIface.DHCP6 != nil && !*srcIface.DHCP6 {
+			dstIface.DHCP6 = srcIface.DHCP6
+		}
 	}
 }
 

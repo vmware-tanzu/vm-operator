@@ -25,6 +25,10 @@ type VirtualMachineResourceQuantity struct {
 	// represents a host-level CPU allocation in MHz (e.g. "2000" for
 	// 2 GHz). Maps to CpuAllocation.Reservation and CpuAllocation.Limit
 	// respectively.
+	//
+	// For spec.resources.size, an increase can be applied while the VM is
+	// powered on when cpuAdvanced.hotAddEnabled is already enabled on the
+	// live VM; a decrease always requires power-off.
 	CPU *resource.Quantity `json:"cpu,omitempty"`
 
 	// +optional
@@ -34,14 +38,16 @@ type VirtualMachineResourceQuantity struct {
 	// For spec.resources.size, maps to ConfigSpec.MemoryMB (guest-visible).
 	// For spec.resources.requests and spec.resources.limits, maps to
 	// MemoryAllocation.Reservation and MemoryAllocation.Limit respectively.
+	//
+	// For spec.resources.size, an increase can be applied while the VM is
+	// powered on when memoryAdvanced.hotAddEnabled is already enabled on the
+	// live VM; a decrease always requires power-off.
 	Memory *resource.Quantity `json:"memory,omitempty"`
 }
 
 // VirtualMachineResourcesSpec describes the desired compute resource
 // allocation for a VirtualMachine. All sub-fields are optional; a nil
 // sub-field defers to the VirtualMachineClass value via field-level merge.
-// When no VirtualMachineClass is referenced, spec.resources.size.cpu and
-// spec.resources.size.memory are required.
 //
 // Requires the TelcoVMServiceAPI supervisor capability.
 type VirtualMachineResourcesSpec struct {
@@ -98,35 +104,21 @@ const (
 // VirtualMachineCPUTopologySpec describes the guest CPU topology.
 //
 // Requires the TelcoVMServiceAPI supervisor capability.
-// +kubebuilder:validation:XValidation:rule="!has(self.vnumaNodeCount) || has(self.coresPerSocket)",message="vnumaNodeCount requires coresPerSocket to also be set"
-// +kubebuilder:validation:XValidation:rule="!has(self.numaFixedAutoAffinityEnabled) || !self.numaFixedAutoAffinityEnabled || !has(self.vnumaNodeCount)",message="vnumaNodeCount cannot be set when numaFixedAutoAffinityEnabled is true"
+// +kubebuilder:validation:XValidation:rule="!has(self.vnumaNodeCount) || self.vnumaNodeCount == 0 || (has(self.coresPerSocket) && self.coresPerSocket > 0)",message="vnumaNodeCount requires coresPerSocket to be set to an explicit (non-zero) value"
 type VirtualMachineCPUTopologySpec struct {
 	// +optional
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 
 	// CoresPerSocket controls the number of cores per virtual socket.
-	// When unset, any explicit cores-per-socket configuration is cleared,
-	// reverting to the vSphere default.
+	// When unset or 0, any explicit cores-per-socket configuration is cleared,
+	// reverting to the vSphere default (auto sizing). 0 is a sentinel for
+	// "auto" and is equivalent to leaving the field unset.
 	// Maps to ConfigSpec.NumCoresPerSocket.
 	// Requires power-off to apply.
 	CoresPerSocket *int32 `json:"coresPerSocket,omitempty"`
 
 	// +optional
-
-	// NUMAFixedAutoAffinityEnabled enables fixed affinity between the VM's
-	// vCPUs and physical NUMA nodes on the host. vCPUs are distributed equally
-	// across (total vCPU count / CoresPerSocket) virtual NUMA nodes; when
-	// CoresPerSocket is unset, all vCPUs are placed on a single physical NUMA
-	// node. The affinity is established at each power-on and live migration.
-	// Mutually exclusive with VNUMANodeCount.
-	// When false or unset, fixed affinity is disabled.
-	// Maps to ConfigSpec.NUMAFixedAutoAffinityEnabled.
-	// Requires hardware version vmx-23 or later.
-	// Requires power-off to apply.
-	NUMAFixedAutoAffinityEnabled *bool `json:"numaFixedAutoAffinityEnabled,omitempty"`
-
-	// +optional
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 
 	// VNUMANodeCount sets the number of virtual NUMA nodes. vSphere derives
 	// coresPerNumaNode as total vCPU count / VNUMANodeCount; the vCPU count
@@ -134,26 +126,14 @@ type VirtualMachineCPUTopologySpec struct {
 	// The derived coresPerNumaNode must be a multiple or divisor of
 	// CoresPerSocket; the VM will fail to power on if this constraint is
 	// violated.
-	// When unset, any manual vNUMA configuration is cleared, enabling automatic
-	// vNUMA sizing.
-	// Must be set together with CoresPerSocket.
+	// When unset or 0, any manual vNUMA configuration is cleared, enabling
+	// automatic vNUMA sizing. 0 is a sentinel for "auto" and is equivalent to
+	// leaving the field unset.
+	// When set to a value > 0, must be set together with CoresPerSocket.
 	// Maps to ConfigSpec.VirtualNuma.CoresPerNumaNode.
 	// Requires hardware version vmx-20 or later.
 	// Requires power-off to apply.
 	VNUMANodeCount *int32 `json:"vnumaNodeCount,omitempty"`
-
-	// +optional
-
-	// ExposeVNUMAOnCPUHotAdd controls vNUMA exposure when CPU hot-add occurs.
-	// When true, virtual NUMA topology is exposed to the guest when vCPUs are
-	// hot-added.
-	// When false or unset, a single virtual NUMA node is presented to the guest
-	// during hot-add regardless of configured topology.
-	// Only relevant when cpuAdvanced.hotAddEnabled is true.
-	// Maps to ConfigSpec.VirtualNuma.ExposeVnumaOnCpuHotadd.
-	// Requires hardware version vmx-20 or later.
-	// Requires power-off to apply.
-	ExposeVNUMAOnCPUHotAdd *bool `json:"exposeVnumaOnCpuHotadd,omitempty"`
 }
 
 // VirtualMachineCPUAdvancedSpec describes advanced CPU scheduling and topology
@@ -169,6 +149,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// Requires full CPU and memory reservation (requests = size)
 	// when set to High or HighWithHyperthreading.
 	// When unset, the setting is cleared, reverting to the vSphere default.
+	// Can be reconfigured while the VM is powered on.
 	LatencySensitivity *VirtualMachineLatencySensitivityLevel `json:"latencySensitivity,omitempty"`
 
 	// +optional
@@ -182,7 +163,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 
 	// HotAddEnabled allows vCPUs to be added to the VM while it is powered
 	// on (CPU hot-add). Maps to ConfigSpec.CpuHotAddEnabled.
-	// Requires hardware version vmx-20 or later.
+	// Requires hardware version vmx-11 or later.
 	// Requires power-off to apply.
 	HotAddEnabled *bool `json:"hotAddEnabled,omitempty"`
 
@@ -192,6 +173,8 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// (VT-d / IOMMU) for this VM. Required for SR-IOV and PCI passthrough
 	// workloads. Requires EFI firmware (spec.bootOptions.firmware = "efi").
 	// Maps to ConfigSpec.Flags.VvtdEnabled.
+	// Minimum hardware version depends on host CPU vendor:
+	// vmx-14 or later on Intel hosts; vmx-18 or later on AMD hosts.
 	// Requires power-off to apply.
 	IOMMUEnabled *bool `json:"iommuEnabled,omitempty"`
 
@@ -202,6 +185,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// hypervisor or use hardware VMX instructions. Required for nested
 	// virtualization workloads.
 	// Maps to ConfigSpec.NestedHVEnabled.
+	// Requires hardware version vmx-9 or later.
 	// Requires power-off to apply.
 	NestedHardwareVirtualizationEnabled *bool `json:"nestedHardwareVirtualizationEnabled,omitempty"`
 
@@ -211,20 +195,9 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// counters (vPMC), allowing profiling tools inside the guest OS to
 	// access hardware performance counter data.
 	// Maps to ConfigSpec.VPMCEnabled.
+	// Requires hardware version vmx-9 or later.
 	// Requires power-off to apply.
 	PerformanceCountersEnabled *bool `json:"performanceCountersEnabled,omitempty"`
-
-	// +optional
-
-	// ReservationLockedToMax pins the host CPU reservation to guarantee full
-	// CPU capacity on the placed host. Overrides any explicit value in
-	// spec.resources.requests.cpu when set.
-	// When false or unset, spec.resources.requests.cpu is used for the
-	// CPU reservation.
-	// Maps to ConfigSpec.CpuAllocation.ReservationLockedToMax.
-	// Requires hardware version vmx-23 or later.
-	// Requires power-off to apply.
-	ReservationLockedToMax *bool `json:"reservationLockedToMax,omitempty"`
 }
 
 // VirtualMachineMemoryAdvancedSpec describes advanced memory configuration
@@ -236,7 +209,7 @@ type VirtualMachineMemoryAdvancedSpec struct {
 
 	// HotAddEnabled allows memory to be added to the VM while it is powered
 	// on (memory hot-add). Maps to ConfigSpec.MemoryHotAddEnabled.
-	// Requires hardware version vmx-20 or later.
+	// Requires hardware version vmx-7 or later.
 	// Requires power-off to apply.
 	HotAddEnabled *bool `json:"hotAddEnabled,omitempty"`
 
@@ -246,6 +219,6 @@ type VirtualMachineMemoryAdvancedSpec struct {
 	// guest-visible memory size. Required for SR-IOV workloads, which need
 	// full guest RAM pinned on the host.
 	// Maps to ConfigSpec.MemoryReservationLockedToMax.
-	// Requires power-off to apply.
+	// Can be reconfigured while the VM is powered on.
 	ReservationLockedToMax *bool `json:"reservationLockedToMax,omitempty"`
 }

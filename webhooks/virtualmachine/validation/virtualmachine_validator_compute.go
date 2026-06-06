@@ -99,29 +99,29 @@ func validateComputeResourceFields(specPath *field.Path, vm *vmopv1.VirtualMachi
 
 	// size.{cpu,memory} > 0 when set
 	if size != nil {
-		if size.CPU != nil && size.CPU.IsZero() {
+		if size.CPU != nil && (size.CPU.IsZero() || size.CPU.Value() < 0) {
 			allErrs = append(allErrs, field.Invalid(
 				sizePath.Child("cpu"), size.CPU.String(),
 				"must be greater than 0 when set"))
 		}
-		if size.Memory != nil && size.Memory.IsZero() {
+		if size.Memory != nil && (size.Memory.IsZero() || size.Memory.Value() < 0) {
 			allErrs = append(allErrs, field.Invalid(
 				sizePath.Child("memory"), size.Memory.String(),
 				"must be greater than 0 when set"))
 		}
 	}
 
-	// limits.{cpu,memory} > 0 when set (nil = unlimited)
+	// limits.{cpu,memory} must be > 0 or -1 when set (nil = unlimited, -1 = unlimited sentinel)
 	if lim != nil {
 		if lim.CPU != nil && lim.CPU.IsZero() {
 			allErrs = append(allErrs, field.Invalid(
 				limPath.Child("cpu"), lim.CPU.String(),
-				"must be greater than 0 when set (nil = unlimited)"))
+				"must be greater than 0 or -1 (unlimited) when set (nil = unlimited)"))
 		}
 		if lim.Memory != nil && lim.Memory.IsZero() {
 			allErrs = append(allErrs, field.Invalid(
 				limPath.Child("memory"), lim.Memory.String(),
-				"must be greater than 0 when set (nil = unlimited)"))
+				"must be greater than 0 or -1 (unlimited) when set (nil = unlimited)"))
 		}
 	}
 
@@ -165,9 +165,10 @@ func validateComputeResourceFields(specPath *field.Path, vm *vmopv1.VirtualMachi
 //   - requests.memory != nil AND size.memory != nil AND requests.memory == size.memory
 //   - OR memoryAdvanced.reservationLockedToMax == true
 //
-// CPU reservation invariant is satisfied when either:
-//   - cpuAdvanced.reservationLockedToMax == true
-//   - OR requests.cpu is set and > 0
+// CPU reservation invariant is satisfied when requests.cpu is set and > 0.
+// The webhook cannot verify that the value equals 100% of vCPU capacity
+// (which depends on the host CPU speed), so it only checks that a non-zero
+// reservation is explicitly provided.
 //
 // Any other combination (including partial nil) is rejected because the
 // full-reservation invariant cannot be verified with incomplete information.
@@ -203,15 +204,14 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 				"or spec.memoryAdvanced.reservationLockedToMax must be true"))
 	}
 
-	// Full CPU reservation: reservationLockedToMax or requests.cpu > 0.
-	// The webhook cannot verify the exact MHz value equals 100% (that depends
-	// on the host's CPU speed at placement time), so we only check that a
-	// non-zero reservation is present.
-	cpuReservationMet := ptr.Deref(cpuAdv.ReservationLockedToMax) ||
-		(resources != nil &&
-			resources.Requests != nil &&
-			resources.Requests.CPU != nil &&
-			!resources.Requests.CPU.IsZero())
+	// Full CPU reservation: requests.cpu must be explicitly set to > 0.
+	// The webhook cannot verify the exact MHz value equals 100% of vCPU
+	// capacity (which depends on host CPU speed at placement time), so it
+	// only checks that a non-zero reservation is explicitly provided.
+	cpuReservationMet := resources != nil &&
+		resources.Requests != nil &&
+		resources.Requests.CPU != nil &&
+		!resources.Requests.CPU.IsZero()
 	if !cpuReservationMet {
 		allErrs = append(allErrs, field.Invalid(lsPath, string(ls),
 			"High Latency Sensitivity requires you to set 100% CPU reservation for this VM"))
@@ -221,7 +221,6 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 }
 
 // validateComputeReservationLockedToMax validates mutual exclusion rules:
-//   - cpuAdvanced.reservationLockedToMax=true is mutually exclusive with requests.cpu
 //   - memoryAdvanced.reservationLockedToMax=true is compatible with requests.memory only
 //     when size.memory is also set and requests.memory equals size.memory, because
 //     vSphere locks the reservation to the full size in that mode. When size.memory
@@ -230,18 +229,8 @@ func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.Virt
 	var (
 		allErrs   field.ErrorList
 		resources = vm.Spec.Resources
-		cpuAdv    = vm.Spec.CPUAdvanced
 		memAdv    = vm.Spec.MemoryAdvanced
 	)
-
-	if cpuAdv != nil && ptr.Deref(cpuAdv.ReservationLockedToMax) {
-		if resources != nil && resources.Requests != nil && resources.Requests.CPU != nil {
-			allErrs = append(allErrs, field.Invalid(
-				specPath.Child("cpuAdvanced").Child("reservationLockedToMax"),
-				true,
-				"mutually exclusive with spec.resources.requests.cpu"))
-		}
-	}
 
 	if memAdv != nil && ptr.Deref(memAdv.ReservationLockedToMax) {
 		if resources != nil && resources.Requests != nil && resources.Requests.Memory != nil {
@@ -262,12 +251,12 @@ func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.Virt
 }
 
 // validateComputeTopology validates spec.cpuAdvanced.topology constraints:
-//   - When vnumaNodeCount is set together with coresPerSocket and size.cpu:
+//   - vnumaNodeCount > 0 requires coresPerSocket > 0 (auto/zero coresPerSocket
+//     is not allowed when vnumaNodeCount is explicit).
+//   - When vnumaNodeCount > 0 and coresPerSocket > 0 and size.cpu is set:
 //     size.cpu must be evenly divisible by vnumaNodeCount; the derived
 //     coresPerNumaNode (size.cpu / vnumaNodeCount) must be a multiple or
 //     divisor of coresPerSocket.
-//   - exposeVnumaOnCpuHotadd=true requires hotAddEnabled=true.
-//   - vnumaNodeCount set with hotAddEnabled=true requires exposeVnumaOnCpuHotadd=true.
 func validateComputeTopology(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	cpuAdv := vm.Spec.CPUAdvanced
 	if cpuAdv == nil || cpuAdv.Topology == nil {
@@ -278,13 +267,15 @@ func validateComputeTopology(specPath *field.Path, vm *vmopv1.VirtualMachine) fi
 	t := cpuAdv.Topology
 	topoPath := specPath.Child("cpuAdvanced").Child("topology")
 
-	if t.VNUMANodeCount != nil && t.CoresPerSocket == nil {
+	if t.VNUMANodeCount != nil && *t.VNUMANodeCount > 0 &&
+		(t.CoresPerSocket == nil || *t.CoresPerSocket == 0) {
 		allErrs = append(allErrs, field.Invalid(
 			topoPath.Child("vnumaNodeCount"), *t.VNUMANodeCount,
-			"requires coresPerSocket to be set"))
+			"requires coresPerSocket to be set to an explicit (non-zero) value"))
 	}
 
-	if t.VNUMANodeCount != nil && t.CoresPerSocket != nil {
+	if t.VNUMANodeCount != nil && *t.VNUMANodeCount > 0 &&
+		t.CoresPerSocket != nil && *t.CoresPerSocket > 0 {
 		resources := vm.Spec.Resources
 		if resources != nil && resources.Size != nil && resources.Size.CPU != nil {
 			numCPU := resources.Size.CPU.Value()
@@ -304,22 +295,6 @@ func validateComputeTopology(specPath *field.Path, vm *vmopv1.VirtualMachine) fi
 				}
 			}
 		}
-	}
-
-	if ptr.Deref(t.ExposeVNUMAOnCPUHotAdd) {
-		if !ptr.Deref(cpuAdv.HotAddEnabled) {
-			allErrs = append(allErrs, field.Invalid(
-				topoPath.Child("exposeVnumaOnCpuHotadd"), true,
-				"requires cpuAdvanced.hotAddEnabled to be true"))
-		}
-	}
-
-	if t.VNUMANodeCount != nil &&
-		ptr.Deref(cpuAdv.HotAddEnabled) &&
-		!ptr.Deref(t.ExposeVNUMAOnCPUHotAdd) {
-		allErrs = append(allErrs, field.Invalid(
-			topoPath.Child("vnumaNodeCount"), *t.VNUMANodeCount,
-			"requires cpuAdvanced.topology.exposeVnumaOnCpuHotadd=true when cpuAdvanced.hotAddEnabled=true"))
 	}
 
 	return allErrs

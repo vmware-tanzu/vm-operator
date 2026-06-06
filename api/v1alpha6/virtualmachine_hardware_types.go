@@ -401,13 +401,6 @@ type VirtualMachineVNUMATopologyStatus struct {
 	// node is determined automatically by vSphere.
 	// Maps to VirtualMachineVirtualNumaInfo.autoCoresPerNumaNode.
 	AutoCoresPerNumaNode *bool `json:"autoCoresPerNumaNode,omitempty"`
-
-	// +optional
-
-	// ExposeVNUMAOnCPUHotAdd describes whether the vNUMA topology is exposed
-	// to the guest when CPU hot-add is enabled.
-	// Maps to VirtualMachineVirtualNumaInfo.vnumaOnCpuHotaddExposed.
-	ExposeVNUMAOnCPUHotAdd *bool `json:"exposeVnumaOnCpuHotadd,omitempty"`
 }
 
 // VirtualMachineCPUAllocationStatus describes the observed CPU configuration of the VM.

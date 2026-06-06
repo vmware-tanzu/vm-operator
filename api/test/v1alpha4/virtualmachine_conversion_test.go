@@ -529,38 +529,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
 							LatencySensitivity: ptrOf(vmopv1.VirtualMachineLatencySensitivityHigh),
 							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-								CoresPerSocket:               ptrOf(int32(4)),
-								NUMAFixedAutoAffinityEnabled: ptrOf(true),
-								VNUMANodeCount:               ptrOf(int32(8)),
-								ExposeVNUMAOnCPUHotAdd:       ptrOf(true),
+								CoresPerSocket: ptrOf(int32(4)),
+								VNUMANodeCount: ptrOf(int32(8)),
 							},
 							HotAddEnabled:                       ptrOf(false),
 							IOMMUEnabled:                        ptrOf(true),
 							NestedHardwareVirtualizationEnabled: ptrOf(true),
 							PerformanceCountersEnabled:          ptrOf(true),
-							ReservationLockedToMax:              ptrOf(true),
-						},
-					},
-				},
-			},
-			{
-				name: "spec.cpuAdvanced.topology.numaFixedAutoAffinityEnabled",
-				hub: &vmopv1.VirtualMachine{
-					Spec: vmopv1.VirtualMachineSpec{
-						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-							Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-								NUMAFixedAutoAffinityEnabled: ptrOf(true),
-							},
-						},
-					},
-				},
-			},
-			{
-				name: "spec.cpuAdvanced.reservationLockedToMax",
-				hub: &vmopv1.VirtualMachine{
-					Spec: vmopv1.VirtualMachineSpec{
-						CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-							ReservationLockedToMax: ptrOf(true),
 						},
 					},
 				},

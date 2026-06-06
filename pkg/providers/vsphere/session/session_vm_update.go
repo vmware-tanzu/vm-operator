@@ -430,6 +430,11 @@ func (s *Session) poweredOnReconfigure(
 		return err
 	}
 
+	// Apply compute config changes while the VM is powered on.
+	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, true, configSpec)
+	}
+
 	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, vmCtx.VM, nil)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, vmCtx.VM.Spec)
 
@@ -437,7 +442,7 @@ func (s *Session) poweredOnReconfigure(
 		return fmt.Errorf("update CD-ROM device connection error: %w", err)
 	}
 
-	err := doReconfigure(
+	reconfigErr := doReconfigure(
 		logr.NewContext(
 			vmCtx,
 			vmCtx.Logger.WithName("poweredOnReconfigure"),
@@ -448,17 +453,18 @@ func (s *Session) poweredOnReconfigure(
 		vmCtx.MoVM,
 		*configSpec)
 
-	if errors.Is(err, ErrReconfigure) {
+	if errors.Is(reconfigErr, ErrReconfigure) {
 		if cbtErr := s.reconcilePoweredOnChangeBlockTracking(vmCtx, configSpec); cbtErr != nil {
 			// The Reconfigure has been performed but we have no way to later determine if
 			// this needs to be called. We used to just this best effort after a reconfigure
 			// so continue to do that here for now. See vmon-3868 for a more complete fix.
 			vmCtx.Logger.Error(cbtErr, "Failed to update CBT for powered on VM")
 		}
+
 	}
 
-	if err != nil {
-		return err
+	if reconfigErr != nil {
+		return reconfigErr
 	}
 
 	return nil
@@ -485,6 +491,12 @@ func (s *Session) poweredOffReconfigure(
 		return err
 	}
 
+	// Overlay vm spec compute fields onto the ConfigSpec.
+	// This runs for both the VMResize and non-VMResize spec-building paths.
+	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, false, configSpec)
+	}
+
 	reconfigErr := doReconfigure(
 		logr.NewContext(
 			vmCtx,
@@ -495,6 +507,10 @@ func (s *Session) poweredOffReconfigure(
 		vcVM,
 		vmCtx.MoVM,
 		*configSpec)
+
+	if reconfigErr != nil && !errors.Is(reconfigErr, ErrReconfigure) {
+		return reconfigErr
+	}
 
 	if needsResize &&
 		(reconfigErr == nil || errors.Is(reconfigErr, ErrReconfigure)) {
@@ -691,6 +707,11 @@ func updateConfigSpec(
 		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 		resize.CompareCPUAllocation(*config, updateArgs.ConfigSpec, configSpec)
 		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
+		// For backward compatibility, sync the class CPU/memory values into vm.Spec so that
+		// OverwriteSpecComputeConfig does not override them with backfilled spec values.
+		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+			vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, updateArgs.ConfigSpec)
+		}
 	}
 
 	return configSpec, needsResize, nil
@@ -970,15 +991,30 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	if resizeArgs.VMClass != nil {
 		needsResize = vmopv1util.ResizeNeeded(*vmCtx.VM, *resizeArgs.VMClass)
 		if needsResize {
+			// For backward compatibility, sync class compute fields into spec
+			// before building the diff so that OverwriteSpecComputeConfig
+			// applies the class intent. Scope of sync matches the scope of the resize path.
 			if pkgcfg.FromContext(vmCtx).Features.VMResize {
+				if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+					vmopv1util.SyncClassComputeToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
+				}
 				configSpec, err = resize.CreateResizeConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
 			} else {
+				if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+					vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
+				}
 				configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
 			}
 			if err != nil {
 				return err
 			}
 		}
+	}
+
+	// Overlay vm spec compute fields after the class-based resize diff so that
+	// spec values take precedence.
+	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *moVM.Config, false, &configSpec)
 	}
 
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
@@ -1060,6 +1096,9 @@ func (s *Session) getResizeConfigSpecForPoweredOffVM(
 
 	needsResize := vmopv1util.ResizeNeeded(*vmCtx.VM, updateArgs.VMClass)
 	if needsResize {
+		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+			vmopv1util.SyncClassComputeToSpec(vmCtx.VM, updateArgs.ConfigSpec)
+		}
 		cs, err := resize.CreateResizeConfigSpec(vmCtx, *config, updateArgs.ConfigSpec)
 		if err != nil {
 			return nil, false, err

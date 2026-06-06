@@ -38,9 +38,24 @@ func DefaultWatchedPropertyPaths() []string {
 		"config.annotation",
 
 		"config.changeTrackingEnabled",
+		"config.cpuAllocation",
+		"config.cpuHotAddEnabled",
 		"config.extraConfig",
+		"config.flags.vvtdEnabled",
+		"config.hardware.autoCoresPerSocket",
 		"config.hardware.device",
+		"config.hardware.memoryMB",
+		"config.hardware.numCoresPerSocket",
+		"config.hardware.numCPU",
+		"config.hardware.simultaneousThreads",
 		"config.keyId",
+		"config.latencySensitivity",
+		"config.memoryAllocation",
+		"config.memoryHotAddEnabled",
+		"config.memoryReservationLockedToMax",
+		"config.nestedHVEnabled",
+		"config.numaInfo",
+		"config.vPMCEnabled",
 
 		// The following properties are omitted because it would cause too much
 		// noise due to VKS VMs. These VMs see changes to their IP routes

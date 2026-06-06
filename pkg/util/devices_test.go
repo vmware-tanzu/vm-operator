@@ -213,6 +213,160 @@ var _ = Describe("HasVirtualPCIPassthroughDeviceChange", func() {
 
 })
 
+var _ = Describe("RequiresMemoryReservationLock", func() {
+
+	var (
+		existingDevices []vimtypes.BaseVirtualDevice
+		deviceChanges   []vimtypes.BaseVirtualDeviceConfigSpec
+		required        bool
+	)
+
+	JustBeforeEach(func() {
+		required = util.RequiresMemoryReservationLock(existingDevices, deviceChanges)
+	})
+
+	AfterEach(func() {
+		existingDevices = nil
+		deviceChanges = nil
+	})
+
+	Context("no devices at all", func() {
+		It("returns false", func() {
+			Expect(required).To(BeFalse())
+		})
+	})
+
+	Context("no PCI passthrough or SR-IOV devices, existing or changed", func() {
+		BeforeEach(func() {
+			existingDevices = []vimtypes.BaseVirtualDevice{&vimtypes.VirtualVmxnet3{}}
+			deviceChanges = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device:    &vimtypes.VirtualVmxnet3{},
+				},
+			}
+		})
+
+		It("returns false", func() {
+			Expect(required).To(BeFalse())
+		})
+	})
+
+	Context("an existing PCI passthrough device, with no device changes", func() {
+		BeforeEach(func() {
+			existingDevices = []vimtypes.BaseVirtualDevice{newPCIPassthroughDevice("")}
+		})
+
+		It("returns true", func() {
+			Expect(required).To(BeTrue())
+		})
+	})
+
+	Context("an existing SR-IOV device, with no device changes", func() {
+		BeforeEach(func() {
+			existingDevices = []vimtypes.BaseVirtualDevice{&vimtypes.VirtualSriovEthernetCard{}}
+		})
+
+		It("returns true", func() {
+			Expect(required).To(BeTrue())
+		})
+	})
+
+	Context("an existing PCI passthrough device being removed this reconfigure", func() {
+		BeforeEach(func() {
+			dev := newPCIPassthroughDevice("")
+			dev.Key = 4000
+			existingDevices = []vimtypes.BaseVirtualDevice{dev}
+
+			removedDev := newPCIPassthroughDevice("")
+			removedDev.Key = 4000
+			deviceChanges = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+					Device:    removedDev,
+				},
+			}
+		})
+
+		It("returns false", func() {
+			Expect(required).To(BeFalse())
+		})
+	})
+
+	Context("an existing PCI passthrough device, and an unrelated device being removed", func() {
+		BeforeEach(func() {
+			dev := newPCIPassthroughDevice("")
+			dev.Key = 4000
+			existingDevices = []vimtypes.BaseVirtualDevice{dev}
+
+			removedDev := &vimtypes.VirtualVmxnet3{}
+			removedDev.Key = 4001
+			deviceChanges = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+					Device:    removedDev,
+				},
+			}
+		})
+
+		It("returns true", func() {
+			Expect(required).To(BeTrue())
+		})
+	})
+
+	Context("a new PCI passthrough device being added this reconfigure", func() {
+		BeforeEach(func() {
+			deviceChanges = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device:    newPCIPassthroughDevice(""),
+				},
+			}
+		})
+
+		It("returns true", func() {
+			Expect(required).To(BeTrue())
+		})
+	})
+
+	Context("a new SR-IOV device being added this reconfigure", func() {
+		BeforeEach(func() {
+			deviceChanges = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device:    &vimtypes.VirtualSriovEthernetCard{},
+				},
+			}
+		})
+
+		It("returns true", func() {
+			Expect(required).To(BeTrue())
+		})
+	})
+
+	Context("an existing PCI passthrough device being edited this reconfigure", func() {
+		BeforeEach(func() {
+			dev := newPCIPassthroughDevice("")
+			dev.Key = 4000
+			existingDevices = []vimtypes.BaseVirtualDevice{dev}
+
+			editedDev := newPCIPassthroughDevice("profile1")
+			editedDev.Key = 4000
+			deviceChanges = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device:    editedDev,
+				},
+			}
+		})
+
+		It("returns true", func() {
+			Expect(required).To(BeTrue())
+		})
+	})
+
+})
+
 var _ = Describe("SelectNvidiaVgpu", func() {
 	Context("selecting Nvidia vGPU devices", func() {
 		It("will return only the selected device type", func() {

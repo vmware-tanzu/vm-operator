@@ -665,7 +665,7 @@ func GetVNUMANodeCount(vm *vmopv1.VirtualMachine) int32 {
 //   - spec.memoryAdvanced.reservationLockedToMax == true
 //   - spec.resources.requests.memory equals spec.resources.size.memory
 //
-// Note: this checks only spec-declared intent.  Callers that have access
+// Note: this checks only spec-declared intent. Callers that have access
 // to the live vSphere ConfigInfo should additionally check
 // ci.MemoryReservationLockedToMax and ci.MemoryAllocation.Reservation.
 func FullMemReservationSpecMet(vm *vmopv1.VirtualMachine) bool {

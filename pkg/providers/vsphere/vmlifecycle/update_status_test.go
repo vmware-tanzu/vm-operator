@@ -5724,7 +5724,7 @@ var _ = Describe("Hardware status", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
-					Expect(vmCtx.VM.Status.Hardware.Memory.Total).To(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory).To(BeNil())
 				})
 			})
 
@@ -5737,6 +5737,234 @@ var _ = Describe("Hardware status", func() {
 					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2148M"))
+				})
+			})
+			When("full compute configuration is set", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+						Reservation: ptr.To(int64(1000)),
+						Limit:       ptr.To(int64(4000)),
+					}
+					vmCtx.MoVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+						Reservation: ptr.To(int64(1024)),
+						Limit:       ptr.To(int64(2048)),
+					}
+					vmCtx.MoVM.Config.Hardware.NumCoresPerSocket = ptr.To(int32(4))
+					vmCtx.MoVM.Config.Hardware.SimultaneousThreads = 2
+					vmCtx.MoVM.Config.LatencySensitivity = &vimtypes.LatencySensitivity{
+						Level: vimtypes.LatencySensitivitySensitivityLevelHigh,
+					}
+					vmCtx.MoVM.Config.CpuHotAddEnabled = ptr.To(true)
+					vmCtx.MoVM.Config.Flags = vimtypes.VirtualMachineFlagInfo{
+						VvtdEnabled: ptr.To(true),
+					}
+					vmCtx.MoVM.Config.NestedHVEnabled = ptr.To(true)
+					vmCtx.MoVM.Config.VPMCEnabled = ptr.To(true)
+					vmCtx.MoVM.Config.MemoryHotAddEnabled = ptr.To(true)
+					vmCtx.MoVM.Config.MemoryReservationLockedToMax = ptr.To(true)
+					vmCtx.MoVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
+						CoresPerNumaNode:     ptr.To(int32(2)),
+						AutoCoresPerNumaNode: ptr.To(false),
+					}
+				})
+
+				When("TelcoVMServiceAPI is disabled", func() {
+					It("should populate only Total and Reservation; leave all Telco fields nil", func() {
+						err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+						Expect(err).ToNot(HaveOccurred())
+
+						cpu := vmCtx.VM.Status.Hardware.CPU
+						Expect(cpu).ToNot(BeNil())
+						Expect(cpu.Total).To(Equal(int32(4)))
+						Expect(cpu.Reservation).To(Equal(int64(1000)))
+						// new fields must be absent without the flag
+						Expect(cpu.Limit).To(BeNil())
+						Expect(cpu.CoresPerSocket).To(BeNil())
+						Expect(cpu.SimultaneousThreads).To(BeNil())
+						Expect(cpu.LatencySensitivity).To(BeEmpty())
+						Expect(cpu.HotAddEnabled).To(BeNil())
+						Expect(cpu.IOMMUEnabled).To(BeNil())
+						Expect(cpu.NestedHardwareVirtualizationEnabled).To(BeNil())
+						Expect(cpu.PerformanceCountersEnabled).To(BeNil())
+						Expect(cpu.VNUMA).To(BeNil())
+
+						mem := vmCtx.VM.Status.Hardware.Memory
+						Expect(mem).ToNot(BeNil())
+						Expect(mem.Limit).To(BeNil())
+						Expect(mem.ReservationLockedToMax).To(BeNil())
+						Expect(mem.HotAddEnabled).To(BeNil())
+					})
+				})
+
+				When("TelcoVMServiceAPI is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.TelcoVMServiceAPI = true
+						})
+					})
+
+					It("should populate all CPU and memory status fields", func() {
+						err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+						Expect(err).ToNot(HaveOccurred())
+
+						cpu := vmCtx.VM.Status.Hardware.CPU
+						Expect(cpu).ToNot(BeNil())
+						Expect(cpu.Total).To(Equal(int32(4)))
+						Expect(cpu.Reservation).To(Equal(int64(1000)))
+						Expect(cpu.Limit).ToNot(BeNil())
+						Expect(*cpu.Limit).To(Equal(int64(4000)))
+						Expect(cpu.CoresPerSocket).To(Equal(ptr.To(int32(4))))
+						Expect(cpu.SimultaneousThreads).To(Equal(ptr.To(int32(2))))
+						Expect(cpu.LatencySensitivity).To(Equal(string(vimtypes.LatencySensitivitySensitivityLevelHigh)))
+						Expect(cpu.HotAddEnabled).To(Equal(ptr.To(true)))
+						Expect(cpu.IOMMUEnabled).To(Equal(ptr.To(true)))
+						Expect(cpu.NestedHardwareVirtualizationEnabled).To(Equal(ptr.To(true)))
+						Expect(cpu.PerformanceCountersEnabled).To(Equal(ptr.To(true)))
+						Expect(cpu.VNUMA).ToNot(BeNil())
+						Expect(cpu.VNUMA.CoresPerNumaNode).To(Equal(ptr.To(int32(2))))
+						Expect(cpu.VNUMA.AutoCoresPerNumaNode).To(Equal(ptr.To(false)))
+
+						mem := vmCtx.VM.Status.Hardware.Memory
+						Expect(mem).ToNot(BeNil())
+						Expect(mem.Limit).ToNot(BeNil())
+						Expect(mem.Limit.String()).To(Equal("2048M"))
+						Expect(mem.ReservationLockedToMax).To(Equal(ptr.To(true)))
+						Expect(mem.HotAddEnabled).To(Equal(ptr.To(true)))
+					})
+				})
+			})
+
+			When("CPU limit is -1 (unlimited) and TelcoVMServiceAPI is enabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					vmCtx.MoVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+						Limit: ptr.To(int64(-1)),
+					}
+				})
+
+				It("should not set cpu.Limit", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.Status.Hardware.CPU.Limit).To(BeNil())
+				})
+			})
+
+			When("memory limit is -1 (unlimited) and TelcoVMServiceAPI is enabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = true
+					})
+					vmCtx.MoVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+						Limit: ptr.To(int64(-1)),
+					}
+				})
+
+				It("should not set memory.Limit", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.Status.Hardware.Memory.Limit).To(BeNil())
+				})
+			})
+		})
+
+		Context("VirtualMachineConditionComputeConfigSynced", func() {
+
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Version: "vmx-17",
+					Hardware: vimtypes.VirtualHardware{
+						NumCPU:   2,
+						MemoryMB: 1024,
+					},
+				}
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.TelcoVMServiceAPI = true
+				})
+			})
+
+			When("TelcoVMServiceAPI is disabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TelcoVMServiceAPI = false
+					})
+					vmCtx.VM.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+						ReservationLockedToMax: ptr.To(true),
+					}
+				})
+
+				It("should not set the condition", func() {
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+					c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionComputeConfigSynced)
+					Expect(c).To(BeNil())
+				})
+			})
+
+			When("spec compute fields match live vSphere config", func() {
+				It("should set condition True", func() {
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+					c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionComputeConfigSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				})
+			})
+
+			When("spec compute field differs from live vSphere config", func() {
+				BeforeEach(func() {
+					// ReservationLockedToMax has no HW version gate and is always hot-pluggable,
+					// so it will show up as drift (ReconfigurePending) rather than blocked.
+					vmCtx.VM.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+						ReservationLockedToMax: ptr.To(true),
+					}
+					vmCtx.MoVM.Config.MemoryReservationLockedToMax = ptr.To(false)
+				})
+
+				It("should set condition False with ComputeConfigMismatch reason", func() {
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+					c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionComputeConfigSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(vmopv1.VirtualMachineComputeConfigMismatchReason))
+				})
+			})
+
+			When("field requires higher hardware version", func() {
+				BeforeEach(func() {
+					// cpuHotAddFlagField requires VMX-11; set version below that.
+					vmCtx.MoVM.Config.Version = "vmx-9"
+					vmCtx.VM.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+						HotAddEnabled: ptr.To(true),
+					}
+				})
+
+				It("should set condition False with PrerequisiteNotMet reason", func() {
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+					c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionComputeConfigSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(vmopv1.VirtualMachinePrerequisiteNotMetReason))
+					Expect(c.Message).To(ContainSubstring("cpuAdvanced.hotAddEnabled"))
+				})
+			})
+
+			When("field requires power-off and VM is powered on", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+					// memHotAddFlagField is never hot-pluggable; requires power-off.
+					vmCtx.VM.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+						HotAddEnabled: ptr.To(true),
+					}
+					vmCtx.MoVM.Config.MemoryHotAddEnabled = ptr.To(false)
+				})
+
+				It("should set condition False with PowerOffRequired reason", func() {
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+					c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionComputeConfigSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(vmopv1.VirtualMachinePowerOffRequiredReason))
+					Expect(c.Message).To(ContainSubstring("memoryAdvanced.hotAddEnabled"))
 				})
 			})
 		})

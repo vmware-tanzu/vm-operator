@@ -763,6 +763,30 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		verifyCdromConnectionState(ctx, vmMoRef, propCollector, true, false)
 	})
 
+	It("When deploying VM with many controllers", Label("experimental"), func() {
+		tinyCoreImageName := "tiny-core-linux-complex-hw"
+		// Ensure the vmi name is present in the temp namespace.
+		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, tinyCoreImageName)
+		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", input.WCPNamespaceName)
+
+		vmParameters := manifestbuilders.VirtualMachineYaml{
+			Namespace:        input.WCPNamespaceName,
+			Name:             vmName,
+			VMClassName:      clusterResources.VMClassName,
+			StorageClassName: clusterResources.StorageClassName,
+			ImageName:        vmiName,
+			PowerState:       poweredOnState,
+			GuestID:          "ubuntu64Guest",
+		}
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM %s", string(vmYaml))
+
+		By("Waiting for VM creation")
+		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1a5.VirtualMachinePowerStateOn))
+	})
+
 	Context("IaaS Policies", func() {
 
 		/*

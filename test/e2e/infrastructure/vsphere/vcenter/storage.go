@@ -27,6 +27,8 @@ const (
 	volumeAllocationNamespace     = "com.vmware.storage.volumeallocation"
 	volumeAllocationTypeID        = "VolumeAllocationType"
 	fullyInitializedValue         = "Fully initialized"
+	datastoreTypeVSAND            = "vsanD"
+	datastoreTypeVSAN             = "vsan"
 )
 
 // GetStoragePolicyIDFromName looks up a storage profile by name and returns its ID.
@@ -268,6 +270,15 @@ func GetOrCreateVsanDirectStoragePolicyID(ctx context.Context, client *vim25.Cli
 
 // IsVSANDEnabledCluster checks if given wcp enabled cluster is enabled with vsand capability.
 func IsVSANDEnabledCluster(ctx context.Context, client *vim25.Client, kubeconfigPath string) (bool, error) {
+	return isDatastoreTypeEnabledOnCluster(ctx, client, kubeconfigPath, datastoreTypeVSAND)
+}
+
+// IsVSANEnabledCluster checks if given wcp enabled cluster is enabled with vsan capability.
+func IsVSANEnabledCluster(ctx context.Context, client *vim25.Client, kubeconfigPath string) (bool, error) {
+	return isDatastoreTypeEnabledOnCluster(ctx, client, kubeconfigPath, datastoreTypeVSAN)
+}
+
+func isDatastoreTypeEnabledOnCluster(ctx context.Context, client *vim25.Client, kubeconfigPath, datastoreType string) (bool, error) {
 	clusterMOID := GetClusterMoIDFromKubeconfig(ctx, kubeconfigPath)
 	if clusterMOID == "" {
 		return false, errors.New("could not fetch cluster moid from wcp cluster config")
@@ -280,15 +291,12 @@ func IsVSANDEnabledCluster(ctx context.Context, client *vim25.Client, kubeconfig
 			Value: clusterMOID,
 		},
 	)
-
-	return clusterConfiguredWithVsand(ctx, cluster)
+	return clusterConfiguredWithDatastoreType(ctx, cluster, datastoreType)
 }
 
-func clusterConfiguredWithVsand(ctx context.Context, cluster *object.ClusterComputeResource) (bool, error) {
+func clusterConfiguredWithDatastoreType(ctx context.Context, cluster *object.ClusterComputeResource, datastoreType string) (bool, error) {
 	var cr mo.ComputeResource
-
-	err := cluster.Properties(ctx, cluster.Reference(), []string{"datastore"}, &cr)
-	if err != nil {
+	if err := cluster.Properties(ctx, cluster.Reference(), []string{"datastore"}, &cr); err != nil {
 		return false, err
 	}
 
@@ -297,16 +305,13 @@ func clusterConfiguredWithVsand(ctx context.Context, cluster *object.ClusterComp
 	}
 
 	var datastores []mo.Datastore
-
 	pc := property.DefaultCollector(cluster.Client())
-
-	err = pc.Retrieve(ctx, cr.Datastore, []string{"summary"}, &datastores)
-	if err != nil {
+	if err := pc.Retrieve(ctx, cr.Datastore, []string{"summary"}, &datastores); err != nil {
 		return false, err
 	}
 
 	for _, d := range datastores {
-		if d.Summary.Type == "vsanD" {
+		if d.Summary.Type == datastoreType {
 			return true, nil
 		}
 	}

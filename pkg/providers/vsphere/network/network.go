@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
@@ -118,6 +119,10 @@ var (
 
 	// ErrNetworkInterfaceNotReady is returned when the network interface is not ready.
 	ErrNetworkInterfaceNotReady = pkgerr.NoRequeueErrorf("network interface is not ready")
+
+	// ErrNetworkInterfaceBackingNotSupported is returned when the network interface specifies a
+	// backing type that is not supported.
+	ErrNetworkInterfaceBackingNotSupported = pkgerr.NoRequeueErrorf("network interface backing type not supported")
 )
 
 // CreateNetworkDevices ensures all network interface CRs exist for the VM's network
@@ -199,7 +204,7 @@ func CreateNetworkDevices(
 
 		switch ifaceCR := obj.(type) {
 		case *netopv1alpha1.NetworkInterface:
-			dev, err = getNetOPNetworkInterfaceDevice(ctx, vimClient, ifaceCR, interfaceSpec)
+			dev, err = getNetOPNetworkInterfaceDevice(ctx, vimClient, ifaceCR, nil, interfaceSpec)
 		case *ncpv1alpha1.VirtualNetworkInterface:
 			dev, err = getNCPNetworkInterfaceDevice(ctx, vimClient, nil, ifaceCR)
 		case *vpcv1alpha1.SubnetPort:
@@ -259,9 +264,10 @@ func getNetworkInterfaceAPIGroup(
 }
 
 func getNetOPNetworkInterfaceDevice(
-	_ context.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
 	netIf *netopv1alpha1.NetworkInterface,
+	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (Device, error) {
 
 	var dev Device
@@ -284,13 +290,10 @@ func getNetOPNetworkInterfaceDevice(
 	}
 
 	networkID := netIf.Status.NetworkID
-	backing := object.NewDistributedVirtualPortgroup(
-		vimClient,
-		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypeDistributedVirtualPortgroup),
-			Value: networkID,
-		},
-	)
+	backing, err := getNetworkInterfaceBacking(ctx, vimClient, clusterMoRef, networkID, true, false)
+	if err != nil {
+		return dev, err
+	}
 
 	// The NetworkInterface does not have a MAC address in its Spec, nor does NetOP
 	// generate one in Status. If one was specified in the interface spec, set that
@@ -346,17 +349,9 @@ func getNCPNetworkInterfaceDevice(
 	}
 
 	networkID := vnetIf.Status.ProviderStatus.NsxLogicalSwitchID
-
-	var backing object.NetworkReference
-	if clusterMoRef != nil {
-		ccr := object.NewClusterComputeResource(vimClient, *clusterMoRef)
-		networkRef, err := searchNsxtNetworkReference(ctx, ccr, networkID)
-		if err != nil {
-			return dev, err
-		}
-		backing = networkRef
-	} else {
-		backing = newNSXOpaqueNetwork(networkID)
+	backing, err := getNetworkInterfaceBacking(ctx, vimClient, clusterMoRef, networkID, false, true)
+	if err != nil {
+		return dev, err
 	}
 
 	return Device{
@@ -398,16 +393,9 @@ func getVPCSubnetPortDevice(
 		return dev, pkgerr.NoRequeueErrorf("ready network interface does not have LogicalSwitchUUID")
 	}
 
-	var backing object.NetworkReference
-	if clusterMoRef != nil {
-		ccr := object.NewClusterComputeResource(vimClient, *clusterMoRef)
-		networkRef, err := searchNsxtNetworkReference(ctx, ccr, networkID)
-		if err != nil {
-			return dev, err
-		}
-		backing = networkRef
-	} else {
-		backing = newNSXOpaqueNetwork(networkID)
+	backing, err := getNetworkInterfaceBacking(ctx, vimClient, clusterMoRef, networkID, false, true)
+	if err != nil {
+		return dev, err
 	}
 
 	// A MAC address in the InterfaceSpec will have been set in the SubnetPort
@@ -425,6 +413,61 @@ func getVPCSubnetPortDevice(
 		MacAddress:   macAddress,
 		ExternalID:   subnetPort.Status.Attachment.ID,
 	}, nil
+}
+
+func getNetworkInterfaceBacking(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	clusterMoRef *vimtypes.ManagedObjectReference,
+	networkID string,
+	supportMoID, supportLSUUID bool) (object.NetworkReference, error) {
+
+	// Determine if this is a MoID of a backing type we support.
+	if supportMoID {
+		switch {
+		case strings.HasPrefix(networkID, "dvportgroup-"):
+			return object.NewDistributedVirtualPortgroup(
+				vimClient,
+				vimtypes.ManagedObjectReference{
+					Type:  string(vimtypes.ManagedObjectTypeDistributedVirtualPortgroup),
+					Value: networkID,
+				},
+			), nil
+
+		case strings.HasPrefix(networkID, "network-"):
+			if !pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider {
+				return nil, ErrNetworkInterfaceBackingNotSupported
+			}
+
+			return object.NewNetwork(
+				vimClient,
+				vimtypes.ManagedObjectReference{
+					Type:  string(vimtypes.ManagedObjectTypeNetwork),
+					Value: networkID,
+				},
+			), nil
+		}
+	}
+
+	// Determine if this is a UUID for a LogicalSwitchUUID.
+	if supportLSUUID {
+		if _, err := uuid.Parse(networkID); err == nil {
+			// For a stretched SV setup, each CCR may have a different DVPG.
+			// For placement and create, we use the OpaqueBacking. Otherwise,
+			// resolve the DVPG for the VM's CCR.
+			var backing object.NetworkReference
+			if clusterMoRef != nil {
+				ccr := object.NewClusterComputeResource(vimClient, *clusterMoRef)
+				backing, err = searchNsxtNetworkReference(ctx, ccr, networkID)
+			} else {
+				backing = newNSXOpaqueNetwork(networkID)
+			}
+
+			return backing, err
+		}
+	}
+
+	return nil, fmt.Errorf("%w: %s", ErrNetworkInterfaceBackingNotSupported, networkID)
 }
 
 // CreateAndWaitForNetworkInterfaces creates the appropriate CRs for the VM's network
@@ -470,7 +513,7 @@ func CreateAndWaitForNetworkInterfaces(
 
 		switch networkType {
 		case pkgcfg.NetworkProviderTypeVDS:
-			dev, bs, err = createAndWaitNetOPNetworkInterface(vmCtx, client, vimClient, interfaceSpec)
+			dev, bs, err = createAndWaitNetOPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		case pkgcfg.NetworkProviderTypeNSXT:
 			dev, bs, err = createAndWaitNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		case pkgcfg.NetworkProviderTypeVPC:
@@ -653,6 +696,7 @@ func createAndWaitNetOPNetworkInterface(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	vimClient *vim25.Client,
+	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 ) (Device, Bootstrap, error) {
 
@@ -661,7 +705,7 @@ func createAndWaitNetOPNetworkInterface(
 		return Device{}, Bootstrap{}, err
 	}
 
-	dev, err := getNetOPNetworkInterfaceDevice(vmCtx, vimClient, netIf, interfaceSpec)
+	dev, err := getNetOPNetworkInterfaceDevice(vmCtx, vimClient, netIf, clusterMoRef, interfaceSpec)
 	if err != nil {
 		if errors.Is(err, ErrNetworkInterfaceNotReady) {
 			netIf, err = waitForReadyNetworkInterface(vmCtx, client, netIf.Name)
@@ -670,7 +714,7 @@ func createAndWaitNetOPNetworkInterface(
 			return Device{}, Bootstrap{}, err
 		}
 
-		dev, err = getNetOPNetworkInterfaceDevice(vmCtx, vimClient, netIf, interfaceSpec)
+		dev, err = getNetOPNetworkInterfaceDevice(vmCtx, vimClient, netIf, clusterMoRef, interfaceSpec)
 		if err != nil {
 			return Device{}, Bootstrap{}, err
 		}

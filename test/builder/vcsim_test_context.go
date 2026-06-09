@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -72,9 +73,9 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -86,18 +87,12 @@ const (
 	NetworkEnvNSXT  = NetworkEnv("nsx-t")
 	NetworkEnvVPC   = NetworkEnv("nsx-t-vpc")
 	NetworkEnvNamed = NetworkEnv("named")
-
-	NsxTLogicalSwitchUUID = "nsxt-dummy-ls-uuid"
-	VPCLogicalSwitchUUID  = "vpc-dummy-ls-uuid"
 )
 
 // VCSimTestConfig configures the vcsim environment.
 type VCSimTestConfig struct {
 	// NumFaultDomains is the number of zones.
 	NumFaultDomains int
-
-	// NumNetworks is the number of networks.
-	NumNetworks int
 
 	// NumDatastores is the number of datastores.
 	NumDatastores int
@@ -140,6 +135,13 @@ type VCSimTestConfig struct {
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
 
+	// NumNetworks is the number of networks.
+	NumNetworks int
+
+	// WithNetworkConfig determines the network configuration. Takes precedence
+	// over WithNetworkEnv and NumNetworks.
+	WithNetworkConfig []VCSimNetworkConfig
+
 	// WithoutEncryptionClass disables the creation of the EncryptionClass
 	// resource in each workload namespace.
 	WithoutEncryptionClass bool
@@ -150,6 +152,12 @@ type VCSimTestConfig struct {
 
 	// WithWorkloadIPv6 enables the WorkloadIPv6 feature flag.
 	WithWorkloadIPv6 bool
+}
+
+// VCSimNetworkConfig describes the type and configuration of a network
+// to configure on vcsim.
+type VCSimNetworkConfig struct {
+	Provider pkgcfg.NetworkProviderType
 }
 
 type TestContextForVCSim struct {
@@ -216,10 +224,8 @@ type TestContextForVCSim struct {
 	CategoryID string
 	TagID      string
 
-	networkEnv   NetworkEnv
-	networkCount int
-	NetworkRef   object.NetworkReference
-	NetworkRefs  []object.NetworkReference
+	networkConfig []VCSimNetworkConfig
+	networks      []VCSimNetwork
 
 	model             *simulator.Model
 	server            *simulator.Server
@@ -229,6 +235,12 @@ type TestContextForVCSim struct {
 	folder *object.Folder
 
 	azCCRs map[string][]*object.ClusterComputeResource
+}
+
+type VCSimNetwork struct {
+	Provider          pkgcfg.NetworkProviderType
+	Backing           object.NetworkReference
+	LogicalSwitchUUID string // NSXT/VCP only
 }
 
 type IntegrationTestContextForVCSim struct {
@@ -251,20 +263,6 @@ const (
 	// clustersPerZone is how many clusters to create per zone.
 	clustersPerZone = 1
 )
-
-func GetNsxTLogicalSwitchUUID(idx int) string {
-	if idx == 0 {
-		return NsxTLogicalSwitchUUID
-	}
-	return fmt.Sprintf("%s-%d", NsxTLogicalSwitchUUID, idx)
-}
-
-func GetVPCTLogicalSwitchUUID(idx int) string {
-	if idx == 0 {
-		return VPCLogicalSwitchUUID
-	}
-	return fmt.Sprintf("%s-%d", VPCLogicalSwitchUUID, idx)
-}
 
 func NewTestContextForVCSim(
 	parentCtx context.Context,
@@ -379,8 +377,24 @@ func newTestContextForVCSim(
 	ctx.ClustersPerZone = clustersPerZone
 	ctx.workloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
 
-	ctx.networkEnv = config.WithNetworkEnv
-	ctx.networkCount = max(1, config.NumNetworks)
+	if len(config.WithNetworkConfig) > 0 {
+		Expect(config.WithNetworkEnv).To(BeEmpty())
+		Expect(config.NumNetworks).To(BeZero())
+		ctx.networkConfig = config.WithNetworkConfig
+	} else if config.WithNetworkEnv != "" {
+		c := VCSimNetworkConfig{}
+		switch config.WithNetworkEnv {
+		case NetworkEnvVDS:
+			c.Provider = pkgcfg.NetworkProviderTypeVDS
+		case NetworkEnvNSXT:
+			c.Provider = pkgcfg.NetworkProviderTypeNSXT
+		case NetworkEnvVPC:
+			c.Provider = pkgcfg.NetworkProviderTypeVPC
+		case NetworkEnvNamed:
+			c.Provider = pkgcfg.NetworkProviderTypeNamed
+		}
+		ctx.networkConfig = slices.Repeat([]VCSimNetworkConfig{c}, max(1, config.NumNetworks))
+	}
 
 	return ctx
 }
@@ -570,17 +584,8 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 	pkgcfg.SetContext(c, func(cc *pkgcfg.Config) {
 		cc.PodNamespace = c.PodNamespace
 
-		switch config.WithNetworkEnv {
-		case NetworkEnvVDS:
-			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
-		case NetworkEnvNSXT:
-			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
-		case NetworkEnvVPC:
-			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
-		case NetworkEnvNamed:
-			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
-		default:
-			cc.NetworkProviderType = ""
+		if len(c.networkConfig) > 0 {
+			cc.NetworkProviderType = c.networkConfig[0].Provider
 		}
 
 		cc.ContentAPIWait = 1 * time.Second
@@ -608,7 +613,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	vcModel.Host = 0
 	vcModel.Cluster = c.ZoneCount * c.ClustersPerZone
 	vcModel.ClusterHost = 2
-	vcModel.Portgroup = c.networkCount
+	vcModel.Portgroup = len(c.networkConfig)
 	vcModel.Datastore = max(config.NumDatastores, 1)
 
 	Expect(vcModel.Create()).To(Succeed())
@@ -663,27 +668,33 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 		}
 	}
 
-	for i := range c.networkCount {
+	for i, cfg := range c.networkConfig {
+		network := VCSimNetwork{
+			Provider: cfg.Provider,
+		}
+
 		networkRef, err := c.Finder.Network(c, fmt.Sprintf("DC0_DVPG%d", i))
 		Expect(err).ToNot(HaveOccurred())
-		if i == 0 {
-			c.NetworkRef = networkRef
-		}
-		c.NetworkRefs = append(c.NetworkRefs, networkRef)
+		network.Backing = networkRef
 
-		switch c.networkEnv {
-		case NetworkEnvVDS:
+		switch cfg.Provider {
+		case pkgcfg.NetworkProviderTypeVDS:
 			// Nothing more needed for VDS.
-		case NetworkEnvNSXT, NetworkEnvVPC:
-			dvpg, ok := vcModel.Map().Get(networkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
-			Expect(ok).To(BeTrue())
-			if c.networkEnv == NetworkEnvNSXT {
-				dvpg.Config.LogicalSwitchUuid = GetNsxTLogicalSwitchUUID(i)
-			} else {
-				dvpg.Config.LogicalSwitchUuid = GetVPCTLogicalSwitchUUID(i)
+		case pkgcfg.NetworkProviderTypeNSXT, pkgcfg.NetworkProviderTypeVPC:
+			network.LogicalSwitchUUID = uuid.NewString()
+
+			dvpgSpec := vimtypes.DVPortgroupConfigSpec{
+				BackingType:       "nsx",
+				LogicalSwitchUuid: network.LogicalSwitchUUID,
 			}
-			dvpg.Config.BackingType = "nsx"
+
+			task, err := object.NewDistributedVirtualPortgroup(
+				c.VCClient.Client, networkRef.Reference()).Reconfigure(c, dvpgSpec)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(c)).To(Succeed())
 		}
+
+		c.networks = append(c.networks, network)
 	}
 
 	c.VCClientConfig = pkgclient.Config{
@@ -1289,6 +1300,11 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 	ccrs, ok := c.azCCRs[azName]
 	Expect(ok).To(BeTrue())
 	return ccrs
+}
+
+func (c *TestContextForVCSim) GetNetwork(idx int) VCSimNetwork {
+	Expect(idx).To(BeNumerically("<", len(c.networks)), "Invalid network index")
+	return c.networks[idx]
 }
 
 func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicy(

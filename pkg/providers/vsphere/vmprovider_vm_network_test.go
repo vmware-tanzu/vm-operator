@@ -26,6 +26,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -369,7 +370,7 @@ func vmNetworkTests() {
 						Expect(ctx.Client.Get(ctx, objKey, subnetPort)).To(Succeed())
 
 						subnetPort.Status.Attachment.ID += "-restored"
-						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(restoredNetworkIdx)
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(restoredNetworkIdx).LogicalSwitchUUID
 						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 
 						restoredExtID = subnetPort.Status.Attachment.ID
@@ -888,7 +889,7 @@ func (v vdsNetworkProvider) simulateInterfaceReconcile(
 	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 	Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
-	netInterface.Status.NetworkID = ctx.NetworkRefs[networkIdx].Reference().Value
+	netInterface.Status.NetworkID = ctx.GetNetwork(networkIdx).Backing.Reference().Value
 	netInterface.Status.ExternalID = extID(networkName, interfaceName)
 	netInterface.Status.MacAddress = "" // NetOP doesn't set this.
 	netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
@@ -919,7 +920,7 @@ func (v vdsNetworkProvider) assertEthernetCard(
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 	backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 	Expect(ok).Should(BeTrue())
-	ExpectWithOffset(1, backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[networkIdx].Reference().Value))
+	ExpectWithOffset(1, backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(networkIdx).Backing.Reference().Value))
 	Expect(ethCard.MacAddress).ToNot(BeEmpty())
 	Expect(ethCard.ExternalId).To(Equal(extID(networkName, interfaceName)))
 
@@ -964,7 +965,7 @@ func (n nsxtNetworkProvider) simulateInterfaceReconcile(
 	netInterface.Status.InterfaceID = extID(networkName, interfaceName)
 	netInterface.Status.MacAddress = fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)
 	netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-		NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(networkIdx),
+		NsxLogicalSwitchID: ctx.GetNetwork(networkIdx).LogicalSwitchUUID,
 	}
 	netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
 		{
@@ -994,7 +995,7 @@ func (n nsxtNetworkProvider) assertEthernetCard(
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 	backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 	Expect(ok).Should(BeTrue())
-	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[networkIdx].Reference().Value))
+	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(networkIdx).Backing.Reference().Value))
 	Expect(ethCard.MacAddress).To(Equal(fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)))
 	Expect(ethCard.ExternalId).To(Equal(extID(networkName, interfaceName)))
 }
@@ -1037,7 +1038,7 @@ func (v vpcNetworkProvider) simulateInterfaceReconcile(
 
 	subnetPort.Status.Attachment.ID = extID(networkName, interfaceName)
 	subnetPort.Status.NetworkInterfaceConfig.MACAddress = fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)
-	subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(networkIdx)
+	subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(networkIdx).LogicalSwitchUUID
 	subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 		{
 			IPAddress: fmt.Sprintf("192.168.1.11%d/24", ifaceIdx),
@@ -1065,7 +1066,7 @@ func (v vpcNetworkProvider) assertEthernetCard(
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 	backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 	Expect(ok).Should(BeTrue())
-	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[networkIdx].Reference().Value))
+	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(networkIdx).Backing.Reference().Value))
 	Expect(ethCard.MacAddress).To(Equal(fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)))
 	Expect(ethCard.ExternalId).To(Equal(extID(networkName, interfaceName)))
 }

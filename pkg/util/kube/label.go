@@ -6,6 +6,8 @@ package kube
 
 import (
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -28,6 +30,14 @@ func HasCAPILabels(labels map[string]string) bool {
 	_, hasCAPVLabel := labels[CAPVClusterRoleLabelKey]
 
 	return hasCAPWLabel || hasCAPVLabel
+}
+
+// HasZoneLabel returns true if the VM has a label indicating it is pinned to a zone.
+func HasZoneLabel(labels map[string]string) bool {
+	labelValue, hasZoneLabel := labels[corev1.LabelTopologyZone]
+
+	return hasZoneLabel && labelValue != ""
+
 }
 
 // HasVMOperatorLabels returns true if the given labels map has a label key

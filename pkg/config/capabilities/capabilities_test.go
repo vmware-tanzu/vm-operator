@@ -18,6 +18,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
+
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -186,6 +187,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadIPv6: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVirtualMachineConfigPolicy: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -210,6 +214,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMVlanSubinterface = true
 							config.Features.PerNamespaceNetworkProvider = true
 							config.Features.WorkloadIPv6 = true
+							config.Features.VirtualMachineConfigPolicy = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -268,6 +273,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
 					})
 				})
 
@@ -328,6 +336,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
 					})
 				})
 			})
@@ -397,6 +408,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadIPv6: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVirtualMachineConfigPolicy: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -457,6 +471,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
 					})
 				})
 
@@ -532,6 +549,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
 					})
 				})
 			})
@@ -879,6 +899,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVirtualMachineConfigPolicy] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VirtualMachineConfigPolicy=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -949,6 +982,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyWorkloadIPv6: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVirtualMachineConfigPolicy: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -980,6 +1016,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMVlanSubinterface = true
 					config.Features.PerNamespaceNetworkProvider = true
 					config.Features.WorkloadIPv6 = true
+					config.Features.VirtualMachineConfigPolicy = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -1040,6 +1077,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -1061,11 +1101,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMVlanSubinterface = false
 					config.Features.PerNamespaceNetworkProvider = false
 					config.Features.WorkloadIPv6 = false
+					config.Features.VirtualMachineConfigPolicy = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true,WorkloadIPv6=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1120,6 +1161,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
 			})
 		})
 	})

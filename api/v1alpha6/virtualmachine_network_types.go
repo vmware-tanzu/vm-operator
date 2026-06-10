@@ -96,7 +96,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// When set to true, the interface requests an IPv4 address via DHCP.
 	// When set to false, DHCP for IPv4 is explicitly disabled; the interface
 	// relies on static allocation.
-	// When unset (nil), the network provider determines the allocation method
+	// When omitted, the network provider determines the allocation method
 	// from subnet configuration.
 	//
 	// Please note this field is only supported if the network connection
@@ -113,7 +113,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// When set to true, the interface requests an IPv6 address via DHCPv6.
 	// When set to false, DHCPv6 is explicitly disabled; the interface relies
 	// on static allocation.
-	// When unset (nil), the network provider determines the allocation method
+	// When omitted, the network provider determines the allocation method
 	// from subnet configuration.
 	//
 	// Please note this field is only supported if the network connection

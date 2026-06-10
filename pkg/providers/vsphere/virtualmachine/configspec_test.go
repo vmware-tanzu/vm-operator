@@ -22,6 +22,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -469,6 +470,7 @@ var _ = Describe("CreateConfigSpec", func() {
 	Context("AF/AAF policies", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.VMPlacementPolicies = true
 				config.Features.VMAffinityDuringExecution = true
 			})
 		})
@@ -506,24 +508,9 @@ var _ = Describe("CreateConfigSpec", func() {
 					}
 				})
 
-				It("should have placement policies and tag specs", func() {
-					// Expect 2 policies: one for MatchLabels "env:prod" and one for MatchExpressions "app:db"
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
-
-					// Verify both policies are VmVmAffinity
-					for _, pol := range configSpec.VmPlacementPolicies {
-						policy, ok := pol.(*vimtypes.VmVmAffinity)
-						Expect(ok).To(BeTrue())
-						Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution)))
-						Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
-						Expect(policy.AffinedVmsTag.NameId.Tag).To(BeElementOf("env:prod", "app:db"))
-						Expect(policy.AffinedVmsTag.NameId.Category).To(Equal(vmCtx.VM.Namespace))
-					}
-
-					// Only labels referenced in affinity rules should be included as tags
-					// Affinity rules reference "env" and "app" keys, so only those labels should be present
-					// "zone:us-west" should be excluded since "zone" is not referenced in any affinity rule
-					expectedTagNames := []string{"app:db", "env:prod"}
+				It("should not have placement policies and tag specs", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					expectedTagNames := []string{}
 					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
 				})
 			})
@@ -551,18 +538,124 @@ var _ = Describe("CreateConfigSpec", func() {
 					}
 				})
 
-				It("should have anti-affinity policies and tag specs", func() {
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
-					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmToVmGroupsAntiAffinity)
-					Expect(ok).To(BeTrue())
-					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution)))
-					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
-					Expect(policy.AntiAffinedVmGroupTags).To(HaveLen(1))
-					Expect(policy.AntiAffinedVmGroupTags[0].NameId.Tag).To(Equal("app:web"))
-					Expect(policy.AntiAffinedVmGroupTags[0].NameId.Category).To(Equal(vmCtx.VM.Namespace))
+				It("should have not have anti-affinity policies and tag specs", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					expectedTagNames := []string{}
+					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
+				})
+			})
+			Context("VKS node VM with both host and zone topology keys with capw labels", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Labels = map[string]string{
+						"app":                            "web",
+						"env":                            "prod",
+						kubeutil.CAPWClusterRoleLabelKey: "node",
+					}
 
-					// Check TagSpecs for VM labels
-					expectedTagNames := []string{"app:web"}
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAffinity: &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "web",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"env": "prod",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						},
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "db",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"env": "dev",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						},
+					}
+				})
+				It("should ignore both host affinity policies and zone affinity policies", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					expectedTagNames := []string{}
+					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
+				})
+			})
+			Context("VKS node VM with both host and zone topology keys with capv labels", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Labels = map[string]string{
+						"app":                            "web",
+						"env":                            "prod",
+						kubeutil.CAPVClusterRoleLabelKey: "node",
+					}
+
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAffinity: &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "web",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"env": "prod",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						},
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "db",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"env": "dev",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						},
+					}
+				})
+
+				It("should ignore both host affinity policies and zone affinity policies", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					expectedTagNames := []string{}
 					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
 				})
 			})
@@ -610,7 +703,7 @@ var _ = Describe("CreateConfigSpec", func() {
 										},
 									},
 								},
-								TopologyKey: corev1.LabelTopologyZone,
+								TopologyKey: corev1.LabelHostname,
 							},
 						},
 					},
@@ -1139,7 +1232,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 
-					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+					// Tagspecs are empty as VM does not have relevant labels.
+					assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 				})
 			})
 
@@ -1214,7 +1308,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 
-					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+					// Tagspecs are empty as VM does not have relevant labels.
+					assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 				})
 			})
 
@@ -1594,6 +1689,174 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						Expect(configSpec.TagSpecs).To(BeEmpty())
 					})
 				})
+				Context("VKS node VM with both host and zone topology keys with capv labels", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Labels = map[string]string{
+							"app":                            "web",
+							"env":                            "prod",
+							kubeutil.CAPVClusterRoleLabelKey: "node",
+						}
+
+						vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "web",
+											},
+										},
+										TopologyKey: corev1.LabelHostname,
+									},
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"env": "prod",
+											},
+										},
+										TopologyKey: corev1.LabelTopologyZone,
+									},
+								},
+							},
+							VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "db",
+											},
+										},
+										TopologyKey: corev1.LabelHostname,
+									},
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"env": "dev",
+											},
+										},
+										TopologyKey: corev1.LabelTopologyZone,
+									},
+								},
+							},
+						}
+					})
+
+					// policies are ignored as cluster modules is used for VMs with capv labels
+					It("should ignore host affinity policies and keep zone affinity policies", func() {
+						Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
+
+						pols := []vimtypes.BaseVmPlacementPolicy{
+							&vimtypes.VmVmAffinity{
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+								AffinedVmsTag: vimtypes.TagId{
+									NameId: &vimtypes.TagIdNameId{
+										Tag:      fmt.Sprintf("%s:%s", "env", "prod"),
+										Category: vmCtx.VM.Namespace,
+									},
+								},
+							},
+							&vimtypes.VmToVmGroupsAntiAffinity{
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+								AntiAffinedVmGroupTags: []vimtypes.TagId{
+									{
+										NameId: &vimtypes.TagIdNameId{
+											Tag:      fmt.Sprintf("%s:%s", "env", "dev"),
+											Category: vmCtx.VM.Namespace,
+										},
+									},
+								},
+							},
+						}
+						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
+						assertVMTags(configSpec, []string{"env:prod"}, vmCtx.VM.Namespace)
+					})
+				})
+				Context("VKS node VM with both host and zone topology keys with capw labels", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Labels = map[string]string{
+							"app":                            "web",
+							"env":                            "prod",
+							kubeutil.CAPWClusterRoleLabelKey: "node",
+						}
+
+						vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "web",
+											},
+										},
+										TopologyKey: corev1.LabelHostname,
+									},
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"env": "prod",
+											},
+										},
+										TopologyKey: corev1.LabelTopologyZone,
+									},
+								},
+							},
+							VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "db",
+											},
+										},
+										TopologyKey: corev1.LabelHostname,
+									},
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"env": "dev",
+											},
+										},
+										TopologyKey: corev1.LabelTopologyZone,
+									},
+								},
+							},
+						}
+					})
+
+					// policies are ignored as cluster modules is used for VMs with capw labels
+					It("should ignore host affinity policies and keep zone affinity policies", func() {
+						Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
+
+						pols := []vimtypes.BaseVmPlacementPolicy{
+							&vimtypes.VmVmAffinity{
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+								AffinedVmsTag: vimtypes.TagId{
+									NameId: &vimtypes.TagIdNameId{
+										Tag:      fmt.Sprintf("%s:%s", "env", "prod"),
+										Category: vmCtx.VM.Namespace,
+									},
+								},
+							},
+							&vimtypes.VmToVmGroupsAntiAffinity{
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+								AntiAffinedVmGroupTags: []vimtypes.TagId{
+									{
+										NameId: &vimtypes.TagIdNameId{
+											Tag:      fmt.Sprintf("%s:%s", "env", "dev"),
+											Category: vmCtx.VM.Namespace,
+										},
+									},
+								},
+							},
+						}
+						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
+						assertVMTags(configSpec, []string{"env:prod"}, vmCtx.VM.Namespace)
+					})
+				})
 			})
 
 			When("VMAffinityDuringExecution feature is disabled", func() {
@@ -1627,7 +1890,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 					It("produces no placement policies", func() {
 						Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+						assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 					})
 				})
 
@@ -1661,7 +1924,9 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 					It("produces no placement policies", func() {
 						Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+
+						// Tagspecs are empty as VM does not have relevant labels.
+						assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 					})
 				})
 
@@ -1704,7 +1969,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 							},
 						}))
 
-						assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+						// Tagspecs are empty as VM does not have relevant labels.
+						assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 					})
 				})
 			})
@@ -1754,7 +2020,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 
-					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+					// Tagspecs are empty as VM does not have relevant labels.
+					assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 				})
 			})
 
@@ -1812,7 +2079,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 
-					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+					// Tagspecs are empty as VM does not have relevant labels.
+					assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 				})
 			})
 
@@ -1841,8 +2109,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 				It("creates a minimal policy with VM tags but no anti-affinity rules", func() {
 					Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 
-					// VM tags should still be attached (without VM Operator managed labels) even though selector was invalid.
-					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vmCtx.VM.Namespace)
+					// VM tags are empty as selector was invalid.
+					assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
 				})
 			})
 		})
@@ -1897,6 +2165,256 @@ var _ = Describe("ConfigSpecFromVMClassDevices", func() {
 			Expect(pciBacking2.AllowedDevice[0].DeviceId).To(BeEquivalentTo(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].DeviceID))
 			Expect(pciBacking2.AllowedDevice[0].VendorId).To(BeEquivalentTo(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].VendorID))
 			Expect(pciBacking2.CustomLabel).To(Equal(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].CustomLabel))
+		})
+	})
+})
+
+var _ = Describe("CalculateAffinityConstraints", func() {
+	var (
+		vm    *vmopv1.VirtualMachine
+		vmCtx pkgctx.VirtualMachineContext
+	)
+
+	BeforeEach(func() {
+		vm = builder.DummyVirtualMachine()
+		vm.Name = "test-vm"
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: pkgcfg.NewContext(),
+			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
+			VM:      vm,
+		}
+	})
+
+	Describe("Feature flag combinations", func() {
+		When("both flags are disabled", func() {
+			It("should disable both host and zone rules", func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = false
+					config.Features.VMAffinityDuringExecution = false
+				})
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeFalse())
+				Expect(constraints.ConfigureZoneRules).To(BeFalse())
+			})
+		})
+
+		When("only VMPlacementPolicies is enabled", func() {
+			It("should enable only zone rules", func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+					config.Features.VMAffinityDuringExecution = false
+				})
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeFalse())
+				Expect(constraints.ConfigureZoneRules).To(BeTrue())
+			})
+		})
+
+		When("only VMAffinityDuringExecution is enabled", func() {
+			It("should enable only host rules", func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = false
+					config.Features.VMAffinityDuringExecution = true
+				})
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeTrue())
+				Expect(constraints.ConfigureZoneRules).To(BeFalse())
+			})
+		})
+
+		When("both flags are enabled", func() {
+			It("should enable both host and zone rules", func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+					config.Features.VMAffinityDuringExecution = true
+				})
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeTrue())
+				Expect(constraints.ConfigureZoneRules).To(BeTrue())
+			})
+		})
+	})
+
+	Describe("VKS node detection", func() {
+		When("VM has CAPI labels (VKS node)", func() {
+			BeforeEach(func() {
+				// Add CAPI labels to make it a VKS node VM
+				vm.Labels = map[string]string{
+					kubeutil.CAPWClusterRoleLabelKey: "control-plane",
+				}
+			})
+
+			It("should disable host rules even when VMAffinityDuringExecution is enabled", func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+					config.Features.VMAffinityDuringExecution = true
+				})
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS node VMs should disable host rules")
+				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "Zone rules should still be enabled")
+			})
+
+			It("should keep zone rules enabled when VMPlacementPolicies is enabled", func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+					config.Features.VMAffinityDuringExecution = false
+				})
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeFalse())
+				Expect(constraints.ConfigureZoneRules).To(BeTrue())
+			})
+		})
+
+		When("VM does not have CAPI labels (regular VM)", func() {
+			BeforeEach(func() {
+				vm.Labels = map[string]string{
+					"app": "test-app",
+				}
+			})
+
+			It("should allow host rules when VMAffinityDuringExecution is enabled", func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+					config.Features.VMAffinityDuringExecution = true
+				})
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeTrue(), "Regular VMs should allow host rules")
+				Expect(constraints.ConfigureZoneRules).To(BeTrue())
+			})
+		})
+	})
+
+	Describe("Workflow context", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.VMPlacementPolicies = true
+				config.Features.VMAffinityDuringExecution = true
+			})
+		})
+
+		When("isCreateVM is true (creation workflow)", func() {
+			It("should disable zone rules regardless of feature flags", func() {
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+				Expect(constraints.ConfigureHostRules).To(BeTrue(), "Host rules should still be enabled during creation")
+				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "Zone rules should be disabled during VM creation")
+			})
+		})
+
+		When("isCreateVM is false (placement workflow)", func() {
+			It("should allow zone rules when VMPlacementPolicies is enabled", func() {
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeTrue())
+				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "Zone rules should be enabled during placement")
+			})
+		})
+	})
+
+	Describe("Combined scenarios", func() {
+		When("VKS node VM with creation workflow", func() {
+			BeforeEach(func() {
+				vm.Labels = map[string]string{
+					kubeutil.CAPWClusterRoleLabelKey: "worker",
+				}
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+					config.Features.VMAffinityDuringExecution = true
+				})
+			})
+
+			It("should disable both host and zone rules", func() {
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
+				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "Creation workflow should disable zone rules")
+			})
+		})
+
+		When("VKS node VM with placement workflow", func() {
+			BeforeEach(func() {
+				vm.Labels = map[string]string{
+					kubeutil.CAPWClusterRoleLabelKey: "worker",
+				}
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+					config.Features.VMAffinityDuringExecution = true
+				})
+			})
+
+			It("should disable host rules but allow zone rules", func() {
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
+				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "Zone rules should be enabled for placement")
+			})
+		})
+
+		When("regular VM with different flag combinations", func() {
+			BeforeEach(func() {
+				vm.Labels = map[string]string{
+					"app": "test-app",
+				}
+			})
+
+			It("should respect feature flags during placement workflow", func() {
+				testCases := []struct {
+					vmPlacement  bool
+					vmAffinity   bool
+					expectedZone bool
+					expectedHost bool
+					description  string
+				}{
+					{false, false, false, false, "no flags enabled"},
+					{true, false, true, false, "only placement enabled"},
+					{false, true, false, true, "only affinity enabled"},
+					{true, true, true, true, "both flags enabled"},
+				}
+
+				for _, tc := range testCases {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMPlacementPolicies = tc.vmPlacement
+						config.Features.VMAffinityDuringExecution = tc.vmAffinity
+					})
+
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+					Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
+						"Host rules mismatch for case: %s", tc.description)
+					Expect(constraints.ConfigureZoneRules).To(Equal(tc.expectedZone),
+						"Zone rules mismatch for case: %s", tc.description)
+				}
+			})
+
+			It("should disable zone rules during creation workflow regardless of flags", func() {
+				testCases := []struct {
+					vmPlacement  bool
+					vmAffinity   bool
+					expectedHost bool
+					description  string
+				}{
+					{false, false, false, "no flags enabled"},
+					{true, false, false, "only placement enabled"},
+					{false, true, true, "only affinity enabled"},
+					{true, true, true, "both flags enabled"},
+				}
+
+				for _, tc := range testCases {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMPlacementPolicies = tc.vmPlacement
+						config.Features.VMAffinityDuringExecution = tc.vmAffinity
+					})
+
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+					Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
+						"Host rules mismatch for case: %s", tc.description)
+					Expect(constraints.ConfigureZoneRules).To(BeFalse(),
+						"Zone rules should always be false during creation for case: %s", tc.description)
+				}
+			})
 		})
 	})
 })

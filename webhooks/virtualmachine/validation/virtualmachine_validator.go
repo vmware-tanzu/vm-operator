@@ -1170,7 +1170,7 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
-	if interfaceSpec.DHCP4 {
+	if interfaceSpec.DHCP4 != nil && *interfaceSpec.DHCP4 {
 		if len(ipv4Addrs) > 0 {
 			p := interfacePath.Child("dhcp4")
 			allErrs = append(allErrs, field.Invalid(p, strings.Join(ipv4Addrs, ","),
@@ -1183,7 +1183,7 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
-	if interfaceSpec.DHCP6 {
+	if interfaceSpec.DHCP6 != nil && *interfaceSpec.DHCP6 {
 		if len(ipv6Addrs) > 0 {
 			p := interfacePath.Child("dhcp6")
 			allErrs = append(allErrs, field.Invalid(p, strings.Join(ipv6Addrs, ","),

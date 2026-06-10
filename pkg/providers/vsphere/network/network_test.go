@@ -105,7 +105,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name:    "eth0",
 						Network: &common.PartialObjectRef{Name: networkName},
-						DHCP6:   true,
+						DHCP6:   ptr.To(true),
 					},
 				}
 			})

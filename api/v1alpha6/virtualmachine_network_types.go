@@ -91,27 +91,37 @@ type VirtualMachineNetworkInterfaceSpec struct {
 
 	// +optional
 
-	// DHCP4 indicates whether or not this interface uses DHCP for IP4
-	// networking.
+	// DHCP4 controls IPv4 DHCP for this interface.
+	//
+	// When set to true, the interface requests an IPv4 address via DHCP.
+	// When set to false, DHCP for IPv4 is explicitly disabled; the interface
+	// relies on static allocation.
+	// When omitted, the network provider determines the allocation method
+	// from subnet configuration.
 	//
 	// Please note this field is only supported if the network connection
 	// supports DHCP.
 	//
 	// Please note this field is mutually exclusive with IP4 addresses in the
 	// Addresses field and the Gateway4 field.
-	DHCP4 bool `json:"dhcp4,omitempty"`
+	DHCP4 *bool `json:"dhcp4,omitempty"`
 
 	// +optional
 
-	// DHCP6 indicates whether or not this interface uses DHCP for IP6
-	// networking.
+	// DHCP6 controls DHCPv6 for this interface.
+	//
+	// When set to true, the interface requests an IPv6 address via DHCPv6.
+	// When set to false, DHCPv6 is explicitly disabled; the interface relies
+	// on static allocation.
+	// When omitted, the network provider determines the allocation method
+	// from subnet configuration.
 	//
 	// Please note this field is only supported if the network connection
 	// supports DHCP.
 	//
 	// Please note this field is mutually exclusive with IP6 addresses in the
 	// Addresses field and the Gateway6 field.
-	DHCP6 bool `json:"dhcp6,omitempty"`
+	DHCP6 *bool `json:"dhcp6,omitempty"`
 
 	// +optional
 

@@ -33,6 +33,7 @@ import (
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -190,10 +191,18 @@ func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *pkgctx.VirtualMach
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) getLoadBalancerProvider(ctx context.Context) (providers.LoadbalancerProvider, error) {
+func (r *ReconcileVirtualMachineService) getLoadBalancerProvider(
+	ctx context.Context,
+	namespace string) (providers.LoadbalancerProvider, error) {
+
 	lbProviderType := pkgcfg.FromContext(ctx).LoadBalancerProvider
 	if lbProviderType == "" {
-		switch pkgcfg.FromContext(ctx).NetworkProviderType {
+		providerType, err := netsetutil.GetProviderType(ctx, r.Client, namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		switch providerType {
 		case pkgcfg.NetworkProviderTypeNSXT, pkgcfg.NetworkProviderTypeVPC:
 			// This LB provider dates back to the initial release which was NSXT only, but
 			// we have no way to determine what the actual LB is. So continue to set these
@@ -213,7 +222,7 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 	vmService := ctx.VMService
 
 	if vmService.Spec.Type == vmopv1.VirtualMachineServiceTypeLoadBalancer {
-		lbProvider, err := r.getLoadBalancerProvider(ctx)
+		lbProvider, err := r.getLoadBalancerProvider(ctx, vmService.Namespace)
 		if err != nil {
 			return fmt.Errorf("failed to get load balancer provider: %w", err)
 		}
@@ -334,7 +343,7 @@ func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	}
 
 	// Explicitly remove provider specific annotations
-	lbProvider, err := r.getLoadBalancerProvider(ctx)
+	lbProvider, err := r.getLoadBalancerProvider(ctx, vmService.Namespace)
 	if err != nil {
 		return fmt.Errorf("failed to get load balancer provider: %w", err)
 	}

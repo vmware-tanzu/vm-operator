@@ -5,6 +5,7 @@
 package validation
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -50,6 +51,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -174,6 +176,7 @@ var (
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get
+// +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networksettings,verbs=get;list;watch
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
@@ -225,6 +228,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	var fieldErrs field.ErrorList
+	var errs []error
 
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateImageOnCreate(ctx, vm)...)
@@ -232,10 +236,22 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateStorageFields(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, nil)...)
+
+	netFieldErrs, err := v.validateNetwork(ctx, vm, nil)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	fieldErrs = append(fieldErrs, netFieldErrs...)
+
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
-	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
+
+	probeFieldErrs, err := v.validateReadinessProbe(ctx, vm)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	fieldErrs = append(fieldErrs, probeFieldErrs...)
+
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateComputeConfig(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
@@ -258,7 +274,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, nil, validationErrs, errors.Join(errs...))
 }
 
 func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
@@ -321,6 +337,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	var fieldErrs field.ErrorList
+	var errs []error
 
 	// Check if the VM has been upgraded.
 	fieldErrs = append(fieldErrs, v.validateSchemaUpgrade(ctx, vm, oldVM)...)
@@ -338,10 +355,22 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrapProviderImmutable(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, oldVM)...)
+
+	netFieldErrs, err := v.validateNetwork(ctx, vm, oldVM)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	fieldErrs = append(fieldErrs, netFieldErrs...)
+
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
-	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
+
+	probeFieldErrs, err := v.validateReadinessProbe(ctx, vm)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	fieldErrs = append(fieldErrs, probeFieldErrs...)
+
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateComputeConfig(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
@@ -361,7 +390,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, nil, validationErrs, errors.Join(errs...))
 }
 
 func (v validator) validateBootstrapProviderImmutable(
@@ -831,13 +860,13 @@ func (v validator) validateCrypto(
 
 func (v validator) validateNetwork(
 	ctx *pkgctx.WebhookRequestContext,
-	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) (field.ErrorList, error) {
 
 	var allErrs field.ErrorList
 
 	networkSpec := vm.Spec.Network
 	if networkSpec == nil {
-		return allErrs
+		return allErrs, nil
 	}
 
 	networkPath := field.NewPath("spec", "network")
@@ -853,10 +882,15 @@ func (v validator) validateNetwork(
 	}
 
 	if len(networkSpec.Interfaces) > 0 {
+		providerType, err := v.getNetworkProviderType(ctx, vm.Namespace)
+		if err != nil {
+			return nil, err
+		}
+
 		p := networkPath.Child("interfaces")
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
-			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p.Index(i), interfaceSpec, vm.Name)...)
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p.Index(i), interfaceSpec, vm.Name, providerType)...)
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p.Index(i), interfaceSpec, vm)...)
 		}
 	}
@@ -871,7 +905,7 @@ func (v validator) validateNetwork(
 		}
 	}
 
-	return allErrs
+	return allErrs, nil
 }
 
 // validateNetworkInterfaceMacAddressNotChanged tries to check that the MAC address
@@ -1010,6 +1044,20 @@ func (v validator) validateNetworkVLANs(
 	return allErrs
 }
 
+// getNetworkProviderType returns the network provider type for the given
+// namespace. When PerNamespaceNetworkProvider is disabled it reads the global
+// config; when enabled it fetches NetworkSettings/default from that namespace.
+func (v validator) getNetworkProviderType(
+	ctx *pkgctx.WebhookRequestContext,
+	namespace string) (pkgcfg.NetworkProviderType, error) {
+
+	providerType, err := netsetutil.GetProviderType(ctx, v.client, namespace)
+	if err != nil {
+		return "", err
+	}
+	return providerType, nil
+}
+
 // Note the code for VDS is basically done, but only support this for VPC right
 // now since that is what matters.
 var macAddressSupportNetworkGroups = []string{
@@ -1042,15 +1090,15 @@ var networkProviderValidations = map[pkgcfg.NetworkProviderType]networkProviderV
 }
 
 func (v validator) validateNetworkInterfaceNetworkRef(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
+	providerType pkgcfg.NetworkProviderType,
 	interfacePath *field.Path,
 	networkGV schema.GroupVersion,
 	networkKind string) field.ErrorList {
 
 	var allErrs field.ErrorList
 
-	networkProvider := pkgcfg.FromContext(ctx).NetworkProviderType
-	supported, ok := networkProviderValidations[networkProvider]
+	supported, ok := networkProviderValidations[providerType]
 	if !ok {
 		// No supported for this provider type (e.g., Named network provider).
 		return allErrs
@@ -1082,7 +1130,8 @@ func (v validator) validateNetworkInterfaceSpec(
 	ctx *pkgctx.WebhookRequestContext,
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
-	vmName string) field.ErrorList {
+	vmName string,
+	providerType pkgcfg.NetworkProviderType) field.ErrorList {
 
 	var (
 		allErrs           field.ErrorList
@@ -1108,7 +1157,8 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
-	allErrs = append(allErrs, v.validateNetworkInterfaceNetworkRef(ctx, interfacePath, networkGV, networkKind)...)
+	allErrs = append(allErrs,
+		v.validateNetworkInterfaceNetworkRef(ctx, providerType, interfacePath, networkGV, networkKind)...)
 
 	// The networkInterface CR name ("vmName-networkName-interfaceName" or "vmName-interfaceName") needs to be a DNS1123 Label
 	if networkName != "" {
@@ -2049,13 +2099,13 @@ func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookReque
 
 func (v validator) validateReadinessProbe(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm *vmopv1.VirtualMachine) (field.ErrorList, error) {
 
 	var allErrs field.ErrorList
 
 	probe := vm.Spec.ReadinessProbe
 	if probe == nil {
-		return allErrs
+		return allErrs, nil
 	}
 
 	readinessProbePath := field.NewPath("spec", "readinessProbe")
@@ -2077,8 +2127,13 @@ func (v validator) validateReadinessProbe(
 	if probe.TCPSocket != nil {
 		tcpSocketPath := readinessProbePath.Child("tcpSocket")
 
+		providerType, err := v.getNetworkProviderType(ctx, vm.Namespace)
+		if err != nil {
+			return nil, err
+		}
+
 		// TCP readiness probe is not allowed under VPC Networking
-		if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
+		if providerType == pkgcfg.NetworkProviderTypeVPC {
 			allErrs = append(allErrs, field.Forbidden(tcpSocketPath, tcpReadinessProbeNotAllowedVPC))
 		} else if probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
 			// Validate port if environment is a restricted network environment between SV CP VMs and Workload VMs e.g. VMC.
@@ -2093,7 +2148,7 @@ func (v validator) validateReadinessProbe(
 		}
 	}
 
-	return allErrs
+	return allErrs, nil
 }
 
 var megaByte = resource.MustParse("1Mi")

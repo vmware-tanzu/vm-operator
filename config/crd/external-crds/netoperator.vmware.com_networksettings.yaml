@@ -41,7 +41,7 @@ spec:
             type: object
           provider:
             description: |-
-              Provider is the active network provider in this namespace. Workloads and network-aware
+              provider is the active network provider in this namespace. Workloads and network-aware
               components should use this to determine which provider governs networking for the namespace,
               including when choosing defaulting behavior or which provider-specific APIs to use when not
               otherwise specified.

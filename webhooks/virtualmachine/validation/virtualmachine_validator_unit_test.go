@@ -29,6 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
@@ -41,6 +43,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/anno2extraconfig"
@@ -1529,6 +1532,27 @@ func unitTestsValidateCreate() {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
 						})
+					},
+					validate: doValidateWithMsg(
+						`spec.readinessProbe.tcpSocket: Forbidden: VPC networking doesn't allow TCP readiness probe to be specified`),
+				},
+			),
+			Entry("should deny TCP readiness probe with VPC via PerNamespaceNetworkProvider",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							TCPSocket: &vmopv1.TCPSocketAction{},
+						}
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.PerNamespaceNetworkProvider = true
+						})
+						Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "default",
+								Namespace: ctx.vm.Namespace,
+							},
+							Provider: netopv1alpha1.NetworkProviderVPC,
+						})).To(Succeed())
 					},
 					validate: doValidateWithMsg(
 						`spec.readinessProbe.tcpSocket: Forbidden: VPC networking doesn't allow TCP readiness probe to be specified`),
@@ -3230,167 +3254,102 @@ func unitTestsValidateCreate() {
 			),
 		)
 
-		DescribeTable("network create - validate network provider API group and kind", doTest,
+		DescribeTableSubtree("network create - validate network provider API group and kind",
+			func(
+				providerType pkgcfg.NetworkProviderType,
+				enableCapability bool,
+			) {
+				var (
+					capProviderType netopv1alpha1.NetworkProvider
+					apiVersion      string
+					kind            string
 
-			Entry("allow VirtualNetwork kind with NSXT provider",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
-						})
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "vmware.com/v1alpha1",
-											Kind:       "VirtualNetwork",
-										},
-										Name: "my-network",
-									},
-								},
-							},
-						}
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("disallow incorrect API group and kind with NSXT provider",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
-						})
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "crd.nsx.vmware.com/v1alpha1",
-											Kind:       "VirtualNetwork",
-										},
-										Name: "my-network",
-									},
-								},
-								{
-									Name: "eth1",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "vmware.com/v1alpha1",
-											Kind:       "SubnetSet",
-										},
-										Name: "my-network-2",
-									},
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.network.interfaces[0].network.apiVersion: Unsupported value: "crd.nsx.vmware.com/v1alpha1": supported values: "vmware.com/v1alpha1"`,
-						`spec.network.interfaces[1].network.kind: Unsupported value: "SubnetSet": supported values: "VirtualNetwork"`),
-				},
-			),
+					wrongAPIVersion    string
+					wrongKind          string
+					wrongAPIVersionMsg string
+					wrongKindMsg       string
+				)
 
-			Entry("allow Network kind with VDS provider",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
-						})
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "netoperator.vmware.com/v1alpha1",
-											Kind:       "Network",
-										},
-										Name: "my-network",
-									},
-								},
-							},
+				//nolint:goconst
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.PerNamespaceNetworkProvider = enableCapability
+						if !enableCapability {
+							config.NetworkProviderType = providerType
 						}
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("disallow incorrect API group and kind with VDS provider",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
-						})
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "vmware.com/v1alpha1",
-											Kind:       "Network",
-										},
-										Name: "my-network",
-									},
-								},
-								{
-									Name: "eth1",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "netoperator.vmware.com/v1alpha1",
-											Kind:       "VirtualNetwork",
-										},
-										Name: "my-network-2",
-									},
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.network.interfaces[0].network.apiVersion: Unsupported value: "vmware.com/v1alpha1": supported values: "netoperator.vmware.com/v1alpha1"`,
-						`spec.network.interfaces[1].network.kind: Unsupported value: "VirtualNetwork": supported values: "Network"`),
-				},
-			),
+					})
 
-			Entry("allow SubnetSet kind with VPC provider",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
-						})
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "crd.nsx.vmware.com/v1alpha1",
-											Kind:       "SubnetSet",
-										},
-										Name: "my-network",
+					switch providerType {
+					case pkgcfg.NetworkProviderTypeVDS:
+						capProviderType = netopv1alpha1.NetworkProviderVSphereDistributed
+						apiVersion = "netoperator.vmware.com/v1alpha1"
+						kind = "Network"
+
+						wrongAPIVersion = "vmware.com/v1alpha1"
+						wrongKind = "VirtualNetwork"
+						wrongAPIVersionMsg = `spec.network.interfaces[0].network.apiVersion: Unsupported value: "vmware.com/v1alpha1": supported values: "netoperator.vmware.com/v1alpha1"`
+						wrongKindMsg = `spec.network.interfaces[1].network.kind: Unsupported value: "VirtualNetwork": supported values: "Network"`
+					case pkgcfg.NetworkProviderTypeNSXT:
+						capProviderType = netopv1alpha1.NetworkProviderNSXTier1
+						apiVersion = "vmware.com/v1alpha1"
+						kind = "VirtualNetwork"
+
+						wrongAPIVersion = "crd.nsx.vmware.com/v1alpha1"
+						wrongKind = "SubnetSet"
+						wrongAPIVersionMsg = `spec.network.interfaces[0].network.apiVersion: Unsupported value: "crd.nsx.vmware.com/v1alpha1": supported values: "vmware.com/v1alpha1"`
+						wrongKindMsg = `spec.network.interfaces[1].network.kind: Unsupported value: "SubnetSet": supported values: "VirtualNetwork"`
+					case pkgcfg.NetworkProviderTypeVPC:
+						capProviderType = netopv1alpha1.NetworkProviderVPC
+						apiVersion = "crd.nsx.vmware.com/v1alpha1"
+						kind = "SubnetSet"
+
+						wrongAPIVersion = "vmware.com/v1alpha1"
+						wrongKind = "VirtualNetwork"
+						wrongAPIVersionMsg = `spec.network.interfaces[0].network.apiVersion: Unsupported value: "vmware.com/v1alpha1": supported values: "crd.nsx.vmware.com/v1alpha1"`
+						wrongKindMsg = `spec.network.interfaces[1].network.kind: Unsupported value: "VirtualNetwork": supported values: "Subnet", "SubnetSet"`
+					}
+
+					if enableCapability {
+						Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "default",
+								Namespace: ctx.vm.Namespace,
+							},
+							Provider: capProviderType,
+						})).To(Succeed())
+					}
+				})
+
+				It("allows correct APIVersion and Kind", func() {
+					ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+								Network: &common.PartialObjectRef{
+									TypeMeta: metav1.TypeMeta{
+										APIVersion: apiVersion,
+										Kind:       kind,
 									},
+									Name: "my-network",
 								},
 							},
-						}
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("allow Subnet kind with VPC provider",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
-						})
+						},
+					}
+					var err error
+					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ctx.ValidateCreate(&ctx.WebhookRequestContext).Allowed).To(BeTrue())
+				})
+
+				if providerType == pkgcfg.NetworkProviderTypeVPC {
+					It("allows Subnet kind", func() {
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
 									Name: "eth0",
 									Network: &common.PartialObjectRef{
 										TypeMeta: metav1.TypeMeta{
-											APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											APIVersion: apiVersion,
 											Kind:       "Subnet",
 										},
 										Name: "my-network",
@@ -3398,48 +3357,86 @@ func unitTestsValidateCreate() {
 								},
 							},
 						}
-					},
-					expectAllowed: true,
-				},
-			),
+						var err error
+						ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(ctx.ValidateCreate(&ctx.WebhookRequestContext).Allowed).To(BeTrue())
+					})
+				}
 
-			Entry("disallow incorrect API group and kind with VPC provider",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
-						})
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "vmware.com/v1alpha1",
-											Kind:       "SubnetSet",
-										},
-										Name: "my-network",
+				It("denies incorrect API group and kind", func() {
+					ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+								Network: &common.PartialObjectRef{
+									TypeMeta: metav1.TypeMeta{
+										APIVersion: wrongAPIVersion,
+										Kind:       kind,
 									},
-								},
-								{
-									Name: "eth1",
-									Network: &common.PartialObjectRef{
-										TypeMeta: metav1.TypeMeta{
-											APIVersion: "crd.nsx.vmware.com/v1alpha1",
-											Kind:       "VirtualNetwork",
-										},
-										Name: "my-network-2",
-									},
+									Name: "my-network",
 								},
 							},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.network.interfaces[0].network.apiVersion: Unsupported value: "vmware.com/v1alpha1": supported values: "crd.nsx.vmware.com/v1alpha1"`,
-						`spec.network.interfaces[1].network.kind: Unsupported value: "VirtualNetwork": supported values: "Subnet", "SubnetSet"`),
-				},
-			),
+							{
+								Name: "eth1",
+								Network: &common.PartialObjectRef{
+									TypeMeta: metav1.TypeMeta{
+										APIVersion: apiVersion,
+										Kind:       wrongKind,
+									},
+									Name: "my-network-2",
+								},
+							},
+						},
+					}
+
+					var err error
+					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+					Expect(err).ToNot(HaveOccurred())
+					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+					Expect(response.Allowed).To(BeFalse())
+					doValidateWithMsg(wrongAPIVersionMsg, wrongKindMsg)(response)
+				})
+			},
+
+			Entry("nsx-tier1 envvar", pkgcfg.NetworkProviderTypeNSXT, false),
+			Entry("nsx-tier1 capability", pkgcfg.NetworkProviderTypeNSXT, true),
+			Entry("vsphere-distributed envvar", pkgcfg.NetworkProviderTypeVDS, false),
+			Entry("vsphere-distributed capability", pkgcfg.NetworkProviderTypeVDS, true),
+			Entry("vpc envvar", pkgcfg.NetworkProviderTypeVPC, false),
+			Entry("vpc capability", pkgcfg.NetworkProviderTypeVPC, true),
 		)
+
+		Context("when PerNamespaceNetworkProvider is enabled and NetworkSettings is absent", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.PerNamespaceNetworkProvider = true
+				})
+				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+							Network: &common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									APIVersion: "vmware.com/v1alpha1",
+									Kind:       "VirtualNetwork",
+								},
+								Name: "my-network",
+							},
+						},
+					},
+				}
+			})
+
+			It("ValidateCreate returns error", func() {
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(response.Result.Message).To(ContainSubstring(netsetutil.ErrNetworkSettingsNotFound.Error()))
+			})
+		})
 
 		DescribeTable("network create - host and domain names", doTest,
 

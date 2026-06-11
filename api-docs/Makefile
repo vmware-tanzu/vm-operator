@@ -6,7 +6,7 @@
 # WARNING: The Go version baked into this image must be compatible with the
 # go directive in go.mod. If either is updated, verify the other still matches
 # or the vendor/docs-generation step will fail with a version mismatch.
-API_DOCS_IMAGE ?= wcp-docker-local.packages.vcfd.broadcom.net/tools/api-docs:699a6a4
+API_DOCS_IMAGE ?= wcp-docker-local.packages.vcfd.broadcom.net/tools/api-docs:4d81416
 DOCKER_RUN := docker run --platform=linux/amd64 \
   -v $(CURDIR):$(CURDIR) -w $(CURDIR) --rm $(API_DOCS_IMAGE)
 

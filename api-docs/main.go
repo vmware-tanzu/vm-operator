@@ -28,11 +28,6 @@ import (
 	_ "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
 	_ "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	_ "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
-
-	_ "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	_ "github.com/vmware-tanzu/vm-operator/api/v1alpha6/cloudinit"
-	_ "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	_ "github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 )
 
 func main() {}

@@ -30,6 +30,14 @@ const (
 	VirtualMachineServiceTypeExternalName VirtualMachineServiceType = "ExternalName"
 )
 
+const (
+	// ServiceReadyConditionType reflects the underlying Service Ready condition.
+	// Note that not all LoadBalancer providers set a Ready condition on the
+	// Service. When the condition is not present, this condition will have
+	// Status of Unknown with the Reason "ServiceReadyNotPresent".
+	ServiceReadyConditionType = "VirtualMachineServiceServiceReady"
+)
+
 // VirtualMachineServicePort describes the specification of a service port to
 // be exposed by a VirtualMachineService. This VirtualMachineServicePort
 // specification includes attributes that define the external and internal
@@ -188,6 +196,11 @@ type VirtualMachineServiceStatus struct {
 	// LoadBalancer contains the current status of the load balancer,
 	// if one is present.
 	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty"`
+
+	// +optional
+
+	// Conditions describes the observed conditions of the VirtualMachineService.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -208,6 +221,14 @@ type VirtualMachineService struct {
 
 func (s *VirtualMachineService) NamespacedName() string {
 	return s.Namespace + "/" + s.Name
+}
+
+func (s VirtualMachineService) GetConditions() []metav1.Condition {
+	return s.Status.Conditions
+}
+
+func (s *VirtualMachineService) SetConditions(conditions []metav1.Condition) {
+	s.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true

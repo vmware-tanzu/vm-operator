@@ -6,6 +6,14 @@ ARG BASE_IMAGE=mirror.gcr.io/library/photon:5.0
 # Build stage - compile tests
 FROM ${BASE_IMAGE} AS builder
 
+# Go module proxy settings. Override at build time to use an internal mirror
+# when proxy.golang.org is not reachable (e.g. network-restricted build systems).
+# Defaults preserve the standard public behaviour for local/public builds.
+ARG GOPROXY=https://proxy.golang.org,direct
+ARG GONOSUMDB=
+ENV GOPROXY="${GOPROXY}"
+ENV GONOSUMDB="${GONOSUMDB}"
+
 # Build stage setup
 WORKDIR /vm-operator
 
@@ -25,15 +33,15 @@ RUN tdnf install -y \
     go
 RUN go mod download
 
-# Pre-compile test binaries for faster execution  
-RUN cd test/e2e/vmservice && go test -c -o /vm-operator/e2e-tests .
+# Pre-compile test binaries for faster execution
+RUN cd test/e2e/vmservice && go test -c -ldflags="-s -w" -o /vm-operator/e2e-tests .
 
 # Compile packer-plugin-vsphere from source.
 # The source is staged into the build context before docker build runs .
 # For local/public builds the default is the public GitHub repo, cloned by
 # the vm-operator Makefile's e2e-image-build target if not already present.
 COPY packer-plugin-vsphere-src/ /packer-plugin-vsphere-src/
-RUN go build -C /packer-plugin-vsphere-src -o /usr/local/bin/packer-plugin-vsphere main.go
+RUN go build -C /packer-plugin-vsphere-src -ldflags="-s -w" -o /usr/local/bin/packer-plugin-vsphere main.go
 
 # Runtime stage - minimal image with compiled tests
 FROM ${BASE_IMAGE} AS runtime
@@ -52,22 +60,25 @@ LABEL branch="${BUILD_BRANCH}" \
       vendor="Broadcom" \
       version="${BUILD_VERSION}"
 
-# Install required packages
-RUN tdnf update -y && \
-    tdnf install -y \
+# Install required packages.
+# go/build-essential/glibc-devel are intentionally omitted: the e2e-tests binary
+# is pre-compiled in the builder stage, so no Go toolchain is needed at runtime.
+# Note: tdnf update is intentionally omitted. The base image is a pinned snapshot.
+# Running tdnf update pulls from the latest snapshot repo and breaks the version
+# consistency guarantee, causing libcap dependency conflicts.
+# To pick up OS security patches, bump the BASE_IMAGE tag instead.
+RUN tdnf install -y \
+        bash \
+        coreutils \
         curl \
         jq \
-        git \
-        openssh \
+        openssl \
+        openssh-clients \
+        readline \
         sshpass \
-        bash \
         make \
-        build-essential \
-        glibc-devel \
-        go \
         sudo \
         unzip \
-        openssl \
         && \
     rm -rf /var/cache/tdnf
 
@@ -80,12 +91,14 @@ RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
     chmod +x /usr/local/bin/govc
 
 # packer — required by vmserviceapp E2E tests.
+# unzip is installed only for this extraction step and removed immediately after.
 ARG PACKER_DOWNLOAD_URL=https://releases.hashicorp.com/packer/1.9.1/packer_1.9.1_linux_amd64.zip
 RUN curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip && \
     unzip /tmp/packer.zip -d /tmp/packer && \
     mv /tmp/packer/packer /usr/local/bin/packer && \
     chmod 0755 /usr/local/bin/packer && \
-    rm -rf /tmp/packer.zip /tmp/packer
+    rm -rf /tmp/packer.zip /tmp/packer && \
+    rm -rf /var/cache/tdnf
 
 # PIP_INDEX_URL overrides the pip package index used when install-pykmip.sh runs
 # on the testbed gateway VM. Defaults to empty (public PyPI). Build systems that
@@ -95,8 +108,7 @@ ENV PIP_INDEX_URL="${PIP_INDEX_URL}"
 
 # kubectl is always staged into the build context as ./kubectl before docker build runs.
 # This is to support passing the kubectl binary from the build system.
-COPY kubectl /usr/local/bin/kubectl
-RUN chmod +x /usr/local/bin/kubectl
+COPY --chmod=755 kubectl /usr/local/bin/kubectl
 
 # Create users and groups required for the build system's log directory access.
 #
@@ -116,14 +128,13 @@ RUN groupadd -g 201 mts && \
     echo "vmoperator ALL=(svc-vdm_stage0) NOPASSWD:ALL" >> /etc/sudoers && \
     sed -i '/Defaults requiretty/d' /etc/sudoers
 
-# Create directories and set up convenience scripts
-RUN mkdir -p /vm-operator /tmp/go-cache && \
-    chown vmoperator:vmoperator /vm-operator /tmp/go-cache
+# Create directories
+RUN mkdir -p /vm-operator && \
+    chown vmoperator:vmoperator /vm-operator
 
 WORKDIR /vm-operator
 
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/hack/e2e/ ./hack/e2e/
-RUN chmod +x /vm-operator/hack/e2e/*.sh
+COPY --from=builder --chown=vmoperator:vmoperator --chmod=755 /vm-operator/hack/e2e/ ./hack/e2e/
 
 COPY --from=builder /usr/local/bin/packer-plugin-vsphere /usr/local/bin/packer-plugin-vsphere
 
@@ -135,14 +146,13 @@ COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservic
 
 # REPO_ROOT tells vmserviceapp tests where to find bundled Packer HCL templates.
 # PACKER_PLUGIN_DIR_PATH tells Packer where to find the vsphere plugin binary.
+# E2E_PREBUILT_BINARY points run-e2e.sh at the compiled test binary in this image.
 ENV REPO_ROOT=/vm-operator
 ENV PACKER_PLUGIN_DIR_PATH=/usr/local/bin
+ENV E2E_PREBUILT_BINARY=/vm-operator/e2e-tests
 
 # Switch to non-root user for runtime
 USER vmoperator
-
-# Set up Go environment for runtime
-ENV GOCACHE="/tmp/go-cache"
 
 # Default command
 CMD ["/bin/bash"]

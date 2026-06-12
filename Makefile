@@ -4,7 +4,8 @@ SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
 # The list of goals that do not require Golang.
-NON_GO_GOALS := lint-markdown lint-shell
+# e2e image targets are Docker-only; all Go compilation happens inside the container.
+NON_GO_GOALS := lint-markdown lint-shell e2e-%
 
 # If one of the goals that require golang is present and the
 # Go binary is not in the path, then print an error message

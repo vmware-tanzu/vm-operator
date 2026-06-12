@@ -126,12 +126,21 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				if tarLocationCLIsAttached && !keepTargetLocationCLAttached {
 					Expect(wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(input.WCPNamespaceName, targetLocationCLID)).To(Succeed(), "failed to detach content library '%s' from namespace '%s'", targetLocationCLID, input.WCPNamespaceName)
 
+					// Wait for the namespace update to fully propagate before deleting the CL.
+					// The dcli namespace update is asynchronous — vCenter marks the CL "in use"
+					// until the namespace config_status returns to RUNNING.
+					wcp.WaitForNamespaceReady(wcpClient, input.WCPNamespaceName)
+
 					tarLocationCLIsAttached = false
 				}
 
 				// Delete the content library if exists and not keeping it attached to the namespace.
 				if targetLocationCLID != "" && !keepTargetLocationCLAttached {
-					Expect(wcpClient.DeleteLocalContentLibrary(targetLocationCLID)).To(Succeed(), "failed to delete the publish content library, CL ID: %s", targetLocationCLID)
+					if err := wcpClient.DeleteLocalContentLibrary(targetLocationCLID); err != nil {
+						// Log but don't fail — the CL may be temporarily in use by a parallel
+						// runner (NotAllowedInCurrentState) or already deleted (NotFound).
+						GinkgoWriter.Printf("Warning: failed to delete publish content library %s: %v\n", targetLocationCLID, err)
+					}
 					targetLocationCLID = ""
 				}
 

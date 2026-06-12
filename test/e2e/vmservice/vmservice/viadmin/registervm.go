@@ -75,8 +75,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		svClusterClientSet            *kubernetes.Clientset
 		vmServiceBackupRestoreEnabled bool
 		incrementalRestoreEnabled     bool
-		linuxImageDisplayName string
-		linuxVMIName          string
+		linuxImageDisplayName         string
+		linuxVMIName                  string
 	)
 
 	BeforeEach(func() {
@@ -296,24 +296,26 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation to VM")
 
-			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
-			Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-
 			// Collect all PVC names from the VM spec
 			var pvcNames []string
 
-			for _, volume := range vm.Spec.Volumes {
-				if volume.PersistentVolumeClaim != nil {
-					pvcNames = append(pvcNames, volume.PersistentVolumeClaim.ClaimName)
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				if vm.Annotations == nil {
+					vm.Annotations = make(map[string]string)
 				}
-			}
+				vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+
+				pvcNames = []string{}
+				for _, volume := range vm.Spec.Volumes {
+					if volume.PersistentVolumeClaim != nil {
+						pvcNames = append(pvcNames, volume.PersistentVolumeClaim.ClaimName)
+					}
+				}
+			}, config.GetIntervals("default", "wait-virtual-machine-annotation-update")...).
+				Should(Succeed(), "timed out adding pause annotation to VM %s", vmName)
 
 			// Unregister all PVCs using the helper function
 			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, pvcNames, config)
@@ -462,15 +464,16 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation to VM")
 
-			vm, err = utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
-			Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				if vm.Annotations == nil {
+					vm.Annotations = make(map[string]string)
+				}
+				vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+			}, config.GetIntervals("default", "wait-virtual-machine-annotation-update")...).
+				Should(Succeed(), "timed out adding pause annotation to VM %s", vmName)
 
 			// Collect all PVC names from the VM spec
 			var pvcNames []string
@@ -861,15 +864,16 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation to VM")
 
-			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
-			Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				if vm.Annotations == nil {
+					vm.Annotations = make(map[string]string)
+				}
+				vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+			}, config.GetIntervals("default", "wait-virtual-machine-annotation-update")...).
+				Should(Succeed(), "timed out adding pause annotation to VM %s", vmName)
 
 			var vmMO mo.VirtualMachine
 
@@ -1017,11 +1021,12 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(taskInfo.Error).To(BeNil())
 			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
 
-			e2eframework.Logf("VM has been restored: %v", vm)
-
 			// Fetch the restored VM and verify that it has the expected number of volumes.
 			restoredVM, err := utils.GetVirtualMachineA3(ctx, svClusterClient, existingVM.Namespace, existingVM.Name)
 			Expect(err).ToNot(HaveOccurred())
+
+			e2eframework.Logf("VM has been restored: %v", restoredVM)
+
 			Expect(len(restoredVM.Spec.Volumes)).To(Equal(2)) // one base disk and one PVC
 
 			var restoredVol *vmopv1a3.VirtualMachineVolume

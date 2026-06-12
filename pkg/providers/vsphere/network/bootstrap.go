@@ -7,6 +7,7 @@ package network
 import (
 	"context"
 	"net"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +17,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -50,6 +52,11 @@ type Bootstrap struct {
 	// DHCP6 indicates that IPv6 DHCP is active for this interface.  Same
 	// semantics as DHCP4.
 	DHCP6 bool
+
+	// AcceptRA indicates that Router Advertisement processing (SLAAC) should
+	// be enabled for this interface. Independent of DHCP6: both may be true
+	// when the subnet uses SLAAC + DHCPv6; AcceptRA alone means SLAAC-only.
+	AcceptRA bool
 
 	// MTU is the MTU to configure inside the guest, taken from interfaceSpec.MTU.
 	// Zero means "use the OS default".
@@ -228,7 +235,10 @@ func NetOPInterfaceBootstrap(
 	initial := bootstrapFromNetOP(netIf)
 	initial.MacAddress = macAddress
 
-	return InterfaceBootstrap(ctx, vm, initial, interfaceSpec)
+	b := InterfaceBootstrap(ctx, vm, initial, interfaceSpec)
+	// NetOP has no independent RA control; AcceptRA always mirrors DHCP6.
+	b.AcceptRA = b.DHCP6
+	return b
 }
 
 func bootstrapFromNetOP(netIf *netopv1alpha1.NetworkInterface) Bootstrap {
@@ -245,6 +255,8 @@ func bootstrapFromNetOP(netIf *netopv1alpha1.NetworkInterface) Bootstrap {
 
 	initial.DHCP4 = v4Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 	initial.DHCP6 = v6Mode == netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+	// NetOP does not expose separate RA / DHCPv6 controls; mirror old behavior.
+	initial.AcceptRA = initial.DHCP6
 
 	for _, ip := range netIf.Status.IPConfigs {
 		switch ip.IPFamily {
@@ -283,7 +295,10 @@ func NCPInterfaceBootstrap(
 	initial := bootstrapFromNCP(vnetIf)
 	initial.MacAddress = macAddress
 
-	return InterfaceBootstrap(ctx, vm, initial, interfaceSpec)
+	b := InterfaceBootstrap(ctx, vm, initial, interfaceSpec)
+	// NCP has no independent RA control; AcceptRA always mirrors DHCP6.
+	b.AcceptRA = b.DHCP6
+	return b
 }
 
 func bootstrapFromNCP(vnetIf *ncpv1alpha1.VirtualNetworkInterface) Bootstrap {
@@ -350,11 +365,58 @@ func bootstrapFromVPC(
 		initial.IPConfigs = append(initial.IPConfigs, ipConfig)
 	}
 
-	if len(initial.IPConfigs) == 0 {
-		if !subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet {
+	cfg := subnetPort.Status.NetworkInterfaceConfig
+	dhcp4Active := !cfg.DHCPDeactivatedOnSubnet
+
+	if !pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+		if len(initial.IPConfigs) == 0 {
+			if dhcp4Active {
+				initial.DHCP4 = true
+			} else {
+				initial.NoIPAM = true
+			}
+		}
+		return initial
+	}
+
+	hasStaticV4 := slices.ContainsFunc(initial.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return c.IsIPv4 })
+	hasStaticV6 := slices.ContainsFunc(initial.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return !c.IsIPv4 })
+
+	dhcp6Active := !cfg.DHCPv6DeactivatedOnSubnet
+	raActive := !cfg.RADeactivated
+	// DHCP6=true whenever any IPv6 dynamic assignment is active (DHCPv6 or SLAAC).
+	// On systemd-networkd, dhcp6: true is required to bring up the IPv6 stack even
+	// in SLAAC-only mode; the RA's M/O flags control whether a DHCPv6 client runs.
+	ipv6Dynamic := dhcp6Active || raActive
+
+	switch subnetPort.Spec.InterfaceIPType {
+	case vpcv1alpha1.IPAddressTypeIPv6:
+		if !hasStaticV6 {
+			if ipv6Dynamic {
+				initial.DHCP6 = true
+				initial.AcceptRA = raActive
+			} else {
+				initial.NoIPAM = true
+			}
+		}
+	case vpcv1alpha1.IPAddressTypeIPv4IPv6:
+		if !hasStaticV4 && dhcp4Active {
 			initial.DHCP4 = true
-		} else {
+		}
+		if !hasStaticV6 && ipv6Dynamic {
+			initial.DHCP6 = true
+			initial.AcceptRA = raActive
+		}
+		if !initial.DHCP4 && !initial.DHCP6 && len(initial.IPConfigs) == 0 {
 			initial.NoIPAM = true
+		}
+	default: // "IPv4" or "" — IPv4-only path
+		if !hasStaticV4 {
+			if dhcp4Active {
+				initial.DHCP4 = true
+			} else {
+				initial.NoIPAM = true
+			}
 		}
 	}
 
@@ -385,6 +447,7 @@ func devAndBootstrapToNetworkInterfaceResult(
 		NoIPAM:          b.NoIPAM,
 		DHCP4:           b.DHCP4,
 		DHCP6:           b.DHCP6,
+		AcceptRA:        b.AcceptRA,
 		MTU:             b.MTU,
 		Nameservers:     b.Nameservers,
 		SearchDomains:   b.SearchDomains,

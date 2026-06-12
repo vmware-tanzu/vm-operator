@@ -18,6 +18,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -32,7 +33,7 @@ var _ = Describe("InterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = pkgcfg.NewContext() // default: WorkloadIPv6=false
 		initial = network.Bootstrap{}
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
@@ -644,7 +645,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = pkgcfg.NewContext() // default: WorkloadIPv6=false
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
 				Network: &vmopv1.VirtualMachineNetworkSpec{},
@@ -689,6 +690,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		It("produces non-DHCP Bootstrap with IPConfigs in CIDR notation, MAC lowercased", func() {
 			Expect(bootstrap.DHCP4).To(BeFalse())
 			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.MacAddress).To(Equal("aa:bb:cc:dd:ee:ff"))
 			Expect(bootstrap.IPConfigs).To(HaveLen(2))
@@ -705,6 +707,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		It("effective IPv4 mode is DHCP → bootstrap.DHCP4=true", func() {
 			Expect(bootstrap.DHCP4).To(BeTrue())
 			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(BeEmpty())
 		})
@@ -719,6 +722,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 			Expect(bootstrap.NoIPAM).To(BeTrue())
 			Expect(bootstrap.DHCP4).To(BeFalse())
 			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(BeEmpty())
 		})
 	})
@@ -760,6 +764,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		It("infers StaticPool: DHCP4=false, IPConfigs populated from status", func() {
 			Expect(bootstrap.DHCP4).To(BeFalse())
 			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.MacAddress).To(Equal("aa:bb:cc:dd:ee:ff"))
 			Expect(bootstrap.IPConfigs).To(HaveLen(1))
@@ -773,9 +778,10 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		BeforeEach(func() {
 			netIf.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 		})
-		It("DHCP4=true, DHCP6=false, no IPConfigs", func() {
+		It("DHCP4=true, DHCP6=false, AcceptRA=false, no IPConfigs", func() {
 			Expect(bootstrap.DHCP4).To(BeTrue())
 			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(BeEmpty())
 		})
@@ -786,9 +792,10 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 			netIf.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 			netIf.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 		})
-		It("DHCP4=true, DHCP6=true, no IPConfigs", func() {
+		It("DHCP4=true, DHCP6=true, AcceptRA=true (mirrors DHCP6), no IPConfigs", func() {
 			Expect(bootstrap.DHCP4).To(BeTrue())
 			Expect(bootstrap.DHCP6).To(BeTrue())
+			Expect(bootstrap.AcceptRA).To(BeTrue())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(BeEmpty())
 		})
@@ -810,6 +817,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		It("DHCP4=true, DHCP6=false; only IPv6 IPConfig in bootstrap (IPv4 filtered because mode=DHCP)", func() {
 			Expect(bootstrap.DHCP4).To(BeTrue())
 			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(HaveLen(1))
 			Expect(bootstrap.IPConfigs[0].IPCIDR).To(Equal("2001:db8::100/64"))
@@ -839,6 +847,7 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		It("produces IPv4 IPConfigs via the Prefix→CIDR path", func() {
 			Expect(bootstrap.DHCP4).To(BeFalse())
 			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(HaveLen(2))
 			Expect(bootstrap.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
@@ -869,9 +878,10 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 				},
 			}
 		})
-		It("DHCP4=false, DHCP6=true; only IPv4 IPConfig in bootstrap (IPv6 filtered because mode=DHCP)", func() {
+		It("DHCP4=false, DHCP6=true, AcceptRA=true; only IPv4 IPConfig in bootstrap (IPv6 filtered because mode=DHCP)", func() {
 			Expect(bootstrap.DHCP4).To(BeFalse())
 			Expect(bootstrap.DHCP6).To(BeTrue())
+			Expect(bootstrap.AcceptRA).To(BeTrue())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(HaveLen(1))
 			Expect(bootstrap.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
@@ -894,6 +904,8 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		})
 		It("IPv4 IPConfig is skipped because mode is DHCP, not StaticPool; DHCP4=true, IPConfigs empty", func() {
 			Expect(bootstrap.DHCP4).To(BeTrue())
+			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(BeEmpty())
 		})
@@ -918,6 +930,8 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		})
 		It("IPConfig with unrecognized IPFamily is skipped; only the recognized IPv4 entry is included", func() {
 			Expect(bootstrap.DHCP4).To(BeFalse())
+			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.AcceptRA).To(BeFalse())
 			Expect(bootstrap.NoIPAM).To(BeFalse())
 			Expect(bootstrap.IPConfigs).To(HaveLen(1))
 			Expect(bootstrap.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
@@ -938,7 +952,7 @@ var _ = Describe("NCPInterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = pkgcfg.NewContext() // default: WorkloadIPv6=false
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
 				Network: &vmopv1.VirtualMachineNetworkSpec{},
@@ -1060,7 +1074,8 @@ var _ = Describe("VPCInterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		// Default: WorkloadIPv6=false (gate off), preserving existing behavior.
+		ctx = pkgcfg.NewContext()
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
 				Network: &vmopv1.VirtualMachineNetworkSpec{},
@@ -1163,5 +1178,77 @@ var _ = Describe("VPCInterfaceBootstrap", func() {
 			Expect(bootstrap.IPConfigs[0].IsIPv4).To(BeFalse())
 			Expect(bootstrap.IPConfigs[0].Gateway).To(Equal("fd1a:6c85:79fe:7c98::1"))
 		})
+	})
+
+	When("WorkloadIPv6=true", func() {
+		type subnetCfg struct {
+			ipType   vpcv1alpha1.IPAddressType
+			dhcp4Off bool
+			dhcp6Off bool
+			raOff    bool
+			ips      []vpcv1alpha1.NetworkInterfaceIPAddress
+		}
+		type want struct {
+			dhcp4, dhcp6, acceptRA, noIPAM bool
+			ipConfigLen                    int
+		}
+
+		BeforeEach(func() {
+			ctx = pkgcfg.WithConfig(pkgcfg.Config{
+				Features: pkgcfg.FeatureStates{WorkloadIPv6: true},
+			})
+		})
+
+		DescribeTable("bootstrapFromVPC",
+			func(sc subnetCfg, w want) {
+				subnetPort.Spec.InterfaceIPType = sc.ipType
+				subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet = sc.dhcp4Off
+				subnetPort.Status.NetworkInterfaceConfig.DHCPv6DeactivatedOnSubnet = sc.dhcp6Off
+				subnetPort.Status.NetworkInterfaceConfig.RADeactivated = sc.raOff
+				subnetPort.Status.NetworkInterfaceConfig.IPAddresses = sc.ips
+				b := network.VPCInterfaceBootstrap(ctx, vm, subnetPort, interfaceSpec, macAddress)
+				Expect(b.DHCP4).To(Equal(w.dhcp4), "DHCP4")
+				Expect(b.DHCP6).To(Equal(w.dhcp6), "DHCP6")
+				Expect(b.AcceptRA).To(Equal(w.acceptRA), "AcceptRA")
+				Expect(b.NoIPAM).To(Equal(w.noIPAM), "NoIPAM")
+				Expect(b.IPConfigs).To(HaveLen(w.ipConfigLen), "IPConfigs len")
+			},
+			Entry("IPv4 default, DHCP4 active",
+				subnetCfg{},
+				want{dhcp4: true}),
+			Entry("IPv4 default, DHCP4 deactivated → NoIPAM",
+				subnetCfg{dhcp4Off: true},
+				want{noIPAM: true}),
+			Entry("IPv6, DHCPv6+RA active",
+				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv6},
+				want{dhcp6: true, acceptRA: true}),
+			Entry("IPv6, SLAAC-only (DHCPv6 deactivated)",
+				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv6, dhcp6Off: true},
+				want{dhcp6: true, acceptRA: true}),
+			Entry("IPv6, DHCPv6-only (RA deactivated)",
+				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv6, raOff: true},
+				want{dhcp6: true}),
+			Entry("IPv6, all deactivated → NoIPAM",
+				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv6, dhcp6Off: true, raOff: true},
+				want{noIPAM: true}),
+			Entry("IPv6, static IP assigned",
+				subnetCfg{
+					ipType: vpcv1alpha1.IPAddressTypeIPv6,
+					ips:    []vpcv1alpha1.NetworkInterfaceIPAddress{{IPAddress: "fd00::5/64", Gateway: "fd00::1"}},
+				},
+				want{ipConfigLen: 1}),
+			Entry("IPv4IPv6, all dynamic active",
+				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv4IPv6},
+				want{dhcp4: true, dhcp6: true, acceptRA: true}),
+			Entry("IPv4IPv6, all deactivated → NoIPAM",
+				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv4IPv6, dhcp4Off: true, dhcp6Off: true, raOff: true},
+				want{noIPAM: true}),
+			Entry("IPv4IPv6, static IPv4 present, DHCPv6+RA active",
+				subnetCfg{
+					ipType: vpcv1alpha1.IPAddressTypeIPv4IPv6,
+					ips:    []vpcv1alpha1.NetworkInterfaceIPAddress{{IPAddress: "10.0.0.5/24", Gateway: "10.0.0.1"}},
+				},
+				want{dhcp6: true, acceptRA: true, ipConfigLen: 1}),
+		)
 	})
 })

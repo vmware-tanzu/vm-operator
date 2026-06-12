@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,6 +64,7 @@ type NetworkInterfaceResult struct { //nolint:revive
 	NoIPAM          bool
 	DHCP4           bool
 	DHCP6           bool
+	AcceptRA        bool
 	MTU             int64
 	Nameservers     []string
 	SearchDomains   []string
@@ -737,6 +739,54 @@ func IPAMModesToNetOPInterfaceIPFamilyPolicy(ipamModes []corev1.IPFamily) netopv
 	}
 }
 
+// IPAMModesToVPCInterfaceIPType converts IPAMModes to the VPC SubnetPort
+// InterfaceIPType, which tells NSX Operator which IP address families to
+// activate on the port.
+func IPAMModesToVPCInterfaceIPType(ipamModes []corev1.IPFamily) vpcv1alpha1.IPAddressType {
+	hasV4 := slices.Contains(ipamModes, corev1.IPv4Protocol)
+	hasV6 := slices.Contains(ipamModes, corev1.IPv6Protocol)
+	switch {
+	case hasV4 && hasV6:
+		return vpcv1alpha1.IPAddressTypeIPv4IPv6
+	case hasV6:
+		return vpcv1alpha1.IPAddressTypeIPv6
+	case hasV4:
+		return vpcv1alpha1.IPAddressTypeIPv4
+	default:
+		return ""
+	}
+}
+
+// DeriveStaticIPAllocationType determines which IP families must use NSX's
+// strict static IP pool. Only an explicit DHCP4=false or DHCP6=false triggers
+// this: the user is saying "I want this family but NOT via DHCP" — NSX must
+// allocate from the static pool and will fail if the subnet is not configured
+// for static allocation.
+//
+// interfaceSpec.Addresses is communicated to NSX via AddressBindings (set
+// separately); StaticIPAllocationType is not needed for the explicit-IP case.
+func DeriveStaticIPAllocationType(
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+) vpcv1alpha1.StaticIPAllocationType {
+
+	hasIPv4Mode := slices.Contains(interfaceSpec.IPAMModes, corev1.IPv4Protocol)
+	hasIPv6Mode := slices.Contains(interfaceSpec.IPAMModes, corev1.IPv6Protocol)
+
+	wantStaticV4 := hasIPv4Mode && interfaceSpec.DHCP4 != nil && !*interfaceSpec.DHCP4
+	wantStaticV6 := hasIPv6Mode && interfaceSpec.DHCP6 != nil && !*interfaceSpec.DHCP6
+
+	switch {
+	case wantStaticV4 && wantStaticV6:
+		return vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6
+	case wantStaticV6:
+		return vpcv1alpha1.StaticIPAllocationTypeIPv6
+	case wantStaticV4:
+		return vpcv1alpha1.StaticIPAllocationTypeIPv4
+	default:
+		return ""
+	}
+}
+
 func findNetOPCondition(
 	netIf *netopv1alpha1.NetworkInterface,
 	condType netopv1alpha1.NetworkInterfaceConditionType) *netopv1alpha1.NetworkInterfaceCondition {
@@ -1007,6 +1057,11 @@ func createVPCNetworkInterface(
 					MACAddress: strings.ToLower(interfaceSpec.MACAddr),
 				},
 			}
+		}
+
+		if pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+			subnetPort.Spec.InterfaceIPType = IPAMModesToVPCInterfaceIPType(interfaceSpec.IPAMModes)
+			subnetPort.Spec.StaticIPAllocationType = DeriveStaticIPAllocationType(interfaceSpec)
 		}
 
 		return nil

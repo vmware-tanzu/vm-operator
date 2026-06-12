@@ -11,13 +11,16 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-var _ = Describe("Netplan", func() {
+var _ = Describe("Netplan",
+	Label(testlabels.API),
+	func() {
 	const (
 		ifName        = "my-interface"
 		guestDevName  = "eth42"
@@ -189,6 +192,7 @@ var _ = Describe("Netplan", func() {
 						GuestDeviceName: guestDevName,
 						DHCP4:           true,
 						DHCP6:           true,
+						AcceptRA:        true,
 						MTU:             9000,
 						Nameservers:     []string{dnsServer1},
 						SearchDomains:   []string{searchDomain1},
@@ -215,6 +219,29 @@ var _ = Describe("Netplan", func() {
 				Expect(np.Nameservers.Addresses).To(Equal([]string{dnsServer1}))
 				Expect(np.Nameservers.Search).To(Equal([]string{searchDomain1}))
 				Expect(np.Routes).To(BeEmpty())
+			})
+		})
+
+		Context("DHCP6 without AcceptRA (DHCPv6-only)", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP6:           true,
+						AcceptRA:        false,
+					},
+				}
+			})
+
+			It("Dhcp6=true, AcceptRa=false", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(config).ToNot(BeNil())
+				Expect(config.Ethernets).To(HaveLen(1))
+				np := config.Ethernets[ifName]
+				Expect(np.Dhcp6).To(HaveValue(BeTrue()))
+				Expect(np.AcceptRa).To(HaveValue(BeFalse()))
 			})
 		})
 

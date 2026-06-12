@@ -36,6 +36,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -689,18 +690,35 @@ func (r *Reconciler) getVMForPlacement(
 		return nil, nil
 	}
 
-	// If VM has a zone label, skip group placement to respect zone override.
 	if zoneName := vm.Labels[corev1.LabelTopologyZone]; zoneName != "" {
+		isVksNodeVM := kubeutil.HasCAPILabels(vm.Labels)
+		// A zone-labeled VM bypasses group placement to honor its zone override
+		// when VMAffinityDuringExecution is disabled, or when it is a VKS node
+		// (CAPI-managed) which must stay pinned to its assigned zone.
+		if !pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution ||
+			isVksNodeVM {
+			pkglog.FromContextOrDefault(ctx).V(4).Info(
+				"VM has explicit zone label, skipping group placement",
+				"vmName", vmName,
+				"zoneName", zoneName,
+			)
+			return nil, nil
+		}
+
+		// Feature enabled + non-VKS: fall through so the zone-labeled VM still
+		// participates in group placement for DRS host recommendations.
 		pkglog.FromContextOrDefault(ctx).V(4).Info(
-			"VM has explicit zone label, skipping group placement",
+			"VM has explicit zone label but participates in group placement "+
+				"(VMAffinityDuringExecution enabled, non-VKS)",
 			"vmName", vmName,
 			"zoneName", zoneName,
 		)
-		return nil, nil
 	}
 
 	// VMG doesn't have a PlacementReady condition true for this VM (UID).
-	// VM is not already placed, nor has a zone label override.
+	// VM is not already placed, and either has no zone label override or is a
+	// non-VKS zone-labeled VM participating in group placement for VM-VM
+	// Affinity/Anti-Affinity at host host level within the zone.
 	// Return this VM to get it placed by the group.
 	return vm, nil
 }

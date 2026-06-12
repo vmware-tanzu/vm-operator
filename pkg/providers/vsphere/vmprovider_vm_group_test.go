@@ -22,6 +22,7 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -417,6 +418,121 @@ func vmGroupTests() {
 				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
+			})
+		})
+
+		Context("when VMAffinityDuringExecution is enabled", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMAffinityDuringExecution = true
+				})
+			})
+
+			When("VM is a VKS node", func() {
+				JustBeforeEach(func() {
+					vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+					Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				})
+
+				It("should bypass group placement and honor the zone override", func() {
+					err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+					Expect(err).To(MatchError(vsphere.ErrCreate))
+
+					// Verify VM was created
+					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+				})
+			})
+
+			When("VM is not a VKS node", func() {
+				var (
+					groupZone string
+					groupHost string
+					groupPool string
+				)
+
+				setGroupPlacementReady := func(placementZone string) {
+					GinkgoHelper()
+					ccrs := ctx.GetAZClusterComputes(placementZone)
+					Expect(ccrs).ToNot(BeEmpty())
+					hosts, err := ccrs[0].Hosts(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(hosts).ToNot(BeEmpty())
+					groupHost = hosts[0].Reference().Value
+
+					nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, placementZone, "")
+					Expect(nsRP).ToNot(BeNil())
+					groupPool = nsRP.Reference().Value
+
+					Expect(ctx.Client.Get(
+						ctx, client.ObjectKeyFromObject(vmGroup), vmGroup)).To(Succeed())
+					vmGroup.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
+						{
+							Name: vm.Name,
+							Kind: "VirtualMachine",
+							Conditions: []metav1.Condition{
+								{
+									Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+									Status: metav1.ConditionTrue,
+								},
+							},
+							Placement: &vmopv1.VirtualMachinePlacementStatus{
+								Zone: placementZone,
+								Node: groupHost,
+								Pool: groupPool,
+							},
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, vmGroup)).To(Succeed())
+				}
+
+				When("group placement zone matches the VM zone label", func() {
+					JustBeforeEach(func() {
+						groupZone = zoneName
+						setGroupPlacementReady(groupZone)
+					})
+
+					It("should place the VM by group in its zone", func() {
+						err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+						Expect(err).To(MatchError(vsphere.ErrCreate))
+
+						// Verify VM was created
+						Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+					})
+				})
+
+				When("group placement zone differs from the VM zone label", func() {
+					JustBeforeEach(func() {
+						Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+
+						// get a random zone that is different from the VM zone
+						groupZone = zoneName
+						for groupZone == zoneName {
+							groupZone = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+						}
+						setGroupPlacementReady(groupZone)
+					})
+
+					It("should block placement with a ZoneMismatch condition", func() {
+						err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+						Expect(err.Error()).To(ContainSubstring("does not match VM zone label"))
+
+						By("VM is not created", func() {
+							Expect(vm.Status.UniqueID).To(BeEmpty())
+						})
+						By("PlacementReady is False with ZoneMismatch reason", func() {
+							c := conditions.Get(vm, vmopv1.VirtualMachineConditionPlacementReady)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal("ZoneMismatch"))
+						})
+					})
+				})
 			})
 		})
 	})

@@ -329,9 +329,12 @@ func CreateConfigSpecForPlacement(
 	return configSpec, nil
 }
 
-// CalculateAffinityConstraints calculates the constraints based on vm object in vmCtx & creation/placement
-// workflow.
-func CalculateAffinityConstraints(vmCtx pkgctx.VirtualMachineContext, isCreateVM bool) AffinityRuleConstraints {
+// CalculateAffinityConstraints calculates the constraints based on vm object
+// in vmCtx & creation/placement workflow.
+func CalculateAffinityConstraints(
+	vmCtx pkgctx.VirtualMachineContext,
+	isCreateVM bool,
+) AffinityRuleConstraints {
 	constraints := AffinityRuleConstraints{}
 	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
 		constraints.ConfigureZoneRules = true
@@ -347,9 +350,19 @@ func CalculateAffinityConstraints(vmCtx pkgctx.VirtualMachineContext, isCreateVM
 		constraints.ConfigureHostRules = false
 	}
 
-	if isCreateVM {
-		// Zonal rules are ignored during VM Creation as DRS does not differentiate between topologies for persisted policies.
-		// Persistent policies are treated at Host Topology.
+	// ConfigureZoneRules = false when:
+	//   1. VM Creation: DRS doesn't differentiate topologies for persisted policies.
+	//   2. VKS Node: Never get zonal policies (VMs are already zone-constrained).
+	//   3. VMAffinityDuringExecution + Zone Label: Already zone-constrained
+	//
+	//   isCreateVM? → isVksNodeVM? → (VMAffinityDuringExecution + ZoneLabel)?
+	//    ↓YES (any)       ↓YES              ↓YES     		↓NO
+	//    FALSE            FALSE             FALSE    		TRUE
+	//
+	if isCreateVM ||
+		isVksNodeVM ||
+		(pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
+			kubeutil.HasZoneLabel(vmCtx.VM.Labels)) {
 		constraints.ConfigureZoneRules = false
 	}
 

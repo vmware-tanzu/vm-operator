@@ -14,7 +14,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware/govmomi/alarm"
 	"github.com/vmware/govmomi/cns"
 	cnstypes "github.com/vmware/govmomi/cns/types"
@@ -296,26 +298,22 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation to VM")
 
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			base := vm.DeepCopy()
+			if vm.Annotations == nil {
+				vm.Annotations = make(map[string]string)
+			}
+			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
+
 			// Collect all PVC names from the VM spec
 			var pvcNames []string
-
-			Eventually(func(g Gomega) {
-				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-				g.Expect(err).ToNot(HaveOccurred())
-				if vm.Annotations == nil {
-					vm.Annotations = make(map[string]string)
+			for _, volume := range vm.Spec.Volumes {
+				if volume.PersistentVolumeClaim != nil {
+					pvcNames = append(pvcNames, volume.PersistentVolumeClaim.ClaimName)
 				}
-				vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-
-				pvcNames = []string{}
-				for _, volume := range vm.Spec.Volumes {
-					if volume.PersistentVolumeClaim != nil {
-						pvcNames = append(pvcNames, volume.PersistentVolumeClaim.ClaimName)
-					}
-				}
-			}, config.GetIntervals("default", "wait-virtual-machine-annotation-update")...).
-				Should(Succeed(), "timed out adding pause annotation to VM %s", vmName)
+			}
 
 			// Unregister all PVCs using the helper function
 			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, pvcNames, config)
@@ -401,6 +399,20 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForPVCAttachment(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, pvcNameA)
 
+			// Set Removable=true on every volume before backup is captured so the
+			// backup YAML reflects the correct value. The CSI CnsRegisterVolume
+			// controller reads spec.volumes[*].removable when a newly registered FCD
+			// is processed; if removable is missing the disk may be mis-classified
+			// during a restore pass.
+			By("Set all PVC volumes as removable=true before backup is captured")
+			vmA5, err := utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			baseRemovable := vmA5.DeepCopy()
+			for i := range vmA5.Spec.Volumes {
+				vmA5.Spec.Volumes[i].Removable = ptr.To(true)
+			}
+			Expect(svClusterClient.Patch(ctx, vmA5, ctrlclient.MergeFrom(baseRemovable))).To(Succeed())
+
 			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -442,7 +454,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
-
+			baseA3 := vm.DeepCopy()
 			vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1a3.VirtualMachineVolume{
 				Name: pvcNameB,
 				VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
@@ -453,7 +465,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 					},
 				},
 			})
-			Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(baseA3))).To(Succeed())
 
 			vmoperator.WaitForPVCAttachment(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, pvcNameB)
 			// Both PVC A and B are now attached to VM.
@@ -462,18 +474,25 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 
-			By("Add the pause annotation to VM")
+			By("Add the pause annotation and set all volumes as removable")
 
-			Eventually(func(g Gomega) {
-				vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-				g.Expect(err).ToNot(HaveOccurred())
-				if vm.Annotations == nil {
-					vm.Annotations = make(map[string]string)
-				}
-				vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-virtual-machine-annotation-update")...).
-				Should(Succeed(), "timed out adding pause annotation to VM %s", vmName)
+			vm, err = utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Use v1alpha5 to access the Removable field. RegisterVM restores from
+			// the backup yaml (pvcA only), requiring pvcB removal; the validating
+			// webhook blocks that unless Removable=true on every volume.
+			vmA5, err = utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			basePause := vmA5.DeepCopy()
+			if vmA5.Annotations == nil {
+				vmA5.Annotations = make(map[string]string)
+			}
+			vmA5.Annotations[vmopv1a5.PauseAnnotation] = trueString
+			for i := range vmA5.Spec.Volumes {
+				vmA5.Spec.Volumes[i].Removable = ptr.To(true)
+			}
+			Expect(svClusterClient.Patch(ctx, vmA5, ctrlclient.MergeFrom(basePause))).To(Succeed())
 
 			// Collect all PVC names from the VM spec
 			var pvcNames []string
@@ -864,16 +883,14 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation to VM")
 
-			Eventually(func(g Gomega) {
-				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-				g.Expect(err).ToNot(HaveOccurred())
-				if vm.Annotations == nil {
-					vm.Annotations = make(map[string]string)
-				}
-				vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-virtual-machine-annotation-update")...).
-				Should(Succeed(), "timed out adding pause annotation to VM %s", vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			base := vm.DeepCopy()
+			if vm.Annotations == nil {
+				vm.Annotations = make(map[string]string)
+			}
+			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 			var vmMO mo.VirtualMachine
 

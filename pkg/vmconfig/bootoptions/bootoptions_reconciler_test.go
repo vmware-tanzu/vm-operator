@@ -900,6 +900,222 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					Expect(eth2.DeviceKey).To(Equal(int32(4002)))
 				})
 			})
+
+			When("the VM class has boot options", func() {
+				BeforeEach(func() {
+					moVM.Config = nil
+				})
+				Context("bootDelay", func() {
+					BeforeEach(func() {
+						configSpec.BootOptions = &vimtypes.VirtualMachineBootOptions{
+							BootDelay: 10,
+						}
+					})
+					When("the VM spec does not specify bootDelay", func() {
+						It("should keep the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.BootDelay).To(Equal(int64(10)))
+						})
+					})
+					When("the VM spec does specify bootDelay", func() {
+						BeforeEach(func() {
+							vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+								BootDelay: &metav1.Duration{
+									Duration: 100 * time.Millisecond,
+								},
+							}
+						})
+						It("should override the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.BootDelay).To(Equal(int64(100)))
+						})
+					})
+				})
+
+				Context("bootRetry", func() {
+					BeforeEach(func() {
+						configSpec.BootOptions = &vimtypes.VirtualMachineBootOptions{
+							BootRetryEnabled: ptr.To(true),
+						}
+					})
+					When("the VM spec does not specify bootRetry", func() {
+						It("should keep the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.BootRetryEnabled).ToNot(BeNil())
+							Expect(*configSpec.BootOptions.BootRetryEnabled).To(BeTrue())
+						})
+					})
+					When("the VM spec does specify bootRetry", func() {
+						BeforeEach(func() {
+							vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+								BootRetry: vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
+							}
+						})
+						It("should override the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.BootRetryEnabled).ToNot(BeNil())
+							Expect(*configSpec.BootOptions.BootRetryEnabled).To(BeFalse())
+						})
+					})
+				})
+
+				Context("bootRetryDelay", func() {
+					BeforeEach(func() {
+						configSpec.BootOptions = &vimtypes.VirtualMachineBootOptions{
+							BootRetryDelay: 5000,
+						}
+					})
+					When("the VM spec does not specify bootRetryDelay", func() {
+						It("should keep the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.BootRetryDelay).To(Equal(int64(5000)))
+						})
+					})
+					When("the VM spec does specify bootRetryDelay", func() {
+						BeforeEach(func() {
+							vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+								BootRetryDelay: &metav1.Duration{
+									Duration: 2 * time.Second,
+								},
+							}
+						})
+						It("should override the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.BootRetryDelay).To(Equal(int64(2000)))
+						})
+					})
+				})
+
+				Context("efiSecureBootEnabled", func() {
+					BeforeEach(func() {
+						configSpec.BootOptions = &vimtypes.VirtualMachineBootOptions{
+							EfiSecureBootEnabled: ptr.To(true),
+						}
+					})
+					When("the VM spec does not specify efiSecureBoot", func() {
+						It("should keep the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.EfiSecureBootEnabled).ToNot(BeNil())
+							Expect(*configSpec.BootOptions.EfiSecureBootEnabled).To(BeTrue())
+						})
+					})
+					When("the VM spec does specify efiSecureBoot", func() {
+						BeforeEach(func() {
+							vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+								EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
+							}
+						})
+						It("should override the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.EfiSecureBootEnabled).ToNot(BeNil())
+							Expect(*configSpec.BootOptions.EfiSecureBootEnabled).To(BeFalse())
+						})
+					})
+				})
+
+				Context("networkBootProtocol", func() {
+					BeforeEach(func() {
+						configSpec.BootOptions = &vimtypes.VirtualMachineBootOptions{
+							NetworkBootProtocol: string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+						}
+					})
+					When("the VM spec does not specify networkBootProtocol", func() {
+						It("should clear boot options when only the class network protocol applied", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).To(BeNil())
+						})
+					})
+					When("the VM spec does specify networkBootProtocol", func() {
+						BeforeEach(func() {
+							vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+								NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP6,
+							}
+						})
+						It("should override the value from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.NetworkBootProtocol).To(
+								Equal(string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv6)))
+						})
+					})
+				})
+
+				Context("bootOrder", func() {
+					BeforeEach(func() {
+						configSpec.BootOptions = &vimtypes.VirtualMachineBootOptions{
+							BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+								&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+							},
+						}
+					})
+					When("the VM spec does not specify bootOrder", func() {
+						It("should clear boot options when only the class boot order applied", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).To(BeNil())
+						})
+					})
+					When("the VM spec does specify bootOrder", func() {
+						BeforeEach(func() {
+							vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{Name: "eth0"},
+								},
+							}
+							vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+								{
+									Name:     "disk-0",
+									DiskUUID: "6000C298-df15-fe89-ddcb-8ea33329595d",
+								},
+							}
+							ethDevice := &vimtypes.VirtualVmxnet3{}
+							ethDevice.Key = 4000
+							moVM = mo.VirtualMachine{
+								Config: &vimtypes.VirtualMachineConfigInfo{
+									Hardware: vimtypes.VirtualHardware{
+										Device: []vimtypes.BaseVirtualDevice{
+											&vimtypes.VirtualCdrom{},
+											&vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 2000,
+													Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+														Uuid: "6000C298-df15-fe89-ddcb-8ea33329595d",
+													},
+												},
+											},
+											ethDevice,
+										},
+									},
+								},
+							}
+							vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+								BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+									{
+										Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+										Name: "disk-0",
+									},
+								},
+							}
+						})
+						It("should override the boot order from the configSpec", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.BootOptions).ToNot(BeNil())
+							Expect(configSpec.BootOptions.BootOrder).To(HaveLen(1))
+							Expect(configSpec.BootOptions.BootOrder[0]).To(
+								BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
+							disk0 := configSpec.BootOptions.BootOrder[0].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
+							Expect(disk0.DeviceKey).To(Equal(int32(2000)))
+						})
+					})
+				})
+			})
 		})
 	})
 })

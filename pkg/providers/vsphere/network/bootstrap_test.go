@@ -19,6 +19,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -33,7 +34,9 @@ var _ = Describe("InterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = pkgcfg.NewContext() // default: WorkloadIPv6=false
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			Features: pkgcfg.FeatureStates{WorkloadIPv6: false},
+		})
 		initial = network.Bootstrap{}
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
@@ -645,7 +648,9 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = pkgcfg.NewContext() // default: WorkloadIPv6=false
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			Features: pkgcfg.FeatureStates{WorkloadIPv6: false},
+		})
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
 				Network: &vmopv1.VirtualMachineNetworkSpec{},
@@ -952,7 +957,9 @@ var _ = Describe("NCPInterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = pkgcfg.NewContext() // default: WorkloadIPv6=false
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			Features: pkgcfg.FeatureStates{WorkloadIPv6: false},
+		})
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
 				Network: &vmopv1.VirtualMachineNetworkSpec{},
@@ -1063,7 +1070,9 @@ var _ = Describe("NCPInterfaceBootstrap", func() {
 	})
 })
 
-var _ = Describe("VPCInterfaceBootstrap", func() {
+var _ = Describe("VPCInterfaceBootstrap",
+	Label(testlabels.API),
+	func() {
 	var (
 		ctx           context.Context
 		vm            *vmopv1.VirtualMachine
@@ -1074,8 +1083,9 @@ var _ = Describe("VPCInterfaceBootstrap", func() {
 	)
 
 	BeforeEach(func() {
-		// Default: WorkloadIPv6=false (gate off), preserving existing behavior.
-		ctx = pkgcfg.NewContext()
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			Features: pkgcfg.FeatureStates{WorkloadIPv6: false},
+		})
 		vm = &vmopv1.VirtualMachine{
 			Spec: vmopv1.VirtualMachineSpec{
 				Network: &vmopv1.VirtualMachineNetworkSpec{},
@@ -1180,6 +1190,17 @@ var _ = Describe("VPCInterfaceBootstrap", func() {
 		})
 	})
 
+	When("WorkloadIPv6=false, interfaceSpec.DHCP6 override", func() {
+		BeforeEach(func() {
+			// ctx is already pkgcfg.NewContext() (WorkloadIPv6=false).
+			interfaceSpec.DHCP6 = ptr.To(true)
+		})
+		It("AcceptRA mirrors DHCP6 (no independent RA control without WorkloadIPv6)", func() {
+			Expect(bootstrap.DHCP6).To(BeTrue())
+			Expect(bootstrap.AcceptRA).To(BeTrue())
+		})
+	})
+
 	When("WorkloadIPv6=true", func() {
 		type subnetCfg struct {
 			ipType   vpcv1alpha1.IPAddressType
@@ -1224,7 +1245,7 @@ var _ = Describe("VPCInterfaceBootstrap", func() {
 				want{dhcp6: true, acceptRA: true}),
 			Entry("IPv6, SLAAC-only (DHCPv6 deactivated)",
 				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv6, dhcp6Off: true},
-				want{dhcp6: true, acceptRA: true}),
+				want{dhcp6: false, acceptRA: true}),
 			Entry("IPv6, DHCPv6-only (RA deactivated)",
 				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv6, raOff: true},
 				want{dhcp6: true}),
@@ -1243,6 +1264,9 @@ var _ = Describe("VPCInterfaceBootstrap", func() {
 			Entry("IPv4IPv6, all deactivated → NoIPAM",
 				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv4IPv6, dhcp4Off: true, dhcp6Off: true, raOff: true},
 				want{noIPAM: true}),
+			Entry("IPv4IPv6, DHCPv4 active, SLAAC-only (DHCPv6 deactivated)",
+				subnetCfg{ipType: vpcv1alpha1.IPAddressTypeIPv4IPv6, dhcp6Off: true},
+				want{dhcp4: true, dhcp6: false, acceptRA: true}),
 			Entry("IPv4IPv6, static IPv4 present, DHCPv6+RA active",
 				subnetCfg{
 					ipType: vpcv1alpha1.IPAddressTypeIPv4IPv6,

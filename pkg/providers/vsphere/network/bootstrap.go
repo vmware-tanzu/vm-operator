@@ -337,7 +337,12 @@ func VPCInterfaceBootstrap(
 	initial := bootstrapFromVPC(ctx, subnetPort)
 	initial.MacAddress = macAddress
 
-	return InterfaceBootstrap(ctx, vm, initial, interfaceSpec)
+	b := InterfaceBootstrap(ctx, vm, initial, interfaceSpec)
+	if !pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
+		// Without IPv6 capability, VPC has no independent RA control.
+		b.AcceptRA = b.DHCP6
+	}
+	return b
 }
 
 func bootstrapFromVPC(
@@ -384,16 +389,16 @@ func bootstrapFromVPC(
 
 	dhcp6Active := !cfg.DHCPv6DeactivatedOnSubnet
 	raActive := !cfg.RADeactivated
-	// DHCP6=true whenever any IPv6 dynamic assignment is active (DHCPv6 or SLAAC).
-	// On systemd-networkd, dhcp6: true is required to bring up the IPv6 stack even
-	// in SLAAC-only mode; the RA's M/O flags control whether a DHCPv6 client runs.
+	// ipv6Dynamic is true when either DHCPv6 or SLAAC is active on the subnet.
+	// Both paths need DHCP6/AcceptRA set independently: dhcp6Active drives the
+	// DHCPv6 client and raActive drives IPv6AcceptRA in the guest's netplan config.
 	ipv6Dynamic := dhcp6Active || raActive
 
 	switch subnetPort.Spec.InterfaceIPType {
 	case vpcv1alpha1.IPAddressTypeIPv6:
 		if !hasStaticV6 {
 			if ipv6Dynamic {
-				initial.DHCP6 = true
+				initial.DHCP6 = dhcp6Active
 				initial.AcceptRA = raActive
 			} else {
 				initial.NoIPAM = true
@@ -404,7 +409,7 @@ func bootstrapFromVPC(
 			initial.DHCP4 = true
 		}
 		if !hasStaticV6 && ipv6Dynamic {
-			initial.DHCP6 = true
+			initial.DHCP6 = dhcp6Active
 			initial.AcceptRA = raActive
 		}
 		if !initial.DHCP4 && !initial.DHCP6 && len(initial.IPConfigs) == 0 {

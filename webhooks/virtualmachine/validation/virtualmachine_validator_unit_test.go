@@ -3407,6 +3407,179 @@ func unitTestsValidateCreate() {
 			Entry("vpc capability", pkgcfg.NetworkProviderTypeVPC, true),
 		)
 
+		DescribeTableSubtree("network create - validate network provider API group and kind with legacy provider",
+			func(
+				primaryProviderType pkgcfg.NetworkProviderType,
+				legacyProviderType pkgcfg.NetworkProviderType,
+			) {
+			var (
+				primaryCapProvider netopv1alpha1.NetworkProvider
+				legacyCapProvider  netopv1alpha1.NetworkProvider
+
+				primaryAPIVersion string
+				primaryKind       string
+
+				legacyAPIVersion string
+				legacyKind       string
+
+				unrelatedAPIVersion    string
+				unrelatedKind          string
+				unrelatedAPIVersionMsg string
+				crossGroupKindMsg      string
+			)
+
+			//nolint:goconst
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.PerNamespaceNetworkProvider = true
+				})
+
+				switch primaryProviderType {
+				case pkgcfg.NetworkProviderTypeVPC:
+					primaryCapProvider = netopv1alpha1.NetworkProviderVPC
+					primaryAPIVersion = "crd.nsx.vmware.com/v1alpha1"
+					primaryKind = "SubnetSet"
+				default:
+					Fail(fmt.Sprintf("unsupported primaryProviderType: %v", primaryProviderType))
+				}
+
+				switch legacyProviderType {
+				case pkgcfg.NetworkProviderTypeVDS:
+					legacyCapProvider = netopv1alpha1.NetworkProviderVSphereDistributed
+					legacyAPIVersion = "netoperator.vmware.com/v1alpha1"
+					legacyKind = "Network"
+					unrelatedAPIVersion = "vmware.com/v1alpha1"
+					unrelatedKind = "VirtualNetwork"
+				case pkgcfg.NetworkProviderTypeNSXT:
+					legacyCapProvider = netopv1alpha1.NetworkProviderNSXTier1
+					legacyAPIVersion = "vmware.com/v1alpha1"
+					legacyKind = "VirtualNetwork"
+					unrelatedAPIVersion = "netoperator.vmware.com/v1alpha1"
+					unrelatedKind = "Network"
+				default:
+					Fail(fmt.Sprintf("unsupported legacyProviderType: %v", legacyProviderType))
+				}
+
+				// Both switches must run before computing derived messages.
+				unrelatedAPIVersionMsg = fmt.Sprintf(
+					`spec.network.interfaces[0].network.apiVersion: Unsupported value: %q: supported values: %q, %q`,
+					unrelatedAPIVersion, primaryAPIVersion, legacyAPIVersion)
+				crossGroupKindMsg = fmt.Sprintf(
+					`spec.network.interfaces[0].network.kind: Unsupported value: %q: supported values: %q`,
+					primaryKind, legacyKind)
+
+				Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "default",
+							Namespace: ctx.vm.Namespace,
+						},
+						Provider:       primaryCapProvider,
+						LegacyProvider: legacyCapProvider,
+					})).To(Succeed())
+				})
+
+				It("allows an interface using the primary provider's APIVersion and Kind", func() {
+					ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+								Network: &common.PartialObjectRef{
+									TypeMeta: metav1.TypeMeta{
+										APIVersion: primaryAPIVersion,
+										Kind:       primaryKind,
+									},
+									Name: "my-network",
+								},
+							},
+						},
+					}
+					var err error
+					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ctx.ValidateCreate(&ctx.WebhookRequestContext).Allowed).To(BeTrue())
+				})
+
+				It("allows an interface using the legacy provider's APIVersion and Kind", func() {
+					ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+								Network: &common.PartialObjectRef{
+									TypeMeta: metav1.TypeMeta{
+										APIVersion: legacyAPIVersion,
+										Kind:       legacyKind,
+									},
+									Name: "my-network",
+								},
+							},
+						},
+					}
+					var err error
+					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ctx.ValidateCreate(&ctx.WebhookRequestContext).Allowed).To(BeTrue())
+				})
+
+				It("denies an interface using an unrelated provider's APIVersion and Kind", func() {
+					ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+								Network: &common.PartialObjectRef{
+									TypeMeta: metav1.TypeMeta{
+										APIVersion: unrelatedAPIVersion,
+										Kind:       unrelatedKind,
+									},
+									Name: "my-network",
+								},
+							},
+						},
+					}
+					var err error
+					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+					Expect(err).ToNot(HaveOccurred())
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				doValidateWithMsg(unrelatedAPIVersionMsg)(response)
+			})
+
+				It("denies an interface whose group matches the legacy provider but whose kind belongs to the primary provider", func() {
+					// legacyAPIVersion group is valid, but primaryKind belongs to a
+					// different provider's group — the kind check must be scoped to
+					// the matched group, not the union of all providers' kinds.
+					ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+								Network: &common.PartialObjectRef{
+									TypeMeta: metav1.TypeMeta{
+										APIVersion: legacyAPIVersion,
+										Kind:       primaryKind,
+									},
+									Name: "my-network",
+								},
+							},
+						},
+					}
+					var err error
+					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+					Expect(err).ToNot(HaveOccurred())
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeFalse())
+				doValidateWithMsg(crossGroupKindMsg)(response)
+				})
+			},
+
+			Entry("vpc primary, vsphere-distributed legacy",
+				pkgcfg.NetworkProviderTypeVPC,
+				pkgcfg.NetworkProviderTypeVDS,
+			),
+			Entry("vpc primary, nsx-tier1 legacy",
+				pkgcfg.NetworkProviderTypeVPC,
+				pkgcfg.NetworkProviderTypeNSXT,
+			),
+		)
+
 		Context("when PerNamespaceNetworkProvider is enabled and NetworkSettings is absent", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {

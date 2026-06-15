@@ -43,16 +43,66 @@ func GetProviderType(
 		return pkgcfg.FromContext(ctx).NetworkProviderType, nil
 	}
 
-	var ns netopv1alpha1.NetworkSettings
-	err := reader.Get(ctx, ctrlclient.ObjectKey{Name: defaultNetworkSettingsName, Namespace: namespace}, &ns)
+	ns, err := getNetworkSettings(ctx, reader, namespace)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return "", ErrNetworkSettingsNotFound
-		}
 		return "", err
 	}
 
 	return providerToType(ns.Provider)
+}
+
+// GetSupportedProviderTypes returns the supported NetworkProviderTypes for the given
+// namespace. In a namespace that underwent network migration, the prior (legacy)
+// network provider is also supported.
+func GetSupportedProviderTypes(
+	ctx context.Context,
+	reader ctrlclient.Reader,
+	namespace string) ([]pkgcfg.NetworkProviderType, error) {
+
+	t := make([]pkgcfg.NetworkProviderType, 0, 2)
+
+	if !pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider {
+		return append(t, pkgcfg.FromContext(ctx).NetworkProviderType), nil
+	}
+
+	ns, err := getNetworkSettings(ctx, reader, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	defaultProvider, err := providerToType(ns.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	t = append(t, defaultProvider)
+
+	if ns.LegacyProvider != "" {
+		legacyProvider, err := providerToType(ns.LegacyProvider)
+		if err != nil {
+			return nil, err
+		}
+		t = append(t, legacyProvider)
+	}
+
+	return t, nil
+}
+
+func getNetworkSettings(
+	ctx context.Context,
+	reader ctrlclient.Reader,
+	namespace string) (*netopv1alpha1.NetworkSettings, error) {
+
+	var ns netopv1alpha1.NetworkSettings
+	err := reader.Get(ctx, ctrlclient.ObjectKey{Name: defaultNetworkSettingsName, Namespace: namespace}, &ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, ErrNetworkSettingsNotFound
+		}
+		return nil, err
+	}
+
+	return &ns, nil
 }
 
 // providerToType maps a netopv1alpha1.NetworkProvider value to the

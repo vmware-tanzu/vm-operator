@@ -866,7 +866,7 @@ func (v validator) validateNetwork(
 	}
 
 	if len(networkSpec.Interfaces) > 0 {
-		providerType, err := v.getNetworkProviderType(ctx, vm.Namespace)
+		providerTypes, err := netsetutil.GetSupportedProviderTypes(ctx, v.client, vm.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -874,8 +874,9 @@ func (v validator) validateNetwork(
 		p := networkPath.Child("interfaces")
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
-			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p.Index(i), interfaceSpec, vm.Name, providerType)...)
-			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p.Index(i), interfaceSpec, vm)...)
+			p := p.Index(i)
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p, interfaceSpec, vm.Name, providerTypes)...)
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p, interfaceSpec, vm)...)
 		}
 	}
 
@@ -1028,20 +1029,6 @@ func (v validator) validateNetworkVLANs(
 	return allErrs
 }
 
-// getNetworkProviderType returns the network provider type for the given
-// namespace. When PerNamespaceNetworkProvider is disabled it reads the global
-// config; when enabled it fetches NetworkSettings/default from that namespace.
-func (v validator) getNetworkProviderType(
-	ctx *pkgctx.WebhookRequestContext,
-	namespace string) (pkgcfg.NetworkProviderType, error) {
-
-	providerType, err := netsetutil.GetProviderType(ctx, v.client, namespace)
-	if err != nil {
-		return "", err
-	}
-	return providerType, nil
-}
-
 // Note the code for VDS is basically done, but only support this for VPC right
 // now since that is what matters.
 var macAddressSupportNetworkGroups = []string{
@@ -1075,35 +1062,55 @@ var networkProviderValidations = map[pkgcfg.NetworkProviderType]networkProviderV
 
 func (v validator) validateNetworkInterfaceNetworkRef(
 	_ *pkgctx.WebhookRequestContext,
-	providerType pkgcfg.NetworkProviderType,
+	providerTypes []pkgcfg.NetworkProviderType,
 	interfacePath *field.Path,
 	networkGV schema.GroupVersion,
 	networkKind string) field.ErrorList {
 
 	var allErrs field.ErrorList
 
-	supported, ok := networkProviderValidations[providerType]
-	if !ok {
-		// No supported for this provider type (e.g., Named network provider).
+	// Collect validations for all supported provider types in this namespace.
+	var validations []networkProviderValidation
+	for _, pt := range providerTypes {
+		if v, ok := networkProviderValidations[pt]; ok {
+			validations = append(validations, v)
+		}
+	}
+
+	if len(validations) == 0 {
+		// No validation for any provider type (e.g., Named network provider).
 		return allErrs
 	}
 
-	if networkGV.Group != "" && networkGV.Group != supported.group {
-		// We don't care about the version for anything but show the user provided
-		// APIVersion since that is the field the group comes from. For supported,
-		// just show the version we're importing which is OK'ish since none of the
-		// providers have moved past v1a1.
-		allErrs = append(allErrs, field.NotSupported(
-			interfacePath.Child("network", "apiVersion"),
-			networkGV.String(),
-			[]string{supported.apiVersion}))
+	// Each entry in networkProviderValidations has a unique API group, so
+	// there is at most one match.
+	var matched *networkProviderValidation
+	for i := range validations {
+		if networkGV.Group == validations[i].group {
+			matched = &validations[i]
+			break
+		}
 	}
 
-	if networkKind != "" && !slices.Contains(supported.kinds, networkKind) {
+	if matched == nil {
+		supportedAPIVersions := make([]string, 0, len(validations))
+		for _, val := range validations {
+			supportedAPIVersions = append(supportedAPIVersions, val.apiVersion)
+		}
+		// Show the full user-provided APIVersion in the error so the message is
+		// as specific as possible, even though only the group determines matching.
+		return append(allErrs, field.NotSupported(
+			interfacePath.Child("network", "apiVersion"),
+			networkGV.String(),
+			supportedAPIVersions))
+	}
+
+	// Group matched: check the kind against this provider's supported kinds.
+	if !slices.Contains(matched.kinds, networkKind) {
 		allErrs = append(allErrs, field.NotSupported(
 			interfacePath.Child("network", "kind"),
 			networkKind,
-			supported.kinds))
+			matched.kinds))
 	}
 
 	return allErrs
@@ -1115,7 +1122,7 @@ func (v validator) validateNetworkInterfaceSpec(
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	vmName string,
-	providerType pkgcfg.NetworkProviderType) field.ErrorList {
+	providerTypes []pkgcfg.NetworkProviderType) field.ErrorList {
 
 	var (
 		allErrs           field.ErrorList
@@ -1141,8 +1148,10 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
-	allErrs = append(allErrs,
-		v.validateNetworkInterfaceNetworkRef(ctx, providerType, interfacePath, networkGV, networkKind)...)
+	if networkGV.Group != "" && networkKind != "" {
+		allErrs = append(allErrs,
+			v.validateNetworkInterfaceNetworkRef(ctx, providerTypes, interfacePath, networkGV, networkKind)...)
+	}
 
 	// The networkInterface CR name ("vmName-networkName-interfaceName" or "vmName-interfaceName") needs to be a DNS1123 Label
 	if networkName != "" {
@@ -2109,15 +2118,15 @@ func (v validator) validateReadinessProbe(
 	}
 
 	if probe.TCPSocket != nil {
-		tcpSocketPath := readinessProbePath.Child("tcpSocket")
-
-		providerType, err := v.getNetworkProviderType(ctx, vm.Namespace)
+		providerTypes, err := netsetutil.GetSupportedProviderTypes(ctx, v.client, vm.Namespace)
 		if err != nil {
 			return nil, err
 		}
 
+		tcpSocketPath := readinessProbePath.Child("tcpSocket")
+
 		// TCP readiness probe is not allowed under VPC Networking
-		if providerType == pkgcfg.NetworkProviderTypeVPC {
+		if slices.Contains(providerTypes, pkgcfg.NetworkProviderTypeVPC) {
 			allErrs = append(allErrs, field.Forbidden(tcpSocketPath, tcpReadinessProbeNotAllowedVPC))
 		} else if probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
 			// Validate port if environment is a restricted network environment between SV CP VMs and Workload VMs e.g. VMC.

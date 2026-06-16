@@ -277,6 +277,31 @@ rules:
   - update
   - watch
 - apiGroups:
+  - vim.vmware.com
+  resources:
+  - configtargets
+  - virtualmachineconfigoptions
+  - virtualmachineconfigpolicies
+  - virtualmachineguestoptions
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vim.vmware.com
+  resources:
+  - configtargets/status
+  - virtualmachineconfigoptions/status
+  - virtualmachineconfigpolicies/status
+  - virtualmachineguestoptions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - vmoperator.vmware.com
   resources:
   - clustervirtualmachineimages

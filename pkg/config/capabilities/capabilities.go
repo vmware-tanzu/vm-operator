@@ -120,6 +120,13 @@ const (
 	// CapabilityKeyWorkloadIPv6 is the name of the capability key defined in
 	// the Supervisor capabilities CRD for IPv6 support for VM service workloads.
 	CapabilityKeyWorkloadIPv6 = "supports_workload_ipv6"
+
+	// CapabilityKeyVirtualMachineConfigPolicy is the name of the capability key
+	// defined in the Supervisor capabilities CRD. It gates the
+	// VirtualMachineConfigPolicy controllers, webhooks, and associated CRDs
+	// (ConfigTarget, VirtualMachineConfigOptions, VirtualMachineConfigPolicy,
+	// VirtualMachineGuestOptions).
+	CapabilityKeyVirtualMachineConfigPolicy = "supports_vm_config_policy"
 )
 
 var (
@@ -292,6 +299,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.PerNamespaceNetworkProvider = capStatus.Activated
 		case CapabilityKeyWorkloadIPv6:
 			fs.WorkloadIPv6 = capStatus.Activated
+		case CapabilityKeyVirtualMachineConfigPolicy:
+			fs.VirtualMachineConfigPolicy = capStatus.Activated
 		}
 
 	}

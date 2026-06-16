@@ -78,7 +78,6 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	_ = vspherepolv1.AddToScheme(opts.Scheme)
 	_ = appv1a1.AddToScheme(opts.Scheme)
 	_ = infrav1.AddToScheme(opts.Scheme)
-	_ = vimv1.AddToScheme(opts.Scheme)
 
 	//
 	// VM Op
@@ -87,6 +86,10 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 
 	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
 		_ = imgregv1.AddToScheme(opts.Scheme)
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
+		_ = vimv1.AddToScheme(opts.Scheme)
 	}
 
 	if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {

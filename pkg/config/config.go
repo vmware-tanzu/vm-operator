@@ -205,6 +205,7 @@ type FeatureStates struct {
 	TelcoVMServiceAPI           bool
 	PerNamespaceNetworkProvider bool
 	WorkloadIPv6                bool
+	VirtualMachineConfigPolicy  bool
 }
 
 type InstanceStorage struct {

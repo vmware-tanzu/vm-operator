@@ -47,9 +47,6 @@ import (
 func vmNetworkTests() {
 
 	const (
-		subnetKind       = "Subnet"
-		subnetAPIVersion = "crd.nsx.vmware.com/v1alpha1"
-
 		networkName0   = "my-network-0"
 		interfaceName0 = "eth0"
 		networkName1   = "my-network-1"
@@ -286,21 +283,18 @@ func vmNetworkTests() {
 							{
 								Name: interfaceName0,
 								Network: &vmopv1common.PartialObjectRef{
-									Name: networkName0,
+									TypeMeta: np.getTypeMeta(),
+									Name:     networkName0,
 								},
 							},
 							{
 								Name: interfaceName1,
 								Network: &vmopv1common.PartialObjectRef{
-									Name: networkName1,
+									TypeMeta: np.getTypeMeta(),
+									Name:     networkName1,
 								},
 							},
 						},
-					}
-
-					for i := range vm.Spec.Network.Interfaces {
-						vm.Spec.Network.Interfaces[i].Network.Kind = subnetKind
-						vm.Spec.Network.Interfaces[i].Network.APIVersion = subnetAPIVersion
 					}
 				})
 
@@ -465,15 +459,11 @@ func vmNetworkTests() {
 								{
 									Name: interfaceName0,
 									Network: &vmopv1common.PartialObjectRef{
-										Name: networkName0,
+										TypeMeta: np.getTypeMeta(),
+										Name:     networkName0,
 									},
 								},
 							},
-						}
-
-						if networkEnv == builder.NetworkEnvVPC {
-							vm.Spec.Network.Interfaces[0].Network.Kind = subnetKind
-							vm.Spec.Network.Interfaces[0].Network.APIVersion = subnetAPIVersion
 						}
 					})
 
@@ -653,23 +643,18 @@ func vmNetworkTests() {
 								{
 									Name: interfaceName0,
 									Network: &vmopv1common.PartialObjectRef{
-										Name: networkName0,
+										TypeMeta: np.getTypeMeta(),
+										Name:     networkName0,
 									},
 								},
 								{
 									Name: interfaceName1,
 									Network: &vmopv1common.PartialObjectRef{
-										Name: networkName1,
+										TypeMeta: np.getTypeMeta(),
+										Name:     networkName1,
 									},
 								},
 							},
-						}
-
-						if networkEnv == builder.NetworkEnvVPC {
-							for i := range vm.Spec.Network.Interfaces {
-								vm.Spec.Network.Interfaces[i].Network.Kind = subnetKind
-								vm.Spec.Network.Interfaces[i].Network.APIVersion = subnetAPIVersion
-							}
 						}
 					})
 
@@ -851,6 +836,7 @@ func vmNetworkTests() {
 }
 
 type fakeNetworkProvider interface {
+	getTypeMeta() metav1.TypeMeta
 	simulateInterfaceReconcile(ctx *builder.TestContextForVCSim, vm *vmopv1.VirtualMachine, interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec, networkIdx int)
 	assertEthernetCard(ctx *builder.TestContextForVCSim, dev vimtypes.BaseVirtualDevice, interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec, networkIdx int)
 	assertNetworkInterfacesDNE(ctx *builder.TestContextForVCSim, vm *vmopv1.VirtualMachine, networkName, interfaceName string)
@@ -870,6 +856,13 @@ func idxFromInterfaceName(s string) int {
 }
 
 type vdsNetworkProvider struct{}
+
+func (vdsNetworkProvider) getTypeMeta() metav1.TypeMeta {
+	return metav1.TypeMeta{
+		APIVersion: netopv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "Network",
+	}
+}
 
 func (v vdsNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
@@ -943,6 +936,13 @@ func (v vdsNetworkProvider) assertNetworkInterfacesDNE(
 }
 
 type nsxtNetworkProvider struct{}
+
+func (nsxtNetworkProvider) getTypeMeta() metav1.TypeMeta {
+	return metav1.TypeMeta{
+		APIVersion: ncpv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "VirtualNetwork",
+	}
+}
 
 func (n nsxtNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
@@ -1018,6 +1018,13 @@ func (n nsxtNetworkProvider) assertNetworkInterfacesDNE(
 
 type vpcNetworkProvider struct{}
 
+func (vpcNetworkProvider) getTypeMeta() metav1.TypeMeta {
+	return metav1.TypeMeta{
+		APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "Subnet",
+	}
+}
+
 func (v vpcNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
 	vm *vmopv1.VirtualMachine,
@@ -1034,6 +1041,7 @@ func (v vpcNetworkProvider) simulateInterfaceReconcile(
 		},
 	}
 	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+	Expect(subnetPort.Spec.SubnetSet).To(BeEmpty())
 	Expect(subnetPort.Spec.Subnet).To(Equal(networkName))
 
 	subnetPort.Status.Attachment.ID = extID(networkName, interfaceName)

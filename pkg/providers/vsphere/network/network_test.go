@@ -33,6 +33,21 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+var (
+	netOPNetworkTypeMeta = metav1.TypeMeta{
+		APIVersion: netopv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "Network",
+	}
+	nsxtNetworkTypeMeta = metav1.TypeMeta{
+		APIVersion: ncpv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "VirtualNetwork",
+	}
+	vpcNetworkTypeMeta = metav1.TypeMeta{
+		APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "SubnetSet",
+	}
+)
+
 var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), func() {
 
 	const (
@@ -165,7 +180,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
-							Name: networkName,
+							TypeMeta: netOPNetworkTypeMeta,
+							Name:     networkName,
 						},
 					},
 				}
@@ -407,8 +423,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					testConfig.WithWorkloadIPv6 = false
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 					}
@@ -435,8 +454,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 					}
@@ -463,8 +485,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 						},
 					}
@@ -491,8 +516,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:    interfaceName,
-							Network: &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{
 								corev1.IPv4Protocol,
 								corev1.IPv6Protocol,
@@ -522,8 +550,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:    interfaceName,
-							Network: &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							// IPAMModes not set
 						},
 					}
@@ -551,18 +582,27 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      "eth0",
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: "eth0",
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 						{
-							Name:      "eth1",
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: "eth1",
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 						},
 						{
-							Name:    "eth2",
-							Network: &common.PartialObjectRef{Name: networkName},
+							Name: "eth2",
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{
 								corev1.IPv4Protocol,
 								corev1.IPv6Protocol,
@@ -651,7 +691,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
-							Name: networkName,
+							TypeMeta: nsxtNetworkTypeMeta,
+							Name:     networkName,
 						},
 					},
 				}
@@ -886,11 +927,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
-							Name: networkName,
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "SubnetSet",
-								APIVersion: "crd.nsx.vmware.com/v1alpha1",
-							},
+							TypeMeta: vpcNetworkTypeMeta,
+							Name:     networkName,
 						},
 					},
 				}
@@ -1588,19 +1626,6 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 		interfaceKey1 client.ObjectKey
 		devices       []network.Device
 		err           error
-
-		netOPNetworkTypeMeta = metav1.TypeMeta{
-			APIVersion: netopv1alpha1.SchemeGroupVersion.String(),
-			Kind:       "Network",
-		}
-		nsxtNetworkTypeMeta = metav1.TypeMeta{
-			APIVersion: ncpv1alpha1.SchemeGroupVersion.String(),
-			Kind:       "VirtualNetwork",
-		}
-		vpcNetworkTypeMeta = metav1.TypeMeta{
-			APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
-			Kind:       "SubnetSet",
-		}
 	)
 
 	BeforeEach(func() {
@@ -1633,6 +1658,19 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 	})
 
 	Context("network spec is nil", func() {
+		It("returns nil devices and no error", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(devices).To(BeNil())
+		})
+	})
+
+	Context("network spec is disabled", func() {
+		BeforeEach(func() {
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Disabled: true,
+			}
+		})
+
 		It("returns nil devices and no error", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(devices).To(BeNil())

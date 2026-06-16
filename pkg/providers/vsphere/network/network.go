@@ -32,12 +32,12 @@ import (
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
@@ -140,17 +140,19 @@ func CreateNetworkDevices(
 ) ([]Device, error) {
 
 	networkSpec := vm.Spec.Network
-	if networkSpec == nil {
+	if networkSpec == nil || networkSpec.Disabled {
 		return nil, nil
 	}
 
-	switch pkgcfg.FromContext(ctx).NetworkProviderType {
-	case pkgcfg.NetworkProviderTypeNamed:
-		// Named network is a testing only hack that does not have a CR so
-		// handle it separately.
-		return createNetworkDevicesForNamedNetwork(ctx, vm, finder)
-	case "":
-		return nil, fmt.Errorf("no network provider set")
+	if !pkgcfg.FromContext(ctx).Features.PerNamespaceNetworkProvider {
+		switch pkgcfg.FromContext(ctx).NetworkProviderType {
+		case pkgcfg.NetworkProviderTypeNamed:
+			// Named network is a testing only hack that does not have a CR so
+			// handle it separately.
+			return createNetworkDevicesForNamedNetwork(ctx, vm, finder)
+		case "":
+			return nil, fmt.Errorf("no network provider set")
+		}
 	}
 
 	objs := make([]ctrlclient.Object, 0, len(networkSpec.Interfaces))
@@ -159,9 +161,8 @@ func CreateNetworkDevices(
 	// Create all the network interface CRs. The VM may have multiple interfaces so we
 	// want to create them all up front so they can be reconciled concurrently.
 	for _, interfaceSpec := range networkSpec.Interfaces {
-		group, err := getNetworkInterfaceAPIGroup(ctx, interfaceSpec)
+		group, err := getNetworkInterfaceAPIGroup(interfaceSpec)
 		if err != nil {
-			// Not expected.
 			errs = append(errs,
 				fmt.Errorf("error getting network APIGroup for %s: %w", interfaceSpec.Name, err))
 			continue
@@ -170,7 +171,7 @@ func CreateNetworkDevices(
 		var obj ctrlclient.Object
 
 		switch group {
-		case netopv1alpha1.GroupName:
+		case netopv1alpha1.SchemeGroupVersion.Group:
 			obj, err = createNetOPNetworkInterface(ctx, vm, client, interfaceSpec)
 		case ncpv1alpha1.SchemeGroupVersion.Group:
 			obj, err = createNCPNetworkInterface(ctx, vm, client, interfaceSpec)
@@ -232,33 +233,22 @@ func CreateNetworkDevices(
 	return devices, nil
 }
 
-// getNetworkInterfaceAPIGroup returns the API Group name for this interface.
-// This is used to determine which network interface CR type to create for the
-// interface.
+// getNetworkInterfaceAPIGroup returns the API Group name for this interface. This
+// is used to determine which network interface CR type to create for the interface.
+// The VM validation webhook enforces this group is support in this namespace.
 func getNetworkInterfaceAPIGroup(
-	ctx context.Context,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (string, error) {
 
-	// The VM mutation and validation wehbooks ensure this that is set and that it
-	// is a supported value. But for any VM that just happened to be created before
-	// we started to do this and has never been updated, fallback to the old behavior
-	// based on the provider type.
 	network := interfaceSpec.Network
 	if network == nil || network.APIVersion == "" {
-		var group string
-		switch pkgcfg.FromContext(ctx).NetworkProviderType {
-		case pkgcfg.NetworkProviderTypeVDS:
-			group = netopv1alpha1.GroupName
-		case pkgcfg.NetworkProviderTypeNSXT:
-			group = ncpv1alpha1.SchemeGroupVersion.Group
-		case pkgcfg.NetworkProviderTypeVPC:
-			group = vpcv1alpha1.SchemeGroupVersion.Group
-		}
-		return group, nil
+		// The VM mutation webhook will default in the network type based
+		// on the default network provider for this namespace.
+		return "", pkgerr.NoRequeueErrorf("no network API Version")
 	}
 
 	gv, err := schema.ParseGroupVersion(network.APIVersion)
 	if err != nil {
+		// The VM validation webhook will check for invalid values.
 		return "", pkgerr.NoRequeueErrorf("invalid API Version: %s", network.APIVersion)
 	}
 
@@ -501,37 +491,53 @@ func CreateAndWaitForNetworkInterfaces(
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	networkSpec *vmopv1.VirtualMachineNetworkSpec) (NetworkInterfaceResults, error) {
 
-	networkType := pkgcfg.FromContext(vmCtx).NetworkProviderType
-	if networkType == "" {
-		return NetworkInterfaceResults{}, fmt.Errorf("no network provider set")
+	if !pkgcfg.FromContext(vmCtx).Features.PerNamespaceNetworkProvider {
+		switch pkgcfg.FromContext(vmCtx).NetworkProviderType {
+		case pkgcfg.NetworkProviderTypeNamed:
+			// Named network is a testing only hack that does not have a CR so
+			// handle it separately.
+			return createAndWaitNamedNetworkInterfaces(vmCtx, vmCtx.VM, finder)
+		case "":
+			return NetworkInterfaceResults{}, fmt.Errorf("no network provider set")
+		}
 	}
 
 	results := make([]NetworkInterfaceResult, 0, len(networkSpec.Interfaces))
+	var errs []error
 
 	for _, interfaceSpec := range networkSpec.Interfaces {
+		group, err := getNetworkInterfaceAPIGroup(interfaceSpec)
+		if err != nil {
+			errs = append(errs,
+				fmt.Errorf("error getting network APIGroup for %s: %w", interfaceSpec.Name, err))
+			continue
+		}
+
 		var dev Device
 		var bs Bootstrap
-		var err error
 
-		switch networkType {
-		case pkgcfg.NetworkProviderTypeVDS:
+		switch group {
+		case netopv1alpha1.SchemeGroupVersion.Group:
 			dev, bs, err = createAndWaitNetOPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case pkgcfg.NetworkProviderTypeNSXT:
+		case ncpv1alpha1.SchemeGroupVersion.Group:
 			dev, bs, err = createAndWaitNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case pkgcfg.NetworkProviderTypeVPC:
+		case vpcv1alpha1.SchemeGroupVersion.Group:
 			dev, bs, err = createAndWaitVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case pkgcfg.NetworkProviderTypeNamed:
-			dev, bs, err = createAndWaitNamedNetworkInterface(vmCtx, vmCtx.VM, finder, interfaceSpec)
 		default:
-			err = fmt.Errorf("unsupported network provider envvar value: %q", networkType)
+			err = fmt.Errorf("unsupported network API Group: %q", group)
 		}
 
 		if err != nil {
-			return NetworkInterfaceResults{},
-				fmt.Errorf("network interface %q error: %w", interfaceSpec.Name, err)
+			errs = append(errs,
+				fmt.Errorf("network interface %q error: %w", interfaceSpec.Name, err))
+			continue
 		}
 
 		results = append(results, devAndBootstrapToNetworkInterfaceResult(dev, bs))
+	}
+
+	if len(errs) != 0 {
+		return NetworkInterfaceResults{}, errors.Join(errs...)
 	}
 
 	return NetworkInterfaceResults{
@@ -555,6 +561,25 @@ func createNetworkDevicesForNamedNetwork(
 	}
 
 	return devices, nil
+}
+
+func createAndWaitNamedNetworkInterfaces(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	finder *find.Finder) (NetworkInterfaceResults, error) {
+
+	results := NetworkInterfaceResults{}
+
+	for _, interfaceSpec := range vm.Spec.Network.Interfaces {
+		dev, bs, err := createAndWaitNamedNetworkInterface(ctx, vm, finder, interfaceSpec)
+		if err != nil {
+			return NetworkInterfaceResults{},
+				fmt.Errorf("named network interface %q error: %w", interfaceSpec.Name, err)
+		}
+		results.Results = append(results.Results, devAndBootstrapToNetworkInterfaceResult(dev, bs))
+	}
+
+	return results, nil
 }
 
 func createAndWaitNamedNetworkInterface(
@@ -631,10 +656,6 @@ func createNetOPNetworkInterface(
 	client ctrlclient.Client,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (
 	*netopv1alpha1.NetworkInterface, error) {
-
-	if pkgcfg.FromContext(ctx).NetworkProviderType != pkgcfg.NetworkProviderTypeVDS {
-		return nil, ErrNetworkInterfaceTypeNotSupported
-	}
 
 	var networkName string
 	if netRef := interfaceSpec.Network; netRef != nil {
@@ -910,10 +931,6 @@ func createNCPNetworkInterface(
 	client ctrlclient.Client,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 
-	if pkgcfg.FromContext(ctx).NetworkProviderType != pkgcfg.NetworkProviderTypeNSXT {
-		return nil, ErrNetworkInterfaceTypeNotSupported
-	}
-
 	var networkName string
 	if netRef := interfaceSpec.Network; netRef != nil {
 		networkName = netRef.Name
@@ -1012,10 +1029,6 @@ func createVPCNetworkInterface(
 	vm *vmopv1.VirtualMachine,
 	client ctrlclient.Client,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (*vpcv1alpha1.SubnetPort, error) {
-
-	if pkgcfg.FromContext(ctx).NetworkProviderType != pkgcfg.NetworkProviderTypeVPC {
-		return nil, ErrNetworkInterfaceTypeNotSupported
-	}
 
 	var (
 		networkName string

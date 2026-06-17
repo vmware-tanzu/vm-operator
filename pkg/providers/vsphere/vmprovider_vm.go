@@ -1158,19 +1158,13 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
 
-	// 2. List policies in the namespace
-	resourcePolicies, err := GetVMSetResourcePolicies(vmCtx, vs.k8sClient)
-	if err != nil {
-		return err
-	}
-
 	currentCond := pkgcond.Get(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
 
-	isVMInValidRP, err := validateVMResourcePool(vmCtx, expectedRootRPMoID, vcClient, resourcePolicies)
+	isVMInValidRP, err := validateVMResourcePool(vmCtx, expectedRootRPMoID, vcClient)
 	if err != nil {
 		return fmt.Errorf("failed to validate VM resource pool: %w", err)
 	}
-	isVMInValidFolder, err := validateVMFolder(vmCtx, expectedFolder, vcClient, resourcePolicies)
+	isVMInValidFolder, err := validateVMFolder(vmCtx, expectedFolder, vcClient)
 	if err != nil {
 		return fmt.Errorf("failed to validate VM folder: %w", err)
 	}
@@ -1201,8 +1195,7 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 func validateVMResourcePool(
 	vmCtx pkgctx.VirtualMachineContext,
 	expectedRootRPMoID string,
-	vcClient *vcclient.Client,
-	resourcePolicies *vmopv1.VirtualMachineSetResourcePolicyList) (bool, error) {
+	vcClient *vcclient.Client) (bool, error) {
 
 	if vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
 		return true, nil
@@ -1217,11 +1210,7 @@ func validateVMResourcePool(
 		return false, err
 	}
 	if moPool.Parent != nil && moPool.Parent.Value == expectedRootRPMoID {
-		for _, policy := range resourcePolicies.Items {
-			if policy.Spec.ResourcePool.Name != "" && moPool.Name == policy.Spec.ResourcePool.Name {
-				return true, nil
-			}
-		}
+		return true, nil
 	}
 
 	return false, nil
@@ -1230,8 +1219,7 @@ func validateVMResourcePool(
 func validateVMFolder(
 	vmCtx pkgctx.VirtualMachineContext,
 	expectedFolder string,
-	vcClient *vcclient.Client,
-	resourcePolicies *vmopv1.VirtualMachineSetResourcePolicyList) (bool, error) {
+	vcClient *vcclient.Client) (bool, error) {
 
 	if vmCtx.MoVM.Parent.Value == expectedFolder {
 		return true, nil
@@ -1247,11 +1235,7 @@ func validateVMFolder(
 	// this is to verify if the folder is child of parent Namespace Folder
 	if moFolder.Parent != nil && moFolder.Parent.Value == expectedFolder {
 		// this is to verify if the child folder is the VKS
-		for _, policy := range resourcePolicies.Items {
-			if policy.Spec.Folder != "" && moFolder.Name == policy.Spec.Folder {
-				return true, nil
-			}
-		}
+		return true, nil
 	}
 	return false, nil
 }

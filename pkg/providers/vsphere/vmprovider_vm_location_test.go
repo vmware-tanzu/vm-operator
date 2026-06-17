@@ -121,16 +121,16 @@ func vmLocationTests() {
 		})
 	})
 
-	When("VM is in a child RP matching a VirtualMachineSetResourcePolicy", func() {
+	When("VM is in a direct child RP of the namespace RP", func() {
 		It("sets VirtualMachineInValidLocation condition to True", func() {
 			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Create a resource policy which provisions a child RP and folder.
-			resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("child-rp-policy", nsInfo)
-			Expect(resourcePolicy).ToNot(BeNil())
+			// Create a child RP under the namespace RP.
+			rp, _ := ctx.CreateVirtualMachineSetResourcePolicy("child-rp-policy", nsInfo)
+			Expect(rp).ToNot(BeNil())
 
-			childRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", resourcePolicy.Spec.ResourcePool.Name)
+			childRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", rp.Spec.ResourcePool.Name)
 			Expect(childRP).ToNot(BeNil())
 
 			// Move VM into the child RP, keep it in the namespace folder.
@@ -146,14 +146,13 @@ func vmLocationTests() {
 		})
 	})
 
-	When("VM is in a child folder matching a VirtualMachineSetResourcePolicy", func() {
+	When("VM is in a direct child folder of the namespace folder", func() {
 		It("sets VirtualMachineInValidLocation condition to True", func() {
 			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Create a resource policy which provisions a child RP and folder.
-			resourcePolicy, childFolder := ctx.CreateVirtualMachineSetResourcePolicy("child-folder-policy", nsInfo)
-			Expect(resourcePolicy).ToNot(BeNil())
+			// Create a child folder under the namespace folder.
+			_, childFolder := ctx.CreateVirtualMachineSetResourcePolicy("child-folder-policy", nsInfo)
 			Expect(childFolder).ToNot(BeNil())
 
 			nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")

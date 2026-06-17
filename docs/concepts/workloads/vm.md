@@ -807,7 +807,7 @@ Each `spec.network.interfaces[]` entry may include an optional `type` of `VMXNet
 | Field | Description |
 |-------|-------------|
 | `type` | Virtual device model: `VMXNet3`, `SRIOV`, or legacy types `E1000`, `E1000e`, `VMXNet2`, or `PCNet32`. Omitted values are backfilled from the running VM's hardware during schema upgrade, by interface order as described above. |
-| `vNUMANodeID` | Pins the adapter to a virtual NUMA node; must match the VM's CPU topology and required minimum hardware version. |
+| `vnumaNodeID` | Pins the adapter to a virtual NUMA node; must match the VM's CPU topology and required minimum hardware version. |
 | `vmxnet3` | VMXNet3-only performance and offload settings. **Requires `type: VMXNet3`.** See [VMXNet3 interface tuning](#vmxnet3-interface-tuning). |
 | `advancedProperties` | Additional per-adapter VMX settings as key/value pairs. Keys must not duplicate a first-class field (for example a key that duplicates a `vmxnet3` subfield is rejected). |
 
@@ -820,7 +820,7 @@ Use `spec.network.interfaces[].vmxnet3` only when `type` is `VMXNet3`. The API r
 | `uptv2Enabled` | Enables UPT v2 (uniform passthrough) for this adapter. Requires a sufficiently high VM hardware version, UPT-capable hardware, full memory reservation, and a current VMXNet3 guest driver. |
 | `ctxPerDev` | Transmit context threading: `PerVM` (default), `PerDevice`, or `PerQueue` (often used with RSS for high throughput). |
 | `rssOffloadEnabled` | Receive Side Scaling offload so the physical NIC can spread receive traffic across queues. |
-| `udpRSSEnabled` | Extends RSS-style distribution to UDP as well as TCP. |
+| `udpRssEnabled` | Extends RSS-style distribution to UDP as well as TCP. |
 | `pnicFeatures` | Set of physical NIC queue features (for example `ReceiveSideScaling`, `LargeReceiveOffload`). |
 | `coalescingScheme` | Interrupt coalescing mode: `Disabled`, `Adapt`, `Static`, or `RateBasedCoalescing`. |
 | `coalescingParams` | Parameter string for `Static` or `RateBasedCoalescing` (packet queue limit or interrupts per second, depending on scheme). Ignored for `Disabled` or `Adapt`. |
@@ -916,12 +916,12 @@ The above data does _not_ represent the _observed_ network configuration of the 
 | `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. |
 | `defaultVolumeProvisioningMode` | Default provisioning mode for PVCs owned by this VM. |
 | `changeBlockTracking` | Enables change block tracking for backup integrations. |
-| `preferHTEnabled` | Prefer scheduling vCPUs on hyperthreads of the same core for locality. |
+| `preferHtEnabled` | Prefer scheduling vCPUs on hyperthreads of the same core for locality. |
 | `hugePages1GEnabled` | Use 1 GiB huge pages for VM memory. Cannot be changed while the VM is powered on. |
 | `timeTrackerLowLatencyEnabled` | Low-latency time tracking; often used with high latency sensitivity. |
 | `cpuAffinityExclusiveNoStatsEnabled` | Disable per-VM CPU accounting statistics; often used with high latency sensitivity. |
 | `vmxSwapEnabled` | Allow or disallow VMX process swap; set `false` to reduce swap-related jitter. |
-| `pNUMANodeAffinity` | Pin the VM to listed physical host NUMA node IDs (distinct from per-NIC `vNUMANodeID`). |
+| `pnumaNodeAffinity` | Pin the VM to listed physical host NUMA node IDs (distinct from per-NIC `vnumaNodeID`). |
 | `extraConfig` | Fallback list of VM-wide VMX key/value pairs not modeled above. Keys that duplicate a first-class field or reserved prefixes are rejected. Per-adapter keys belong under `spec.network.interfaces[]`. |
 
 `status.extraConfig` lists the effective VM-wide VMX map the operator is managing for observation. Conditions such as `VirtualMachineExtraConfigSynced` and `VirtualMachineNetworkConfigSynced` report whether VM-wide and per-interface advanced settings have been applied.

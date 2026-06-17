@@ -2,16 +2,18 @@
 // The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package backfill_test
+package extraconfig_test
 
 import (
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	_ "github.com/vmware-tanzu/vm-operator/test/builder/log"
 )
 
-func TestBackfill(t *testing.T) {
+func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Schema Upgrade Backfill Suite")
+	RunSpecs(t, "ExtraConfig Reconciler Test Suite")
 }

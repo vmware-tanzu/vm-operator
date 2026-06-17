@@ -215,7 +215,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// not support device assignment.
 	// Requires spec.minHardwareVersion >= 20.
 	// Cannot be changed while the VM is powered on.
-	VNUMANodeID *int32 `json:"vNUMANodeID,omitempty"`
+	VNUMANodeID *int32 `json:"vnumaNodeID,omitempty"`
 
 	// +optional
 

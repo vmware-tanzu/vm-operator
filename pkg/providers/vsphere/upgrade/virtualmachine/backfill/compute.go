@@ -27,10 +27,10 @@ import (
 func ComputeConfigFromMoVM(
 	_ context.Context,
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine) (bool, error) {
+	moVM mo.VirtualMachine) bool {
 
 	if moVM.Config == nil {
-		return false, nil
+		return false
 	}
 
 	ci := moVM.Config
@@ -51,7 +51,7 @@ func ComputeConfigFromMoVM(
 		mutated = true
 	}
 
-	return mutated, nil
+	return mutated
 }
 
 // backfillSize populates spec.resources.size.{cpu,memory} from hardware config.

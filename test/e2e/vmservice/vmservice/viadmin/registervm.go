@@ -81,7 +81,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		incrementalRestoreEnabled     bool
 		linuxImageDisplayName         string
 		linuxVMIName                  string
-		isImportOpEnabled             bool
+		registervmViaImportOpEnabled  bool
 	)
 
 	BeforeEach(func() {
@@ -109,11 +109,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 		incrementalRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIncrementalRestore"))
 		asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
-		fmt.Println("asyncSupervisorFSSEnabled:", asyncSupervisorFSSEnabled)
 		Expect(err).NotTo(HaveOccurred())
-		isImportOpEnabled = utils.IsSupervisorCapabilityEnabled(ctx, clusterProxy.GetClientSet(),
+		registervmViaImportOpEnabled = utils.IsSupervisorCapabilityEnabled(ctx, clusterProxy.GetClientSet(),
 			clusterProxy.GetDynamicClient(), consts.RegisterVMViaImportoperationSupport, asyncSupervisorFSSEnabled)
-		fmt.Println("isImportOpEnabled:", isImportOpEnabled)
 	})
 
 	Context("Authorization test", func() {
@@ -154,9 +152,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 
 		It("A user without namespaces.Configure privilege should not be able to invoke RegisterVM API", Label("smoke"), func() {
-			if isImportOpEnabled {
-				Skip("WCP_VMService_BackupRestore FSS is not enabled")
-			}
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
@@ -175,9 +170,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("RegisterVM with invalid params", func() {
 		It("If the VM does not exist, returns not found error", func() {
-			if isImportOpEnabled {
-				Skip("WCP_VMService_BackupRestore FSS is not enabled")
-			}
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
@@ -194,9 +186,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 
 		It("If the namespace does not exist, returns not found error", func() {
-			if isImportOpEnabled {
-				Skip("WCP_VMService_BackupRestore FSS is not enabled")
-			}
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
@@ -213,9 +202,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 
 		It("If the VM is already registered, returns already in desired state error", func() {
-			if isImportOpEnabled {
-				Skip("WCP_VMService_BackupRestore FSS is not enabled")
-			}
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
@@ -244,7 +230,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Incremental Restore - Register VM with pre-existing VM CR", func() {
 		It("Should register VM successfully", func() {
-			if isImportOpEnabled {
+			if registervmViaImportOpEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
 			if !incrementalRestoreEnabled {
@@ -376,7 +362,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Incremental Restore - Register VM with pre-existing VM CR and PVCs", func() {
 		It("Should register VM successfully", func() {
-			if isImportOpEnabled {
+			if registervmViaImportOpEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
 			if !incrementalRestoreEnabled {
@@ -598,7 +584,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		// - InvokeRegisterVM, expecting to succeed and clear triggered alarm
 		// - VerifyPostRegisterVM, expecting VM is powered on, has IP, etc
 		It("Should trigger on failure", func() {
-			if isImportOpEnabled {
+			if registervmViaImportOpEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
 			if !vmServiceBackupRestoreEnabled {
@@ -827,7 +813,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Restore disk only", func() {
 		It("Should register restored disk", func() {
-			if isImportOpEnabled {
+			if registervmViaImportOpEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
 			if !vmServiceBackupRestoreEnabled {
@@ -1115,7 +1101,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		)
 
 		BeforeEach(func() {
-			if !isImportOpEnabled {
+			if !registervmViaImportOpEnabled {
 				Skip("RegisterVM via ImportOperation is not enabled")
 			}
 

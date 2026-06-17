@@ -287,51 +287,25 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			By("Retrieving the correct namespace folder MoID")
 			_, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName)
 
-			By("Retrieving the datacenter root VM folder to use as an invalid folder location")
-			// Walk up from the cluster through intermediate host-folders until we
-			// reach the Datacenter, then use its vmFolder.  The DC's vmFolder is:
-			//   (a) always a genuine Folder-typed MoRef (safe to use in RelocateSpec),
-			//   (b) always above the namespace folder hierarchy, so validateVMFolder
-			//       (which only checks the VM's direct parent and its parent) will
-			//       correctly flag the location as invalid.
-			// Using parent(nsFolderMoID) is NOT reliable because in WCP that parent
-			// is often a Datacenter object; setting Type:"Folder" with a Datacenter
-			// value causes vSphere to silently ignore the folder in RelocateSpec.
+			By("Retrieving the parent of the namespace folder as the invalid folder location")
+			// The namespace folder's parent (the DC's root VM folder) is always a
+			// Folder-typed MoRef and always lies outside the 2-level hierarchy that
+			// validateVMFolder checks, so it reliably triggers the LocationMismatch.
 			pc := property.DefaultCollector(vCenterAdminClient)
-			kubeconfigPath2 := clusterProxy.GetKubeconfigPath()
-			clusterMoID2 := vcenter.GetClusterMoIDFromKubeconfigFile(ctx, kubeconfigPath2)
-
-			var clusterMo2 mo.ClusterComputeResource
+			var nsFolderMo mo.Folder
 			Expect(pc.RetrieveOne(ctx,
-				vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: clusterMoID2},
+				vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID},
 				[]string{"parent"},
-				&clusterMo2,
-			)).To(Succeed(), "failed to fetch cluster parent")
-			Expect(clusterMo2.Parent).ToNot(BeNil(), "cluster has no parent")
-
-			// Walk up; intermediate nodes are host-folders (Type "Folder").
-			current := clusterMo2.Parent
-			var dcMoRef *vimtypes.ManagedObjectReference
-			for current != nil {
-				if current.Type == "Datacenter" {
-					dcMoRef = current
-					break
-				}
-				var folderMo mo.Folder
-				Expect(pc.RetrieveOne(ctx, *current, []string{"parent"}, &folderMo)).
-					To(Succeed(), "failed to fetch parent for %s", current.Value)
-				current = folderMo.Parent
-			}
-			Expect(dcMoRef).ToNot(BeNil(), "could not locate Datacenter from cluster parent chain")
-
-			var dcMo mo.Datacenter
-			Expect(pc.RetrieveOne(ctx, *dcMoRef, []string{"vmFolder"}, &dcMo)).
-				To(Succeed(), "failed to fetch Datacenter vmFolder")
-			Expect(dcMo.VmFolder).ToNot(BeNil(), "Datacenter vmFolder is nil")
-			invalidFolderMoID := dcMo.VmFolder.Value
+				&nsFolderMo,
+			)).To(Succeed(), "failed to fetch namespace folder's parent")
+			Expect(nsFolderMo.Parent).ToNot(BeNil(), "namespace folder has no parent")
+			Expect(nsFolderMo.Parent.Type).To(Equal("Folder"),
+				"namespace folder's parent must be a Folder (got %s %s)",
+				nsFolderMo.Parent.Type, nsFolderMo.Parent.Value)
+			invalidFolderMoID := nsFolderMo.Parent.Value
 			Expect(invalidFolderMoID).ToNot(Equal(nsFolderMoID),
-				"DC vmFolder unexpectedly equals the namespace folder")
-			e2eframework.Logf("invalid folder MoID (DC root VM folder): %s", invalidFolderMoID)
+				"namespace folder's parent unexpectedly equals the namespace folder itself")
+			e2eframework.Logf("invalid folder MoID (parent of namespace folder): %s", invalidFolderMoID)
 
 			By("Moving VM into the DC root VM folder via MoveIntoFolder (direct inventory move)")
 			// Use Folder.MoveInto rather than Relocate.Folder: in WCP, the

@@ -4,6 +4,3 @@
 
 // Package vim contains controllers for vim.vmware.com resources.
 package vim
-
-// +kubebuilder:rbac:groups=vim.vmware.com,resources=configtargets;virtualmachineconfigoptions;virtualmachineconfigpolicies;virtualmachineguestoptions,verbs=create;get;list;patch;update;watch
-// +kubebuilder:rbac:groups=vim.vmware.com,resources=configtargets/status;virtualmachineconfigoptions/status;virtualmachineconfigpolicies/status;virtualmachineguestoptions/status,verbs=get;patch;update

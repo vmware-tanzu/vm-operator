@@ -694,3 +694,16 @@ func (vs *vSphereVMProvider) VSphereClient(
 	}
 	return c.Client, nil
 }
+
+// QueryConfigOptionEx implements VirtualMachineProviderInterface.
+func (vs *vSphereVMProvider) QueryConfigOptionEx(
+	ctx context.Context,
+	clusterMoID string,
+	hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error) {
+
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vSphere client for QueryConfigOptionEx: %w", err)
+	}
+	return QueryConfigOptionEx(ctx, client.VimClient(), clusterMoID, hardwareVersion)
+}

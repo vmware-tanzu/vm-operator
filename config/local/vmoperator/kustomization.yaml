@@ -22,10 +22,6 @@ resources:
 - ../../crd/external-crds/imageregistry.vmware.com_clustercontentlibraryitems.yaml
 - ../../crd/external-crds/imageregistry.vmware.com_contentlibraryitems.yaml
 - ../../crd/external-crds/netoperator.vmware.com_networkinterfaces.yaml
-- ../../crd/external-crds/vim.vmware.com_configtargets.yaml
-- ../../crd/external-crds/vim.vmware.com_virtualmachineconfigoptions.yaml
-- ../../crd/external-crds/vim.vmware.com_virtualmachineconfigpolicies.yaml
-- ../../crd/external-crds/vim.vmware.com_virtualmachineguestoptions.yaml
 
 patches:
 - path: namespace_patch.yaml

@@ -755,12 +755,13 @@ var _ = Describe("Install", func() {
 			Expect(pkgcrd.Install(
 				pkgcfg.WithConfig(pkgcfg.Config{
 					Features: pkgcfg.FeatureStates{
-						FastDeploy:                true,
-						ImmutableClasses:          true,
-						VMGroups:                  true,
-						VMSnapshots:               true,
-						VSpherePolicies:           true,
-						BringYourOwnEncryptionKey: true,
+						FastDeploy:                   true,
+						ImmutableClasses:             true,
+						VMGroups:                     true,
+						VMSnapshots:                  true,
+						VSpherePolicies:              true,
+						BringYourOwnEncryptionKey:    true,
+						VirtualMachineConfigPolicy:   true,
 					},
 				}),
 				client,

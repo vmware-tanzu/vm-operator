@@ -1689,13 +1689,8 @@ var _ = Describe("Reconcile", func() {
 					Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
 
 					// Simulate CSI marking CRV as registered (this happens after PVC is bound)
-					// Re-fetch the CRV to get the latest version before updating status
-					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
-						Namespace: vm.Namespace,
-						Name:      claimName,
-					}, crv)).To(Succeed())
 					crv.Status.Registered = true
-					Expect(k8sClient.Update(ctx, crv)).To(Succeed())
+					Expect(k8sClient.Status().Update(ctx, crv)).To(Succeed())
 
 					// Verify the status was not yet pruned.
 					Expect(vm.Status.Volumes).To(HaveLen(1))

@@ -325,7 +325,17 @@ func reconcileSnapshotReadyCondition(vmSnapshot *vmopv1.VirtualMachineSnapshot) 
 
 	created := pkgcond.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
 	synced := pkgcond.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
+	createdReason := pkgcond.GetReason(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
 	switch {
+	case !created && createdReason == vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason:
+		// Propagate the specific disk-registration-waiting reason to the Ready
+		// condition so it is visible without inspecting the Created condition.
+		pkgcond.MarkFalse(
+			vmSnapshot,
+			vmopv1.VirtualMachineSnapshotReadyCondition,
+			vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason,
+			"Snapshot is not ready because disk registration hasn't been completed",
+		)
 	case !created:
 		pkgcond.MarkFalse(
 			vmSnapshot,

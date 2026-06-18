@@ -46,7 +46,6 @@ import (
 // vmUnmanagedVolumesTests provides comprehensive test coverage for the
 // AllDisksArePVCs feature in the vSphere provider.
 func vmUnmanagedVolumesTests() {
-
 	var (
 		parentCtx   context.Context
 		initObjects []client.Object
@@ -113,8 +112,8 @@ func vmUnmanagedVolumesTests() {
 		// versions.
 		ctx.SimulatorContext().For("/pbm").Map.Handler = func(
 			simCtx *simulator.Context,
-			m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
-
+			m *simulator.Method,
+		) (mo.Reference, vimtypes.BaseMethodFault) {
 			if m.Name == "PbmQueryAssociatedProfiles" {
 				req, ok := m.Body.(*pbmtypes.PbmQueryAssociatedProfiles)
 				if !ok {
@@ -168,7 +167,6 @@ func vmUnmanagedVolumesTests() {
 	})
 
 	When("VM has unmanaged disks from vSphere", func() {
-
 		It("should backfill unmanaged disk into spec.volumes", func() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
 				To(MatchError(vsphere.ErrRegisterVolumes))
@@ -255,10 +253,14 @@ func vmUnmanagedVolumesTests() {
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			}
 
+			// Simulate CNS marking the CRV as registered before the final reconcile.
+			crv.Status.Registered = true
+			Expect(ctx.Client.Status().Update(ctx, crv)).To(Succeed())
+
 			// Trigger another reconciliation
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
-			// Verify CnsRegisterVolume was deleted
+			// CRV was cleaned up since it's now registered
 			Expect(client.IgnoreNotFound(ctx.Client.Get(ctx, client.ObjectKey{
 				Namespace: vm.Namespace,
 				Name:      claimName,
@@ -270,7 +272,6 @@ func vmUnmanagedVolumesTests() {
 	})
 
 	When("VM has PVC with datasource ref w disk from VMI", func() {
-
 		var vmic vmopv1.VirtualMachineImageCache
 
 		BeforeEach(func() {
@@ -481,10 +482,14 @@ func vmUnmanagedVolumesTests() {
 			vm.Status.Volumes[0].Attached = true
 			Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 
+			// Simulate CNS marking the CRV as registered before the final reconcile.
+			crv.Status.Registered = true
+			Expect(ctx.Client.Status().Update(ctx, crv)).To(Succeed())
+
 			// Trigger another reconciliation
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
-			// Verify CnsRegisterVolume was deleted
+			// CRV was cleaned up since it's now registered
 			Expect(client.IgnoreNotFound(ctx.Client.Get(ctx, client.ObjectKey{
 				Namespace: vm.Namespace,
 				Name:      claimName,
@@ -531,8 +536,8 @@ type fakeProfileManager struct {
 }
 
 func (m *fakeProfileManager) PbmQueryAssociatedProfiles(
-	req *pbmtypes.PbmQueryAssociatedProfiles) soap.HasFault {
-
+	req *pbmtypes.PbmQueryAssociatedProfiles,
+) soap.HasFault {
 	body := new(pbmmethods.PbmQueryAssociatedProfilesBody)
 	body.Res = new(pbmtypes.PbmQueryAssociatedProfilesResponse)
 	body.Res.Returnval = m.Result

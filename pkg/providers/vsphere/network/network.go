@@ -49,7 +49,13 @@ type NetworkInterfaceResults struct { //nolint:revive
 }
 
 type NetworkInterfaceResult struct { //nolint:revive
+	// ObjectName is the name of the network interface CR backing this result.
+	// Empty for named (testing-only) networks which have no CR.
 	ObjectName string
+	// ObjectProviderType is the network provider type of the CR. Combined with
+	// ObjectName it uniquely identifies the CR across all network providers.
+	ObjectProviderType pkgcfg.NetworkProviderType
+
 	IPConfigs  []NetworkInterfaceIPConfig
 	MacAddress string
 	ExternalID string
@@ -87,6 +93,7 @@ type NetworkInterfaceRoute struct { //nolint:revive
 // Device contains the information from the network interface CR needed to create or
 // configure a virtual ethernet card device on a VM.
 type Device struct {
+	ProviderType pkgcfg.NetworkProviderType
 	InterfaceObj ctrlclient.Object
 
 	Backing    object.NetworkReference
@@ -297,6 +304,7 @@ func getNetOPNetworkInterfaceDevice(
 	}
 
 	return Device{
+		ProviderType: pkgcfg.NetworkProviderTypeVDS,
 		InterfaceObj: netIf,
 		Backing:      backing,
 		NetworkID:    networkID,
@@ -347,6 +355,7 @@ func getNCPNetworkInterfaceDevice(
 	}
 
 	return Device{
+		ProviderType: pkgcfg.NetworkProviderTypeNSXT,
 		InterfaceObj: vnetIf,
 		Backing:      backing,
 		NetworkID:    networkID,
@@ -399,6 +408,7 @@ func getVPCSubnetPortDevice(
 	}
 
 	return Device{
+		ProviderType: pkgcfg.NetworkProviderTypeVPC,
 		InterfaceObj: subnetPort,
 		Backing:      backing,
 		NetworkID:    networkID,

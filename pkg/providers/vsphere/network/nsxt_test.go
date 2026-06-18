@@ -5,9 +5,12 @@
 package network_test
 
 import (
-	"github.com/go-logr/logr"
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,11 +70,11 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 
 		initEthCard := func(idx int) vimtypes.VirtualVmxnet3 {
 			dev := vimtypes.VirtualVmxnet3{}
-			backing, err := ctx.NetworkRefs[idx].EthernetCardBackingInfo(ctx)
+			backing, err := ctx.GetNetwork(idx).Backing.EthernetCardBackingInfo(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			dev.Backing = backing
 			dev.MacAddress = macAddress1
-			dev.ExternalId = builder.GetVPCTLogicalSwitchUUID(idx)
+			dev.ExternalId = fmt.Sprintf("dummy-extid-%d", idx)
 			dev.SubnetId = dummySubnetID
 			return dev
 		}
@@ -82,7 +85,7 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 		dev2.MacAddress = macAddress2
 
 		initNetworkResult := func(idx int, dev vimtypes.BaseVirtualEthernetCard) network.NetworkInterfaceResult {
-			dvpgMoRef := ctx.NetworkRefs[idx].Reference()
+			dvpgMoRef := ctx.GetNetwork(idx).Backing.Reference()
 
 			ethCard := dev.GetVirtualEthernetCard()
 			r := network.NetworkInterfaceResult{}

@@ -121,14 +121,13 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(err).ToNot(HaveOccurred())
 					backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).To(BeTrue())
-					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
 				})
 
 				Expect(result.DHCP4).To(BeFalse())
 				Expect(result.NoIPAM).To(BeFalse())
 				Expect(result.DHCP6).To(BeTrue()) // Only enabled if explicitly requested (which it is above).
 			})
-
 		})
 
 		Context("network does not exist", func() {
@@ -174,7 +173,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			It("returns success", func() {
 				// Assert test env is what we expect.
-				Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
+				Expect(ctx.GetNetwork(0).Backing.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
@@ -199,7 +198,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(externalID).To(BeEmpty())
 
 					netInterface.Status.ExternalID = externalID
-					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 					netInterface.Status.MacAddress = "" // NetOP doesn't set this.
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
@@ -239,9 +238,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				result := results.Results[0]
 				Expect(result.MacAddress).To(BeEmpty())
 				Expect(result.ExternalID).To(Equal(externalID))
-				Expect(result.NetworkID).To(Equal(ctx.NetworkRef.Reference().Value))
+				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
 				Expect(result.Backing).ToNot(BeNil())
-				Expect(result.Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+				Expect(result.Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 				Expect(result.Name).To(Equal(interfaceName))
 				Expect(result.GuestDeviceName).To(Equal(interfaceName))
 
@@ -274,7 +273,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-						// No NetworkInterface Spec.MacAddress.
+						// No NetworkInterface Spec.MacAddress field to set.
+						netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
 							{
 								Type:   netopv1alpha1.NetworkInterfaceReady,
@@ -313,6 +313,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
 							{
@@ -355,7 +356,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+						netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
 							{
@@ -398,6 +399,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 						netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
@@ -451,6 +453,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
 						netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
@@ -504,6 +507,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeNone
 						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
 							{
@@ -550,7 +554,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				It("returns success", func() {
 					// Assert test env is what we expect.
-					Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
+					Expect(ctx.GetNetwork(0).Backing.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
 
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
@@ -569,7 +573,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMInterfaceNameLabel, interfaceName))
 						Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
-						netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+						netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 						netInterface.Status.MacAddress = "" // NetOP doesn't set this.
 						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 						netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
@@ -609,9 +613,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					result := results.Results[0]
 					Expect(result.MacAddress).To(BeEmpty())
 					Expect(result.ExternalID).To(BeEmpty())
-					Expect(result.NetworkID).To(Equal(ctx.NetworkRef.Reference().Value))
+					Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
 					Expect(result.Backing).ToNot(BeNil())
-					Expect(result.Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+					Expect(result.Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 					Expect(result.Name).To(Equal(interfaceName))
 					Expect(result.GuestDeviceName).To(Equal(interfaceName))
 
@@ -652,7 +656,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						},
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
@@ -719,7 +723,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						},
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
@@ -963,6 +967,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							} else {
 								Expect(err).ToNot(HaveOccurred())
 							}
+							netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
 							netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
 								{
 									Type:   netopv1alpha1.NetworkInterfaceReady,
@@ -1024,7 +1029,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			It("returns success", func() {
 				// Assert test env is what we expect.
-				Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
+				Expect(ctx.GetNetwork(0).Backing.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
@@ -1046,7 +1051,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					netInterface.Status.InterfaceID = interfaceID
 					netInterface.Status.MacAddress = macAddress
 					netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-						NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(0),
+						NsxLogicalSwitchID: ctx.GetNetwork(0).LogicalSwitchUUID,
 					}
 					netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
 						{
@@ -1082,7 +1087,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				result := results.Results[0]
 				Expect(result.MacAddress).To(Equal(macAddress))
 				Expect(result.ExternalID).To(Equal(interfaceID))
-				Expect(result.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(0)))
+				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 				Expect(result.Name).To(Equal(interfaceName))
 
 				Expect(result.Backing).ToNot(BeNil())
@@ -1090,7 +1095,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(err).ToNot(HaveOccurred())
 				opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 				Expect(ok).To(BeTrue())
-				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(builder.NsxTLogicalSwitchUUID))
+				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 
 				Expect(result.IPConfigs).To(HaveLen(2))
 				ipConfig := result.IPConfigs[0]
@@ -1115,7 +1120,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 					Expect(results.Results).To(HaveLen(1))
 					Expect(results.Results[0].Backing).ToNot(BeNil())
-					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 				})
 			})
 
@@ -1136,7 +1141,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				It("returns success", func() {
 					// Assert test env is what we expect.
-					Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
+					Expect(ctx.GetNetwork(0).Backing.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
 
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
@@ -1156,7 +1161,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						netInterface.Status.InterfaceID = interfaceID
 						netInterface.Status.MacAddress = macAddress
 						netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-							NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(0),
+							NsxLogicalSwitchID: ctx.GetNetwork(0).LogicalSwitchUUID,
 						}
 						netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
 							{
@@ -1192,7 +1197,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					result := results.Results[0]
 					Expect(result.MacAddress).To(Equal(macAddress))
 					Expect(result.ExternalID).To(Equal(interfaceID))
-					Expect(result.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(0)))
+					Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 					Expect(result.Name).To(Equal(interfaceName))
 
 					Expect(result.Backing).ToNot(BeNil())
@@ -1200,7 +1205,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(err).ToNot(HaveOccurred())
 					opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 					Expect(ok).To(BeTrue())
-					Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(builder.NsxTLogicalSwitchUUID))
+					Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 
 					Expect(result.IPConfigs).To(HaveLen(2))
 					ipConfig := result.IPConfigs[0]
@@ -1225,7 +1230,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 						Expect(results.Results).To(HaveLen(1))
 						Expect(results.Results[0].Backing).ToNot(BeNil())
-						Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+						Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 					})
 				})
 			})
@@ -1263,7 +1268,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			It("returns success", func() {
 				// Assert test env is what we expect.
-				Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
+				Expect(ctx.GetNetwork(0).Backing.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
@@ -1287,7 +1292,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 					subnetPort.Status.Attachment.ID = interfaceID
 					subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
-					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(0).LogicalSwitchUUID
 					subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 						{
 							IPAddress: "192.168.1.110/24",
@@ -1320,7 +1325,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				result := results.Results[0]
 				Expect(result.MacAddress).To(Equal(macAddress))
 				Expect(result.ExternalID).To(Equal(interfaceID))
-				Expect(result.NetworkID).To(Equal(builder.GetVPCTLogicalSwitchUUID(0)))
+				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 				Expect(result.Name).To(Equal(interfaceName))
 
 				Expect(result.Backing).ToNot(BeNil())
@@ -1328,7 +1333,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(err).ToNot(HaveOccurred())
 				opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 				Expect(ok).To(BeTrue())
-				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(builder.VPCLogicalSwitchUUID))
+				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 
 				Expect(result.IPConfigs).To(HaveLen(2))
 				ipConfig := result.IPConfigs[0]
@@ -1353,7 +1358,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 					Expect(results.Results).To(HaveLen(1))
 					Expect(results.Results[0].Backing).ToNot(BeNil())
-					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 				})
 			})
 
@@ -1385,7 +1390,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(subnetPort.Spec.AddressBindings[0].MACAddress).To(Equal(macAddress))
 
 						subnetPort.Status.Attachment.ID = interfaceID
-						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(0).LogicalSwitchUUID
 						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
 						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 							{
@@ -1463,7 +1468,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						*/
 
 						subnetPort.Status.Attachment.ID = interfaceID
-						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(0).LogicalSwitchUUID
 						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
 						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 							{
@@ -1548,7 +1553,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(subnetPort.Spec.AddressBindings).To(BeEmpty())
 
 						subnetPort.Status.Attachment.ID = interfaceID
-						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(0).LogicalSwitchUUID
 						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
 						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 							{
@@ -1642,7 +1647,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						*/
 
 						subnetPort.Status.Attachment.ID = interfaceID
-						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(0).LogicalSwitchUUID
 						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
 						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 							{
@@ -1730,7 +1735,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
 
 						subnetPort.Status.Attachment.ID = interfaceID
-						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(0).LogicalSwitchUUID
 						subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet = false
 						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 							{
@@ -1780,7 +1785,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
 
 						subnetPort.Status.Attachment.ID = interfaceID
-						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = ctx.GetNetwork(0).LogicalSwitchUUID
 						subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet = true
 						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 							{
@@ -1979,7 +1984,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			Expect(err).ToNot(HaveOccurred())
 			backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 			Expect(ok).To(BeTrue())
-			Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+			Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
 		})
 
 		Context("Named Network with MAC address", func() {
@@ -1999,6 +2004,8 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvVDS
+			testConfig.NumNetworks = 2
+
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
@@ -2073,59 +2080,66 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			)
 		})
 
-		Context("interface is ready", func() {
-			BeforeEach(func() {
-				netIf0 := &netopv1alpha1.NetworkInterface{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      interfaceKey0.Name,
-						Namespace: interfaceKey0.Namespace,
-					},
-					Status: netopv1alpha1.NetworkInterfaceStatus{
-						NetworkID:  "dvpg-portgroup-0",
-						MacAddress: macAddress0,
-						ExternalID: externalID0,
-						Conditions: []netopv1alpha1.NetworkInterfaceCondition{
-							{
-								Type:   netopv1alpha1.NetworkInterfaceReady,
-								Status: corev1.ConditionTrue,
-							},
-						},
-					},
-				}
+		netOPReconcile := func(objKey client.ObjectKey, r func(s *netopv1alpha1.NetworkInterfaceStatus)) {
+			netIf := &netopv1alpha1.NetworkInterface{}
+			Expect(ctx.Client.Get(ctx, objKey, netIf)).To(Succeed())
+			r(&netIf.Status)
+			Expect(ctx.Client.Status().Update(ctx, netIf)).To(Succeed())
+		}
 
-				netIf1 := &netopv1alpha1.NetworkInterface{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      interfaceKey1.Name,
-						Namespace: interfaceKey1.Namespace,
-					},
-					Status: netopv1alpha1.NetworkInterfaceStatus{
-						NetworkID:  "dvpg-portgroup-1",
-						MacAddress: macAddress1,
-						ExternalID: externalID1,
-						Conditions: []netopv1alpha1.NetworkInterfaceCondition{
-							{
-								Type:   netopv1alpha1.NetworkInterfaceReady,
-								Status: corev1.ConditionTrue,
-							},
-						},
-					},
-				}
-
-				initObjects = append(initObjects, netIf0, netIf1)
-			})
-
+		Context("interfaces become ready", func() {
 			It("returns success with backing", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+
+				By("Mark interfaces as ready", func() {
+					netOPReconcile(interfaceKey0, func(s *netopv1alpha1.NetworkInterfaceStatus) {
+						*s = netopv1alpha1.NetworkInterfaceStatus{
+							NetworkID:  ctx.GetNetwork(0).Backing.Reference().Value,
+							MacAddress: macAddress0,
+							ExternalID: externalID0,
+							Conditions: []netopv1alpha1.NetworkInterfaceCondition{
+								{
+									Type:   netopv1alpha1.NetworkInterfaceReady,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						}
+					})
+
+					netOPReconcile(interfaceKey1, func(s *netopv1alpha1.NetworkInterfaceStatus) {
+						*s = netopv1alpha1.NetworkInterfaceStatus{
+							NetworkID:  ctx.GetNetwork(1).Backing.Reference().Value,
+							MacAddress: macAddress1,
+							ExternalID: externalID1,
+							Conditions: []netopv1alpha1.NetworkInterfaceCondition{
+								{
+									Type:   netopv1alpha1.NetworkInterfaceReady,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						}
+					})
+				})
+
+				devices, err = network.CreateNetworkDevices(
+					ctx,
+					vm,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(devices).To(HaveLen(2))
 
 				dev0 := devices[0]
-				Expect(dev0.NetworkID).To(Equal("dvpg-portgroup-0"))
+				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
 				Expect(dev0.Backing).ToNot(BeNil())
 				Expect(dev0.MacAddress).To(Equal(macAddress0))
 				Expect(dev0.ExternalID).To(Equal(externalID0))
 
 				dev1 := devices[1]
-				Expect(dev1.NetworkID).To(Equal("dvpg-portgroup-1"))
+				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).Backing.Reference().Value))
 				Expect(dev1.Backing).ToNot(BeNil())
 				Expect(dev1.MacAddress).To(Equal(macAddress1))
 				Expect(dev1.ExternalID).To(Equal(externalID1))
@@ -2157,7 +2171,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 						Namespace: interfaceKey1.Namespace,
 					},
 					Status: netopv1alpha1.NetworkInterfaceStatus{
-						NetworkID:  "dvpg-portgroup-key",
+						NetworkID:  "dvportgroup-42",
 						MacAddress: macAddress1,
 						ExternalID: externalID1,
 						Conditions: []netopv1alpha1.NetworkInterfaceCondition{
@@ -2181,8 +2195,18 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 	})
 
 	Context("NSXT", func() {
+
+		ncpReconcile := func(k client.ObjectKey, r func(s *ncpv1alpha1.VirtualNetworkInterfaceStatus)) {
+			vnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
+			Expect(ctx.Client.Get(ctx, k, vnetIf)).To(Succeed())
+			r(&vnetIf.Status)
+			Expect(ctx.Client.Status().Update(ctx, vnetIf)).To(Succeed())
+		}
+
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvNSXT
+			testConfig.NumNetworks = 2
+
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
@@ -2234,57 +2258,57 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			})
 		})
 
-		Context("interface is ready", func() {
-			BeforeEach(func() {
-				vnetIf0 := &ncpv1alpha1.VirtualNetworkInterface{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      interfaceKey0.Name,
-						Namespace: interfaceKey0.Namespace,
-					},
-					Status: ncpv1alpha1.VirtualNetworkInterfaceStatus{
-						InterfaceID: externalID0,
-						MacAddress:  macAddress0,
-						ProviderStatus: &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-							NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(0),
-						},
-						Conditions: []ncpv1alpha1.VirtualNetworkCondition{
-							{
-								Type:   "Ready",
-								Status: "True",
-							},
-						},
-					},
-				}
-
-				vnetIf1 := &ncpv1alpha1.VirtualNetworkInterface{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      interfaceKey1.Name,
-						Namespace: interfaceKey1.Namespace,
-					},
-					Status: ncpv1alpha1.VirtualNetworkInterfaceStatus{
-						InterfaceID: externalID1,
-						MacAddress:  macAddress1,
-						ProviderStatus: &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-							NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(1),
-						},
-						Conditions: []ncpv1alpha1.VirtualNetworkCondition{
-							{
-								Type:   "Ready",
-								Status: "True",
-							},
-						},
-					},
-				}
-
-				initObjects = append(initObjects, vnetIf0, vnetIf1)
-			})
-
+		Context("interfaces become ready", func() {
 			It("returns success with backing and identifiers", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+
+				By("Mark interfaces as ready", func() {
+					ncpReconcile(interfaceKey0, func(s *ncpv1alpha1.VirtualNetworkInterfaceStatus) {
+						*s = ncpv1alpha1.VirtualNetworkInterfaceStatus{
+							InterfaceID: externalID0,
+							MacAddress:  macAddress0,
+							ProviderStatus: &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
+								NsxLogicalSwitchID: ctx.GetNetwork(0).LogicalSwitchUUID,
+							},
+							Conditions: []ncpv1alpha1.VirtualNetworkCondition{
+								{
+									Type:   "Ready",
+									Status: "True",
+								},
+							},
+						}
+					})
+
+					ncpReconcile(interfaceKey1, func(s *ncpv1alpha1.VirtualNetworkInterfaceStatus) {
+						*s = ncpv1alpha1.VirtualNetworkInterfaceStatus{
+							InterfaceID: externalID1,
+							MacAddress:  macAddress1,
+							ProviderStatus: &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
+								NsxLogicalSwitchID: ctx.GetNetwork(1).LogicalSwitchUUID,
+							},
+							Conditions: []ncpv1alpha1.VirtualNetworkCondition{
+								{
+									Type:   "Ready",
+									Status: "True",
+								},
+							},
+						}
+					})
+				})
+
+				devices, err = network.CreateNetworkDevices(
+					ctx,
+					vm,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(devices).To(HaveLen(2))
 
 				dev0 := devices[0]
-				Expect(dev0.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(0)))
+				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 				Expect(dev0.Backing).ToNot(BeNil())
 				Expect(dev0.ExternalID).To(Equal(externalID0))
 				Expect(dev0.MacAddress).To(Equal(macAddress0))
@@ -2296,7 +2320,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(opaqueNetwork0.OpaqueNetworkId).To(Equal(dev0.NetworkID))
 
 				dev1 := devices[1]
-				Expect(dev1.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(1)))
+				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
 				Expect(dev1.Backing).ToNot(BeNil())
 				Expect(dev1.ExternalID).To(Equal(externalID1))
 				Expect(dev1.MacAddress).To(Equal(macAddress1))
@@ -2317,9 +2341,6 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 						Namespace: interfaceKey0.Namespace,
 					},
 					Status: ncpv1alpha1.VirtualNetworkInterfaceStatus{
-						ProviderStatus: &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-							NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(0),
-						},
 						Conditions: []ncpv1alpha1.VirtualNetworkCondition{
 							{
 								Type:    "Ready",
@@ -2367,8 +2388,18 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 	})
 
 	Context("VPC", func() {
+
+		vpcReconcile := func(objKey client.ObjectKey, r func(s *vpcv1alpha1.SubnetPortStatus)) {
+			subnetPort := &vpcv1alpha1.SubnetPort{}
+			Expect(ctx.Client.Get(ctx, objKey, subnetPort)).To(Succeed())
+			r(&subnetPort.Status)
+			Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+		}
+
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvVPC
+			testConfig.NumNetworks = 2
+
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
@@ -2488,61 +2519,61 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			})
 		})
 
-		Context("interface is ready", func() {
-			BeforeEach(func() {
-				subnetPort0 := &vpcv1alpha1.SubnetPort{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      interfaceKey0.Name,
-						Namespace: interfaceKey0.Namespace,
-					},
-					Status: vpcv1alpha1.SubnetPortStatus{
-						Attachment: vpcv1alpha1.PortAttachment{
-							ID: externalID0,
-						},
-						NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
-							LogicalSwitchUUID: builder.GetVPCTLogicalSwitchUUID(0),
-							MACAddress:        macAddress0,
-						},
-						Conditions: []vpcv1alpha1.Condition{
-							{
-								Type:   vpcv1alpha1.Ready,
-								Status: corev1.ConditionTrue,
+		Context("interfaces become ready", func() {
+			It("returns success with backing", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+
+				By("Mark interfaces as ready", func() {
+					vpcReconcile(interfaceKey0, func(s *vpcv1alpha1.SubnetPortStatus) {
+						*s = vpcv1alpha1.SubnetPortStatus{
+							Attachment: vpcv1alpha1.PortAttachment{
+								ID: externalID0,
 							},
-						},
-					},
-				}
-
-				subnetPort1 := &vpcv1alpha1.SubnetPort{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      interfaceKey1.Name,
-						Namespace: interfaceKey1.Namespace,
-					},
-					Status: vpcv1alpha1.SubnetPortStatus{
-						Attachment: vpcv1alpha1.PortAttachment{
-							ID: externalID1,
-						},
-						NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
-							LogicalSwitchUUID: builder.GetVPCTLogicalSwitchUUID(1),
-							MACAddress:        macAddress1,
-						},
-						Conditions: []vpcv1alpha1.Condition{
-							{
-								Type:   vpcv1alpha1.Ready,
-								Status: corev1.ConditionTrue,
+							NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
+								LogicalSwitchUUID: ctx.GetNetwork(0).LogicalSwitchUUID,
+								MACAddress:        macAddress0,
 							},
-						},
-					},
-				}
+							Conditions: []vpcv1alpha1.Condition{
+								{
+									Type:   vpcv1alpha1.Ready,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						}
+					})
 
-				initObjects = append(initObjects, subnetPort0, subnetPort1)
-			})
+					vpcReconcile(interfaceKey1, func(s *vpcv1alpha1.SubnetPortStatus) {
+						*s = vpcv1alpha1.SubnetPortStatus{
+							Attachment: vpcv1alpha1.PortAttachment{
+								ID: externalID1,
+							},
+							NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
+								LogicalSwitchUUID: ctx.GetNetwork(1).LogicalSwitchUUID,
+								MACAddress:        macAddress1,
+							},
+							Conditions: []vpcv1alpha1.Condition{
+								{
+									Type:   vpcv1alpha1.Ready,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						}
+					})
+				})
 
-			It("returns success", func() {
+				devices, err = network.CreateNetworkDevices(
+					ctx,
+					vm,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(devices).To(HaveLen(2))
 
 				dev0 := devices[0]
-				Expect(dev0.NetworkID).To(Equal(builder.GetVPCTLogicalSwitchUUID(0)))
+				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 				Expect(dev0.Backing).ToNot(BeNil())
 				Expect(dev0.MacAddress).To(Equal(macAddress0))
 				Expect(dev0.ExternalID).To(Equal(externalID0))
@@ -2554,7 +2585,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(opaqueNetwork0.OpaqueNetworkId).To(Equal(dev0.NetworkID))
 
 				dev1 := devices[1]
-				Expect(dev1.NetworkID).To(Equal(builder.GetVPCTLogicalSwitchUUID(1)))
+				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
 				Expect(dev1.Backing).ToNot(BeNil())
 				Expect(dev1.MacAddress).To(Equal(macAddress1))
 				Expect(dev1.ExternalID).To(Equal(externalID1))

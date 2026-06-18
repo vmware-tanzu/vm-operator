@@ -81,9 +81,17 @@ var (
 		"tagpolicies.vsphere.policy.vmware.com",
 	}
 
+	externalVIMConfigPolicy = []string{
+		"configtargets.vim.vmware.com",
+		"virtualmachineconfigoptions.vim.vmware.com",
+		"virtualmachineconfigpolicies.vim.vmware.com",
+		"virtualmachineguestoptions.vim.vmware.com",
+	}
+
 	externalAll = slices.Concat(
 		externalBYOK,
 		externalVSpherePolicy,
+		externalVIMConfigPolicy,
 		[]string{storagePoliciesCRD},
 	)
 )
@@ -686,6 +694,19 @@ var _ = Describe("Install", func() {
 			})
 		})
 
+		When("VM config policy is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VirtualMachineConfigPolicy = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVIMConfigPolicy)...)
+			})
+		})
+
 		When("all features are enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -697,6 +718,7 @@ var _ = Describe("Install", func() {
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.TelcoVMServiceAPI = true
+					config.Features.VirtualMachineConfigPolicy = true
 				})
 			})
 			It("should get the expected crds", func() {

@@ -67,25 +67,24 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	)
 
 	var (
-		input                             VMSpecInput
-		wcpClient                         wcp.WorkloadManagementAPI
-		vCenterClient                     *vim25.Client
-		propCollector                     *property.Collector
-		config                            *e2eConfig.E2EConfig
-		clusterProxy                      *common.VMServiceClusterProxy
-		svClusterClient                   ctrlclient.Client
-		clusterResources                  *e2eConfig.Resources
-		tmpNamespaceCtx                   wcpframework.NamespaceContext
-		vmYaml                            []byte
-		vmName                            string
-		instanceStorageFssEnabled         bool
-		vmClassAsConfigDaynDateFssEnabled bool
-		namespacedVMClassFSSEnabled       bool
-		vmResizeCPUMemoryFssEnabled       bool
-		isoSupportFSSEnabled              bool
-		linuxImageDisplayName             string
-		linuxVMIName                      string
-		linuxImageGuestID                 string
+		input                       VMSpecInput
+		wcpClient                   wcp.WorkloadManagementAPI
+		vCenterClient               *vim25.Client
+		propCollector               *property.Collector
+		config                      *e2eConfig.E2EConfig
+		clusterProxy                *common.VMServiceClusterProxy
+		svClusterClient             ctrlclient.Client
+		clusterResources            *e2eConfig.Resources
+		tmpNamespaceCtx             wcpframework.NamespaceContext
+		vmYaml                      []byte
+		vmName                      string
+		instanceStorageFssEnabled   bool
+		namespacedVMClassFSSEnabled bool
+		vmResizeCPUMemoryFssEnabled bool
+		isoSupportFSSEnabled        bool
+		linuxImageDisplayName       string
+		linuxVMIName                string
+		linuxImageGuestID           string
 	)
 
 	BeforeEach(func() {
@@ -118,7 +117,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		propCollector = property.DefaultCollector(vCenterClient)
 
 		instanceStorageFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSInstanceStorage"))
-		vmClassAsConfigDaynDateFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMClassAsConfigDaynDate"))
 		namespacedVMClassFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSNamespacedVMClass"))
 		vmResizeCPUMemoryFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMResizeCPUMemory"))
 		isoSupportFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIsoSupport"))
@@ -175,11 +173,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(virtualMachine.Spec.InstanceUUID).To(Equal(vmMO.Config.InstanceUuid))
 	})
 
-	It("Should create expected resources for a single poweredOff VirtualMachine when VM_Class_as_Config_DaynDate Enabled", func() {
-		if !vmClassAsConfigDaynDateFssEnabled {
-			Skip("VM_Class_as_Config_DaynDate FSS is not enabled")
-		}
-
+	It("Should create expected resources for a single poweredOff VirtualMachine", func() {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
@@ -286,11 +280,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmservice.VerifyVMClassDeletion(wcpClient, newVMClassName)
 	})
 
-	It("Should create expected resources for a single VirtualMachine when VM_Class_as_Config_DaynDate Enabled", func() {
-		if !vmClassAsConfigDaynDateFssEnabled {
-			Skip("VM_Class_as_Config_DaynDate FSS is not enabled")
-		}
-
+	It("Should create expected resources for a single VirtualMachine", func() {
 		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassE1000)).To(Succeed())
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{

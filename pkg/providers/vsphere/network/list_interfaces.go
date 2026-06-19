@@ -66,11 +66,10 @@ func listInterfacesWithIgnore(
 	ignore sets.Set[string],
 ) ([]ctrlclient.Object, error) {
 
-	networkType, err := netsetutil.GetProviderType(vmCtx, client, vmCtx.VM.Namespace)
+	networkTypes, err := netsetutil.GetSupportedProviderTypes(vmCtx, client, vmCtx.VM.Namespace)
 	if err != nil {
 		return nil, err
 	}
-	networkTypes := []pkgcfg.NetworkProviderType{networkType}
 
 	// TODO: Anything v1a2 or later will have the label. Maybe check the created at annotation
 	// value and do a more exhaustive list if this is an old VM.

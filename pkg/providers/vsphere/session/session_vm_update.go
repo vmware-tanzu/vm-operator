@@ -35,6 +35,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -410,9 +411,10 @@ func (s *Session) poweredOnReconfigure(
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 
-	if pkgcfg.FromContext(vmCtx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
-		err := s.handleRestoredVPCInterfaces(vmCtx, vcVM, networkResults)
-		if err != nil {
+	if networkType, err := netsetutil.GetProviderType(vmCtx, s.K8sClient, vmCtx.VM.Namespace); err != nil {
+		return err
+	} else if networkType == pkgcfg.NetworkProviderTypeVPC {
+		if err := s.handleRestoredVPCInterfaces(vmCtx, vcVM, networkResults); err != nil {
 			return err
 		}
 	}
@@ -505,7 +507,11 @@ func (s *Session) poweredOffReconfigure(
 	}
 
 	if reconfigErr == nil || errors.Is(reconfigErr, ErrReconfigure) {
-		if pkgcfg.FromContext(vmCtx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
+		networkType, err := netsetutil.GetProviderType(vmCtx, s.K8sClient, vmCtx.VM.Namespace)
+		if err != nil {
+			return err
+		}
+		if networkType == pkgcfg.NetworkProviderTypeVPC {
 			if v, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]; ok {
 				vmCtx.Logger.Info("Removing VPC restore annotation after powered off reconfigure",
 					"interfaces", v)
@@ -1014,7 +1020,11 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		return err
 	}
 
-	if pkgcfg.FromContext(vmCtx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
+	networkType, err := netsetutil.GetProviderType(vmCtx, s.K8sClient, vmCtx.VM.Namespace)
+	if err != nil {
+		return err
+	}
+	if networkType == pkgcfg.NetworkProviderTypeVPC {
 		if v, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]; ok {
 			vmCtx.Logger.Info("Removing VPC restore annotation after powered off reconfigure",
 				"interfaces", v)

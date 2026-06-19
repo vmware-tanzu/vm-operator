@@ -115,14 +115,14 @@ func vmLocationTests() {
 	}
 
 	When("VM is in the correct namespace RP and folder", func() {
-		It("sets VirtualMachineInValidLocation condition to True", func() {
+		It("sets VirtualMachineLocationValid condition to True", func() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineInValidLocation)).To(BeTrue())
+			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
 		})
 	})
 
 	When("VM is in a direct child RP of the namespace RP", func() {
-		It("sets VirtualMachineInValidLocation condition to True", func() {
+		It("sets VirtualMachineLocationValid condition to True", func() {
 			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -142,12 +142,12 @@ func vmLocationTests() {
 			Expect(task.Wait(ctx)).To(Succeed())
 
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineInValidLocation)).To(BeTrue())
+			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
 		})
 	})
 
 	When("VM is in a direct child folder of the namespace folder", func() {
-		It("sets VirtualMachineInValidLocation condition to True", func() {
+		It("sets VirtualMachineLocationValid condition to True", func() {
 			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -166,12 +166,12 @@ func vmLocationTests() {
 			Expect(task.Wait(ctx)).To(Succeed())
 
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineInValidLocation)).To(BeTrue())
+			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
 		})
 	})
 
 	When("VM is moved to an invalid resource pool", func() {
-		It("sets VirtualMachineInValidLocation condition to False and returns NoRequeueError", func() {
+		It("sets VirtualMachineLocationValid condition to False and returns NoRequeueError", func() {
 			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -191,15 +191,15 @@ func vmLocationTests() {
 			var noRequeueErr pkgerr.NoRequeueError
 			Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 
-			Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineInValidLocation)).To(BeTrue())
-			cond := conditions.Get(vm, vmopv1.VirtualMachineInValidLocation)
+			Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
+			cond := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 			Expect(cond).ToNot(BeNil())
-			Expect(cond.Reason).To(Equal("LocationMismatch"))
+			Expect(cond.Reason).To(Equal("ResourcePoolMismatch"))
 		})
 	})
 
 	When("VM is moved to an invalid folder", func() {
-		It("sets VirtualMachineInValidLocation condition to False and returns NoRequeueError", func() {
+		It("sets VirtualMachineLocationValid condition to False and returns NoRequeueError", func() {
 			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -220,10 +220,10 @@ func vmLocationTests() {
 			var noRequeueErr pkgerr.NoRequeueError
 			Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 
-			Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineInValidLocation)).To(BeTrue())
-			cond := conditions.Get(vm, vmopv1.VirtualMachineInValidLocation)
+			Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
+			cond := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 			Expect(cond).ToNot(BeNil())
-			Expect(cond.Reason).To(Equal("LocationMismatch"))
+			Expect(cond.Reason).To(Equal("FolderMismatch"))
 		})
 	})
 
@@ -245,14 +245,14 @@ func vmLocationTests() {
 
 				// First call sets condition to False.
 				Expect(callProviderOnce()).Error().To(HaveOccurred())
-				cond1 := conditions.Get(vm, vmopv1.VirtualMachineInValidLocation)
+				cond1 := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 				Expect(cond1).ToNot(BeNil())
 				Expect(cond1.Status).To(Equal(metav1.ConditionFalse))
 				ltt1 := cond1.LastTransitionTime
 
 				// Second call: condition is already False — must not touch LastTransitionTime.
 				Expect(callProviderOnce()).Error().To(HaveOccurred())
-				cond2 := conditions.Get(vm, vmopv1.VirtualMachineInValidLocation)
+				cond2 := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 				Expect(cond2).ToNot(BeNil())
 				Expect(cond2.LastTransitionTime).To(Equal(ltt1))
 			})
@@ -262,17 +262,54 @@ func vmLocationTests() {
 			It("does not change LastTransitionTime on the second reconcile", func() {
 				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
-				cond1 := conditions.Get(vm, vmopv1.VirtualMachineInValidLocation)
+				cond1 := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 				Expect(cond1).ToNot(BeNil())
 				Expect(cond1.Status).To(Equal(metav1.ConditionTrue))
 				ltt1 := cond1.LastTransitionTime
 
 				// Second full reconcile: condition is already True — must not touch LastTransitionTime.
 				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-				cond2 := conditions.Get(vm, vmopv1.VirtualMachineInValidLocation)
+				cond2 := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 				Expect(cond2).ToNot(BeNil())
 				Expect(cond2.LastTransitionTime).To(Equal(ltt1))
 			})
+		})
+	})
+
+	When("VM is moved back to the correct location after being in an invalid resource pool", func() {
+		It("resets VirtualMachineLocationValid condition to True", func() {
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
+
+			// Move VM to the cluster root RP — outside the namespace RP hierarchy.
+			clusterRP, err := ctx.GetFirstClusterFromFirstZone().ResourcePool(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			task, err := vcVM.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+				Pool:   ptr.To(clusterRP.Reference()),
+				Folder: ptr.To(nsInfo.Folder.Reference()),
+			}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+
+			// Condition should become False while VM is in an invalid location.
+			Expect(callProviderOnce()).Error().To(HaveOccurred())
+			Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
+
+			// Move VM back to the namespace RP and folder.
+			nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
+			Expect(nsRP).ToNot(BeNil())
+			task, err = vcVM.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+				Pool:   ptr.To(nsRP.Reference()),
+				Folder: ptr.To(nsInfo.Folder.Reference()),
+			}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+
+			// Condition should be reset to True after the VM is back in the correct location.
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
 		})
 	})
 }

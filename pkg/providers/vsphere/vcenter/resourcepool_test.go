@@ -19,8 +19,8 @@ import (
 func resourcePoolTests() {
 	Describe("GetResourcePool", getResourcePoolTests)
 	Describe("CreateDeleteExistResourcePoolChild", createDeleteExistResourcePoolChild)
-	Describe("GetParentResourcePool", getParentResourcePoolTests)
-	Describe("GetParentFolder", getParentFolderTests)
+	Describe("GetResourcePoolProperties", getParentResourcePoolTests)
+	Describe("GetFolderProperties", getParentFolderTests)
 }
 
 func getResourcePoolTests() {
@@ -239,7 +239,7 @@ func getParentResourcePoolTests() {
 	})
 
 	It("returns the parent RP with name populated", func() {
-		moPool, err := vcenter.GetParentResourcePool(ctx, ctx.VCClient.Client, childRP.Reference().Value)
+		moPool, err := vcenter.GetResourcePoolProperties(ctx, ctx.VCClient.Client, childRP.Reference().Value)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(moPool.Name).ToNot(BeEmpty())
 		Expect(moPool.Parent).ToNot(BeNil())
@@ -247,7 +247,7 @@ func getParentResourcePoolTests() {
 	})
 
 	It("returns error when RP MoID does not exist", func() {
-		_, err := vcenter.GetParentResourcePool(ctx, ctx.VCClient.Client, "bogus-rp-id")
+		_, err := vcenter.GetResourcePoolProperties(ctx, ctx.VCClient.Client, "bogus-rp-id")
 		Expect(err).To(HaveOccurred())
 	})
 }
@@ -280,7 +280,7 @@ func getParentFolderTests() {
 	})
 
 	It("returns the parent folder with name populated", func() {
-		moFolder, err := vcenter.GetParentFolder(ctx, ctx.VCClient.Client, childFolder.Reference().Value)
+		moFolder, err := vcenter.GetFolderProperties(ctx, ctx.VCClient.Client, childFolder.Reference().Value)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(moFolder.Name).ToNot(BeEmpty())
 		Expect(moFolder.Parent).ToNot(BeNil())
@@ -288,7 +288,7 @@ func getParentFolderTests() {
 	})
 
 	It("returns error when folder MoID does not exist", func() {
-		_, err := vcenter.GetParentFolder(ctx, ctx.VCClient.Client, "bogus-folder-id")
+		_, err := vcenter.GetFolderProperties(ctx, ctx.VCClient.Client, "bogus-folder-id")
 		Expect(err).To(HaveOccurred())
 	})
 }

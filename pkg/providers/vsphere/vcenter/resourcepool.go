@@ -164,36 +164,38 @@ func findChildRP(
 	return childRP, nil
 }
 
-func GetParentResourcePool(
+// GetResourcePoolProperties fetches the "parent" and "name" properties of the
+// given ResourcePool MoID and returns the populated mo.ResourcePool.
+func GetResourcePoolProperties(
 	ctx context.Context,
 	vimClient *vim25.Client,
-	currentRPMoID string) (mo.ResourcePool, error) {
+	rpMoID string) (mo.ResourcePool, error) {
 
 	poolObj := object.NewResourcePool(vimClient,
-		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: currentRPMoID})
+		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
 
 	var moPool mo.ResourcePool
-	err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent", "name"}, &moPool)
-	if err != nil {
+	if err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent", "name"}, &moPool); err != nil {
 		return mo.ResourcePool{}, err
 	}
 
 	return moPool, nil
 }
 
-func GetParentFolder(
+// GetFolderProperties fetches the "parent" and "name" properties of the given
+// Folder MoID and returns the populated mo.Folder.
+func GetFolderProperties(
 	ctx context.Context,
 	vimClient *vim25.Client,
-	currentFolderMoID string) (mo.Folder, error) {
+	folderMoID string) (mo.Folder, error) {
 
 	folderObj := object.NewFolder(vimClient,
-		vimtypes.ManagedObjectReference{Type: "Folder", Value: currentFolderMoID})
+		vimtypes.ManagedObjectReference{Type: "Folder", Value: folderMoID})
 
 	var moFolder mo.Folder
-	err := folderObj.Properties(ctx, folderObj.Reference(), []string{"parent", "name"}, &moFolder)
-	if err != nil {
-		return mo.Folder{}, fmt.Errorf("failed to fetch parent properties for folder %s: %w",
-			currentFolderMoID, err)
+	if err := folderObj.Properties(ctx, folderObj.Reference(), []string{"parent", "name"}, &moFolder); err != nil {
+		return mo.Folder{}, err
 	}
+
 	return moFolder, nil
 }

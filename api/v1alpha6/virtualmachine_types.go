@@ -116,9 +116,9 @@ const (
 	// not the guest is reporting the expected IP address(es).
 	VirtualMachineGuestNetworkConfigSynced = "VirtualMachineGuestNetworkConfigSynced"
 
-	// VirtualMachineInValidLocation indicates that the VM is in the expected location in the vCenter inventory.
+	// VirtualMachineLocationValid indicates that the VM is in the expected location in the vCenter inventory.
 	// This condition is set when a VM is detected to be in the incorrect folder or resource pool based on its namespace.
-	VirtualMachineInValidLocation = "VirtualMachineInValidLocation"
+	VirtualMachineLocationValid = "VirtualMachineLocationValid"
 
 	// VirtualMachineConditionComputeConfigSynced indicates whether the VM's
 	// compute configuration (spec.resources, spec.cpuAdvanced, spec.memoryAdvanced)

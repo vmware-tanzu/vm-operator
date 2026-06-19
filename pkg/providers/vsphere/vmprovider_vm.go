@@ -1134,17 +1134,20 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	return reconcileErr
 }
 
+// reconcileLocation validates that the VM is within its expected namespace
+// ResourcePool and Folder hierarchy. If the VM is found outside this hierarchy,
+// all further reconciliation is blocked until the VM is returned to the correct
+// location. This prevents unintended changes to VMs that have been manually
+// moved in the vCenter inventory.
 func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcClient *vcclient.Client) error {
 	vmCtx.Logger.V(4).Info("Reconciling VirtualMachine location")
 	if vmCtx.MoVM.ResourcePool == nil {
 		return fmt.Errorf("VM is not assigned to any resource pools")
 	}
 
-	// If the VM doesn't have a topology zone label, skip location validation.
-	// This can happen in unit tests or when the zone is being determined.
-	// Similar to how vmlifecycle/update_status.go handles missing zone labels.
 	zoneName := vmCtx.VM.Status.Zone
 	if zoneName == "" {
+		vmCtx.Logger.Info("WARNING: VM has no zone set; skipping location validation")
 		return nil
 	}
 
@@ -1158,8 +1161,6 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
 
-	currentCond := pkgcond.Get(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
-
 	isVMInValidRP, err := validateVMResourcePool(vmCtx, expectedRootRPMoID, vcClient)
 	if err != nil {
 		return fmt.Errorf("failed to validate VM resource pool: %w", err)
@@ -1169,39 +1170,51 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return fmt.Errorf("failed to validate VM folder: %w", err)
 	}
 
-	// Handle Mismatch
+	// If the VM is outside its expected RP or Folder hierarchy, block all further
+	// reconciliation by returning a NoRequeueError. The VM will not be reconciled
+	// again until its inventory location changes.
 	if !isVMInValidRP || !isVMInValidFolder {
-		if currentCond == nil || currentCond.Status != metav1.ConditionFalse {
-			pkgcond.MarkFalse(
-				vmCtx.VM,
-				vmopv1.VirtualMachineInValidLocation,
-				"LocationMismatch",
-				"VM is in an invalid ResourcePool or Folder. Move the VM back to the Right RP/Folder hierarchy for namespace %s to resume reconciliation.",
-				vmCtx.VM.Namespace,
-			)
+		var reason string
+		if !isVMInValidRP {
+			reason = "ResourcePoolMismatch"
+		} else {
+			reason = "FolderMismatch"
 		}
+		pkgcond.MarkFalse(
+			vmCtx.VM,
+			vmopv1.VirtualMachineLocationValid,
+			reason,
+			"VM was moved to an unexpected ResourcePool or Folder",
+		)
 
 		return pkgerr.NoRequeueError{Message: fmt.Sprintf(
-			"reconciliation paused for the VM %s because it is moved to invalid ResourcePool/Folder. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s,Expected Folder MoRef: %s, Current Folder MoRef: %s. Move the VM back to the Right RP/Folder hierarchy for namespace %s to resume reconciliation.",
-			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value, expectedFolder, vmCtx.MoVM.Parent.Value, vmCtx.VM.Namespace)}
+			"VM %s/%s relocated outside expected hierarchy: "+
+				"expected RP %s got %s, expected folder %s got %s",
+			vmCtx.VM.Namespace, vmCtx.VM.Name,
+			expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value,
+			expectedFolder, vmCtx.MoVM.Parent.Value,
+		)}
 	}
 
-	if currentCond == nil || currentCond.Status != metav1.ConditionTrue {
-		pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
-	}
+	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineLocationValid)
 	return nil
 }
 
+// validateVMResourcePool checks that the VM resides within the expected
+// namespace ResourcePool hierarchy. It accepts the VM being directly in the
+// namespace RP or in an immediate child RP (e.g. a VKS workload pool). Only
+// one level of depth is validated: deeper nesting is not a supported
+// configuration and would not be detected as valid here.
 func validateVMResourcePool(
 	vmCtx pkgctx.VirtualMachineContext,
 	expectedRootRPMoID string,
 	vcClient *vcclient.Client) (bool, error) {
 
-	if vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
+	if vmCtx.MoVM.ResourcePool != nil && vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
 		return true, nil
 	}
 
-	moPool, err := vcenter.GetParentResourcePool(
+	moPool, err := vcenter.GetResourcePoolProperties(
 		vmCtx,
 		vcClient.VimClient(),
 		vmCtx.MoVM.ResourcePool.Value,
@@ -1216,15 +1229,20 @@ func validateVMResourcePool(
 	return false, nil
 }
 
+// validateVMFolder checks that the VM resides within the expected namespace
+// Folder hierarchy. It accepts the VM being directly in the namespace Folder
+// or in an immediate child Folder (e.g. a VKS workload folder). Only one
+// level of depth is validated: deeper nesting is not a supported configuration
+// and would not be detected as valid here.
 func validateVMFolder(
 	vmCtx pkgctx.VirtualMachineContext,
 	expectedFolder string,
 	vcClient *vcclient.Client) (bool, error) {
 
-	if vmCtx.MoVM.Parent.Value == expectedFolder {
+	if vmCtx.MoVM.Parent != nil && vmCtx.MoVM.Parent.Value == expectedFolder {
 		return true, nil
 	}
-	moFolder, err := vcenter.GetParentFolder(
+	moFolder, err := vcenter.GetFolderProperties(
 		vmCtx,
 		vcClient.VimClient(),
 		vmCtx.MoVM.Parent.Value,
@@ -1232,9 +1250,8 @@ func validateVMFolder(
 	if err != nil {
 		return false, err
 	}
-	// this is to verify if the folder is child of parent Namespace Folder
+	// Accept VMs in an immediate child of the namespace folder (e.g. VKS node folders).
 	if moFolder.Parent != nil && moFolder.Parent.Value == expectedFolder {
-		// this is to verify if the child folder is the VKS
 		return true, nil
 	}
 	return false, nil

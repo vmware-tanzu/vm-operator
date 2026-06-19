@@ -47,7 +47,7 @@ type VMLocationSpecInput struct {
 	WCPNamespaceName string
 }
 
-// VMLocationSpec validates that the VirtualMachineInValidLocation condition is set correctly
+// VMLocationSpec validates that the VirtualMachineLocationValid condition is set correctly
 // when a VM is created in, moved out of, or returned to the expected vCenter inventory location.
 func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput) {
 	const (
@@ -199,12 +199,12 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	}
 
 	When("VM is created in the correct namespace RP and folder", Label("vmrelocation"), func() {
-		It("sets VirtualMachineInValidLocation condition to True", func() {
+		It("sets VirtualMachineLocationValid condition to True", func() {
 			createVM()
 
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,
 				input.WCPNamespaceName, vmName, metav1.Condition{
-					Type:   vmopv1.VirtualMachineInValidLocation,
+					Type:   vmopv1.VirtualMachineLocationValid,
 					Status: metav1.ConditionTrue,
 				})
 		})
@@ -215,10 +215,10 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
 
-			By("Waiting for VirtualMachineInValidLocation=True after initial creation")
+			By("Waiting for VirtualMachineLocationValid=True after initial creation")
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,
 				input.WCPNamespaceName, vmName, metav1.Condition{
-					Type:   vmopv1.VirtualMachineInValidLocation,
+					Type:   vmopv1.VirtualMachineLocationValid,
 					Status: metav1.ConditionTrue,
 				})
 
@@ -249,21 +249,21 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			By("Relocating VM to the cluster root RP (outside the namespace RP hierarchy)")
 			relocateVM(vmMoID, clusterRPRef.Value, "")
 
-			By("Waiting for VirtualMachineInValidLocation condition to become False")
+			By("Waiting for VirtualMachineLocationValid condition to become False")
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,
 				input.WCPNamespaceName, vmName, metav1.Condition{
-					Type:   vmopv1.VirtualMachineInValidLocation,
+					Type:   vmopv1.VirtualMachineLocationValid,
 					Status: metav1.ConditionFalse,
-					Reason: "LocationMismatch",
+					Reason: "ResourcePoolMismatch",
 				})
 
 			By("Relocating VM back to the correct namespace RP and folder")
 			relocateVM(vmMoID, nsRPMoID, nsFolderMoID)
 
-			By("Waiting for VirtualMachineInValidLocation condition to return to True")
+			By("Waiting for VirtualMachineLocationValid condition to return to True")
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,
 				input.WCPNamespaceName, vmName, metav1.Condition{
-					Type:   vmopv1.VirtualMachineInValidLocation,
+					Type:   vmopv1.VirtualMachineLocationValid,
 					Status: metav1.ConditionTrue,
 				})
 		})
@@ -274,10 +274,10 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
 
-			By("Waiting for VirtualMachineInValidLocation=True after initial creation")
+			By("Waiting for VirtualMachineLocationValid=True after initial creation")
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,
 				input.WCPNamespaceName, vmName, metav1.Condition{
-					Type:   vmopv1.VirtualMachineInValidLocation,
+					Type:   vmopv1.VirtualMachineLocationValid,
 					Status: metav1.ConditionTrue,
 				})
 
@@ -333,12 +333,12 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			Expect(vmMoAfterMove.Parent.Value).To(Equal(invalidFolderMoID),
 				"VM did not move to the DC root VM folder; actual parent: %s", vmMoAfterMove.Parent.Value)
 
-			By("Waiting for VirtualMachineInValidLocation condition to become False")
+			By("Waiting for VirtualMachineLocationValid condition to become False")
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,
 				input.WCPNamespaceName, vmName, metav1.Condition{
-					Type:   vmopv1.VirtualMachineInValidLocation,
+					Type:   vmopv1.VirtualMachineLocationValid,
 					Status: metav1.ConditionFalse,
-					Reason: "LocationMismatch",
+					Reason: "FolderMismatch",
 				})
 
 			By("Moving VM back into the namespace folder")
@@ -350,10 +350,10 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			Expect(recoverErr).ToNot(HaveOccurred(), "failed to start MoveIntoFolder recovery task")
 			Expect(recoverTask.Wait(ctx)).To(Succeed(), "MoveIntoFolder recovery task failed for VM %s", vmMoID)
 
-			By("Waiting for VirtualMachineInValidLocation condition to return to True")
+			By("Waiting for VirtualMachineLocationValid condition to return to True")
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,
 				input.WCPNamespaceName, vmName, metav1.Condition{
-					Type:   vmopv1.VirtualMachineInValidLocation,
+					Type:   vmopv1.VirtualMachineLocationValid,
 					Status: metav1.ConditionTrue,
 				})
 		})

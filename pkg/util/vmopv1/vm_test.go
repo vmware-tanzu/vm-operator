@@ -944,15 +944,32 @@ var _ = DescribeTable("GetContextWithWorkloadDomainIsolation",
 	func(
 		ctx context.Context,
 		vm vmopv1.VirtualMachine,
-		expected bool,
+		expected, identical bool,
 	) {
-		c := vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, vm)
+		c := vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, &vm)
 		Ω(pkgcfg.FromContext(c).Features.WorkloadDomainIsolation).Should(Equal(expected))
+		if identical {
+			Ω(c).Should(BeIdenticalTo(ctx))
+		} else {
+			Ω(c).ShouldNot(BeIdenticalTo(ctx))
+		}
 	},
 	Entry(
 		"is not kubernetes node",
 		pkgcfg.NewContext(),
 		vmopv1.VirtualMachine{},
+		true,
+		false,
+	),
+	Entry(
+		"is not kubernetes node with capability enabled",
+		pkgcfg.WithConfig(pkgcfg.Config{
+			Features: pkgcfg.FeatureStates{
+				WorkloadDomainIsolation: true,
+			},
+		}),
+		vmopv1.VirtualMachine{},
+		true,
 		true,
 	),
 	Entry(
@@ -966,6 +983,7 @@ var _ = DescribeTable("GetContextWithWorkloadDomainIsolation",
 			},
 		},
 		false,
+		true,
 	),
 	Entry(
 		"is kubernetes node with capability enabled",
@@ -981,6 +999,7 @@ var _ = DescribeTable("GetContextWithWorkloadDomainIsolation",
 				},
 			},
 		},
+		true,
 		true,
 	),
 )

@@ -430,7 +430,7 @@ func (s *Session) poweredOnReconfigure(
 		return fmt.Errorf("update CD-ROM device connection error: %w", err)
 	}
 
-	if err := doReconfigure(
+	err := doReconfigure(
 		logr.NewContext(
 			vmCtx,
 			vmCtx.Logger.WithName("poweredOnReconfigure"),
@@ -439,12 +439,18 @@ func (s *Session) poweredOnReconfigure(
 		vmCtx.VM,
 		vcVM,
 		vmCtx.MoVM,
-		*configSpec); err != nil {
+		*configSpec)
 
-		return err
+	if errors.Is(err, ErrReconfigure) {
+		if cbtErr := s.reconcilePoweredOnChangeBlockTracking(vmCtx, configSpec); cbtErr != nil {
+			// The Reconfigure has been performed but we have no way to later determine if
+			// this needs to be called. We used to just this best effort after a reconfigure
+			// so continue to do that here for now. See vmon-3868 for a more complete fix.
+			vmCtx.Logger.Error(cbtErr, "Failed to update CBT for powered on VM")
+		}
 	}
 
-	if err := s.reconcileChangeTracking(vmCtx, configSpec); err != nil {
+	if err != nil {
 		return err
 	}
 
@@ -1291,29 +1297,21 @@ func reconcileAnnotationsToExtraConfig(
 		configSpec)
 }
 
-func (s *Session) reconcileChangeTracking(
+func (s *Session) reconcilePoweredOnChangeBlockTracking(
 	vmCtx pkgctx.VirtualMachineContext,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
-
-	vmCtx.Logger.V(4).Info("Reconciling change tracking")
-
-	if vmCtx.MoVM.Runtime.PowerState !=
-		vimtypes.VirtualMachinePowerStatePoweredOn {
-
-		vmCtx.Logger.V(4).Info("Skipping reconciliation of change tracking " +
-			"of vm that is not powered on")
-		return nil
-	}
-
-	if configSpec.ChangeTrackingEnabled == nil {
-		vmCtx.Logger.V(4).Info("Skipping reconciliation of change tracking " +
-			"of vm where feature is not enabled")
-		return nil
-	}
 
 	// Special case for CBT: in order for CBT change take effect for a powered
 	// on VM, a checkpoint save/restore is needed. The FSR call allows CBT to
 	// take effect for powered-on VMs.
+
+	if configSpec.ChangeTrackingEnabled == nil {
+		return nil
+	}
+
+	vmCtx.Logger.Info("Invoking FSR for ChangeBlockTracking update",
+		"enabled", configSpec.ChangeTrackingEnabled)
+
 	if err := s.invokeFsrVirtualMachine(vmCtx); err != nil {
 		return fmt.Errorf("failed to invoke FSR for CBT update: %w", err)
 	}

@@ -62,6 +62,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		}
 
 		networkSpec = &vmopv1.VirtualMachineNetworkSpec{}
+		vm.Spec.Network = networkSpec
 	})
 
 	JustBeforeEach(func() {
@@ -601,6 +602,74 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ipConfig.IsIPv4).To(BeFalse())
 					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 				})
+			})
+		})
+
+		Context("InterfaceSpec Gateway field is not accidentally modified", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							Name: networkName,
+						},
+						Addresses: []string{"192.168.1.100/24", "2001:db8::100/64"},
+					},
+				}
+			})
+
+			It("returns success with user addresses overriding NetOP", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "10.0.0.100",
+							IPFamily:   corev1.IPv4Protocol,
+							Gateway:    "10.0.0.1",
+							SubnetMask: "255.255.255.0",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
+
+				netInterfacesBefore := vmCtx.VM.DeepCopy().Spec.Network.Interfaces
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(netInterfacesBefore).To(Equal(vmCtx.VM.Spec.Network.Interfaces))
+
+				Expect(results.Results).To(HaveLen(1))
+				result := results.Results[0]
+				Expect(result.IPConfigs).To(HaveLen(2))
+				// User addresses should override NetOP addresses
+				Expect(result.IPConfigs[0].IPCIDR).To(Equal("192.168.1.100/24"))
+				Expect(result.IPConfigs[1].IPCIDR).To(Equal("2001:db8::100/64"))
+				// Gateway4 should be backfilled from NetOP
+				Expect(result.IPConfigs[0].Gateway).To(Equal("10.0.0.1"))
 			})
 		})
 	})

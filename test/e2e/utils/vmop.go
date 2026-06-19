@@ -135,14 +135,12 @@ func DeleteVirtualMachineSnapshot(ctx context.Context, client ctrlclient.Client,
 	return client.Delete(ctx, virtualMachineSnapshot)
 }
 
-func GetVirtualMachineClass(ctx context.Context, client ctrlclient.Client, name, ns string, namespacedVMClassFSSEnabled bool) (*vmopv1a2.VirtualMachineClass, error) {
+func GetVirtualMachineClass(ctx context.Context, client ctrlclient.Client, name, ns string) (*vmopv1a2.VirtualMachineClass, error) {
 	virtualMachineClass := &vmopv1a2.VirtualMachineClass{}
 
 	key := types.NamespacedName{
-		Name: name,
-	}
-	if namespacedVMClassFSSEnabled {
-		key.Namespace = ns
+		Name:      name,
+		Namespace: ns,
 	}
 
 	err := client.Get(ctx, key, virtualMachineClass)

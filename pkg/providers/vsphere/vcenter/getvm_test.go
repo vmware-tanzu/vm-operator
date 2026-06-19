@@ -156,17 +156,4 @@ func getVM() {
 			Expect(vm).To(BeNil())
 		})
 	})
-
-	Context("VM does not have IDs set", func() {
-		BeforeEach(func() {
-			vmCtx.VM.Spec.InstanceUUID = ""
-			vmCtx.VM.Status.UniqueID = ""
-		})
-
-		It("returns error", func() {
-			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
-			Expect(err).To(MatchError("neither MoID or InstanceUUID set on VM"))
-			Expect(vm).To(BeNil())
-		})
-	})
 }

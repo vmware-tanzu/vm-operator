@@ -26,8 +26,7 @@ func GetVirtualMachine(
 	vimClient *vim25.Client,
 	datacenter *object.Datacenter) (*object.VirtualMachine, error) {
 
-	moID := vmCtx.VM.Status.UniqueID
-	if moID != "" {
+	if moID := vmCtx.VM.Status.UniqueID; moID != "" {
 		if vm, err := findVMByMoID(vmCtx, vimClient, moID); err == nil {
 			return vm, nil
 		} else if !errors.Is(err, errVMNotFound) {
@@ -52,12 +51,6 @@ func GetVirtualMachine(
 		} else if !errors.Is(err, errVMNotFound) {
 			return nil, err
 		}
-	}
-
-	if moID == "" && instanceUUID == "" {
-		// This shouldn't happen, but we cannot determine if this VM exists or not so
-		// must return an error.
-		return nil, fmt.Errorf("neither MoID or InstanceUUID set on VM")
 	}
 
 	return nil, nil

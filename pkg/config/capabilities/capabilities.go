@@ -126,7 +126,7 @@ const (
 	// VirtualMachineConfigPolicy controllers, webhooks, and associated CRDs
 	// (ConfigTarget, VirtualMachineConfigOptions, VirtualMachineConfigPolicy,
 	// VirtualMachineGuestOptions).
-	CapabilityKeyVirtualMachineConfigPolicy = "supports_vm_config_policy"
+	CapabilityKeyVirtualMachineConfigPolicy = "supports_vm_service_vm_config_policy"
 )
 
 var (

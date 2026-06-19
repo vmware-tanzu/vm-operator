@@ -80,7 +80,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmName                      string
 		instanceStorageFssEnabled   bool
 		vmResizeCPUMemoryFssEnabled bool
-		isoSupportFSSEnabled        bool
 		linuxImageDisplayName       string
 		linuxVMIName                string
 		linuxImageGuestID           string
@@ -117,7 +116,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		instanceStorageFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSInstanceStorage"))
 		vmResizeCPUMemoryFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMResizeCPUMemory"))
-		isoSupportFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIsoSupport"))
 
 		vmYaml = nil
 		tmpNamespaceCtx = wcpframework.NamespaceContext{}
@@ -651,9 +649,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 	It("Should create expected resources for a VirtualMachine deployed from ISO", func() {
 		skipper.SkipUnlessInfraIs(config.InfraConfig.InfraName, "wcp")
-		if !isoSupportFSSEnabled {
-			Skip("ISO Support FSS is not enabled")
-		}
 
 		if os.Getenv("RUN_CANONICAL_TEST") == "true" {
 			Skip("These tests will be skipped for Canonical OVA testing.")

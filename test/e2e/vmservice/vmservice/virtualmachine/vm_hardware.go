@@ -1173,6 +1173,18 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 
 			It("VMs should power on successfully", func() {
+				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				defer vcenter.LogoutVimClient(vCenterClient)
+
+				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+
+				if isVSANDEnabled || isVSANEnabled {
+					Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
+				}
+
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: eztStorageProfileName,
 					SharingMode:      ptr.To(string(vmopv1a5.VolumeSharingModeMultiWriter)),
@@ -1914,6 +1926,18 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Should(Succeed(), "Timed out waiting for boot disk to become managed PVC")
 
 				By("Creating a new PVC with a different storage class and larger size")
+				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				defer vcenter.LogoutVimClient(vCenterClient)
+
+				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+
+				if isVSANDEnabled || isVSANEnabled {
+					Skip("Skipping boot disk storage class replacement: EZT storage profile requires non-VSAN datastore")
+				}
+
 				// Create a new PVC with a different storage class and larger size.
 				newBootDiskPVCName := fmt.Sprintf("%s-new-boot-disk", vmName)
 				newBootDiskPVCSize := bootDiskPVC.Spec.Resources.Requests[corev1.ResourceStorage]
@@ -2214,6 +2238,18 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			It("Import brownfield VM with shared SCSI controller and shared disk should succeed", Label("experimental"), func() {
 				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.MultiWriterDiskVMotionCapabilityName)
 
+				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				defer vcenter.LogoutVimClient(vCenterClient)
+
+				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+
+				if isVSANDEnabled || isVSANEnabled {
+					Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
+				}
+
 				importOpName := fmt.Sprintf("import-shared-disk-%s", capiutil.RandomString(4))
 
 				result := ImportBrownfieldVM(ImportBrownfieldVMInput{
@@ -2475,6 +2511,18 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 
 			It("should allow a non-encrypted VM with a physical-sharing SCSI controller", func() {
+				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				defer vcenter.LogoutVimClient(vCenterClient)
+
+				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+				Expect(err).To(BeNil())
+
+				if isVSANDEnabled || isVSANEnabled {
+					Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
+				}
+
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    eztStorageProfileName,
 					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),

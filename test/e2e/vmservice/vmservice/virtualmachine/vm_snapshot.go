@@ -141,10 +141,10 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		BeforeEach(func() {
 			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
-		})
+		vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+	})
 
-		It("successfully create, update, revert to, and delete vm snapshots", Label("smoke"), func() {
+	It("successfully create, update, revert to, and delete vm snapshots", Label("smoke"), func() {
 			By("create vm snapshot 1")
 			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
 				Namespace: vmSvcNamespace,
@@ -400,10 +400,10 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				},
 			})
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
-		})
+		vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+	})
 
-		It("successfully create, and delete vm snapshots", func() {
+	It("successfully create, and delete vm snapshots", func() {
 			By("create vm snapshot 1")
 			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
 				Namespace: vmSvcNamespace,

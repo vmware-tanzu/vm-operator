@@ -19,6 +19,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -1438,4 +1440,71 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 			"boot disk %q storage policy StorageClass %q does not match spec.storageClass %q on VirtualMachine %s/%s",
 			boot.Name, scName, vm.Spec.StorageClass, namespace, name)
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+}
+
+// WaitForVMCnsRegisterVolumesRegistered waits until every CnsRegisterVolume
+// owned by the given VM (identified by label vmoperator.vmware.com/created-by)
+// has status.registered=true.
+//
+// This must be called before creating a VirtualMachineSnapshot when the
+// AllDisksArePVCs feature is enabled. If a snapshot is taken while a
+// CnsRegisterVolume is still in progress, the VMDK acquires a snapshot delta
+// child and becomes a non-running-point disk. VSLM's RegisterDisk then
+// rejects it with InvalidArgument("path"), leaving the PVC permanently
+// Pending and the snapshot stuck WaitingForCSISync.
+//
+// If no CnsRegisterVolumes exist for the VM (e.g. it was deployed from an
+// FCD-backed ISO image), the function returns immediately — no registration
+// is needed for FCDs.
+func WaitForVMCnsRegisterVolumesRegistered(
+	ctx context.Context,
+	vmSvcE2EConfig *config.E2EConfig,
+	client ctrlclient.Client,
+	ns, vmName string,
+) {
+	crvGVK := schema.GroupVersionKind{
+		Group:   "cns.vmware.com",
+		Version: "v1alpha1",
+		Kind:    "CnsRegisterVolumeList",
+	}
+
+	By(fmt.Sprintf("Waiting for all CnsRegisterVolumes to be registered for VM %s/%s", ns, vmName))
+	Eventually(func(g Gomega) bool {
+		crvList := &unstructured.UnstructuredList{}
+		crvList.SetGroupVersionKind(crvGVK)
+
+		err := client.List(ctx, crvList,
+			ctrlclient.InNamespace(ns),
+			ctrlclient.MatchingLabels{
+				"vmoperator.vmware.com/created-by": vmName,
+			},
+		)
+		if err != nil {
+			e2eframework.Logf("retry: failed to list CnsRegisterVolumes for VM %s/%s: %v", ns, vmName, err)
+			return false
+		}
+
+		if len(crvList.Items) == 0 {
+			// No CRVs for this VM — either FCD-backed image or registration
+			// not yet triggered. Safe to return true; if registration is
+			// still pending the snapshot gate in vm-operator will hold it.
+			return true
+		}
+
+		for i := range crvList.Items {
+			crv := &crvList.Items[i]
+			registered, found, err := unstructured.NestedBool(crv.Object, "status", "registered")
+			if err != nil || !found || !registered {
+				errMsg, _, _ := unstructured.NestedString(crv.Object, "status", "error")
+				e2eframework.Logf("retry: CnsRegisterVolume %s/%s not yet registered (error: %q)",
+					ns, crv.GetName(), errMsg)
+				return false
+			}
+		}
+
+	e2eframework.Logf("All %d CnsRegisterVolume(s) for VM %s/%s are registered",
+		len(crvList.Items), ns, vmName)
+	return true
+}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(),
+	"Timed out waiting for CnsRegisterVolumes to be registered for VM %s/%s", ns, vmName)
 }

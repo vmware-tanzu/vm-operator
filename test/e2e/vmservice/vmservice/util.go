@@ -769,11 +769,17 @@ func VerifyLoginAndRunCmdsInVDSSetup(config *config.E2EConfig, vmIP string, cmds
 	if len(cmds) > 0 && len(expectedOutput) > 0 {
 		for i, cmd := range cmds {
 			By(fmt.Sprintf("Verify running cmd: %s on VM with vmIP (ipv4): %s contains expected output: %s", cmd, vmIP, expectedOutput[i]))
-			cmdOutput, err = cmdRunner.RunCommand(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
-			cmdOutputString = string(cmdOutput)
-			Expect(cmdOutputString).To(ContainSubstring(expectedOutput[i]))
+			// Wrap each command in Eventually so that cloud-init (or any other
+			// in-guest agent) has time to finish writing files after SSH first
+			// becomes available. Without this, tests that check for files written
+			// by cloud-init (e.g. /helloworld via write_files) can fail on the
+			// VDS path even though the NSX path retries identically.
+			Eventually(func(g Gomega) {
+				cmdOutput, err = cmdRunner.RunCommand(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(string(cmdOutput)).To(ContainSubstring(expectedOutput[i]))
+			}, config.GetIntervals("default", "login-retry-timeout")...).Should(Succeed(),
+				"cmd %q output did not contain expected %q", cmd, expectedOutput[i])
 		}
 	}
 
@@ -1013,6 +1019,14 @@ func DeleteVMResource(
 	// Wait for backup to complete before powering off and deleting the VM
 	waitForBackupToComplete(ctx, vm, clusterProxy, config)
 
+	// When AllDisksArePVCs is enabled, the CSI driver takes a VM snapshot
+	// while registering the boot VMDK as an FCD. If that snapshot is still
+	// outstanding when we unregister the PVCs and call RegisterVM, the VMDK
+	// has an active delta child ("_N.vmdk") and RegisterVM rejects it with
+	// "disk is not restored". Wait until every CnsRegisterVolume owned by
+	// this VM has status.registered=true before touching the disk chain.
+	vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, config, svClusterClient, vmNamespace, vmName)
+
 	By("Power off the VM")
 	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
@@ -1021,13 +1035,12 @@ func DeleteVMResource(
 
 	vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 	Expect(err).ToNot(HaveOccurred())
-
+	base := vm.DeepCopy()
 	if vm.Annotations == nil {
 		vm.Annotations = make(map[string]string)
 	}
-
 	vm.Annotations[vmopv1a2.PauseAnnotation] = trueString
-	Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+	Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 	// Collect all PVC names from the VM spec
 	var pvcNames []string

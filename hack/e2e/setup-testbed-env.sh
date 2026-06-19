@@ -310,7 +310,7 @@ _setup_kubectl_vsphere() {
     local -r plugin_url="https://${wcp_ip}/wcp/plugin/${plugin_os}/vsphere-plugin.zip"
     local -r extract_dir="/tmp/vsphere-plugin-$$"
 
-    if ! curl --max-time 60 --retry 3 --retry-delay 5 -fsSLo vsphere-plugin.zip "${plugin_url}" 2>/dev/null; then
+    if ! curl --insecure --max-time 60 --retry 3 --retry-delay 5 -fsSLo vsphere-plugin.zip "${plugin_url}" 2>/dev/null; then
         _warn "Failed to download kubectl-vsphere from ${wcp_ip} (${plugin_os})"
         return 0
     fi

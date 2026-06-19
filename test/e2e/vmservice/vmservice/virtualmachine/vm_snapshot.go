@@ -17,6 +17,7 @@ import (
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
+
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -137,7 +138,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 			})
 	})
 
-	When("VM doesn't have PVC", func() {
+	When("VM doesn't have PVC", Label("experimental"), func() {
 		BeforeEach(func() {
 			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
@@ -388,7 +389,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		})
 	})
 
-	When("VM has PVC", func() {
+	When("VM has PVC", Label("experimental"), func() {
 		BeforeEach(func() {
 			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", []manifestbuilders.PVC{
 				{

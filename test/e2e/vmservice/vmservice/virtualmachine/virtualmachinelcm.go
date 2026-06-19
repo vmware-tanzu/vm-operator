@@ -67,22 +67,21 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	)
 
 	var (
-		input                       VMSpecInput
-		wcpClient                   wcp.WorkloadManagementAPI
-		vCenterClient               *vim25.Client
-		propCollector               *property.Collector
-		config                      *e2eConfig.E2EConfig
-		clusterProxy                *common.VMServiceClusterProxy
-		svClusterClient             ctrlclient.Client
-		clusterResources            *e2eConfig.Resources
-		tmpNamespaceCtx             wcpframework.NamespaceContext
-		vmYaml                      []byte
-		vmName                      string
-		instanceStorageFssEnabled   bool
-		vmResizeCPUMemoryFssEnabled bool
-		linuxImageDisplayName       string
-		linuxVMIName                string
-		linuxImageGuestID           string
+		input                     VMSpecInput
+		wcpClient                 wcp.WorkloadManagementAPI
+		vCenterClient             *vim25.Client
+		propCollector             *property.Collector
+		config                    *e2eConfig.E2EConfig
+		clusterProxy              *common.VMServiceClusterProxy
+		svClusterClient           ctrlclient.Client
+		clusterResources          *e2eConfig.Resources
+		tmpNamespaceCtx           wcpframework.NamespaceContext
+		vmYaml                    []byte
+		vmName                    string
+		instanceStorageFssEnabled bool
+		linuxImageDisplayName     string
+		linuxVMIName              string
+		linuxImageGuestID         string
 	)
 
 	BeforeEach(func() {
@@ -115,7 +114,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		propCollector = property.DefaultCollector(vCenterClient)
 
 		instanceStorageFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSInstanceStorage"))
-		vmResizeCPUMemoryFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMResizeCPUMemory"))
 
 		vmYaml = nil
 		tmpNamespaceCtx = wcpframework.NamespaceContext{}
@@ -202,11 +200,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 	})
 
-	It("Should resize powered off VirtualMachine when VM_Resize_CPU_Memory is Enabled", func() {
-		if !vmResizeCPUMemoryFssEnabled {
-			Skip("VM_Resize_CPU_Memory FSS is not enabled")
-		}
-
+	It("Should resize powered off VirtualMachine", func() {
 		const newVMClassName = "guaranteed-large"
 
 		Expect(vmservice.EnsureNamespaceHasAccess(input.WCPClient, clusterResources.VMClassName, input.WCPNamespaceName)).To(Succeed())

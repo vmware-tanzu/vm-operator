@@ -715,6 +715,49 @@ type VirtualMachineNetworkInterfaceStatus struct {
 
 	// DNS describes the observed state of the interface's DNS configuration.
 	DNS *VirtualMachineNetworkDNSStatus `json:"dns,omitempty"`
+
+	// +optional
+
+	// VNUMANodeID reflects the observed virtual NUMA node assignment for this
+	// interface. Unset if the interface has no NUMA node affinity configured.
+	VNUMANodeID *int32 `json:"vnumaNodeID,omitempty"`
+
+	// +optional
+
+	// VMXNet3 reflects the observed VMXNet3-specific device properties for
+	// this interface. Unset if the interface is not a VMXNet3 adapter.
+	VMXNet3 *VirtualMachineNetworkInterfaceVMXNet3Status `json:"vmxnet3,omitempty"`
+}
+
+// VirtualMachineNetworkInterfaceVMXNet3Status describes observed VMXNet3 device
+// properties for a network interface.
+type VirtualMachineNetworkInterfaceVMXNet3Status struct {
+	// +optional
+
+	// UPTv2Enabled reflects the observed UPTv2 enablement config on this interface.
+	UPTv2Enabled *bool `json:"uptv2Enabled,omitempty"`
+
+	// +optional
+
+	// UPTv2Active indicates whether UPTv2 (Uniform Pass-through v2) is active at
+	// runtime. True means the NIC is operating in pass-through mode. False means
+	// the NIC has network connectivity but UPTv2 is inactive (see UPTv2InactiveReasonVM
+	// and UPTv2InactiveReasonOther for the reason). Unset if the NIC is not VMXNet3
+	// or UPTv2Enabled is not true. Read from
+	// VirtualMachineDeviceRuntimeInfoVirtualEthernetCardRuntimeState.
+	UPTv2Active *bool `json:"uptv2Active,omitempty"`
+
+	// +optional
+
+	// UPTv2InactiveReasonVM lists reasons why UPTv2 is inactive that are related
+	// to virtual machine state or configuration. Populated when UPTv2Active is false.
+	UPTv2InactiveReasonVM []string `json:"uptv2InactiveReasonVm,omitempty"`
+
+	// +optional
+
+	// UPTv2InactiveReasonOther lists reasons why UPTv2 is inactive that are not
+	// related to virtual machine state or configuration. Populated when UPTv2Active is false.
+	UPTv2InactiveReasonOther []string `json:"uptv2InactiveReasonOther,omitempty"`
 }
 
 // VirtualMachineNetworkConfigInterfaceStatus describes the configured state of

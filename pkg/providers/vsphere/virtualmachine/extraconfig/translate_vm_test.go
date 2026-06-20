@@ -13,6 +13,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine/extraconfig"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -112,5 +113,60 @@ var _ = Describe("TranslateFirstClass", func() {
 		}
 		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
+	})
+})
+
+var _ = Describe("TranslateVMXNet3NICFirstClass", func() {
+	ctx := context.Background()
+	// ethernet0 has deviceKey 4000 (EthernetDeviceKeyBase + 0)
+	const devKey0 int32 = 4000
+	// ethernet1 has deviceKey 4001
+	const devKey1 int32 = 4001
+	const prefix0 = "ethernet0."
+	const prefix1 = "ethernet1."
+
+	It("returns nil for nil input", func() {
+		Expect(extraconfig.TranslateVMXNet3NICFirstClass(ctx, devKey0, nil)).To(BeNil())
+	})
+
+	It("returns one entry per vmx-tagged NIC field (all empty) for empty spec", func() {
+		keyCount := len(vmopv1util.VMXNet3NICKeyMap())
+		ov := extraconfig.TranslateVMXNet3NICFirstClass(ctx, devKey0, &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{})
+		Expect(ov).To(HaveLen(keyCount))
+		for _, bov := range ov {
+			kv := bov.GetOptionValue()
+			Expect(kv.Value).To(Equal(""), "expected empty string for zero field %q", kv.Key)
+		}
+	})
+
+	It("prefixes keys with the device prefix", func() {
+		ov := extraconfig.TranslateVMXNet3NICFirstClass(ctx, devKey0, &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{})
+		for _, bov := range ov {
+			kv := bov.GetOptionValue()
+			Expect(kv.Key).To(HavePrefix(prefix0), "key %q should have prefix %q", kv.Key, prefix0)
+		}
+	})
+
+	It("encodes *bool true as TRUE", func() {
+		spec := &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+			UPTv2Enabled: ptr.To(true),
+		}
+		ov := extraconfig.TranslateVMXNet3NICFirstClass(ctx, devKey0, spec)
+		keys := map[string]string{}
+		for _, bov := range ov {
+			kv := bov.GetOptionValue()
+			v, _ := kv.Value.(string)
+			keys[kv.Key] = v
+		}
+		Expect(len(keys)).To(BeNumerically(">", 0))
+	})
+
+	It("uses the ethernet1 prefix for deviceKey 4001", func() {
+		spec := &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{}
+		ov := extraconfig.TranslateVMXNet3NICFirstClass(ctx, devKey1, spec)
+		for _, bov := range ov {
+			kv := bov.GetOptionValue()
+			Expect(kv.Key).To(HavePrefix(prefix1))
+		}
 	})
 })

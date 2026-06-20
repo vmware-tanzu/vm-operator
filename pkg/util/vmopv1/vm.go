@@ -649,3 +649,50 @@ func IsFSRSupported(vm vmopv1.VirtualMachine) bool {
 
 	return isFSRSupported
 }
+
+// GetVNUMANodeCount returns the configured virtual NUMA node count for the VM.
+// Returns 0 when CPUAdvanced, Topology, or VNUMANodeCount is nil.
+func GetVNUMANodeCount(vm *vmopv1.VirtualMachine) int32 {
+	if vm.Spec.CPUAdvanced == nil || vm.Spec.CPUAdvanced.Topology == nil ||
+		vm.Spec.CPUAdvanced.Topology.VNUMANodeCount == nil {
+		return 0
+	}
+	return *vm.Spec.CPUAdvanced.Topology.VNUMANodeCount
+}
+
+// FullMemReservationSpecMet returns true when the VM spec describes full
+// guest memory reservation via either mechanism accepted by vSphere:
+//   - spec.memoryAdvanced.reservationLockedToMax == true
+//   - spec.resources.requests.memory equals spec.resources.size.memory
+//
+// Note: this checks only spec-declared intent.  Callers that have access
+// to the live vSphere ConfigInfo should additionally check
+// ci.MemoryReservationLockedToMax and ci.MemoryAllocation.Reservation.
+func FullMemReservationSpecMet(vm *vmopv1.VirtualMachine) bool {
+	if vm.Spec.MemoryAdvanced != nil && vm.Spec.MemoryAdvanced.ReservationLockedToMax != nil &&
+		*vm.Spec.MemoryAdvanced.ReservationLockedToMax {
+		return true
+	}
+	res := vm.Spec.Resources
+	if res != nil && res.Requests != nil && res.Size != nil &&
+		res.Requests.Memory != nil && res.Size.Memory != nil &&
+		res.Requests.Memory.Cmp(*res.Size.Memory) == 0 {
+		return true
+	}
+	return false
+}
+
+// FirmwareIsEFI returns true when the VM's effective firmware type is EFI.
+// It prefers spec.bootOptions.firmware and falls back to the live vSphere
+// config (ci.Firmware) when the spec value is absent, mirroring the same
+// precedence used during reconciliation.
+func FirmwareIsEFI(vm *vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo) bool {
+	firmware := ""
+	if vm.Spec.BootOptions != nil {
+		firmware = string(vm.Spec.BootOptions.Firmware)
+	}
+	if firmware == "" {
+		firmware = ci.Firmware
+	}
+	return firmware == string(vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI)
+}

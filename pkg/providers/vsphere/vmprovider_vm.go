@@ -72,6 +72,7 @@ import (
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
+	vmconfnetworkextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
@@ -2634,6 +2635,16 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
 		if err := vmconfextraconfig.Reconcile(
+			vmCtx,
+			vs.k8sClient,
+			vcClient.VimClient(),
+			vmCtx.VM,
+			vmCtx.MoVM,
+			&createArgs.ConfigSpec); err != nil {
+
+			return err
+		}
+		if err := vmconfnetworkextraconfig.Reconcile(
 			vmCtx,
 			vs.k8sClient,
 			vcClient.VimClient(),

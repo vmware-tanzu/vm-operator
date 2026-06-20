@@ -309,3 +309,40 @@ var _ = Describe("EncodeVMXSliceStringField / DecodeVMXFieldValue round-trip (un
 		Entry("three values", []string{"a", "b", "c"}, "a,b,c"),
 	)
 })
+
+var _ = Describe("VMXNet3NICModeMap", func() {
+	It("contains an entry for every vmx-tagged field in VirtualMachineNetworkInterfaceVMXNet3Spec", func() {
+		nicKeyMap := vmopv1util.VMXNet3NICKeyMap()
+		nicModeMap := vmopv1util.VMXNet3NICModeMap()
+		Expect(nicModeMap).To(HaveLen(len(nicKeyMap)))
+		for tmplKey := range nicKeyMap {
+			Expect(nicModeMap).To(HaveKey(tmplKey))
+		}
+	})
+
+	It("maps known powercycle fields to VMXModePowerCycle using template keys", func() {
+		modeMap := vmopv1util.VMXNet3NICModeMap()
+		Expect(modeMap).To(HaveKeyWithValue("ethernet%d.ctxPerDev", vmopv1util.VMXModePowerCycle))
+		Expect(modeMap).To(HaveKeyWithValue("ethernet%d.rssoffload", vmopv1util.VMXModePowerCycle))
+	})
+
+	It("maps known live fields to VMXModeLive using template keys", func() {
+		modeMap := vmopv1util.VMXNet3NICModeMap()
+		Expect(modeMap).To(HaveKeyWithValue("ethernet%d.coalescingScheme", vmopv1util.VMXModeLive))
+		Expect(modeMap).To(HaveKeyWithValue("ethernet%d.coalescingParams", vmopv1util.VMXModeLive))
+	})
+})
+
+var _ = Describe("ExtractEthernetDeviceProperty", func() {
+	DescribeTable("parses ethernet VMX keys",
+		func(key string, wantProp string, wantOK bool) {
+			prop, ok := vmopv1util.ExtractEthernetDeviceProperty(key)
+			Expect(ok).To(Equal(wantOK))
+			Expect(prop).To(Equal(wantProp))
+		},
+		Entry("valid key ethernet0.ctxPerDev", "ethernet0.ctxPerDev", "ctxPerDev", true),
+		Entry("valid key ethernet3.rssoffload", "ethernet3.rssoffload", "rssoffload", true),
+		Entry("non-ethernet key is rejected", "someOtherKey", "", false),
+		Entry("empty string is rejected", "", "", false),
+	)
+})

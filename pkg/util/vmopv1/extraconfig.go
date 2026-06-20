@@ -36,8 +36,13 @@ func EthernetExtraConfigPrefix(deviceKey int32) string {
 }
 
 // ethernetDeviceVMXRE matches a vmx struct tag of the form "ethernet%d.<key>"
-// and captures the bare key portion in submatch[1].
+// and captures the bare key portion in submatch[1]. Used only for struct-tag
+// reflection (buildDeviceTagMaps). Does NOT match live ExtraConfig keys.
 var ethernetDeviceVMXRE = regexp.MustCompile(`^` + ethernetVMXKeyPrefix + `\.(.*)$`)
+
+// ethernetLiveKeyRE matches a live VMX ExtraConfig key of the form "ethernetN.<key>"
+// (where N is a decimal device index) and captures the bare key in submatch[1].
+var ethernetLiveKeyRE = regexp.MustCompile(`^ethernet\d+\.(.*)$`)
 
 // VMXMode describes how a change to a first-class VMX key is applied.
 // It is declared by the vmxmode struct tag on VirtualMachineAdvancedSpec fields.
@@ -56,21 +61,17 @@ const (
 	VMXModePowerOff
 )
 
-// advancedVMXMaps holds both maps built in a single struct-reflection pass.
-type advancedVMXMaps struct {
+// vmxTagMaps holds both key→fieldIdx and key→VMXMode maps for any VMX spec
+// struct. Used for global VM fields (VirtualMachineAdvancedSpec) and
+// device-scoped fields (e.g. ethernet%d, passthru%d).
+type vmxTagMaps struct {
 	keys  map[string]int
 	modes map[string]VMXMode
 }
 
 var (
-	cachedAdvancedVMXMaps = sync.OnceValue(func() advancedVMXMaps {
-		return buildAdvancedVMXMaps(reflect.TypeOf(vmopv1.VirtualMachineAdvancedSpec{}))
-	})
-
-	cachedVMXNet3NICKeyMap = sync.OnceValue(func() map[string]int {
-		return BuildVMXNet3NICKeyMap(
-			reflect.TypeOf(vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{}))
-	})
+	cachedAdvancedVMXMaps = sync.OnceValue(buildAdvancedVMXMaps[vmopv1.VirtualMachineAdvancedSpec])
+	cachedVMXNet3NICMaps  = sync.OnceValue(buildVMXNet3NICMaps[vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec])
 )
 
 // AdvancedVMXKeyMap returns the shared, lazily-built map of vmx struct tags
@@ -85,22 +86,94 @@ func AdvancedVMXModeMap() map[string]VMXMode {
 	return cachedAdvancedVMXMaps().modes
 }
 
-// VMXNet3NICKeyMap returns the shared, lazily-built map of bare vmxnet3 property
-// names to field indices for VirtualMachineNetworkInterfaceVMXNet3Spec.
+// VMXNet3NICKeyMap returns the shared, lazily-built map of template VMX keys
+// (e.g. "ethernet%d.ctxPerDev") to field indices for
+// VirtualMachineNetworkInterfaceVMXNet3Spec.
 func VMXNet3NICKeyMap() map[string]int {
-	return cachedVMXNet3NICKeyMap()
+	return cachedVMXNet3NICMaps().keys
 }
 
-// buildAdvancedVMXMaps returns both the vmx-key→fieldIdx map and the
-// vmx-key→VMXMode map for the given struct type in a single reflection pass.
-// Fields without a vmx tag, or whose tag matches "ethernet%d.<key>", are skipped.
-func buildAdvancedVMXMaps(t reflect.Type) advancedVMXMaps {
+// VMXNet3NICModeMap returns the shared, lazily-built map of template VMX keys
+// (e.g. "ethernet%d.ctxPerDev") to VMXMode for
+// VirtualMachineNetworkInterfaceVMXNet3Spec.
+func VMXNet3NICModeMap() map[string]VMXMode {
+	return cachedVMXNet3NICMaps().modes
+}
+
+// isDeviceProperty reports whether tag matches the device-namespace VMX pattern
+// described by re (e.g. ethernetDeviceVMXRE for "ethernet%d.<key>").
+func isDeviceProperty(tag string, re *regexp.Regexp) bool {
+	return re.MatchString(tag)
+}
+
+// extractDeviceProperty strips the device-namespace prefix from a full VMX key
+// using re, returning the bare property name and true.
+// Returns ("", false) when the key does not match the pattern.
+func extractDeviceProperty(key string, re *regexp.Regexp) (string, bool) {
+	sub := re.FindStringSubmatch(key)
+	if len(sub) != 2 {
+		return "", false
+	}
+	return sub[1], true
+}
+
+// ExtractEthernetDeviceProperty strips the "ethernetN." namespace prefix from
+// a live VMX ExtraConfig key (e.g. "ethernet0.ctxPerDev"), returning the bare
+// property name and true. Returns ("", false) when the key does not match.
+func ExtractEthernetDeviceProperty(key string) (string, bool) {
+	return extractDeviceProperty(key, ethernetLiveKeyRE)
+}
+
+// IsEthernetDeviceKey reports whether key is a live VMX ExtraConfig key in the
+// ethernetN namespace (e.g. "ethernet0.ctxPerDev").
+func IsEthernetDeviceKey(key string) bool {
+	return ethernetLiveKeyRE.MatchString(key)
+}
+
+// EthernetTemplateKey returns the template-form VMX key for a bare NIC property
+// name (e.g. "ctxPerDev" → "ethernet%d.ctxPerDev"). This is the canonical form
+// used as map keys by VMXNet3NICKeyMap and VMXNet3NICModeMap.
+func EthernetTemplateKey(bareKey string) string {
+	return ethernetVMXKeyPrefix + "." + bareKey
+}
+
+// NormalizeEthernetDeviceKey converts a live VMX ExtraConfig key to its
+// template form for map lookup. For example "ethernet0.ctxPerDev" →
+// "ethernet%d.ctxPerDev". Returns the key unchanged when it does not match
+// the live ethernet-device pattern.
+func NormalizeEthernetDeviceKey(key string) string {
+	if bare, ok := extractDeviceProperty(key, ethernetLiveKeyRE); ok {
+		return ethernetVMXKeyPrefix + "." + bare
+	}
+	return key
+}
+
+// IsFirstClassVMXnet3NICKey reports whether key refers to a first-class VMXNet3 NIC
+// property managed via spec.network.interfaces[].vmxnet3. It accepts both the
+// bare key form ("ctxPerDev") and the live prefixed form ("ethernet0.ctxPerDev").
+func IsFirstClassVMXnet3NICKey(key string) bool {
+	m := VMXNet3NICKeyMap()
+	// Strip "ethernetN." prefix if present; otherwise treat key as bare.
+	bare, ok := extractDeviceProperty(key, ethernetLiveKeyRE)
+	if !ok {
+		bare = key
+	}
+	_, found := m[EthernetTemplateKey(bare)]
+	return found
+}
+
+// buildVMXTagMaps scans struct type T in a single reflection pass and builds
+// both tag→fieldIdx and tag→VMXMode maps. include decides whether a vmx tag
+// should be indexed; the tag itself is used as the map key. This shared builder
+// is used for both global VM fields and device-scoped field sets.
+func buildVMXTagMaps[T any](include func(tag string) bool) vmxTagMaps {
+	t := reflect.TypeOf(*new(T))
 	keys := make(map[string]int, t.NumField())
 	modes := make(map[string]VMXMode, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		tag := f.Tag.Get("vmx")
-		if tag == "" || ethernetDeviceVMXRE.MatchString(tag) {
+		if !include(tag) {
 			continue
 		}
 		keys[tag] = i
@@ -113,37 +186,30 @@ func buildAdvancedVMXMaps(t reflect.Type) advancedVMXMaps {
 			modes[tag] = VMXModePowerCycle
 		}
 	}
-	return advancedVMXMaps{keys: keys, modes: modes}
+	return vmxTagMaps{keys: keys, modes: modes}
 }
 
-// BuildVMXKeyMap returns a map from vmx struct tag to field index for the given
-// struct type. Fields whose vmx tag matches "ethernet%d.<key>" (NIC-indexed)
-// are excluded; use BuildVMXNet3NICKeyMap for those.
-func BuildVMXKeyMap(t reflect.Type) map[string]int {
-	m := make(map[string]int)
-	for i := 0; i < t.NumField(); i++ {
-		tag := t.Field(i).Tag.Get("vmx")
-		if tag == "" || ethernetDeviceVMXRE.MatchString(tag) {
-			continue
-		}
-		m[tag] = i
-	}
-	return m
+// buildAdvancedVMXMaps builds maps for global VM fields in T.
+// Fields without a vmx tag, or with a device-scoped tag (e.g. ethernet%d.*), are skipped.
+func buildAdvancedVMXMaps[T any]() vmxTagMaps {
+	return buildVMXTagMaps[T](func(tag string) bool {
+		return tag != "" && !isDeviceProperty(tag, ethernetDeviceVMXRE)
+	})
 }
 
-// BuildVMXNet3NICKeyMap returns a map from the bare property name to field index
-// for a NIC-tuning struct type. Only fields with vmx tags of the form
-// "ethernet%d.<key>" are included; the returned map keys are the bare "<key>"
-// portion (e.g. "ctxPerDev").
-func BuildVMXNet3NICKeyMap(t reflect.Type) map[string]int {
-	m := make(map[string]int)
-	for i := 0; i < t.NumField(); i++ {
-		tag := t.Field(i).Tag.Get("vmx")
-		if sub := ethernetDeviceVMXRE.FindStringSubmatch(tag); len(sub) == 2 {
-			m[sub[1]] = i
-		}
-	}
-	return m
+// buildDeviceTagMaps builds maps for a device-scoped struct type T. re selects
+// which fields belong to this device namespace (e.g. ethernetDeviceVMXRE for
+// ethernet%d fields). The full vmx tag (e.g. "ethernet%d.ctxPerDev") is used
+// as the map key, preserving the template placeholder for runtime formatting.
+func buildDeviceTagMaps[T any](re *regexp.Regexp) vmxTagMaps {
+	return buildVMXTagMaps[T](func(tag string) bool {
+		return isDeviceProperty(tag, re)
+	})
+}
+
+// buildVMXNet3NICMaps returns both maps for T using the ethernet%d namespace.
+func buildVMXNet3NICMaps[T any]() vmxTagMaps {
+	return buildDeviceTagMaps[T](ethernetDeviceVMXRE)
 }
 
 // vmxStringDecoder translates a raw vSphere string value to the canonical spec

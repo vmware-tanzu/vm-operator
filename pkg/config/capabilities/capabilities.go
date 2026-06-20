@@ -91,6 +91,11 @@ const (
 	// CapabilityKeyAllDisksArePVCs is the name of the capability key defined in
 	// the Supervisor capabilities CRD for enabling all disks as PVCs in VM Op.
 	CapabilityKeyAllDisksArePVCs = "supports_vm_service_all_disks_are_pvcs"
+
+	// CapabilityKeyVMAffinityDuringExecution is the name of the capability key defined in
+	// the Supervisor capabilities CRD for enabling affinity/anti-affinity rules
+	// for VM Placement during execution.
+	CapabilityKeyVMAffinityDuringExecution = "supports_VM_service_VM_affinity_during_execution"
 )
 
 var (
@@ -251,6 +256,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VSpherePolicies = capStatus.Activated
 		case CapabilityKeyAllDisksArePVCs:
 			fs.AllDisksArePVCs = capStatus.Activated
+		case CapabilityKeyVMAffinityDuringExecution:
+			fs.VMAffinityDuringExecution = capStatus.Activated
 		}
 
 	}

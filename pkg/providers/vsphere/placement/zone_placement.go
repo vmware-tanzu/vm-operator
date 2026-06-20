@@ -351,6 +351,7 @@ func getPlacementRecommendation(
 			finder,
 			candidateRPMoRefs,
 			[]vimtypes.VirtualMachineConfigSpec{configSpec},
+			false,
 			needDatastorePlacement)
 		if err != nil {
 			return Recommendation{}, fmt.Errorf("PlaceVmsXCluster failed: %w", err)

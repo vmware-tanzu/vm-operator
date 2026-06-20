@@ -199,6 +199,7 @@ type FeatureStates struct {
 	VMSharedDisks               bool
 	GuestCustomizationVCDParity bool
 	AllDisksArePVCs             bool
+	VMAffinityDuringExecution   bool
 }
 
 type InstanceStorage struct {

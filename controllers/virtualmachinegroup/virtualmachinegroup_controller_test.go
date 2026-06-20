@@ -23,9 +23,11 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -502,6 +504,18 @@ var _ = Describe(
 					Expect(ctx.Client.Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
 				}
 
+				setVMCAPILabel = func(vmKey types.NamespacedName) {
+					GinkgoHelper()
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
+					vmCopy := vm.DeepCopy()
+					if vmCopy.Labels == nil {
+						vmCopy.Labels = make(map[string]string)
+					}
+					vmCopy.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+					Expect(ctx.Client.Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
+				}
+
 				verifyGroupPlacementReadyCondition = func(
 					groupKey types.NamespacedName,
 					memberCount int,
@@ -694,6 +708,71 @@ var _ = Describe(
 					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
 					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
 					Expect(groupPlacementCallCount.Load()).To(BeEquivalentTo(1), "VM should be placed by group")
+				})
+			})
+
+			When("VMAffinityDuringExecution is enabled", func() {
+				var oldVMAffinityDuringExecution bool
+
+				BeforeEach(func() {
+					oldVMAffinityDuringExecution = pkgcfg.FromContext(suite.Context).Features.VMAffinityDuringExecution
+					pkgcfg.SetContext(suite.Context, func(config *pkgcfg.Config) {
+						config.Features.VMAffinityDuringExecution = true
+					})
+				})
+
+				AfterEach(func() {
+					pkgcfg.SetContext(suite.Context, func(config *pkgcfg.Config) {
+						config.Features.VMAffinityDuringExecution = oldVMAffinityDuringExecution
+					})
+				})
+
+				When("VM has a zone label and is a VKS node", func() {
+					BeforeEach(func() {
+						By("setting zone and CAPI labels on VMs before adding to group")
+						setVMZoneLabel(vm1Key, "zone-a")
+						setVMZoneLabel(vm2Key, "zone-b")
+						setVMZoneLabel(vm3Key, "zone-c")
+						setVMCAPILabel(vm1Key)
+						setVMCAPILabel(vm2Key)
+						setVMCAPILabel(vm3Key)
+					})
+
+					It("should skip group placement to respect zone override", func() {
+						By("verifying provider was not called for group placement")
+						Consistently(func(g Gomega) {
+							g.Expect(groupPlacementCallCount.Load()).To(BeZero(),
+								"VKS nodes with zone label should not be placed by group")
+						}, "3s", "100ms").Should(Succeed())
+
+						By("verifying PlacementReady is not set on member status")
+						Consistently(func(g Gomega) {
+							group := &vmopv1.VirtualMachineGroup{}
+							g.Expect(ctx.Client.Get(ctx, vmGroup1Key, group)).To(Succeed())
+							g.Expect(group.Status.Members).To(HaveLen(3))
+							for _, ms := range group.Status.Members {
+								if ms.Kind == virtualMachineKind {
+									g.Expect(conditions.Get(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeNil())
+								}
+							}
+						}, "3s").Should(Succeed())
+					})
+				})
+
+				When("VM has a zone label and is not a VKS node", func() {
+					BeforeEach(func() {
+						By("setting zone label (without CAPI labels) on VMs before adding to group")
+						setVMZoneLabel(vm1Key, "zone-a")
+						setVMZoneLabel(vm2Key, "zone-b")
+						setVMZoneLabel(vm3Key, "zone-c")
+					})
+
+					It("should place the VM by group", func() {
+						verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+						verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
+						Expect(groupPlacementCallCount.Load()).To(BeEquivalentTo(1),
+							"non-VKS zone-labeled VM should be placed by group")
+					})
 				})
 			})
 		})

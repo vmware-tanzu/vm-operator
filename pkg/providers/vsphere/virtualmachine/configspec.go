@@ -12,6 +12,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -150,6 +151,11 @@ func CreateConfigSpec(
 	} else {
 		initResourceAllocation(&configSpec.MemoryAllocation)
 	}
+
+	// Apply placement policies and tag specs when feature is enabled
+	affinityConstraints := CalculateAffinityConstraints(vmCtx, true)
+	genConfigSpecAffinityPolicies(vmCtx, &configSpec, affinityConstraints)
+	genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec, affinityConstraints)
 
 	return configSpec
 }
@@ -307,10 +313,9 @@ func CreateConfigSpecForPlacement(
 	}
 
 	// Populate the affinity policy for the VM.
-	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
-		genConfigSpecAffinityPolicies(vmCtx, &configSpec)
-		genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec)
-	}
+	affinityConstraints := CalculateAffinityConstraints(vmCtx, false)
+	genConfigSpecAffinityPolicies(vmCtx, &configSpec, affinityConstraints)
+	genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec, affinityConstraints)
 
 	cleanupConfigSpecForPlacement(&configSpec)
 
@@ -322,6 +327,46 @@ func CreateConfigSpecForPlacement(
 	//  - whatever else I'm forgetting
 
 	return configSpec, nil
+}
+
+// CalculateAffinityConstraints calculates the constraints based on vm object
+// in vmCtx & creation/placement workflow.
+func CalculateAffinityConstraints(
+	vmCtx pkgctx.VirtualMachineContext,
+	isCreateVM bool,
+) AffinityRuleConstraints {
+	constraints := AffinityRuleConstraints{}
+	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
+		constraints.ConfigureZoneRules = true
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+		constraints.ConfigureHostRules = true
+	}
+
+	isVksNodeVM := kubeutil.HasCAPILabels(vmCtx.VM.Labels)
+	if isVksNodeVM {
+		// Host anti-affinity for CAPI VMs is handled via cluster modules.
+		constraints.ConfigureHostRules = false
+	}
+
+	// ConfigureZoneRules = false when:
+	//   1. VM Creation: DRS doesn't differentiate topologies for persisted policies.
+	//   2. VKS Node: Never get zonal policies (VMs are already zone-constrained).
+	//   3. VMAffinityDuringExecution + Zone Label: Already zone-constrained
+	//
+	//   isCreateVM? → isVksNodeVM? → (VMAffinityDuringExecution + ZoneLabel)?
+	//    ↓YES (any)       ↓YES              ↓YES     		↓NO
+	//    FALSE            FALSE             FALSE    		TRUE
+	//
+	if isCreateVM ||
+		isVksNodeVM ||
+		(pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
+			kubeutil.HasZoneLabel(vmCtx.VM.Labels)) {
+		constraints.ConfigureZoneRules = false
+	}
+
+	return constraints
 }
 
 // cleanupConfigSpecForPlacement removes fields from the placement

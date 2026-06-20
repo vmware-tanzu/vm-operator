@@ -18,6 +18,49 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
+// translateFields iterates keyMap and emits an OptionValue per field in rv.
+// The output key for each map entry is produced by keyFunc(mapKey).
+// Fields with unsupported kinds are skipped with a V(4) log.
+func translateFields(
+	ctx context.Context,
+	rv reflect.Value,
+	keyMap map[string]int,
+	keyFunc func(string) string,
+) pkgutil.OptionValues {
+	log := pkglog.FromContextOrDefault(ctx)
+	out := make(pkgutil.OptionValues, 0, len(keyMap))
+	for mapKey, fieldIdx := range keyMap {
+		fv := rv.Field(fieldIdx)
+		outKey := keyFunc(mapKey)
+		val, ok := TranslateFieldValue(fv)
+		if !ok {
+			log.V(4).Info("skipping field with unsupported type", "key", outKey, "kind", fv.Kind())
+			continue
+		}
+		out = append(out, &vimtypes.OptionValue{Key: outKey, Value: val})
+	}
+	return out
+}
+
+// TranslateVMXNet3NICFirstClass returns VMX OptionValues for every vmx-tagged
+// first-class field of a VMXNet3 spec. Each key is formatted with the device's
+// namespace index (deviceKey - EthernetDeviceKeyBase), e.g. for deviceKey 4000
+// the template key "ethernet%d.ctxPerDev" becomes "ethernet0.ctxPerDev".
+// An empty-string value signals clear-if-present for nil/zero fields.
+// Returns nil if vmxnet3 is nil.
+func TranslateVMXNet3NICFirstClass(
+	ctx context.Context,
+	deviceKey int32,
+	vmxnet3 *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec,
+) pkgutil.OptionValues {
+	if vmxnet3 == nil {
+		return nil
+	}
+	idx := int(deviceKey - vmopv1util.EthernetDeviceKeyBase)
+	return translateFields(ctx, reflect.ValueOf(vmxnet3).Elem(),
+		vmopv1util.VMXNet3NICKeyMap(), func(k string) string { return fmt.Sprintf(k, idx) })
+}
+
 // TranslateFirstClass returns VMX OptionValues for every first-class field of
 // spec.advanced, including entries with empty-string values for nil/zero fields.
 // An empty-string value signals that the key should be cleared on the VM if
@@ -32,22 +75,8 @@ func TranslateFirstClass(ctx context.Context, advanced *vmopv1.VirtualMachineAdv
 	if advanced == nil {
 		return nil
 	}
-
-	log := pkglog.FromContextOrDefault(ctx)
-	keyMap := vmopv1util.AdvancedVMXKeyMap()
-	rv := reflect.ValueOf(advanced).Elem()
-	out := make(pkgutil.OptionValues, 0, len(keyMap))
-
-	for vmxKey, fieldIdx := range keyMap {
-		fv := rv.Field(fieldIdx)
-		val, ok := TranslateFieldValue(fv)
-		if !ok {
-			log.V(4).Info("skipping field with unsupported type", "key", vmxKey, "kind", fv.Kind())
-			continue
-		}
-		out = append(out, &vimtypes.OptionValue{Key: vmxKey, Value: val})
-	}
-	return out
+	return translateFields(ctx, reflect.ValueOf(advanced).Elem(),
+		vmopv1util.AdvancedVMXKeyMap(), func(k string) string { return k })
 }
 
 // TranslateFieldValue converts a struct field value to its canonical VMX string

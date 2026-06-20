@@ -18,6 +18,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine/extraconfig"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // ovList is a helper to build a BaseOptionValue slice.
@@ -32,26 +33,26 @@ func ovList(pairs ...string) pkgutil.OptionValues {
 	return out
 }
 
-var _ = Describe("LoadManagedKeys", func() {
+var _ = Describe("LoadVMManagedKeys", func() {
 
 	It("returns nil when key absent", func() {
-		Expect(extraconfig.LoadManagedKeys(nil)).To(BeNil())
-		Expect(extraconfig.LoadManagedKeys(pkgutil.OptionValues{})).To(BeNil())
+		Expect(extraconfig.LoadVMManagedKeys(nil)).To(BeNil())
+		Expect(extraconfig.LoadVMManagedKeys(pkgutil.OptionValues{})).To(BeNil())
 	})
 
 	It("returns nil when key empty", func() {
 		obs := ovList(vsphereconst.ExtraConfigManagedKeysKey, "")
-		Expect(extraconfig.LoadManagedKeys(obs)).To(BeNil())
+		Expect(extraconfig.LoadVMManagedKeys(obs)).To(BeNil())
 	})
 
 	It("parses comma-separated keys", func() {
 		obs := ovList(vsphereconst.ExtraConfigManagedKeysKey, "foo,bar,baz")
-		Expect(extraconfig.LoadManagedKeys(obs)).To(ConsistOf("foo", "bar", "baz"))
+		Expect(extraconfig.LoadVMManagedKeys(obs)).To(ConsistOf("foo", "bar", "baz"))
 	})
 
 	It("trims spaces", func() {
 		obs := ovList(vsphereconst.ExtraConfigManagedKeysKey, " foo , bar ")
-		Expect(extraconfig.LoadManagedKeys(obs)).To(ConsistOf("foo", "bar"))
+		Expect(extraconfig.LoadVMManagedKeys(obs)).To(ConsistOf("foo", "bar"))
 	})
 })
 
@@ -111,6 +112,74 @@ var _ = Describe("SemanticDiff", func() {
 	It("suppresses first-class reset when key not in observed", func() {
 		merged := ovList("numa.vcpu.preferHT", "")
 		Expect(extraconfig.SemanticDiff(ctx, nil, merged)).To(BeNil())
+	})
+})
+
+var _ = Describe("LoadDeviceManagedKeys", func() {
+	const managedKey = "vmservice.nic.ethernet0.managedKeys"
+
+	It("returns nil when key absent", func() {
+		Expect(extraconfig.LoadDeviceManagedKeys(nil, managedKey)).To(BeNil())
+		Expect(extraconfig.LoadDeviceManagedKeys(pkgutil.OptionValues{}, managedKey)).To(BeNil())
+	})
+
+	It("returns nil when key empty", func() {
+		obs := ovList(managedKey, "")
+		Expect(extraconfig.LoadDeviceManagedKeys(obs, managedKey)).To(BeNil())
+	})
+
+	It("parses comma-separated bare keys", func() {
+		obs := ovList(managedKey, "ctxPerDev,rssoffload,pnicfeatures")
+		Expect(extraconfig.LoadDeviceManagedKeys(obs, managedKey)).To(ConsistOf(
+			"ctxPerDev", "rssoffload", "pnicfeatures"))
+	})
+
+	It("trims spaces", func() {
+		obs := ovList(managedKey, " ctxPerDev , rssoffload ")
+		Expect(extraconfig.LoadDeviceManagedKeys(obs, managedKey)).To(ConsistOf("ctxPerDev", "rssoffload"))
+	})
+})
+
+var _ = Describe("VMXNet3SemanticDiff", func() {
+	ctx := context.Background()
+
+	// VMXNet3SemanticDiff accepts a template-key map (as returned by VMXNet3NICKeyMap).
+	// Live keys in merged (e.g. "ethernet0.rssoffload") are normalized to their
+	// template form ("ethernet%d.rssoffload") internally before lookup.
+	keyMap := vmopv1util.VMXNet3NICKeyMap()
+
+	It("returns nil when merged is empty", func() {
+		Expect(extraconfig.VMXNet3SemanticDiff(ctx, nil, nil, nil)).To(BeNil())
+	})
+
+	It("passes through non-first-class key using string equality", func() {
+		observed := ovList("ethernet0.customBag", "old")
+		merged := ovList("ethernet0.customBag", "new")
+		out := extraconfig.VMXNet3SemanticDiff(ctx, observed, merged, keyMap)
+		Expect(out).To(HaveLen(1))
+		v, _ := out.GetString("ethernet0.customBag")
+		Expect(v).To(Equal("new"))
+	})
+
+	It("suppresses non-first-class key when unchanged", func() {
+		observed := ovList("ethernet0.customBag", "val")
+		merged := ovList("ethernet0.customBag", "val")
+		Expect(extraconfig.VMXNet3SemanticDiff(ctx, observed, merged, keyMap)).To(BeNil())
+	})
+
+	It("suppresses first-class NIC key when semantically equal (true vs TRUE)", func() {
+		observed := ovList("ethernet0.rssoffload", "true")
+		merged := ovList("ethernet0.rssoffload", "TRUE")
+		Expect(extraconfig.VMXNet3SemanticDiff(ctx, observed, merged, keyMap)).To(BeNil())
+	})
+
+	It("emits first-class NIC key when semantically different", func() {
+		observed := ovList("ethernet0.rssoffload", "TRUE")
+		merged := ovList("ethernet0.rssoffload", "FALSE")
+		out := extraconfig.VMXNet3SemanticDiff(ctx, observed, merged, keyMap)
+		Expect(out).To(HaveLen(1))
+		v, _ := out.GetString("ethernet0.rssoffload")
+		Expect(v).To(Equal("FALSE"))
 	})
 })
 

@@ -113,7 +113,6 @@ const (
 )
 
 var (
-	ethernetDeviceKeyRE       = regexp.MustCompile(`^ethernet\d+\.(.*)$`)
 	capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
 
 	// systemReservedNetworkDeviceProperties is the set of ethernet device suffixes reserved by the system.
@@ -3660,17 +3659,9 @@ func isSystemReservedNetworkDeviceProperty(key string) bool {
 }
 
 func isFirstClassNICAdvancedProperty(key string) bool {
-	m := vmopv1util.VMXNet3NICKeyMap()
-	if _, ok := m[key]; ok {
-		return true
-	}
-	if match := ethernetDeviceKeyRE.FindStringSubmatch(key); match != nil {
-		_, ok := m[match[1]]
-		return ok
-	}
-	return false
+	return vmopv1util.IsFirstClassVMXnet3NICKey(key)
 }
 
 func isNetworkDeviceProperty(key string) bool {
-	return ethernetDeviceKeyRE.MatchString(key)
+	return vmopv1util.IsEthernetDeviceKey(key)
 }

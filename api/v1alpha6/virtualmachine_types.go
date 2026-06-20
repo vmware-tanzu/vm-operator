@@ -178,6 +178,24 @@ const (
 	// hardware device configuration does not match the desired state specified
 	// in the spec. This is used for the aggregated condition.
 	VirtualMachineHardwareDeviceConfigMismatchReason = "HardwareDeviceConfigMismatch"
+
+	// VirtualMachinePrerequisiteNotMetReason is used on synced conditions when one or more
+	// spec fields cannot be applied because a prerequisite is not satisfied — for example, a
+	// minimum hardware version requirement or a runtime condition such as EFI firmware or a
+	// configured vNUMA topology. The condition message lists every blocked field and why.
+	VirtualMachinePrerequisiteNotMetReason = "PrerequisiteNotMet"
+
+	// VirtualMachinePowerOffRequiredReason is used on synced conditions when the VM is
+	// powered on and pending changes require a power-off to take effect.
+	VirtualMachinePowerOffRequiredReason = "PowerOffRequired"
+
+	// VirtualMachinePowerCyclePendingReason is used on synced conditions when a change
+	// has been applied but takes effect only after a guest power cycle.
+	VirtualMachinePowerCyclePendingReason = "PowerCyclePending"
+
+	// VirtualMachineNetworkErrorReason indicates that reconciliation of
+	// VirtualMachineNetworkConfigSynced failed with an unexpected error.
+	VirtualMachineNetworkErrorReason = "Error"
 )
 
 const (

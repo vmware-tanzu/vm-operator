@@ -139,7 +139,7 @@ func (r reconciler) Reconcile(
 	}
 
 	// Clear bag keys previously tracked but no longer in spec.
-	managed := extraconfig.LoadManagedKeys(observed)
+	managed := extraconfig.LoadVMManagedKeys(observed)
 	for _, mk := range managed {
 		if !specBagKeys[mk] {
 			overlay = append(overlay, &vimtypes.OptionValue{Key: mk, Value: ""})

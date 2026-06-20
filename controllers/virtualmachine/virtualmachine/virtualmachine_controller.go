@@ -52,6 +52,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
+	vmconfnetworkextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 )
 
 const (
@@ -330,6 +331,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
 		ctx = vmconfig.Register(ctx, vmconfextraconfig.New())
+		ctx = vmconfig.Register(ctx, vmconfnetworkextraconfig.New())
 	}
 
 	ctx = ctxop.WithContext(ctx)

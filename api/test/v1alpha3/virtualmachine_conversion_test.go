@@ -661,6 +661,27 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "status.network.interfaces[].vnumaNodeID and vmxnet3",
+				hub: &vmopv1.VirtualMachine{
+					Status: vmopv1.VirtualMachineStatus{
+						Network: &vmopv1.VirtualMachineNetworkStatus{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceStatus{
+								{
+									Name:        "eth0",
+									VNUMANodeID: ptrOf(int32(2)),
+									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
+										UPTv2Enabled:             ptrOf(true),
+										UPTv2Active:              ptrOf(false),
+										UPTv2InactiveReasonVM:    []string{"vm-reason"},
+										UPTv2InactiveReasonOther: []string{"other-reason"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		}
 
 		for i := range testCases {
@@ -787,6 +808,35 @@ func TestVirtualMachineConversion(t *testing.T) {
 								Total: ptrOf(resource.MustParse("5.5Gi")),
 								Disks: ptrOf(resource.MustParse("5Gi")),
 								Other: ptrOf(resource.MustParse("512Mi")),
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "status.network.interfaces[].vnumaNodeID and vmxnet3 dropped",
+				hub: &vmopv1.VirtualMachine{
+					Status: vmopv1.VirtualMachineStatus{
+						Network: &vmopv1.VirtualMachineNetworkStatus{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceStatus{
+								{
+									Name:        "eth0",
+									VNUMANodeID: ptrOf(int32(2)),
+									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
+										UPTv2Active:              ptrOf(false),
+										UPTv2InactiveReasonVM:    []string{"vm-reason"},
+										UPTv2InactiveReasonOther: []string{"other-reason"},
+									},
+								},
+							},
+						},
+					},
+				},
+				exp: &vmopv1a3.VirtualMachine{
+					Status: vmopv1a3.VirtualMachineStatus{
+						Network: &vmopv1a3.VirtualMachineNetworkStatus{
+							Interfaces: []vmopv1a3.VirtualMachineNetworkInterfaceStatus{
+								{Name: "eth0"},
 							},
 						},
 					},

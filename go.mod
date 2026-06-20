@@ -51,12 +51,12 @@ require (
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259af5cbb
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260611174009-a2d7e608727d
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c
-	github.com/vmware/govmomi v0.55.0-alpha.0.0.20260518191903-48ab34adb211
+	github.com/vmware/govmomi v0.55.0-alpha.0.0.20260622155957-a8a7db14910d
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93
 	golang.org/x/net v0.55.0 // indirect
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/24
-	golang.org/x/text v0.37.0
-	golang.org/x/tools v0.44.0
+	golang.org/x/text v0.38.0
+	golang.org/x/tools v0.45.0
 	k8s.io/api v0.36.1
 	k8s.io/apiextensions-apiserver v0.36.0
 	k8s.io/apimachinery v0.36.1
@@ -130,9 +130,9 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/time v0.14.0 // indirect

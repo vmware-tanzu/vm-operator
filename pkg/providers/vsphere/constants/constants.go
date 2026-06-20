@@ -62,6 +62,12 @@ const (
 	// can be removed when the user deletes them from the spec.
 	ExtraConfigManagedKeysKey = "vmservice.extraconfig.managedKeys"
 
+	// NICExtraConfigManagedKeysKeyFmt is the per-NIC ExtraConfig key (printf
+	// format, %d = ethernet index) that tracks which advancedProperties bag
+	// keys are managed by vm-operator for a given ethernet device.
+	// Example: "vmservice.nic.ethernet0.managedKeys" for device key 4000.
+	NICExtraConfigManagedKeysKeyFmt = "vmservice.nic.ethernet%d.managedKeys"
+
 	// ExtraConfig reserved prefixes — vm-operator controls these and users must not set them directly.
 	ExtraConfigReservedPrefixVMService = "vmservice."
 

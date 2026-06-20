@@ -260,6 +260,14 @@ func Convert_v1alpha6_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolum
 	return autoConvert_v1alpha6_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s)
 }
 
+// Convert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha3_VirtualMachineNetworkInterfaceStatus drops
+// fields that do not exist in v1alpha3 (VNUMANodeID, VMXNet3).
+func Convert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha3_VirtualMachineNetworkInterfaceStatus(
+	in *vmopv1.VirtualMachineNetworkInterfaceStatus, out *VirtualMachineNetworkInterfaceStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha3_VirtualMachineNetworkInterfaceStatus(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineCryptoSpec_To_v1alpha3_VirtualMachineCryptoSpec(
 	in *vmopv1.VirtualMachineCryptoSpec, out *VirtualMachineCryptoSpec, s apiconversion.Scope) error {
 

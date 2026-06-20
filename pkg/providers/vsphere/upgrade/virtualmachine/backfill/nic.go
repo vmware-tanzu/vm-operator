@@ -137,8 +137,7 @@ func backfillNICSpec(
 			continue
 		}
 
-		propName, found := strings.CutPrefix(ov.Key, prefix)
-		if !found {
+		if !strings.HasPrefix(ov.Key, prefix) {
 			continue
 		}
 
@@ -147,7 +146,7 @@ func backfillNICSpec(
 			continue
 		}
 
-		fieldIdx, exists := vmopv1util.VMXNet3NICKeyMap()[propName]
+		fieldIdx, exists := vmopv1util.VMXNet3NICKeyMap()[vmopv1util.NormalizeEthernetDeviceKey(ov.Key)]
 		if !exists {
 			continue
 		}
@@ -184,7 +183,7 @@ func backfillNICSpec(
 }
 
 // backfillVNUMANodeID populates iface.VNUMANodeID from dev.NumaNode when the
-// device reports a positive NUMA node assignment and the spec field is nil.
+// device reports a NUMA node assignment (>= 0) and the spec field is nil.
 func backfillVNUMANodeID(
 	iface *vmopv1.VirtualMachineNetworkInterfaceSpec,
 	dev vimtypes.BaseVirtualDevice) bool {
@@ -194,14 +193,13 @@ func backfillVNUMANodeID(
 	}
 
 	numaNode := dev.GetVirtualDevice().NumaNode
-	if numaNode <= 0 {
-		// 0 → indistinguishable from "not set" due to XML omitempty.
+	if numaNode == nil || *numaNode < 0 {
+		// nil → unset (no NUMA assignment, or cleared and read back as absent).
 		// Negative → explicitly no affinity.
-		// TODO: Need a fix from govmomi.
 		return false
 	}
 
-	iface.VNUMANodeID = &numaNode
+	iface.VNUMANodeID = numaNode
 	return true
 }
 

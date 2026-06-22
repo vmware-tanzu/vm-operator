@@ -850,6 +850,39 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 		})
 	})
 
+	When("IPv6=StaticPool with multiple IPv6 IPConfigs using Prefix field", func() {
+		BeforeEach(func() {
+			netIf.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+			netIf.Status.IPv6AssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool
+			netIf.Status.IPConfigs = []netopv1alpha1.IPConfig{
+				{
+					IP:       "2001:db8::100",
+					IPFamily: corev1.IPv6Protocol,
+					Gateway:  "2001:db8::1",
+					Prefix:   ptr.To[int32](64),
+				},
+				{
+					IP:       "2001:db8::101",
+					IPFamily: corev1.IPv6Protocol,
+					Gateway:  "2001:db8::1",
+					Prefix:   ptr.To[int32](64),
+				},
+			}
+		})
+		It("produces multiple IPv6 IPConfigs via the Prefix→CIDR path", func() {
+			Expect(bootstrap.DHCP4).To(BeFalse())
+			Expect(bootstrap.DHCP6).To(BeFalse())
+			Expect(bootstrap.NoIPAM).To(BeFalse())
+			Expect(bootstrap.IPConfigs).To(HaveLen(2))
+			Expect(bootstrap.IPConfigs[0].IPCIDR).To(Equal("2001:db8::100/64"))
+			Expect(bootstrap.IPConfigs[0].IsIPv4).To(BeFalse())
+			Expect(bootstrap.IPConfigs[0].Gateway).To(Equal("2001:db8::1"))
+			Expect(bootstrap.IPConfigs[1].IPCIDR).To(Equal("2001:db8::101/64"))
+			Expect(bootstrap.IPConfigs[1].IsIPv4).To(BeFalse())
+			Expect(bootstrap.IPConfigs[1].Gateway).To(Equal("2001:db8::1"))
+		})
+	})
+
 	When("IPv4=StaticPool, IPv6=DHCP, both IPConfig types present in status", func() {
 		BeforeEach(func() {
 			netIf.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeStaticPool

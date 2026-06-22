@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
@@ -1063,6 +1064,101 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// We can't use len(existingVM.Spec.Volumes) here because we are only restoring one disk.
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, 1, clusterProxy, config, svClusterClient, wcpClient)
+			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+		})
+	})
+
+	Context("RegisterVM - Restore to new", func() {
+		It("Should register VM when no pre-existing VM CR exists", func() {
+			if !vmServiceBackupRestoreEnabled {
+				Skip("WCP_VMService_BackupRestore FSS is not enabled")
+			}
+
+			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			defer vcenter.LogoutVimClient(vCenterClient)
+
+			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+			secretName := vmName + "-cloud-config-data"
+			secret := manifestbuilders.Secret{
+				Namespace: input.WCPNamespaceName,
+				Name:      secretName,
+			}
+			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
+			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data")
+
+			resources := config.InfraConfig.ManagementClusterConfig.Resources
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        input.WCPNamespaceName,
+				Name:             vmName,
+				VMClassName:      resources.VMClassName,
+				StorageClassName: resources.StorageClassName,
+				ResourcePolicy:   resources.VMResourcePolicyName,
+				ImageName:        linuxVMIName,
+				Bootstrap: manifestbuilders.Bootstrap{
+					CloudInit: &manifestbuilders.CloudInit{
+						RawCloudConfig: &manifestbuilders.KeySelector{
+							Key:  "user-data",
+							Name: secretName,
+						},
+					},
+				},
+				PowerState: "PoweredOn",
+			}
+			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+
+			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
+
+			By("Wait for VM resource YAML to be saved in ExtraConfig")
+			var vmMO mo.VirtualMachine
+			propCollector := property.DefaultCollector(vCenterClient)
+			Eventually(func(g Gomega) {
+				g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.extraConfig"}, &vmMO)).To(Succeed())
+				g.Expect(vmMO.Config).ToNot(BeNil())
+				ecList := object.OptionValueList(vmMO.Config.ExtraConfig)
+				resourceYAML, _ := ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
+				g.Expect(resourceYAML).ToNot(BeEmpty())
+			}, config.GetIntervals("default", "wait-backup-to-complete")...).
+				Should(Succeed(), "Timed out waiting for VM resource YAML in ExtraConfig")
+
+			By("Power off the VM")
+			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+
+			By("Add the pause annotation to stop reconciliation")
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			base := vm.DeepCopy()
+			if vm.Annotations == nil {
+				vm.Annotations = make(map[string]string)
+			}
+			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
+
+			By("Remove the VMOP finalizer and delete the VM CR")
+			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			controllerutil.RemoveFinalizer(vm, vmservice.VMFinalizerName)
+			controllerutil.RemoveFinalizer(vm, vmservice.VMFinalizerNameDeprecated)
+			Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+			Expect(svClusterClient.Delete(ctx, vm)).To(Succeed())
+			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+			taskInfo, err := vmservice.InvokeRegisterVM(ctx, existingVM.Status.UniqueID, input.WCPNamespaceName, clusterProxy, wcpClient)
+
+			By("Verify task state is success")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(taskInfo).ToNot(BeNil())
+			Expect(taskInfo.Error).To(BeNil())
+			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
+
+			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, len(existingVM.Spec.Volumes), clusterProxy, config, svClusterClient, wcpClient)
 			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})

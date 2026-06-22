@@ -988,8 +988,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			Eventually(func(g Gomega) {
 				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(vm.Status.Host).ToNot(BeEmpty())
-				host = vm.Status.Host
+				g.Expect(vm.Status.NodeName).ToNot(BeEmpty())
+				host = vm.Status.NodeName
 			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
 
 			return host

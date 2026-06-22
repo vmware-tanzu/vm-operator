@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25"
+	"k8s.io/apimachinery/pkg/api/meta"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,7 +33,7 @@ import (
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
@@ -185,7 +186,7 @@ func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := GetVirtualMachineCondition(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
 
@@ -304,7 +305,7 @@ func WaitOnVirtualMachineConditionUpdate(ctx context.Context, config *config.E2E
 			return false
 		}
 
-		actualCondition := GetVirtualMachineCondition(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		if actualCondition == nil {
 			return false
 		}
@@ -339,7 +340,7 @@ func WaitOnVirtualMachineCondition(
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := GetVirtualMachineCondition(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 
 		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
@@ -405,7 +406,7 @@ func UpdateVirtualMachinePowerState(ctx context.Context, config *config.E2EConfi
 			return false
 		}
 
-		vm.Spec.PowerState = vmopv1a2.VirtualMachinePowerState(powerState)
+		vm.Spec.PowerState = vmopv1.VirtualMachinePowerState(powerState)
 		if err := client.Update(ctx, vm); err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false
@@ -428,7 +429,7 @@ func WaitForVirtualMachinePowerState(
 			return false
 		}
 
-		return vm.Status.PowerState == vmopv1a2.VirtualMachinePowerState(expectedPowerState)
+		return vm.Status.PowerState == vmopv1.VirtualMachinePowerState(expectedPowerState)
 	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(BeTrue(), "Timed out waiting for VirtualMachines %s PowerState to be updated to %s", vmName, expectedPowerState)
 }
 
@@ -1410,7 +1411,7 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA6(ctx, k8sClient, namespace, name)
+		vm, err := utils.GetVirtualMachine(ctx, k8sClient, namespace, name)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		g.Expect(vm.Spec.StorageClass).NotTo(BeEmpty(),
@@ -1425,7 +1426,7 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 		g.Expect(boot).NotTo(BeNil(),
 			"no boot disk found in status.volumes for VirtualMachine %s/%s", namespace, name)
 
-		if boot.Type == vmopv1a6.VolumeTypeManaged {
+		if boot.Type == vmopv1.VolumeTypeManaged {
 			g.Expect(boot.DiskUUID).NotTo(BeEmpty(),
 				"boot disk %q in VirtualMachine %s/%s has no diskUUID yet", boot.Name, namespace, name)
 		}

@@ -44,6 +44,7 @@ import (
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsunregistervolumev1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/cnsunregistervolume/v1alpha1"
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -818,7 +819,7 @@ func decodeGzipBase64(encoded string) (string, error) {
 // in the VM's ExtraConfig. This is exported for use in tests that perform in-place restores.
 func WaitForBackupToComplete(
 	ctx context.Context,
-	vm *vmopv1a2.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 ) {
@@ -830,7 +831,7 @@ func WaitForBackupToComplete(
 // in the VM's ExtraConfig.
 func waitForBackupToComplete(
 	ctx context.Context,
-	vm *vmopv1a2.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 ) {

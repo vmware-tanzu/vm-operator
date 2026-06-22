@@ -90,7 +90,7 @@ func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E
 
 	By("Waiting for vSphere VM to be created")
 	Eventually(func(g Gomega) bool {
-		vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false
@@ -138,7 +138,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 // Utility function to wait for the VM's Status.Class.Name to be updated.
 func WaitForVirtualMachineStatusClassUpdated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, className string) {
 	Eventually(func(g Gomega) bool {
-		vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false

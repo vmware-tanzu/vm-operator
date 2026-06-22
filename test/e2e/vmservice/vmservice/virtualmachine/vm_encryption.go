@@ -21,6 +21,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -470,8 +471,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify VM config and disks are encrypted")
 		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
-		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1a3.VirtualMachineEncryptionTypeConfig))
-		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1a3.VirtualMachineEncryptionTypeDisks))
+		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeConfig))
+		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeDisks))
 	})
 
 	It("Encrypt PVC using encryption class annotation on the PVC", Label("experimental"), func() {
@@ -535,7 +536,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify crypto status of volumes reflects volume is encrypted using encryption class from annotation")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Volumes).To(HaveLen(2))
@@ -608,7 +609,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify crypto status of volumes reflects volume is encrypted using the default key provider")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Volumes).To(HaveLen(2))
@@ -690,7 +691,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify VM is re-encrypted with new key")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Crypto).NotTo(BeNil())
@@ -701,7 +702,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify crypto status of volumes reflects the encryption class")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Volumes).To(HaveLen(2))
@@ -778,7 +779,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify the encryption synced condition reports an error due to mixed provider types")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			condition := meta.FindStatusCondition(vm.GetConditions(), vmopv1a3.VirtualMachineEncryptionSynced)
@@ -818,7 +819,7 @@ func useKeyProvider(
 	Expect(cryptoManager.SetDefaultKmsClusterId(ctx, keyProviderID, nil)).To(Succeed())
 }
 
-func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client ctrlclient.Client, ns string, vmName string, reason string) *vmopv1a3.VirtualMachineCryptoStatus {
+func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client ctrlclient.Client, ns string, vmName string, reason string) *vmopv1.VirtualMachineCryptoStatus {
 	expectedCondition := metav1.Condition{
 		Type:   vmopv1a3.VirtualMachineEncryptionSynced,
 		Status: metav1.ConditionTrue,
@@ -834,7 +835,7 @@ func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client 
 	// - Check Reason before Status, gives more context on failure
 	// - Much shorter timeout
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
@@ -849,7 +850,7 @@ func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client 
 
 	By("Checking VirtualMachine.Status.Crypto")
 
-	vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 	Expect(err).To(BeNil())
 
 	if expectedCondition.Status == metav1.ConditionTrue {

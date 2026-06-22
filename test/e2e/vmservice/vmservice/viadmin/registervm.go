@@ -26,10 +26,18 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
 
+	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
@@ -46,7 +54,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 )
 
 const trueString = "true"
@@ -448,13 +455,13 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Use v1alpha3 here to make sure this doesn't blow up in product branches older than v1a5.
 			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", vmParameters.PVCNames))
 
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			baseA3 := vm.DeepCopy()
-			vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1a3.VirtualMachineVolume{
+			vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 				Name: pvcNameB,
-				VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
-					PersistentVolumeClaim: &vmopv1a3.PersistentVolumeClaimVolumeSource{
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 							ClaimName: pvcNameB,
 						},
@@ -472,7 +479,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation and set all volumes as removable")
 
-			vm, err = utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Use v1alpha5 to access the Removable field. RegisterVM restores from
@@ -1035,14 +1042,14 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
 
 			// Fetch the restored VM and verify that it has the expected number of volumes.
-			restoredVM, err := utils.GetVirtualMachineA3(ctx, svClusterClient, existingVM.Namespace, existingVM.Name)
+			restoredVM, err := utils.GetVirtualMachine(ctx, svClusterClient, existingVM.Namespace, existingVM.Name)
 			Expect(err).ToNot(HaveOccurred())
 
 			e2eframework.Logf("VM has been restored: %v", restoredVM)
 
 			Expect(len(restoredVM.Spec.Volumes)).To(Equal(2)) // one base disk and one PVC
 
-			var restoredVol *vmopv1a3.VirtualMachineVolume
+			var restoredVol *vmopv1.VirtualMachineVolume
 
 			for _, vol := range restoredVM.Spec.Volumes {
 				// The volume with restored- prefix is the one that was restored.

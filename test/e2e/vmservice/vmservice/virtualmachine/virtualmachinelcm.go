@@ -155,7 +155,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 		By("Verifying VM gets expected BIOS and instance UUID")
-		virtualMachine, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		virtualMachine, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 		e2eframework.ExpectNoError(err)
 		Expect(virtualMachine.Spec.BiosUUID).To(Equal(virtualMachine.Status.BiosUUID))
 
@@ -682,7 +682,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		By(fmt.Sprintf("Verifying VM status field has the expected network config info: %+v", netInfo))
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(vm.Status.Network).NotTo(BeNil())
 			g.Expect(vm.Status.Network.Config).NotTo(BeNil())

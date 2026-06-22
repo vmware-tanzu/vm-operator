@@ -21,7 +21,6 @@ import (
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
@@ -32,23 +31,6 @@ const (
 
 func GetVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1.VirtualMachine, error) {
 	virtualMachine := &vmopv1.VirtualMachine{}
-
-	key := types.NamespacedName{
-		Namespace: ns,
-		Name:      name,
-	}
-
-	err := client.Get(ctx, key, virtualMachine)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachine, nil
-}
-
-// TODO: the above should return vmopv1a3, but requires some refactoring of existing tests.
-func GetVirtualMachineA3(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a3.VirtualMachine, error) {
-	virtualMachine := &vmopv1a3.VirtualMachine{}
 
 	key := types.NamespacedName{
 		Namespace: ns,

@@ -1118,6 +1118,14 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			// With AllDisksArePVCs enabled, the CSI driver takes a snapshot while
+			// registering the boot VMDK as an FCD. If that snapshot is still active
+			// when the backup runs, ExtraConfig records the delta filename
+			// (e.g. "_3.vmdk"). After consolidation the disk reverts to the base
+			// name, so RegisterVM's filename lookup would fail. Wait until every
+			// CnsRegisterVolume is registered (snapshot consolidated) before
+			// reading the backup.
+			vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())

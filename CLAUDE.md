@@ -6,6 +6,12 @@ This project follows Spec-Driven Development (SDD). The authoritative guidelines
 
 ---
 
+## SDD index
+
+Before starting any non-trivial task, read `.sdd/INDEX.md`. If the files you are touching correspond to an in-progress spec, read that spec's `spec.md` and `plan.md` before writing code — the spec is the acceptance criteria.
+
+---
+
 ## Always-active rules
 
 @.sdd/memory/constitution.md

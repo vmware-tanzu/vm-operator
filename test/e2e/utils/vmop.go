@@ -30,23 +30,6 @@ const (
 	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
 )
 
-func ListVirtualMachinesWithOptions(ctx context.Context, client ctrlclient.Client, ns string, options []ctrlclient.ListOption) (*vmopv1a2.VirtualMachineList, error) {
-	virtualMachineList := &vmopv1a2.VirtualMachineList{}
-
-	options = append(options, ctrlclient.InNamespace(ns))
-
-	err := client.List(ctx, virtualMachineList, options...)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachineList, nil
-}
-
-func ListVirtualMachines(ctx context.Context, client ctrlclient.Client, ns string) (*vmopv1a2.VirtualMachineList, error) {
-	return ListVirtualMachinesWithOptions(ctx, client, ns, nil)
-}
-
 func GetVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a2.VirtualMachine, error) {
 	virtualMachine := &vmopv1a2.VirtualMachine{}
 

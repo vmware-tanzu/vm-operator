@@ -46,22 +46,6 @@ func GetVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, name s
 	return virtualMachine, nil
 }
 
-func GetVirtualMachineA2(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a2.VirtualMachine, error) {
-	virtualMachine := &vmopv1a2.VirtualMachine{}
-
-	key := types.NamespacedName{
-		Namespace: ns,
-		Name:      name,
-	}
-
-	err := client.Get(ctx, key, virtualMachine)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachine, nil
-}
-
 // TODO: the above should return vmopv1a3, but requires some refactoring of existing tests.
 func GetVirtualMachineA3(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a3.VirtualMachine, error) {
 	virtualMachine := &vmopv1a3.VirtualMachine{}

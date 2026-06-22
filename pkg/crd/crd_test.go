@@ -223,6 +223,11 @@ var _ = Describe("Install", func() {
 		assertFieldForCRD("virtualmachineservices.vmoperator.vmware.com", expected, fields...)
 	}
 
+	assertVMGroupField := func(expected bool, fields ...string) {
+		GinkgoHelper()
+		assertFieldForCRD("virtualmachinegroups.vmoperator.vmware.com", expected, fields...)
+	}
+
 	assertCELRulesContaining := func(crdName string, celPath []string, fieldRef string, expectPresent bool) {
 		GinkgoHelper()
 
@@ -424,6 +429,28 @@ var _ = Describe("Install", func() {
 				Entry("bootOptions", "bootOptions"),
 				Entry("groupName", "groupName"),
 			)
+
+			It("vmgroup api should not have powerOffDelay without TelcoVMServiceAPI", func() {
+				assertVMGroupField(false, specFieldPath("bootOrder.[].powerOffDelay")...)
+			})
+		})
+
+		When("groups and TelcoVMServiceAPI are enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMGroups = true
+					config.Features.TelcoVMServiceAPI = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups)...)
+			})
+
+			It("vmgroup api should have powerOffDelay", func() {
+				assertVMGroupField(true, specFieldPath("bootOrder.[].powerOffDelay")...)
+			})
 		})
 
 		When("snapshots are enabled", func() {

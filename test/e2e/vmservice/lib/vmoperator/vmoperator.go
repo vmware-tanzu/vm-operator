@@ -1503,9 +1503,9 @@ func WaitForVMCnsRegisterVolumesRegistered(
 			}
 		}
 
-	e2eframework.Logf("All %d CnsRegisterVolume(s) for VM %s/%s are registered",
-		len(crvList.Items), ns, vmName)
-	return true
-}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(),
-	"Timed out waiting for CnsRegisterVolumes to be registered for VM %s/%s", ns, vmName)
+		e2eframework.Logf("All %d CnsRegisterVolume(s) for VM %s/%s are registered",
+			len(crvList.Items), ns, vmName)
+		return true
+	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(),
+		"Timed out waiting for CnsRegisterVolumes to be registered for VM %s/%s", ns, vmName)
 }

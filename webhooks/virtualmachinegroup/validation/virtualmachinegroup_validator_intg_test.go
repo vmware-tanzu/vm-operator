@@ -27,6 +27,7 @@ const (
 	modifyAnnotationNotAllowedForNonAdminMsg = "modifying this annotation is not allowed for non-admin users"
 	emptyPowerStateNotAllowedAfterSetMsg     = "cannot set powerState to empty once it's been set"
 	selfRefMemberOrGroupMsg                  = "group cannot have itself as a member or group name"
+	powerOffDelayNotSupportedMsg             = "specifying powerOffDelay is not supported"
 )
 
 func intgTests() {
@@ -114,6 +115,7 @@ func intgTestsValidateCreate() {
 		invalidTimeFormat bool
 		duplicateMember   bool
 		selfReferenced    bool
+		powerOffDelaySet  bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
@@ -140,6 +142,10 @@ func intgTestsValidateCreate() {
 				},
 			})
 			ctx.vmGroup.Spec.GroupName = ctx.vmGroup.Name
+		}
+
+		if args.powerOffDelaySet {
+			ctx.vmGroup.Spec.BootOrder[0].PowerOffDelay = &metav1.Duration{Duration: time.Minute}
 		}
 
 		err := ctx.Client.Create(ctx, ctx.vmGroup)
@@ -170,6 +176,8 @@ func intgTestsValidateCreate() {
 			createArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachine/vm-1\", spec.bootOrder[1].members[1]: Duplicate value: \"VirtualMachine/vm-2\", spec.bootOrder[1].members[2]: Duplicate value: \"VirtualMachineGroup/vmgroup-1\""),
 		Entry("should not work with self referenced member or group name",
 			createArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
+		Entry("should not work with powerOffDelay set when TelcoVMServiceAPI is not enabled",
+			createArgs{powerOffDelaySet: true}, false, powerOffDelayNotSupportedMsg),
 	)
 }
 
@@ -287,6 +295,17 @@ func intgTestsValidateUpdate() {
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring(selfRefMemberOrGroupMsg))
+		})
+	})
+
+	When("update is performed with powerOffDelay set when TelcoVMServiceAPI is not enabled", func() {
+		BeforeEach(func() {
+			ctx.vmGroup.Spec.BootOrder[0].PowerOffDelay = &metav1.Duration{Duration: time.Minute}
+		})
+
+		It("should deny the request", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(powerOffDelayNotSupportedMsg))
 		})
 	})
 }

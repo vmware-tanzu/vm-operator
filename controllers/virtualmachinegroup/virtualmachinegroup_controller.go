@@ -268,11 +268,12 @@ func (r *Reconciler) reconcileMembers(
 	}
 
 	// Get the group's apply power state change time that may be set from its
-	// parent group for power-on delay.
-	var applyPowerOnTime time.Time
-	if updatePowerState && ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn {
+	// parent group for power-on or power-off delay.
+	var applyPowerStateTime time.Time
+	if updatePowerState && (ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
+		ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff) {
 		if v := ctx.VMGroup.Annotations[constants.ApplyPowerStateTimeAnnotation]; v != "" {
-			applyPowerOnTime, err = time.Parse(time.RFC3339Nano, v)
+			applyPowerStateTime, err = time.Parse(time.RFC3339Nano, v)
 			if err != nil {
 				ctx.Logger.Error(err, "Failed to parse time from annotation",
 					"annotationKey", constants.ApplyPowerStateTimeAnnotation,
@@ -282,11 +283,11 @@ func (r *Reconciler) reconcileMembers(
 		}
 	}
 
-	// If applyPowerOnTime is zero, this group's power state was being changed
-	// directly (not inherited from a parent). Use the last updated annotation
-	// timestamp as the base time for calculating members' power-on delays.
-	if applyPowerOnTime.IsZero() {
-		applyPowerOnTime = lastUpdateAnnoTime
+	// If applyPowerStateTime is zero, this group's power state was being
+	// changed directly (not inherited from a parent). Use the last updated
+	// annotation timestamp as the base time for calculating members' delays.
+	if applyPowerStateTime.IsZero() {
+		applyPowerStateTime = lastUpdateAnnoTime
 	}
 
 	var (
@@ -294,10 +295,27 @@ func (r *Reconciler) reconcileMembers(
 		memberErrs     = []error{}
 	)
 
-	for _, bootOrder := range ctx.VMGroup.Spec.BootOrder {
-		if ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn &&
-			bootOrder.PowerOnDelay != nil {
-			applyPowerOnTime = applyPowerOnTime.Add(bootOrder.PowerOnDelay.Duration)
+	// Determine the order of boot order group iteration and which delay
+	// field to use based on the desired power state. Power-on iterates
+	// forward using PowerOnDelay; power-off iterates in reverse using
+	// PowerOffDelay.
+	bootOrders := ctx.VMGroup.Spec.BootOrder
+	if ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff {
+		bootOrders = reverseBootOrder(bootOrders)
+	}
+
+	for _, bootOrder := range bootOrders {
+		if updatePowerState {
+			switch ctx.VMGroup.Spec.PowerState {
+			case vmopv1.VirtualMachinePowerStateOn:
+				if bootOrder.PowerOnDelay != nil {
+					applyPowerStateTime = applyPowerStateTime.Add(bootOrder.PowerOnDelay.Duration)
+				}
+			case vmopv1.VirtualMachinePowerStateOff:
+				if bootOrder.PowerOffDelay != nil {
+					applyPowerStateTime = applyPowerStateTime.Add(bootOrder.PowerOffDelay.Duration)
+				}
+			}
 		}
 
 		for _, member := range bootOrder.Members {
@@ -315,7 +333,7 @@ func (r *Reconciler) reconcileMembers(
 			}
 
 			if err := r.reconcileMember(
-				ctx, member, ms, updatePowerState, applyPowerOnTime,
+				ctx, member, ms, updatePowerState, applyPowerStateTime,
 			); err != nil {
 				memberErrs = append(memberErrs, err)
 			}
@@ -343,7 +361,7 @@ func (r *Reconciler) reconcileMember(
 	member vmopv1.GroupMember,
 	ms *vmopv1.VirtualMachineGroupMemberStatus,
 	updatePowerState bool,
-	applyPowerOnTime time.Time,
+	applyPowerStateTime time.Time,
 ) error {
 
 	var obj vmopv1util.VirtualMachineOrGroup
@@ -470,7 +488,7 @@ func (r *Reconciler) reconcileMember(
 
 	if updatePowerState {
 		// Update power state specs for both member types (VMs and VM Groups).
-		updateMemberPowerState(*ctx.VMGroup, obj, applyPowerOnTime)
+		updateMemberPowerState(*ctx.VMGroup, obj, applyPowerStateTime)
 	}
 
 patchMember:
@@ -808,12 +826,24 @@ func shouldUpdatePowerState(
 	return true, lastUpdateAnnotation, nil
 }
 
+// reverseBootOrder returns a new slice with boot order groups in reverse order.
+func reverseBootOrder(
+	bootOrders []vmopv1.VirtualMachineGroupBootOrderGroup,
+) []vmopv1.VirtualMachineGroupBootOrderGroup {
+
+	reversed := make([]vmopv1.VirtualMachineGroupBootOrderGroup, len(bootOrders))
+	for i, bo := range bootOrders {
+		reversed[len(bootOrders)-1-i] = bo
+	}
+	return reversed
+}
+
 // updateMemberPowerState updates all the required power state fields on a given
 // member object.
 func updateMemberPowerState(
 	group vmopv1.VirtualMachineGroup,
 	member client.Object,
-	applyPowerOnTime time.Time,
+	applyPowerStateTime time.Time,
 ) {
 
 	switch obj := member.(type) {
@@ -822,11 +852,12 @@ func updateMemberPowerState(
 		obj.Spec.PowerOffMode = group.Spec.PowerOffMode
 		obj.Spec.SuspendMode = group.Spec.SuspendMode
 
-		if obj.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn {
+		if obj.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
+			obj.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff {
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)
 			}
-			obj.Annotations[constants.ApplyPowerStateTimeAnnotation] = applyPowerOnTime.Format(time.RFC3339Nano)
+			obj.Annotations[constants.ApplyPowerStateTimeAnnotation] = applyPowerStateTime.Format(time.RFC3339Nano)
 		}
 
 	case *vmopv1.VirtualMachineGroup:
@@ -834,11 +865,12 @@ func updateMemberPowerState(
 		obj.Spec.PowerOffMode = group.Spec.PowerOffMode
 		obj.Spec.SuspendMode = group.Spec.SuspendMode
 
-		if obj.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn {
+		if obj.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
+			obj.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff {
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)
 			}
-			obj.Annotations[constants.ApplyPowerStateTimeAnnotation] = applyPowerOnTime.Format(time.RFC3339Nano)
+			obj.Annotations[constants.ApplyPowerStateTimeAnnotation] = applyPowerStateTime.Format(time.RFC3339Nano)
 		}
 	}
 }

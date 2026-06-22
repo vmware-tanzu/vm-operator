@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -119,6 +120,8 @@ func unitTestsValidateCreate() {
 		nextForceSyncTime     string
 		duplicateMember       bool
 		selfReferenced        bool
+		powerOffDelaySet      bool
+		telcoVMServiceAPI     bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
@@ -126,6 +129,16 @@ func unitTestsValidateCreate() {
 
 		if args.isServiceUser {
 			ctx.IsPrivilegedAccount = true
+		}
+
+		if args.telcoVMServiceAPI {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = true
+			})
+		}
+
+		if args.powerOffDelaySet {
+			ctx.vmGroup.Spec.BootOrder[0].PowerOffDelay = &metav1.Duration{Duration: time.Minute}
 		}
 
 		ctx.vmGroup.Spec.PowerState = args.powerState
@@ -205,6 +218,10 @@ func unitTestsValidateCreate() {
 			createArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachine/vm-dup\""),
 		Entry("should not work with self reference member or group name",
 			createArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
+		Entry("should not work with powerOffDelay set when TelcoVMServiceAPI is not enabled",
+			createArgs{powerOffDelaySet: true}, false, powerOffDelayNotSupportedMsg),
+		Entry("should work with powerOffDelay set when TelcoVMServiceAPI is enabled",
+			createArgs{powerOffDelaySet: true, telcoVMServiceAPI: true}, true, ""),
 	)
 }
 
@@ -222,6 +239,8 @@ func unitTestsValidateUpdate() {
 		nextForceSyncTime            string
 		duplicateMember              bool
 		selfReferenced               bool
+		powerOffDelaySet             bool
+		telcoVMServiceAPI            bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
@@ -229,6 +248,16 @@ func unitTestsValidateUpdate() {
 
 		if args.isServiceUser {
 			ctx.IsPrivilegedAccount = true
+		}
+
+		if args.telcoVMServiceAPI {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = true
+			})
+		}
+
+		if args.powerOffDelaySet {
+			ctx.vmGroup.Spec.BootOrder[0].PowerOffDelay = &metav1.Duration{Duration: time.Minute}
 		}
 
 		// Setup old VMGroup
@@ -328,6 +357,10 @@ func unitTestsValidateUpdate() {
 			updateArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachineGroup/vmg-dup\""),
 		Entry("should not work with self reference member or group name",
 			updateArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
+		Entry("should not work with powerOffDelay set when TelcoVMServiceAPI is not enabled",
+			updateArgs{powerOffDelaySet: true}, false, powerOffDelayNotSupportedMsg),
+		Entry("should work with powerOffDelay set when TelcoVMServiceAPI is enabled",
+			updateArgs{powerOffDelaySet: true, telcoVMServiceAPI: true}, true, ""),
 	)
 }
 

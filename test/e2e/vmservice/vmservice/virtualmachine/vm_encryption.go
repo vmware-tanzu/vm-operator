@@ -15,6 +15,7 @@ import (
 	crypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -780,7 +781,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			condition := vmoperator.GetVirtualMachineConditionA3(vm, vmopv1a3.VirtualMachineEncryptionSynced)
+			condition := meta.FindStatusCondition(vm.GetConditions(), vmopv1a3.VirtualMachineEncryptionSynced)
 			g.Expect(condition).ToNot(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse),
 				"expected EncryptionSynced to be False due to mixed provider types, got %s with reason %s: %s",
@@ -836,7 +837,7 @@ func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client 
 		vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := vmoperator.GetVirtualMachineConditionA3(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 
 		if actualCondition.Status == metav1.ConditionFalse {

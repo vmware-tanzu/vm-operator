@@ -13,10 +13,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware/govmomi/alarm"
 	"github.com/vmware/govmomi/cns"
 	cnstypes "github.com/vmware/govmomi/cns/types"

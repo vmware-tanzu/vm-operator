@@ -96,7 +96,7 @@ func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E
 			return false
 		}
 
-		actualCondition := GetVirtualMachineConditionA3(vm, kind)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), kind)
 		g.Expect(actualCondition).ToNot(BeNil())
 		g.Expect(actualCondition.Status).To(Equal(metav1.ConditionTrue))
 
@@ -194,24 +194,6 @@ func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config
 			g.Expect(actualCondition.Reason).Should(Equal(expectedCondition.Reason))
 		}
 	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed(), "VirtualMachine conditions changed")
-}
-
-func GetVirtualMachineConditionA3(vm *vmopv1a3.VirtualMachine, conditionType string) *metav1.Condition {
-	var condition *metav1.Condition
-
-	for _, c := range vm.Status.Conditions {
-		if c.Type == conditionType {
-			if condition != nil {
-				if condition.LastTransitionTime.After(c.LastTransitionTime.Time) {
-					continue
-				}
-			}
-
-			condition = &c
-		}
-	}
-
-	return condition
 }
 
 // Utility function to check Virtual Machine creation.

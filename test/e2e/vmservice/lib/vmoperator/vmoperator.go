@@ -1379,7 +1379,7 @@ func VerifyVMDeleted(
 	vmSvcE2EConfig *config.E2EConfig,
 	ns, name string) {
 	Eventually(func() bool {
-		err := utils.DeleteVirtualMachineA5(ctx, client, ns, name)
+		err := utils.DeleteVirtualMachine(ctx, client, ns, name)
 		if err != nil && apierrors.IsNotFound(err) {
 			return true
 		}

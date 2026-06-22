@@ -96,8 +96,8 @@ func GetVirtualMachineA5(ctx context.Context, client ctrlclient.Client, ns, name
 	return virtualMachine, nil
 }
 
-func DeleteVirtualMachineA5(ctx context.Context, client ctrlclient.Client, ns, name string) error {
-	virtualMachine := &vmopv1a5.VirtualMachine{
+func DeleteVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, name string) error {
+	virtualMachine := &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
 			Name:      name,

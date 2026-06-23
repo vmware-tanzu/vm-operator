@@ -29,7 +29,6 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -83,8 +82,6 @@ func WaitForVirtualMachineToExist(ctx context.Context, config *config.E2EConfig,
 // Use this function before helpers that wait on vSphere VM properties,
 // such as WaitForVirtualMachinePowerState and WaitForVirtualMachineIP.
 func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
-	kind := vmopv1a3.VirtualMachineConditionCreated
-
 	By("Waiting for vSphere VM to be created")
 	Eventually(func(g Gomega) bool {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
@@ -93,7 +90,7 @@ func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E
 			return false
 		}
 
-		actualCondition := meta.FindStatusCondition(vm.GetConditions(), kind)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineConditionCreated)
 		g.Expect(actualCondition).ToNot(BeNil())
 		g.Expect(actualCondition.Status).To(Equal(metav1.ConditionTrue))
 
@@ -521,7 +518,7 @@ func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framewor
 	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
 
 	Eventually(func(g Gomega) {
-		vmi := &vmopv1a3.VirtualMachineImage{}
+		vmi := &vmopv1.VirtualMachineImage{}
 		g.Expect(client.Get(ctx, objKey, vmi)).To(Succeed())
 		g.Expect(vmi.Status.Disks).ToNot(BeEmpty())
 	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).Should(Succeed(),
@@ -550,7 +547,7 @@ func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.C
 	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
 
 	Eventually(func(g Gomega) {
-		vmi := &vmopv1a3.VirtualMachineImage{}
+		vmi := &vmopv1.VirtualMachineImage{}
 		g.Expect(client.Get(ctx, objKey, vmi)).To(Succeed())
 		g.Expect(vmi.Status.Disks).ToNot(BeEmpty())
 		// ProviderContentVersion must be non-empty before the validating webhook

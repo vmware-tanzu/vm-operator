@@ -36,6 +36,18 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 		})
 	})
 
+	Context("VI-ADMIN-NS-ROLE", func() {
+		viadmin.VIAdminNamespaceRoleSpec(context.TODO(), func() viadmin.VIAdminNamespaceRoleSpecInput {
+			return viadmin.VIAdminNamespaceRoleSpecInput{
+				ClusterProxy:   svClusterProxy,
+				Config:         config,
+				WCPClient:      wcpClient,
+				ArtifactFolder: artifactFolder,
+				SkipCleanup:    skipCleanup,
+			}
+		})
+	})
+
 	Context("VI-ADMIN-RegisterVM", func() {
 		viadmin.VIAdminRegisterVMSpec(context.TODO(), func() viadmin.VIAdminRegisterVMSpecInput {
 			return viadmin.VIAdminRegisterVMSpecInput{

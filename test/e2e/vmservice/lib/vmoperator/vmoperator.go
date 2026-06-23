@@ -593,19 +593,6 @@ func WaitForClusterVirtualMachineImageName(ctx context.Context, config *framewor
 	return cvmiName, nil
 }
 
-func GetVMClassInNamespace(ctx context.Context, client ctrlclient.Client, config *config.E2EConfig, ns, vmclassName string) (*vmopv1a2.VirtualMachineClass, error) {
-	vmclass := &vmopv1a2.VirtualMachineClass{}
-
-	e2eframework.Logf("Getting Namespace scoped VMClass %s in namespace %s", vmclassName, ns)
-
-	err := client.Get(ctx, ctrlclient.ObjectKey{Name: vmclassName, Namespace: ns}, vmclass)
-	if err != nil {
-		return nil, err
-	}
-
-	return vmclass, nil
-}
-
 func MemoryQuantityToMb(q resource.Quantity) int {
 	return int(math.Ceil(float64(q.Value()) / float64(1024*1024)))
 }

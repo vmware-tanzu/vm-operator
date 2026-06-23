@@ -29,7 +29,6 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -592,60 +591,6 @@ func WaitForClusterVirtualMachineImageName(ctx context.Context, config *framewor
 		fmt.Sprintf("failed to find cvmi by display name %s", imageDisplayName))
 
 	return cvmiName, nil
-}
-
-func GetClusterScopedVirtualMachineImage(ctx context.Context, config *framework.Config, client ctrlclient.Client, name string) (ctrlclient.Object, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if vmImageRegistryFss {
-		virtualMachineImage := &vmopv1a2.ClusterVirtualMachineImage{}
-
-		err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-		if err != nil {
-			return nil, err
-		}
-
-		return virtualMachineImage, nil
-	}
-
-	virtualMachineImage := &vmopv1a2.VirtualMachineImage{}
-
-	err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachineImage, nil
-}
-
-func GetClusterScopedVirtualMachineImageV1A1(ctx context.Context, config *framework.Config, client ctrlclient.Client, name string) (ctrlclient.Object, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if vmImageRegistryFss {
-		virtualMachineImage := &vmopv1a1.ClusterVirtualMachineImage{}
-
-		err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-		if err != nil {
-			return nil, err
-		}
-
-		return virtualMachineImage, nil
-	}
-
-	virtualMachineImage := &vmopv1a1.VirtualMachineImage{}
-
-	err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachineImage, nil
 }
 
 func GetVMClassInNamespace(ctx context.Context, client ctrlclient.Client, config *config.E2EConfig, ns, vmclassName string) (*vmopv1a2.VirtualMachineClass, error) {

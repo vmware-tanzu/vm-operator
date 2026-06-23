@@ -168,16 +168,6 @@ func UpdateVirtualMachineClassName(ctx context.Context, config *config.E2EConfig
 	}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(BeTrue(), "Timed out updating VirtualMachines %s ClassName to %s", vmName, className)
 }
 
-func GetVirtualMachineCondition(vm *vmopv1a2.VirtualMachine, conditionType string) *metav1.Condition {
-	for _, condition := range vm.Status.Conditions {
-		if condition.Type == conditionType {
-			return &condition
-		}
-	}
-
-	return nil
-}
-
 // Utility function to check a particular condition consistency on a given list of Virtual Machine.
 func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client,
 	ns string, vmName string, expectedCondition metav1.Condition) {

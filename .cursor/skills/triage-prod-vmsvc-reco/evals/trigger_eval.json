@@ -1,0 +1,41 @@
+{
+  "triggers": [
+    "triage this prod-vmsvc-reco-main pipeline",
+    "prod-vmsvc-reco-main",
+    "triage-vm-service-e2e",
+    "jenkins-vcfwcp",
+    "triage this pipeline",
+    "investigate the pipeline failure",
+    "why did the pipeline fail",
+    "what failed in the pipeline",
+    "root cause the pipeline failure",
+    "prod-vmsvc-reco-nsx failed",
+    "prod-vmsvc-reco-vds failed",
+    "prod-vmsvc-reco-nsx-vpc failed",
+    "prod-vmsvc-reco-vds-ssv failed",
+    "pipeline is failing on prod-vmsvc-reco",
+    "triage prod-vmsvc-reco-nsx",
+    "triage prod-vmsvc-reco-vds",
+    "triage prod-vmsvc-reco-nsx-vpc",
+    "triage prod-vmsvc-reco-vds-ssv",
+    "can you triage this jenkins pipeline",
+    "jenkins build failed, please triage",
+    "look into this jenkins failure",
+    "what caused the vmsvc reco pipeline to fail",
+    "investigate this jenkins build",
+    "prod-vmsvc-reco pipeline failure",
+    "all downstream jobs failed",
+    "nimbus infra failure in pipeline",
+    "testbed deploy failed in pipeline",
+    "gce2e test failure",
+    "vm service e2e pipeline triage",
+    "please triage jenkins-vcfwcp.devops.broadcom.net/job/prod-vmsvc-reco"
+  ],
+  "non_triggers": [
+    "how do I write a unit test",
+    "what is a CnsRegisterVolume",
+    "show me the controller code",
+    "fix this Go compilation error",
+    "help me understand the reconciler loop"
+  ]
+}

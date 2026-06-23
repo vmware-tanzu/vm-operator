@@ -100,8 +100,8 @@ func GetVirtualMachineClass(ctx context.Context, client ctrlclient.Client, ns, n
 	return virtualMachineClass, nil
 }
 
-func ListVirtualMachineImagesWithOptions(ctx context.Context, client ctrlclient.Client, options []ctrlclient.ListOption) (*vmopv1a2.VirtualMachineImageList, error) {
-	virtualMachineImageList := &vmopv1a2.VirtualMachineImageList{}
+func ListVirtualMachineImagesWithOptions(ctx context.Context, client ctrlclient.Client, options []ctrlclient.ListOption) (*vmopv1.VirtualMachineImageList, error) {
+	virtualMachineImageList := &vmopv1.VirtualMachineImageList{}
 
 	err := client.List(ctx, virtualMachineImageList, options...)
 	if err != nil {
@@ -112,8 +112,8 @@ func ListVirtualMachineImagesWithOptions(ctx context.Context, client ctrlclient.
 }
 
 // ListClusterVirtualMachineImages returns the CVMI List in the client's cluster.
-func ListClusterVirtualMachineImages(ctx context.Context, client ctrlclient.Client) (*vmopv1a2.ClusterVirtualMachineImageList, error) {
-	clusterVirtualMachineImageList := &vmopv1a2.ClusterVirtualMachineImageList{}
+func ListClusterVirtualMachineImages(ctx context.Context, client ctrlclient.Client) (*vmopv1.ClusterVirtualMachineImageList, error) {
+	clusterVirtualMachineImageList := &vmopv1.ClusterVirtualMachineImageList{}
 
 	err := client.List(ctx, clusterVirtualMachineImageList)
 	if err != nil {

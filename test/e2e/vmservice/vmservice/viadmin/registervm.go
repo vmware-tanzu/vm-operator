@@ -402,7 +402,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Set Removable=true on every volume before backup is captured so the
 			// backup YAML reflects the correct value. The CSI CnsRegisterVolume
 			// controller reads spec.volumes[*].removable when a newly registered FCD
-			// is processed; if removable is missing the disk may be mis-classified
+			// is processed; if removable is missing the disk may be misclassified
 			// during a restore pass.
 			By("Set all PVC volumes as removable=true before backup is captured")
 			vmA5, err := utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)

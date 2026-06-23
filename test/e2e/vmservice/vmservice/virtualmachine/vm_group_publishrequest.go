@@ -18,6 +18,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -125,7 +126,7 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 	createVMs := func() {
 		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vm1Name, vmChildGroupName, nil)
 		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vm0Name, vmGroupName, nil)
-		vmoperator.VerifyVirtualMachineGroupLinked(ctx, vmSvcE2EConfig, vmSvcClusterProxy.GetClient(), vmSvcNamespace, vmGroupName, sets.New([]vmopv1a5.GroupMember{
+		vmoperator.VerifyVirtualMachineGroupLinked(ctx, vmSvcE2EConfig, vmSvcClusterProxy.GetClient(), vmSvcNamespace, vmGroupName, sets.New([]vmopv1.GroupMember{
 			{Kind: "VirtualMachine", Name: vm0Name},
 			{Kind: "VirtualMachineGroup", Name: vmChildGroupName},
 		}...))

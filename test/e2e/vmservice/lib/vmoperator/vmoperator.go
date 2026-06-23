@@ -462,24 +462,6 @@ func DeleteSubnetOrSubnetSet(ctx context.Context, client ctrlclient.Client, ns, 
 	Expect(client.Delete(ctx, obj)).To(Succeed())
 }
 
-// DescribeAllVirtualMachinesInNamespace logs the output of `kubectl describe vm` for all VMs in the given namespace.
-func DescribeAllVirtualMachinesInNamespace(ctx context.Context, client ctrlclient.Client, kubeconfigPath, ns string) {
-	e2eframework.Logf("Describing all VMs in namespace %s", ns)
-
-	vmList := &vmopv1a2.VirtualMachineList{}
-	Expect(client.List(ctx, vmList, ctrlclient.InNamespace(ns))).Should(Succeed())
-
-	for _, vm := range vmList.Items {
-		stdout, stderr, err := framework.KubectlDescribeWithNamespacedName(ctx, kubeconfigPath, "vm", ns, vm.Name)
-		if err != nil {
-			e2eframework.Logf("Failed to run kubectl describe for VM '%s/%s': %s", ns, vm.Name, stderr)
-			continue
-		}
-
-		e2eframework.Logf("kubectl describe vm -n %s %s:\n%s", ns, vm.Name, stdout)
-	}
-}
-
 // DescribeResourceIfExists logs the output of `kubectl describe <resource>` if the given resource exists.
 func DescribeResourceIfExists(ctx context.Context, client ctrlclient.Client, kubeconfigPath, ns, resourceName, resource string) {
 	stdout, stderr, err := framework.KubectlDescribeWithNamespacedName(ctx, kubeconfigPath, resource, ns, resourceName)

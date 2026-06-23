@@ -41,7 +41,6 @@ import (
 const virtualMachineKind = "VirtualMachine"
 
 const (
-	vmopConfigurationConfigMap  = "vsphere.provider.config.vmoperator.vmware.com"
 	vmClassBestEffortSmall      = "best-effort-small"
 	vmClassBestEffortExtraSmall = "best-effort-xsmall"
 	NetworkProviderTypeVPC      = "NSXT_VPC"

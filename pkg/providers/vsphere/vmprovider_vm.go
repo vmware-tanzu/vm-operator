@@ -1073,6 +1073,19 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
+			// When disk registration is pending and VMSnapshots are enabled,
+			// annotate any queued snapshots so they don't appear stuck with
+			// empty conditions. ReconcileCurrentSnapshot is skipped on this
+			// path, so we set the condition here before exiting early.
+			if pkgcfg.FromContext(vmCtx).Features.VMSnapshots &&
+				pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs &&
+				!pkgcond.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
+				if setErr := ReconcileSnapshotWaitForCRVCondition(
+					vmCtx, vs.k8sClient); setErr != nil {
+					reconcileErr = getReconcileErr(
+						"snapshot wait-for-crv condition", reconcileErr, setErr)
+				}
+			}
 			return errOrReconcileErr(reconcileErr, err)
 		}
 		reconcileErr = getReconcileErr("config", reconcileErr, err)

@@ -191,9 +191,9 @@ func vmLocationTests() {
 			var noRequeueErr pkgerr.NoRequeueError
 			Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 
-			Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
 			cond := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal("ResourcePoolMismatch"))
 		})
 	})
@@ -220,10 +220,41 @@ func vmLocationTests() {
 			var noRequeueErr pkgerr.NoRequeueError
 			Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 
-			Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineLocationValid)).To(BeTrue())
 			cond := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
 			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal("FolderMismatch"))
+		})
+	})
+
+	When("VM is moved to both an invalid resource pool and an invalid folder", func() {
+		It("sets VirtualMachineLocationValid condition to False with ResourcePoolAndFolderMismatch reason", func() {
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Move VM to the cluster root RP (outside namespace RP) and to the
+			// datacenter root folder (outside namespace folder) simultaneously.
+			clusterRP, err := ctx.GetFirstClusterFromFirstZone().ResourcePool(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			dcFolder, err := ctx.Finder.DefaultFolder(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			task, err := vcVM.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+				Pool:   ptr.To(clusterRP.Reference()),
+				Folder: ptr.To(dcFolder.Reference()),
+			}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+
+			err = callProviderOnce()
+			Expect(err).To(HaveOccurred())
+			var noRequeueErr pkgerr.NoRequeueError
+			Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
+
+			cond := conditions.Get(vm, vmopv1.VirtualMachineLocationValid)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("ResourcePoolAndFolderMismatch"))
 		})
 	})
 

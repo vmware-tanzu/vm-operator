@@ -1144,10 +1144,13 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	if vmCtx.MoVM.ResourcePool == nil {
 		return fmt.Errorf("VM is not assigned to any resource pools")
 	}
+	if vmCtx.MoVM.Parent == nil {
+		return fmt.Errorf("VM has no parent folder")
+	}
 
 	zoneName := vmCtx.VM.Status.Zone
 	if zoneName == "" {
-		vmCtx.Logger.Info("WARNING: VM has no zone set; skipping location validation")
+		vmCtx.Logger.Info("VM has no zone set; skipping location validation")
 		return nil
 	}
 
@@ -1175,9 +1178,12 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 	// again until its inventory location changes.
 	if !isVMInValidRP || !isVMInValidFolder {
 		var reason string
-		if !isVMInValidRP {
+		switch {
+		case !isVMInValidRP && !isVMInValidFolder:
+			reason = "ResourcePoolAndFolderMismatch"
+		case !isVMInValidRP:
 			reason = "ResourcePoolMismatch"
-		} else {
+		default:
 			reason = "FolderMismatch"
 		}
 		pkgcond.MarkFalse(
@@ -1210,7 +1216,7 @@ func validateVMResourcePool(
 	expectedRootRPMoID string,
 	vcClient *vcclient.Client) (bool, error) {
 
-	if vmCtx.MoVM.ResourcePool != nil && vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
+	if vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
 		return true, nil
 	}
 
@@ -1239,7 +1245,7 @@ func validateVMFolder(
 	expectedFolder string,
 	vcClient *vcclient.Client) (bool, error) {
 
-	if vmCtx.MoVM.Parent != nil && vmCtx.MoVM.Parent.Value == expectedFolder {
+	if vmCtx.MoVM.Parent.Value == expectedFolder {
 		return true, nil
 	}
 	moFolder, err := vcenter.GetFolderProperties(

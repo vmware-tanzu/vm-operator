@@ -3,8 +3,8 @@
 
 ARG BASE_IMAGE=mirror.gcr.io/library/photon:5.0
 
-# Build stage - compile tests
-FROM ${BASE_IMAGE} AS builder
+# Build base stage - shared Go toolchain and vm-operator module downloads
+FROM ${BASE_IMAGE} AS builder-base
 
 # Go module proxy settings. Override at build time to use an internal mirror
 # when proxy.golang.org is not reachable (e.g. network-restricted build systems).
@@ -14,34 +14,48 @@ ARG GONOSUMDB=
 ENV GOPROXY="${GOPROXY}"
 ENV GONOSUMDB="${GONOSUMDB}"
 
-# Build stage setup
 WORKDIR /vm-operator
 
-# Copy all source code needed for compilation
+# Install Go toolchain.
+RUN tdnf install -y \
+        build-essential \
+        glibc-devel \
+        go && \
+    rm -rf /var/cache/tdnf
+
+# Download vm-operator module dependencies. test/e2e/, hack/, and Makefile are
+# intentionally excluded so test-only changes don't bust this layer.
 COPY go.mod go.sum ./
 COPY api/ ./api/
 COPY external/ ./external/
 COPY pkg/ ./pkg/
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    go mod download
+
+# e2e test binary builder — BuildKit runs this in parallel with builder-packer
+FROM builder-base AS builder-e2e
+
 COPY test/e2e/ ./test/e2e/
 COPY hack/ ./hack/
 COPY Makefile ./
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd test/e2e/vmservice && go test -c -ldflags="-s -w" -o /vm-operator/e2e-tests .
 
-# Install Go dependencies
-RUN tdnf install -y \
-    build-essential \
-    glibc-devel \
-    go
-RUN go mod download
-
-# Pre-compile test binaries for faster execution
-RUN cd test/e2e/vmservice && go test -c -ldflags="-s -w" -o /vm-operator/e2e-tests .
-
-# Compile packer-plugin-vsphere from source.
-# The source is staged into the build context before docker build runs .
+# packer-plugin-vsphere builder — BuildKit runs this in parallel with builder-e2e.
+# The source is staged into the build context before docker build runs.
 # For local/public builds the default is the public GitHub repo, cloned by
 # the vm-operator Makefile's e2e-image-build target if not already present.
+FROM builder-base AS builder-packer
+
+COPY packer-plugin-vsphere-src/go.mod packer-plugin-vsphere-src/go.sum /packer-plugin-vsphere-src/
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    cd /packer-plugin-vsphere-src && go mod download
+
 COPY packer-plugin-vsphere-src/ /packer-plugin-vsphere-src/
-RUN go build -C /packer-plugin-vsphere-src -ldflags="-s -w" -o /usr/local/bin/packer-plugin-vsphere main.go
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -C /packer-plugin-vsphere-src -ldflags="-s -w" -o /usr/local/bin/packer-plugin-vsphere main.go
 
 # Runtime stage - minimal image with compiled tests
 FROM ${BASE_IMAGE} AS runtime
@@ -78,8 +92,7 @@ RUN tdnf install -y \
         sshpass \
         make \
         sudo \
-        unzip \
-        && \
+        unzip && \
     rm -rf /var/cache/tdnf
 
 # Install pre-built tool binaries. Public GitHub/HashiCorp URLs are the defaults;
@@ -87,18 +100,20 @@ RUN tdnf install -y \
 
 # govc — required by hack/kms.sh and hack/proxy.sh for gateway VM discovery.
 ARG GOVC_DOWNLOAD_URL=https://github.com/vmware/govmomi/releases/download/v0.53.0/govc_Linux_x86_64.tar.gz
-RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
-    chmod +x /usr/local/bin/govc
+RUN --mount=type=cache,target=/tmp/dl-cache \
+    CACHED="/tmp/dl-cache/govc-$(printf '%s' "${GOVC_DOWNLOAD_URL}" | md5sum | cut -c1-8)" && \
+    [ -f "${CACHED}" ] || { curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /tmp govc && mv /tmp/govc "${CACHED}"; } && \
+    install -m 755 "${CACHED}" /usr/local/bin/govc
 
 # packer — required by vmserviceapp E2E tests.
-# unzip is installed only for this extraction step and removed immediately after.
 ARG PACKER_DOWNLOAD_URL=https://releases.hashicorp.com/packer/1.9.1/packer_1.9.1_linux_amd64.zip
-RUN curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip && \
-    unzip /tmp/packer.zip -d /tmp/packer && \
-    mv /tmp/packer/packer /usr/local/bin/packer && \
-    chmod 0755 /usr/local/bin/packer && \
-    rm -rf /tmp/packer.zip /tmp/packer && \
-    rm -rf /var/cache/tdnf
+RUN --mount=type=cache,target=/tmp/dl-cache \
+    CACHED="/tmp/dl-cache/packer-$(printf '%s' "${PACKER_DOWNLOAD_URL}" | md5sum | cut -c1-8)" && \
+    [ -f "${CACHED}" ] || { curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip && \
+        unzip /tmp/packer.zip -d /tmp/packer-src && \
+        mv /tmp/packer-src/packer "${CACHED}" && \
+        rm -rf /tmp/packer.zip /tmp/packer-src; } && \
+    install -m 755 "${CACHED}" /usr/local/bin/packer
 
 # PIP_INDEX_URL overrides the pip package index used when install-pykmip.sh runs
 # on the testbed gateway VM. Defaults to empty (public PyPI). Build systems that
@@ -134,15 +149,15 @@ RUN mkdir -p /vm-operator && \
 
 WORKDIR /vm-operator
 
-COPY --from=builder --chown=vmoperator:vmoperator --chmod=755 /vm-operator/hack/e2e/ ./hack/e2e/
+COPY --from=builder-e2e --chown=vmoperator:vmoperator --chmod=755 /vm-operator/hack/e2e/ ./hack/e2e/
 
-COPY --from=builder /usr/local/bin/packer-plugin-vsphere /usr/local/bin/packer-plugin-vsphere
+COPY --from=builder-packer /usr/local/bin/packer-plugin-vsphere /usr/local/bin/packer-plugin-vsphere
 
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/config/ ./test/e2e/vmservice/config/
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/fixtures/ ./test/e2e/fixtures/
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/vmserviceapp/templates/ ./test/e2e/vmservice/vmserviceapp/templates/
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/config/ ./test/e2e/vmservice/config/
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/test/e2e/fixtures/ ./test/e2e/fixtures/
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/vmserviceapp/templates/ ./test/e2e/vmservice/vmserviceapp/templates/
 
 # REPO_ROOT tells vmserviceapp tests where to find bundled Packer HCL templates.
 # PACKER_PLUGIN_DIR_PATH tells Packer where to find the vsphere plugin binary.

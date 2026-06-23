@@ -59,8 +59,8 @@ func IsNetworkNsxtVPC(ctx context.Context, client ctrlclient.Client, config *con
 	return envs[config.GetVariable("EnvNetworkProvider")] == NetworkProviderTypeVPC
 }
 
-// Utility function to ensure that a VirtualMachine with given name either exists or not, returns as soon as the CR exists in etcd.
-// To check if the vSphere VM has been created, see WaitForVirtualMachineConditionCreated.
+// WaitForVirtualMachineToExist waits for the VM to be created in etcd, as
+// indicated by the Get() retuning success.
 func WaitForVirtualMachineToExist(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
 	By("Verifying the existence of VM CR in etcd")
 	Eventually(func() bool {
@@ -74,10 +74,8 @@ func WaitForVirtualMachineToExist(ctx context.Context, config *config.E2EConfig,
 	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(), "Timed out waiting for k8s VirtualMachine %s to exist", vmName)
 }
 
-// Utility function to wait for a VM to exist, VirtualMachineCreated condition to exist and expect to be True.
-// This function fails when VirtualMachineCreated.Status == ConditionFalse, meaning the vSphere VM failed to be created.
-// Use this function before helpers that wait on vSphere VM properties,
-// such as WaitForVirtualMachinePowerState and WaitForVirtualMachineIP.
+// WaitForVirtualMachineConditionCreated waits for the VM to be created on VC,
+// as indicated by the VirtualMachineConditionCreated condition.
 func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
 	By("Waiting for vSphere VM to be created")
 	Eventually(func(g Gomega) bool {
@@ -92,7 +90,8 @@ func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E
 		g.Expect(actualCondition.Status).To(Equal(metav1.ConditionTrue))
 
 		return true
-	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(), "Timed out waiting for VirtualMachine %s to be created", vmName)
+	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(),
+		"Timed out waiting for VirtualMachine %s to be created on VC", vmName)
 }
 
 // WaitForVirtualMachineImageCacheReady waits for VirtualMachineConditionImageCacheReady to become True.
@@ -126,7 +125,8 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 
-// Utility function to wait for the VM's Status.Class.Name to be updated.
+// WaitForVirtualMachineStatusClassUpdated waits for the VM Status to
+// report the expected class name.
 func WaitForVirtualMachineStatusClassUpdated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, className string) {
 	Eventually(func(g Gomega) bool {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)

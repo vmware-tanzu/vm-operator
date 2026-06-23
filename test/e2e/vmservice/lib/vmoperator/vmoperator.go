@@ -32,7 +32,6 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -112,7 +111,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 	By("Waiting for VirtualMachine image cache to be ready")
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry waiting for image cache: %v", err)
 			g.Expect(err).ToNot(HaveOccurred())
@@ -120,7 +119,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		}
 
 		for _, cond := range vm.Status.Conditions {
-			if cond.Type == vmopv1a5.VirtualMachineConditionImageCacheReady {
+			if cond.Type == vmopv1.VirtualMachineConditionImageCacheReady {
 				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
 					"VirtualMachineConditionImageCacheReady is %s: %s", cond.Status, cond.Message)
 				return
@@ -201,7 +200,7 @@ func WaitForVirtualMachineCreation(ctx context.Context, config *config.E2EConfig
 	By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
 	WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
 	WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
-	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1a5.VirtualMachinePowerStateOn))
+	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 	WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
 }
 
@@ -421,7 +420,7 @@ func WaitForLinuxPrepCustomizeNextPowerOnFalse(
 	client ctrlclient.Client,
 	ns, vmName string) {
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(vm.Spec.Bootstrap).ToNot(BeNil())
 		g.Expect(vm.Spec.Bootstrap.LinuxPrep).ToNot(BeNil())
@@ -753,7 +752,7 @@ func VerifyVirtualMachineGroupPublishRequestCompleted(
 		}
 
 		for _, condition := range vmGroupPub.Status.Conditions {
-			if condition.Type == vmopv1a5.VirtualMachineGroupPublishRequestConditionComplete {
+			if condition.Type == vmopv1.VirtualMachineGroupPublishRequestConditionComplete {
 				return condition.Status == metav1.ConditionTrue
 			}
 		}
@@ -780,10 +779,10 @@ func VerifyVirtualMachineGroupLinked(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	expectedMembers sets.Set[vmopv1a5.GroupMember]) {
+	expectedMembers sets.Set[vmopv1.GroupMember]) {
 	e2eframework.Logf("%s expected members: %v", name, expectedMembers)
 
-	var lastActualMembers sets.Set[vmopv1a5.GroupMember]
+	var lastActualMembers sets.Set[vmopv1.GroupMember]
 
 	Eventually(func(g Gomega) bool {
 		vmGroup, err := utils.GetVirtualMachineGroup(ctx, client, ns, name)
@@ -792,13 +791,13 @@ func VerifyVirtualMachineGroupLinked(
 			return false
 		}
 
-		actualMembers := make(sets.Set[vmopv1a5.GroupMember])
+		actualMembers := make(sets.Set[vmopv1.GroupMember])
 
 		for _, member := range vmGroup.Status.Members {
 			for _, condition := range member.Conditions {
-				if condition.Type == vmopv1a5.VirtualMachineGroupMemberConditionGroupLinked &&
+				if condition.Type == vmopv1.VirtualMachineGroupMemberConditionGroupLinked &&
 					condition.Status == metav1.ConditionTrue {
-					actualMembers.Insert(vmopv1a5.GroupMember{
+					actualMembers.Insert(vmopv1.GroupMember{
 						Name: member.Name,
 						Kind: member.Kind,
 					})
@@ -1198,9 +1197,9 @@ func VerifyVirtualMachineSnapshotCondition(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	powerState vmopv1a5.VirtualMachinePowerState,
+	powerState vmopv1.VirtualMachinePowerState,
 	quiesced bool,
-	children []vmopv1a5.VirtualMachineSnapshotReference,
+	children []vmopv1.VirtualMachineSnapshotReference,
 ) {
 	GinkgoHelper()
 
@@ -1218,7 +1217,7 @@ func VerifyVirtualMachineSnapshotCondition(
 		}
 
 		for _, condition := range vmSnapshot.Status.Conditions {
-			if condition.Type == vmopv1a5.VirtualMachineSnapshotReadyCondition {
+			if condition.Type == vmopv1.VirtualMachineSnapshotReadyCondition {
 				return condition.Status == metav1.ConditionTrue
 			}
 		}
@@ -1251,14 +1250,14 @@ func VerifySnapshotStatusOnVirtualMachine(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	currentSnapshot *vmopv1a5.VirtualMachineSnapshotReference,
-	rootSnapshots []vmopv1a5.VirtualMachineSnapshotReference,
-	powerState vmopv1a5.VirtualMachinePowerState,
+	currentSnapshot *vmopv1.VirtualMachineSnapshotReference,
+	rootSnapshots []vmopv1.VirtualMachineSnapshotReference,
+	powerState vmopv1.VirtualMachinePowerState,
 ) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, name)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, name)
 		g.Expect(err).To(Succeed())
 		g.Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty(),
 			"spec.CurrentSnapshotName should be empty")
@@ -1279,12 +1278,12 @@ func VerifyVirtualMachineRestartMode(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	restartMode vmopv1a5.VirtualMachinePowerOpMode,
+	restartMode vmopv1.VirtualMachinePowerOpMode,
 ) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, name)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, name)
 		g.Expect(err).To(Succeed())
 		g.Expect(vm.Spec.RestartMode).To(Equal(restartMode))
 	}, config.GetIntervals("default", "wait-virtual-machine-snapshot-related-resource")...).Should(Succeed(),

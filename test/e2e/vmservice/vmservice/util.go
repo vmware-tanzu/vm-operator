@@ -43,7 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsunregistervolumev1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/cnsunregistervolume/v1alpha1"
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
@@ -1353,7 +1352,7 @@ func CreateSnapshotInVC(
 	vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 	defer vcenter.LogoutVimClient(vCenterClient)
 
-	vm, err := utils.GetVirtualMachineA5(ctx, clusterProxy.GetClient(), vmNamespace, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, clusterProxy.GetClient(), vmNamespace, vmName)
 	Expect(err).NotTo(HaveOccurred())
 
 	vmMoID := vm.Status.UniqueID
@@ -1391,13 +1390,13 @@ func RevertVMSnapshot(
 	vmSvcClusterProxy *common.VMServiceClusterProxy,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
-	currentSnapshot *vmopv1a5.VirtualMachineSnapshotReference,
+	currentSnapshot *vmopv1.VirtualMachineSnapshotReference,
 ) {
 	GinkgoHelper()
 
 	Expect(currentSnapshot.Name).NotTo(BeEmpty())
 
-	vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 	Expect(err).NotTo(HaveOccurred())
 
 	vmPatch := vm.DeepCopy()
@@ -1416,11 +1415,11 @@ func UpdateVMRestartMode(
 	vmSvcClusterProxy *common.VMServiceClusterProxy,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
-	restartMode vmopv1a5.VirtualMachinePowerOpMode,
+	restartMode vmopv1.VirtualMachinePowerOpMode,
 ) {
 	GinkgoHelper()
 
-	vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 	Expect(err).NotTo(HaveOccurred())
 
 	vmPatch := vm.DeepCopy()

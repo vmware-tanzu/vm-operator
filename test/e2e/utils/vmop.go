@@ -139,8 +139,8 @@ func GetVirtualMachineSnapshot(ctx context.Context, client ctrlclient.Client, ns
 	return virtualMachineSnapshot, nil
 }
 
-func GetVirtualMachinePublishRequest(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a2.VirtualMachinePublishRequest, error) {
-	virtualMachinePublishRequest := &vmopv1a2.VirtualMachinePublishRequest{}
+func GetVirtualMachinePublishRequest(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1.VirtualMachinePublishRequest, error) {
+	virtualMachinePublishRequest := &vmopv1.VirtualMachinePublishRequest{}
 
 	key := types.NamespacedName{
 		Namespace: ns,

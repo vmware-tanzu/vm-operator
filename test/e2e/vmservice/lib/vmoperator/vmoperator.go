@@ -29,7 +29,6 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
@@ -603,16 +602,6 @@ func GetVMClassesNameForUpdate(ctx context.Context, config *framework.Config, cl
 	return vmClassBestEffortExtraSmall, vmClassBestEffortSmall, nil
 }
 
-func getVirtualMachinePublishRequestCondition(vmPub *vmopv1a2.VirtualMachinePublishRequest, conditionType string) *metav1.Condition {
-	for _, condition := range vmPub.Status.Conditions {
-		if condition.Type == conditionType {
-			return &condition
-		}
-	}
-
-	return nil
-}
-
 // VerifyVirtualMachinePublishRequestCondition waits until the expected condition is met on the VirtualMachinePublishRequest.
 func VerifyVirtualMachinePublishRequestCondition(
 	ctx context.Context,
@@ -624,7 +613,7 @@ func VerifyVirtualMachinePublishRequestCondition(
 		vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, client, ns, vmPubName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := getVirtualMachinePublishRequestCondition(vmPub, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vmPub.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 
 		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))

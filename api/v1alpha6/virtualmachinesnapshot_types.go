@@ -102,6 +102,11 @@ const (
 	// VirtualMachineSnapshotCreationFailedReason documents that the virtual machine
 	// snapshot creation has failed.
 	VirtualMachineSnapshotCreationFailedReason = "VirtualMachineSnapshotCreationFailed"
+
+	// VirtualMachineSnapshotWaitingForDiskRegistrationReason documents that the
+	// virtual machine snapshot is waiting for all unmanaged disk registrations
+	// to complete before the snapshot can be triggered.
+	VirtualMachineSnapshotWaitingForDiskRegistrationReason = "VirtualMachineSnapshotWaitingForDiskRegistration"
 )
 
 const (

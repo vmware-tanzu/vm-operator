@@ -39,8 +39,8 @@ func NewFakeClient(objs ...client.Object) client.Client {
 
 func NewFakeClientWithInterceptors(
 	funcs interceptor.Funcs,
-	objs ...client.Object) client.Client {
-
+	objs ...client.Object,
+) client.Client {
 	scheme := NewScheme()
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -70,6 +70,7 @@ func KnownObjectTypes() []client.Object {
 		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
 		&cnsv1alpha1.CnsNodeVMBatchAttachment{},
+		&cnsv1alpha1.CnsRegisterVolume{},
 		&spqv1.StoragePolicyQuota{},
 		&spqv1.StoragePolicyUsage{},
 		&spqv1.StorageQuota{},

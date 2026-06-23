@@ -327,6 +327,30 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("snapshot's created condition is false with WaitingForDiskRegistration reason", func() {
+			BeforeEach(func() {
+				conditions.MarkFalse(vmSnapshot,
+					vmopv1.VirtualMachineSnapshotCreatedCondition,
+					vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason,
+					"waiting for disk registration")
+				vm.Status.UniqueID = dummyVMUUID
+				initObjects = nil
+				initObjects = append(initObjects, vm, vmSnapshot)
+			})
+
+			It("sets ready condition to WaitingForDiskRegistration", func() {
+				Expect(err).ToNot(HaveOccurred())
+				vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, snapshotObjKey, vmSnapshotObj)).To(Succeed())
+
+				Expect(conditions.IsFalse(vmSnapshotObj,
+					vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+				Expect(conditions.GetReason(vmSnapshotObj,
+					vmopv1.VirtualMachineSnapshotReadyCondition)).
+					To(Equal(vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason))
+			})
+		})
+
 		When("snapshot's created condition is true", func() {
 			BeforeEach(func() {
 				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)

@@ -1026,20 +1026,6 @@ func WaitForVirtualMachineGroupToBeDeleted(ctx context.Context, config *config.E
 	}, config.GetIntervals("default", "wait-virtual-machine-group-deletion")...).Should(Succeed(), "Timed out waiting for VirtualMachineGroup %s to be deleted", groupName)
 }
 
-func VerifyVirtualMachineSnapshotDeleted(
-	ctx context.Context,
-	config *config.E2EConfig,
-	client ctrlclient.Client,
-	ns, name string) {
-	GinkgoHelper()
-
-	Eventually(func(g Gomega) bool {
-		_, err := utils.GetVirtualMachineSnapshot(ctx, client, ns, name)
-		return apierrors.IsNotFound(err)
-	}, config.GetIntervals("default", "wait-virtual-machine-snapshot-deletion")...).Should(BeTrue(),
-		"Timed out waiting for VirtualMachineSnapshot to be deleted")
-}
-
 func VerifyVirtualMachineSnapshotCondition(
 	ctx context.Context,
 	config *config.E2EConfig,

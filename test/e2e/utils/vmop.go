@@ -84,8 +84,8 @@ func DeleteVirtualMachineSnapshot(ctx context.Context, client ctrlclient.Client,
 	return client.Delete(ctx, virtualMachineSnapshot)
 }
 
-func GetVirtualMachineClass(ctx context.Context, client ctrlclient.Client, name, ns string) (*vmopv1a2.VirtualMachineClass, error) {
-	virtualMachineClass := &vmopv1a2.VirtualMachineClass{}
+func GetVirtualMachineClass(ctx context.Context, client ctrlclient.Client, name, ns string) (*vmopv1.VirtualMachineClass, error) {
+	virtualMachineClass := &vmopv1.VirtualMachineClass{}
 
 	key := types.NamespacedName{
 		Name:      name,

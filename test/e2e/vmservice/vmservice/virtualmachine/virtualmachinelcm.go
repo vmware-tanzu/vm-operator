@@ -190,12 +190,10 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
 		e2eframework.ExpectNoError(err)
 
-		hw := vmMO.Config.Hardware
-		var vmClass *vmopv1a2.VirtualMachineClass
-		// Depending on namespacedVMClassFSS, return namespaced VM Class or cluster scoped VM Class
-		vmClass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, clusterResources.VMClassName, input.WCPNamespaceName)
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, clusterResources.VMClassName, input.WCPNamespaceName)
 		e2eframework.ExpectNoError(err)
 
+		hw := vmMO.Config.Hardware
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 	})
@@ -311,9 +309,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(ecMap).To(HaveKeyWithValue("hello-test-key", "hello-test-value"))
 
 		// verify cpu and memory
-		var vmClass *vmopv1a2.VirtualMachineClass
-		// Depending on namespacedVMClassFSS, return namespaced VM Class or cluster scoped VM Class
-		vmClass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassE1000, input.WCPNamespaceName)
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassE1000, input.WCPNamespaceName)
 		e2eframework.ExpectNoError(err)
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
@@ -355,8 +351,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(hwVersion).To(Equal("vmx-22"))
 
 		// verify cpu and memory
-		var vmClass *vmopv1a2.VirtualMachineClass
-		vmClass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassVMX22, input.WCPNamespaceName)
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassVMX22, input.WCPNamespaceName)
 		e2eframework.ExpectNoError(err)
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
@@ -606,10 +601,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 		By("Verify that instance volumes are attached to virtual machine as expected")
-		var vmcInfo *vmopv1a2.VirtualMachineClass
-		// Depending on namespacedVMClassFSS, return namespaced VM Class or cluster scoped VM Class
-		vmcInfo, err = utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassInstanceStorage, tmpNamespaceName)
-
+		vmcInfo, err := utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassInstanceStorage, tmpNamespaceName)
 		Expect(err).NotTo(HaveOccurred())
 		vmcISVols := vmcInfo.Spec.Hardware.InstanceStorage.Volumes
 

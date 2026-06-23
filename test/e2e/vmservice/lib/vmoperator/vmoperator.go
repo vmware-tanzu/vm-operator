@@ -41,9 +41,7 @@ import (
 const virtualMachineKind = "VirtualMachine"
 
 const (
-	vmClassBestEffortSmall      = "best-effort-small"
-	vmClassBestEffortExtraSmall = "best-effort-xsmall"
-	NetworkProviderTypeVPC      = "NSXT_VPC"
+	NetworkProviderTypeVPC = "NSXT_VPC"
 )
 
 // NetworkProviderInfo contains the network provider information for a VM.
@@ -557,12 +555,6 @@ func WaitForClusterVirtualMachineImageName(ctx context.Context, config *framewor
 
 func MemoryQuantityToMb(q resource.Quantity) int {
 	return int(math.Ceil(float64(q.Value()) / float64(1024*1024)))
-}
-
-func GetVMClassesNameForUpdate(ctx context.Context, config *framework.Config, client ctrlclient.Client) (oldVMClassName, newVMClassName string, _ error) {
-	// By default, we use the name directly from vcenter with the assumption that best-effort-small and
-	// best-effort-medium exist, and we cannot assume the vm class CR presents.
-	return vmClassBestEffortExtraSmall, vmClassBestEffortSmall, nil
 }
 
 // VerifyVirtualMachinePublishRequestCondition waits until the expected condition is met on the VirtualMachinePublishRequest.

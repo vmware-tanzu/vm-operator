@@ -203,7 +203,8 @@ func WaitForVirtualMachineIP(ctx context.Context, config *config.E2EConfig, svCl
 }
 
 // Utility function to check Virtual Machine Status MoID.
-func WaitForVirtualMachineMOID(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
+func WaitForVirtualMachineMOID(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) string {
+	var moID string
 	By("Verify that the VirtualMachine has a Unique ID/MOID")
 	Eventually(func() bool {
 		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
@@ -212,8 +213,11 @@ func WaitForVirtualMachineMOID(ctx context.Context, config *config.E2EConfig, sv
 			return false
 		}
 
-		return vm.Status.UniqueID != ""
+		moID = vm.Status.UniqueID
+		return moID != ""
 	}, config.GetIntervals("default", "wait-virtual-machine-moid")...).Should(BeTrue())
+
+	return moID
 }
 
 // Utility function to check PVC Attachment with Virtual Machine Status.

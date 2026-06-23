@@ -182,9 +182,8 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
 
 		var vmMO mo.VirtualMachine
 		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
@@ -218,9 +217,8 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 
 		By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", input.WCPNamespaceName, vmName))
-		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
 
 		var vmMO mo.VirtualMachine
 		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)

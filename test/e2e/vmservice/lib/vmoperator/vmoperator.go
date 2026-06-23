@@ -471,17 +471,8 @@ func DescribeResourceIfExists(ctx context.Context, client ctrlclient.Client, kub
 // Utility function to get a image k8s name given its display name.
 func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, namespace, imageDisplayName string) (string, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
 
-	var options []ctrlclient.ListOption
-	if vmImageRegistryFss {
-		options = append(options, ctrlclient.InNamespace(namespace))
-	}
-
+	options := []ctrlclient.ListOption{ctrlclient.InNamespace(namespace)}
 	var imageName string
 
 	Eventually(func(g Gomega) bool {
@@ -505,14 +496,6 @@ func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Confi
 // Utility function to wait for a VMI to have its Status.Disks populated.
 func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, namespace, imageName string) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if !vmImageRegistryFss {
-		namespace = ""
-	}
 
 	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
 
@@ -534,14 +517,6 @@ func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framewor
 // so WaitForVirtualMachineImageStatusDisks is sufficient there.
 func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, namespace, imageName string) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if !vmImageRegistryFss {
-		namespace = ""
-	}
 
 	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
 
@@ -559,14 +534,6 @@ func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.C
 // Utility function to get a ClusterVirtualMachineImage k8s object's name by its display name.
 func WaitForClusterVirtualMachineImageName(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, imageDisplayName string) (string, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if !vmImageRegistryFss {
-		return "", fmt.Errorf("cannot get ClusterVirtualMachineImage as image-registry FSS is not enabled")
-	}
 
 	var cvmiName string
 

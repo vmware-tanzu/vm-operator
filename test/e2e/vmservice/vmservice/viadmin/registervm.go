@@ -26,13 +26,12 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -302,10 +301,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			base := vm.DeepCopy()
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 			// Collect all PVC names from the VM spec
@@ -486,10 +482,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmA5, err = utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			basePause := vmA5.DeepCopy()
-			if vmA5.Annotations == nil {
-				vmA5.Annotations = make(map[string]string)
-			}
-			vmA5.Annotations[vmopv1a5.PauseAnnotation] = trueString
+			metav1.SetMetaDataAnnotation(&vmA5.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 			for i := range vmA5.Spec.Volumes {
 				vmA5.Spec.Volumes[i].Removable = ptr.To(true)
 			}
@@ -887,10 +880,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			base := vm.DeepCopy()
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 			var vmMO mo.VirtualMachine

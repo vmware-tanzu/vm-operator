@@ -1032,14 +1032,10 @@ func DeleteVMResource(
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
 
 	By("Add the pause annotation to VM")
-
 	vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 	Expect(err).ToNot(HaveOccurred())
 	base := vm.DeepCopy()
-	if vm.Annotations == nil {
-		vm.Annotations = make(map[string]string)
-	}
-	vm.Annotations[vmopv1a2.PauseAnnotation] = trueString
+	metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 	Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 	// Collect all PVC names from the VM spec

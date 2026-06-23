@@ -42,7 +42,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsunregistervolumev1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/cnsunregistervolume/v1alpha1"
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
@@ -1028,8 +1027,8 @@ func DeleteVMResource(
 	vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Power off the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
+	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
 	By("Add the pause annotation to VM")
 	vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -1125,7 +1124,7 @@ func VerifyPostRegisterVM(
 	wcpClient wcp.WorkloadManagementAPI) {
 	By("Verify that the VM has been created in PoweredOff state")
 	vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmNamespace, vmName)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
 	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 	Expect(err).ToNot(HaveOccurred())
@@ -1146,8 +1145,8 @@ func VerifyPostRegisterVM(
 		expectedRestoredPVCCount, actualRestoredPVCCount)
 
 	By("Power on the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOn))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOn))
+	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 
 	By("Verify that the VM has an IP assigned")
 	vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, vmNamespace, vmName)

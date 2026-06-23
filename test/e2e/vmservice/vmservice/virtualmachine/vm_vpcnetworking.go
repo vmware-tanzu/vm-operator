@@ -139,9 +139,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		vm1Name = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		vm2Name = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 
-		var vmiErr error
-		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 		vm1IP = ""
 		vm2IP = ""
 		secretName = fmt.Sprintf("%s-%s", "secret", capiutil.RandomString(4))
@@ -424,8 +422,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 
 			var vmImageName2 string
 
-			vmImageName2, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, secondNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get the VM Image name in namespace %q", secondNamespaceName)
+			vmImageName2 = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, secondNamespaceName, linuxImageDisplayName)
 			Expect(vmImageName2).NotTo(BeEmpty(), "VM Image CR name is empty for the second namespace")
 
 			By("Create a secret in the second namespace with cloud-init config")

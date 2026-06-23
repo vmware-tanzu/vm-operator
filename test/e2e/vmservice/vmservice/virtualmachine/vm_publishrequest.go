@@ -239,8 +239,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// Ensure the published image is available with expected display name under the namespace.
 				expectedPublishedImageCRName, err := vmoperator.GetVirtualMachinePublishRequestTargetItemName(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				Expect(err).NotTo(HaveOccurred(), "failed to get the published target item name in namespace %q", input.WCPNamespaceName)
-				publishedImageCRName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, expectedPublishedImageCRName)
-				Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", input.WCPNamespaceName)
+				publishedImageCRName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, expectedPublishedImageCRName)
 				Expect(publishedImageCRName).NotTo(BeEmpty(), "published VM Image resource name is empty")
 				vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, publishedImageCRName)
 
@@ -392,8 +391,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// Ensure the published image is available with expected display name under the namespace.
 				expectedPublishedImageCRName, err := vmoperator.GetVirtualMachinePublishRequestTargetItemName(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				Expect(err).NotTo(HaveOccurred(), "failed to get the published target item name in namespace %q", input.WCPNamespaceName)
-				publishedImageCRName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, expectedPublishedImageCRName)
-				Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", input.WCPNamespaceName)
+				publishedImageCRName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, expectedPublishedImageCRName)
 				Expect(publishedImageCRName).NotTo(BeEmpty(), "published VM Image resource name is empty")
 				vmoperator.WaitForVirtualMachineImageStatusDisks(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, publishedImageCRName)
 

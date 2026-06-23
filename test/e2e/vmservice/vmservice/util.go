@@ -1258,8 +1258,7 @@ func DeployVMWithCloudInit(
 	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
 
 	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
-	linuxVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
-	Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, ns)
+	linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
 
 	vmParameters := manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,

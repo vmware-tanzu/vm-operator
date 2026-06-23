@@ -95,9 +95,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		tmpNamespaceCtx = wcpframework.NamespaceContext{}
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 
-		var err error
-		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		sshCommandRunner, _ := e2essh.NewSSHCommandRunner(
 			vcenter.GetVCPNIDFromKubeconfigFile(ctx, svClusterProxy.GetKubeconfigPath()),

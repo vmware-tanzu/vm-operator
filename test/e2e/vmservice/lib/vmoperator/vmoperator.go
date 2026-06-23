@@ -472,7 +472,7 @@ func DescribeResourceIfExists(ctx context.Context, client ctrlclient.Client, kub
 
 // Utility function to get a image k8s name given its display name.
 func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Config,
-	client ctrlclient.Client, namespace, imageDisplayName string) (string, error) {
+	client ctrlclient.Client, namespace, imageDisplayName string) string {
 
 	options := []ctrlclient.ListOption{ctrlclient.InNamespace(namespace)}
 	var imageName string
@@ -492,7 +492,7 @@ func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Confi
 	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).Should(BeTrue(),
 		fmt.Sprintf("failed to find vm image with display name %s", imageDisplayName))
 
-	return imageName, nil
+	return imageName
 }
 
 // Utility function to wait for a VMI to have its Status.Disks populated.

@@ -364,9 +364,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
-			var vmiErr error
-			linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, linuxImageDisplayName)
-			Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, vmSvcNamespace)
+			linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, linuxImageDisplayName)
 
 			isoSupportFSSEnabled = utils.IsFssEnabled(ctx,
 				svClusterClient,
@@ -1729,8 +1727,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Get the ISO-type image CR name")
 
-				isoImageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, isoImageDisplayName)
-				Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", vmSvcNamespace)
+				isoImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, isoImageDisplayName)
 
 				cdrom.Image = vmopv1a5.VirtualMachineImageRef{
 					Kind: "VirtualMachineImage",

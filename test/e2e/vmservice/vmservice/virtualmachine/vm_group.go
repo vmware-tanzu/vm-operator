@@ -98,9 +98,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
-		var err error
-		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		vmgRootYaml = nil
 		vmMemberNames = []string{}
@@ -683,8 +681,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
-			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get VMI by display name %q in namespace %q", linuxImageDisplayName, tmpNamespaceName)
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 			By("Binding all zones to the temporary namespace")
 
@@ -1288,8 +1285,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
-			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get VMI by display name %q in namespace %q", linuxImageDisplayName, tmpNamespaceName)
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 			By("Binding all zones to the temporary namespace")
 
@@ -1385,8 +1381,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(namespaceZones.Items).ToNot(BeEmpty())
 
 				By("Resolving the tiny-core-linux-complex-hw VMI in the temporary namespace")
-				tinyImageVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, "tiny-core-linux-complex-hw")
-				Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", "tiny-core-linux-complex-hw", tmpNamespaceName)
+				tinyImageVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, "tiny-core-linux-complex-hw")
 
 				createCacheVMFunc := func(vmName, groupName, preferredZone, appLabel string, antiAffinity bool) {
 					GinkgoHelper()

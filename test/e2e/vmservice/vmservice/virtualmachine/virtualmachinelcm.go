@@ -103,9 +103,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxImageGuestID = vmservice.GetDefaultImageGuestID()
 
-		var err error
-		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
@@ -401,8 +399,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
 		// Ensure the Linux VMI name is present in the temp namespace.
-		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        tmpNamespaceName,
@@ -432,8 +429,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
 		// Ensure the Linux VMI name is present in the temp namespace.
-		vmiName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
+		vmiName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 		vmParameters.ImageName = vmiName
 
 		// Create a new VM and verify the creation is successful.
@@ -579,8 +575,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassInstanceStorage, vSANDDStoragePolicyIDInt)).To(Succeed())
 		Expect(vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassInstanceStorage, tmpNamespaceName)).To(Succeed())
 
-		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name in namespace: %s", tmpNamespaceName)
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        tmpNamespaceName,
@@ -640,8 +635,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		By("Get the ISO-type image CR name")
 		isoImageDisplayName := "ubuntu-24.04-live-server-amd64"
-		isoImageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, isoImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", input.WCPNamespaceName)
+		isoImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, isoImageDisplayName)
 
 		By("Create a VM with CD-ROM attached and backed by the ISO-type image")
 		vmParameters := manifestbuilders.VirtualMachineYaml{
@@ -735,8 +729,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	It("When deploying VM with many controllers", Label("experimental"), func() {
 		tinyCoreImageName := "tiny-core-linux-complex-hw"
 		// Ensure the vmi name is present in the temp namespace.
-		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, tinyCoreImageName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", input.WCPNamespaceName)
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, tinyCoreImageName)
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
@@ -824,8 +817,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
 			By("Deploying a VM without any explicit policies")
-			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 			vmParameters := manifestbuilders.VirtualMachineYaml{
 				Namespace:        tmpNamespaceName,
 				Name:             vmName,
@@ -1056,8 +1048,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
 
 			By("Resolving VMI name for the namespace")
-			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get VMI name in namespace %q", tmpNamespaceName)
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 			By("Creating tag category for placement policies")
 			tagCategoryName := fmt.Sprintf("placement-policy-test-%s", tmpNamespaceName)

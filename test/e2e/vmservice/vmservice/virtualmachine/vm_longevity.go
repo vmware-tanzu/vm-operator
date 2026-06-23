@@ -83,9 +83,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		svClusterClient = clusterProxy.GetClient()
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
-		var vmiErr error
-		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		By("Create a second namespace without VMClass")
 

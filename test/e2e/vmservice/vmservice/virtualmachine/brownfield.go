@@ -129,10 +129,9 @@ func ImportBrownfieldVM(input ImportBrownfieldVMInput) BrownfieldVMResult {
 
 	const photonImageDisplayName = "photon-5.0"
 
-	photonImageName, err := vmoperator.WaitForVirtualMachineImageName(
+	photonImageName := vmoperator.WaitForVirtualMachineImageName(
 		ctx, &input.Config.Config, input.SVClusterClient,
 		input.Namespace, photonImageDisplayName)
-	Expect(err).ToNot(HaveOccurred(), "Failed to find photon image")
 
 	photonImage := vmopv1a5.VirtualMachineImage{}
 	Expect(input.SVClusterClient.Get(ctx, ctrlclient.ObjectKey{

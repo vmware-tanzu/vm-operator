@@ -133,8 +133,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
-		vmiName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VM Image name in namespace %q", tmpNamespaceName)
+		vmiName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 		By(utils.E2EEncryptionStorageProfileName + " should exist")
 		Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient,

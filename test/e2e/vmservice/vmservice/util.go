@@ -1057,13 +1057,9 @@ func DeleteVMResource(
 	By("Remove the VMOP finalizer to ensure deletion of K8s VM")
 	Eventually(func() bool {
 		vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-		if apierrors.IsNotFound(err) {
-			// VM is already deleted, nothing to do.
-			return true
-		}
-
 		if err != nil {
-			return false
+			// If VM is already deleted, nothing to do.
+			return apierrors.IsNotFound(err)
 		}
 
 		if vm.DeletionTimestamp.IsZero() {
@@ -1398,7 +1394,7 @@ func RevertVMSnapshot(
 	Expect(vmSvcClusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed())
 	framework.Logf("Revert to VirtualMachineSnapshot:\n%s", currentSnapshot.Name)
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(vm.Status.CurrentSnapshot).To(Equal(currentSnapshot))
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-snapshot-revert")...).Should(Succeed())
@@ -1421,7 +1417,7 @@ func UpdateVMRestartMode(
 	Expect(vmSvcClusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed())
 	framework.Logf("Update VM RestartMode:\n%s", restartMode)
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(vm.Spec.RestartMode).To(Equal(restartMode))
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-restart-mode-update")...).Should(Succeed())
@@ -1464,7 +1460,7 @@ func VerifyVMTagsAndPolicyAssignment(
 
 	Eventually(func(g Gomega) {
 		// Verify the K8s VM CR has the expected policies in status.
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get K8s VM CR")
 
 		vmStatusPolicyNames := make([]string, len(vm.Status.Policies))

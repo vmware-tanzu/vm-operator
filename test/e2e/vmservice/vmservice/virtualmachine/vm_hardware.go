@@ -28,7 +28,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -88,7 +88,7 @@ func createPvcsFromSpec(
 
 type testSpec struct {
 	pvcs     []manifestbuilders.PVC
-	hardware vmopv1a5.VirtualMachineHardwareSpec
+	hardware vmopv1.VirtualMachineHardwareSpec
 }
 
 func waitForVMAndBatchAttach(
@@ -98,7 +98,7 @@ func waitForVMAndBatchAttach(
 	vmSvcNamespace,
 	vmPrefix string,
 	expectedVolumes []string,
-) *vmopv1a5.VirtualMachine {
+) *vmopv1.VirtualMachine {
 	By("Waiting for the Virtual Machine to be created")
 	vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmSvcNamespace, vmPrefix)
 
@@ -108,7 +108,7 @@ func waitForVMAndBatchAttach(
 	By("Waiting for Virtual Machine to Power On")
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmPrefix, "PoweredOn")
 
-	vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmPrefix)
+	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmPrefix)
 	Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 	Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 
@@ -148,7 +148,7 @@ func getBackfilledVolumes(
 	var backfilledVolumes []string
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
 		backfilledVolumes = []string{}
@@ -171,7 +171,7 @@ func getBackfilledVolumes(
 
 			for _, volStatus := range vm.Status.Volumes {
 				if volStatus.Name == backfilledVolName {
-					g.Expect(volStatus.Type).To(Equal(vmopv1a5.VolumeTypeManaged),
+					g.Expect(volStatus.Type).To(Equal(vmopv1.VolumeTypeManaged),
 						"Expected backfilled volume %s to have type Managed", backfilledVolName)
 
 					found = true
@@ -194,16 +194,16 @@ func verifyCreatedControllersCount(
 	svClusterClient ctrlclient.Client,
 	vmSvcNamespace,
 	vmName string,
-	expectedControllersCount map[vmopv1a5.VirtualControllerType]int,
+	expectedControllersCount map[vmopv1.VirtualControllerType]int,
 ) {
 	Eventually(func(g Gomega) bool {
-		vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 		if err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false
 		}
 
-		createdControllersCount := make(map[vmopv1a5.VirtualControllerType]int)
+		createdControllersCount := make(map[vmopv1.VirtualControllerType]int)
 		for _, controller := range vm.Status.Hardware.Controllers {
 			createdControllersCount[controller.Type]++
 		}
@@ -553,7 +553,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName, condition)
 				}
 
-				statusControllerDevices := make(map[vmopv1a5.VirtualControllerType]map[int32]int)
+				statusControllerDevices := make(map[vmopv1.VirtualControllerType]map[int32]int)
 				for _, controller := range vm.Status.Hardware.Controllers {
 					if _, ok := statusControllerDevices[controller.Type]; !ok {
 						statusControllerDevices[controller.Type] = make(map[int32]int)
@@ -564,12 +564,12 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("verifying 2 IDE controllers")
 				// The mutation webhook always creates 2 IDE controllers.
-				Expect(statusControllerDevices[vmopv1a5.VirtualControllerTypeIDE]).To(HaveLen(2), "Expected 2 IDE controllers")
+				Expect(statusControllerDevices[vmopv1.VirtualControllerTypeIDE]).To(HaveLen(2), "Expected 2 IDE controllers")
 
 				By("verifying explicit controllers")
 
 				expectedScsiControllerDevicesCount := 0
-				expectedDeviceCount := make(map[vmopv1a5.VirtualControllerType]map[int32]int)
+				expectedDeviceCount := make(map[vmopv1.VirtualControllerType]map[int32]int)
 
 				for _, pvc := range spec.pvcs {
 					if pvc.ControllerType == nil || pvc.ControllerBusNumber == nil {
@@ -578,7 +578,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						continue
 					}
 
-					if *pvc.ControllerType == vmopv1a5.VirtualControllerTypeSCSI {
+					if *pvc.ControllerType == vmopv1.VirtualControllerTypeSCSI {
 						expectedScsiControllerDevicesCount++
 					}
 
@@ -603,7 +603,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				totalStatusScsiControllerDevicesCount := 0
 
 				for _, controller := range vm.Status.Hardware.Controllers {
-					if controller.Type == vmopv1a5.VirtualControllerTypeSCSI {
+					if controller.Type == vmopv1.VirtualControllerTypeSCSI {
 						totalStatusScsiControllerDevicesCount += len(controller.Devices)
 					}
 				}
@@ -622,7 +622,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}
 
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
 					bootDiskFound := false
@@ -653,17 +653,17 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 							bootDiskFound = true
 
 							if allDisksArePVCapabilityEnabled {
-								g.Expect(pvc.Type).To(Equal(vmopv1a5.VolumeTypeManaged),
-									"Expected volume %s to have a type of %s", pvc.Name, vmopv1a5.VolumeTypeManaged)
+								g.Expect(pvc.Type).To(Equal(vmopv1.VolumeTypeManaged),
+									"Expected volume %s to have a type of %s", pvc.Name, vmopv1.VolumeTypeManaged)
 							} else {
 								// boot disk is not expect going to be in the manifest.
-								g.Expect(pvc.Type).To(Equal(vmopv1a5.VolumeTypeClassic),
-									"Expected volume %s to have a type of %s", pvc.Name, vmopv1a5.VolumeTypeClassic)
+								g.Expect(pvc.Type).To(Equal(vmopv1.VolumeTypeClassic),
+									"Expected volume %s to have a type of %s", pvc.Name, vmopv1.VolumeTypeClassic)
 							}
 						} else {
 							g.Expect(ok).To(BeTrue(), "Expected volume %s to be found in expected volumes", pvc.Name)
-							g.Expect(pvc.Type).To(Equal(vmopv1a5.VolumeTypeManaged),
-								"Expected volume %s to have a type of %s", pvc.Name, vmopv1a5.VolumeTypeManaged)
+							g.Expect(pvc.Type).To(Equal(vmopv1.VolumeTypeManaged),
+								"Expected volume %s to have a type of %s", pvc.Name, vmopv1.VolumeTypeManaged)
 
 							if expectedPvc.ControllerType != nil {
 								g.Expect(pvc.ControllerType).To(Equal(*expectedPvc.ControllerType),
@@ -704,31 +704,31 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// We are adding a PVC with a persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModePersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModePersistent)),
 				}, 1)...)
 
 				// We are adding a PVC with a independent persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModeIndependentPersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeIndependentPersistent)),
 				}, 1)...)
 
 				// We are adding a PVC with a independent non persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModeIndependentNonPersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeIndependentNonPersistent)),
 				}, 1)...)
 
 				// We are adding a PVC with a non persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModeNonPersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeNonPersistent)),
 				}, 1)...)
 
 				// We are adding a PVC explicitly assigned to a SCSI:1:1.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(1)),
 					UnitNumber:          ptr.To(int32(1)),
 				}, 1)...)
@@ -736,7 +736,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// We are adding a PVC explicitly assigned to SCSI:1 and without a unit number.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(1)),
 				}, 1)...)
 
@@ -744,41 +744,41 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// We are adding a PVC explicitly assigned to NVME:1 and without a unit number.
 				// pvcs = append(pvcs, createPvcsFromSpec(input, vmPrefix, manifestbuilders.PVC{
 				// 	StorageClassName:    clusterResources.StorageClassName,
-				// 	ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeNVME),
+				// 	ControllerType:      ptr.To(vmopv1.VirtualControllerTypeNVME),
 				// 	ControllerBusNumber: ptr.To(int32(1)),
 				// }, 1)...)
 
 				// // We are adding a PVC explicitly assigned to SATA:1 and without a unit number.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSATA),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSATA),
 					ControllerBusNumber: ptr.To(int32(1)),
 				}, 1)...)
 
 				return testSpec{
 					pvcs: pvcs,
-					hardware: vmopv1a5.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+					hardware: vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
 								BusNumber: 1,
-								Type:      vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
+								Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
 							},
 							{
 								BusNumber: 2,
-								Type:      vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
+								Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
 							},
 							{
 								BusNumber:   3,
-								Type:        vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
-								SharingMode: vmopv1a5.VirtualControllerSharingModePhysical,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 							},
 						},
-						NVMEControllers: []vmopv1a5.NVMEControllerSpec{
+						NVMEControllers: []vmopv1.NVMEControllerSpec{
 							{
 								BusNumber: 1,
 							},
 						},
-						SATAControllers: []vmopv1a5.SATAControllerSpec{
+						SATAControllers: []vmopv1.SATAControllerSpec{
 							{
 								BusNumber: 1,
 							},
@@ -809,31 +809,31 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// We are adding a PVC with a persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModePersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModePersistent)),
 				}, 1)...)
 
 				// We are adding a PVC with a independent persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModeIndependentPersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeIndependentPersistent)),
 				}, 1)...)
 
 				// We are adding a PVC with a independent non persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModeIndependentNonPersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeIndependentNonPersistent)),
 				}, 1)...)
 
 				// We are adding a PVC with a non persistent disk mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1a5.VolumeDiskModeNonPersistent)),
+					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeNonPersistent)),
 				}, 1)...)
 
 				// We are adding a PVC explicitly assigned to a SCSI:1:1.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(1)),
 					UnitNumber:          ptr.To(int32(1)),
 				}, 1)...)
@@ -841,10 +841,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// We are adding a PVC explicitly assigned to a SCSI:2:2 with a multi-writer sharing mode.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    eztStorageProfileName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(2)),
 					UnitNumber:          ptr.To(int32(2)),
-					SharingMode:         ptr.To(string(vmopv1a5.VolumeSharingModeMultiWriter)),
+					SharingMode:         ptr.To(string(vmopv1.VolumeSharingModeMultiWriter)),
 					AccessModes:         []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 					VolumeMode:          ptr.To(corev1.PersistentVolumeBlock),
 				}, 1)...)
@@ -852,7 +852,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// We are adding a PVC explicitly assigned to SCSI:1 and without a unit number.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(1)),
 				}, 1)...)
 
@@ -860,7 +860,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// that has physical sharing mode defined in the VM below.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    eztStorageProfileName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(3)),
 					UnitNumber:          ptr.To(int32(0)),
 					AccessModes:         []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
@@ -872,7 +872,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: eztStorageProfileName,
 					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 					VolumeMode:       ptr.To(corev1.PersistentVolumeBlock),
-					ApplicationType:  vmopv1a5.VolumeApplicationTypeOracleRAC,
+					ApplicationType:  vmopv1.VolumeApplicationTypeOracleRAC,
 				}, 1)...)
 
 				// We are adding a PVC with only application type set to MicrosoftWSFC.
@@ -880,8 +880,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName:    eztStorageProfileName,
 					AccessModes:         []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 					VolumeMode:          ptr.To(corev1.PersistentVolumeBlock),
-					ApplicationType:     vmopv1a5.VolumeApplicationTypeMicrosoftWSFC,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(3)),
 				}, 1)...)
 
@@ -889,41 +889,41 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// We are adding a PVC explicitly assigned to NVME:1 and without a unit number.
 				// pvcs = append(pvcs, createPvcsFromSpec(input, vmPrefix, manifestbuilders.PVC{
 				// 	StorageClassName:    clusterResources.StorageClassName,
-				// 	ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeNVME),
+				// 	ControllerType:      ptr.To(vmopv1.VirtualControllerTypeNVME),
 				// 	ControllerBusNumber: ptr.To(int32(1)),
 				// }, 1)...)
 
 				// // We are adding a PVC explicitly assigned to SATA:1 and without a unit number.
 				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSATA),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSATA),
 					ControllerBusNumber: ptr.To(int32(1)),
 				}, 1)...)
 
 				return testSpec{
 					pvcs: pvcs,
-					hardware: vmopv1a5.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+					hardware: vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
 								BusNumber: 1,
-								Type:      vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
+								Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
 							},
 							{
 								BusNumber: 2,
-								Type:      vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
+								Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
 							},
 							{
 								BusNumber:   3,
-								Type:        vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
-								SharingMode: vmopv1a5.VirtualControllerSharingModePhysical,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 							},
 						},
-						NVMEControllers: []vmopv1a5.NVMEControllerSpec{
+						NVMEControllers: []vmopv1.NVMEControllerSpec{
 							{
 								BusNumber: 1,
 							},
 						},
-						SATAControllers: []vmopv1a5.SATAControllerSpec{
+						SATAControllers: []vmopv1.SATAControllerSpec{
 							{
 								BusNumber: 1,
 							},
@@ -944,31 +944,31 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 		Describe("Controller lifecycle", func() {
 			DescribeTable("Adding/Deleting controllers",
-				func(vmPowerState vmopv1a5.VirtualMachinePowerState) {
-					hardware := vmopv1a5.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+				func(vmPowerState vmopv1.VirtualMachinePowerState) {
+					hardware := vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{
 								BusNumber: 0,
 							},
 							{
 								BusNumber: 1,
-								Type:      vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
+								Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
 							},
 							{
 								BusNumber: 2,
-								Type:      vmopv1a5.SCSIControllerTypeLsiLogic,
+								Type:      vmopv1.SCSIControllerTypeLsiLogic,
 							},
 						},
-						NVMEControllers: []vmopv1a5.NVMEControllerSpec{
+						NVMEControllers: []vmopv1.NVMEControllerSpec{
 							{
 								BusNumber: 1,
 							},
 							{
 								BusNumber:   2,
-								SharingMode: vmopv1a5.VirtualControllerSharingModePhysical,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 							},
 						},
-						SATAControllers: []vmopv1a5.SATAControllerSpec{
+						SATAControllers: []vmopv1.SATAControllerSpec{
 							{
 								BusNumber: 1,
 							},
@@ -993,17 +993,17 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 					By("Verifying the controllers are created")
 					verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
-						map[vmopv1a5.VirtualControllerType]int{
-							vmopv1a5.VirtualControllerTypeSCSI: len(hardware.SCSIControllers),
-							vmopv1a5.VirtualControllerTypeSATA: len(hardware.SATAControllers),
-							vmopv1a5.VirtualControllerTypeNVME: len(hardware.NVMEControllers),
-							vmopv1a5.VirtualControllerTypeIDE:  2,
+						map[vmopv1.VirtualControllerType]int{
+							vmopv1.VirtualControllerTypeSCSI: len(hardware.SCSIControllers),
+							vmopv1.VirtualControllerTypeSATA: len(hardware.SATAControllers),
+							vmopv1.VirtualControllerTypeNVME: len(hardware.NVMEControllers),
+							vmopv1.VirtualControllerTypeIDE:  2,
 						},
 					)
 
 					By("Deleting controller from each type")
 
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 					Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 					vmPatch := vm.DeepCopy()
@@ -1014,16 +1014,16 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 						To(Succeed(), "failed to patch virtualmachine")
 					verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
-						map[vmopv1a5.VirtualControllerType]int{
-							vmopv1a5.VirtualControllerTypeSCSI: len(vmPatch.Spec.Hardware.SCSIControllers),
-							vmopv1a5.VirtualControllerTypeSATA: len(vmPatch.Spec.Hardware.SATAControllers),
-							vmopv1a5.VirtualControllerTypeNVME: len(vmPatch.Spec.Hardware.NVMEControllers),
-							vmopv1a5.VirtualControllerTypeIDE:  2,
+						map[vmopv1.VirtualControllerType]int{
+							vmopv1.VirtualControllerTypeSCSI: len(vmPatch.Spec.Hardware.SCSIControllers),
+							vmopv1.VirtualControllerTypeSATA: len(vmPatch.Spec.Hardware.SATAControllers),
+							vmopv1.VirtualControllerTypeNVME: len(vmPatch.Spec.Hardware.NVMEControllers),
+							vmopv1.VirtualControllerTypeIDE:  2,
 						})
 
 					By("Creating new controller for each type")
 
-					vm, err = utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 					Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 					vmPatch = vm.DeepCopy()
@@ -1034,25 +1034,25 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 						To(Succeed(), "failed to patch virtualmachine")
 					verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
-						map[vmopv1a5.VirtualControllerType]int{
-							vmopv1a5.VirtualControllerTypeSCSI: len(vmPatch.Spec.Hardware.SCSIControllers),
-							vmopv1a5.VirtualControllerTypeSATA: len(vmPatch.Spec.Hardware.SATAControllers),
-							vmopv1a5.VirtualControllerTypeNVME: len(vmPatch.Spec.Hardware.NVMEControllers),
-							vmopv1a5.VirtualControllerTypeIDE:  2,
+						map[vmopv1.VirtualControllerType]int{
+							vmopv1.VirtualControllerTypeSCSI: len(vmPatch.Spec.Hardware.SCSIControllers),
+							vmopv1.VirtualControllerTypeSATA: len(vmPatch.Spec.Hardware.SATAControllers),
+							vmopv1.VirtualControllerTypeNVME: len(vmPatch.Spec.Hardware.NVMEControllers),
+							vmopv1.VirtualControllerTypeIDE:  2,
 						})
 				},
-				Entry("while VM is powered on", vmopv1a5.VirtualMachinePowerStateOn),
-				Entry("while VM is powered off", vmopv1a5.VirtualMachinePowerStateOff),
+				Entry("while VM is powered on", vmopv1.VirtualMachinePowerStateOn),
+				Entry("while VM is powered off", vmopv1.VirtualMachinePowerStateOff),
 			)
 
 			It("Updating controller while VM is powered off should succeed", func() {
-				hardware := vmopv1a5.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+				hardware := vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
 						{
 							BusNumber: 0,
 						},
 					},
-					NVMEControllers: []vmopv1a5.NVMEControllerSpec{
+					NVMEControllers: []vmopv1.NVMEControllerSpec{
 						{
 							BusNumber: 1,
 						},
@@ -1065,32 +1065,32 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
-					PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
+					PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
 					Hardware:         &hardware,
 				})
 				vmYamls = append(vmYamls, vmYaml)
 
 				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1a5.VirtualMachinePowerStateOff))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
 				By("Verifying the controllers are created")
 				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
-					map[vmopv1a5.VirtualControllerType]int{
-						vmopv1a5.VirtualControllerTypeSCSI: len(hardware.SCSIControllers),
-						vmopv1a5.VirtualControllerTypeNVME: len(hardware.NVMEControllers),
+					map[vmopv1.VirtualControllerType]int{
+						vmopv1.VirtualControllerTypeSCSI: len(hardware.SCSIControllers),
+						vmopv1.VirtualControllerTypeNVME: len(hardware.NVMEControllers),
 					})
 
 				By("Updating the controllers")
 
-				vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 				Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 				vmPatch := vm.DeepCopy()
-				vmPatch.Spec.Hardware.SCSIControllers[0].SharingMode = vmopv1a5.VirtualControllerSharingModePhysical
-				vmPatch.Spec.Hardware.SCSIControllers[0].Type = vmopv1a5.SCSIControllerTypeLsiLogic
+				vmPatch.Spec.Hardware.SCSIControllers[0].SharingMode = vmopv1.VirtualControllerSharingModePhysical
+				vmPatch.Spec.Hardware.SCSIControllers[0].Type = vmopv1.SCSIControllerTypeLsiLogic
 
-				vmPatch.Spec.Hardware.NVMEControllers[0].SharingMode = vmopv1a5.VirtualControllerSharingModePhysical
+				vmPatch.Spec.Hardware.NVMEControllers[0].SharingMode = vmopv1.VirtualControllerSharingModePhysical
 
 				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 					To(Succeed(), "failed to patch virtualmachine")
@@ -1104,8 +1104,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 
 			It("Updating controller while VM is powered on should fail", func() {
-				hardware := vmopv1a5.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+				hardware := vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
 						{
 							BusNumber: 0,
 						},
@@ -1118,28 +1118,28 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
-					PowerState:       string(vmopv1a5.VirtualMachinePowerStateOn),
+					PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 					Hardware:         &hardware,
 				})
 				vmYamls = append(vmYamls, vmYaml)
 
 				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1a5.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 
 				By("Verifying the controllers are created")
 				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
-					map[vmopv1a5.VirtualControllerType]int{
-						vmopv1a5.VirtualControllerTypeSCSI: len(hardware.SCSIControllers),
+					map[vmopv1.VirtualControllerType]int{
+						vmopv1.VirtualControllerTypeSCSI: len(hardware.SCSIControllers),
 					})
 
 				By("Updating the controllers")
 
-				vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 				Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 				vmPatch := vm.DeepCopy()
-				vmPatch.Spec.Hardware.SCSIControllers[0].SharingMode = vmopv1a5.VirtualControllerSharingModePhysical
+				vmPatch.Spec.Hardware.SCSIControllers[0].SharingMode = vmopv1.VirtualControllerSharingModePhysical
 
 				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 					To(MatchError(ContainSubstring("spec.hardware.scsiControllers[0].sharingMode: Forbidden")),
@@ -1157,7 +1157,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				for i := range numberOfVMs {
 					vmName := fmt.Sprintf("%s-%d", vmName, i)
 
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					if err != nil {
 						e2eframework.Logf("failed to get VirtualMachine %s: %v", vmName, err)
 						continue
@@ -1185,7 +1185,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: eztStorageProfileName,
-					SharingMode:      ptr.To(string(vmopv1a5.VolumeSharingModeMultiWriter)),
+					SharingMode:      ptr.To(string(vmopv1.VolumeSharingModeMultiWriter)),
 					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 					VolumeMode:       ptr.To(corev1.PersistentVolumeBlock),
 				}, 3)
@@ -1193,7 +1193,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: eztStorageProfileName,
 					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 					VolumeMode:       ptr.To(corev1.PersistentVolumeBlock),
-					ApplicationType:  vmopv1a5.VolumeApplicationTypeOracleRAC,
+					ApplicationType:  vmopv1.VolumeApplicationTypeOracleRAC,
 				}, 1)...)
 
 				var vms []string
@@ -1286,9 +1286,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					volumeNameToDetach, vmName)
 
 				vmPatch := vm.DeepCopy()
-				vmPatch.Spec.Volumes = []vmopv1a5.VirtualMachineVolume{}
+				vmPatch.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
 
-				var detachedVol vmopv1a5.VirtualMachineVolume
+				var detachedVol vmopv1.VirtualMachineVolume
 
 				for _, vol := range vm.Spec.Volumes {
 					if vol.Name == volumeNameToDetach {
@@ -1388,7 +1388,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Waiting for the Virtual Machine to be resized")
 				Eventually(func(g Gomega) bool {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					if err != nil {
 						e2eframework.Logf("retry due to: %v", err)
 						return false
@@ -1465,7 +1465,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Verify persistent volume claim order is swapped")
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					if err != nil {
 						e2eframework.Logf("retry due to: %v", err)
 						g.Expect(err).ToNot(HaveOccurred())
@@ -1525,19 +1525,19 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				By("Powering off the Virtual Machine")
 
 				vmPatch := vm.DeepCopy()
-				vmPatch.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOff
+				vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 					To(Succeed(), "failed to patch virtualmachine")
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOff")
 
-				vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 				Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 
 				By("Powering on the Virtual Machine")
 
 				vmPatch = vm.DeepCopy()
-				vmPatch.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+				vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 					To(Succeed(), "failed to patch virtualmachine")
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
@@ -1590,31 +1590,31 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Storing the initial volume spec and status")
 				// Re-fetch to get the latest resource version before patching.
-				vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 				Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 
-				savedSpecVolumes := make([]vmopv1a5.VirtualMachineVolume, len(vm.Spec.Volumes))
+				savedSpecVolumes := make([]vmopv1.VirtualMachineVolume, len(vm.Spec.Volumes))
 				copy(savedSpecVolumes, vm.Spec.Volumes)
 
-				savedStatusVolumes := make([]vmopv1a5.VirtualMachineVolumeStatus, len(vm.Status.Volumes))
+				savedStatusVolumes := make([]vmopv1.VirtualMachineVolumeStatus, len(vm.Status.Volumes))
 				copy(savedStatusVolumes, vm.Status.Volumes)
-				vmopv1a5.SortVirtualMachineVolumeStatuses(savedStatusVolumes)
+				vmopv1.SortVirtualMachineVolumeStatuses(savedStatusVolumes)
 
 				// Build a lookup from DiskUUID -> saved status for field-by-field comparison.
-				savedStatusByDiskUUID := make(map[string]vmopv1a5.VirtualMachineVolumeStatus, len(savedStatusVolumes))
+				savedStatusByDiskUUID := make(map[string]vmopv1.VirtualMachineVolumeStatus, len(savedStatusVolumes))
 				for _, vol := range savedStatusVolumes {
 					savedStatusByDiskUUID[vol.DiskUUID] = vol
 				}
 
 				By("Powering off the VM and setting all volumes to removable")
 
-				vm, err = utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
 				vmPatch := vm.DeepCopy()
 
-				vmPatch.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOff
+				vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 				for i := range vmPatch.Spec.Volumes {
 					vmPatch.Spec.Volumes[i].Removable = ptr.To(true)
 				}
@@ -1625,17 +1625,17 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Detaching all volumes")
 
-				vm, err = utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
 				vmPatch = vm.DeepCopy()
-				vmPatch.Spec.Volumes = []vmopv1a5.VirtualMachineVolume{}
+				vmPatch.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
 				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 					To(Succeed(), "failed to patch virtualmachine to detach all volumes")
 
 				By("Waiting for status.volumes to be empty after detach")
 				Eventually(func(g Gomega) {
-					vm, err = utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 					g.Expect(vm.Status.Volumes).To(BeEmpty(),
 						"Expected status.volumes to be empty after detaching all volumes")
@@ -1650,7 +1650,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Reattaching all previously detached volumes")
 
-				vm, err = utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
 				vmPatch = vm.DeepCopy()
@@ -1669,23 +1669,23 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Powering on the Virtual Machine after reattaching volumes")
 
-				vm, err = utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
 				vmPatch = vm.DeepCopy()
-				vmPatch.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+				vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 					To(Succeed(), "failed to patch virtualmachine power state to on")
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
 
 				By("Verifying status.volumes matches the originally recorded state")
 				Eventually(func(g Gomega) {
-					vm, err = utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
-					actualStatusVolumes := make([]vmopv1a5.VirtualMachineVolumeStatus, len(vm.Status.Volumes))
+					actualStatusVolumes := make([]vmopv1.VirtualMachineVolumeStatus, len(vm.Status.Volumes))
 					copy(actualStatusVolumes, vm.Status.Volumes)
-					vmopv1a5.SortVirtualMachineVolumeStatuses(actualStatusVolumes)
+					vmopv1.SortVirtualMachineVolumeStatuses(actualStatusVolumes)
 
 					g.Expect(actualStatusVolumes).To(HaveLen(len(savedStatusVolumes)),
 						"Expected %d volumes in status, got %d", len(savedStatusVolumes), len(actualStatusVolumes))
@@ -1719,7 +1719,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		})
 
 		DescribeTable("VM with CD-ROM",
-			func(cdrom vmopv1a5.VirtualMachineCdromSpec) {
+			func(cdrom vmopv1.VirtualMachineCdromSpec) {
 				if !isoSupportFSSEnabled {
 					Skip("ISO Support FSS is not enabled")
 					return
@@ -1729,7 +1729,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				isoImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, isoImageDisplayName)
 
-				cdrom.Image = vmopv1a5.VirtualMachineImageRef{
+				cdrom.Image = vmopv1.VirtualMachineImageRef{
 					Kind: "VirtualMachineImage",
 					Name: isoImageName,
 				}
@@ -1741,8 +1741,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					VMClassName:      clusterResources.VMClassName,
 					GuestID:          "ubuntu64Guest",
 					StorageClassName: clusterResources.StorageClassName,
-					Hardware: &vmopv1a5.VirtualMachineHardwareSpec{
-						Cdrom: []vmopv1a5.VirtualMachineCdromSpec{
+					Hardware: &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
 							cdrom,
 						},
 					},
@@ -1758,16 +1758,16 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Verifying the CD-ROMs are attached to the first IDE controller")
 
-				vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 				Expect(vm).ToNot(BeNil(), "VirtualMachine is nil")
 
 				found := false
 
 				for _, controller := range vm.Status.Hardware.Controllers {
-					if controller.Type == vmopv1a5.VirtualControllerTypeIDE && controller.BusNumber == 0 {
+					if controller.Type == vmopv1.VirtualControllerTypeIDE && controller.BusNumber == 0 {
 						Expect(controller.Devices).To(HaveLen(1), "Expected 1 device on the controller")
-						Expect(controller.Devices[0].Type).To(Equal(vmopv1a5.VirtualDeviceTypeCDROM), "Expected device type to be CDROM")
+						Expect(controller.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeCDROM), "Expected device type to be CDROM")
 
 						if cdrom.UnitNumber != nil {
 							Expect(controller.Devices[0].UnitNumber).To(Equal(*cdrom.UnitNumber), "Expected device unit number to be %d", *cdrom.UnitNumber)
@@ -1783,17 +1783,17 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				Expect(found).To(BeTrue(), "Expected to find the first IDE controller")
 			},
-			Entry("VM with implicit CD-ROM placement", vmopv1a5.VirtualMachineCdromSpec{
+			Entry("VM with implicit CD-ROM placement", vmopv1.VirtualMachineCdromSpec{
 				Name:              "cdrom1",
 				Connected:         ptr.To(true),
 				AllowGuestControl: ptr.To(true),
 			}),
-			Entry("VM with explicit CD-ROM placement", vmopv1a5.VirtualMachineCdromSpec{
+			Entry("VM with explicit CD-ROM placement", vmopv1.VirtualMachineCdromSpec{
 				Name:                "cdrom1",
 				Connected:           ptr.To(true),
 				AllowGuestControl:   ptr.To(true),
 				ControllerBusNumber: ptr.To(int32(0)),
-				ControllerType:      vmopv1a5.VirtualControllerTypeIDE,
+				ControllerType:      vmopv1.VirtualControllerTypeIDE,
 				UnitNumber:          ptr.To(int32(0)),
 			}),
 		)
@@ -1843,7 +1843,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				var bootDiskVolName string
 
 				Eventually(func(g Gomega) bool {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					if err != nil {
 						e2eframework.Logf("retry due to: %v", err)
 						return false
@@ -1889,10 +1889,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Verifying the boot disk becomes managed PVC")
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					var bootDiskVolume *vmopv1a5.VirtualMachineVolumeStatus
+					var bootDiskVolume *vmopv1.VirtualMachineVolumeStatus
 
 					for i, volStatus := range vm.Status.Volumes {
 						if volStatus.Name == bootDiskVolName {
@@ -1902,7 +1902,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					}
 
 					g.Expect(bootDiskVolume).ToNot(BeNil(), "Expected to find boot disk volume in status")
-					g.Expect(bootDiskVolume.Type).To(Equal(vmopv1a5.VolumeTypeManaged),
+					g.Expect(bootDiskVolume.Type).To(Equal(vmopv1.VolumeTypeManaged),
 						"Expected boot disk to be of type Managed (PVC)")
 					g.Expect(bootDiskVolume.Name).ToNot(BeEmpty(), "Expected boot disk volume to have a name")
 					g.Expect(bootDiskVolume.Attached).To(BeTrue(), "Expected boot disk to be attached")
@@ -1961,7 +1961,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Updating the VM to use the new PVC with different storage class")
 
-				vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VM")
 
 				vmPatch := vm.DeepCopy()
@@ -1977,7 +1977,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Waiting for the new PVC to be attached and reflected in VM status")
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 					g.Expect(err).ToNot(HaveOccurred())
 
 					verifiedInStatus := false
@@ -2155,10 +2155,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
 
 				By("Verifying controllers in status")
-				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, map[vmopv1a5.VirtualControllerType]int{
-					vmopv1a5.VirtualControllerTypeIDE:  2,
-					vmopv1a5.VirtualControllerTypeSCSI: 2,
-					vmopv1a5.VirtualControllerTypeSATA: 1,
+				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, map[vmopv1.VirtualControllerType]int{
+					vmopv1.VirtualControllerTypeIDE:  2,
+					vmopv1.VirtualControllerTypeSCSI: 2,
+					vmopv1.VirtualControllerTypeSATA: 1,
 				})
 
 				By("Waiting on virtual machine conditions to become true")
@@ -2182,7 +2182,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				volumeNames := make([]string, 0)
 
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())
 
 					volumeNames = make([]string, 0)
@@ -2192,7 +2192,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						volumeNames = append(volumeNames, volName)
 						g.Expect(volName).ToNot(BeEmpty(), "Expected volume, volumes[%d] to have a name", i)
 						g.Expect(vol).ToNot(BeNil(), "Expected to find volume %s in status", volName)
-						g.Expect(vol.Type).To(Equal(vmopv1a5.VolumeTypeManaged),
+						g.Expect(vol.Type).To(Equal(vmopv1.VolumeTypeManaged),
 							"Expected volume to be of type Managed (PVC)")
 						g.Expect(vol.Attached).To(BeTrue(), "Expected volume %s to be attached", volName)
 						g.Expect(vol.DiskUUID).ToNot(BeEmpty(), "Expected volume %s to have a disk UUID", volName)
@@ -2289,17 +2289,17 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				e2eframework.Logf("Imported VM %s is powered on", importedVMName)
 
 				By("Verifying shared SCSI controller in VM status")
-				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, map[vmopv1a5.VirtualControllerType]int{
-					vmopv1a5.VirtualControllerTypeIDE:  2,
-					vmopv1a5.VirtualControllerTypeSCSI: 2,
+				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, map[vmopv1.VirtualControllerType]int{
+					vmopv1.VirtualControllerTypeIDE:  2,
+					vmopv1.VirtualControllerTypeSCSI: 2,
 				})
 
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					idx := slices.IndexFunc(vm.Spec.Hardware.SCSIControllers, func(c vmopv1a5.SCSIControllerSpec) bool {
-						return c.BusNumber == 1 && c.SharingMode == vmopv1a5.VirtualControllerSharingModePhysical
+					idx := slices.IndexFunc(vm.Spec.Hardware.SCSIControllers, func(c vmopv1.SCSIControllerSpec) bool {
+						return c.BusNumber == 1 && c.SharingMode == vmopv1.VirtualControllerSharingModePhysical
 					})
 					g.Expect(idx).To(BeNumerically(">=", 0), "Expected to find shared SCSI controller with physical sharing mode")
 					if idx >= 0 {
@@ -2325,11 +2325,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Verifying shared disk volume has MultiWriter sharing mode")
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					idx := slices.IndexFunc(vm.Status.Volumes, func(v vmopv1a5.VirtualMachineVolumeStatus) bool {
-						return v.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
+					idx := slices.IndexFunc(vm.Status.Volumes, func(v vmopv1.VirtualMachineVolumeStatus) bool {
+						return v.ControllerType == vmopv1.VirtualControllerTypeSCSI &&
 							*v.ControllerBusNumber == 1 &&
 							*v.UnitNumber == 0
 					})
@@ -2338,7 +2338,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						vol := vm.Status.Volumes[idx]
 						e2eframework.Logf("Found shared disk volume: name=%s, sharingMode=%s, controllerBus=%d, unit=%d",
 							vol.Name, vol.SharingMode, *vol.ControllerBusNumber, *vol.UnitNumber)
-						g.Expect(vol.SharingMode).To(Equal(vmopv1a5.VolumeSharingModeMultiWriter),
+						g.Expect(vol.SharingMode).To(Equal(vmopv1.VolumeSharingModeMultiWriter),
 							"Expected shared disk to have sharingMode=MultiWriter")
 					}
 				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
@@ -2346,11 +2346,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Verifying PVC for shared disk is created and bound")
 				Eventually(func(g Gomega) {
-					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, importedVMName)
 					g.Expect(err).ToNot(HaveOccurred())
 
-					idx := slices.IndexFunc(vm.Status.Volumes, func(v vmopv1a5.VirtualMachineVolumeStatus) bool {
-						return v.ControllerType == vmopv1a5.VirtualControllerTypeSCSI &&
+					idx := slices.IndexFunc(vm.Status.Volumes, func(v vmopv1.VirtualMachineVolumeStatus) bool {
+						return v.ControllerType == vmopv1.VirtualControllerTypeSCSI &&
 							*v.ControllerBusNumber == 1 &&
 							*v.UnitNumber == 0
 					})
@@ -2410,26 +2410,26 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				})
 
 				By("Attempting to create VM with encrypted PVC in MultiWriter mode (should be webhook-rejected)")
-				vm := &vmopv1a5.VirtualMachine{
+				vm := &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      vmName,
 						Namespace: vmSvcNamespace,
 					},
-					Spec: vmopv1a5.VirtualMachineSpec{
+					Spec: vmopv1.VirtualMachineSpec{
 						ClassName:    clusterResources.VMClassName,
 						ImageName:    linuxVMIName,
 						StorageClass: clusterResources.StorageClassName,
-						Volumes: []vmopv1a5.VirtualMachineVolume{
+						Volumes: []vmopv1.VirtualMachineVolume{
 							{
 								Name: pvcSpec.VolumeName,
-								VirtualMachineVolumeSource: vmopv1a5.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1a5.PersistentVolumeClaimVolumeSource{
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 											ClaimName: pvcSpec.ClaimName,
 										},
 									},
 								},
-								SharingMode: vmopv1a5.VolumeSharingModeMultiWriter,
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
 							},
 						},
 					},
@@ -2445,7 +2445,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			It("should reject a VM whose encrypted PVC is on a physical-sharing SCSI controller", func() {
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    utils.E2EEncryptionStorageClassName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(1)),
 					AccessModes:         []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 					VolumeMode:          ptr.To(corev1.PersistentVolumeBlock),
@@ -2464,35 +2464,35 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					})
 				})
 
-				vm := &vmopv1a5.VirtualMachine{
+				vm := &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      vmName,
 						Namespace: vmSvcNamespace,
 					},
-					Spec: vmopv1a5.VirtualMachineSpec{
+					Spec: vmopv1.VirtualMachineSpec{
 						ClassName:    clusterResources.VMClassName,
 						ImageName:    linuxVMIName,
 						StorageClass: clusterResources.StorageClassName,
-						Hardware: &vmopv1a5.VirtualMachineHardwareSpec{
-							SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+						Hardware: &vmopv1.VirtualMachineHardwareSpec{
+							SCSIControllers: []vmopv1.SCSIControllerSpec{
 								{
 									BusNumber:   1,
-									Type:        vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
-									SharingMode: vmopv1a5.VirtualControllerSharingModePhysical,
+									Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+									SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 								},
 							},
 						},
-						Volumes: []vmopv1a5.VirtualMachineVolume{
+						Volumes: []vmopv1.VirtualMachineVolume{
 							{
 								Name: pvcSpec.VolumeName,
-								VirtualMachineVolumeSource: vmopv1a5.VirtualMachineVolumeSource{
-									PersistentVolumeClaim: &vmopv1a5.PersistentVolumeClaimVolumeSource{
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 											ClaimName: pvcSpec.ClaimName,
 										},
 									},
 								},
-								ControllerType:      vmopv1a5.VirtualControllerTypeSCSI,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 								ControllerBusNumber: ptr.To(int32(1)),
 							},
 						},
@@ -2522,19 +2522,19 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName:    eztStorageProfileName,
-					ControllerType:      ptr.To(vmopv1a5.VirtualControllerTypeSCSI),
+					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
 					ControllerBusNumber: ptr.To(int32(1)),
 					UnitNumber:          ptr.To(int32(0)),
 					AccessModes:         []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 					VolumeMode:          ptr.To(corev1.PersistentVolumeBlock),
 				}, 1)
 
-				hardware := vmopv1a5.VirtualMachineHardwareSpec{
-					SCSIControllers: []vmopv1a5.SCSIControllerSpec{
+				hardware := vmopv1.VirtualMachineHardwareSpec{
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
 						{
 							BusNumber:   1,
-							Type:        vmopv1a5.SCSIControllerTypeParaVirtualSCSI,
-							SharingMode: vmopv1a5.VirtualControllerSharingModePhysical,
+							Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+							SharingMode: vmopv1.VirtualControllerSharingModePhysical,
 						},
 					},
 				}
@@ -2566,9 +2566,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Verifying the physical-sharing controller is reflected in VM status")
 				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
-					map[vmopv1a5.VirtualControllerType]int{
-						vmopv1a5.VirtualControllerTypeSCSI: 2,
-						vmopv1a5.VirtualControllerTypeIDE:  2,
+					map[vmopv1.VirtualControllerType]int{
+						vmopv1.VirtualControllerTypeSCSI: 2,
+						vmopv1.VirtualControllerTypeIDE:  2,
 					},
 				)
 			})

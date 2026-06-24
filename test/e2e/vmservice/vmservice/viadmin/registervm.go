@@ -402,7 +402,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// is processed; if removable is missing the disk may be misclassified
 			// during a restore pass.
 			By("Set all PVC volumes as removable=true before backup is captured")
-			vmA5, err := utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vmA5, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			baseRemovable := vmA5.DeepCopy()
 			for i := range vmA5.Spec.Volumes {
@@ -476,10 +476,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Use v1alpha5 to access the Removable field. RegisterVM restores from
-			// the backup yaml (pvcA only), requiring pvcB removal; the validating
-			// webhook blocks that unless Removable=true on every volume.
-			vmA5, err = utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			// RegisterVM restores from the backup yaml (pvcA only), requiring pvcB
+			// removal; the validating webhook blocks that unless Removable=true on
+			// every volume.
+			vmA5, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			basePause := vmA5.DeepCopy()
 			metav1.SetMetaDataAnnotation(&vmA5.ObjectMeta, vmopv1.PauseAnnotation, trueString)

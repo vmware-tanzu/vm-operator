@@ -27,7 +27,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
@@ -746,7 +746,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		By("Waiting for VM creation")
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1a5.VirtualMachinePowerStateOn))
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 	})
 
 	Context("IaaS Policies", func() {
@@ -960,7 +960,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				StorageClassName: clusterResources.StorageClassName,
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,
 				PowerState:       "PoweredOn",
-				Policies: []vmopv1a5.PolicySpec{
+				Policies: []vmopv1.PolicySpec{
 					{
 						APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 						Kind:       "ComputePolicy",
@@ -979,7 +979,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 			By("Updating the VM's labels and policies to match by label")
 			vmParameters.Labels = matchLabel
-			vmParameters.Policies = []vmopv1a5.PolicySpec{
+			vmParameters.Policies = []vmopv1.PolicySpec{
 				{
 					APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 					Kind:       "ComputePolicy",
@@ -995,7 +995,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
 
 			By("Updating the VM's label to not match the policies and remove the explicit optional policy")
-			vmObj, err := utils.GetVirtualMachineA5(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vmObj, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			Expect(err).NotTo(HaveOccurred(), "failed to get existing VM")
 			vmLabels := vmObj.Labels
 			for key := range matchLabel {
@@ -1003,7 +1003,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				delete(vmLabels, key)
 			}
 			vmParameters.Labels = vmLabels
-			vmParameters.Policies = []vmopv1a5.PolicySpec{}
+			vmParameters.Policies = []vmopv1.PolicySpec{}
 			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 			e2eframework.Logf("Updating VM's labels:\n%s", string(vmYaml))
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML")
@@ -1147,7 +1147,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					StorageClassName: clusterResources.StorageClassName,
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "PoweredOn",
-					Policies: []vmopv1a5.PolicySpec{
+					Policies: []vmopv1.PolicySpec{
 						{
 							APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 							Kind:       "ComputePolicy",

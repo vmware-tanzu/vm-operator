@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
 )
 
@@ -38,14 +38,14 @@ type Bootstrap struct {
 }
 
 type Cdrom struct {
-	Name                string                          `json:"name,omitempty"`
-	ImageName           string                          `json:"imageName,omitempty"`
-	ImageKind           string                          `json:"imageKind,omitempty"`
-	Connected           bool                            `json:"connected,omitempty"`
-	AllowGuestControl   bool                            `json:"allowGuestControl,omitempty"`
-	ControllerBusNumber *int32                          `json:"controllerBusNumber,omitempty"`
-	ControllerType      *vmopv1a5.VirtualControllerType `json:"controllerType,omitempty"`
-	UnitNumber          *int32                          `json:"unitNumber,omitempty"`
+	Name                string                        `json:"name,omitempty"`
+	ImageName           string                        `json:"imageName,omitempty"`
+	ImageKind           string                        `json:"imageKind,omitempty"`
+	Connected           bool                          `json:"connected,omitempty"`
+	AllowGuestControl   bool                          `json:"allowGuestControl,omitempty"`
+	ControllerBusNumber *int32                        `json:"controllerBusNumber,omitempty"`
+	ControllerType      *vmopv1.VirtualControllerType `json:"controllerType,omitempty"`
+	UnitNumber          *int32                        `json:"unitNumber,omitempty"`
 }
 
 type CloudInit struct {
@@ -102,8 +102,8 @@ type PVC struct {
 
 	VolumeMode      *corev1.PersistentVolumeMode        `json:"volume_mode,omitempty"`
 	AccessModes     []corev1.PersistentVolumeAccessMode `json:"access_modes,omitempty"`
-	ControllerType  *vmopv1a5.VirtualControllerType     `json:"controller_type,omitempty"`
-	ApplicationType vmopv1a5.VolumeApplicationType      `json:"application_type,omitempty"`
+	ControllerType  *vmopv1.VirtualControllerType       `json:"controller_type,omitempty"`
+	ApplicationType vmopv1.VolumeApplicationType        `json:"application_type,omitempty"`
 }
 
 type VirtualMachineYaml struct {
@@ -123,16 +123,16 @@ type VirtualMachineYaml struct {
 	PowerState       string            `json:"power_state,omitempty"`
 	Bootstrap        Bootstrap         `json:"bootstrap,omitempty"`
 	// Deprecated: For v1alpha5, use Hardware.Cdrom instead.
-	Cdrom               []Cdrom                              `json:"cdrom,omitempty"`
-	GuestID             string                               `json:"guest_id,omitempty"`
-	PVCNames            []string                             `json:"pvc_names,omitempty"`
-	Crypto              *Crypto                              `json:"crypto,omitempty"`
-	GroupName           string                               `json:"groupName,omitempty"`
-	CurrentSnapshotName string                               `json:"currentSnapshotName,omitempty"`
-	PVCs                []PVC                                `json:"pvcs,omitempty"`
-	Affinity            *vmopv1a5.AffinitySpec               `json:"affinity,omitempty"`
-	Hardware            *vmopv1a5.VirtualMachineHardwareSpec `json:"hardware,omitempty"`
-	Policies            []vmopv1a5.PolicySpec                `json:"policies,omitempty"`
+	Cdrom               []Cdrom                            `json:"cdrom,omitempty"`
+	GuestID             string                             `json:"guest_id,omitempty"`
+	PVCNames            []string                           `json:"pvc_names,omitempty"`
+	Crypto              *Crypto                            `json:"crypto,omitempty"`
+	GroupName           string                             `json:"groupName,omitempty"`
+	CurrentSnapshotName string                             `json:"currentSnapshotName,omitempty"`
+	PVCs                []PVC                              `json:"pvcs,omitempty"`
+	Affinity            *vmopv1.AffinitySpec               `json:"affinity,omitempty"`
+	Hardware            *vmopv1.VirtualMachineHardwareSpec `json:"hardware,omitempty"`
+	Policies            []vmopv1.PolicySpec                `json:"policies,omitempty"`
 }
 
 // GetVirtualMachineYaml returns a v1alpha1 VirtualMachine yaml from a templatized fixture.

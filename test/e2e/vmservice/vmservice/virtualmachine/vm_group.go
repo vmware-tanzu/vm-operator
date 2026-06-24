@@ -24,7 +24,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -149,7 +149,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				BootOrder: []manifestbuilders.BootOrder{
 					{
 						// No power on delay for the first boot order.
-						Members: []vmopv1a5.GroupMember{
+						Members: []vmopv1.GroupMember{
 							{
 								Kind: vmKind,
 								Name: vm1Name,
@@ -158,7 +158,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 					{
 						PowerOnDelay: "30s",
-						Members: []vmopv1a5.GroupMember{
+						Members: []vmopv1.GroupMember{
 							{
 								Kind: vmKind,
 								Name: vm2Name,
@@ -167,7 +167,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 					{
 						PowerOnDelay: "1m",
-						Members: []vmopv1a5.GroupMember{
+						Members: []vmopv1.GroupMember{
 							{
 								Kind: vmKind,
 								Name: vm3Name,
@@ -207,7 +207,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Waiting for all VMs to have group linked condition set to true")
 
 			groupLinkedTrueCondition := metav1.Condition{
-				Type:   vmopv1a5.VirtualMachineGroupMemberConditionGroupLinked,
+				Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 				Status: metav1.ConditionTrue,
 			}
 			for _, vmName := range vmMemberNames {
@@ -217,7 +217,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Verifying VirtualMachineGroup has Ready condition set to true")
 
 			readyTrueCondition := metav1.Condition{
-				Type:   vmopv1a5.ReadyConditionType,
+				Type:   vmopv1.ReadyConditionType,
 				Status: metav1.ConditionTrue,
 			}
 			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, readyTrueCondition)
@@ -251,9 +251,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 					// Verify all expected member conditions are set to true.
 					expectedConditionTypes := []string{
-						vmopv1a5.VirtualMachineGroupMemberConditionGroupLinked,
-						vmopv1a5.VirtualMachineGroupMemberConditionPowerStateSynced,
-						vmopv1a5.VirtualMachineGroupMemberConditionPlacementReady,
+						vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+						vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+						vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 					}
 
 					Expect(ms.Conditions).To(HaveLen(3)) // GroupLinked, PowerStateSynced, PlacementReady
@@ -337,7 +337,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Updating VirtualMachineGroup to adopt the existing VM4")
 
 			vmGroupParameters.BootOrder = append(vmGroupParameters.BootOrder, manifestbuilders.BootOrder{
-				Members: []vmopv1a5.GroupMember{
+				Members: []vmopv1.GroupMember{
 					{
 						Kind: vmKind,
 						Name: vm4Name,
@@ -385,7 +385,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Verifying VirtualMachineGroup member status has PowerStateSynced condition set to false for VM1")
 
 			powerStateSyncedFalseCondition := metav1.Condition{
-				Type:   vmopv1a5.VirtualMachineGroupMemberConditionPowerStateSynced,
+				Type:   vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
 				Status: metav1.ConditionFalse,
 				Reason: "NotSynced",
 			}
@@ -421,7 +421,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Name:      vmgRootName,
 				BootOrder: []manifestbuilders.BootOrder{
 					{
-						Members: []vmopv1a5.GroupMember{
+						Members: []vmopv1.GroupMember{
 							{
 								Kind: vmKind,
 								Name: vm1Name,
@@ -430,7 +430,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 					{
 						PowerOnDelay: "30s",
-						Members: []vmopv1a5.GroupMember{
+						Members: []vmopv1.GroupMember{
 							{
 								Kind: vmgKind,
 								Name: vmgChildName,
@@ -453,7 +453,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				GroupName: vmgRootName,
 				BootOrder: []manifestbuilders.BootOrder{
 					{
-						Members: []vmopv1a5.GroupMember{
+						Members: []vmopv1.GroupMember{
 							{
 								Kind: vmKind,
 								Name: vm2Name,
@@ -506,7 +506,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Waiting for all group members to have group linked condition set to true")
 
 			groupLinkedTrueCondition := metav1.Condition{
-				Type:   vmopv1a5.VirtualMachineGroupMemberConditionGroupLinked,
+				Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 				Status: metav1.ConditionTrue,
 			}
 			for _, vmName := range vmMemberNames {
@@ -518,7 +518,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Verifying both root and child VirtualMachineGroups are ready")
 
 			readyTrueCondition := metav1.Condition{
-				Type:   vmopv1a5.ReadyConditionType,
+				Type:   vmopv1.ReadyConditionType,
 				Status: metav1.ConditionTrue,
 			}
 			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgChildName, readyTrueCondition)
@@ -608,9 +608,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					ImageName:        tmpNamespaceVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
-					Affinity: &vmopv1a5.AffinitySpec{
-						VMAffinity: &vmopv1a5.VMAffinitySpec{
-							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{
+					Affinity: &vmopv1.AffinitySpec{
+						VMAffinity: &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -621,8 +621,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 								},
 							},
 						},
-						VMAntiAffinity: &vmopv1a5.VMAntiAffinitySpec{
-							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchExpressions: []metav1.LabelSelectorRequirement{
@@ -722,7 +722,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Name:      vmgRootName,
 				BootOrder: []manifestbuilders.BootOrder{
 					{
-						Members: []vmopv1a5.GroupMember{
+						Members: []vmopv1.GroupMember{
 							{
 								Kind: vmKind,
 								Name: vm1Name,
@@ -878,7 +878,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					Name:      vmgRootName,
 					BootOrder: []manifestbuilders.BootOrder{
 						{
-							Members: []vmopv1a5.GroupMember{
+							Members: []vmopv1.GroupMember{
 								{
 									Kind: vmKind,
 									Name: vm1Name,
@@ -1010,10 +1010,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		powerOnVMFunc := func(vmName string) {
 			GinkgoHelper()
 
-			vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine %s", vmName)
 			vmPatch := vm.DeepCopy()
-			vmPatch.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 				To(Succeed(), "failed to patch powerState for vm %s", vmName)
 		}
@@ -1024,9 +1024,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			labels := make(map[string]string)
 			labels["tier"] = label
 
-			var affinityLabelSelector *vmopv1a5.VMAffinitySpec
+			var affinityLabelSelector *vmopv1.VMAffinitySpec
 			if len(affinityTiers) > 0 {
-				terms := []vmopv1a5.VMAffinityTerm{
+				terms := []vmopv1.VMAffinityTerm{
 					{
 						LabelSelector: &metav1.LabelSelector{
 							MatchExpressions: []metav1.LabelSelectorRequirement{
@@ -1041,19 +1041,19 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 				}
 				if affinityType == requiredDuringSchedulingPreferredDuringExecution {
-					affinityLabelSelector = &vmopv1a5.VMAffinitySpec{
+					affinityLabelSelector = &vmopv1.VMAffinitySpec{
 						RequiredDuringSchedulingPreferredDuringExecution: terms,
 					}
 				} else if affinityType == preferredDuringSchedulingPreferredDuringExecution {
-					affinityLabelSelector = &vmopv1a5.VMAffinitySpec{
+					affinityLabelSelector = &vmopv1.VMAffinitySpec{
 						PreferredDuringSchedulingPreferredDuringExecution: terms,
 					}
 				}
 			}
 
-			var antiAffinityLabelSelector *vmopv1a5.VMAntiAffinitySpec
+			var antiAffinityLabelSelector *vmopv1.VMAntiAffinitySpec
 			if len(antiAffinityTiers) > 0 {
-				terms := []vmopv1a5.VMAffinityTerm{
+				terms := []vmopv1.VMAffinityTerm{
 					{
 						LabelSelector: &metav1.LabelSelector{
 							MatchExpressions: []metav1.LabelSelectorRequirement{
@@ -1068,11 +1068,11 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 				}
 				if affinityType == requiredDuringSchedulingPreferredDuringExecution {
-					antiAffinityLabelSelector = &vmopv1a5.VMAntiAffinitySpec{
+					antiAffinityLabelSelector = &vmopv1.VMAntiAffinitySpec{
 						RequiredDuringSchedulingPreferredDuringExecution: terms,
 					}
 				} else if affinityType == preferredDuringSchedulingPreferredDuringExecution {
-					antiAffinityLabelSelector = &vmopv1a5.VMAntiAffinitySpec{
+					antiAffinityLabelSelector = &vmopv1.VMAntiAffinitySpec{
 						PreferredDuringSchedulingPreferredDuringExecution: terms,
 					}
 				}
@@ -1086,8 +1086,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				ImageName:        tmpNamespaceVMIName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
-				PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
-				Affinity: &vmopv1a5.AffinitySpec{
+				PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
+				Affinity: &vmopv1.AffinitySpec{
 					VMAffinity:     affinityLabelSelector,
 					VMAntiAffinity: antiAffinityLabelSelector,
 				},
@@ -1141,13 +1141,13 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Name:      vmgRootName,
 				BootOrder: []manifestbuilders.BootOrder{
 					{
-						Members: []vmopv1a5.GroupMember{},
+						Members: []vmopv1.GroupMember{},
 					},
 				},
 			}
 			for _, v := range vmMemberNames {
 				vmgParameters.BootOrder[0].Members = append(vmgParameters.BootOrder[0].Members,
-					vmopv1a5.GroupMember{Kind: vmKind, Name: v})
+					vmopv1.GroupMember{Kind: vmKind, Name: v})
 			}
 
 			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
@@ -1386,7 +1386,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				createCacheVMFunc := func(vmName, groupName, preferredZone, appLabel string, antiAffinity bool) {
 					GinkgoHelper()
 
-					term := vmopv1a5.VMAffinityTerm{
+					term := vmopv1.VMAffinityTerm{
 						LabelSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								"app": appLabel,
@@ -1395,14 +1395,14 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						TopologyKey: "kubernetes.io/hostname",
 					}
 
-					affinity := &vmopv1a5.AffinitySpec{}
+					affinity := &vmopv1.AffinitySpec{}
 					if antiAffinity {
-						affinity.VMAntiAffinity = &vmopv1a5.VMAntiAffinitySpec{
-							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{term},
+						affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term},
 						}
 					} else {
-						affinity.VMAffinity = &vmopv1a5.VMAffinitySpec{
-							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{term},
+						affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term},
 						}
 					}
 
@@ -1417,7 +1417,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						ImageName:        tinyImageVMIName,
 						VMClassName:      clusterResources.VMClassName,
 						StorageClassName: clusterResources.StorageClassName,
-						PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
+						PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
 						Affinity:         affinity,
 					}
 					vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
@@ -1446,7 +1446,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						Name:      aafGroupName,
 						BootOrder: []manifestbuilders.BootOrder{
 							{
-								Members: []vmopv1a5.GroupMember{
+								Members: []vmopv1.GroupMember{
 									{Kind: vmKind, Name: aafVM1},
 									{Kind: vmKind, Name: aafVM2},
 								},
@@ -1462,7 +1462,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						Name:      afGroupName,
 						BootOrder: []manifestbuilders.BootOrder{
 							{
-								Members: []vmopv1a5.GroupMember{
+								Members: []vmopv1.GroupMember{
 									{Kind: vmKind, Name: afVM1},
 									{Kind: vmKind, Name: afVM2},
 								},
@@ -1529,13 +1529,13 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				createVKSNodePoolVMFunc := func(vmName, tier, antiAffinityType string, otherTiers []string) {
 					GinkgoHelper()
 
-					hostnameAntiAffinityTerm := vmopv1a5.VMAffinityTerm{
+					hostnameAntiAffinityTerm := vmopv1.VMAffinityTerm{
 						LabelSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"tier": tier},
 						},
 						TopologyKey: "kubernetes.io/hostname",
 					}
-					zoneAntiAffinityTerm := vmopv1a5.VMAffinityTerm{
+					zoneAntiAffinityTerm := vmopv1.VMAffinityTerm{
 						LabelSelector: &metav1.LabelSelector{
 							MatchExpressions: []metav1.LabelSelectorRequirement{
 								{
@@ -1548,8 +1548,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						TopologyKey: "topology.kubernetes.io/zone",
 					}
 
-					antiAffinityTerms := []vmopv1a5.VMAffinityTerm{hostnameAntiAffinityTerm, zoneAntiAffinityTerm}
-					antiAffinity := &vmopv1a5.VMAntiAffinitySpec{}
+					antiAffinityTerms := []vmopv1.VMAffinityTerm{hostnameAntiAffinityTerm, zoneAntiAffinityTerm}
+					antiAffinity := &vmopv1.VMAntiAffinitySpec{}
 					if antiAffinityType == preferredDuringSchedulingPreferredDuringExecution {
 						antiAffinity.PreferredDuringSchedulingPreferredDuringExecution = antiAffinityTerms
 					} else {
@@ -1564,11 +1564,11 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						ImageName:        tmpNamespaceVMIName,
 						VMClassName:      clusterResources.VMClassName,
 						StorageClassName: clusterResources.StorageClassName,
-						PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
-						Affinity: &vmopv1a5.AffinitySpec{
+						PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
+						Affinity: &vmopv1.AffinitySpec{
 							VMAntiAffinity: antiAffinity,
-							VMAffinity: &vmopv1a5.VMAffinitySpec{
-								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{"tier": tier},
@@ -1599,13 +1599,13 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					Name:      vmgRootName,
 					BootOrder: []manifestbuilders.BootOrder{
 						{
-							Members: []vmopv1a5.GroupMember{},
+							Members: []vmopv1.GroupMember{},
 						},
 					},
 				}
 				for _, v := range vmMemberNames {
 					vmgParameters.BootOrder[0].Members = append(vmgParameters.BootOrder[0].Members,
-						vmopv1a5.GroupMember{Kind: vmKind, Name: v})
+						vmopv1.GroupMember{Kind: vmKind, Name: v})
 				}
 				vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
 				e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))

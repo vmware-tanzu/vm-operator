@@ -384,7 +384,16 @@ _setup_kubectl_vsphere() {
 
     mkdir -p "${extract_dir}"
     local unzip_out
-    if ! unzip_out=$(unzip -o vsphere-plugin.zip -d "${extract_dir}" 2>&1); then
+    if command -v 7z &>/dev/null; then
+        unzip_out=$(7z x vsphere-plugin.zip -o"${extract_dir}" -y 2>&1)
+    elif command -v unzip &>/dev/null; then
+        unzip_out=$(unzip -o vsphere-plugin.zip -d "${extract_dir}" 2>&1)
+    else
+        rm -f vsphere-plugin.zip
+        _err "Failed to unzip kubectl-vsphere plugin: neither 7z nor unzip is available"
+        return 1
+    fi
+    if [[ ${?} -ne 0 ]]; then
         local zip_size
         zip_size=$(wc -c < vsphere-plugin.zip 2>/dev/null || echo "unknown")
         rm -f vsphere-plugin.zip

@@ -9438,6 +9438,78 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 
 	unitTestsValidateVolumeUnitNumber(doTest)
 
+	Context("spec.crypto", func() {
+		const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+		DescribeTable("update", doTest,
+			Entry("should disallow spec.crypto when FSS_WCP_VMSERVICE_BYOK is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = false
+						})
+					},
+					validate: func(response admission.Response) {
+						Expect(string(response.Result.Reason)).To(Equal(field.Invalid(
+							field.NewPath("spec", "crypto"),
+							&vmopv1.VirtualMachineCryptoSpec{},
+							"the Bring Your Own Key (Provider) feature is not enabled").Error()))
+					},
+				},
+			),
+
+			Entry("should allow spec.crypto when BYOK is enabled and storage class is encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClassWithID(profileID)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *sc, true)).To(Succeed())
+
+						rlName := sc.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+						Expect(ctx.Client.Create(ctx, builder.DummyResourceQuota(ctx.vm.Namespace, rlName))).To(Succeed())
+
+						ctx.oldVM.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: fake,
+						}
+						ctx.vm.Spec.Volumes = nil
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = true
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should disallow spec.crypto when BYOK is enabled but storage class is not encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClassWithID(profileID)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *sc, false)).To(Succeed())
+
+						rlName := sc.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+						Expect(ctx.Client.Create(ctx, builder.DummyResourceQuota(ctx.vm.Namespace, rlName))).To(Succeed())
+
+						ctx.oldVM.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: fake,
+						}
+						ctx.vm.Spec.Volumes = nil
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = true
+						})
+					},
+					validate: doValidateWithMsg(
+						`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.storageClass specify an encryption storage class`),
+				},
+			),
+		)
+	})
+
 	commonCreateAndUpdateValidations(doTest)
 }
 

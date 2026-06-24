@@ -11131,8 +11131,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: guestinfo.custom.data: this key is reserved for the system"),
+						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.custom.data: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject vmx.reboot.powerCycle exact key",
@@ -11145,8 +11144,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: vmx.reboot.powerCycle: this key is reserved for the system"),
+						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmx.reboot.powerCycle: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject GOSC reserved keys",
@@ -11159,8 +11157,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: tools.deployPkg.fileName: this key is reserved for the system"),
+						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: tools.deployPkg.fileName: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject ethernet device-scoped keys",
@@ -11173,8 +11170,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead"),
+						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead`),
 					},
 				),
 			)
@@ -11217,8 +11213,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
-							"Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+						validate: doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
 					},
 				),
 				Entry("should reject first-class NIC properties (device-prefixed)",
@@ -11237,8 +11232,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
-							"Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+						validate: doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
 					},
 				),
 				Entry("should reject generic ethernet device-scoped keys",
@@ -11257,8 +11251,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
-							"Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix"),
+						validate: doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix`),
 					},
 				),
 				Entry("should reject system reserved network device properties",
@@ -11452,9 +11445,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					expectAllowed: false,
-					validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-						"Forbidden: numa.vcpu.preferHT: use the corresponding first-class field " +
-						"in spec.advanced instead"),
+					validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
 				},
 			),
 			Entry("should reject vmservice.* prefix on create",
@@ -11467,8 +11458,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					expectAllowed: false,
-					validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-						"Forbidden: vmservice.test.key: this key is reserved for the system"),
+					validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
 				},
 			),
 			Entry("should reject guestinfo. prefix on create",

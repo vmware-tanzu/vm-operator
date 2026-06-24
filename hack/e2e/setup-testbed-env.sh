@@ -40,6 +40,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Retry configuration.
+# ---------------------------------------------------------------------------
+# SSH to vCenter (decryptK8Pwd.py): Supervisor may still be initialising when
+# the e2e runner starts, so allow a generous window.
+_DECRYPT_RETRY_ATTEMPTS=6
+_DECRYPT_RETRY_INITIAL_DELAY=10   # seconds; doubles each attempt (~5 min total)
+
+# SCP kubeconfig from Supervisor control-plane VM.
+_KUBECONFIG_RETRY_ATTEMPTS=5
+_KUBECONFIG_RETRY_INITIAL_DELAY=5 # seconds; doubles each attempt (~2.5 min total)
+
+# kubectl-vsphere plugin download + unzip (Supervisor may serve a 503 or return
+# a truncated zip during cluster initialisation).
+_KUBECTL_VSPHERE_RETRY_ATTEMPTS=5
+_KUBECTL_VSPHERE_RETRY_INITIAL_DELAY=5 # seconds; doubles each attempt (~2.5 min total)
+
+# ---------------------------------------------------------------------------
 # Module-level helpers.
 # All progress/diagnostic output goes to stderr so stdout stays clean for the
 # "export VAR=value" lines (which the caller can pipe through eval).
@@ -47,6 +64,34 @@ fi
 _log()  { printf '%s\n'          "$*" >&2; }
 _warn() { printf 'Warning: %s\n' "$*" >&2; }
 _err()  { printf 'Error: %s\n'   "$*" >&2; }
+
+# _retry_with_backoff <max_attempts> <initial_delay_seconds> <description> <cmd> [args...]
+#
+# Runs <cmd> [args...] up to <max_attempts> times with exponential backoff
+# starting at <initial_delay_seconds>.  Returns 0 on the first success, or 1
+# after all attempts are exhausted.
+_retry_with_backoff() {
+    local -r max_attempts="$1"
+    local -r initial_delay="$2"
+    local -r description="$3"
+    shift 3
+
+    local attempt=1
+    local delay="${initial_delay}"
+    while (( attempt <= max_attempts )); do
+        if "$@"; then
+            return 0
+        fi
+        if (( attempt < max_attempts )); then
+            _warn "${description} failed (attempt ${attempt}/${max_attempts}); retrying in ${delay}s..."
+            sleep "${delay}"
+            delay=$(( delay * 2 ))
+        fi
+        (( attempt++ ))
+    done
+    _warn "${description} failed after ${max_attempts} attempts"
+    return 1
+}
 
 # Export a variable and, when running as a subprocess, also emit an eval-safe
 # "export VAR=value" line to stdout.
@@ -217,6 +262,24 @@ _export_common_vars() {
 }
 
 # ---------------------------------------------------------------------------
+# _decrypt_wcp_credentials
+#
+# Runs decryptK8Pwd.py on vCenter via SSH and stores the output in the
+# caller's wcp_raw variable (dynamic scoping — must be declared local by the
+# caller).  Returns 1 if the SSH fails or produces empty output so that
+# _retry_with_backoff can treat it as a retriable failure.
+# ---------------------------------------------------------------------------
+_decrypt_wcp_credentials() {
+    local _out
+    _out=$(sshpass -p "${vc_root_password}" \
+            ssh "${_SSH_OPTS[@]}" -o ConnectTimeout=30 -o LogLevel=ERROR \
+            "${vc_root_username}@${vc_url}" \
+            "/usr/lib/vmware-wcp/decryptK8Pwd.py") || return 1
+    [[ -n "${_out}" ]] || return 1
+    wcp_raw="${_out}"
+}
+
+# ---------------------------------------------------------------------------
 # _fetch_supervisor_access <enable_e2e>
 #
 # SSHes to vCenter to run decryptK8Pwd.py, downloads the supervisor kubeconfig,
@@ -241,21 +304,22 @@ _fetch_supervisor_access() {
     fi
 
     local wcp_raw=""
-    if ! wcp_raw=$(sshpass -p "${vc_root_password}" \
-            ssh "${_SSH_OPTS[@]}" -o ConnectTimeout=30 \
-            "${vc_root_username}@${vc_url}" \
-            "/usr/lib/vmware-wcp/decryptK8Pwd.py" 2>/dev/null); then
-        _warn "SSH to vCenter to list WCP clusters failed — WCP may not be enabled yet"
-    fi
-
-    if [[ -z "${wcp_raw}" ]]; then
-        _warn "No WCP credentials returned — supervisor cluster may not be ready"
-        return 0
+    if ! _retry_with_backoff "${_DECRYPT_RETRY_ATTEMPTS}" "${_DECRYPT_RETRY_INITIAL_DELAY}" \
+            "SSH to vCenter (decryptK8Pwd.py)" \
+            _decrypt_wcp_credentials; then
+        _err "Failed to retrieve WCP credentials from vCenter after ${_DECRYPT_RETRY_ATTEMPTS} attempts"
+        return 1
     fi
 
     # Write into _main's local variables via dynamic scoping.
     wcp_password=$(grep "PWD:" <<< "${wcp_raw}" | sed -E 's/.*PWD: ([^ ]*).*/\1/')
     wcp_ip=$(grep "IP:"  <<< "${wcp_raw}" | sed -E 's/.*IP: ([^ ]*).*/\1/')
+
+    if [[ -z "${wcp_ip}" || -z "${wcp_password}" ]]; then
+        _err "Failed to parse Supervisor IP or password from vCenter output"
+        return 1
+    fi
+
     _log "Supervisor IP: ${wcp_ip}"
 
     mkdir -p "${HOME}/.kube"
@@ -263,11 +327,12 @@ _fetch_supervisor_access() {
     local -r wcp_kubeconfig_dest="${HOME}/.kube/wcp-config"
 
     _log "Downloading kubeconfig to ${kubeconfig_dest}..."
-    if ! sshpass -p "${wcp_password}" \
+    if ! _retry_with_backoff "${_KUBECONFIG_RETRY_ATTEMPTS}" "${_KUBECONFIG_RETRY_INITIAL_DELAY}" "SCP kubeconfig from supervisor" \
+            sshpass -p "${wcp_password}" \
             scp "${_SSH_OPTS[@]}" -o ConnectTimeout=30 \
-            "root@${wcp_ip}:~/.kube/config" "${kubeconfig_dest}" 2>/dev/null; then
-        _warn "Failed to copy kubeconfig from supervisor cluster; kubectl access may fail"
-        return 0
+            "root@${wcp_ip}:~/.kube/config" "${kubeconfig_dest}"; then
+        _err "Failed to copy kubeconfig from supervisor cluster after retries"
+        return 1
     fi
 
     # Replace 127.0.0.1 so the kubeconfig is usable from outside the cluster VM.
@@ -295,8 +360,8 @@ _fetch_supervisor_access() {
 # ---------------------------------------------------------------------------
 _setup_kubectl_vsphere() {
     if [[ -z "${wcp_ip}" ]]; then
-        _warn "Skipping kubectl-vsphere install: WCP_IP not set"
-        return 0
+        _err "Cannot install kubectl-vsphere: WCP_IP not set"
+        return 1
     fi
 
     _log "Installing kubectl-vsphere from supervisor ${wcp_ip}..."
@@ -310,25 +375,32 @@ _setup_kubectl_vsphere() {
     local -r plugin_url="https://${wcp_ip}/wcp/plugin/${plugin_os}/vsphere-plugin.zip"
     local -r extract_dir="/tmp/vsphere-plugin-$$"
 
-    if ! curl --insecure --max-time 60 --retry 3 --retry-delay 5 -fsSLo vsphere-plugin.zip "${plugin_url}" 2>/dev/null; then
-        _warn "Failed to download kubectl-vsphere from ${wcp_ip} (${plugin_os})"
-        return 0
+    local curl_err
+    if ! curl_err=$(curl --insecure --max-time 60 --retry 3 --retry-delay 5 -fsSLo vsphere-plugin.zip "${plugin_url}" 2>&1); then
+        rm -f vsphere-plugin.zip
+        _err "Failed to download kubectl-vsphere from ${wcp_ip} (${plugin_os}): ${curl_err}"
+        return 1
     fi
 
     mkdir -p "${extract_dir}"
-    if unzip -o vsphere-plugin.zip -d "${extract_dir}" >/dev/null 2>&1; then
-        export PATH="${extract_dir}/bin:${PATH}"
-        # When not sourced, emit PATH so the caller's shell gets it too.
-        # Use a literal $PATH so the user's current PATH is spliced in at eval
-        # time rather than the subprocess's expanded copy.
-        if [[ "${_SOURCED}" == "false" ]]; then
-            printf 'export PATH=%q:$PATH\n' "${extract_dir}/bin"
-        fi
-        _log "kubectl-vsphere available at ${extract_dir}/bin"
-    else
-        _warn "Failed to unzip kubectl-vsphere plugin"
+    local unzip_out
+    if ! unzip_out=$(unzip -o vsphere-plugin.zip -d "${extract_dir}" 2>&1); then
+        local zip_size
+        zip_size=$(wc -c < vsphere-plugin.zip 2>/dev/null || echo "unknown")
+        rm -f vsphere-plugin.zip
+        _err "Failed to unzip kubectl-vsphere plugin (zip size: ${zip_size} bytes): ${unzip_out}"
+        return 1
     fi
+
     rm -f vsphere-plugin.zip
+    export PATH="${extract_dir}/bin:${PATH}"
+    # When not sourced, emit PATH so the caller's shell gets it too.
+    # Use a literal $PATH so the user's current PATH is spliced in at eval
+    # time rather than the subprocess's expanded copy.
+    if [[ "${_SOURCED}" == "false" ]]; then
+        printf 'export PATH=%q:$PATH\n' "${extract_dir}/bin"
+    fi
+    _log "kubectl-vsphere available at ${extract_dir}/bin"
 }
 
 # ---------------------------------------------------------------------------
@@ -479,7 +551,11 @@ _setup_gateway_and_proxy() {
 _setup_e2e() {
     local -r script_dir="$1"
     _log "=== E2E Testbed Setup ==="
-    _setup_kubectl_vsphere
+    if ! _retry_with_backoff "${_KUBECTL_VSPHERE_RETRY_ATTEMPTS}" "${_KUBECTL_VSPHERE_RETRY_INITIAL_DELAY}" \
+            "Install kubectl-vsphere" _setup_kubectl_vsphere; then
+        _err "Failed to install kubectl-vsphere after ${_KUBECTL_VSPHERE_RETRY_ATTEMPTS} attempts"
+        return 1
+    fi
     _setup_gateway_and_proxy "${script_dir}"
     _log "=== E2E Testbed Setup Complete ==="
 }
@@ -543,7 +619,7 @@ EOF
     _load_testbed "${testbed_source}"  || return
     _parse_vc_credentials              || return
     _export_common_vars
-    _fetch_supervisor_access "${enable_e2e}"
+    _fetch_supervisor_access "${enable_e2e}" || return
 
     # Export WCP/supervisor under both naming conventions used in the test suite.
     _export WCP_IP                  "${wcp_ip}"

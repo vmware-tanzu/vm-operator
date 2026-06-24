@@ -169,7 +169,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupPublishReque
 	}
 
 	if conditions.IsTrue(vmGroupPublishReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete) {
-		return r.reconcileSpecTTL(ctx)
+		if allImagesHaveNames(vmGroupPublishReq.Status.Images) {
+			// if some imageNames are still blank — fall through to reconcileStatus.
+			// This self-heals the race where a stale patchStatus overwrote imageNames
+			return r.reconcileSpecTTL(ctx)
+		}
 	}
 
 	if err := r.verifySpec(vmGroupPublishReq); err != nil {
@@ -370,6 +374,19 @@ func (r *Reconciler) verifySpec(vmGroupPublishReq *vmopv1.VirtualMachineGroupPub
 	}
 
 	return nil
+}
+
+// allImagesHaveNames returns true when every image entry has a non-empty ImageName.
+// It is used to detect the race where Complete is marked before all imageNames are
+// populated: if any name is blank the reconciler falls through to reconcileStatus so
+// the names are filled before the early-return guard takes effect.
+func allImagesHaveNames(images []vmopv1.VirtualMachineGroupPublishRequestImageStatus) bool {
+	for _, img := range images {
+		if img.ImageName == "" {
+			return false
+		}
+	}
+	return len(images) > 0
 }
 
 // reconcileSpecTTL deletes the group publish request and its child vm publish requests once the TTL expires.

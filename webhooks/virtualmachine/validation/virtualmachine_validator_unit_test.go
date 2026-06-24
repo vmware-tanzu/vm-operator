@@ -3232,6 +3232,54 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+
+			Entry("allow same VLAN ID on different parent links",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0"},
+								{Name: "eth1"},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{Name: "vlan100-on-eth0", ID: 100, Link: "eth0"},
+								{Name: "vlan100-on-eth1", ID: 100, Link: "eth1"},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow valid VLAN name that shares a prefix with an interface name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0"},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								// "eth0.100" shares the "eth0" prefix but is not the
+								// same name as the parent interface.
+								{Name: "eth0.100", ID: 100, Link: "eth0"},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
 		)
 
 		DescribeTableSubtree("network create - validate network provider API group and kind",

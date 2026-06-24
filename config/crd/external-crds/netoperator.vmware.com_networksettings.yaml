@@ -37,6 +37,23 @@ spec:
               In CamelCase.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
+          legacyProvider:
+            description: |-
+              legacyProvider is the network provider to which this namespace was previously affined.
+              When set, the namespace has transitioned from legacyProvider to the current provider.
+              APIs and resources associated with legacyProvider remain functional within this namespace
+              but are no longer the governing provider; new network resources will be created under
+              the current provider's APIs.
+
+              This field is absent when the namespace has never undergone a provider transition.
+            enum:
+            - vsphere-distributed
+            - nsx-tier1
+            - vpc
+            type: string
+            x-kubernetes-validations:
+            - message: legacyProvider must be vsphere-distributed or nsx-tier1
+              rule: self in ['vsphere-distributed', 'nsx-tier1']
           metadata:
             type: object
           provider:
@@ -53,5 +70,8 @@ spec:
         required:
         - provider
         type: object
+        x-kubernetes-validations:
+        - message: legacyProvider must differ from provider
+          rule: '!has(self.legacyProvider) || self.legacyProvider != self.provider'
     served: true
     storage: true

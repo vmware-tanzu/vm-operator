@@ -56,7 +56,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.40.0
 	github.com/sirupsen/logrus v1.9.4
-	github.com/vmware-tanzu/net-operator-api v0.0.0-20260521184348-f9c023dead14
+	github.com/vmware-tanzu/net-operator-api v0.0.0-20260611174009-a2d7e608727d
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/image-registry-operator v0.0.0-00010101000000-000000000000

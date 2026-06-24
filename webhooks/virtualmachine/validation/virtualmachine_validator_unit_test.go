@@ -11026,9 +11026,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: numa.vcpu.preferHT: use the corresponding first-class field " +
-							"in spec.advanced instead"),
+						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
 					},
 				),
 				Entry("should reject vmservice.* prefix",
@@ -11041,8 +11039,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: vmservice.test.key: this key is reserved for the system"),
+						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject guestinfo.* prefix",
@@ -11330,5 +11327,84 @@ func commonCreateAndUpdateValidations(
 			)
 		})
 
+	})
+
+	// The TelcoVMServiceAPI extraConfig validation context above always uses an
+	// update context (oldVM != nil) even when called from unitTestsValidateCreate.
+	// This Context exercises the same validation on the create path (oldVM == nil).
+	Context("TelcoVMServiceAPI extraConfig validation - create path", func() {
+		var ctx *unitValidatingWebhookContext
+
+		doTest := func(args testParams) {
+			doTestWithContext(ctx, args)
+		}
+
+		BeforeEach(func() {
+			ctx = newUnitTestContextForValidatingWebhook(false) // create context: oldVM is nil
+
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = true
+			})
+
+			bypassUpgradeCheck(&ctx.Context, ctx.vm)
+		})
+
+		DescribeTable("should validate VM advanced extraConfig on create", doTest,
+			Entry("should allow non-reserved extraConfig keys",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "user.custom.setting", Value: "value1"},
+								{Key: "custom.app.config", Value: "value2"},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should reject first-class VMX keys on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+						"Forbidden: numa.vcpu.preferHT: use the corresponding first-class field " +
+						"in spec.advanced instead"),
+				},
+			),
+			Entry("should reject vmservice.* prefix on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "vmservice.test.key", Value: "value"},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
+						"Forbidden: vmservice.test.key: this key is reserved for the system"),
+				},
+			),
+			Entry("should reject guestinfo. prefix on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "guestinfo.myKey", Value: "value"},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.myKey: this key is reserved for the system`),
+				},
+			),
+		)
 	})
 }

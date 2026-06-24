@@ -28,6 +28,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -996,6 +997,23 @@ func DummyCnsNodeVMAttachment(name, namespace, nodeUUID, volumeName, diskUUID st
 			AttachmentMetadata: map[string]string{
 				cnsv1alpha1.AttributeFirstClassDiskUUID: diskUUID,
 			},
+		},
+	}
+}
+
+// DummyVirtualMachineConfigOptions returns a dummy VirtualMachineConfigOptions
+// with the given name and hardwareVersion.
+func DummyVirtualMachineConfigOptions(name, hardwareVersion string) *vimv1.VirtualMachineConfigOptions {
+	return &vimv1.VirtualMachineConfigOptions{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "VirtualMachineConfigOptions",
+			APIVersion: vimv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: vimv1.VirtualMachineConfigOptionsSpec{
+			HardwareVersion: hardwareVersion,
 		},
 	}
 }

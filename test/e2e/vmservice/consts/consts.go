@@ -36,5 +36,6 @@ const (
 	SharedDisksCapabilityName               = "supports_shared_disks_with_VM_service_VMs"
 	AllDisksArePVCapabilityName             = "supports_vm_service_all_disks_are_pvcs"
 	MultiWriterDiskVMotionCapabilityName    = "supports_multiwriter_disk_vmotion"
-	IaaSComputePoliciesCapabilityName       = "supports_iaas_compute_policies"
+	IaaSComputePoliciesCapabilityName              = "supports_iaas_compute_policies"
+	VirtualMachineConfigPolicyCapabilityName       = "supports_vm_config_policy"
 )

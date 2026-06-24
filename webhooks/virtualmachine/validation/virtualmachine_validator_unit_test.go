@@ -9770,6 +9770,45 @@ func commonCreateAndUpdateValidations(
 				},
 			),
 
+			Entry("should deny MicrosoftWSFC volume with wrong DiskMode",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+							},
+						}
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "wsfc-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								DiskMode:            vmopv1.VolumeDiskModePersistent,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(0)),
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[0].diskMode: Invalid value: "Persistent": DiskMode must be IndependentPersistent for MicrosoftWSFC volumes`,
+					),
+				},
+			),
+
 			Entry("should allow MicrosoftWSFC volume with Physical controller",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -9807,9 +9846,9 @@ func commonCreateAndUpdateValidations(
 							},
 						}
 					},
-			expectAllowed: true,
-			},
-		),
+					expectAllowed: true,
+				},
+			),
 		)
 
 		DescribeTable("validate OracleRAC application type requirements",

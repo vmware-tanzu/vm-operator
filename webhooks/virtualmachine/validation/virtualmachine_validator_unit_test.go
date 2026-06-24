@@ -9673,33 +9673,6 @@ func commonCreateAndUpdateValidations(
 ) {
 	Context("Application type validation", func() {
 
-		var (
-			ctx *unitValidatingWebhookContext
-		)
-
-		BeforeEach(func() {
-			ctx = newUnitTestContextForValidatingWebhook(true)
-
-			// Create a PVC for the tests
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "pvc-1",
-					Namespace: ctx.vm.Namespace,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("10Gi"),
-						},
-					},
-				},
-			}
-			Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
-
-			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
-		})
-
 		DescribeTable("validate Microsoft WSFC controller requirements",
 			doTest,
 

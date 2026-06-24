@@ -1486,28 +1486,28 @@ func unitTestsValidateCreate() {
 	Context("Readiness Probe", func() {
 
 		DescribeTable("create", doTest,
-			Entry("should fail when Readiness probe has multiple actions #2",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						cm := &corev1.ConfigMap{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      config.ProviderConfigMapName,
-								Namespace: ctx.Namespace,
-							},
-							Data: make(map[string]string),
-						}
-						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
+		Entry("should fail when Readiness probe has multiple actions #1",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					cm := &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      config.ProviderConfigMapName,
+							Namespace: ctx.Namespace,
+						},
+						Data: make(map[string]string),
+					}
+					Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
 
-						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
-							TCPSocket:      &vmopv1.TCPSocketAction{},
-							GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.readinessProbe: Forbidden: only one action can be specified`),
+					ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						TCPSocket:      &vmopv1.TCPSocketAction{},
+						GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+					}
 				},
-			),
-			Entry("should fail when Readiness probe has multiple actions #2",
+				validate: doValidateWithMsg(
+					`spec.readinessProbe: Forbidden: only one action can be specified`),
+			},
+		),
+		Entry("should fail when Readiness probe has multiple actions #2",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{

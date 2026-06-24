@@ -9621,10 +9621,12 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 }
 
 func unitTestsValidateDelete() {
-	var (
-		ctx      *unitValidatingWebhookContext
-		response admission.Response
-	)
+	// ValidateDelete currently always allows deletion.  This suite provides a
+	// structured scaffold so that future validation logic (e.g. preventing
+	// deletion of a running VM, privileged-only deletion, etc.) can be wired in
+	// without restructuring the tests.
+
+	var ctx *unitValidatingWebhookContext
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
@@ -9634,16 +9636,45 @@ func unitTestsValidateDelete() {
 		ctx = nil
 	})
 
-	When("the delete is performed", func() {
-		JustBeforeEach(func() {
-			response = ctx.ValidateDelete(&ctx.WebhookRequestContext)
-		})
+	doTest := func(response admission.Response, expectAllowed bool) {
+		GinkgoHelper()
+		Expect(response.Allowed).To(Equal(expectAllowed))
+		Expect(response.Result).ToNot(BeNil())
+	}
 
-		It("should allow the request", func() {
-			Expect(response.Allowed).To(BeTrue())
-			Expect(response.Result).ToNot(BeNil())
-		})
-	})
+	DescribeTable("should allow all deletes",
+		func(setup func()) {
+			if setup != nil {
+				setup()
+			}
+			response := ctx.ValidateDelete(&ctx.WebhookRequestContext)
+			doTest(response, true)
+		},
+
+		Entry("should allow delete by SSO user",
+			func() {
+				ctx.IsPrivilegedAccount = false
+			},
+		),
+
+		Entry("should allow delete by privileged service account",
+			func() {
+				ctx.IsPrivilegedAccount = true
+			},
+		),
+
+		Entry("should allow delete of a powered-on VM",
+			func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			},
+		),
+
+		Entry("should allow delete of a powered-off VM",
+			func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			},
+		),
+	)
 }
 
 func unitTestsValidateVolumeUnitNumber(

@@ -87,6 +87,64 @@ type testParams struct {
 	skipSetControllerForPVC bool
 }
 
+// createVMClass creates a VirtualMachineClass named newVMClass in
+// ctx.vm.Namespace and ensures it is readable from the fake client before
+// returning.
+func createVMClass(ctx *unitValidatingWebhookContext) {
+	class := &vmopv1.VirtualMachineClass{
+		ObjectMeta: metav1.ObjectMeta{Name: newVMClass, Namespace: ctx.vm.Namespace},
+	}
+	Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+}
+
+// createInactiveClassInstance creates a VirtualMachineClassInstance with no
+// active label and no owner reference — used to simulate an instance that has
+// not yet been marked active.
+func createInactiveClassInstance(ctx *unitValidatingWebhookContext, instanceName string) {
+	instance := &vmopv1.VirtualMachineClassInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: instanceName, Namespace: ctx.vm.Namespace},
+	}
+	Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+}
+
+// createActiveClassInstance creates an active VirtualMachineClassInstance whose
+// owner reference points to className.
+func createActiveClassInstance(ctx *unitValidatingWebhookContext, instanceName, className string) {
+	instance := &vmopv1.VirtualMachineClassInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instanceName,
+			Namespace: ctx.vm.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "vmoperator.vmware.com/v1alpha6",
+					Kind:       "VirtualMachineClass",
+					Name:       className,
+				},
+			},
+			Labels: map[string]string{vmopv1.VMClassInstanceActiveLabelKey: ""},
+		},
+	}
+	Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+}
+
+// createActiveClassInstanceWithWrongOwner creates an active
+// VirtualMachineClassInstance whose owner reference points to wrongOwner
+// rather than the class named in spec.className.
+func createActiveClassInstanceWithWrongOwner(
+	ctx *unitValidatingWebhookContext, instanceName, wrongOwner string) {
+
+	instance := &vmopv1.VirtualMachineClassInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            instanceName,
+			Namespace:       ctx.vm.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{Name: wrongOwner}},
+			Labels:          map[string]string{vmopv1.VMClassInstanceActiveLabelKey: ""},
+		},
+	}
+	Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+}
+
 // setAdminAnnotations sets the admin-only annotations on a VM with values
 // optionally suffixed by suffix. These are the annotations that are
 // restricted to privileged users on both create and update.
@@ -760,30 +818,9 @@ func unitTestsValidateCreate() {
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createInactiveClassInstance(ctx, "new-class-instance")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -798,39 +835,9 @@ func unitTestsValidateCreate() {
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance without an OwnerRef that points to some other VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									Name: "random-vm-class",
-								},
-							},
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstanceWithWrongOwner(ctx, "new-class-instance", "random-vm-class")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -845,41 +852,9 @@ func unitTestsValidateCreate() {
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									APIVersion: "vmoperator.vmware.com/v1alpha6",
-									Name:       newVMClass,
-									Kind:       "VirtualMachineClass",
-								},
-							},
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstance(ctx, "new-class-instance", newVMClass)
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -5447,30 +5422,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createInactiveClassInstance(ctx, "new-class-instance")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -5487,39 +5441,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance without an OwnerRef that points to some other VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									Name: "random-vm-class",
-								},
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstanceWithWrongOwner(ctx, "new-class-instance", "random-vm-class")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -5535,41 +5459,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									APIVersion: "vmoperator.vmware.com/v1alpha6",
-									Name:       newVMClass,
-									Kind:       "VirtualMachineClass",
-								},
-							},
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstance(ctx, "new-class-instance", newVMClass)
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true

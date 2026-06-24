@@ -188,9 +188,15 @@ func doValidateWithMsg(msgs ...string) func(admission.Response) {
 }
 
 // doTestWithContext runs a table-style validating webhook test using the provided ctx.
-// It calls ValidateUpdate when ctx.oldVM is set, otherwise ValidateCreate. Use when a nested Context owns a
-// dedicated ctx and the outer commonCreateAndUpdateValidations doTest closure would bind the wrong ctx.
+// It calls ValidateUpdate when ctx.oldVM is set, otherwise ValidateCreate.
+//
+// Use this function when a nested Context owns a dedicated ctx variable.  The outer
+// doTest closures in unitTestsValidateCreate and unitTestsValidateUpdate capture
+// their own ctx by closure and cannot be replaced by this helper without changing
+// upgrade-annotation semantics.
 func doTestWithContext(ctx *unitValidatingWebhookContext, args testParams) {
+	GinkgoHelper()
+
 	args.setup(ctx)
 
 	var err error

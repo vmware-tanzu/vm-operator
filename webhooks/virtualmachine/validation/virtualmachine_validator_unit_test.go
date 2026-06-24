@@ -5786,6 +5786,65 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 		)
 	})
 
+	Context("spec.powerState", func() {
+		DescribeTable("no-op and allowed transitions", doTest,
+			Entry("should allow On→On with no field changes",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow Off→Off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow Suspended→Suspended",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow On→Off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow On→Suspended",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow Off→On",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
 	Context("Image and ImageName", func() {
 		DescribeTable("imageName", doTest,
 			Entry("forbid changing imageName to non empty value",

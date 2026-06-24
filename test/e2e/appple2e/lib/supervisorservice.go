@@ -12,6 +12,7 @@ func (sst SupervisorServiceType) String() string {
 }
 
 const (
+	VapiErrMsg                      = "Server error: com.vmware.vapi.std.errors.Error"
 	VapiNotFoundErrMsg              = "Server error: com.vmware.vapi.std.errors.NotFound"
 	VapiUnauthorizedErrMsg          = "Server error: com.vmware.vapi.std.errors.Unauthorized"
 	VapiAlreadyInDesiredStateErrMsg = "Server error: com.vmware.vapi.std.errors.AlreadyInDesiredState"

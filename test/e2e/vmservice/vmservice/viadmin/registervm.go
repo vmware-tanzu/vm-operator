@@ -35,6 +35,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -61,6 +62,7 @@ type VIAdminRegisterVMSpecInput struct {
 	WCPClient        wcp.WorkloadManagementAPI
 	WCPNamespaceName string
 	LinuxVMName      string
+	ArtifactFolder   string
 }
 
 func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegisterVMSpecInput) {
@@ -79,6 +81,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		incrementalRestoreEnabled     bool
 		linuxImageDisplayName         string
 		linuxVMIName                  string
+		registervmViaImportOpEnabled  bool
 	)
 
 	BeforeEach(func() {
@@ -105,6 +108,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 		incrementalRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIncrementalRestore"))
+		asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
+		Expect(err).NotTo(HaveOccurred())
+		registervmViaImportOpEnabled = utils.IsSupervisorCapabilityEnabled(ctx, clusterProxy.GetClientSet(),
+			clusterProxy.GetDynamicClient(), consts.RegisterVMViaImportoperationSupport, asyncSupervisorFSSEnabled)
 	})
 
 	Context("Authorization test", func() {
@@ -167,6 +174,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
 
+			if registervmViaImportOpEnabled {
+				Skip("RegisterVM uses the ImportOperation path on this environment; the new path validates VM existence via VC task creation, returning a generic Error for an invalid MoRef rather than NotFound")
+			}
+
 			By("Invoke the RegisterVM API")
 
 			taskID, err := wcpClient.RegisterVM(input.WCPNamespaceName, "non-exist-vm-moid")
@@ -176,6 +187,29 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(errors.As(err, &dcliErr)).Should(BeTrue())
 			Expect(dcliErr.Response()).Should(ContainSubstring(lib.VapiNotFoundErrMsg))
 			Expect(taskID).To(BeEmpty())
+		})
+
+		It("If the VM does not exist on the ImportOperation path, returns an error", func() {
+			if !vmServiceBackupRestoreEnabled {
+				Skip("WCP_VMService_BackupRestore FSS is not enabled")
+			}
+
+			if !registervmViaImportOpEnabled {
+				Skip("Test only applies to the ImportOperation path")
+			}
+
+			By("Invoke the RegisterVM API with a non-existent VM MoID")
+
+			// The ImportOperation path calls vimClient.CreateTask before checking VM
+			// existence. vCenter rejects CreateTask for an invalid MoRef with a fault,
+			// which maps to a generic Error rather than NotFound.
+			taskID, err := wcpClient.RegisterVM(input.WCPNamespaceName, "non-exist-vm-moid")
+			Expect(err).To(HaveOccurred())
+			Expect(taskID).To(BeEmpty())
+
+			var dcliErr wcp.DcliError
+			Expect(errors.As(err, &dcliErr)).Should(BeTrue())
+			Expect(dcliErr.Response()).Should(ContainSubstring(lib.VapiErrMsg))
 		})
 
 		It("If the namespace does not exist, returns not found error", func() {
@@ -203,6 +237,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Skip("WCP_VMService_Incremental_Restore FSS is enabled")
 			}
 
+			if registervmViaImportOpEnabled {
+				Skip("RegisterVM uses the ImportOperation path on this environment; AlreadyInDesiredState is not returned when incremental restore is supported")
+			}
+
 			By("Get an existing VM Service VM MoID in Supervisor")
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
 			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
@@ -223,6 +261,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Incremental Restore - Register VM with pre-existing VM CR", func() {
 		It("Should register VM successfully", func() {
+			if registervmViaImportOpEnabled {
+				Skip("RegisterVM uses the ImportOperation path on this environment; legacy incremental restore test does not apply")
+			}
 			if !incrementalRestoreEnabled {
 				Skip("WCP_VMService_Incremental_Restore FSS is not enabled")
 			}
@@ -352,6 +393,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Incremental Restore - Register VM with pre-existing VM CR and PVCs", func() {
 		It("Should register VM successfully", func() {
+			if registervmViaImportOpEnabled {
+				Skip("RegisterVM uses the ImportOperation path on this environment; legacy incremental restore test does not apply")
+			}
 			if !incrementalRestoreEnabled {
 				Skip("WCP_VMService_Incremental_Restore FSS is not enabled")
 			}
@@ -571,6 +615,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		// - InvokeRegisterVM, expecting to succeed and clear triggered alarm
 		// - VerifyPostRegisterVM, expecting VM is powered on, has IP, etc
 		It("Should trigger on failure", func() {
+			if registervmViaImportOpEnabled {
+				Skip("RegisterVM uses the ImportOperation path on this environment; legacy-path alarm test does not apply")
+			}
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
@@ -797,6 +844,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Restore disk only", func() {
 		It("Should register restored disk", func() {
+			if registervmViaImportOpEnabled {
+				Skip("RegisterVM uses the ImportOperation path on this environment; legacy-path disk restore test does not apply")
+			}
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
@@ -1073,6 +1123,126 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// We can't use len(existingVM.Spec.Volumes) here because we are only restoring one disk.
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, 1, clusterProxy, config, svClusterClient, wcpClient)
 			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+		})
+	})
+	Context("RegisterVM via ImportOperation CR", func() {
+		var (
+			tmpNamespaceCtx  wcpframework.NamespaceContext
+			tmpNamespaceName string
+		)
+
+		BeforeEach(func() {
+			if !registervmViaImportOpEnabled {
+				Skip("RegisterVM via ImportOperation is not enabled")
+			}
+
+			// Create a temporary WCP namespace with only ONE storage policy. The
+			// ImportOperation admission webhook requires a single unambiguous storage
+			// class when no explicit default storage class is configured in the namespace.
+			// The shared test namespace typically has multiple storage policies, which
+			// causes the webhook to reject the CreateImportOperation request with
+			// "no default storage class due to more than 1 storage policy exists".
+			By("Creating a temporary WCP namespace with a single storage policy for ImportOperation test")
+			resources := config.InfraConfig.ManagementClusterConfig.Resources
+			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+			vmsvcSpecs := wcp.NewVMServiceSpecDetails(
+				[]string{resources.VMClassName},
+				[]string{vmserviceCLID},
+			)
+
+			tmpNSName := fmt.Sprintf("%s-importop-%s", specName, capiutil.RandomString(6))
+			var err error
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs,
+				resources.StorageClassName, "", tmpNSName, input.ArtifactFolder)
+			Expect(err).ToNot(HaveOccurred(), "failed to create temporary WCP namespace for ImportOperation test")
+			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
+			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+		})
+
+		AfterEach(func() {
+			if tmpNamespaceName != "" {
+				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+				tmpNamespaceName = ""
+			}
+		})
+
+		It("Should trigger ImportOperation CR creation when capability is enabled", func() {
+			resources := config.InfraConfig.ManagementClusterConfig.Resources
+
+			// Wait for the Linux VM image to be available in the temporary namespace
+			By("Waiting for Linux VM image in the temporary namespace")
+			tmpLinuxVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+			Expect(err).ToNot(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, tmpNamespaceName)
+
+			// Create a VM in the temporary namespace, then orphan it to simulate a restore
+			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+			secretName := vmName + "-cloud-config-data"
+			secret := manifestbuilders.Secret{
+				Namespace: tmpNamespaceName,
+				Name:      secretName,
+			}
+			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
+			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data")
+
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        tmpNamespaceName,
+				Name:             vmName,
+				VMClassName:      resources.VMClassName,
+				StorageClassName: resources.StorageClassName,
+				ImageName:        tmpLinuxVMIName,
+				PowerState:       "PoweredOn",
+				Bootstrap: manifestbuilders.Bootstrap{
+					CloudInit: &manifestbuilders.CloudInit{
+						RawCloudConfig: &manifestbuilders.KeySelector{Key: "user-data", Name: secretName},
+					},
+				},
+			}
+			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM in temporary namespace")
+
+			By("Waiting for VM to be created and backup to complete before orphaning")
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			vmservice.WaitForBackupToComplete(ctx, existingVM, clusterProxy, config)
+			vmMoID := vmservice.DeleteVMResource(ctx, vmName, tmpNamespaceName, nil, clusterProxy, config, svClusterClient)
+
+			// With only one storage policy in the temporary namespace, the ImportOperation
+			// admission webhook auto-selects it without requiring a default designation.
+			By("Invoking RegisterVM API to generate the ImportOperation CR")
+			taskID, err := wcpClient.RegisterVM(tmpNamespaceName, vmMoID)
+			Expect(err).ToNot(HaveOccurred(), "RegisterVM API call failed")
+			Expect(taskID).ToNot(BeEmpty(), "RegisterVM returned an empty task ID")
+
+			// WCP appends the VC UUID to task IDs (e.g., "task-1234:vc-uuid"). Strip the
+			// suffix to get the raw CR name that wcpsvc uses when creating the ImportOperation.
+			crName := strings.Split(taskID, ":")[0]
+
+			By(fmt.Sprintf("Verifying ImportOperation CR %q is created in namespace %q", crName, tmpNamespaceName))
+			// The scheme registers ImportOperation at v1alpha2 (the only version available
+			// in external/mobility-operator/). This Get succeeds as long as the CRD on the
+			// cluster serves v1alpha2 — either natively or via conversion from the v1alpha4
+			// storage version that wcpsvc uses when creating the CR.
+			importOp := &mopv1a2.ImportOperation{}
+			crKey := ctrlclient.ObjectKey{
+				Namespace: tmpNamespaceName,
+				Name:      crName,
+			}
+			Eventually(func() error {
+				return svClusterClient.Get(ctx, crKey, importOp)
+			}, config.GetIntervals("default", "wait-config-map-creation")...).Should(
+				Succeed(), "ImportOperation CR %q should be created by wcpsvc in namespace %q", crName, tmpNamespaceName)
+
+			By("Waiting for vSphere registration task to complete")
+			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			defer vcenter.LogoutVimClient(vCenterClient)
+			taskMoref := types.ManagedObjectReference{Type: "Task", Value: crName}
+			task := object.NewTask(vCenterClient, taskMoref)
+			_, err = task.WaitForResult(ctx, nil)
+			Expect(err).ToNot(HaveOccurred(), "vSphere registration task failed")
+			By("Verifying VM state after successful registration")
+			expectedRestoredPVCCount := 0
+			vmservice.VerifyPostRegisterVM(ctx, vmName, tmpNamespaceName, nil, expectedRestoredPVCCount, clusterProxy, config, svClusterClient, wcpClient)
 		})
 	})
 }

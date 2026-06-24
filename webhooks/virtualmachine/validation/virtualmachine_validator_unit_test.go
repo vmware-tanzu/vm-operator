@@ -9807,6 +9807,108 @@ func commonCreateAndUpdateValidations(
 							},
 						}
 					},
+			expectAllowed: true,
+			},
+		),
+		)
+
+		DescribeTable("validate OracleRAC application type requirements",
+			doTest,
+
+			Entry("should deny OracleRAC volume with wrong SharingMode",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "oracle-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+								DiskMode:    vmopv1.VolumeDiskModeIndependentPersistent,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[0].sharingMode: Invalid value: "None": SharingMode must be MultiWriter for OracleRAC volumes`,
+					),
+				},
+			),
+
+			Entry("should deny OracleRAC volume with wrong DiskMode",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "oracle-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+								DiskMode:    vmopv1.VolumeDiskModePersistent,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[0].diskMode: Invalid value: "Persistent": DiskMode must be IndependentPersistent for OracleRAC volumes`,
+					),
+				},
+			),
+
+			Entry("should allow valid OracleRAC volume",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						}
+
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "oracle-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
+								DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(0)),
+							},
+						}
+					},
 					expectAllowed: true,
 				},
 			),

@@ -859,16 +859,22 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			By("Deploying a VM without any explicit policies")
 			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 			Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        tmpNamespaceName,
-				Name:             vmName,
-				ImageName:        tmpNamespaceVMIName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
-				PowerState:       "PoweredOn",
+			vm := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      vmName,
+					Namespace: tmpNamespaceName,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					ClassName:    clusterResources.VMClassName,
+					ImageName:    tmpNamespaceVMIName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+					Reserved: &vmopv1a5.VirtualMachineReservedSpec{
+						ResourcePolicyName: clusterResources.VMResourcePolicyName,
+					},
+				},
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			vmYaml = manifestbuilders.MustMarshalObjects(clusterProxy.GetScheme(), vm)
 			e2eframework.Logf("VM YAML without spec.policies:\n%s", string(vmYaml))
 			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
@@ -992,24 +998,30 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 			By("Creating a new VM with explicitly specified the optional policy match by guest ID")
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        tmpNamespaceName,
-				Name:             vmName,
-				GuestID:          linuxImageGuestID,
-				ImageName:        tmpNamespaceVMIName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
-				PowerState:       "PoweredOn",
-				Policies: []vmopv1a5.PolicySpec{
-					{
-						APIVersion: "vsphere.policy.vmware.com/v1alpha1",
-						Kind:       "ComputePolicy",
-						Name:       opPolicyNameMatchByGuestID,
+			vm := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      vmName,
+					Namespace: tmpNamespaceName,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					ClassName:    clusterResources.VMClassName,
+					GuestID:      linuxImageGuestID,
+					ImageName:    tmpNamespaceVMIName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+					Reserved: &vmopv1a5.VirtualMachineReservedSpec{
+						ResourcePolicyName: clusterResources.VMResourcePolicyName,
+					},
+					Policies: []vmopv1a5.PolicySpec{
+						{
+							APIVersion: "vsphere.policy.vmware.com/v1alpha1",
+							Kind:       "ComputePolicy",
+							Name:       opPolicyNameMatchByGuestID,
+						},
 					},
 				},
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			vmYaml = manifestbuilders.MustMarshalObjects(clusterProxy.GetScheme(), vm)
 			e2eframework.Logf("Creating VM with explicit spec.policies:\n%s", string(vmYaml))
 			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM with explicitly specified optional policy")
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
@@ -1019,15 +1031,15 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
 
 			By("Updating the VM's labels and policies to match by label")
-			vmParameters.Labels = matchLabel
-			vmParameters.Policies = []vmopv1a5.PolicySpec{
+			vm.Labels = matchLabel
+			vm.Spec.Policies = []vmopv1a5.PolicySpec{
 				{
 					APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 					Kind:       "ComputePolicy",
 					Name:       opPolicyNameMatchByLabel,
 				},
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			vmYaml = manifestbuilders.MustMarshalObjects(clusterProxy.GetScheme(), vm)
 			e2eframework.Logf("Updating VM's labels and spec.policies:\n%s", string(vmYaml))
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML")
 
@@ -1043,9 +1055,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				Expect(vmLabels).To(HaveKey(key))
 				delete(vmLabels, key)
 			}
-			vmParameters.Labels = vmLabels
-			vmParameters.Policies = []vmopv1a5.PolicySpec{}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			vm.Labels = vmLabels
+			vm.Spec.Policies = nil
+			vmYaml = manifestbuilders.MustMarshalObjects(clusterProxy.GetScheme(), vm)
 			e2eframework.Logf("Updating VM's labels:\n%s", string(vmYaml))
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML")
 

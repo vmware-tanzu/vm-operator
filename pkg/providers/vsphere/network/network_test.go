@@ -1349,6 +1349,156 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				})
 			})
 		})
+
+		Context("InterfaceIPType and StaticIPAllocationType", func() {
+			// InterfaceIPType and StaticIPAllocationType are WorkloadIPv6 capability
+			// features; enable them for all sub-contexts that verify proper propagation.
+			BeforeEach(func() {
+				testConfig.WithWorkloadIPv6 = true
+			})
+
+			Context("WorkloadIPv6 capability disabled", func() {
+				BeforeEach(func() {
+					testConfig.WithWorkloadIPv6 = false
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:      interfaceName,
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+						},
+					}
+				})
+
+				It("does not set InterfaceIPType on SubnetPort", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+					By("verify SubnetPort does not have InterfaceIPType set", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressType("")))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationType("")))
+					})
+				})
+			})
+
+			Context("IPv4 only", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:      interfaceName,
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+						},
+					}
+				})
+
+				It("sets InterfaceIPType to IPv4", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+					By("verify SubnetPort has InterfaceIPType IPv4", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressTypeIPv4))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationType("")))
+					})
+				})
+			})
+
+			Context("IPv6 only", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:      interfaceName,
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+						},
+					}
+				})
+
+				It("sets InterfaceIPType to IPv6", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+					By("verify SubnetPort has InterfaceIPType IPv6", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressTypeIPv6))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationType("")))
+					})
+				})
+			})
+
+			Context("dual stack", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:      interfaceName,
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol},
+						},
+					}
+				})
+
+				It("sets InterfaceIPType to IPv4IPv6", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+					By("verify SubnetPort has InterfaceIPType IPv4IPv6", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressTypeIPv4IPv6))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationType("")))
+					})
+				})
+			})
+
+			Context("DHCP6=false with IPv6 mode", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:      interfaceName,
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+							DHCP6:     ptr.To(false),
+						},
+					}
+				})
+
+				It("sets StaticIPAllocationType to IPv6", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+					By("verify SubnetPort has StaticIPAllocationType IPv6", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressTypeIPv6))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeIPv6))
+					})
+				})
+			})
+		})
 	})
 })
 

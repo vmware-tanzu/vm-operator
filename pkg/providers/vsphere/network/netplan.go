@@ -37,9 +37,7 @@ func NetPlanCustomization(result NetworkInterfaceResults, vlans []vmopv1.Virtual
 
 		npEth.Dhcp4 = &r.DHCP4
 		npEth.Dhcp6 = &r.DHCP6
-		// Right now we can set the same value as DHCPv6 configuration
-		// and in some future separate/specialize if required.
-		npEth.AcceptRa = &r.DHCP6
+		npEth.AcceptRa = &r.AcceptRA
 
 		if !*npEth.Dhcp4 {
 			for i := range r.IPConfigs {

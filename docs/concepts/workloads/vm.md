@@ -835,8 +835,9 @@ There are several options which may be used to influence the guest's per-interfa
 |-------|-------------|:----------:|:---------:|:-------:|
 | `spec.network.interfaces[].guestDeviceName` | The name of the interface in the guest | ✓ |  |  |
 | `spec.network.interfaces[].addresses` | The IP4 and IP6 addresses (with prefix length) for the interface | ✓ | ✓ | ✓ |
-| `spec.network.interfaces[].dhcp4` | Enables DHCP4 | ✓ | ✓ | ✓ |
-| `spec.network.interfaces[].dhcp6` | Enables DHCP6 | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].dhcp4` | Controls IPv4 DHCP: `true` requests a DHCP address, `false` explicitly disables DHCP (relies on static allocation), omitted defers to the network provider | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].dhcp6` | Controls DHCPv6: `true` requests a DHCPv6 address, `false` explicitly disables DHCPv6 (relies on static allocation), omitted defers to the network provider | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].ipamModes` | Requests which IP address families (`IPv4`, `IPv6`, or both) the network provider allocates for this interface; omitted means the provider applies its default | ✓ | ✓ | ✓ |
 | `spec.network.interfaces[].gateway4` | The IP4 address of the gateway for the IP4 address family | ✓ | ✓ | ✓ |
 | `spec.network.interfaces[].gateway6` | The IP6 address of the gateway for the IP6 address family | ✓ | ✓ | ✓ |
 | `spec.network.interfaces[].mtu` | The maximum transmission unit size in bytes | ✓ |  |  |
@@ -846,7 +847,7 @@ There are several options which may be used to influence the guest's per-interfa
 
 !!! note "Underlying Network Support"
 
-    Please note support for the fields `spec.network.interfaces[].addresses`, `spec.network.interfaces[].dhcp4`, and `spec.network.interfaces[].dhcp6` depends on the underlying network.
+    Please note support for the fields `spec.network.interfaces[].addresses`, `spec.network.interfaces[].dhcp4`, `spec.network.interfaces[].dhcp6`, and `spec.network.interfaces[].ipamModes` depends on the underlying network.
 
 ### Intended Network Config
 

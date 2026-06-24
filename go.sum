@@ -185,8 +185,8 @@ github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259
 github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259af5cbb/go.mod h1:sh4NJb1tCbzNRJ+ajRuu3thDovFN10Hic2wYmyklG/M=
 github.com/vmware-tanzu/net-operator-api v0.0.0-20260521184348-f9c023dead14 h1:QdHz/WzDkNCzeN3sFyG9bdlNrn/j7osp3qgrwBMv+TU=
 github.com/vmware-tanzu/net-operator-api v0.0.0-20260521184348-f9c023dead14/go.mod h1:w6QJGm3crIA16ZIz1FVQXD2NVeJhOgGXxW05RbVTSTo=
-github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260423081355-beab2417344a h1:yqGxhqSJ78veQjdOHINJLE9IWDcreMTzwDsOAdwrUWM=
-github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260423081355-beab2417344a/go.mod h1:Q4JzNkNMvjo7pXtlB5/R3oME4Nhah7fAObWgghVmtxk=
+github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c h1:ZYd1EUxMifaI//+lNw81fRSuVdqzxjlhbmzVNoOI0x4=
+github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c/go.mod h1:lyi/HGVxk/UK+bGCSSGdsZB6ep/NxN+NZ6AdQqcxWrg=
 github.com/vmware/govmomi v0.55.0-alpha.0.0.20260518191903-48ab34adb211 h1:n8hoHi/26x5GaTKTS04PqC7bNrCh7Wa7Eh44RKTM214=
 github.com/vmware/govmomi v0.55.0-alpha.0.0.20260518191903-48ab34adb211/go.mod h1:0F3hChqXDrSQQnjfSiCqRE5lPD4aZlbOtKG4uroq2a4=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=

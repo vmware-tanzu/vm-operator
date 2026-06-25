@@ -68,7 +68,6 @@ LABEL branch="${BUILD_BRANCH}" \
 # consistency guarantee, causing libcap dependency conflicts.
 # To pick up OS security patches, bump the BASE_IMAGE tag instead.
 RUN tdnf install -y \
-        7zip \
         bash \
         coreutils \
         curl \
@@ -94,7 +93,16 @@ RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
 ARG PACKER_DOWNLOAD_URL=https://releases.hashicorp.com/packer/1.9.1/packer_1.9.1_linux_amd64.zip
 RUN curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip
 
-RUN 7z x /tmp/packer.zip -o/tmp/packer packer -y
+# if 7zip is available, prefer to use it
+# otherwise fallback to unzip.
+# Certain Photon5 images versions do not have it
+RUN if tdnf info 7zip > /dev/null 2>&1; then \
+        tdnf install -y 7zip && \
+        7z x /tmp/packer.zip -o/tmp/packer packer -y; \
+    else \
+        tdnf install -y unzip && \
+        unzip /tmp/packer.zip packer -d /tmp/packer; \
+    fi
 
 RUN mv /tmp/packer/packer /usr/local/bin/packer && \
     chmod 0755 /usr/local/bin/packer && \

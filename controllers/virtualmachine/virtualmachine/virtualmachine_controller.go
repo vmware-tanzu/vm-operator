@@ -45,6 +45,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
@@ -188,33 +189,36 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		)
 	}
 
-	switch pkgcfg.FromContext(ctx).NetworkProviderType {
-	case pkgcfg.NetworkProviderTypeVDS:
-		builder = builder.Watches(
-			&netopv1alpha1.NetworkInterface{},
-			handler.EnqueueRequestForOwner(
-				mgr.GetScheme(),
-				mgr.GetRESTMapper(),
-				&vmopv1.VirtualMachine{}),
-		)
+	// Setup watches for the network interface CR types supported on this cluster.
+	for _, providerType := range netsetutil.GetClusterSupportedProviderTypesFromConfig(ctx) {
+		switch providerType {
+		case pkgcfg.NetworkProviderTypeVDS:
+			builder = builder.Watches(
+				&netopv1alpha1.NetworkInterface{},
+				handler.EnqueueRequestForOwner(
+					mgr.GetScheme(),
+					mgr.GetRESTMapper(),
+					&vmopv1.VirtualMachine{}),
+			)
 
-	case pkgcfg.NetworkProviderTypeNSXT:
-		builder = builder.Watches(
-			&ncpv1alpha1.VirtualNetworkInterface{},
-			handler.EnqueueRequestForOwner(
-				mgr.GetScheme(),
-				mgr.GetRESTMapper(),
-				&vmopv1.VirtualMachine{}),
-		)
+		case pkgcfg.NetworkProviderTypeNSXT:
+			builder = builder.Watches(
+				&ncpv1alpha1.VirtualNetworkInterface{},
+				handler.EnqueueRequestForOwner(
+					mgr.GetScheme(),
+					mgr.GetRESTMapper(),
+					&vmopv1.VirtualMachine{}),
+			)
 
-	case pkgcfg.NetworkProviderTypeVPC:
-		builder = builder.Watches(
-			&vpcv1alpha1.SubnetPort{},
-			handler.EnqueueRequestForOwner(
-				mgr.GetScheme(),
-				mgr.GetRESTMapper(),
-				&vmopv1.VirtualMachine{}),
-		)
+		case pkgcfg.NetworkProviderTypeVPC:
+			builder = builder.Watches(
+				&vpcv1alpha1.SubnetPort{},
+				handler.EnqueueRequestForOwner(
+					mgr.GetScheme(),
+					mgr.GetRESTMapper(),
+					&vmopv1.VirtualMachine{}),
+			)
+		}
 	}
 
 	// Watch CnsNodeVMBatchAttachment in order to account for the volume

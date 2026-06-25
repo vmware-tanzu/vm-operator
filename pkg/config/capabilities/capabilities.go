@@ -127,6 +127,12 @@ const (
 	// (ConfigTarget, VirtualMachineConfigOptions, VirtualMachineConfigPolicy,
 	// VirtualMachineGuestOptions).
 	CapabilityKeyVirtualMachineConfigPolicy = "supports_vm_service_vm_config_policy"
+
+	// CapabilityKeyWorkloadNetworkConfiguration is the name of the capability
+	// key defined in the Supervisor capabilities CRD for enabling the
+	// cluster-scoped WorkloadNetworkConfiguration singleton, which declares
+	// the network providers available on the cluster.
+	CapabilityKeyWorkloadNetworkConfiguration = "supports_workload_network_configuration"
 )
 
 var (
@@ -301,6 +307,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.WorkloadIPv6 = capStatus.Activated
 		case CapabilityKeyVirtualMachineConfigPolicy:
 			fs.VirtualMachineConfigPolicy = capStatus.Activated
+		case CapabilityKeyWorkloadNetworkConfiguration:
+			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		}
 
 	}

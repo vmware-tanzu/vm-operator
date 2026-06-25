@@ -243,6 +243,7 @@ rules:
   - netoperator.vmware.com
   resources:
   - networksettings
+  - workloadnetworkconfigurations
   verbs:
   - get
   - list

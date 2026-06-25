@@ -14,12 +14,14 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -287,6 +289,171 @@ var _ = Describe(
 						})
 					})
 				})
+			})
+		})
+	})
+
+var _ = Describe(
+	"ReconcileNormal",
+	Label(
+		testlabels.Controller,
+		testlabels.API,
+	),
+	func() {
+		const (
+			zoneName      = "az-0"
+			zoneNamespace = "test-ns"
+			clusterMoID1  = "domain-c1"
+			clusterMoID2  = "domain-c2"
+		)
+
+		var (
+			ctx            context.Context
+			fakeClient     ctrlclient.Client
+			reconciler     *zone.Reconciler
+			zoneClusterIDs []string
+			featureEnabled bool
+		)
+
+		newZone := func() *topologyv1.Zone {
+			return &topologyv1.Zone{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       zoneName,
+					Namespace:  zoneNamespace,
+					Finalizers: []string{zone.Finalizer},
+				},
+				Spec: topologyv1.ZoneSpec{
+					ManagedVMs: topologyv1.VSphereEntityInfo{
+						ClusterMoIDs: zoneClusterIDs,
+					},
+				},
+			}
+		}
+
+		BeforeEach(func() {
+			featureEnabled = true
+			zoneClusterIDs = []string{clusterMoID1}
+		})
+
+		JustBeforeEach(func() {
+			fakeClient = builder.NewFakeClient(newZone())
+
+			ctx = pkgcfg.WithContext(context.Background(), pkgcfg.Default())
+			ctx = pkgcfg.UpdateContext(ctx, func(cfg *pkgcfg.Config) {
+				cfg.Features.VirtualMachineConfigPolicy = featureEnabled
+			})
+
+			reconciler = zone.NewReconciler(context.Background(), fakeClient, logr.Discard(), nil)
+		})
+
+		When("the VirtualMachineConfigPolicy feature is disabled", func() {
+			BeforeEach(func() {
+				featureEnabled = false
+			})
+
+			It("does not create ConfigTarget or VirtualMachineConfigPolicy objects", func() {
+				_, err := reconciler.ReconcileNormal(ctx, newZone())
+				Expect(err).ToNot(HaveOccurred())
+
+				var ctList vimv1.ConfigTargetList
+				Expect(fakeClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).To(BeEmpty())
+
+				var policyList vimv1.VirtualMachineConfigPolicyList
+				Expect(fakeClient.List(ctx, &policyList, ctrlclient.InNamespace(zoneNamespace))).To(Succeed())
+				Expect(policyList.Items).To(BeEmpty())
+			})
+		})
+
+		When("the zone has a single cluster MoID", func() {
+			It("creates a ConfigTarget for the cluster MoID", func() {
+				_, err := reconciler.ReconcileNormal(ctx, newZone())
+				Expect(err).ToNot(HaveOccurred())
+
+				var ct vimv1.ConfigTarget
+				Expect(fakeClient.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID1}, &ct)).To(Succeed())
+				Expect(ct.Spec.ID.ID).To(Equal(clusterMoID1))
+			})
+
+			It("creates a VirtualMachineConfigPolicy for the zone", func() {
+				_, err := reconciler.ReconcileNormal(ctx, newZone())
+				Expect(err).ToNot(HaveOccurred())
+
+				var policy vimv1.VirtualMachineConfigPolicy
+				Expect(fakeClient.Get(ctx,
+					ctrlclient.ObjectKey{Name: zoneName, Namespace: zoneNamespace},
+					&policy)).To(Succeed())
+				Expect(policy.Spec.Zone).To(Equal(zoneName))
+				Expect(policy.Spec.SyncMode).To(Equal(vimv1.VirtualMachineConfigPolicySyncModeConfigTarget))
+			})
+
+			It("is idempotent across multiple reconciles", func() {
+				for range 3 {
+					_, err := reconciler.ReconcileNormal(ctx, newZone())
+					Expect(err).ToNot(HaveOccurred())
+				}
+
+				var ctList vimv1.ConfigTargetList
+				Expect(fakeClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).To(HaveLen(1))
+				Expect(ctList.Items[0].Spec.ID.ID).To(Equal(clusterMoID1))
+			})
+
+			It("does not overwrite SyncMode on an existing policy", func() {
+				existing := &vimv1.VirtualMachineConfigPolicy{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      zoneName,
+						Namespace: zoneNamespace,
+					},
+					Spec: vimv1.VirtualMachineConfigPolicySpec{
+						Zone:     zoneName,
+						SyncMode: vimv1.VirtualMachineConfigPolicySyncModeDisabled,
+					},
+				}
+				Expect(fakeClient.Create(ctx, existing)).To(Succeed())
+
+				_, err := reconciler.ReconcileNormal(ctx, newZone())
+				Expect(err).ToNot(HaveOccurred())
+
+				var policy vimv1.VirtualMachineConfigPolicy
+				Expect(fakeClient.Get(ctx,
+					ctrlclient.ObjectKey{Name: zoneName, Namespace: zoneNamespace},
+					&policy)).To(Succeed())
+				Expect(policy.Spec.SyncMode).To(Equal(vimv1.VirtualMachineConfigPolicySyncModeDisabled))
+			})
+		})
+
+		When("the zone has multiple cluster MoIDs", func() {
+			BeforeEach(func() {
+				zoneClusterIDs = []string{clusterMoID1, clusterMoID2}
+			})
+
+			It("creates one ConfigTarget per cluster MoID", func() {
+				_, err := reconciler.ReconcileNormal(ctx, newZone())
+				Expect(err).ToNot(HaveOccurred())
+
+				var ct1 vimv1.ConfigTarget
+				Expect(fakeClient.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID1}, &ct1)).To(Succeed())
+				Expect(ct1.Spec.ID.ID).To(Equal(clusterMoID1))
+
+				var ct2 vimv1.ConfigTarget
+				Expect(fakeClient.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID2}, &ct2)).To(Succeed())
+				Expect(ct2.Spec.ID.ID).To(Equal(clusterMoID2))
+			})
+		})
+
+		When("the zone has duplicate cluster MoIDs", func() {
+			BeforeEach(func() {
+				zoneClusterIDs = []string{clusterMoID1, clusterMoID1, clusterMoID2}
+			})
+
+			It("creates one ConfigTarget per unique cluster MoID", func() {
+				_, err := reconciler.ReconcileNormal(ctx, newZone())
+				Expect(err).ToNot(HaveOccurred())
+
+				var ctList vimv1.ConfigTargetList
+				Expect(fakeClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).To(HaveLen(2))
 			})
 		})
 	})

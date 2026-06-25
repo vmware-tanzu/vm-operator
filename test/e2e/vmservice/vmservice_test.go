@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/configpolicy"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
@@ -242,6 +243,18 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					Config:           config,
 					WCPClient:        wcpClient,
 					ArtifactFolder:   artifactFolder,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+	})
+
+	Context("CONFIG-POLICY", func() {
+		Context("ZONE-FAN-OUT", func() {
+			configpolicy.ZoneFanOutSpec(context.TODO(), func() configpolicy.ZoneFanOutSpecInput {
+				return configpolicy.ZoneFanOutSpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})

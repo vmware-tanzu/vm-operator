@@ -181,8 +181,29 @@ func unitTestsReconcile() {
 			BeforeEach(func() {
 				conditions.MarkTrue(vmGroupPubReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete)
 			})
-			It("should return nil when ttl is nil", func() {
+
+			It("should skip to reconcileSpecTTL and return nil when all imageNames are set and TTL is nil", func() {
+				vmGroupPubReq.Status.Images = []vmopv1.VirtualMachineGroupPublishRequestImageStatus{
+					{Source: builder.DummyVirtualMachineName + "-0", ImageName: "img-0"},
+					{Source: builder.DummyVirtualMachineName + "-1", ImageName: "img-1"},
+				}
 				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(BeNil())
+			})
+
+			It("should fall through to reconcileStatus when some imageNames are blank", func() {
+				vmGroupPubReq.Status.Images = []vmopv1.VirtualMachineGroupPublishRequestImageStatus{
+					{Source: builder.DummyVirtualMachineName + "-0", ImageName: "img-0"},
+					{Source: builder.DummyVirtualMachineName + "-1", ImageName: ""},
+				}
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
+				Expect(conditions.IsTrue(vmGroupPubReq,
+					vmopv1.VirtualMachineGroupPublishRequestConditionComplete)).To(BeFalse())
+			})
+
+			It("should fall through to reconcileStatus when Status.Images is empty", func() {
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
+				Expect(conditions.IsTrue(vmGroupPubReq,
+					vmopv1.VirtualMachineGroupPublishRequestConditionComplete)).To(BeFalse())
 			})
 		})
 	})

@@ -205,14 +205,18 @@ func vmConfigSpecTests() {
 			instanceUUID = o.Config.InstanceUuid
 			vm.Spec.InstanceUUID = instanceUUID
 
-			// Move the imported VM into the namespace's resource pool so
-			// that reconcileLocation accepts the VM as living in an
+			// Move the imported VM into the namespace's resource pool and folder
+			// so that reconcileLocation accepts the VM as living in an
 			// authorized location for this namespace.
 			nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 			nsRPRef := nsRP.Reference()
+			nsFolderRef := nsInfo.Folder.Reference()
 			relocateTask, err := vcVM.Relocate(
 				ctx,
-				vimtypes.VirtualMachineRelocateSpec{Pool: &nsRPRef},
+				vimtypes.VirtualMachineRelocateSpec{
+					Pool:   &nsRPRef,
+					Folder: &nsFolderRef,
+				},
 				vimtypes.VirtualMachineMovePriorityDefaultPriority)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(relocateTask.Wait(ctx)).To(Succeed())

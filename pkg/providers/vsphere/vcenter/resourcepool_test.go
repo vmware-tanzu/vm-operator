@@ -19,8 +19,6 @@ import (
 func resourcePoolTests() {
 	Describe("GetResourcePool", getResourcePoolTests)
 	Describe("CreateDeleteExistResourcePoolChild", createDeleteExistResourcePoolChild)
-	Describe("GetResourcePoolProperties", getParentResourcePoolTests)
-	Describe("GetFolderProperties", getParentFolderTests)
 }
 
 func getResourcePoolTests() {
@@ -203,92 +201,5 @@ func createDeleteExistResourcePoolChild() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})
-	})
-}
-
-func getParentResourcePoolTests() {
-	var (
-		ctx        *builder.TestContextForVCSim
-		nsInfo     builder.WorkloadNamespaceInfo
-		nsRP       *object.ResourcePool
-		testConfig builder.VCSimTestConfig
-
-		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
-		childRP        *object.ResourcePool
-	)
-
-	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{}
-		ctx = suite.NewTestContextForVCSim(testConfig)
-		nsInfo = ctx.CreateWorkloadNamespace()
-		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
-
-		resourcePolicy, _ = ctx.CreateVirtualMachineSetResourcePolicy("child-rp", nsInfo)
-		Expect(resourcePolicy).ToNot(BeNil())
-
-		childRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", resourcePolicy.Spec.ResourcePool.Name)
-		Expect(childRP).ToNot(BeNil())
-	})
-
-	AfterEach(func() {
-		ctx.AfterEach()
-		ctx = nil
-		nsRP = nil
-		childRP = nil
-		resourcePolicy = nil
-	})
-
-	It("returns the parent RP with name populated", func() {
-		moPool, err := vcenter.GetResourcePoolProperties(ctx, ctx.VCClient.Client, childRP.Reference().Value)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(moPool.Name).ToNot(BeEmpty())
-		Expect(moPool.Parent).ToNot(BeNil())
-		Expect(moPool.Parent.Value).To(Equal(nsRP.Reference().Value))
-	})
-
-	It("returns error when RP MoID does not exist", func() {
-		_, err := vcenter.GetResourcePoolProperties(ctx, ctx.VCClient.Client, "bogus-rp-id")
-		Expect(err).To(HaveOccurred())
-	})
-}
-
-func getParentFolderTests() {
-	var (
-		ctx        *builder.TestContextForVCSim
-		nsInfo     builder.WorkloadNamespaceInfo
-		testConfig builder.VCSimTestConfig
-
-		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
-		childFolder    *object.Folder
-	)
-
-	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{}
-		ctx = suite.NewTestContextForVCSim(testConfig)
-		nsInfo = ctx.CreateWorkloadNamespace()
-
-		resourcePolicy, childFolder = ctx.CreateVirtualMachineSetResourcePolicy("child-folder", nsInfo)
-		Expect(resourcePolicy).ToNot(BeNil())
-		Expect(childFolder).ToNot(BeNil())
-	})
-
-	AfterEach(func() {
-		ctx.AfterEach()
-		ctx = nil
-		childFolder = nil
-		resourcePolicy = nil
-	})
-
-	It("returns the parent folder with name populated", func() {
-		moFolder, err := vcenter.GetFolderProperties(ctx, ctx.VCClient.Client, childFolder.Reference().Value)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(moFolder.Name).ToNot(BeEmpty())
-		Expect(moFolder.Parent).ToNot(BeNil())
-		Expect(moFolder.Parent.Value).To(Equal(nsInfo.Folder.Reference().Value))
-	})
-
-	It("returns error when folder MoID does not exist", func() {
-		_, err := vcenter.GetFolderProperties(ctx, ctx.VCClient.Client, "bogus-folder-id")
-		Expect(err).To(HaveOccurred())
 	})
 }

@@ -164,38 +164,29 @@ func findChildRP(
 	return childRP, nil
 }
 
-// GetResourcePoolProperties fetches the "parent" and "name" properties of the
-// given ResourcePool MoID and returns the populated mo.ResourcePool.
-func GetResourcePoolProperties(
+func IsVMInValidResourcePool(
 	ctx context.Context,
 	vimClient *vim25.Client,
-	rpMoID string) (mo.ResourcePool, error) {
+	currentRPMoID string,
+	expectedRootRPMoID string) (bool, error) {
 
+	// Case A: Direct match
+	if currentRPMoID == expectedRootRPMoID {
+		return true, nil
+	}
+	// Case B: Check if current pool's parent is the root
 	poolObj := object.NewResourcePool(vimClient,
-		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: currentRPMoID})
 
 	var moPool mo.ResourcePool
-	if err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent", "name"}, &moPool); err != nil {
-		return mo.ResourcePool{}, err
+	err := poolObj.Properties(ctx, poolObj.Reference(), []string{"parent"}, &moPool)
+	if err != nil {
+		return false, err
 	}
 
-	return moPool, nil
-}
-
-// GetFolderProperties fetches the "parent" and "name" properties of the given
-// Folder MoID and returns the populated mo.Folder.
-func GetFolderProperties(
-	ctx context.Context,
-	vimClient *vim25.Client,
-	folderMoID string) (mo.Folder, error) {
-
-	folderObj := object.NewFolder(vimClient,
-		vimtypes.ManagedObjectReference{Type: "Folder", Value: folderMoID})
-
-	var moFolder mo.Folder
-	if err := folderObj.Properties(ctx, folderObj.Reference(), []string{"parent", "name"}, &moFolder); err != nil {
-		return mo.Folder{}, err
+	if moPool.Parent != nil && moPool.Parent.Value == expectedRootRPMoID {
+		return true, nil
 	}
 
-	return moFolder, nil
+	return false, nil
 }

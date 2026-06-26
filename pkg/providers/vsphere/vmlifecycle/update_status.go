@@ -361,21 +361,21 @@ func reconcileComputeConfigSynced(
 
 	poweredOn := vmCtx.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOn
 	var dryRunCS vimtypes.VirtualMachineConfigSpec
-	blockedHW, blockedPowerOff := vmopv1util.OverwriteSpecComputeConfig(
+	blocked, blockedPowerOff := vmopv1util.OverwriteSpecComputeConfig(
 		*vmCtx.VM, *vmCtx.MoVM.Config, poweredOn, &dryRunCS)
 
 	switch {
-	case len(blockedHW) > 0:
+	case len(blocked) > 0:
 		conditions.MarkFalse(vmCtx.VM,
 			vmopv1.VirtualMachineConditionComputeConfigSynced,
 			vmopv1.VirtualMachinePrerequisiteNotMetReason,
 			"Prerequisites not met: %s",
-			strings.Join(blockedHW, ", "))
+			strings.Join(blocked, "; "))
 	case len(blockedPowerOff) > 0:
 		conditions.MarkFalse(vmCtx.VM,
 			vmopv1.VirtualMachineConditionComputeConfigSynced,
 			vmopv1.VirtualMachinePowerOffRequiredReason,
-			"Power off to apply: %s",
+			"VM power off required to apply: %s",
 			strings.Join(blockedPowerOff, ", "))
 	case !reflect.DeepEqual(dryRunCS, vimtypes.VirtualMachineConfigSpec{}):
 		// Spec compute fields differ from live vSphere state.

@@ -483,7 +483,7 @@ spec:
 | `topology.coresPerSocket` | Number of cores per virtual socket. Maps to `ConfigSpec.NumCoresPerSocket`. `0` is a sentinel for "auto" (equivalent to leaving the field unset). | No — requires power-off |
 | `topology.vnumaNodeCount` | Sets the number of virtual NUMA nodes. When set to a value > 0, `topology.coresPerSocket` must also be set to a non-zero value. The vCPU count should be evenly divisible by this value. `0` is a sentinel for "auto" (equivalent to leaving the field unset). Requires hardware version vmx-20 or later. | No — requires power-off |
 | `hotAddEnabled` | Enables CPU hot-add (adding vCPUs while the VM is powered on). Maps to `ConfigSpec.CpuHotAddEnabled`. Requires hardware version vmx-11 or later. | No — requires power-off |
-| `iommuEnabled` | Enables Intel VT-d / IOMMU. Required for SR-IOV and PCI passthrough workloads. Requires EFI firmware (`spec.bootOptions.firmware = "efi"`). | No — requires power-off |
+| `iommuEnabled` | Enables Intel VT-d / IOMMU. Required for SR-IOV and PCI passthrough workloads. | No — requires power-off |
 | `nestedHardwareVirtualizationEnabled` | Exposes hardware-assisted virtualization to the guest OS, enabling nested hypervisors. | No — requires power-off |
 | `performanceCountersEnabled` | Enables virtualized CPU performance counters (vPMC) for guest profiling tools. | No — requires power-off |
 
@@ -953,7 +953,7 @@ Overrides the guest-visible compute allocation and host-level resource policies 
 | `topology.coresPerNumaNode` | Cores per virtual NUMA node (≥ 1). Sets the number of vNUMA nodes = total vCPUs / value. Requires power-off. |
 | `topology.exposeVnumaOnCpuHotadd` | Expose vNUMA topology when vCPUs are hot-added. Only relevant when `hotAddEnabled` is true and vNUMA is configured. Requires power-off. |
 | `hotAddEnabled` | Allow vCPU hot-add while the VM is powered on. Incompatible with `latencySensitivity` High/HighWithHyperthreading. Requires power-off to enable. |
-| `iommuEnabled` | Enable IOMMU (VT-d / Intel VT-d). Required for SR-IOV and PCI passthrough. Requires EFI firmware. Requires power-off. |
+| `iommuEnabled` | Enable IOMMU (VT-d / Intel VT-d). Required for SR-IOV and PCI passthrough. Requires power-off. |
 | `nestedHardwareVirtualizationEnabled` | Expose hardware virtualisation to the guest OS (nested hypervisor / VMX). Requires power-off. |
 | `performanceCountersEnabled` | Enable vPMC so profiling tools inside the guest can access hardware performance counters. Requires power-off. |
 

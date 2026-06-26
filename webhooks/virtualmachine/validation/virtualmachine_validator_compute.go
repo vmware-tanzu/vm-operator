@@ -14,6 +14,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // validateComputeConfig validates spec.resources, spec.cpuAdvanced, and
@@ -185,19 +186,12 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 	}
 
 	var (
-		allErrs   field.ErrorList
-		resources = vm.Spec.Resources
-		memAdv    = vm.Spec.MemoryAdvanced
-		lsPath    = specPath.Child("cpuAdvanced").Child("latencySensitivity")
+		allErrs field.ErrorList
+		lsPath  = specPath.Child("cpuAdvanced").Child("latencySensitivity")
 	)
 
-	// Full memory reservation: reservationLockedToMax or requests.memory == size.memory
-	memReservationMet := (memAdv != nil && ptr.Deref(memAdv.ReservationLockedToMax)) ||
-		(resources != nil &&
-			resources.Requests != nil && resources.Size != nil &&
-			resources.Requests.Memory != nil && resources.Size.Memory != nil &&
-			resources.Requests.Memory.Cmp(*resources.Size.Memory) == 0)
-	if !memReservationMet {
+	// Full memory reservation: reservationLockedToMax or requests.memory == size.memory.
+	if !vmopv1util.FullMemReservationSpecMet(vm) {
 		allErrs = append(allErrs, field.Invalid(lsPath, string(ls),
 			"requires full memory reservation: "+
 				"spec.resources.requests.memory must equal spec.resources.size.memory, "+
@@ -208,6 +202,7 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 	// The webhook cannot verify the exact MHz value equals 100% of vCPU
 	// capacity (which depends on host CPU speed at placement time), so it
 	// only checks that a non-zero reservation is explicitly provided.
+	resources := vm.Spec.Resources
 	cpuReservationMet := resources != nil &&
 		resources.Requests != nil &&
 		resources.Requests.CPU != nil &&
@@ -220,11 +215,16 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 	return allErrs
 }
 
-// validateComputeReservationLockedToMax validates mutual exclusion rules:
-//   - memoryAdvanced.reservationLockedToMax=true is compatible with requests.memory only
-//     when size.memory is also set and requests.memory equals size.memory, because
-//     vSphere locks the reservation to the full size in that mode. When size.memory
-//     is absent the comparison is skipped (no reference value to check against).
+// validateComputeReservationLockedToMax validates mutual exclusion and ordering
+// rules when memoryAdvanced.reservationLockedToMax is true:
+//   - requests.memory must not be set: vSphere locks the reservation to the full
+//     guest size and overrides any explicit value in the first reconcile; in
+//     subsequent reconciles the reservation-only ConfigSpec is validated by
+//     vSphere, causing an InvalidArgument error if the value differs from the
+//     locked size.
+//   - limits.memory, when set, must be >= size.memory: vSphere requires
+//     Limit >= Reservation, and the lock pins the effective Reservation to
+//     size.memory.
 func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var (
 		allErrs   field.ErrorList
@@ -232,18 +232,28 @@ func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.Virt
 		memAdv    = vm.Spec.MemoryAdvanced
 	)
 
-	if memAdv != nil && ptr.Deref(memAdv.ReservationLockedToMax) {
-		if resources != nil && resources.Requests != nil && resources.Requests.Memory != nil {
-			// Only validate when size.memory is present; without it there is no
-			// reference value to compare the reservation against.
-			if resources.Size != nil && resources.Size.Memory != nil &&
-				resources.Requests.Memory.Cmp(*resources.Size.Memory) != 0 {
-				allErrs = append(allErrs, field.Invalid(
-					specPath.Child("memoryAdvanced").Child("reservationLockedToMax"),
-					true,
-					"mutually exclusive with spec.resources.requests.memory "+
-						"unless requests.memory equals size.memory"))
-			}
+	if memAdv == nil || !ptr.Deref(memAdv.ReservationLockedToMax) {
+		return nil
+	}
+
+	if resources != nil && resources.Requests != nil && resources.Requests.Memory != nil {
+		allErrs = append(allErrs, field.Invalid(
+			specPath.Child("resources").Child("requests").Child("memory"),
+			resources.Requests.Memory.String(),
+			"must not be set when spec.memoryAdvanced.reservationLockedToMax is true: "+
+				"vSphere owns the memory reservation when the lock is active"))
+	}
+
+	if resources != nil &&
+		resources.Limits != nil && resources.Limits.Memory != nil &&
+		resources.Size != nil && resources.Size.Memory != nil {
+		if resources.Limits.Memory.Cmp(*resources.Size.Memory) < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				specPath.Child("resources").Child("limits").Child("memory"),
+				resources.Limits.Memory.String(),
+				"must be greater than or equal to size.memory when "+
+					"spec.memoryAdvanced.reservationLockedToMax is true: "+
+					"vSphere pins the reservation to size.memory and requires Limit >= Reservation"))
 		}
 	}
 

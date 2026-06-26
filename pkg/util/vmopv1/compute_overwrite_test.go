@@ -23,7 +23,7 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		liveCI    vimtypes.VirtualMachineConfigInfo
 		poweredOn bool
 		cs        vimtypes.VirtualMachineConfigSpec
-		blockedHW []string
+		blocked []string
 		blockedPO []string
 	)
 
@@ -51,7 +51,7 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 	})
 
 	JustBeforeEach(func() {
-		blockedHW, blockedPO = vmopv1util.OverwriteSpecComputeConfig(vm, liveCI, poweredOn, &cs)
+		blocked, blockedPO = vmopv1util.OverwriteSpecComputeConfig(vm, liveCI, poweredOn, &cs)
 	})
 
 	// ───────────────────── resources.size.cpu ─────────────────────
@@ -278,8 +278,15 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 				Level: vimtypes.LatencySensitivitySensitivityLevelNormal,
 			}
 			ls := vmopv1.VirtualMachineLatencySensitivityHigh
+			cpuReq := resource.MustParse("4000")
 			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 				LatencySensitivity: &ls,
+			}
+			vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+				ReservationLockedToMax: ptr.To(true),
+			}
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{CPU: &cpuReq},
 			}
 		})
 		It("writes LatencySensitivity High", func() {
@@ -594,8 +601,8 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		It("does not write VirtualNuma", func() {
 			Expect(cs.VirtualNuma).To(BeNil())
 		})
-		It("adds vnumaNodeCount to blockedHW with version suffix", func() {
-			Expect(blockedHW).To(ContainElement("cpuAdvanced.topology.vnumaNodeCount (requires hwVer >= 20)"))
+		It("adds vnumaNodeCount to blocked with version suffix", func() {
+			Expect(blocked).To(ContainElement("cpuAdvanced.topology.vnumaNodeCount (requires hwVer >= 20)"))
 		})
 	})
 
@@ -605,9 +612,11 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 			poweredOn = false
 			cs.NumCPUs = 8 // simulates class/cpuSizeField having set this
 			n := int32(2)
+			cps := int32(4)
 			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 					VNUMANodeCount: &n,
+					CoresPerSocket: &cps,
 				},
 			}
 		})
@@ -615,8 +624,8 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 			Expect(cs.VirtualNuma).NotTo(BeNil())
 			Expect(cs.VirtualNuma.CoresPerNumaNode).To(Equal(ptr.To(int32(4))))
 		})
-		It("returns no blockedHW", func() {
-			Expect(blockedHW).To(BeEmpty())
+		It("returns no blocked", func() {
+			Expect(blocked).To(BeEmpty())
 		})
 	})
 
@@ -632,9 +641,11 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 				CoresPerNumaNode: ptr.To(int32(4)), // correct for 8 CPUs / 2 nodes
 			}
 			n := int32(2)
+			cps := int32(8)
 			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 					VNUMANodeCount: &n,
+					CoresPerSocket: &cps,
 				},
 			}
 		})
@@ -655,8 +666,8 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		It("does not write CpuHotAddEnabled (vSphere ignores incompatible fields)", func() {
 			Expect(cs.CpuHotAddEnabled).To(BeNil())
 		})
-		It("adds cpuAdvanced.hotAddEnabled to blockedHW", func() {
-			Expect(blockedHW).To(ContainElement("cpuAdvanced.hotAddEnabled (requires hwVer >= 11)"))
+		It("adds cpuAdvanced.hotAddEnabled to blocked", func() {
+			Expect(blocked).To(ContainElement("cpuAdvanced.hotAddEnabled (requires hwVer >= 11)"))
 		})
 	})
 
@@ -754,8 +765,8 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		It("does not write MemoryHotAddEnabled (vSphere ignores incompatible fields)", func() {
 			Expect(cs.MemoryHotAddEnabled).To(BeNil())
 		})
-		It("adds memoryAdvanced.hotAddEnabled to blockedHW", func() {
-			Expect(blockedHW).To(ContainElement("memoryAdvanced.hotAddEnabled (requires hwVer >= 7)"))
+		It("adds memoryAdvanced.hotAddEnabled to blocked", func() {
+			Expect(blocked).To(ContainElement("memoryAdvanced.hotAddEnabled (requires hwVer >= 7)"))
 		})
 	})
 
@@ -791,6 +802,50 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 		It("does not add to blockedPowerOff", func() {
 			Expect(blockedPO).NotTo(ContainElement(ContainSubstring("reservation")))
+		})
+	})
+
+	// When the lock is already active, vSphere owns the reservation. A
+	// Reservation-only ConfigSpec (without the lock) is validated by vSphere
+	// and rejected when the value does not equal the locked memory size.
+	// memoryAllocationField must skip the reservation in that case.
+
+	Context("resources.allocation — powered-on, lock already active, no spec reservation", func() {
+		BeforeEach(func() {
+			poweredOn = true
+			// Lock is already live; vSphere has set reservation to memSize (16384).
+			liveCI.MemoryReservationLockedToMax = ptr.To(true)
+			liveCI.Hardware.MemoryMB = 16384
+			liveCI.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+				Reservation: ptr.To(int64(16384)),
+				Limit:       ptr.To(int64(-1)),
+			}
+			// Spec has no requests.memory (required by webhook when lock is set).
+		})
+		It("does not write MemoryAllocation (vSphere owns the reservation)", func() {
+			Expect(cs.MemoryAllocation).To(BeNil())
+		})
+	})
+
+	Context("resources.allocation — powered-on, lock already active, limit differs", func() {
+		BeforeEach(func() {
+			poweredOn = true
+			liveCI.MemoryReservationLockedToMax = ptr.To(true)
+			liveCI.Hardware.MemoryMB = 16384
+			liveCI.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+				Reservation: ptr.To(int64(16384)),
+				Limit:       ptr.To(int64(-1)),
+			}
+			// Spec requests a limit; no requests.memory.
+			lim := resource.MustParse("32Gi")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: &lim},
+			}
+		})
+		It("writes only Limit, not Reservation", func() {
+			Expect(cs.MemoryAllocation).NotTo(BeNil())
+			Expect(cs.MemoryAllocation.Reservation).To(BeNil())
+			Expect(cs.MemoryAllocation.Limit).To(Equal(ptr.To(int64(32768))))
 		})
 	})
 
@@ -957,12 +1012,84 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 				Level: vimtypes.LatencySensitivitySensitivityLevelNormal,
 			}
 			ls := vmopv1.VirtualMachineLatencySensitivityHighWithHyperthreading
+			cpuReq := resource.MustParse("4000")
 			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{LatencySensitivity: &ls}
+			vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+				ReservationLockedToMax: ptr.To(true),
+			}
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{CPU: &cpuReq},
+			}
 		})
 		It("writes LatencySensitivity High and SimultaneousThreads=2", func() {
 			Expect(cs.LatencySensitivity).NotTo(BeNil())
 			Expect(cs.LatencySensitivity.Level).To(Equal(vimtypes.LatencySensitivitySensitivityLevelHigh))
 			Expect(cs.SimultaneousThreads).To(Equal(int32(2)))
+		})
+	})
+
+	// ─── latencySensitivity — prerequisite defense-in-depth ─────────────────────────────────────
+
+	Context("cpuAdvanced.latencySensitivity=High — no memory reservation (prereq not met)", func() {
+		BeforeEach(func() {
+			liveCI.LatencySensitivity = &vimtypes.LatencySensitivity{
+				Level: vimtypes.LatencySensitivitySensitivityLevelNormal,
+			}
+			cpuReq := resource.MustParse("4000")
+			ls := vmopv1.VirtualMachineLatencySensitivityHigh
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{LatencySensitivity: &ls}
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{CPU: &cpuReq},
+			}
+			// No memory reservation set.
+		})
+		It("does not write LatencySensitivity", func() {
+			Expect(cs.LatencySensitivity).To(BeNil())
+		})
+		It("adds latencySensitivity to blocked with memory reason", func() {
+			Expect(blocked).To(ContainElement(ContainSubstring("cpuAdvanced.latencySensitivity")))
+			Expect(blocked).To(ContainElement(ContainSubstring("full memory reservation required")))
+		})
+	})
+
+	Context("cpuAdvanced.latencySensitivity=High — no CPU reservation (prereq not met)", func() {
+		BeforeEach(func() {
+			liveCI.LatencySensitivity = &vimtypes.LatencySensitivity{
+				Level: vimtypes.LatencySensitivitySensitivityLevelNormal,
+			}
+			ls := vmopv1.VirtualMachineLatencySensitivityHigh
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{LatencySensitivity: &ls}
+			vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+				ReservationLockedToMax: ptr.To(true),
+			}
+			// No CPU reservation set.
+		})
+		It("does not write LatencySensitivity", func() {
+			Expect(cs.LatencySensitivity).To(BeNil())
+		})
+		It("adds latencySensitivity to blocked with CPU reason", func() {
+			Expect(blocked).To(ContainElement(ContainSubstring("cpuAdvanced.latencySensitivity")))
+			Expect(blocked).To(ContainElement(ContainSubstring("full CPU reservation required")))
+		})
+	})
+
+	// ─── vnumaNodeCount — prerequisite defense-in-depth ──────────────────────────────────────
+
+	Context("cpuAdvanced.topology.vnumaNodeCount > 0 — no coresPerSocket (prereq not met)", func() {
+		BeforeEach(func() {
+			liveCI.Version = vimtypes.VMX20.String()
+			n := int32(2)
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{VNUMANodeCount: &n},
+				// CoresPerSocket deliberately omitted.
+			}
+		})
+		It("does not write VirtualNuma", func() {
+			Expect(cs.VirtualNuma).To(BeNil())
+		})
+		It("adds vnumaNodeCount to blocked with coresPerSocket reason", func() {
+			Expect(blocked).To(ContainElement(ContainSubstring("cpuAdvanced.topology.vnumaNodeCount")))
+			Expect(blocked).To(ContainElement(ContainSubstring("coresPerSocket")))
 		})
 	})
 
@@ -991,8 +1118,12 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 				CoresPerNumaNode: ptr.To(int32(4)), // 8 CPUs / 4 nodes = 2 cores/node
 			}
 			n := int32(4) // 4 nodes → with 8 CPUs → desired 2 cores/node ≠ live 4
+			cps := int32(2)
 			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
-				Topology: &vmopv1.VirtualMachineCPUTopologySpec{VNUMANodeCount: &n},
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+					VNUMANodeCount: &n,
+					CoresPerSocket: &cps,
+				},
 			}
 		})
 		It("adds vnumaNodeCount to blockedPowerOff (power-off required)", func() {
@@ -1210,6 +1341,42 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
+	Context("resources.allocation — powered-off, lock already active, no spec reservation", func() {
+		BeforeEach(func() {
+			poweredOn = false
+			liveCI.MemoryReservationLockedToMax = ptr.To(true)
+			liveCI.Hardware.MemoryMB = 8192
+			liveCI.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+				Reservation: ptr.To(int64(8192)),
+				Limit:       ptr.To(int64(-1)),
+			}
+		})
+		It("does not write MemoryAllocation (vSphere owns the reservation)", func() {
+			Expect(cs.MemoryAllocation).To(BeNil())
+		})
+	})
+
+	Context("resources.allocation — powered-off, lock already active, limit differs", func() {
+		BeforeEach(func() {
+			poweredOn = false
+			liveCI.MemoryReservationLockedToMax = ptr.To(true)
+			liveCI.Hardware.MemoryMB = 8192
+			liveCI.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+				Reservation: ptr.To(int64(8192)),
+				Limit:       ptr.To(int64(-1)),
+			}
+			lim := resource.MustParse("16Gi")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: &lim},
+			}
+		})
+		It("writes only Limit, not Reservation", func() {
+			Expect(cs.MemoryAllocation).NotTo(BeNil())
+			Expect(cs.MemoryAllocation.Reservation).To(BeNil())
+			Expect(cs.MemoryAllocation.Limit).To(Equal(ptr.To(int64(16384))))
+		})
+	})
+
 	// ───────────────────── cpuAdvanced.hotAddEnabled — class override ─────────────────────
 
 	Context("cpuAdvanced.hotAddEnabled — class enabled it, nil spec, live=false (powered-off)", func() {
@@ -1247,8 +1414,8 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 				},
 			}
 		})
-		It("puts hotAddEnabled in blockedHW (hw gate)", func() {
-			Expect(blockedHW).To(ContainElement("cpuAdvanced.hotAddEnabled (requires hwVer >= 11)"))
+		It("puts hotAddEnabled in blocked (hw gate)", func() {
+			Expect(blocked).To(ContainElement("cpuAdvanced.hotAddEnabled (requires hwVer >= 11)"))
 		})
 		It("puts iommuEnabled in blockedPowerOff (power-off required)", func() {
 			Expect(blockedPO).To(ContainElement("cpuAdvanced.iommuEnabled"))

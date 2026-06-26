@@ -425,7 +425,7 @@ func (s *Session) poweredOnReconfigure(
 		return err
 	}
 
-	// Apply hot-pluggable compute config changes while the VM is powered on.
+	// Apply compute config changes while the VM is powered on.
 	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, true, configSpec)
 	}

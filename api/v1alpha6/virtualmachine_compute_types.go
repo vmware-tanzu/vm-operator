@@ -41,7 +41,11 @@ type VirtualMachineResourceQuantity struct {
 	//
 	// For spec.resources.size, an increase can be applied while the VM is
 	// powered on when memoryAdvanced.hotAddEnabled is already enabled on the
-	// live VM; a decrease always requires power-off.
+	// live VM; a decrease always requires power-off. Note that enabling
+	// memoryAdvanced.hotAddEnabled at the vSphere level is a necessary but
+	// not sufficient condition: the guest OS and its drivers must also
+	// support memory hot-add for the guest to recognize the additional
+	// memory. Not all guest operating systems support this capability.
 	Memory *resource.Quantity `json:"memory,omitempty"`
 }
 
@@ -171,10 +175,9 @@ type VirtualMachineCPUAdvancedSpec struct {
 
 	// IOMMUEnabled enables Intel Virtualization Technology for Directed I/O
 	// (VT-d / IOMMU) for this VM. Required for SR-IOV and PCI passthrough
-	// workloads. Requires EFI firmware (spec.bootOptions.firmware = "efi").
-	// Maps to ConfigSpec.Flags.VvtdEnabled.
-	// Minimum hardware version depends on host CPU vendor:
-	// vmx-14 or later on Intel hosts; vmx-18 or later on AMD hosts.
+	// workloads. Maps to ConfigSpec.Flags.VvtdEnabled.
+	// Minimum hardware version depends on CPU vendor:
+	// vmx-14 or later on Intel CPUs; vmx-18 or later on AMD CPUs.
 	// Requires power-off to apply.
 	IOMMUEnabled *bool `json:"iommuEnabled,omitempty"`
 

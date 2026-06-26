@@ -24,6 +24,10 @@ type computeFieldDef struct {
 	fieldName string
 	// minHWVer is the minimum hardware version required; 0 means no gate.
 	minHWVer vimtypes.HardwareVersion
+	// prerequisite, if non-nil, checks runtime conditions beyond the hardware
+	// version gate (e.g. EFI firmware). Called after differs=true and after
+	// the hwVer gate passes. Returns (true, reason) when blocked.
+	prerequisite func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo) (blocked bool, reason string)
 	// hotPluggable reports whether the field can be changed while powered on.
 	hotPluggable func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo) bool
 	// differs returns true when a write to cs is needed: either the desired
@@ -72,7 +76,7 @@ func computeFields(hwVer vimtypes.HardwareVersion) []computeFieldDef {
 
 // OverwriteSpecComputeConfig applies compute fields from vm.Spec to cs.
 //
-// poweredOn=false (powered-off): applies all hw-compatible fields; blockedPowerOff
+// poweredOn=false (powered-off): applies all compatible fields; blockedPowerOff
 // is always empty since all changes can take effect after a power-off reconfigure.
 //
 // poweredOn=true (powered-on): applies only currently hot-pluggable fields
@@ -80,14 +84,15 @@ func computeFields(hwVer vimtypes.HardwareVersion) []computeFieldDef {
 // differ from liveCI are returned in blockedPowerOff so callers can surface
 // them via the VirtualMachineConditionComputeConfigSynced condition.
 //
-// blockedHW lists fields skipped because the VM's hardware version (derived
-// from liveCI.Version) is below the minimum required (e.g.
-// "cpuAdvanced.hotAddEnabled (requires hwVer >= 11)").
+// blocked lists fields skipped due to unmet prerequisites: hardware version
+// below the minimum required (e.g. "cpuAdvanced.hotAddEnabled (requires
+// hwVer >= 11)"), or a runtime prerequisite not satisfied (e.g. EFI firmware
+// required for IOMMU).
 func OverwriteSpecComputeConfig(
 	vm vmopv1.VirtualMachine,
 	liveCI vimtypes.VirtualMachineConfigInfo,
 	poweredOn bool,
-	cs *vimtypes.VirtualMachineConfigSpec) (blockedHW, blockedPowerOff []string) {
+	cs *vimtypes.VirtualMachineConfigSpec) (blocked, blockedPowerOff []string) {
 
 	hwVer, _ := vimtypes.ParseHardwareVersion(liveCI.Version)
 	for _, f := range computeFields(hwVer) {
@@ -101,9 +106,17 @@ func OverwriteSpecComputeConfig(
 		// vSphere silently ignores fields it cannot apply for the current
 		// hardware version, so we skip writing entirely and surface the block.
 		if f.minHWVer > 0 && hwVer < f.minHWVer {
-			blockedHW = append(blockedHW,
+			blocked = append(blocked,
 				fmt.Sprintf("%s (requires hwVer >= %d)", f.fieldName, f.minHWVer))
 			continue
+		}
+
+		// Runtime prerequisite check (e.g. EFI firmware, vNUMA topology).
+		if f.prerequisite != nil {
+			if prereqBlocked, reason := f.prerequisite(vm, liveCI); prereqBlocked {
+				blocked = append(blocked, fmt.Sprintf("%s (%s)", f.fieldName, reason))
+				continue
+			}
 		}
 
 		if poweredOn && !f.hotPluggable(vm, liveCI) {
@@ -114,7 +127,7 @@ func OverwriteSpecComputeConfig(
 
 		f.apply(vm, liveCI, cs)
 	}
-	return blockedHW, blockedPowerOff
+	return blocked, blockedPowerOff
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,6 +239,21 @@ func memoryAllocationField() computeFieldDef {
 			} else {
 				liveLim = -1
 			}
+			// When the reservation lock is already active, vSphere owns the
+			// reservation value and sets it to the total memory size. Skip the
+			// reservation comparison: if it were included, a subsequent reconcile
+			// where the lock has not changed (not in ConfigSpec) would send a
+			// Reservation-only ConfigSpec that vSphere validates and rejects when
+			// the value does not equal the locked memory size.
+			if ptr.DerefWithDefault(ci.MemoryReservationLockedToMax, false) {
+				if desiredLim != liveLim {
+					return true
+				}
+				if cs.MemoryAllocation == nil {
+					return false
+				}
+				return desiredLim != ptr.DerefWithDefault(cs.MemoryAllocation.Limit, int64(-1))
+			}
 			if desiredRes != liveRes || desiredLim != liveLim {
 				return true
 			}
@@ -236,12 +264,17 @@ func memoryAllocationField() computeFieldDef {
 			csLim := ptr.DerefWithDefault(cs.MemoryAllocation.Limit, int64(-1))
 			return desiredRes != csRes || desiredLim != csLim
 		},
-		apply: func(vm vmopv1.VirtualMachine, _ vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) {
+		apply: func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) {
 			res, lim := desiredMemoryAllocation(vm)
 			if cs.MemoryAllocation == nil {
 				cs.MemoryAllocation = &vimtypes.ResourceAllocationInfo{}
 			}
-			cs.MemoryAllocation.Reservation = ptr.To(res)
+			// When the lock is already active, omit the reservation: vSphere
+			// owns it and any explicit value in a Reservation-only ConfigSpec
+			// is validated (and rejected if != memSize).
+			if !ptr.DerefWithDefault(ci.MemoryReservationLockedToMax, false) {
+				cs.MemoryAllocation.Reservation = ptr.To(res)
+			}
 			cs.MemoryAllocation.Limit = ptr.To(lim)
 		},
 	}
@@ -251,6 +284,28 @@ func latencySensitivityField() computeFieldDef {
 	return computeFieldDef{
 		fieldName:    "cpuAdvanced.latencySensitivity",
 		hotPluggable: alwaysHotPluggable,
+		// Defense-in-depth mirror of the webhook's validateComputeLatencySensitivity.
+		// Prevents applying High/HighWithHyperthreading to vSphere if the spec
+		// bypassed the webhook without the required reservations.
+		prerequisite: func(vm vmopv1.VirtualMachine, _ vimtypes.VirtualMachineConfigInfo) (bool, string) {
+			level, _ := desiredLatencySensitivity(vm)
+			if level != vimtypes.LatencySensitivitySensitivityLevelHigh {
+				return false, ""
+			}
+			if !FullMemReservationSpecMet(&vm) {
+				return true, "full memory reservation required: " +
+					"set spec.memoryAdvanced.reservationLockedToMax=true, " +
+					"or set spec.resources.requests.memory equal to spec.resources.size.memory"
+			}
+			// TODO: verify requests.cpu equals numCPUs × hostCpuMHz (full reservation).
+			// The host CPU MHz is not available in ci; a host property fetch would be
+			// needed. For now, only check that a non-zero reservation is declared.
+			res := vm.Spec.Resources
+			if res == nil || res.Requests == nil || res.Requests.CPU == nil || res.Requests.CPU.IsZero() {
+				return true, "full CPU reservation required: set spec.resources.requests.cpu"
+			}
+			return false, ""
+		},
 		differs: func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) bool {
 			desiredLevel, desiredThreads := desiredLatencySensitivity(vm)
 			var liveLevel vimtypes.LatencySensitivitySensitivityLevel
@@ -330,6 +385,17 @@ func vnumaNodeCountField() computeFieldDef {
 		fieldName:    "cpuAdvanced.topology.vnumaNodeCount",
 		minHWVer:     vimtypes.VMX20,
 		hotPluggable: neverHotPluggable,
+		// Defense-in-depth mirror of the webhook's validateComputeTopology.
+		prerequisite: func(vm vmopv1.VirtualMachine, _ vimtypes.VirtualMachineConfigInfo) (bool, string) {
+			topo := topologySpec(vm)
+			if topo == nil || topo.VNUMANodeCount == nil || *topo.VNUMANodeCount == 0 {
+				return false, ""
+			}
+			if topo.CoresPerSocket == nil || *topo.CoresPerSocket == 0 {
+				return true, "coresPerSocket must be set to an explicit non-zero value when vnumaNodeCount is set"
+			}
+			return false, ""
+		},
 		differs: func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) bool {
 			// Resolve post-reconcile CPU count: cs.NumCPUs is already updated by
 			// cpuSizeField (which runs first) if spec or class changed the CPU count.

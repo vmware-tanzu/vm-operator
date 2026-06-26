@@ -1624,7 +1624,9 @@ spec:
                   sequentially in the order they appear in this list, with delays being
                   cumulative across orders.
 
-                  When powering off, all members are stopped immediately without delays.
+                  When powering off, the boot order groups are processed in reverse order
+                  (last group first), with an optional PowerOffDelay before powering off
+                  each group. Delays are cumulative across groups.
                 items:
                   description: |-
                     VirtualMachineGroupBootOrderGroup describes a boot order group within a
@@ -1660,6 +1662,17 @@ spec:
                       - kind
                       - name
                       x-kubernetes-list-type: map
+                    powerOffDelay:
+                      description: |-
+                        PowerOffDelay is the amount of time to wait before powering off all the
+                        members of this boot order group.
+
+                        When powering off, boot order groups are processed in reverse order
+                        (last group first). Delays are cumulative across groups.
+
+                        If omitted, the members will be powered off immediately when the
+                        group's power state changes to PoweredOff.
+                      type: string
                     powerOnDelay:
                       description: |-
                         PowerOnDelay is the amount of time to wait before powering on all the

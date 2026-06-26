@@ -38,4 +38,5 @@ const (
 	MultiWriterDiskVMotionCapabilityName     = "supports_multiwriter_disk_vmotion"
 	IaaSComputePoliciesCapabilityName        = "supports_iaas_compute_policies"
 	VirtualMachineConfigPolicyCapabilityName = "supports_vm_service_vm_config_policy"
+	TelcoVMServiceAPICapabilityName          = "supports_telco_vm_service_api"
 )

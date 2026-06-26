@@ -196,6 +196,10 @@ const (
 	// VirtualMachineNetworkErrorReason indicates that reconciliation of
 	// VirtualMachineNetworkConfigSynced failed with an unexpected error.
 	VirtualMachineNetworkErrorReason = "Error"
+
+	// VirtualMachineExtraConfigErrorReason indicates that reconciliation of
+	// VirtualMachineExtraConfigSynced failed with an unexpected error.
+	VirtualMachineExtraConfigErrorReason = "ExtraConfigError"
 )
 
 const (

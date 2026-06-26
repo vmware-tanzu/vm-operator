@@ -19,20 +19,13 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	ctxgen "github.com/vmware-tanzu/vm-operator/pkg/context/generic"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	vsphereconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine/extraconfig"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
-)
-
-// Reason constants for VirtualMachineConditionExtraConfigSynced.
-const (
-	ReasonPowerOffRequired  = "PowerOffRequired"
-	ReasonPowerCyclePending = "PowerCyclePending"
-	ReasonError             = "Error"
 )
 
 type contextKeyType uint8
@@ -253,7 +246,7 @@ func (r reconciler) OnResult(
 		conditions.MarkFalse(
 			vm,
 			vmopv1.VirtualMachineExtraConfigSynced,
-			ReasonError,
+			vmopv1.VirtualMachineExtraConfigErrorReason,
 			"%v", resultErr)
 		return nil
 	}
@@ -294,13 +287,13 @@ func (r reconciler) OnResult(
 		conditions.MarkFalse(
 			vm,
 			vmopv1.VirtualMachineExtraConfigSynced,
-			ReasonPowerOffRequired,
+			vmopv1.VirtualMachinePowerOffRequiredReason,
 			"VM power off required to apply: %s", strings.Join(s.Deferred, ", "))
 	case s.PowerCyclePending || powerCycleOnVM:
 		conditions.MarkFalse(
 			vm,
 			vmopv1.VirtualMachineExtraConfigSynced,
-			ReasonPowerCyclePending,
+			vmopv1.VirtualMachinePowerCyclePendingReason,
 			"applied changes take effect on next power cycle")
 	default:
 		conditions.MarkTrue(vm, vmopv1.VirtualMachineExtraConfigSynced)

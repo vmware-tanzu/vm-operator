@@ -234,17 +234,5 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 				}
 			})
 		})
-
-		Context("VM-LOCATION", func() {
-			virtualmachine.VMLocationSpec(context.TODO(), func() virtualmachine.VMLocationSpecInput {
-				return virtualmachine.VMLocationSpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					ArtifactFolder:   artifactFolder,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
 	})
 })

@@ -14,3 +14,5 @@ _output/
 Thumbs.db
 # Git
 .git/
+# E2E test run test logs
+test/e2e/vmservice/test_logs/

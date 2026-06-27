@@ -485,6 +485,58 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+			Entry("should deny PVC volume with unitNumber exceeding maximum for SCSI controller",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(65))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.volumes[0].unitNumber: Invalid value: 65: maximum unit number for SCSI controller is 64",
+					),
+				},
+			),
+			Entry("should deny PVC volume with unitNumber exceeding maximum for NVME controller",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeNVME
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(256))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.volumes[0].unitNumber: Invalid value: 256: maximum unit number for NVME controller is 255",
+					),
+				},
+			),
+			Entry("should deny PVC volume with unitNumber exceeding maximum for IDE controller",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeIDE
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(2))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.volumes[0].unitNumber: Invalid value: 2: maximum unit number for IDE controller is 1",
+					),
+				},
+			),
+			Entry("should deny PVC volume with unitNumber exceeding maximum for SATA controller",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSATA
+						ctx.vm.Spec.Volumes[0].ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].UnitNumber = ptr.To(int32(30))
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.volumes[0].unitNumber: Invalid value: 30: maximum unit number for SATA controller is 29",
+					),
+				},
+			),
 			Entry("should deny PVC volume with controllerBusNumber and unitNumber but no controllerType",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

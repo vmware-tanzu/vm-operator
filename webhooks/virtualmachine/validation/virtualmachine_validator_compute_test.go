@@ -652,6 +652,120 @@ var _ = Describe(
 		})
 
 		// ------------------------------------------------------------------ //
+		// UPTv2 memory reservation cross-field validation
+		// ------------------------------------------------------------------ //
+
+		Context("UPTv2Enabled requires full memory reservation", func() {
+			DescribeTable("uptv2Enabled + memory reservation",
+				doTest,
+				Entry("uptv2Enabled=true without any memory reservation → rejected",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+											UPTv2Enabled: ptr.To(true),
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg(
+							`spec.network.interfaces[0].vmxnet3.uptv2Enabled: Invalid value: true: ` +
+								`requires full guest memory reservation`),
+					},
+				),
+				Entry("uptv2Enabled=true with memoryAdvanced.reservationLockedToMax=true → accepted",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+								ReservationLockedToMax: ptr.To(true),
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+											UPTv2Enabled: ptr.To(true),
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("uptv2Enabled=true with requests.memory == size.memory → accepted",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
+								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+											UPTv2Enabled: ptr.To(true),
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("uptv2Enabled=false without memory reservation → accepted",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+											UPTv2Enabled: ptr.To(false),
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("uptv2Enabled=true on second interface without reservation → rejected",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{Name: "eth0", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+									{
+										Name: "eth1",
+										Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+										VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+											UPTv2Enabled: ptr.To(true),
+										},
+									},
+								},
+							}
+						},
+						expectAllowed: false,
+						validate: doValidateWithMsg(
+							`spec.network.interfaces[1].vmxnet3.uptv2Enabled: Invalid value: true: ` +
+								`requires full guest memory reservation`),
+					},
+				),
+			)
+		})
+
+		// ------------------------------------------------------------------ //
 		// Freeze guard
 		// ------------------------------------------------------------------ //
 

@@ -67,13 +67,13 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 	}
 
 	// vmxnet3WithProps creates a VirtualVmxnet3 with NumaNode and Uptv2Enabled set.
-	vmxnet3WithProps := func(numaNode int32, uptv2Enabled *bool) *vimtypes.VirtualVmxnet3 {
+	vmxnet3WithProps := func(numaNode *int32, uptv2Enabled *bool) *vimtypes.VirtualVmxnet3 {
 		dev := &vimtypes.VirtualVmxnet3{Uptv2Enabled: uptv2Enabled}
 		dev.NumaNode = numaNode
 		return dev
 	}
 
-	sriovDev := func(numaNode int32) *vimtypes.VirtualSriovEthernetCard {
+	sriovDev := func(numaNode *int32) *vimtypes.VirtualSriovEthernetCard {
 		dev := &vimtypes.VirtualSriovEthernetCard{}
 		dev.NumaNode = numaNode
 		return dev
@@ -268,30 +268,30 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 				Expect(vm.Spec.Network.Interfaces[0].VMXNet3).ToNot(BeNil())
 				check(vm.Spec.Network.Interfaces[0].VMXNet3)
 			},
-		Entry("CtxPerDev PerDevice",
-			"ethernet0.ctxPerDev", "1",
-			func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
-				Expect(s.CtxPerDev).ToNot(BeNil())
-				Expect(*s.CtxPerDev).To(Equal(vmopv1.TxContextThreadingModePerDevice))
-			}),
+			Entry("CtxPerDev PerDevice",
+				"ethernet0.ctxPerDev", "1",
+				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
+					Expect(s.CtxPerDev).ToNot(BeNil())
+					Expect(*s.CtxPerDev).To(Equal(vmopv1.TxContextThreadingModePerDevice))
+				}),
 			Entry("RSSOffloadEnabled TRUE",
 				"ethernet0.rssoffload", "TRUE",
 				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
 					Expect(s.RSSOffloadEnabled).ToNot(BeNil())
 					Expect(*s.RSSOffloadEnabled).To(BeTrue())
 				}),
-		Entry("UDPRSSEnabled 2 (disabled)",
-			"ethernet0.udpRSS", "2",
-			func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
-				Expect(s.UDPRSSEnabled).ToNot(BeNil())
-				Expect(*s.UDPRSSEnabled).To(Equal(vmopv1.UDPRSSModeDisabled))
-			}),
-		Entry("UDPRSSEnabled 1 (enabled)",
-			"ethernet0.udpRSS", "1",
-			func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
-				Expect(s.UDPRSSEnabled).ToNot(BeNil())
-				Expect(*s.UDPRSSEnabled).To(Equal(vmopv1.UDPRSSModeEnabled))
-			}),
+			Entry("UDPRSSEnabled 2 (disabled)",
+				"ethernet0.udpRSS", "2",
+				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
+					Expect(s.UDPRSSEnabled).ToNot(BeNil())
+					Expect(*s.UDPRSSEnabled).To(Equal(vmopv1.UDPRSSModeDisabled))
+				}),
+			Entry("UDPRSSEnabled 1 (enabled)",
+				"ethernet0.udpRSS", "1",
+				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
+					Expect(s.UDPRSSEnabled).ToNot(BeNil())
+					Expect(*s.UDPRSSEnabled).To(Equal(vmopv1.UDPRSSModeEnabled))
+				}),
 			Entry("CoalescingScheme Disabled",
 				"ethernet0.coalescingScheme", "Disabled",
 				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
@@ -304,14 +304,14 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 					Expect(s.CoalescingParams).ToNot(BeNil())
 					Expect(*s.CoalescingParams).To(Equal("4000"))
 				}),
-		Entry("PNICFeatures bitmask 3 → LRO+bit1",
-			"ethernet0.pnicfeatures", "3",
-			func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
-				Expect(s.PNICFeatures).To(ConsistOf(
-					vmopv1.PNICQueueFeatureLargeReceiveOffload,
-					vmopv1.PNICQueueFeature("2"),
-				))
-			}),
+			Entry("PNICFeatures bitmask 3 → LRO+bit1",
+				"ethernet0.pnicfeatures", "3",
+				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
+					Expect(s.PNICFeatures).To(ConsistOf(
+						vmopv1.PNICQueueFeatureLargeReceiveOffload,
+						vmopv1.PNICQueueFeature("2"),
+					))
+				}),
 		)
 
 		DescribeTable("auto/default/dontcare sentinels leave spec field nil and report no mutation",
@@ -326,12 +326,12 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 				// VMXNet3 must stay nil — no empty struct created.
 				Expect(vm.Spec.Network.Interfaces[0].VMXNet3).To(BeNil())
 			},
-			Entry("RSSOffloadEnabled auto",     "ethernet0.rssoffload", "auto"),
-			Entry("RSSOffloadEnabled AUTO",     "ethernet0.rssoffload", "AUTO"),
-			Entry("RSSOffloadEnabled DEFAULT",  "ethernet0.rssoffload", "DEFAULT"),
+			Entry("RSSOffloadEnabled auto", "ethernet0.rssoffload", "auto"),
+			Entry("RSSOffloadEnabled AUTO", "ethernet0.rssoffload", "AUTO"),
+			Entry("RSSOffloadEnabled DEFAULT", "ethernet0.rssoffload", "DEFAULT"),
 			Entry("RSSOffloadEnabled dontcare", "ethernet0.rssoffload", "dontcare"),
-			Entry("UDPRSSEnabled auto",         "ethernet0.udpRSS",     "auto"),
-			Entry("UDPRSSEnabled DEFAULT",      "ethernet0.udpRSS",     "DEFAULT"),
+			Entry("UDPRSSEnabled auto", "ethernet0.udpRSS", "auto"),
+			Entry("UDPRSSEnabled DEFAULT", "ethernet0.udpRSS", "DEFAULT"),
 		)
 
 		When("all vmx-tagged NIC keys carry auto sentinels", func() {
@@ -339,7 +339,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 				moVM = moVMWithNICsAndExtraConfig(
 					[]vimtypes.BaseVirtualDevice{vmxnet3Dev(4000)},
 					ov("ethernet0.rssoffload", "auto"),
-					ov("ethernet0.udpRSS",     "DEFAULT"),
+					ov("ethernet0.udpRSS", "DEFAULT"),
 				)
 			})
 
@@ -362,10 +362,10 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 				Expect(vm.Spec.Network.Interfaces[0].VMXNet3.RSSOffloadEnabled).ToNot(BeNil())
 				Expect(*vm.Spec.Network.Interfaces[0].VMXNet3.RSSOffloadEnabled).To(Equal(wantTrue))
 			},
-			Entry("yes → true",  "ethernet0.rssoffload", "yes",  true),
-			Entry("no → false",  "ethernet0.rssoffload", "no",   false),
-			Entry("on → true",   "ethernet0.rssoffload", "on",   true),
-			Entry("off → false", "ethernet0.rssoffload", "off",  false),
+			Entry("yes → true", "ethernet0.rssoffload", "yes", true),
+			Entry("no → false", "ethernet0.rssoffload", "no", false),
+			Entry("on → true", "ethernet0.rssoffload", "on", true),
+			Entry("off → false", "ethernet0.rssoffload", "off", false),
 		)
 
 		DescribeTable("vSphere-managed keys are silently dropped",
@@ -521,7 +521,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 	Context("VNUMANodeID from VirtualDevice.NumaNode", func() {
 		When("NumaNode is positive", func() {
 			BeforeEach(func() {
-				moVM = moVMWithEthernet(vmxnet3WithProps(2, nil))
+				moVM = moVMWithEthernet(vmxnet3WithProps(ptr.To(int32(2)), nil))
 			})
 
 			It("backfills VNUMANodeID", func() {
@@ -532,9 +532,22 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 			})
 		})
 
-		When("NumaNode is zero (indistinguishable from not-set)", func() {
+		When("NumaNode is zero (NUMA node 0 is a valid assignment)", func() {
 			BeforeEach(func() {
-				moVM = moVMWithEthernet(vmxnet3WithProps(0, nil))
+				moVM = moVMWithEthernet(vmxnet3WithProps(ptr.To(int32(0)), nil))
+			})
+
+			It("backfills VNUMANodeID with node 0", func() {
+				mutated := backfill.NICConfigFromMoVM(ctx, vm, moVM)
+				Expect(mutated).To(BeTrue())
+				Expect(vm.Spec.Network.Interfaces[0].VNUMANodeID).ToNot(BeNil())
+				Expect(*vm.Spec.Network.Interfaces[0].VNUMANodeID).To(Equal(int32(0)))
+			})
+		})
+
+		When("NumaNode is nil (unset or cleared)", func() {
+			BeforeEach(func() {
+				moVM = moVMWithEthernet(vmxnet3WithProps(nil, nil))
 			})
 
 			It("does not backfill VNUMANodeID", func() {
@@ -546,7 +559,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 
 		When("NumaNode is negative (explicitly no affinity)", func() {
 			BeforeEach(func() {
-				moVM = moVMWithEthernet(vmxnet3WithProps(-1, nil))
+				moVM = moVMWithEthernet(vmxnet3WithProps(ptr.To(int32(-1)), nil))
 			})
 
 			It("does not backfill VNUMANodeID", func() {
@@ -559,7 +572,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 		When("VNUMANodeID already set — spec wins", func() {
 			BeforeEach(func() {
 				vm.Spec.Network.Interfaces[0].VNUMANodeID = ptr.To(int32(5))
-				moVM = moVMWithEthernet(vmxnet3WithProps(7, nil))
+				moVM = moVMWithEthernet(vmxnet3WithProps(ptr.To(int32(7)), nil))
 			})
 
 			It("does not overwrite existing value", func() {
@@ -572,7 +585,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 		When("NIC is SRIOV — VNUMANodeID still backfilled (on VirtualDevice base)", func() {
 			BeforeEach(func() {
 				vm.Spec.Network.Interfaces[0].Type = vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV
-				moVM = moVMWithEthernet(sriovDev(3))
+				moVM = moVMWithEthernet(sriovDev(ptr.To(int32(3))))
 			})
 
 			It("backfills VNUMANodeID regardless of NIC type", func() {
@@ -591,7 +604,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 	Context("UPTv2Enabled from VirtualVmxnet3.Uptv2Enabled", func() {
 		When("Uptv2Enabled is true", func() {
 			BeforeEach(func() {
-				moVM = moVMWithEthernet(vmxnet3WithProps(0, ptr.To(true)))
+				moVM = moVMWithEthernet(vmxnet3WithProps(nil, ptr.To(true)))
 			})
 
 			It("backfills vmxnet3.UPTv2Enabled = true", func() {
@@ -605,7 +618,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 
 		When("Uptv2Enabled is false", func() {
 			BeforeEach(func() {
-				moVM = moVMWithEthernet(vmxnet3WithProps(0, ptr.To(false)))
+				moVM = moVMWithEthernet(vmxnet3WithProps(nil, ptr.To(false)))
 			})
 
 			It("backfills vmxnet3.UPTv2Enabled = false", func() {
@@ -619,7 +632,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 
 		When("Uptv2Enabled is nil on device", func() {
 			BeforeEach(func() {
-				moVM = moVMWithEthernet(vmxnet3WithProps(0, nil))
+				moVM = moVMWithEthernet(vmxnet3WithProps(nil, nil))
 			})
 
 			It("does not mutate", func() {
@@ -635,7 +648,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 					&vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
 						UPTv2Enabled: ptr.To(false),
 					}
-				moVM = moVMWithEthernet(vmxnet3WithProps(0, ptr.To(true)))
+				moVM = moVMWithEthernet(vmxnet3WithProps(nil, ptr.To(true)))
 			})
 
 			It("does not overwrite existing value", func() {
@@ -648,7 +661,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 		When("NIC type is SRIOV — UPTv2Enabled skipped", func() {
 			BeforeEach(func() {
 				vm.Spec.Network.Interfaces[0].Type = vmopv1.VirtualMachineNetworkInterfaceTypeSRIOV
-				moVM = moVMWithEthernet(vmxnet3WithProps(0, ptr.To(true)))
+				moVM = moVMWithEthernet(vmxnet3WithProps(nil, ptr.To(true)))
 			})
 
 			It("does not backfill UPTv2Enabled for SRIOV interface", func() {
@@ -674,10 +687,10 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 
 		It("aligns device[0]→interfaces[0], device[1]→interfaces[1], etc.", func() {
 			moVM = moVMWithEthernet(
-				vmxnet3WithProps(1, ptr.To(true)),  // interfaces[0]
-				sriovDev(2),                        // interfaces[1] — only VNUMANodeID
-				vmxnet3WithProps(3, ptr.To(false)), // interfaces[2]
-				vmxnet3WithProps(4, ptr.To(true)),  // no spec interface → ignored
+				vmxnet3WithProps(ptr.To(int32(1)), ptr.To(true)),  // interfaces[0]
+				sriovDev(ptr.To(int32(2))),                        // interfaces[1] — only VNUMANodeID
+				vmxnet3WithProps(ptr.To(int32(3)), ptr.To(false)), // interfaces[2]
+				vmxnet3WithProps(ptr.To(int32(4)), ptr.To(true)),  // no spec interface → ignored
 			)
 
 			mutated := backfill.NICConfigFromMoVM(ctx, vm, moVM)
@@ -701,7 +714,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 		})
 
 		It("extra spec interfaces beyond device count: Type preserved if set, no device properties", func() {
-			moVM = moVMWithEthernet(vmxnet3WithProps(1, ptr.To(true))) // 1 device, 3 spec ifaces
+			moVM = moVMWithEthernet(vmxnet3WithProps(ptr.To(int32(1)), ptr.To(true))) // 1 device, 3 spec ifaces
 
 			mutated := backfill.NICConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeTrue())

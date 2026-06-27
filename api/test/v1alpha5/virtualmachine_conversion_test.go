@@ -480,6 +480,27 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "status.network.interfaces[].vnumaNodeID and vmxnet3",
+				hub: &vmopv1.VirtualMachine{
+					Status: vmopv1.VirtualMachineStatus{
+						Network: &vmopv1.VirtualMachineNetworkStatus{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceStatus{
+								{
+									Name:        "eth0",
+									VNUMANodeID: ptr.To(int32(2)),
+									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
+										UPTv2Enabled:             ptr.To(true),
+										UPTv2Active:              ptr.To(false),
+										UPTv2InactiveReasonVM:    []string{"vm-reason"},
+										UPTv2InactiveReasonOther: []string{"other-reason"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		}
 
 		for i := range testCases {
@@ -539,5 +560,31 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(*iface.DHCP4).To(BeTrue(), "DHCP4 must be *true after spoke override")
 		g.Expect(iface.DHCP6).NotTo(BeNil(), "DHCP6 must not be nil")
 		g.Expect(*iface.DHCP6).To(BeTrue(), "DHCP6 must be *true after spoke override")
+	})
+
+	t.Run("status.network.interfaces[].vnumaNodeID and vmxnet3 dropped on spoke", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := &vmopv1.VirtualMachine{
+			Status: vmopv1.VirtualMachineStatus{
+				Network: &vmopv1.VirtualMachineNetworkStatus{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceStatus{
+						{
+							Name:        "eth0",
+							VNUMANodeID: ptr.To(int32(2)),
+							VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
+								UPTv2Active:              ptr.To(false),
+								UPTv2InactiveReasonVM:    []string{"vm-reason"},
+								UPTv2InactiveReasonOther: []string{"other-reason"},
+							},
+						},
+					},
+				},
+			},
+		}
+		spoke := &vmopv1a5.VirtualMachine{}
+		g.Expect(spoke.ConvertFrom(hub)).To(Succeed())
+		g.Expect(spoke.Status.Network).NotTo(BeNil())
+		g.Expect(spoke.Status.Network.Interfaces).To(HaveLen(1))
+		g.Expect(spoke.Status.Network.Interfaces[0].Name).To(Equal("eth0"))
 	})
 }

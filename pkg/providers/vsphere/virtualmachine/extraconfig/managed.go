@@ -18,10 +18,23 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
-// LoadManagedKeys parses the comma-separated managed-keys entry from the
-// observed ExtraConfig. Returns an empty slice if the key is absent or empty.
-func LoadManagedKeys(observed pkgutil.OptionValues) []string {
-	raw, ok := observed.GetString(vsphereconst.ExtraConfigManagedKeysKey)
+// LoadVMManagedKeys parses the comma-separated managed-keys entry from the
+// observed VM-level ExtraConfig. Returns nil if the key is absent or empty.
+func LoadVMManagedKeys(observed pkgutil.OptionValues) []string {
+	return loadManagedKeys(observed, vsphereconst.ExtraConfigManagedKeysKey)
+}
+
+// LoadDeviceManagedKeys parses the managed-keys entry from observed ExtraConfig
+// for the given managedKeysKey (e.g. fmt.Sprintf(NICExtraConfigManagedKeysKeyFmt, idx)).
+// Returns nil if the entry is absent or empty.
+func LoadDeviceManagedKeys(observed pkgutil.OptionValues, managedKeysKey string) []string {
+	return loadManagedKeys(observed, managedKeysKey)
+}
+
+// loadManagedKeys parses a comma-separated list of bare key names from the
+// ExtraConfig entry at key. Returns nil if the entry is absent or empty.
+func loadManagedKeys(observed pkgutil.OptionValues, key string) []string {
+	raw, ok := observed.GetString(key)
 	if !ok || raw == "" {
 		return nil
 	}
@@ -48,14 +61,48 @@ func SemanticDiff(
 	observed pkgutil.OptionValues,
 	merged pkgutil.OptionValues,
 ) pkgutil.OptionValues {
+	return semanticDiff[vmopv1.VirtualMachineAdvancedSpec](
+		ctx, observed, merged, vmopv1util.AdvancedVMXKeyMap(),
+		func(k string) string { return k })
+}
+
+// VMXNet3SemanticDiff filters assembled VMXNet3 NIC ExtraConfig entries before
+// submission, dropping entries semantically identical to what the VM already has.
+//
+// keyMap must contain template-form VMX keys (e.g. "ethernet%d.ctxPerDev"),
+// as returned by VMXNet3NICKeyMap(). Live keys in merged (e.g.
+// "ethernet0.ctxPerDev") are normalized to their template form before lookup.
+// Keys absent from keyMap are treated as non-first-class (plain string
+// comparison).
+func VMXNet3SemanticDiff(
+	ctx context.Context,
+	observed pkgutil.OptionValues,
+	merged pkgutil.OptionValues,
+	keyMap map[string]int,
+) pkgutil.OptionValues {
+	return semanticDiff[vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec](
+		ctx, observed, merged, keyMap, vmopv1util.NormalizeEthernetDeviceKey)
+}
+
+// semanticDiff is the generic implementation shared by SemanticDiff and
+// VMXNet3SemanticDiff. T is the spec struct type whose fields are used for semantic
+// comparison of first-class keys. keyMap maps VMX key strings to field indices
+// in T. keyFromLive maps a live ExtraConfig key to the form used as map keys
+// (identity for VM-level fields; NormalizeEthernetDeviceKey for NIC fields).
+func semanticDiff[T any](
+	ctx context.Context,
+	observed pkgutil.OptionValues,
+	merged pkgutil.OptionValues,
+	keyMap map[string]int,
+	keyFromLive func(string) string,
+) pkgutil.OptionValues {
 
 	if len(merged) == 0 {
 		return nil
 	}
 
 	log := pkglog.FromContextOrDefault(ctx)
-	advType := reflect.TypeOf(vmopv1.VirtualMachineAdvancedSpec{})
-	keyMap := vmopv1util.AdvancedVMXKeyMap()
+	structType := reflect.TypeOf(*new(T))
 
 	var out pkgutil.OptionValues
 	for _, entry := range merged {
@@ -64,7 +111,7 @@ func SemanticDiff(
 			continue
 		}
 
-		fieldIdx, isFirstClass := keyMap[kv.Key]
+		fieldIdx, isFirstClass := keyMap[keyFromLive(kv.Key)]
 		if !isFirstClass {
 			// Non-first-class key: plain string comparison.
 			observedStr, isObserved := observed.GetString(kv.Key)
@@ -76,7 +123,7 @@ func SemanticDiff(
 		}
 
 		// First-class key: decode both sides to Go types and compare semantically.
-		fieldType := advType.Field(fieldIdx).Type
+		fieldType := structType.Field(fieldIdx).Type
 		desiredStr, _ := kv.Value.(string)
 		observedStr, isObserved := observed.GetString(kv.Key)
 

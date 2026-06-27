@@ -16,6 +16,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -1837,6 +1838,113 @@ var _ = Describe("IsFSRSupported", func() {
 				},
 			}
 			Expect(vmopv1util.IsFSRSupported(vm)).To(BeTrue())
+		})
+	})
+})
+
+var _ = Describe("GetVNUMANodeCount", func() {
+	var vm *vmopv1.VirtualMachine
+
+	BeforeEach(func() {
+		vm = &vmopv1.VirtualMachine{}
+	})
+
+	When("CPUAdvanced is nil", func() {
+		It("returns 0", func() {
+			// vm.Spec.CPUAdvanced defaults to nil
+			Expect(vmopv1util.GetVNUMANodeCount(vm)).To(Equal(int32(0)))
+		})
+	})
+
+	When("CPUAdvanced.Topology is nil", func() {
+		It("returns 0", func() {
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{}
+			Expect(vmopv1util.GetVNUMANodeCount(vm)).To(Equal(int32(0)))
+		})
+	})
+
+	When("VNUMANodeCount is nil", func() {
+		It("returns 0", func() {
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{},
+			}
+			Expect(vmopv1util.GetVNUMANodeCount(vm)).To(Equal(int32(0)))
+		})
+	})
+
+	When("VNUMANodeCount is set", func() {
+		It("returns the value", func() {
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+					VNUMANodeCount: ptr.To(int32(4)),
+				},
+			}
+			Expect(vmopv1util.GetVNUMANodeCount(vm)).To(Equal(int32(4)))
+		})
+	})
+})
+
+var _ = Describe("FullMemReservationSpecMet", func() {
+	var vm *vmopv1.VirtualMachine
+
+	BeforeEach(func() {
+		vm = &vmopv1.VirtualMachine{}
+	})
+
+	When("neither field is set", func() {
+		It("returns false", func() {
+			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeFalse())
+		})
+	})
+
+	When("memoryAdvanced.reservationLockedToMax is true", func() {
+		It("returns true", func() {
+			vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+				ReservationLockedToMax: ptr.To(true),
+			}
+			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeTrue())
+		})
+	})
+
+	When("memoryAdvanced.reservationLockedToMax is false", func() {
+		It("returns false", func() {
+			vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+				ReservationLockedToMax: ptr.To(false),
+			}
+			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeFalse())
+		})
+	})
+
+	When("resources.requests.memory equals resources.size.memory", func() {
+		It("returns true", func() {
+			mem := resource.MustParse("4Gi")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &mem},
+				Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: &mem},
+			}
+			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeTrue())
+		})
+	})
+
+	When("resources.requests.memory is less than resources.size.memory", func() {
+		It("returns false", func() {
+			req := resource.MustParse("2Gi")
+			size := resource.MustParse("4Gi")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &req},
+				Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: &size},
+			}
+			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeFalse())
+		})
+	})
+
+	When("resources.requests.memory is set but size.memory is nil", func() {
+		It("returns false", func() {
+			mem := resource.MustParse("4Gi")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &mem},
+			}
+			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeFalse())
 		})
 	})
 })

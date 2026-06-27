@@ -28,6 +28,14 @@ func Convert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(
 	return autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(in, out, s)
 }
 
+// Convert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha5_VirtualMachineNetworkInterfaceStatus drops
+// fields that do not exist in v1alpha5 (VNUMANodeID, VMXNet3).
+func Convert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha5_VirtualMachineNetworkInterfaceStatus(
+	in *vmopv1.VirtualMachineNetworkInterfaceStatus, out *VirtualMachineNetworkInterfaceStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha5_VirtualMachineNetworkInterfaceStatus(in, out, s)
+}
+
 // Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec drops
 // fields that do not exist in v1alpha5; they are preserved via MarshalData on ConvertFrom.
 func Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(

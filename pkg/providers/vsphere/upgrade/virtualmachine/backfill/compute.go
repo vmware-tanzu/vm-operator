@@ -188,7 +188,13 @@ func backfillCPUTopology(
 
 	mutated := false
 
-	if ci.Hardware.NumCoresPerSocket != nil && *ci.Hardware.NumCoresPerSocket > 0 {
+	// Backfill an explicitly-set coresPerSocket value when not in auto mode.
+	// Skip when AutoCoresPerSocket is true (vSphere is auto-managing socket size;
+	// pinning the auto-computed value would prevent future auto-layout changes).
+	// vSphere never returns 0 in the live config, so > 0 captures all settings
+	// including 1 (one core per socket is a valid explicit topology on any HW).
+	if (ci.Hardware.AutoCoresPerSocket == nil || !*ci.Hardware.AutoCoresPerSocket) &&
+		ci.Hardware.NumCoresPerSocket != nil && *ci.Hardware.NumCoresPerSocket > 0 {
 		if vm.Spec.CPUAdvanced == nil ||
 			vm.Spec.CPUAdvanced.Topology == nil ||
 			vm.Spec.CPUAdvanced.Topology.CoresPerSocket == nil {
@@ -220,16 +226,6 @@ func backfillCPUTopology(
 			}
 		}
 
-		if n.VnumaOnCpuHotaddExposed != nil && *n.VnumaOnCpuHotaddExposed {
-			if vm.Spec.CPUAdvanced == nil ||
-				vm.Spec.CPUAdvanced.Topology == nil ||
-				vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd == nil {
-
-				initTopology(vm)
-				vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd = ptr.To(true)
-				mutated = true
-			}
-		}
 	}
 
 	return mutated

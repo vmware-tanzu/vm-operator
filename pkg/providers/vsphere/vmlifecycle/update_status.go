@@ -39,6 +39,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
@@ -74,6 +75,10 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusZone(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusController(vmCtx, k8sClient, vcVM, data)...)
+
+	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		errs = append(errs, reconcileComputeConfigSynced(vmCtx, k8sClient, vcVM, data)...)
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
 		errs = append(errs, reconcileHardwareCondition(vmCtx, k8sClient, vcVM, data)...)
@@ -202,52 +207,90 @@ func reconcileStatusHardware(
 		return nil
 	}
 
-	var (
-		cpuTotal       = config.Hardware.NumCPU
-		cpuReservation int64
-	)
-	if a := config.CpuAllocation; a != nil {
-		if a.Reservation != nil && *a.Reservation > 0 {
-			cpuReservation = *a.Reservation
-		}
-	}
-	if cpuTotal > 0 || cpuReservation > 0 {
+	// ── CPU status ──────────────────────────────────────────────────────────
+
+	if cpuTotal := config.Hardware.NumCPU; cpuTotal > 0 {
 		if vmCtx.VM.Status.Hardware == nil {
 			vmCtx.VM.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 		}
 
-		vmCtx.VM.Status.Hardware.CPU = &vmopv1.VirtualMachineCPUAllocationStatus{
-			Total:       cpuTotal,
-			Reservation: cpuReservation,
+		cpuStatus := &vmopv1.VirtualMachineCPUAllocationStatus{
+			Total: cpuTotal,
 		}
+
+		if a := config.CpuAllocation; a != nil {
+			if res := a.Reservation; res != nil && *res > 0 {
+				cpuStatus.Reservation = *res
+			}
+		}
+
+		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+			if a := config.CpuAllocation; a != nil {
+				// Nil or -1 Limit means unlimited in vSphere; only surface explicit positive limits.
+				if lim := a.Limit; lim != nil && *lim >= 0 {
+					cpuStatus.Limit = lim
+				}
+			}
+
+			if cps := config.Hardware.NumCoresPerSocket; cps != nil {
+				cpuStatus.CoresPerSocket = cps
+			}
+
+			if st := config.Hardware.SimultaneousThreads; st > 0 {
+				cpuStatus.SimultaneousThreads = ptr.To(st)
+			}
+
+			if ls := config.LatencySensitivity; ls != nil {
+				cpuStatus.LatencySensitivity = string(ls.Level)
+			}
+
+			cpuStatus.HotAddEnabled = config.CpuHotAddEnabled
+			cpuStatus.IOMMUEnabled = config.Flags.VvtdEnabled
+			cpuStatus.NestedHardwareVirtualizationEnabled = config.NestedHVEnabled
+			cpuStatus.PerformanceCountersEnabled = config.VPMCEnabled
+
+			if n := config.NumaInfo; n != nil {
+				cpuStatus.VNUMA = &vmopv1.VirtualMachineVNUMATopologyStatus{
+					CoresPerNumaNode:     n.CoresPerNumaNode,
+					AutoCoresPerNumaNode: n.AutoCoresPerNumaNode,
+				}
+			}
+		}
+
+		vmCtx.VM.Status.Hardware.CPU = cpuStatus
 	}
 
-	var (
-		memTotal       = int64(config.Hardware.MemoryMB)
-		memReservation int64
-	)
-	if a := config.MemoryAllocation; a != nil {
-		if a.Reservation != nil && *a.Reservation > 0 {
-			memReservation = *a.Reservation
-		}
-	}
-	if memTotal > 0 || memReservation > 0 {
+	// ── Memory status ────────────────────────────────────────────────────────
+
+	if memTotal := int64(config.Hardware.MemoryMB); memTotal > 0 {
 		if vmCtx.VM.Status.Hardware == nil {
 			vmCtx.VM.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 		}
 
-		vmCtx.VM.Status.Hardware.Memory = &vmopv1.VirtualMachineMemoryAllocationStatus{}
+		memStatus := &vmopv1.VirtualMachineMemoryAllocationStatus{}
 
-		if r := memTotal; r > 0 {
-			b := r * 1000 * 1000
-			q := kubeutil.BytesToResource(b)
-			vmCtx.VM.Status.Hardware.Memory.Total = q
+		b := memTotal * 1000 * 1000
+		memStatus.Total = kubeutil.BytesToResource(b)
+
+		if a := config.MemoryAllocation; a != nil {
+			if res := a.Reservation; res != nil && *res > 0 {
+				memStatus.Reservation = kubeutil.BytesToResource(*res * 1000 * 1000)
+			}
 		}
-		if r := memReservation; r > 0 {
-			b := r * 1000 * 1000
-			q := kubeutil.BytesToResource(b)
-			vmCtx.VM.Status.Hardware.Memory.Reservation = q
+
+		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+			if a := config.MemoryAllocation; a != nil {
+				// Nil or -1 Limit means unlimited in vSphere; only surface explicit positive limits.
+				if lim := a.Limit; lim != nil && *lim >= 0 {
+					memStatus.Limit = kubeutil.BytesToResource(*lim * 1000 * 1000)
+				}
+			}
+
+			memStatus.ReservationLockedToMax = config.MemoryReservationLockedToMax
+			memStatus.HotAddEnabled = config.MemoryHotAddEnabled
 		}
+
+		vmCtx.VM.Status.Hardware.Memory = memStatus
 	}
 
 	if vmCtx.VM.Status.Hardware != nil {
@@ -298,6 +341,51 @@ func reconcileStatusHardware(
 
 	}
 
+	return nil
+}
+
+// reconcileComputeConfigSynced sets VirtualMachineConditionComputeConfigSynced by
+// running OverwriteSpecComputeConfig as a dry-run against the live vSphere config.
+// This follows the same observational pattern as all other status conditions: the
+// condition reflects whether the spec is fully synced to the live VM state and is
+// refreshed on every reconcile loop regardless of whether a reconfigure was needed.
+func reconcileComputeConfigSynced(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	if vmCtx.MoVM.Config == nil {
+		return nil
+	}
+
+	poweredOn := vmCtx.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOn
+	var dryRunCS vimtypes.VirtualMachineConfigSpec
+	blocked, blockedPowerOff := vmopv1util.OverwriteSpecComputeConfig(
+		*vmCtx.VM, *vmCtx.MoVM.Config, poweredOn, &dryRunCS)
+
+	switch {
+	case len(blocked) > 0:
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1.VirtualMachineConditionComputeConfigSynced,
+			vmopv1.VirtualMachinePrerequisiteNotMetReason,
+			"Prerequisites not met: %s",
+			strings.Join(blocked, "; "))
+	case len(blockedPowerOff) > 0:
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1.VirtualMachineConditionComputeConfigSynced,
+			vmopv1.VirtualMachinePowerOffRequiredReason,
+			"VM power off required to apply: %s",
+			strings.Join(blockedPowerOff, ", "))
+	case !reflect.DeepEqual(dryRunCS, vimtypes.VirtualMachineConfigSpec{}):
+		// Spec compute fields differ from live vSphere state.
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1.VirtualMachineConditionComputeConfigSynced,
+			vmopv1.VirtualMachineComputeConfigMismatchReason,
+			"Spec compute fields differ from the live vSphere configuration")
+	default:
+		conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionComputeConfigSynced)
+	}
 	return nil
 }
 

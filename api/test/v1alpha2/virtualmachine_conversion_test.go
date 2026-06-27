@@ -1213,42 +1213,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 				CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
 					LatencySensitivity: ptrOf(vmopv1.VirtualMachineLatencySensitivityHigh),
 					Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-						CoresPerSocket:               ptrOf(int32(4)),
-						NUMAFixedAutoAffinityEnabled: ptrOf(true),
-						VNUMANodeCount:               ptrOf(int32(8)),
-						ExposeVNUMAOnCPUHotAdd:       ptrOf(true),
+						CoresPerSocket: ptrOf(int32(4)),
+						VNUMANodeCount: ptrOf(int32(8)),
 					},
 					HotAddEnabled:                       ptrOf(false),
 					IOMMUEnabled:                        ptrOf(true),
 					NestedHardwareVirtualizationEnabled: ptrOf(true),
 					PerformanceCountersEnabled:          ptrOf(true),
-					ReservationLockedToMax:              ptrOf(true),
-				},
-			},
-		}
-		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
-	})
-
-	t.Run("spec.cpuAdvanced.topology.numaFixedAutoAffinityEnabled", func(t *testing.T) {
-		g := NewWithT(t)
-		hub := vmopv1.VirtualMachine{
-			Spec: vmopv1.VirtualMachineSpec{
-				CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-					Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-						NUMAFixedAutoAffinityEnabled: ptrOf(true),
-					},
-				},
-			},
-		}
-		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
-	})
-
-	t.Run("spec.cpuAdvanced.reservationLockedToMax", func(t *testing.T) {
-		g := NewWithT(t)
-		hub := vmopv1.VirtualMachine{
-			Spec: vmopv1.VirtualMachineSpec{
-				CPUAdvanced: &vmopv1.VirtualMachineCPUAdvancedSpec{
-					ReservationLockedToMax: ptrOf(true),
 				},
 			},
 		}

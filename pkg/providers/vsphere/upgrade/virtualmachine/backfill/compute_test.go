@@ -345,7 +345,8 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 	Context("Group D — spec.cpuAdvanced.topology", func() {
 
 		DescribeTable("coresPerSocket backfill from Hardware.NumCoresPerSocket",
-			func(numCoresPerSocket *int32, expectCPS *int32) {
+			func(autoCoresPerSocket *bool, numCoresPerSocket *int32, expectCPS *int32) {
+				moVM.Config.Hardware.AutoCoresPerSocket = autoCoresPerSocket
 				moVM.Config.Hardware.NumCoresPerSocket = numCoresPerSocket
 				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectCPS == nil {
@@ -361,10 +362,20 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 					Expect(mutated).To(BeTrue())
 				}
 			},
-			Entry("NumCoresPerSocket=4 → coresPerSocket=4", ptr.To(int32(4)), ptr.To(int32(4))),
-			Entry("NumCoresPerSocket=1 → coresPerSocket=1", ptr.To(int32(1)), ptr.To(int32(1))),
-			Entry("NumCoresPerSocket=0 → no backfill", ptr.To(int32(0)), nil),
-			Entry("NumCoresPerSocket=nil → no backfill", nil, nil),
+			Entry("auto=nil, NumCoresPerSocket=4 → coresPerSocket=4",
+				nil, ptr.To(int32(4)), ptr.To(int32(4))),
+			Entry("auto=false, NumCoresPerSocket=4 → coresPerSocket=4",
+				ptr.To(false), ptr.To(int32(4)), ptr.To(int32(4))),
+			// auto=true means vSphere manages socket size; don't pin the auto-computed value.
+			Entry("auto=true, NumCoresPerSocket=4 → no backfill (auto-managed)",
+				ptr.To(true), ptr.To(int32(4)), nil),
+			// NumCoresPerSocket=1 is a valid explicit topology (one core per socket).
+			Entry("auto=false, NumCoresPerSocket=1 → coresPerSocket=1",
+				ptr.To(false), ptr.To(int32(1)), ptr.To(int32(1))),
+			Entry("auto=nil, NumCoresPerSocket=0 → no backfill",
+				nil, ptr.To(int32(0)), nil),
+			Entry("auto=nil, NumCoresPerSocket=nil → no backfill",
+				nil, nil, nil),
 		)
 
 		DescribeTable("vnumaNodeCount derived from NumaInfo.CoresPerNumaNode",
@@ -399,33 +410,6 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 				int32(8), nil, ptr.To(int32(0)), nil),
 			Entry("NumCPU=0 → no backfill",
 				int32(0), nil, ptr.To(int32(2)), nil),
-		)
-
-		DescribeTable("exposeVnumaOnCpuHotadd backfill from NumaInfo.VnumaOnCpuHotaddExposed",
-			func(exposed *bool, expectExposed *bool) {
-				moVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
-					VnumaOnCpuHotaddExposed: exposed,
-				}
-				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-				if expectExposed == nil {
-					if vm.Spec.CPUAdvanced != nil && vm.Spec.CPUAdvanced.Topology != nil {
-						Expect(vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd).To(BeNil())
-					}
-					Expect(mutated).To(BeFalse())
-				} else {
-					Expect(vm.Spec.CPUAdvanced).ToNot(BeNil())
-					Expect(vm.Spec.CPUAdvanced.Topology).ToNot(BeNil())
-					Expect(vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd).ToNot(BeNil())
-					Expect(*vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd).To(Equal(*expectExposed))
-					Expect(mutated).To(BeTrue())
-				}
-			},
-			Entry("VnumaOnCpuHotaddExposed=true → exposeVnumaOnCpuHotadd=true",
-				ptr.To(true), ptr.To(true)),
-			Entry("VnumaOnCpuHotaddExposed=false → no backfill (false equals unset default)",
-				ptr.To(false), nil),
-			Entry("VnumaOnCpuHotaddExposed=nil → no backfill",
-				nil, nil),
 		)
 
 		It("NumaInfo == nil → no NumaInfo-derived topology fields set", func() {
@@ -467,19 +451,6 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			Expect(*vm.Spec.CPUAdvanced.Topology.VNUMANodeCount).To(Equal(int32(2)))
 		})
 
-		It("spec.cpuAdvanced.topology.exposeVnumaOnCpuHotadd already set → not overwritten (spec wins)", func() {
-			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
-				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-					ExposeVNUMAOnCPUHotAdd: ptr.To(true),
-				},
-			}
-			moVM.Config.NumaInfo = &vimtypes.VirtualMachineVirtualNumaInfo{
-				VnumaOnCpuHotaddExposed: ptr.To(true),
-			}
-			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
-			Expect(mutated).To(BeFalse())
-			Expect(*vm.Spec.CPUAdvanced.Topology.ExposeVNUMAOnCPUHotAdd).To(BeTrue())
-		})
 	})
 
 	// ------------------------------------------------------------------ //

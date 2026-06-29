@@ -52,6 +52,12 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		// nativeKeyProviderID is registered automatically by BeforeEach if not pre-configured.
 		standardKeyProviderID = "gce2e-standard"
 		nativeKeyProviderID   = "gce2e-native"
+
+		// vmwareNullImageDisplayName is the display name of the VMWARE-NULL encrypted
+		// OVF item in the vmservice remote content library. vSphere writes the pseudo
+		// key provider "VMWARE-NULL" into a CL item's VMDK when an encrypted VM is
+		// published; the deployed VM is re-encrypted with a real key provider (vmop-3612).
+		vmwareNullImageDisplayName = "encrypted-with-vmware-null-key"
 	)
 
 	var (
@@ -169,6 +175,11 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		_ = cryptoManager.SetDefaultKmsClusterId(ctx, defaultKeyProviderID, nil)
 
+		if cleanupNativeKeyProvider != nil {
+			cleanupNativeKeyProvider()
+			cleanupNativeKeyProvider = nil
+		}
+
 		vcenter.LogoutVimClient(vCenterClient)
 	})
 
@@ -216,6 +227,76 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		if byokFSSEnabled {
 			waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 		}
+	})
+
+	// Context: Encrypted Image deploy from VMWARE-NULL image (vmop-3612)
+	//
+	// This test verifies that VMOP can deploy a VM from a content library image
+	// whose VMDK descriptor carries VMWARE-NULL as the key provider — the pseudo-
+	// provider vSphere writes when an encrypted VM is published to a CL.
+	//
+	// The VMWARE-NULL OVF fixture must be pre-loaded into the vmservice remote
+	// content library with display name vmwareNullImageDisplayName. See
+	// test/e2e/README.md for details on the content library setup.
+	Context("Encrypted Image: deploy from VMWARE-NULL image", Label("extended-functional", "experimental"), func() {
+		It("Verify and deploy VM from VMWARE-NULL encrypted image", func() {
+			encryptedImageDisplayName := vmwareNullImageDisplayName
+			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+
+			By("Wait for the VMWARE-NULL encrypted image VMI to be visible in the namespace")
+			encryptedImageVMIName, err := vmoperator.WaitForVirtualMachineImageName(
+				ctx, &config.Config, svClusterClient, tmpNamespaceName, encryptedImageDisplayName)
+			Expect(err).NotTo(HaveOccurred(),
+				"VMWARE-NULL encrypted image %q not found in namespace %q — "+
+					"ensure the OVF is uploaded to the vmservice subscribed CL",
+				encryptedImageDisplayName, tmpNamespaceName)
+			Expect(encryptedImageVMIName).NotTo(BeEmpty())
+
+			vmoperator.WaitForVirtualMachineImageStatusDisks(ctx, &config.Config, svClusterClient, tmpNamespaceName, encryptedImageVMIName)
+
+			By("Verify the image's VMDK descriptor has VMWARE-NULL key provider")
+			vcenter.VerifyContentLibraryItemDiskHasNullProvider(ctx, vCenterClient, vmserviceCLID, encryptedImageDisplayName)
+
+			useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
+
+			deployVMName := fmt.Sprintf("%s-dep-%s", specName, capiutil.RandomString(4))
+
+			By("Create VM from the VMWARE-NULL encrypted image using encryption storage class")
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        tmpNamespaceName,
+				Name:             deployVMName,
+				ImageName:        encryptedImageVMIName,
+				VMClassName:      "best-effort-small",
+				StorageClassName: utils.E2EEncryptionStorageClassName,
+				ResourcePolicy:   clusterResources.VMResourcePolicyName,
+				PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			}
+			deployVMYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, deployVMYaml)).Should(Succeed(),
+				"failed to create VM from VMWARE-NULL encrypted image:\n %s", string(deployVMYaml))
+
+			DeferCleanup(func() {
+				_ = clusterProxy.DeleteWithArgs(ctx, deployVMYaml)
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, deployVMName)
+			})
+
+			By("Verify VM creation succeeds")
+			// The minimal VMWARE-NULL OVF has no OS/VMware Tools, so we cannot wait
+			// for an IP address. The Created condition + PoweredOn state confirm
+			// VMOP successfully deployed from the VMWARE-NULL image.
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, deployVMName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, deployVMName, "PoweredOn")
+
+			By("Verify the VM is re-encrypted with a real key provider (not VMWARE-NULL)")
+			if byokFSSEnabled {
+				cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, deployVMName, "")
+				Expect(cryptoStatus).NotTo(BeNil())
+				Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
+				Expect(cryptoStatus.Encrypted).NotTo(BeEmpty())
+				Expect(cryptoStatus.ProviderID).To(Equal(nativeKeyProviderID),
+					"VM should be encrypted with the native key provider, not VMWARE-NULL")
+			}
+		})
 	})
 
 	It("Create an Encrypted VirtualMachine using VM Class configured with vTPM", func() {

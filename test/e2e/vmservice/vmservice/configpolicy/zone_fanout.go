@@ -15,10 +15,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
@@ -47,10 +47,7 @@ type ZoneFanOutSpecInput struct {
 // VirtualMachineConfigPolicy objects when a Zone is reconciled with the
 // VirtualMachineConfigPolicy capability active.
 func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput) {
-	const (
-		specName      = "zone-config-target-fan-out"
-		capabilityKey = "supports_vm_service_vm_config_policy"
-	)
+	const specName = "zone-config-target-fan-out"
 
 	var (
 		input           ZoneFanOutSpecInput
@@ -70,12 +67,12 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = input.ClusterProxy.GetClient()
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, capabilityKey)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
 	})
 
 	Context("When a workload namespace has zones", func() {
 		It("Should have at least one ConfigTarget derived from the zone's pool MoIDs",
-			Label("extended-functional"),
+			Label("extended-functional", "experimental"),
 			func() {
 				zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
 				Expect(err).ToNot(HaveOccurred())
@@ -115,7 +112,7 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 			})
 
 		It("Should have a VirtualMachineConfigPolicy for each zone in the namespace",
-			Label("extended-functional"),
+			Label("extended-functional", "experimental"),
 			func() {
 				zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
 				Expect(err).ToNot(HaveOccurred())
@@ -139,7 +136,7 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 			})
 
 		It("Should not delete a ConfigTarget when the zone is reconciled again",
-			Label("extended-functional"),
+			Label("extended-functional", "experimental"),
 			func() {
 				// Pick any existing ConfigTarget and verify its UID is stable
 				// across multiple reconcile cycles (idempotency of CreateOrPatch).

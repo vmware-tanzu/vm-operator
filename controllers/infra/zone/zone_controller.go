@@ -83,6 +83,8 @@ func NewReconciler(
 // Finalizer is the finalizer placed on Zone objects by VM Operator.
 const Finalizer = "vmoperator.vmware.com/zone-finalizer"
 
+const clusterComputeResourceType = "ClusterComputeResource"
+
 // Reconciler reconciles a StoragePolicyQuota object.
 type Reconciler struct {
 	client.Client
@@ -225,7 +227,7 @@ func (r *Reconciler) clusterMoIDsFromPools(
 			return nil, fmt.Errorf("failed to get cluster for resource pool %s: %w", poolMoID, err)
 		}
 
-		if moRef.Type != "ClusterComputeResource" {
+		if moRef.Type != clusterComputeResourceType {
 			continue
 		}
 

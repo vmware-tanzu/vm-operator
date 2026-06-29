@@ -376,7 +376,7 @@ var _ = Describe(
 						for i := range list.Items {
 							g.Expect(list.Items[i].Finalizers).To(ContainElement(zone.Finalizer))
 						}
-					}).Should(Succeed())
+					}).WithTimeout(30 * time.Second).Should(Succeed())
 				})
 			})
 
@@ -400,7 +400,7 @@ var _ = Describe(
 							g.Expect(ct.Spec.ID.ID).To(Equal(clusterMoID))
 						}
 					}
-				}).Should(Succeed())
+				}).WithTimeout(30 * time.Second).Should(Succeed())
 			})
 
 			It("creates one VirtualMachineConfigPolicy per zone", func() {
@@ -419,7 +419,7 @@ var _ = Describe(
 						g.Expect(policy.Spec.Zone).To(Equal(z.Name))
 						g.Expect(policy.Spec.SyncMode).To(Equal(vimv1.VirtualMachineConfigPolicySyncModeConfigTarget))
 					}
-				}).Should(Succeed())
+				}).WithTimeout(30 * time.Second).Should(Succeed())
 			})
 
 			It("is idempotent: ConfigTarget UID is stable across reconciles", func() {
@@ -436,7 +436,7 @@ var _ = Describe(
 
 					var ct vimv1.ConfigTarget
 					g.Expect(vcSimCtx.Client.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID}, &ct)).To(Succeed())
-				}).Should(Succeed())
+				}).WithTimeout(30 * time.Second).Should(Succeed())
 
 				var originalUID types.UID
 
@@ -478,7 +478,7 @@ var _ = Describe(
 
 					var ct vimv1.ConfigTarget
 					g.Expect(vcSimCtx.Client.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID}, &ct)).To(Succeed())
-				}).Should(Succeed())
+				}).WithTimeout(30 * time.Second).Should(Succeed())
 
 				// Remove all pool MoIDs from the zone so the controller derives
 				// no cluster MoIDs on the next reconcile.

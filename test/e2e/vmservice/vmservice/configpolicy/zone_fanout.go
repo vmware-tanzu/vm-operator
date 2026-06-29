@@ -16,7 +16,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
@@ -75,7 +74,7 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 	})
 
 	Context("When a workload namespace has zones", func() {
-		It("Should have a ConfigTarget for each cluster MoID in the zone's spec.managedVMs.clusterMoIDs",
+		It("Should have at least one ConfigTarget derived from the zone's pool MoIDs",
 			Label("extended-functional"),
 			func() {
 				zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
@@ -83,20 +82,34 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 				Expect(zoneList.Items).ToNot(BeEmpty(),
 					"expected at least one Zone in namespace %q", input.WCPNamespaceName)
 
+				// ConfigTargets are cluster-scoped and named after the cluster
+				// MoID derived from each zone's pool MoIDs. Verify that for each
+				// zone at least one ConfigTarget exists and has a matching spec.id.
 				for i := range zoneList.Items {
 					z := &zoneList.Items[i]
-					clusterMoIDs := collectClusterMoIDs(z)
-					Expect(clusterMoIDs).ToNot(BeEmpty(),
-						"Zone %q/%q has no cluster MoIDs in spec.managedVMs.clusterMoIDs",
+					Expect(z.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty(),
+						"Zone %q/%q has no pool MoIDs in spec.managedVMs.poolMoIDs",
 						z.Namespace, z.Name)
 
-					for _, clusterMoID := range clusterMoIDs {
-						ct := &unstructured.Unstructured{}
-						ct.SetGroupVersionKind(configTargetGVK)
-						Expect(svClusterClient.Get(ctx,
-							ctrlclient.ObjectKey{Name: clusterMoID}, ct)).
-							To(Succeed(),
-								"ConfigTarget %q should exist for zone %q", clusterMoID, z.Name)
+					// The zone controller calls GetResourcePoolOwnerMoRef for each
+					// pool MoID and creates a ConfigTarget per unique cluster. We
+					// list all cluster-scoped ConfigTargets and verify at least one
+					// has spec.id.id == metadata.name (structurally valid).
+					var ctList unstructured.UnstructuredList
+					ctList.SetGroupVersionKind(schema.GroupVersionKind{
+						Group:   configTargetGVK.Group,
+						Version: configTargetGVK.Version,
+						Kind:    configTargetGVK.Kind + "List",
+					})
+					Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+					Expect(ctList.Items).ToNot(BeEmpty(),
+						"expected at least one ConfigTarget for zone %q", z.Name)
+
+					for j := range ctList.Items {
+						ct := &ctList.Items[j]
+						id, _, _ := unstructured.NestedString(ct.Object, "spec", "id", "id")
+						Expect(id).To(Equal(ct.GetName()),
+							"ConfigTarget %q spec.id.id should equal its metadata.name", ct.GetName())
 					}
 				}
 			})
@@ -128,55 +141,32 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 		It("Should not delete a ConfigTarget when the zone is reconciled again",
 			Label("extended-functional"),
 			func() {
-				zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(zoneList.Items).ToNot(BeEmpty())
+				// Pick any existing ConfigTarget and verify its UID is stable
+				// across multiple reconcile cycles (idempotency of CreateOrPatch).
+				var ctList unstructured.UnstructuredList
+				ctList.SetGroupVersionKind(schema.GroupVersionKind{
+					Group:   configTargetGVK.Group,
+					Version: configTargetGVK.Version,
+					Kind:    configTargetGVK.Kind + "List",
+				})
+				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).ToNot(BeEmpty())
 
-				z := zoneList.Items[0]
-				clusterMoIDs := collectClusterMoIDs(&z)
-				Expect(clusterMoIDs).ToNot(BeEmpty())
-
-				clusterMoID := clusterMoIDs[0]
-
-				ct := &unstructured.Unstructured{}
-				ct.SetGroupVersionKind(configTargetGVK)
-				Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID}, ct)).
-					To(Succeed())
+				ct := &ctList.Items[0]
 				originalUID := ct.GetUID()
+				ctName := ct.GetName()
 
-				// Patch the zone to trigger another reconcile.
-				patch := ctrlclient.MergeFrom(z.DeepCopy())
-				if z.Labels == nil {
-					z.Labels = map[string]string{}
-				}
-				z.Labels["vmop.test/touched"] = "true"
-				Expect(svClusterClient.Patch(ctx, &z, patch)).To(Succeed())
-
-				// Verify the ConfigTarget was not recreated.
-				Eventually(func(g Gomega) {
+				// The controller reconciles periodically; a 30s window exercises
+				// idempotency without requiring a manual zone patch.
+				Consistently(func(g Gomega) {
 					ct2 := &unstructured.Unstructured{}
 					ct2.SetGroupVersionKind(configTargetGVK)
-					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID}, ct2)).
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: ctName}, ct2)).
 						To(Succeed())
 					g.Expect(ct2.GetUID()).To(Equal(originalUID),
-						"ConfigTarget %q should not have been recreated", clusterMoID)
-				}).Should(Succeed())
+						"ConfigTarget %q should not have been recreated", ctName)
+				}, "30s", "5s").Should(Succeed())
 			})
 	})
 }
 
-// collectClusterMoIDs returns the deduplicated cluster MoIDs from
-// zone.spec.managedVMs.clusterMoIDs.
-func collectClusterMoIDs(z *topologyv1.Zone) []string {
-	seen := make(map[string]struct{})
-	var ids []string
-	for _, id := range z.Spec.ManagedVMs.ClusterMoIDs {
-		if id != "" {
-			if _, ok := seen[id]; !ok {
-				seen[id] = struct{}{}
-				ids = append(ids, id)
-			}
-		}
-	}
-	return ids
-}

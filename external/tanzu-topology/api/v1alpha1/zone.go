@@ -23,11 +23,6 @@ type AvailabilityZoneReference struct {
 // a vSphere entity
 type VSphereEntityInfo struct {
 	// +optional
-	// ClusterMoIDs are the managed object IDs of the vSphere
-	// ClusterComputeResource objects backing this entity.
-	ClusterMoIDs []string `json:"clusterMoIDs,omitempty"`
-
-	// +optional
 	// PoolMoIDs are the managed object ID of the vSphere ResourcePools
 	// in an individual vSphere Zone. A zone may be comprised of
 	// multiple ResourcePools.

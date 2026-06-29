@@ -28,11 +28,83 @@
 #   GINKGO_BIN          - Path to the ginkgo executable (for ginkgo mode).
 #   E2E_PREBUILT_BINARY - Path to the compiled test binary (for prebuilt mode).
 #   E2E_ARTIFACT_FOLDER - Directory to store test results/logs.
+#   TEST_CALLBACK_URL   - Optional HTTP endpoint to POST the overall result to
+#                         once the run completes. No-op when unset.
 ################################################################################
 
 set -o errexit
 set -o nounset
 set -o pipefail
+
+# parse_junit_xml reads a JUnit XML file (written by ginkgo --junit-report) and
+# emits a JSON array of per-test results suitable for the subtest_details field
+# of a test callback payload. Each element has "testcasename" and "result".
+# Ginkgo v2 sets a status="passed|failed|skipped" attribute on every <testcase>
+# element; this function maps those to the PASS/FAIL/SKIPPED enum values the
+# callback API expects. The function uses only jq and sed so that it works in
+# the minimal container environment.
+parse_junit_xml() {
+    local xml_file="${1}"
+    grep '<testcase ' "${xml_file}" | \
+    while IFS= read -r line; do
+        local name status result
+        # The leading space before "name=" is required: greedy matching on a
+        # bare "name=" would otherwise capture "classname=" instead, since
+        # every <testcase> element's classname attribute follows its name
+        # attribute and "classname" contains "name" as a substring.
+        name=$(printf '%s' "${line}" | sed 's/.* name="\([^"]*\)".*/\1/')
+        status=$(printf '%s' "${line}" | sed -n 's/.*status="\([^"]*\)".*/\1/p')
+        case "${status}" in
+            failed)  result="FAIL"    ;;
+            skipped) result="SKIPPED" ;;
+            *)       result="PASS"    ;;
+        esac
+        jq -n --arg n "${name}" --arg r "${result}" \
+            '{testcasename: $n, result: $r}'
+    done | jq -s '.'
+}
+
+# report_result POSTs the overall pass/fail and per-test breakdown to a generic
+# callback URL when one is configured in the environment. The variable name is
+# intentionally generic so that this public script does not reference any
+# specific CI system. Set TEST_CALLBACK_URL in the environment to enable
+# reporting; when unset the function is a no-op (safe for local runs).
+report_result() {
+    local exit_code="${1}"
+    local xml_report="${2:-}"
+
+    if [ -z "${TEST_CALLBACK_URL:-}" ]; then
+        return 0
+    fi
+
+    local result
+    if [ "${exit_code}" -eq 0 ]; then
+        result="Passed"
+    else
+        result="Failed"
+    fi
+
+    # Build per-test breakdown from the JUnit report when available
+    local subtest_details="[]"
+    if [ -f "${xml_report}" ]; then
+        subtest_details=$(parse_junit_xml "${xml_report}") || subtest_details="[]"
+    fi
+
+    local count
+    count=$(printf '%s' "${subtest_details}" | jq 'length')
+    echo "[run-e2e] Reporting result '${result}' with ${count} subtests to callback URL..."
+
+    local payload
+    payload=$(jq -n \
+        --arg result "${result}" \
+        --argjson subtests "${subtest_details}" \
+        '{result: $result, subtest_details: $subtests}')
+
+    curl --silent --show-error --max-time 30 \
+        -X POST "${TEST_CALLBACK_URL}" \
+        -H "Content-Type: application/json" \
+        -d "${payload}" || echo "[run-e2e] WARNING: callback POST failed (ignored)"
+}
 
 # Inputs from Environment
 MODE="${1:-ginkgo}" 
@@ -83,15 +155,20 @@ fi
 # 4. Define E2E specific arguments
 E2E_ARGS="-e2e.e2e-config=${ROOT_DIR}test/e2e/vmservice/config/wcp.yaml -e2e.artifactFolder=${ARTIFACT_FOLDER}"
 
-# 5. Execute
+# 5. Execute (capture exit code so we can report it before exiting)
+E2E_EXIT=0
 if [ "$MODE" = "prebuilt" ]; then
     echo "Running E2E tests (prebuilt: $PREBUILT_BIN)..."
     echo "$PREBUILT_BIN $E2E_ARGS ${GINKGO_ARGS[*]}"
     # shellcheck disable=SC2086
-    exec "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}"
+    "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}" || E2E_EXIT=$?
 else
     echo "Running E2E tests (ginkgo CLI)..."
     echo "$GINKGO_BIN ${GINKGO_ARGS[*]} ./test/e2e/vmservice/... -- $E2E_ARGS"
     # shellcheck disable=SC2086
-    exec "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS
+    "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS || E2E_EXIT=$?
 fi
+
+# 6. Report result, then propagate the original exit code
+report_result "${E2E_EXIT}" "${REPORT_DIR}/test-results.xml"
+exit "${E2E_EXIT}"

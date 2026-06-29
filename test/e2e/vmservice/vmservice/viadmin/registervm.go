@@ -30,12 +30,6 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
-	capiutil "sigs.k8s.io/cluster-api/util"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -51,7 +45,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const trueString = "true"
@@ -1083,9 +1082,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
 
-			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-			defer vcenter.LogoutVimClient(vCenterClient)
-
 			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 			secretName := vmName + "-cloud-config-data"
 			secret := manifestbuilders.Secret{
@@ -1116,58 +1112,21 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
 
+			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			defer vcenter.LogoutVimClient(vCenterClient)
+
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			// With AllDisksArePVCs enabled, the CSI driver takes a snapshot while
-			// registering the boot VMDK as an FCD. If that snapshot is still active
-			// when the backup runs, ExtraConfig records the delta filename
-			// (e.g. "_3.vmdk"). After consolidation the disk reverts to the base
-			// name, so RegisterVM's filename lookup would fail. Wait until every
-			// CnsRegisterVolume is registered (snapshot consolidated) before
-			// reading the backup.
-			vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName,
+				metav1.Condition{
+					Type:   "VirtualMachineUnmanagedVolumesRegistered",
+					Status: metav1.ConditionTrue,
+				})
 
 			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
-
-			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
-
-			By("Wait for VM resource YAML to be saved in ExtraConfig")
-			var vmMO mo.VirtualMachine
-			propCollector := property.DefaultCollector(vCenterClient)
-			Eventually(func(g Gomega) {
-				g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.extraConfig"}, &vmMO)).To(Succeed())
-				g.Expect(vmMO.Config).ToNot(BeNil())
-				ecList := object.OptionValueList(vmMO.Config.ExtraConfig)
-				resourceYAML, _ := ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
-				g.Expect(resourceYAML).ToNot(BeEmpty())
-			}, config.GetIntervals("default", "wait-backup-to-complete")...).
-				Should(Succeed(), "Timed out waiting for VM resource YAML in ExtraConfig")
-
-			By("Power off the VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-
-			By("Add the pause annotation to stop reconciliation")
-			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-			base := vm.DeepCopy()
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
-			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
-
-			By("Remove the VMOP finalizer and delete the VM CR")
-			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-			controllerutil.RemoveFinalizer(vm, vmservice.VMFinalizerName)
-			controllerutil.RemoveFinalizer(vm, vmservice.VMFinalizerNameDeprecated)
-			Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			Expect(svClusterClient.Delete(ctx, vm)).To(Succeed())
-			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-
-			taskInfo, err := vmservice.InvokeRegisterVM(ctx, existingVM.Status.UniqueID, input.WCPNamespaceName, clusterProxy, wcpClient)
+			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
+			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, input.WCPNamespaceName, clusterProxy, wcpClient)
 
 			By("Verify task state is success")
 			Expect(err).ToNot(HaveOccurred())

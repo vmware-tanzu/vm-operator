@@ -119,3 +119,5 @@ intervals:
   default/wait-pvc-attachment: ["5m", "10s"]
   default/wait-pvc-deletion: ["2m", "5s"]
   default/wait-jumpbox-sshpass-ready: ["30m", "10s"]
+  default/wait-vm-nic-extra-config-synced:     ["5m", "10s"]
+  default/wait-vm-nic-extra-config-powerstate: ["3m", "10s"]

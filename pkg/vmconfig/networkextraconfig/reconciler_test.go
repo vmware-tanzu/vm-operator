@@ -399,12 +399,12 @@ var _ = Describe("networkextraconfig.OnResult", func() {
 	})
 
 	Context("with a task error", func() {
-		It("marks condition false with ReasonError", func() {
+		It("marks condition false with NetworkConfigError", func() {
 			Expect(r.OnResult(ctx, vm, moVM, errFake)).To(Succeed())
 			cond := findCondition(vm)
 			Expect(cond).NotTo(BeNil())
 			Expect(string(cond.Status)).To(Equal("False"))
-			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineNetworkErrorReason))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineNetworkConfigErrorReason))
 		})
 	})
 

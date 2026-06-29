@@ -193,10 +193,6 @@ const (
 	// has been applied but takes effect only after a guest power cycle.
 	VirtualMachinePowerCyclePendingReason = "PowerCyclePending"
 
-	// VirtualMachineNetworkErrorReason indicates that reconciliation of
-	// VirtualMachineNetworkConfigSynced failed with an unexpected error.
-	VirtualMachineNetworkErrorReason = "Error"
-
 	// VirtualMachineExtraConfigErrorReason indicates that reconciliation of
 	// VirtualMachineExtraConfigSynced failed with an unexpected error.
 	VirtualMachineExtraConfigErrorReason = "ExtraConfigError"
@@ -208,6 +204,10 @@ const (
 	// VirtualMachinePowerCyclePendingReason). This is expected to resolve to
 	// True once a later reconcile observes the applied change.
 	VirtualMachineExtraConfigMismatchReason = "ExtraConfigMismatch"
+
+	// VirtualMachineNetworkConfigErrorReason indicates that reconciliation of
+	// VirtualMachineNetworkConfigSynced failed with an unexpected error.
+	VirtualMachineNetworkConfigErrorReason = "NetworkConfigError"
 )
 
 const (

@@ -240,7 +240,7 @@ func (r reconciler) OnResult(
 		conditions.MarkFalse(
 			vm,
 			vmopv1.VirtualMachineNetworkConfigSynced,
-			vmopv1.VirtualMachineNetworkErrorReason,
+			vmopv1.VirtualMachineNetworkConfigErrorReason,
 			"%v", resultErr)
 		return nil
 	}

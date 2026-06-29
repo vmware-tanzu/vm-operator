@@ -305,7 +305,7 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 					Expect(*s.CoalescingParams).To(Equal("4000"))
 				}),
 			Entry("PNICFeatures bitmask 3 → LRO+bit1",
-				"ethernet0.pnicfeatures", "3",
+				"ethernet0.pnicFeatures", "3",
 				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
 					Expect(s.PNICFeatures).To(ConsistOf(
 						vmopv1.PNICQueueFeatureLargeReceiveOffload,

@@ -193,10 +193,6 @@ const (
 	// has been applied but takes effect only after a guest power cycle.
 	VirtualMachinePowerCyclePendingReason = "PowerCyclePending"
 
-	// VirtualMachineNetworkErrorReason indicates that reconciliation of
-	// VirtualMachineNetworkConfigSynced failed with an unexpected error.
-	VirtualMachineNetworkErrorReason = "Error"
-
 	// VirtualMachineExtraConfigErrorReason indicates that reconciliation of
 	// VirtualMachineExtraConfigSynced failed with an unexpected error.
 	VirtualMachineExtraConfigErrorReason = "ExtraConfigError"
@@ -213,6 +209,10 @@ const (
 	// when the VM's spec compute fields differ from the live vSphere configuration.
 	// The controller will apply the change on the current or next reconcile loop.
 	VirtualMachineComputeConfigMismatchReason = "ComputeConfigMismatch"
+
+	// VirtualMachineNetworkConfigErrorReason indicates that reconciliation of
+	// VirtualMachineNetworkConfigSynced failed with an unexpected error.
+	VirtualMachineNetworkConfigErrorReason = "NetworkConfigError"
 )
 
 const (

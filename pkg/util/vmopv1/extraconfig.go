@@ -597,7 +597,7 @@ func encodeCoalescingScheme(val string) string {
 	}
 }
 
-// decodePNICQueueFeatures decodes a vSphere pnicfeatures bitmask decimal string
+// decodePNICQueueFeatures decodes a vSphere pnicFeatures bitmask decimal string
 // into a slice of PNICQueueFeature elements.
 //
 // Each set bit in the integer maps to one element:

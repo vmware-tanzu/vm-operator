@@ -128,3 +128,5 @@ intervals:
   default/wait-jumpbox-sshpass-ready: ["30m", "10s"]
   default/wait-vm-compute-config-synced:     ["5m", "10s"]
   default/wait-vm-compute-config-powerstate: ["3m", "10s"]
+  default/wait-vm-extraconfig-synced:    ["5m", "10s"]
+  default/wait-vm-nic-extra-config-synced: ["5m", "10s"]

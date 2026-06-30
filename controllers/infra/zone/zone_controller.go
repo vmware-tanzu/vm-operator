@@ -14,7 +14,6 @@ import (
 	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -27,9 +26,8 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 )
 
@@ -53,7 +51,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
-		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -70,30 +67,25 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
-	recorder record.Recorder,
-	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
+	recorder record.Recorder) *Reconciler {
 	return &Reconciler{
-		Context:    ctx,
-		Client:     client,
-		Logger:     logger,
-		Recorder:   recorder,
-		VMProvider: vmProvider,
+		Context:  ctx,
+		Client:   client,
+		Logger:   logger,
+		Recorder: recorder,
 	}
 }
 
 // Finalizer is the finalizer placed on Zone objects by VM Operator.
 const Finalizer = "vmoperator.vmware.com/zone-finalizer"
 
-const clusterComputeResourceType = "ClusterComputeResource"
-
 // Reconciler reconciles a StoragePolicyQuota object.
 type Reconciler struct {
 	client.Client
 
-	Context    context.Context
-	Logger     logr.Logger
-	Recorder   record.Recorder
-	VMProvider providers.VirtualMachineProviderInterface
+	Context  context.Context
+	Logger   logr.Logger
+	Recorder record.Recorder
 }
 
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=zones,verbs=get;list;watch;update;patch
@@ -200,48 +192,34 @@ func (r *Reconciler) ReconcileNormal(
 	return ctrl.Result{}, nil
 }
 
-// clusterMoIDsFromPools returns the unique ClusterComputeResource managed
-// object IDs that back zone.spec.managedVMs.poolMoIDs. Each pool's parent is
-// resolved via a single PropertyCollector RPC; non-cluster parents (standalone
-// hosts) are silently skipped.
-func (r *Reconciler) clusterMoIDsFromPools(
+// clusterMoIDsForZone returns the ClusterComputeResource managed object IDs
+// of the AvailabilityZone the given Zone is derived from. Zone and
+// AvailabilityZone share the same name.
+func (r *Reconciler) clusterMoIDsForZone(
 	ctx context.Context,
 	zone *topologyv1.Zone) ([]string, error) {
-	vsphereClient, err := r.VMProvider.VSphereClient(ctx)
+	az, err := topology.GetAvailabilityZone(ctx, r.Client, zone.Name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get vSphere client: %w", err)
+		return nil, fmt.Errorf("failed to get availability zone %s: %w", zone.Name, err)
 	}
 
-	vimClient := vsphereClient.VimClient()
-
-	clusterMoIDs := sets.New[string]()
-
-	for _, poolMoID := range zone.Spec.ManagedVMs.PoolMoIDs {
-		if poolMoID == "" {
-			continue
-		}
-
-		moRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, poolMoID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get cluster for resource pool %s: %w", poolMoID, err)
-		}
-
-		if moRef.Type != clusterComputeResourceType {
-			continue
-		}
-
-		clusterMoIDs.Insert(moRef.Value)
+	if len(az.Spec.ClusterComputeResourceMoIDs) > 0 {
+		return az.Spec.ClusterComputeResourceMoIDs, nil
 	}
 
-	return clusterMoIDs.UnsortedList(), nil
+	if az.Spec.ClusterComputeResourceMoId != "" {
+		return []string{az.Spec.ClusterComputeResourceMoId}, nil
+	}
+
+	return nil, nil
 }
 
 // reconcileConfigTargets ensures a cluster-scoped ConfigTarget exists for each
-// unique ClusterComputeResource MoID derived from zone.spec.managedVMs.poolMoIDs.
+// ClusterComputeResource MoID of the zone's availability zone.
 func (r *Reconciler) reconcileConfigTargets(
 	ctx context.Context,
 	zone *topologyv1.Zone) error {
-	clusterMoIDs, err := r.clusterMoIDsFromPools(ctx, zone)
+	clusterMoIDs, err := r.clusterMoIDsForZone(ctx, zone)
 	if err != nil {
 		return err
 	}

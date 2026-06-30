@@ -48,6 +48,16 @@ spec:
               vSphere resources used to represent a Kubernetes namespace on individual
               vSphere Zones.
             properties:
+              allowedClusterComputeResourceMoIDs:
+                description: |-
+                  AllowedClusterComputeResourceMoIDs are the managed object IDs of the vSphere
+                  ClusterComputeResources in this vSphere Zone on which workloads in this
+                  Supervisor Namespace can be placed on. If empty, all the vSphere Clusters in
+                  the vSphere Zone are candidates to place the workloads in this vSphere
+                  Namespace.
+                items:
+                  type: string
+                type: array
               availabilityZoneReference:
                 description: |-
                   Zone is a reference to the cluster scoped AvailabilityZone this
@@ -66,11 +76,50 @@ spec:
                 - apiVersion
                 - name
                 type: object
+              cpu:
+                description: |-
+                  CPU is the desired CPU limit and reservation (in hertz) for the namespace in
+                  this zone, in addition to the limits specified as part of reserved virtual
+                  machine classes.
+                properties:
+                  limit:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Limit is the utilization of zone will not exceed this limit, even
+                      if there are available resources.
+                      If unset, then there is no fixed limit on resource usage.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  reservation:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Reservation is the amount of resource that is guaranteed available to the zone.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
+              disallowUnreservedDirectPathUsage:
+                description: |-
+                  DisallowUnreservedDirectPathUsage determines whether workloads that don't
+                  use a reserved Virtual Machine class instance can use a DirectPath device.
+                type: boolean
               managedVMs:
                 description: |-
                   ManagedVMs contains ResourcePool and folder moIDs to represent managedVMs
                   entity within the namespace
                 properties:
+                  clusterMoIDs:
+                    description: |-
+                      ClusterMoIDs are the managed object IDs of the vSphere Clusters in an
+                      individual vSphere Zone. A zone may be comprised of multiple Clusters.
+                    items:
+                      type: string
+                    type: array
                   folderMoID:
                     description: |-
                       FolderMoID is the managed object ID of the vSphere Folder for a
@@ -84,11 +133,45 @@ spec:
                     items:
                       type: string
                     type: array
+                type: object
+              memory:
+                description: |-
+                  Memory is the desired Memory limit and reservation (in bytes) for the
+                  namespace in this zone, in addition to the limits specified as part of
+                  reserved virtual machine classes.
+                properties:
+                  limit:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Limit is the utilization of zone will not exceed this limit, even
+                      if there are available resources.
+                      If unset, then there is no fixed limit on resource usage.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  reservation:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Reservation is the amount of resource that is guaranteed available to the zone.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
                 type: object
               namespace:
                 description: Namespace contains ResourcePool and folder moIDs to represent
                   the namespace
                 properties:
+                  clusterMoIDs:
+                    description: |-
+                      ClusterMoIDs are the managed object IDs of the vSphere Clusters in an
+                      individual vSphere Zone. A zone may be comprised of multiple Clusters.
+                    items:
+                      type: string
+                    type: array
                   folderMoID:
                     description: |-
                       FolderMoID is the managed object ID of the vSphere Folder for a
@@ -103,11 +186,33 @@ spec:
                       type: string
                     type: array
                 type: object
+              overheadMemoryProvidedBy:
+                description: |-
+                  OverheadMemoryProvidedBy determines the provider of overhead memory for the
+                  namespace in this zone. The default behaviour depends on whether or not
+                  memory reservations are set on the namespace on this zone. If no memory is
+                  reserved, then the overhead memory for the workload will be consumed from
+                  the system. If memory is reserved on the namespace on the zone, then the
+                  overhead memory for the workload will be consumed from that namespace. If
+                  OverheadMemoryProvidedBy is set to System then overhead memory will not be
+                  counted against namespace reservation. When it's set to Namespace then
+                  overhead memory will be consuming memory reservations in this namespace.
+                enum:
+                - System
+                - Namespace
+                type: string
               vSpherePods:
                 description: |-
                   VSpherePods contains ResourcePool and folder moIDs to represent vSpherePods
                   entity within the namespace
                 properties:
+                  clusterMoIDs:
+                    description: |-
+                      ClusterMoIDs are the managed object IDs of the vSphere Clusters in an
+                      individual vSphere Zone. A zone may be comprised of multiple Clusters.
+                    items:
+                      type: string
+                    type: array
                   folderMoID:
                     description: |-
                       FolderMoID is the managed object ID of the vSphere Folder for a
@@ -122,6 +227,29 @@ spec:
                       type: string
                     type: array
                 type: object
+              virtualMachineReservations:
+                description: |-
+                  VirtualMachineReservations is the desired number of reserved Virtual Machine
+                  class instances that are available for the namespace in this zone.
+                items:
+                  description: |-
+                    VirtualMachineClassAllocationInfo describes the definition of allocations
+                    for Virtual Machines of a given class.
+                  properties:
+                    count:
+                      description: Count is the number of instances of given Virtual
+                        Machine class.
+                      format: int64
+                      type: integer
+                    reservedVmClass:
+                      description: ReservedVMClass is the identifier of the Virtual
+                        Machine class used for allocation.
+                      type: string
+                  required:
+                  - count
+                  - reservedVmClass
+                  type: object
+                type: array
             required:
             - availabilityZoneReference
             type: object
@@ -183,6 +311,94 @@ spec:
                   - reason
                   - status
                   - type
+                  type: object
+                type: array
+              cpu:
+                description: |-
+                  CPU is the realized CPU limit and reservation (in hertz) for the namespace
+                  in this zone, in addition to the limits specified as part of reserved
+                  virtual machine classes.
+                properties:
+                  limit:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Limit is the utilization of zone will not exceed this limit, even
+                      if there are available resources.
+                      If unset, then there is no fixed limit on resource usage.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  reservation:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Reservation is the amount of resource that is guaranteed available to the zone.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
+              disallowUnreservedDirectPathUsage:
+                description: |-
+                  DisallowUnreservedDirectPathUsage is the configuration set indicating if
+                  workloads that don't use a reserved Virtual Machine class instance can use
+                  a DirectPath device.
+                type: boolean
+              markedForRemoval:
+                description: |-
+                  MarkedForRemoval describes if the Zone is marked for removal from the
+                  Namespace.
+                type: boolean
+              memory:
+                description: |-
+                  Memory is the realized memory limit and reservation (in bytes) for the
+                  namespace in this zone, in addition to the limits specified as part of
+                  reserved virtual machine classes.
+                properties:
+                  limit:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Limit is the utilization of zone will not exceed this limit, even
+                      if there are available resources.
+                      If unset, then there is no fixed limit on resource usage.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  reservation:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Reservation is the amount of resource that is guaranteed available to the zone.
+                      Units are hertz for CPU and bytes for memory.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
+              virtualMachineReservations:
+                description: |-
+                  VirtualMachineReservations is the guaranteed number of reserved Virtual
+                  Machine class instances that are available for the namespace in this zone.
+                items:
+                  description: |-
+                    VirtualMachineClassAllocationInfo describes the definition of allocations
+                    for Virtual Machines of a given class.
+                  properties:
+                    count:
+                      description: Count is the number of instances of given Virtual
+                        Machine class.
+                      format: int64
+                      type: integer
+                    reservedVmClass:
+                      description: ReservedVMClass is the identifier of the Virtual
+                        Machine class used for allocation.
+                      type: string
+                  required:
+                  - count
+                  - reservedVmClass
                   type: object
                 type: array
             type: object

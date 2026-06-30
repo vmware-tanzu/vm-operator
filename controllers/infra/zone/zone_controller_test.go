@@ -74,11 +74,9 @@ var _ = Describe(
 				ctx,
 				builder.VCSimTestConfig{},
 				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-					err := vmwatcher.AddToManager(ctx, mgr)
-					if err != nil {
+					if err := vmwatcher.AddToManager(ctx, mgr); err != nil {
 						return err
 					}
-
 					return zone.AddToManager(ctx, mgr)
 				},
 				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
@@ -334,11 +332,9 @@ var _ = Describe(
 				ctx,
 				builder.VCSimTestConfig{},
 				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-					err := vmwatcher.AddToManager(ctx, mgr)
-					if err != nil {
+					if err := vmwatcher.AddToManager(ctx, mgr); err != nil {
 						return err
 					}
-
 					return zone.AddToManager(ctx, mgr)
 				},
 				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {

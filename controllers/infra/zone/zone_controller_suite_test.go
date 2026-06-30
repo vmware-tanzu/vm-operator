@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 func TestZoneController(t *testing.T) {
@@ -19,5 +20,5 @@ func TestZoneController(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	zone.SkipNameValidation = new(true)
+	zone.SkipNameValidation = ptr.To(true)
 })

@@ -465,6 +465,11 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 			nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
 		}
 
+		var clusterMoIDs []string
+		for _, ccr := range c.azCCRs[azName] {
+			clusterMoIDs = append(clusterMoIDs, ccr.Reference().Value)
+		}
+
 		// When the WorkloadDomainIsolation capability is disabled,
 		// AvailabilityZone stores namespace info.
 		if !c.workloadDomainIsolation {
@@ -485,11 +490,12 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 				},
 				Spec: topologyv1.ZoneSpec{
 					ManagedVMs: topologyv1.VSphereEntityInfo{
-						FolderMoID: nsInfo.FolderMoId,
-						PoolMoIDs:  nsInfo.PoolMoIDs,
+						FolderMoID:   nsInfo.FolderMoId,
+						PoolMoIDs:    nsInfo.PoolMoIDs,
+						ClusterMoIDs: clusterMoIDs,
 					},
 					Zone: topologyv1.AvailabilityZoneReference{
-						APIVersion: topologyv1.GroupVersion.String(),
+						APIVersion: topologyv1.GroupVersion.Version,
 						Name:       azName,
 					},
 				},

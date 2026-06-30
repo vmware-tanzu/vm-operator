@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package configpolicy contains E2E tests for the VirtualMachineConfigPolicy
-// and ConfigTarget resources created by the zone controller fan-out.
+// feature, covering cluster capability discovery and policy enforcement.
 package configpolicy
 
 import (
@@ -36,21 +36,21 @@ var (
 	}
 )
 
-// ZoneFanOutSpecInput holds the inputs for the ZoneFanOutSpec.
-type ZoneFanOutSpecInput struct {
+// SpecInput holds the inputs for Spec.
+type SpecInput struct {
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
 	Config           *e2eConfig.E2EConfig
 	WCPNamespaceName string
 }
 
-// ZoneFanOutSpec verifies that the zone controller fans out ConfigTarget and
-// VirtualMachineConfigPolicy objects when a Zone is reconciled with the
-// VirtualMachineConfigPolicy capability active.
-func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput) {
-	const specName = "zone-config-target-fan-out"
+// Spec verifies the VirtualMachineConfigPolicy feature end-to-end.
+// Currently covers zone controller fan-out (S3); policy enforcement
+// (S8/S9) and capability population (S5/S6/S7) will be added here.
+func Spec(ctx context.Context, inputGetter func() SpecInput) {
+	const specName = "vm-config-policy"
 
 	var (
-		input           ZoneFanOutSpecInput
+		input           SpecInput
 		svClusterProxy  *common.VMServiceClusterProxy
 		svClusterClient ctrlclient.Client
 	)
@@ -88,10 +88,6 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 						"Zone %q/%q has no pool MoIDs in spec.managedVMs.poolMoIDs",
 						z.Namespace, z.Name)
 
-					// The zone controller calls GetResourcePoolOwnerMoRef for each
-					// pool MoID and creates a ConfigTarget per unique cluster. We
-					// list all cluster-scoped ConfigTargets and verify at least one
-					// has spec.id.id == metadata.name (structurally valid).
 					var ctList unstructured.UnstructuredList
 					ctList.SetGroupVersionKind(schema.GroupVersionKind{
 						Group:   configTargetGVK.Group,
@@ -153,8 +149,6 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 				originalUID := ct.GetUID()
 				ctName := ct.GetName()
 
-				// The controller reconciles periodically; a 30s window exercises
-				// idempotency without requiring a manual zone patch.
 				Consistently(func(g Gomega) {
 					ct2 := &unstructured.Unstructured{}
 					ct2.SetGroupVersionKind(configTargetGVK)
@@ -166,4 +160,3 @@ func ZoneFanOutSpec(ctx context.Context, inputGetter func() ZoneFanOutSpecInput)
 			})
 	})
 }
-

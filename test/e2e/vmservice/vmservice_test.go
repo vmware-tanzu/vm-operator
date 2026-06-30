@@ -250,14 +250,12 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 	})
 
 	Context("CONFIG-POLICY", func() {
-		Context("ZONE-FAN-OUT", func() {
-			configpolicy.ZoneFanOutSpec(context.TODO(), func() configpolicy.ZoneFanOutSpecInput {
-				return configpolicy.ZoneFanOutSpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
+		configpolicy.Spec(context.TODO(), func() configpolicy.SpecInput {
+			return configpolicy.SpecInput{
+				ClusterProxy:     svClusterProxy,
+				Config:           config,
+				WCPNamespaceName: wcpNamespaceName,
+			}
 		})
 	})
 })

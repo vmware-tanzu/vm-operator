@@ -32,7 +32,7 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 - [x] T013 [S1.a] [PR #1649 / vmop-3747] Unit tests for capability gate logic — `pkg/config/capabilities/capabilities_test.go`
 - [x] T014 [S1.b] [PR #1667 / vmop-3748] Install the four `vim.vmware.com` CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`, `VirtualMachineConfigPolicy`) via `config/crd/external-crds/` in the Supervisor chart
 - [x] T015a [S1.b] [PR #1667 / vmop-3748] Extend `config/rbac/role.yaml` with get/list/watch on `zones`
-- [ ] T015b [S1.b] Extend `config/rbac/role.yaml` with create/get/list/patch/update/watch on `configtargets` and `virtualmachineconfigpolicies`
+- [x] T015b [S1.b] [PR #1695 / vmop-3740] Extend `config/rbac/role.yaml` with create/get/list/patch/update/watch on `configtargets` and `virtualmachineconfigpolicies`
 - [ ] T015c [S1.b] Extend `config/rbac/role.yaml` with create/get/list/patch/update/watch on `virtualmachineconfigoptions` and `virtualmachineguestoptions` — deferred to S6/S7 controller stories per commit `1698824b`
 
 ### Story S2 — Partner-facing integration doc (vmop-3739)
@@ -50,10 +50,10 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S3 — Zone controller fan-out (vmop-3740)
 
-- [x] T050 [S3.a] [PR pending: vmop-3740-create-config-targets] Modify `controllers/infra/zone/zone_controller.go` — derive cluster MoIDs from poolMoIDs; CreateOrPatch ConfigTarget per MoID; CreateOrPatch VirtualMachineConfigPolicy per zone (default syncMode=ConfigTarget on create only)
-- [x] T051 [S3.a] [PR pending: vmop-3740-create-config-targets] Unit tests — `controllers/infra/zone/zone_controller_test.go`
-- [x] T052 [S3.b] [PR pending: vmop-3740-create-config-targets] Integration tests with vcsim — `controllers/infra/zone/zone_controller_test.go`: pool→cluster derivation; idempotent create/patch (UID stable); ConfigTarget not deleted when pool MoIDs removed from zone
-- [x] T053 [S3.c] [PR pending: vmop-3740-create-config-targets] E2E test — `test/e2e/vmservice/vmservice/configpolicy/zone_fanout.go`: Zone creation materialises ConfigTarget and VirtualMachineConfigPolicy; idempotency verified with Consistently over 30 s
+- [x] T050 [S3.a] [PR #1695 / vmop-3740] Modify `controllers/infra/zone/zone_controller.go` — derive cluster MoIDs from poolMoIDs; CreateOrPatch ConfigTarget per MoID; CreateOrPatch VirtualMachineConfigPolicy per zone (default syncMode=ConfigTarget on create only)
+- [x] T051 [S3.a] [PR #1695 / vmop-3740] Unit tests — `controllers/infra/zone/zone_controller_test.go`
+- [x] T052 [S3.b] [PR #1695 / vmop-3740] Integration tests with vcsim — `controllers/infra/zone/zone_controller_test.go`: pool→cluster derivation; idempotent create/patch (UID stable); ConfigTarget not deleted when pool MoIDs removed from zone
+- [x] T053 [S3.c] [PR #1695 / vmop-3740] E2E test — `test/e2e/vmservice/vmservice/configpolicy/zone_fanout.go`: Zone creation materialises ConfigTarget and VirtualMachineConfigPolicy; idempotency verified with Consistently over 30 s
 
 ### Story S5 — ConfigTarget controller (vmop-3742)
 

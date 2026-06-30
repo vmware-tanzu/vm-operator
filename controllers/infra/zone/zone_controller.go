@@ -193,14 +193,17 @@ func (r *Reconciler) ReconcileNormal(
 }
 
 // clusterMoIDsForZone returns the ClusterComputeResource managed object IDs
-// of the AvailabilityZone the given Zone is derived from. Zone and
-// AvailabilityZone share the same name.
+// of the AvailabilityZone the given Zone is derived from, resolved via
+// spec.availabilityZoneReference rather than by assuming the Zone and
+// AvailabilityZone share a name.
 func (r *Reconciler) clusterMoIDsForZone(
 	ctx context.Context,
 	zone *topologyv1.Zone) ([]string, error) {
-	az, err := topology.GetAvailabilityZone(ctx, r.Client, zone.Name)
+	azName := zone.Spec.Zone.Name
+
+	az, err := topology.GetAvailabilityZone(ctx, r.Client, azName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get availability zone %s: %w", zone.Name, err)
+		return nil, fmt.Errorf("failed to get availability zone %s: %w", azName, err)
 	}
 
 	if len(az.Spec.ClusterComputeResourceMoIDs) > 0 {

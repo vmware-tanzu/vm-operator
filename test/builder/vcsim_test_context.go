@@ -488,6 +488,10 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 						FolderMoID: nsInfo.FolderMoId,
 						PoolMoIDs:  nsInfo.PoolMoIDs,
 					},
+					Zone: topologyv1.AvailabilityZoneReference{
+						APIVersion: topologyv1.GroupVersion.String(),
+						Name:       azName,
+					},
 				},
 			}
 			Expect(c.Client.Create(c, zone)).To(Succeed())

@@ -50,10 +50,10 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S3 — Zone controller fan-out (vmop-3740)
 
-- [x] T050 [S3.a] [PR #1695 / vmop-3740] Modify `controllers/infra/zone/zone_controller.go` — derive cluster MoIDs from poolMoIDs; CreateOrPatch ConfigTarget per MoID; CreateOrPatch VirtualMachineConfigPolicy per zone (default syncMode=ConfigTarget on create only)
+- [x] T050 [S3.a] [PR #1695 / vmop-3740] Modify `controllers/infra/zone/zone_controller.go` — derive cluster MoIDs from the Zone's AvailabilityZone (`ClusterComputeResourceMoIDs`); CreateOrPatch ConfigTarget per MoID; CreateOrPatch VirtualMachineConfigPolicy per zone (default syncMode=ConfigTarget on create only)
 - [x] T051 [S3.a] [PR #1695 / vmop-3740] Unit tests — `controllers/infra/zone/zone_controller_test.go`
-- [x] T052 [S3.b] [PR #1695 / vmop-3740] Integration tests with vcsim — `controllers/infra/zone/zone_controller_test.go`: pool→cluster derivation; idempotent create/patch (UID stable); ConfigTarget not deleted when pool MoIDs removed from zone
-- [x] T053 [S3.c] [PR #1695 / vmop-3740] E2E test — `test/e2e/vmservice/vmservice/configpolicy/zone_fanout.go`: Zone creation materialises ConfigTarget and VirtualMachineConfigPolicy; idempotency verified with Consistently over 30 s
+- [x] T052 [S3.b] [PR #1695 / vmop-3740] Integration tests with vcsim — `controllers/infra/zone/zone_controller_test.go`: zone→AvailabilityZone cluster MoID derivation; idempotent create/patch (UID stable); ConfigTarget not deleted when pool MoIDs removed from zone
+- [x] T053 [S3.c] [PR #1695 / vmop-3740] E2E test — `test/e2e/vmservice/vmservice/configpolicy/configpolicy.go`: Zone creation materialises ConfigTarget and VirtualMachineConfigPolicy; idempotency verified with Consistently over 30 s
 
 ### Story S5 — ConfigTarget controller (vmop-3742)
 

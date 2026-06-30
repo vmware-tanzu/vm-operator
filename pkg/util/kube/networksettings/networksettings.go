@@ -48,7 +48,7 @@ func GetProviderType(
 		return "", err
 	}
 
-	return providerToType(ns.Provider)
+	return NetworkProviderToType(ns.Provider)
 }
 
 // GetSupportedProviderTypes returns the supported NetworkProviderTypes for the given
@@ -70,7 +70,7 @@ func GetSupportedProviderTypes(
 		return nil, err
 	}
 
-	defaultProvider, err := providerToType(ns.Provider)
+	defaultProvider, err := NetworkProviderToType(ns.Provider)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func GetSupportedProviderTypes(
 	t = append(t, defaultProvider)
 
 	if ns.LegacyProvider != "" {
-		legacyProvider, err := providerToType(ns.LegacyProvider)
+		legacyProvider, err := NetworkProviderToType(ns.LegacyProvider)
 		if err != nil {
 			return nil, err
 		}
@@ -105,9 +105,9 @@ func getNetworkSettings(
 	return &ns, nil
 }
 
-// providerToType maps a netopv1alpha1.NetworkProvider value to the
+// NetworkProviderToType maps a netopv1alpha1.NetworkProvider value to the
 // pkgcfg.NetworkProviderType used throughout vm-operator.
-func providerToType(p netopv1alpha1.NetworkProvider) (pkgcfg.NetworkProviderType, error) {
+func NetworkProviderToType(p netopv1alpha1.NetworkProvider) (pkgcfg.NetworkProviderType, error) {
 	switch p {
 	case netopv1alpha1.NetworkProviderVSphereDistributed:
 		return pkgcfg.NetworkProviderTypeVDS, nil
@@ -117,5 +117,20 @@ func providerToType(p netopv1alpha1.NetworkProvider) (pkgcfg.NetworkProviderType
 		return pkgcfg.NetworkProviderTypeVPC, nil
 	default:
 		return "", fmt.Errorf("unknown network provider %q", p)
+	}
+}
+
+// TypeToNetworkProvider maps a pkgcfg.NetworkProviderType value to the
+// netopv1alpha1.NetworkProvider used by the NetworkSettings CR.
+func TypeToNetworkProvider(t pkgcfg.NetworkProviderType) (netopv1alpha1.NetworkProvider, error) {
+	switch t {
+	case pkgcfg.NetworkProviderTypeVDS:
+		return netopv1alpha1.NetworkProviderVSphereDistributed, nil
+	case pkgcfg.NetworkProviderTypeNSXT:
+		return netopv1alpha1.NetworkProviderNSXTier1, nil
+	case pkgcfg.NetworkProviderTypeVPC:
+		return netopv1alpha1.NetworkProviderVPC, nil
+	default:
+		return "", fmt.Errorf("unknown network provider type %q", t)
 	}
 }

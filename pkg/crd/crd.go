@@ -175,8 +175,7 @@ func Install( //nolint:gocyclo
 
 				return err
 			}
-		case "VirtualMachineGroupPublishRequest",
-			"VirtualMachineGroup":
+		case "VirtualMachineGroupPublishRequest":
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
@@ -184,6 +183,35 @@ func Install( //nolint:gocyclo
 				c,
 				k,
 				nil); err != nil {
+
+				return err
+			}
+		case "VirtualMachineGroup":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				features.VMGroups,
+				c,
+				k,
+				func(
+					kind string,
+					obj *unstructured.Unstructured,
+					shouldRemoveFields bool) error {
+
+					if !features.TelcoVMServiceAPI {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("bootOrder", "[]", "powerOffDelay")); err != nil {
+
+							return err
+						}
+					}
+
+					return nil
+				}); err != nil {
 
 				return err
 			}

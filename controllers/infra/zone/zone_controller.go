@@ -104,7 +104,6 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (_ ctrl.Result, reterr error) {
-
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 	ctx = watcher.JoinContext(ctx, r.Context)
 

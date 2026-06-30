@@ -91,6 +91,7 @@ func intgTestsReconcile() {
 	setVMPubReqCompleted := func(vmPubReq *vmopv1.VirtualMachinePublishRequest) {
 		_, err := controllerutil.CreateOrPatch(ctx, ctx.Client, vmPubReq, func() error {
 			vmPubReq.Status.Ready = true
+			vmPubReq.Status.ImageName = vmPubReq.Spec.Target.Item.Name
 			return nil
 		})
 		Expect(err).ToNot(HaveOccurred())

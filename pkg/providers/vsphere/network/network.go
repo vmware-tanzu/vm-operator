@@ -32,6 +32,7 @@ import (
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -121,11 +122,6 @@ var (
 	// RetryTimeout is var so tests can change it to shorten tests until we get rid of the poll.
 	RetryTimeout = 15 * time.Second
 
-	// ErrNetworkInterfaceTypeNotSupported is returned when the network interface specifies
-	// type that is not supported by the configured network provider. The VM validation
-	// webhook enforces what is supported so this is not an expected error.
-	ErrNetworkInterfaceTypeNotSupported = errors.New("network provider is not supported")
-
 	// ErrNetworkInterfaceNotReady is returned when the network interface is not ready.
 	ErrNetworkInterfaceNotReady = pkgerr.NoRequeueErrorf("network interface is not ready")
 
@@ -148,6 +144,8 @@ func CreateNetworkDevices(
 
 	networkSpec := vm.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"Skipping creating network devices since network spec is nil or disabled")
 		return nil, nil
 	}
 
@@ -242,7 +240,7 @@ func CreateNetworkDevices(
 
 // getNetworkInterfaceAPIGroup returns the API Group name for this interface. This
 // is used to determine which network interface CR type to create for the interface.
-// The VM validation webhook enforces this group is support in this namespace.
+// The VM validation webhook enforces that this group is supported in this namespace.
 func getNetworkInterfaceAPIGroup(
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (string, error) {
 

@@ -1541,7 +1541,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		})
 	})
 
-	Context("Mixed VDS & VPC", func() {
+	Context("Mixed VDS and VPC", func() {
 		const (
 			ifaceName0 = "eth0"
 			ifaceName1 = "eth1"
@@ -2479,7 +2479,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 		})
 	})
 
-	Context("Mixed VDS & VCP providers interfaces", func() {
+	Context("Mixed VDS and VCP providers interfaces", func() {
 
 		BeforeEach(func() {
 			testConfig.NumNetworks = 0

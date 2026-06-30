@@ -412,7 +412,9 @@ func (s *Session) poweredOnReconfigure(
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 
 	if networkType, err := netsetutil.GetProviderType(vmCtx, s.K8sClient, vmCtx.VM.Namespace); err != nil {
-		return err
+		return fmt.Errorf(
+			"failed to get network provider type while doing powered on reconfig: %w",
+			err)
 	} else if networkType == pkgcfg.NetworkProviderTypeVPC {
 		if err := s.handleRestoredVPCInterfaces(vmCtx, vcVM, networkResults); err != nil {
 			return err
@@ -509,7 +511,9 @@ func (s *Session) poweredOffReconfigure(
 	if reconfigErr == nil || errors.Is(reconfigErr, ErrReconfigure) {
 		networkType, err := netsetutil.GetProviderType(vmCtx, s.K8sClient, vmCtx.VM.Namespace)
 		if err != nil {
-			return err
+			return fmt.Errorf(
+				"failed to get network provider type while doing powered off reconfig: %w",
+				err)
 		}
 		if networkType == pkgcfg.NetworkProviderTypeVPC {
 			if v, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]; ok {
@@ -1017,19 +1021,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		configSpec)
 
 	if reconfigErr != nil && !errors.Is(reconfigErr, ErrReconfigure) {
-		return err
-	}
-
-	networkType, err := netsetutil.GetProviderType(vmCtx, s.K8sClient, vmCtx.VM.Namespace)
-	if err != nil {
-		return err
-	}
-	if networkType == pkgcfg.NetworkProviderTypeVPC {
-		if v, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]; ok {
-			vmCtx.Logger.Info("Removing VPC restore annotation after powered off reconfigure",
-				"interfaces", v)
-			delete(vmCtx.VM.Annotations, network.VPCInterfaceRestoredAnnotation)
-		}
+		return reconfigErr
 	}
 
 	if needsResize {
@@ -1041,6 +1033,18 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 			APIVersion: vmopv1.GroupVersion.String(),
 			Kind:       "VirtualMachineClass",
 			Name:       resizeArgs.VMClass.Name,
+		}
+	}
+
+	if networkType, err := netsetutil.GetProviderType(vmCtx, s.K8sClient, vmCtx.VM.Namespace); err != nil {
+		return fmt.Errorf(
+			"failed to get network provider type while doing powered off resize: %w",
+			err)
+	} else if networkType == pkgcfg.NetworkProviderTypeVPC {
+		if v, ok := vmCtx.VM.Annotations[network.VPCInterfaceRestoredAnnotation]; ok {
+			vmCtx.Logger.Info("Removing VPC restore annotation after powered off reconfigure",
+				"interfaces", v)
+			delete(vmCtx.VM.Annotations, network.VPCInterfaceRestoredAnnotation)
 		}
 	}
 

@@ -373,3 +373,73 @@ var _ = Describe("GetSupportedProviderTypes", func() {
 		})
 	})
 })
+
+var _ = Describe("NetworkProviderToType", func() {
+	When("provider is vsphere-distributed", func() {
+		It("returns NetworkProviderTypeVDS", func() {
+			result, err := netsetutil.NetworkProviderToType(netopv1alpha1.NetworkProviderVSphereDistributed)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(pkgcfg.NetworkProviderTypeVDS))
+		})
+	})
+
+	When("provider is nsx-tier1", func() {
+		It("returns NetworkProviderTypeNSXT", func() {
+			result, err := netsetutil.NetworkProviderToType(netopv1alpha1.NetworkProviderNSXTier1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(pkgcfg.NetworkProviderTypeNSXT))
+		})
+	})
+
+	When("provider is vpc", func() {
+		It("returns NetworkProviderTypeVPC", func() {
+			result, err := netsetutil.NetworkProviderToType(netopv1alpha1.NetworkProviderVPC)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(pkgcfg.NetworkProviderTypeVPC))
+		})
+	})
+
+	When("provider is unknown", func() {
+		It("returns an error", func() {
+			result, err := netsetutil.NetworkProviderToType("unknown-provider")
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("unknown network provider")))
+			Expect(result).To(BeEmpty())
+		})
+	})
+})
+
+var _ = Describe("TypeToNetworkProvider", func() {
+	When("type is NetworkProviderTypeVDS", func() {
+		It("returns NetworkProviderVSphereDistributed", func() {
+			result, err := netsetutil.TypeToNetworkProvider(pkgcfg.NetworkProviderTypeVDS)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(netopv1alpha1.NetworkProviderVSphereDistributed))
+		})
+	})
+
+	When("type is NetworkProviderTypeNSXT", func() {
+		It("returns NetworkProviderNSXTier1", func() {
+			result, err := netsetutil.TypeToNetworkProvider(pkgcfg.NetworkProviderTypeNSXT)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(netopv1alpha1.NetworkProviderNSXTier1))
+		})
+	})
+
+	When("type is NetworkProviderTypeVPC", func() {
+		It("returns NetworkProviderVPC", func() {
+			result, err := netsetutil.TypeToNetworkProvider(pkgcfg.NetworkProviderTypeVPC)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(netopv1alpha1.NetworkProviderVPC))
+		})
+	})
+
+	When("type is unknown", func() {
+		It("returns an error", func() {
+			result, err := netsetutil.TypeToNetworkProvider("unknown-type")
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("unknown network provider type")))
+			Expect(result).To(BeEmpty())
+		})
+	})
+})

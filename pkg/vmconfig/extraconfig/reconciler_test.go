@@ -18,6 +18,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	vsphereconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
@@ -292,6 +293,13 @@ var _ = Describe("OnResult", func() {
 		Expect(cond).ToNot(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 		Expect(cond.Reason).To(Equal(vmconfextraconfig.ReasonError))
+	})
+
+	It("does not set Error condition on NoRequeueNoErr sentinel", func() {
+		Expect(r.OnResult(ctx, vm, moVM, pkgerr.NoRequeueNoErr("created vm"))).To(Succeed())
+		cond := findCond(vm)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 	})
 
 	It("sets True condition when spec matches observed", func() {

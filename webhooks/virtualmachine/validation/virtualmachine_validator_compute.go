@@ -14,6 +14,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // validateComputeConfig validates spec.resources, spec.cpuAdvanced, and
@@ -46,6 +47,7 @@ func (v validator) validateComputeConfig(
 	allErrs = append(allErrs, validateComputeLatencySensitivity(specPath, vm)...)
 	allErrs = append(allErrs, validateComputeReservationLockedToMax(specPath, vm)...)
 	allErrs = append(allErrs, validateComputeTopology(specPath, vm)...)
+	allErrs = append(allErrs, validateUPTv2MemoryReservation(specPath, vm)...)
 
 	return allErrs
 }
@@ -186,17 +188,10 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 	var (
 		allErrs   field.ErrorList
 		resources = vm.Spec.Resources
-		memAdv    = vm.Spec.MemoryAdvanced
 		lsPath    = specPath.Child("cpuAdvanced").Child("latencySensitivity")
 	)
 
-	// Full memory reservation: reservationLockedToMax or requests.memory == size.memory
-	memReservationMet := (memAdv != nil && ptr.Deref(memAdv.ReservationLockedToMax)) ||
-		(resources != nil &&
-			resources.Requests != nil && resources.Size != nil &&
-			resources.Requests.Memory != nil && resources.Size.Memory != nil &&
-			resources.Requests.Memory.Cmp(*resources.Size.Memory) == 0)
-	if !memReservationMet {
+	if !vmopv1util.FullMemReservationSpecMet(vm) {
 		allErrs = append(allErrs, field.Invalid(lsPath, string(ls),
 			"requires full memory reservation: "+
 				"spec.resources.requests.memory must equal spec.resources.size.memory, "+
@@ -258,6 +253,36 @@ func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.Virt
 		}
 	}
 
+	return allErrs
+}
+
+// validateUPTv2MemoryReservation rejects any interface spec that sets
+// vmxnet3.uptv2Enabled=true without ensuring full guest memory reservation.
+// vSphere requires full memory reservation when UPTv2 is enabled.
+//
+// Full reservation is satisfied when either:
+//   - spec.memoryAdvanced.reservationLockedToMax == true
+//   - spec.resources.requests.memory equals spec.resources.size.memory
+func validateUPTv2MemoryReservation(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
+	if vmopv1util.FullMemReservationSpecMet(vm) {
+		return nil
+	}
+	if vm.Spec.Network == nil {
+		return nil
+	}
+
+	const msg = "requires full guest memory reservation: " +
+		"set spec.memoryAdvanced.reservationLockedToMax=true, " +
+		"or set spec.resources.requests.memory equal to spec.resources.size.memory"
+
+	var allErrs field.ErrorList
+	ifacesPath := specPath.Child("network", "interfaces")
+	for i, iface := range vm.Spec.Network.Interfaces {
+		if iface.VMXNet3 != nil && ptr.Deref(iface.VMXNet3.UPTv2Enabled) {
+			allErrs = append(allErrs, field.Invalid(
+				ifacesPath.Index(i).Child("vmxnet3", "uptv2Enabled"), true, msg))
+		}
+	}
 	return allErrs
 }
 

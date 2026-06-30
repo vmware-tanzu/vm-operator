@@ -14,6 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -103,6 +104,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (_ ctrl.Result, reterr error) {
+
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 	ctx = watcher.JoinContext(ctx, r.Context)
 
@@ -213,9 +215,7 @@ func (r *Reconciler) clusterMoIDsFromPools(
 
 	vimClient := vsphereClient.VimClient()
 
-	seen := make(map[string]struct{})
-
-	var clusterMoIDs []string
+	clusterMoIDs := sets.New[string]()
 
 	for _, poolMoID := range zone.Spec.ManagedVMs.PoolMoIDs {
 		if poolMoID == "" {
@@ -231,13 +231,10 @@ func (r *Reconciler) clusterMoIDsFromPools(
 			continue
 		}
 
-		if _, ok := seen[moRef.Value]; !ok {
-			seen[moRef.Value] = struct{}{}
-			clusterMoIDs = append(clusterMoIDs, moRef.Value)
-		}
+		clusterMoIDs.Insert(moRef.Value)
 	}
 
-	return clusterMoIDs, nil
+	return clusterMoIDs.UnsortedList(), nil
 }
 
 // reconcileConfigTargets ensures a cluster-scoped ConfigTarget exists for each

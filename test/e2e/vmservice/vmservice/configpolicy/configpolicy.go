@@ -80,21 +80,23 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					"expected at least one Zone in namespace %q", input.WCPNamespaceName)
 
 				// ConfigTargets are cluster-scoped and named after the cluster
-				// MoID derived from each zone's pool MoIDs. Verify that for each
-				// zone at least one ConfigTarget exists and has a matching spec.id.
+				// MoID derived from each zone's pool MoIDs. List them once and
+				// verify that for each zone at least one ConfigTarget exists and
+				// has a matching spec.id.
+				var ctList unstructured.UnstructuredList
+				ctList.SetGroupVersionKind(schema.GroupVersionKind{
+					Group:   configTargetGVK.Group,
+					Version: configTargetGVK.Version,
+					Kind:    configTargetGVK.Kind + "List",
+				})
+				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+
 				for i := range zoneList.Items {
 					z := &zoneList.Items[i]
 					Expect(z.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty(),
 						"Zone %q/%q has no pool MoIDs in spec.managedVMs.poolMoIDs",
 						z.Namespace, z.Name)
 
-					var ctList unstructured.UnstructuredList
-					ctList.SetGroupVersionKind(schema.GroupVersionKind{
-						Group:   configTargetGVK.Group,
-						Version: configTargetGVK.Version,
-						Kind:    configTargetGVK.Kind + "List",
-					})
-					Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
 					Expect(ctList.Items).ToNot(BeEmpty(),
 						"expected at least one ConfigTarget for zone %q", z.Name)
 
@@ -120,14 +122,14 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					policy := &unstructured.Unstructured{}
 					policy.SetGroupVersionKind(vmConfigPolicyGVK)
 					Expect(svClusterClient.Get(ctx,
-						ctrlclient.ObjectKey{Name: z.Name, Namespace: z.Namespace},
+						ctrlclient.ObjectKey{Name: z.Name, Namespace: input.WCPNamespaceName},
 						policy)).To(Succeed(),
-						"VirtualMachineConfigPolicy %q/%q should exist", z.Namespace, z.Name)
+						"VirtualMachineConfigPolicy %q/%q should exist", input.WCPNamespaceName, z.Name)
 
 					zoneField, _, _ := unstructured.NestedString(policy.Object, "spec", "zone")
 					Expect(zoneField).To(Equal(z.Name),
 						"VirtualMachineConfigPolicy %q/%q should reference zone %q",
-						z.Namespace, z.Name, z.Name)
+						input.WCPNamespaceName, z.Name, z.Name)
 				}
 			})
 

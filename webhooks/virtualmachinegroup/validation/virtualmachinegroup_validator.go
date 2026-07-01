@@ -20,6 +20,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -31,6 +32,7 @@ const (
 	emptyPowerStateNotAllowedAfterSet     = "cannot set powerState to empty once it's been set"
 	invalidTimeFormat                     = "time must be in RFC3339Nano format"
 	selfReferenceMemberOrGroupName        = "group cannot have itself as a member or group name"
+	powerOffDelayNotSupported             = "specifying powerOffDelay is not supported"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachinegroup,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinegroups,versions=v1alpha6,name=default.validating.virtualmachinegroup.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -101,6 +103,7 @@ func (v validator) ValidateCreate(
 	fieldErrs = append(fieldErrs, v.validatePowerState(ctx, vmGroup, nil)...)
 	fieldErrs = append(fieldErrs, v.validateBootOrderMembers(ctx, vmGroup)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vmGroup)...)
+	fieldErrs = append(fieldErrs, v.validatePowerOffDelay(ctx, vmGroup)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -135,6 +138,7 @@ func (v validator) ValidateUpdate(
 
 	fieldErrs = append(fieldErrs, v.validateBootOrderMembers(ctx, vmGroup)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vmGroup)...)
+	fieldErrs = append(fieldErrs, v.validatePowerOffDelay(ctx, vmGroup)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -254,6 +258,33 @@ func (v validator) validateGroupName(
 			vmGroup.Spec.GroupName,
 			selfReferenceMemberOrGroupName,
 		))
+	}
+
+	return allErrs
+}
+
+// validatePowerOffDelay validates that spec.bootOrder[].powerOffDelay is only
+// set when the TelcoVMServiceAPI capability is enabled.
+func (v validator) validatePowerOffDelay(
+	ctx *pkgctx.WebhookRequestContext,
+	vmGroup *vmopv1.VirtualMachineGroup) field.ErrorList {
+
+	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+		return nil
+	}
+
+	var (
+		allErrs field.ErrorList
+		path    = field.NewPath("spec", "bootOrder")
+	)
+
+	for i, bootOrder := range vmGroup.Spec.BootOrder {
+		if bootOrder.PowerOffDelay != nil {
+			allErrs = append(allErrs, field.Forbidden(
+				path.Index(i).Child("powerOffDelay"),
+				powerOffDelayNotSupported,
+			))
+		}
 	}
 
 	return allErrs

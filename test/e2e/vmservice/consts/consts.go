@@ -28,13 +28,14 @@ const (
 
 	JumpboxPodVMName = "jumpbox"
 
-	VMGroupsCapabilityName                  = "supports_VM_service_VM_groups"
-	VirtualMachineSnapshotCapabilityName    = "supports_VM_service_VM_snapshots"
-	VMPlacementPoliciesCapabilityName       = "supports_VM_service_VM_placement_policies"
-	VMAffinityDuringExecutionCapabilityName = "supports_VM_service_VM_affinity_during_execution"
-	InventoryContentLibraryCapabilityName   = "supports_inventory_content_library"
-	SharedDisksCapabilityName               = "supports_shared_disks_with_VM_service_VMs"
-	AllDisksArePVCapabilityName             = "supports_vm_service_all_disks_are_pvcs"
-	MultiWriterDiskVMotionCapabilityName    = "supports_multiwriter_disk_vmotion"
-	IaaSComputePoliciesCapabilityName       = "supports_iaas_compute_policies"
+	VMGroupsCapabilityName                   = "supports_VM_service_VM_groups"
+	VirtualMachineSnapshotCapabilityName     = "supports_VM_service_VM_snapshots"
+	VMPlacementPoliciesCapabilityName        = "supports_VM_service_VM_placement_policies"
+	VMAffinityDuringExecutionCapabilityName  = "supports_VM_service_VM_affinity_during_execution"
+	InventoryContentLibraryCapabilityName    = "supports_inventory_content_library"
+	SharedDisksCapabilityName                = "supports_shared_disks_with_VM_service_VMs"
+	AllDisksArePVCapabilityName              = "supports_vm_service_all_disks_are_pvcs"
+	MultiWriterDiskVMotionCapabilityName     = "supports_multiwriter_disk_vmotion"
+	IaaSComputePoliciesCapabilityName        = "supports_iaas_compute_policies"
+	VirtualMachineConfigPolicyCapabilityName = "supports_vm_service_vm_config_policy"
 )

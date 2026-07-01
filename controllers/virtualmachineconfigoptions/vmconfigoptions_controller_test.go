@@ -152,9 +152,9 @@ func unitTestsReconcile() {
 				})
 
 				It("should mark Ready=False with QueryFailed reason and return error", func() {
-					_, err := doReconcile()
 					// First reconcile adds finalizer; second surfaces the error.
-					_, err = doReconcile()
+					_, _ = doReconcile()
+					_, err := doReconcile()
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("vc unavailable"))
 

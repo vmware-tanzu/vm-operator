@@ -19,7 +19,12 @@ import (
 
 var suite = builder.NewTestSuiteForControllerWithContext(
 	cource.WithContext(
-		pkgcfg.NewContextWithDefaultConfig(),
+		pkgcfg.UpdateContext(
+			pkgcfg.NewContextWithDefaultConfig(),
+			func(config *pkgcfg.Config) {
+				config.Features.VirtualMachineConfigPolicy = true
+			},
+		),
 	),
 	vmconfigoptions.AddToManager,
 	manager.InitializeProvidersNoopFn)

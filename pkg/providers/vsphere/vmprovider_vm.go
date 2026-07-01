@@ -1079,7 +1079,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			// path, so we set the condition here before exiting early.
 			if pkgcfg.FromContext(vmCtx).Features.VMSnapshots &&
 				pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs &&
-				!pkgcond.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
+				!pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
 				if setErr := ReconcileSnapshotWaitForCRVCondition(
 					vmCtx, vs.k8sClient); setErr != nil {
 					reconcileErr = getReconcileErr(

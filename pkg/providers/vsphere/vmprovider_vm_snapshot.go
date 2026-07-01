@@ -214,13 +214,13 @@ func markSnapshotWaitingForDiskRegistration(
 	k8sClient ctrlclient.Client,
 	vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
 
-	if pkgcond.GetReason(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) ==
+	if pkgcnd.GetReason(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) ==
 		vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason {
 		return nil
 	}
 
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
-	pkgcond.MarkFalse(
+	pkgcnd.MarkFalse(
 		vmSnapshot,
 		vmopv1.VirtualMachineSnapshotCreatedCondition,
 		vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason,
@@ -848,7 +848,7 @@ func ReconcileSnapshotWaitForCRVCondition(
 
 	for i := range vmSnapshots {
 		snapshot := &vmSnapshots[i]
-		if pkgcond.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) {
+		if pkgcnd.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) {
 			continue
 		}
 		if err := markSnapshotWaitingForDiskRegistration(vmCtx, k8sClient, snapshot); err != nil {
@@ -998,10 +998,10 @@ func ReconcileCurrentSnapshot(
 	// VMs where promoteDiskMode is disabled, because those disks are always
 	// linked clones and their Classic status entries are never cleaned up.
 	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
-		if !pkgcond.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
+		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
 			logger.Info("Waiting for disk registration before creating snapshot",
 				"vmCondition", vmconfunmanagedvolsreg.Condition,
-				"vmConditionReason", pkgcond.GetReason(vmCtx.VM, vmconfunmanagedvolsreg.Condition))
+				"vmConditionReason", pkgcnd.GetReason(vmCtx.VM, vmconfunmanagedvolsreg.Condition))
 
 			if err := markSnapshotWaitingForDiskRegistration(
 				vmCtx, k8sClient, snapshotToProcess); err != nil {

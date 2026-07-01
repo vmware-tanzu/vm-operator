@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/configpolicy"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
@@ -233,6 +234,16 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})
+		})
+	})
+
+	Context("CONFIG-POLICY", func() {
+		configpolicy.Spec(context.TODO(), func() configpolicy.SpecInput {
+			return configpolicy.SpecInput{
+				ClusterProxy:     svClusterProxy,
+				Config:           config,
+				WCPNamespaceName: wcpNamespaceName,
+			}
 		})
 	})
 })

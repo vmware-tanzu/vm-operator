@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -38,7 +40,7 @@ var SkipNameValidation *bool
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType     = &topologyv1.Zone{}
-		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
+		controlledTypeName = reflect.TypeFor[topologyv1.Zone]().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
 	)
@@ -65,7 +67,6 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder) *Reconciler {
-
 	return &Reconciler{
 		Context:  ctx,
 		Client:   client,
@@ -80,6 +81,7 @@ const Finalizer = "vmoperator.vmware.com/zone-finalizer"
 // Reconciler reconciles a StoragePolicyQuota object.
 type Reconciler struct {
 	client.Client
+
 	Context  context.Context
 	Logger   logr.Logger
 	Recorder record.Recorder
@@ -87,15 +89,17 @@ type Reconciler struct {
 
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=zones,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=zones/status,verbs=get
+// +kubebuilder:rbac:groups=vim.vmware.com,resources=configtargets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=vim.vmware.com,resources=virtualmachineconfigpolicies,verbs=get;list;watch;create;update;patch
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (_ ctrl.Result, reterr error) {
-
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 	ctx = watcher.JoinContext(ctx, r.Context)
 
 	var obj topologyv1.Zone
+
 	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -104,6 +108,7 @@ func (r *Reconciler) Reconcile(
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
 	defer func() {
 		if err := patchHelper.Patch(ctx, &obj); err != nil {
 			if reterr == nil {
@@ -124,7 +129,6 @@ func (r *Reconciler) Reconcile(
 func (r *Reconciler) ReconcileDelete(
 	ctx context.Context,
 	obj *topologyv1.Zone) (ctrl.Result, error) {
-
 	if val := obj.Spec.ManagedVMs.FolderMoID; val != "" {
 		if err := watcher.Remove(
 			ctx,
@@ -143,6 +147,7 @@ func (r *Reconciler) ReconcileDelete(
 			}
 		}
 	}
+
 	controllerutil.RemoveFinalizer(obj, Finalizer)
 
 	return ctrl.Result{}, nil
@@ -151,11 +156,12 @@ func (r *Reconciler) ReconcileDelete(
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
 	obj *topologyv1.Zone) (ctrl.Result, error) {
-
 	if controllerutil.AddFinalizer(obj, Finalizer) {
 		// Ensure the finalizer is present before watching this zone.
 		return ctrl.Result{}, nil
 	}
+
+	var errs []error
 
 	if val := obj.Spec.ManagedVMs.FolderMoID; val != "" {
 		if err := watcher.Add(
@@ -167,10 +173,78 @@ func (r *Reconciler) ReconcileNormal(
 			fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
 
 			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
-				return ctrl.Result{}, err
+				errs = append(errs, err)
 			}
 		}
 	}
 
-	return ctrl.Result{}, nil
+	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
+		if err := r.reconcileConfigTargets(ctx, obj); err != nil {
+			errs = append(errs, err)
+		}
+
+		if err := r.reconcileVMConfigPolicy(ctx, obj); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return ctrl.Result{}, errors.Join(errs...)
+}
+
+// reconcileConfigTargets ensures a cluster-scoped ConfigTarget exists for each
+// ClusterComputeResource MoID in zone.spec.managedVMs.clusterMoIDs.
+func (r *Reconciler) reconcileConfigTargets(
+	ctx context.Context,
+	zone *topologyv1.Zone) error {
+	for _, clusterMoID := range zone.Spec.ManagedVMs.ClusterMoIDs {
+		ct := &vimv1.ConfigTarget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: clusterMoID,
+			},
+		}
+
+		if _, err := controllerutil.CreateOrPatch(ctx, r.Client, ct, func() error {
+			// clusterMoID also derives ct.Name (set above), so spec.id can
+			// never differ across reconciles for the same object; setting it
+			// unconditionally is a no-op on update.
+			ct.Spec.ID = vimv1.ManagedObjectID{ID: clusterMoID}
+
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ConfigTarget %s: %w", clusterMoID, err)
+		}
+	}
+
+	return nil
+}
+
+// reconcileVMConfigPolicy ensures a namespace-scoped VirtualMachineConfigPolicy
+// exists for the zone. The syncMode is set only on creation to allow manual
+// overrides to persist across reconciles.
+func (r *Reconciler) reconcileVMConfigPolicy(
+	ctx context.Context,
+	zone *topologyv1.Zone) error {
+	policy := &vimv1.VirtualMachineConfigPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      zone.Name,
+			Namespace: zone.Namespace,
+		},
+	}
+
+	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, policy, func() error {
+		policy.Spec.Zone = zone.Name
+		if policy.Spec.SyncMode == "" {
+			// Set the default only when the object is new; the kubebuilder
+			// defaulting webhook ensures SyncMode is never empty on an existing
+			// object, so this preserves any value a user has configured.
+			policy.Spec.SyncMode = vimv1.VirtualMachineConfigPolicySyncModeConfigTarget
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile VirtualMachineConfigPolicy %s/%s: %w",
+			zone.Namespace, zone.Name, err)
+	}
+
+	return nil
 }

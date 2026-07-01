@@ -41,6 +41,8 @@ Config file: `test/e2e/vmservice/config/wcp.yaml`. Env vars such as `NETWORK`, `
 
 - Follow layouts and examples under `test/e2e/vmservice/` (e.g. `vmservice/virtualmachine/`).
 - Use Ginkgo `Label(...)` with the project’s label scheme (`smoke`, `core-functional`, `extended-functional`, feature labels — see README).
+- **New tests and significant changes to existing E2E tests must include `"experimental"` in their `Label(...)` until validated on a real WCP cluster.** The `experimental` label excludes tests from all CI runs. Remove it once the test has been verified on hardware.
+- Capability constants (e.g. `"supports_vm_service_vm_config_policy"`) belong in `test/e2e/vmservice/consts/consts.go` as named exported constants — do not inline capability strings in spec files.
 - Prefer helpers in `lib/vmoperator`, `manifestbuilders`, and `infrastructure/vsphere` rather than ad-hoc API calls.
 - Async behavior: `Eventually` / `Consistently`, not sleeps — same spirit as controller tests; details and snippets are in the README.
 

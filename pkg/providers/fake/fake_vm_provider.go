@@ -67,6 +67,8 @@ type funcs struct {
 	DeleteSnapshotFn           func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
 	GetSnapshotSizeFn          func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+
+	QueryConfigOptionExFn func(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error)
 }
 
 type VMProvider struct {
@@ -482,6 +484,15 @@ func (s *VMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.Vi
 		return s.SyncVMSnapshotTreeStatusFn(ctx, vm)
 	}
 	return nil
+}
+
+func (s *VMProvider) QueryConfigOptionEx(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.QueryConfigOptionExFn != nil {
+		return s.QueryConfigOptionExFn(ctx, clusterMoID, hardwareVersion)
+	}
+	return nil, nil
 }
 
 func NewVMProvider() *VMProvider {

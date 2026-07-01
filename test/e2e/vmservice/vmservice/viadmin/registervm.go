@@ -30,11 +30,6 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
-	capiutil "sigs.k8s.io/cluster-api/util"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -50,7 +45,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const trueString = "true"
@@ -1072,6 +1072,69 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// We can't use len(existingVM.Spec.Volumes) here because we are only restoring one disk.
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, 1, clusterProxy, config, svClusterClient, wcpClient)
+			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+		})
+	})
+
+	Context("RegisterVM - Restore to new", func() {
+		It("Should register VM when no pre-existing VM CR exists", func() {
+			if !vmServiceBackupRestoreEnabled {
+				Skip("WCP_VMService_BackupRestore FSS is not enabled")
+			}
+
+			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+			secretName := vmName + "-cloud-config-data"
+			secret := manifestbuilders.Secret{
+				Namespace: input.WCPNamespaceName,
+				Name:      secretName,
+			}
+			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
+			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data")
+
+			resources := config.InfraConfig.ManagementClusterConfig.Resources
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        input.WCPNamespaceName,
+				Name:             vmName,
+				VMClassName:      resources.VMClassName,
+				StorageClassName: resources.StorageClassName,
+				ResourcePolicy:   resources.VMResourcePolicyName,
+				ImageName:        linuxVMIName,
+				Bootstrap: manifestbuilders.Bootstrap{
+					CloudInit: &manifestbuilders.CloudInit{
+						RawCloudConfig: &manifestbuilders.KeySelector{
+							Key:  "user-data",
+							Name: secretName,
+						},
+					},
+				},
+				PowerState: "PoweredOn",
+			}
+			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+
+			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			defer vcenter.LogoutVimClient(vCenterClient)
+
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName,
+				metav1.Condition{
+					Type:   "VirtualMachineUnmanagedVolumesRegistered",
+					Status: metav1.ConditionTrue,
+				})
+
+			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
+			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, input.WCPNamespaceName, clusterProxy, wcpClient)
+
+			By("Verify task state is success")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(taskInfo).ToNot(BeNil())
+			Expect(taskInfo.Error).To(BeNil())
+			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
+
+			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, len(existingVM.Spec.Volumes), clusterProxy, config, svClusterClient, wcpClient)
 			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})

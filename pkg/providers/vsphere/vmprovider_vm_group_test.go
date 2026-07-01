@@ -269,6 +269,79 @@ func vmGroupTests() {
 		})
 	})
 
+	Context("Group placement with VMs specifying a preferred zone", func() {
+		It("should constrain placement to the shared zone when all members agree", func() {
+			Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+			zoneName := ctx.ZoneNames[0]
+			vm1.Labels[corev1.LabelTopologyZone] = zoneName
+			vm2.Labels[corev1.LabelTopologyZone] = zoneName
+
+			groupPlacements := []providers.VMGroupPlacement{
+				{
+					VMGroup: vmGroup,
+					VMMembers: []*vmopv1.VirtualMachine{
+						vm1,
+						vm2,
+					},
+				},
+			}
+
+			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmGroup.Status.Members).To(HaveLen(2))
+			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+			assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+
+			Expect(vmGroup.Status.Members[0].Placement.Zone).To(Equal(zoneName))
+			Expect(vmGroup.Status.Members[1].Placement.Zone).To(Equal(zoneName))
+		})
+
+		It("should not constrain placement to a single zone when members disagree", func() {
+			Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+			vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+			vm2.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[1]
+
+			groupPlacements := []providers.VMGroupPlacement{
+				{
+					VMGroup: vmGroup,
+					VMMembers: []*vmopv1.VirtualMachine{
+						vm1,
+						vm2,
+					},
+				},
+			}
+
+			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmGroup.Status.Members).To(HaveLen(2))
+			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+			assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+		})
+
+		It("should not constrain placement to a single zone when one member has no zone label", func() {
+			Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+			// vm1 has a zone label, vm2 has none: not every member agrees
+			// on a zone, so placement must remain unconstrained.
+			vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+
+			groupPlacements := []providers.VMGroupPlacement{
+				{
+					VMGroup: vmGroup,
+					VMMembers: []*vmopv1.VirtualMachine{
+						vm1,
+						vm2,
+					},
+				},
+			}
+
+			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmGroup.Status.Members).To(HaveLen(2))
+			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+			assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+		})
+	})
+
 	Context("VSpherePolicies is enabled", func() {
 		JustBeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {

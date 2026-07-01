@@ -451,6 +451,7 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		}
 
 		var nsRPs []*object.ResourcePool
+		var clusterMoIDs []string
 		for _, ccr := range c.azCCRs[azName] {
 			rp, err := ccr.ResourcePool(c)
 			Expect(err).ToNot(HaveOccurred())
@@ -459,15 +460,11 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 			Expect(err).ToNot(HaveOccurred())
 
 			nsRPs = append(nsRPs, nsRP)
+			clusterMoIDs = append(clusterMoIDs, ccr.Reference().Value)
 		}
 		Expect(nsRPs).To(HaveLen(c.ClustersPerZone))
 		for _, rp := range nsRPs {
 			nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
-		}
-
-		var clusterMoIDs []string
-		for _, ccr := range c.azCCRs[azName] {
-			clusterMoIDs = append(clusterMoIDs, ccr.Reference().Value)
 		}
 
 		// When the WorkloadDomainIsolation capability is disabled,

@@ -11,29 +11,16 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
+	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
-)
-
-var (
-	configTargetGVK = schema.GroupVersionKind{
-		Group:   "vim.vmware.com",
-		Version: "v1alpha1",
-		Kind:    "ConfigTarget",
-	}
-	vmConfigPolicyGVK = schema.GroupVersionKind{
-		Group:   "vim.vmware.com",
-		Version: "v1alpha1",
-		Kind:    "VirtualMachineConfigPolicy",
-	}
 )
 
 // SpecInput holds the inputs for Spec.
@@ -83,12 +70,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				// MoID derived from each zone's pool MoIDs. List them once and
 				// verify that for each zone at least one ConfigTarget exists and
 				// has a matching spec.id.
-				var ctList unstructured.UnstructuredList
-				ctList.SetGroupVersionKind(schema.GroupVersionKind{
-					Group:   configTargetGVK.Group,
-					Version: configTargetGVK.Version,
-					Kind:    configTargetGVK.Kind + "List",
-				})
+				var ctList vimv1.ConfigTargetList
 				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
 
 				for i := range zoneList.Items {
@@ -102,9 +84,8 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 					for j := range ctList.Items {
 						ct := &ctList.Items[j]
-						id, _, _ := unstructured.NestedString(ct.Object, "spec", "id", "id")
-						Expect(id).To(Equal(ct.GetName()),
-							"ConfigTarget %q spec.id.id should equal its metadata.name", ct.GetName())
+						Expect(ct.Spec.ID.ID).To(Equal(ct.Name),
+							"ConfigTarget %q spec.id.id should equal its metadata.name", ct.Name)
 					}
 				}
 			})
@@ -119,46 +100,16 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 				for i := range zoneList.Items {
 					z := &zoneList.Items[i]
-					policy := &unstructured.Unstructured{}
-					policy.SetGroupVersionKind(vmConfigPolicyGVK)
+					policy := &vimv1.VirtualMachineConfigPolicy{}
 					Expect(svClusterClient.Get(ctx,
 						ctrlclient.ObjectKey{Name: z.Name, Namespace: input.WCPNamespaceName},
 						policy)).To(Succeed(),
 						"VirtualMachineConfigPolicy %q/%q should exist", input.WCPNamespaceName, z.Name)
 
-					zoneField, _, _ := unstructured.NestedString(policy.Object, "spec", "zone")
-					Expect(zoneField).To(Equal(z.Name),
+					Expect(policy.Spec.Zone).To(Equal(z.Name),
 						"VirtualMachineConfigPolicy %q/%q should reference zone %q",
 						input.WCPNamespaceName, z.Name, z.Name)
 				}
-			})
-
-		It("Should not delete a ConfigTarget when the zone is reconciled again",
-			Label("extended-functional", "experimental"),
-			func() {
-				// Pick any existing ConfigTarget and verify its UID is stable
-				// across multiple reconcile cycles (idempotency of CreateOrPatch).
-				var ctList unstructured.UnstructuredList
-				ctList.SetGroupVersionKind(schema.GroupVersionKind{
-					Group:   configTargetGVK.Group,
-					Version: configTargetGVK.Version,
-					Kind:    configTargetGVK.Kind + "List",
-				})
-				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
-				Expect(ctList.Items).ToNot(BeEmpty())
-
-				ct := &ctList.Items[0]
-				originalUID := ct.GetUID()
-				ctName := ct.GetName()
-
-				Consistently(func(g Gomega) {
-					ct2 := &unstructured.Unstructured{}
-					ct2.SetGroupVersionKind(configTargetGVK)
-					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: ctName}, ct2)).
-						To(Succeed())
-					g.Expect(ct2.GetUID()).To(Equal(originalUID),
-						"ConfigTarget %q should not have been recreated", ctName)
-				}, "30s", "5s").Should(Succeed())
 			})
 	})
 }

@@ -161,6 +161,8 @@ func (r *Reconciler) ReconcileNormal(
 		return ctrl.Result{}, nil
 	}
 
+	var errs []error
+
 	if val := obj.Spec.ManagedVMs.FolderMoID; val != "" {
 		if err := watcher.Add(
 			ctx,
@@ -171,22 +173,22 @@ func (r *Reconciler) ReconcileNormal(
 			fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
 
 			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
-				return ctrl.Result{}, err
+				errs = append(errs, err)
 			}
 		}
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
 		if err := r.reconcileConfigTargets(ctx, obj); err != nil {
-			return ctrl.Result{}, err
+			errs = append(errs, err)
 		}
 
 		if err := r.reconcileVMConfigPolicy(ctx, obj); err != nil {
-			return ctrl.Result{}, err
+			errs = append(errs, err)
 		}
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, errors.Join(errs...)
 }
 
 // reconcileConfigTargets ensures a cluster-scoped ConfigTarget exists for each
@@ -202,9 +204,10 @@ func (r *Reconciler) reconcileConfigTargets(
 		}
 
 		if _, err := controllerutil.CreateOrPatch(ctx, r.Client, ct, func() error {
-			if ct.UID == "" {
-				ct.Spec.ID = vimv1.ManagedObjectID{ID: clusterMoID}
-			}
+			// clusterMoID also derives ct.Name (set above), so spec.id can
+			// never differ across reconciles for the same object; setting it
+			// unconditionally is a no-op on update.
+			ct.Spec.ID = vimv1.ManagedObjectID{ID: clusterMoID}
 
 			return nil
 		}); err != nil {

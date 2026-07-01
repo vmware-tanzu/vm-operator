@@ -67,6 +67,8 @@ type funcs struct {
 	DeleteSnapshotFn           func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
 	GetSnapshotSizeFn          func(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+
+	GetVirtualMachineConfigTargetFn func(ctx context.Context, clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error)
 }
 
 type VMProvider struct {
@@ -482,6 +484,24 @@ func (s *VMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.Vi
 		return s.SyncVMSnapshotTreeStatusFn(ctx, vm)
 	}
 	return nil
+}
+
+// GetVirtualMachineConfigTarget returns the vSphere cluster's
+// EnvironmentBrowser QueryConfigTarget and QueryConfigOptionDescriptor
+// results for the cluster identified by clusterMoID.
+func (s *VMProvider) GetVirtualMachineConfigTarget(
+	ctx context.Context,
+	clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error) {
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+
+	if s.GetVirtualMachineConfigTargetFn != nil {
+		return s.GetVirtualMachineConfigTargetFn(ctx, clusterMoID)
+	}
+
+	return &vimtypes.ConfigTarget{}, nil, nil
 }
 
 func NewVMProvider() *VMProvider {

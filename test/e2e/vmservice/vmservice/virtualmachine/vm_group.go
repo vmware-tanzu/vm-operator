@@ -994,6 +994,21 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			return host
 		}
 
+		getVMZoneFunc := func(vmName string) string {
+			GinkgoHelper()
+
+			var zone string
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Status.Zone).ToNot(BeEmpty())
+				zone = vm.Status.Zone
+
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+
+			return zone
+		}
+
 		powerOnVMFunc := func(vmName string) {
 			GinkgoHelper()
 
@@ -1065,24 +1080,24 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				}
 			}
 
-		vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        tmpNamespaceName,
-			Name:             vmName,
-			GroupName:        vmgRootName,
-			Labels:           labels,
-			ImageName:        tmpNamespaceVMIName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
-			Affinity: &vmopv1a5.AffinitySpec{
-				VMAffinity:     affinityLabelSelector,
-				VMAntiAffinity: antiAffinityLabelSelector,
-			},
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        tmpNamespaceName,
+				Name:             vmName,
+				GroupName:        vmgRootName,
+				Labels:           labels,
+				ImageName:        tmpNamespaceVMIName,
+				VMClassName:      clusterResources.VMClassName,
+				StorageClassName: clusterResources.StorageClassName,
+				PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
+				Affinity: &vmopv1a5.AffinitySpec{
+					VMAffinity:     affinityLabelSelector,
+					VMAntiAffinity: antiAffinityLabelSelector,
+				},
+			}
+			vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+			Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
 		}
-		vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-		e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
-	}
 
 		verifyAffinity := func(vmHosts map[string]string, affinedVms []string) {
 			GinkgoHelper()
@@ -1358,6 +1373,144 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingPreferredDuringExecution,
 					[]string{vm1Name, vm2Name},
 					[]string{vm3Name, vm4Name})
+			})
+
+			It("Should create VMs in the same zone with required host AF and AAF, repeated 5 times", func() {
+				const iterations = 5
+
+				By("Determining a zone bound to the temporary namespace")
+				namespaceZones, err := utils.ListZonesByNamespace(ctx, input.ClusterProxy.GetClient(), tmpNamespaceName)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(namespaceZones.Items).ToNot(BeEmpty())
+				preferredZone := namespaceZones.Items[0].Name
+
+				By("Resolving the tiny-core-linux-complex-hw VMI in the temporary namespace")
+				tinyImageVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, "tiny-core-linux-complex-hw")
+				Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", "tiny-core-linux-complex-hw", tmpNamespaceName)
+
+				createCacheVMFunc := func(vmName, groupName, appLabel string, antiAffinity bool) {
+					GinkgoHelper()
+
+					term := vmopv1a5.VMAffinityTerm{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"app": appLabel,
+							},
+						},
+						TopologyKey: "kubernetes.io/hostname",
+					}
+
+					affinity := &vmopv1a5.AffinitySpec{}
+					if antiAffinity {
+						affinity.VMAntiAffinity = &vmopv1a5.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{term},
+						}
+					} else {
+						affinity.VMAffinity = &vmopv1a5.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{term},
+						}
+					}
+
+					vmParameters := manifestbuilders.VirtualMachineYaml{
+						Namespace: tmpNamespaceName,
+						Name:      vmName,
+						GroupName: groupName,
+						Labels: map[string]string{
+							"topology.kubernetes.io/zone": preferredZone,
+							"app":                         appLabel,
+						},
+						ImageName:        tinyImageVMIName,
+						VMClassName:      clusterResources.VMClassName,
+						StorageClassName: clusterResources.StorageClassName,
+						PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
+						Affinity:         affinity,
+					}
+					vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+					e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+					Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+				}
+
+				aafGroupName := fmt.Sprintf("%s-aaf", vmgRootName)
+				afGroupName := fmt.Sprintf("%s-af", vmgRootName)
+				aafVM1 := fmt.Sprintf("%s-aaf-vm1", vmgRootName)
+				aafVM2 := fmt.Sprintf("%s-aaf-vm2", vmgRootName)
+				afVM1 := fmt.Sprintf("%s-af-vm1", vmgRootName)
+				afVM2 := fmt.Sprintf("%s-af-vm2", vmgRootName)
+				allVMNames := []string{aafVM1, aafVM2, afVM1, afVM2}
+				vmMemberNames = allVMNames
+
+				for i := range iterations {
+					By(fmt.Sprintf("Iteration %d: creating both VirtualMachineGroups (AAF and AF) and their VMs", i))
+
+					aafGroupParameters := manifestbuilders.VirtualMachineGroupYaml{
+						Namespace: tmpNamespaceName,
+						Name:      aafGroupName,
+						BootOrder: []manifestbuilders.BootOrder{
+							{
+								Members: []vmopv1a5.GroupMember{
+									{Kind: vmKind, Name: aafVM1},
+									{Kind: vmKind, Name: aafVM2},
+								},
+							},
+						},
+					}
+					aafGroupYaml := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(aafGroupParameters)
+					e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(aafGroupYaml))
+					Expect(clusterProxy.CreateWithArgs(ctx, aafGroupYaml)).To(Succeed())
+
+					afGroupParameters := manifestbuilders.VirtualMachineGroupYaml{
+						Namespace: tmpNamespaceName,
+						Name:      afGroupName,
+						BootOrder: []manifestbuilders.BootOrder{
+							{
+								Members: []vmopv1a5.GroupMember{
+									{Kind: vmKind, Name: afVM1},
+									{Kind: vmKind, Name: afVM2},
+								},
+							},
+						},
+					}
+					afGroupYaml := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(afGroupParameters)
+					e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(afGroupYaml))
+					Expect(clusterProxy.CreateWithArgs(ctx, afGroupYaml)).To(Succeed())
+
+					createCacheVMFunc(aafVM1, aafGroupName, "cache-cluster-aaf", true)
+					createCacheVMFunc(aafVM2, aafGroupName, "cache-cluster-aaf", true)
+					createCacheVMFunc(afVM1, afGroupName, "cache-cluster-af", false)
+					createCacheVMFunc(afVM2, afGroupName, "cache-cluster-af", false)
+
+					By(fmt.Sprintf("Iteration %d: waiting for all VMs to be created in vSphere (powered off)", i))
+					for _, vmName := range allVMNames {
+						vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+					}
+
+					By(fmt.Sprintf("Iteration %d: verifying zone placement and host affinity/anti-affinity", i))
+					for _, vmName := range allVMNames {
+						vmZone := getVMZoneFunc(vmName)
+						Expect(vmZone).To(Equal(preferredZone), "iteration %d: vm %s zone mismatch", i, vmName)
+					}
+
+					aafHost1 := getVMHostFunc(aafVM1)
+					aafHost2 := getVMHostFunc(aafVM2)
+					Expect(aafHost1).ToNot(BeEmpty())
+					Expect(aafHost2).ToNot(BeEmpty())
+					Expect(aafHost1).ToNot(Equal(aafHost2), "iteration %d: AAF VMs %s and %s are on the same host", i, aafVM1, aafVM2)
+
+					afHost1 := getVMHostFunc(afVM1)
+					afHost2 := getVMHostFunc(afVM2)
+					Expect(afHost1).ToNot(BeEmpty())
+					Expect(afHost2).ToNot(BeEmpty())
+					Expect(afHost1).To(Equal(afHost2), "iteration %d: AF VMs %s and %s are on different hosts", i, afVM1, afVM2)
+
+					By(fmt.Sprintf("Iteration %d: deleting both VirtualMachineGroups", i))
+					Expect(clusterProxy.DeleteWithArgs(ctx, aafGroupYaml)).To(Succeed())
+					Expect(clusterProxy.DeleteWithArgs(ctx, afGroupYaml)).To(Succeed())
+					vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, aafGroupName)
+					vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, afGroupName)
+					for _, vmName := range allVMNames {
+						vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+					}
+				}
 			})
 		})
 	})

@@ -73,8 +73,8 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S6 — VirtualMachineConfigOptions controller (vmop-3743)
 
-- [ ] T080 [S6.a] Author `webhooks/virtualmachineconfigoptions/validation_webhook.go` — immutable spec.hardwareVersion; format ^vmx-\d+$
-- [ ] T081 [S6.a] Unit tests — `webhooks/virtualmachineconfigoptions/validation_webhook_test.go`
+- [x] T080 [S6.a] [PR #1671 / vmop-3762] Author `webhooks/virtualmachineconfigoptions/validation/virtualmachineconfigoptions_validator.go` — immutable spec.hardwareVersion; format ^vmx-\d+$; metadata.name must equal spec.hardwareVersion
+- [x] T081 [S6.a] [PR #1671 / vmop-3762] Unit tests (13 specs) + integration test stubs — `webhooks/virtualmachineconfigoptions/validation/`
 - [ ] T082 [S6.b] Author `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` — QueryConfigOptionEx; map vim.vm.ConfigOption → status; fan out VirtualMachineGuestOptions per guest OS; update listMap entry keyed by hardwareVersion
 - [ ] T083 [S6.b] Add `pkg/providers/vsphere/environment_browser.go` QueryConfigOptionEx wrapper (extend T064)
 - [ ] T084 [S6.b] Unit tests — `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go`

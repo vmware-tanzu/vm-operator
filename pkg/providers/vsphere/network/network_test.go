@@ -25,12 +25,28 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+)
+
+var (
+	netOPNetworkTypeMeta = metav1.TypeMeta{
+		APIVersion: netopv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "Network",
+	}
+	nsxtNetworkTypeMeta = metav1.TypeMeta{
+		APIVersion: ncpv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "VirtualNetwork",
+	}
+	vpcNetworkTypeMeta = metav1.TypeMeta{
+		APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "SubnetSet",
+	}
 )
 
 var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), func() {
@@ -53,6 +69,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 	)
 
 	BeforeEach(func() {
+		network.RetryTimeout = 1 * time.Millisecond
 		testConfig = builder.VCSimTestConfig{}
 
 		vm = &vmopv1.VirtualMachine{
@@ -155,7 +172,6 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		)
 
 		BeforeEach(func() {
-			network.RetryTimeout = 1 * time.Second
 			testConfig.WithNetworkEnv = builder.NetworkEnvVDS
 		})
 
@@ -165,7 +181,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
-							Name: networkName,
+							TypeMeta: netOPNetworkTypeMeta,
+							Name:     networkName,
 						},
 					},
 				}
@@ -236,6 +253,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				Expect(results.Results).To(HaveLen(1))
 				result := results.Results[0]
+				Expect(result.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
 				Expect(result.MacAddress).To(BeEmpty())
 				Expect(result.ExternalID).To(Equal(externalID))
 				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
@@ -407,8 +425,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					testConfig.WithWorkloadIPv6 = false
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 					}
@@ -435,8 +456,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 					}
@@ -463,8 +487,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 						},
 					}
@@ -491,8 +518,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:    interfaceName,
-							Network: &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{
 								corev1.IPv4Protocol,
 								corev1.IPv6Protocol,
@@ -522,8 +552,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:    interfaceName,
-							Network: &common.PartialObjectRef{Name: networkName},
+							Name: interfaceName,
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							// IPAMModes not set
 						},
 					}
@@ -551,18 +584,27 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				BeforeEach(func() {
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:      "eth0",
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: "eth0",
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 						{
-							Name:      "eth1",
-							Network:   &common.PartialObjectRef{Name: networkName},
+							Name: "eth1",
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 						},
 						{
-							Name:    "eth2",
-							Network: &common.PartialObjectRef{Name: networkName},
+							Name: "eth2",
+							Network: &common.PartialObjectRef{
+								TypeMeta: netOPNetworkTypeMeta,
+								Name:     networkName,
+							},
 							IPAMModes: []corev1.IPFamily{
 								corev1.IPv4Protocol,
 								corev1.IPv6Protocol,
@@ -641,7 +683,6 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		)
 
 		BeforeEach(func() {
-			network.RetryTimeout = 1 * time.Second
 			testConfig.WithNetworkEnv = builder.NetworkEnvNSXT
 		})
 
@@ -651,7 +692,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
-							Name: networkName,
+							TypeMeta: nsxtNetworkTypeMeta,
+							Name:     networkName,
 						},
 					},
 				}
@@ -715,6 +757,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				Expect(results.Results).To(HaveLen(1))
 				result := results.Results[0]
+				Expect(result.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeNSXT))
 				Expect(result.MacAddress).To(Equal(macAddress))
 				Expect(result.ExternalID).To(Equal(interfaceID))
 				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
@@ -876,7 +919,6 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		)
 
 		BeforeEach(func() {
-			network.RetryTimeout = 1 * time.Second
 			testConfig.WithNetworkEnv = builder.NetworkEnvVPC
 		})
 
@@ -886,11 +928,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
-							Name: networkName,
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "SubnetSet",
-								APIVersion: "crd.nsx.vmware.com/v1alpha1",
-							},
+							TypeMeta: vpcNetworkTypeMeta,
+							Name:     networkName,
 						},
 					},
 				}
@@ -953,6 +992,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				Expect(results.Results).To(HaveLen(1))
 				result := results.Results[0]
+				Expect(result.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
 				Expect(result.MacAddress).To(Equal(macAddress))
 				Expect(result.ExternalID).To(Equal(interfaceID))
 				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
@@ -1363,7 +1403,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: vpcNetworkTypeMeta},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 					}
@@ -1391,7 +1431,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: vpcNetworkTypeMeta},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
 						},
 					}
@@ -1419,7 +1459,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: vpcNetworkTypeMeta},
 							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 						},
 					}
@@ -1447,7 +1487,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: vpcNetworkTypeMeta},
 							IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol},
 						},
 					}
@@ -1475,7 +1515,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name:      interfaceName,
-							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: metav1.TypeMeta{Kind: "SubnetSet"}},
+							Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: vpcNetworkTypeMeta},
 							IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
 							DHCP6:     ptr.To(false),
 						},
@@ -1497,6 +1537,148 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeIPv6))
 					})
 				})
+			})
+		})
+	})
+
+	Context("Mixed VDS & VPC", func() {
+		const (
+			ifaceName0 = "eth0"
+			ifaceName1 = "eth1"
+			netName0   = "my-vds-net"
+			netName1   = "my-vpc-net"
+			ifaceID0   = "my-vds-external-id"
+			ifaceID1   = "my-vpc-external-id"
+			macAddr0   = "01:02:03:04:05:06"
+			macAddr1   = "aa:bb:cc:dd:ee:ff"
+		)
+
+		BeforeEach(func() {
+			testConfig.NumNetworks = 0
+			testConfig.WithNetworkConfig = []builder.VCSimNetworkConfig{
+				{Provider: pkgcfg.NetworkProviderTypeVDS},
+				{Provider: pkgcfg.NetworkProviderTypeVPC},
+			}
+			networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				{
+					Name: ifaceName0,
+					Network: &common.PartialObjectRef{
+						TypeMeta: netOPNetworkTypeMeta,
+						Name:     netName0,
+					},
+				},
+				{
+					Name: ifaceName1,
+					Network: &common.PartialObjectRef{
+						TypeMeta: vpcNetworkTypeMeta,
+						Name:     netName1,
+					},
+				},
+			}
+		})
+
+		Context("Simulate workflow", func() {
+			It("returns results with correct ObjectProviderType for each interface", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(results.Results).To(BeEmpty())
+
+				netopKey := client.ObjectKey{
+					Name:      network.NetOPCRName(vm.Name, netName0, ifaceName0, false),
+					Namespace: vm.Namespace,
+				}
+				subnetKey := client.ObjectKey{
+					Name:      network.VPCCRName(vm.Name, netName1, ifaceName1),
+					Namespace: vm.Namespace,
+				}
+
+				By("verify network interface CRs created", func() {
+					By("NetworkInterface", func() {
+						netIf := &netopv1alpha1.NetworkInterface{}
+						Expect(ctx.Client.Get(ctx, netopKey, netIf)).To(Succeed())
+						Expect(metav1.IsControlledBy(netIf, vm)).To(BeTrue())
+						Expect(netIf.Spec.NetworkName).To(Equal(netName0))
+					})
+
+					By("SubnetPort", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{}
+						Expect(ctx.Client.Get(ctx, subnetKey, subnetPort)).To(Succeed())
+						Expect(metav1.IsControlledBy(subnetPort, vm)).To(BeTrue())
+						Expect(subnetPort.Spec.SubnetSet).To(Equal(netName1))
+					})
+				})
+
+				By("simulate VDS interface ready", func() {
+					netIf := &netopv1alpha1.NetworkInterface{}
+					Expect(ctx.Client.Get(ctx, netopKey, netIf)).To(Succeed())
+					netIf.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
+					netIf.Status.MacAddress = macAddr0
+					netIf.Status.ExternalID = ifaceID0
+					netIf.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netIf)).To(Succeed())
+				})
+
+				By("simulate VPC interface ready", func() {
+					subnetPort := &vpcv1alpha1.SubnetPort{}
+					Expect(ctx.Client.Get(ctx, subnetKey, subnetPort)).To(Succeed())
+					subnetPort.Status = vpcv1alpha1.SubnetPortStatus{
+						Attachment: vpcv1alpha1.PortAttachment{ID: ifaceID1},
+						NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
+							LogicalSwitchUUID: ctx.GetNetwork(1).LogicalSwitchUUID,
+							MACAddress:        macAddr1,
+						},
+						Conditions: []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+				})
+
+				results, err = network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results.Results).To(HaveLen(2))
+
+				result0 := results.Results[0]
+				Expect(result0.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
+				Expect(result0.Name).To(Equal(ifaceName0))
+				Expect(result0.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+				Expect(result0.MacAddress).To(Equal(macAddr0))
+				Expect(result0.ExternalID).To(Equal(ifaceID0))
+				Expect(result0.Backing).ToNot(BeNil())
+
+				backing0, err := result0.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				dvpBacking0, ok := backing0.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+				Expect(ok).To(BeTrue())
+				Expect(dvpBacking0.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+
+				result1 := results.Results[1]
+				Expect(result1.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
+				Expect(result1.Name).To(Equal(ifaceName1))
+				Expect(result1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
+				Expect(result1.MacAddress).To(Equal(macAddr1))
+				Expect(result1.ExternalID).To(Equal(ifaceID1))
+				Expect(result1.Backing).ToNot(BeNil())
+
+				backing1, err := result1.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				opaqueBacking, ok := backing1.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+				Expect(ok).To(BeTrue(), "VPC device should have opaque network backing")
+				Expect(opaqueBacking.OpaqueNetworkId).To(Equal(result1.NetworkID))
 			})
 		})
 	})
@@ -1588,19 +1770,6 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 		interfaceKey1 client.ObjectKey
 		devices       []network.Device
 		err           error
-
-		netOPNetworkTypeMeta = metav1.TypeMeta{
-			APIVersion: netopv1alpha1.SchemeGroupVersion.String(),
-			Kind:       "Network",
-		}
-		nsxtNetworkTypeMeta = metav1.TypeMeta{
-			APIVersion: ncpv1alpha1.SchemeGroupVersion.String(),
-			Kind:       "VirtualNetwork",
-		}
-		vpcNetworkTypeMeta = metav1.TypeMeta{
-			APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
-			Kind:       "SubnetSet",
-		}
 	)
 
 	BeforeEach(func() {
@@ -1632,7 +1801,41 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 		initObjects = nil
 	})
 
+	netOPReconcile := func(objKey client.ObjectKey, r func(s *netopv1alpha1.NetworkInterfaceStatus)) {
+		netIf := &netopv1alpha1.NetworkInterface{}
+		Expect(ctx.Client.Get(ctx, objKey, netIf)).To(Succeed())
+		r(&netIf.Status)
+		Expect(ctx.Client.Status().Update(ctx, netIf)).To(Succeed())
+	}
+
+	ncpReconcile := func(k client.ObjectKey, r func(s *ncpv1alpha1.VirtualNetworkInterfaceStatus)) {
+		vnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
+		Expect(ctx.Client.Get(ctx, k, vnetIf)).To(Succeed())
+		r(&vnetIf.Status)
+		Expect(ctx.Client.Status().Update(ctx, vnetIf)).To(Succeed())
+	}
+
+	vpcReconcile := func(objKey client.ObjectKey, r func(s *vpcv1alpha1.SubnetPortStatus)) {
+		subnetPort := &vpcv1alpha1.SubnetPort{}
+		Expect(ctx.Client.Get(ctx, objKey, subnetPort)).To(Succeed())
+		r(&subnetPort.Status)
+		Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+	}
+
 	Context("network spec is nil", func() {
+		It("returns nil devices and no error", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(devices).To(BeNil())
+		})
+	})
+
+	Context("network spec is disabled", func() {
+		BeforeEach(func() {
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Disabled: true,
+			}
+		})
+
 		It("returns nil devices and no error", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(devices).To(BeNil())
@@ -1760,13 +1963,6 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			)
 		})
 
-		netOPReconcile := func(objKey client.ObjectKey, r func(s *netopv1alpha1.NetworkInterfaceStatus)) {
-			netIf := &netopv1alpha1.NetworkInterface{}
-			Expect(ctx.Client.Get(ctx, objKey, netIf)).To(Succeed())
-			r(&netIf.Status)
-			Expect(ctx.Client.Status().Update(ctx, netIf)).To(Succeed())
-		}
-
 		Context("interfaces become ready", func() {
 			It("returns success with backing", func() {
 				Expect(err).To(HaveOccurred())
@@ -1813,16 +2009,30 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(devices).To(HaveLen(2))
 
 				dev0 := devices[0]
+				Expect(dev0.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
 				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
 				Expect(dev0.Backing).ToNot(BeNil())
 				Expect(dev0.MacAddress).To(Equal(macAddress0))
 				Expect(dev0.ExternalID).To(Equal(externalID0))
 
+				backing0, err := dev0.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				dvpBacking0, ok := backing0.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+				Expect(ok).To(BeTrue())
+				Expect(dvpBacking0.Port.PortgroupKey).To(Equal(dev0.NetworkID))
+
 				dev1 := devices[1]
+				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
 				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).Backing.Reference().Value))
 				Expect(dev1.Backing).ToNot(BeNil())
 				Expect(dev1.MacAddress).To(Equal(macAddress1))
 				Expect(dev1.ExternalID).To(Equal(externalID1))
+
+				backing1, err := dev1.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				dvpBacking1, ok := backing1.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+				Expect(ok).To(BeTrue())
+				Expect(dvpBacking1.Port.PortgroupKey).To(Equal(dev1.NetworkID))
 			})
 		})
 
@@ -1875,13 +2085,6 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 	})
 
 	Context("NSXT", func() {
-
-		ncpReconcile := func(k client.ObjectKey, r func(s *ncpv1alpha1.VirtualNetworkInterfaceStatus)) {
-			vnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
-			Expect(ctx.Client.Get(ctx, k, vnetIf)).To(Succeed())
-			r(&vnetIf.Status)
-			Expect(ctx.Client.Status().Update(ctx, vnetIf)).To(Succeed())
-		}
 
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvNSXT
@@ -1988,6 +2191,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(devices).To(HaveLen(2))
 
 				dev0 := devices[0]
+				Expect(dev0.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeNSXT))
 				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 				Expect(dev0.Backing).ToNot(BeNil())
 				Expect(dev0.ExternalID).To(Equal(externalID0))
@@ -2000,6 +2204,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(opaqueNetwork0.OpaqueNetworkId).To(Equal(dev0.NetworkID))
 
 				dev1 := devices[1]
+				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeNSXT))
 				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
 				Expect(dev1.Backing).ToNot(BeNil())
 				Expect(dev1.ExternalID).To(Equal(externalID1))
@@ -2068,13 +2273,6 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 	})
 
 	Context("VPC", func() {
-
-		vpcReconcile := func(objKey client.ObjectKey, r func(s *vpcv1alpha1.SubnetPortStatus)) {
-			subnetPort := &vpcv1alpha1.SubnetPort{}
-			Expect(ctx.Client.Get(ctx, objKey, subnetPort)).To(Succeed())
-			r(&subnetPort.Status)
-			Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
-		}
 
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvVPC
@@ -2253,6 +2451,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(devices).To(HaveLen(2))
 
 				dev0 := devices[0]
+				Expect(dev0.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
 				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 				Expect(dev0.Backing).ToNot(BeNil())
 				Expect(dev0.MacAddress).To(Equal(macAddress0))
@@ -2265,6 +2464,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(opaqueNetwork0.OpaqueNetworkId).To(Equal(dev0.NetworkID))
 
 				dev1 := devices[1]
+				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
 				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
 				Expect(dev1.Backing).ToNot(BeNil())
 				Expect(dev1.MacAddress).To(Equal(macAddress1))
@@ -2275,6 +2475,210 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				opaqueNetwork1, ok := backing1.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 				Expect(ok).To(BeTrue())
 				Expect(opaqueNetwork1.OpaqueNetworkId).To(Equal(dev1.NetworkID))
+			})
+		})
+	})
+
+	Context("Mixed VDS & VCP providers interfaces", func() {
+
+		BeforeEach(func() {
+			testConfig.NumNetworks = 0
+			testConfig.WithNetworkConfig = []builder.VCSimNetworkConfig{
+				{Provider: pkgcfg.NetworkProviderTypeVDS},
+				{Provider: pkgcfg.NetworkProviderTypeVPC},
+			}
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName0,
+						Network: &common.PartialObjectRef{
+							TypeMeta: netOPNetworkTypeMeta,
+							Name:     networkName0,
+						},
+					},
+					{
+						Name: interfaceName1,
+						Network: &common.PartialObjectRef{
+							TypeMeta: vpcNetworkTypeMeta,
+							Name:     networkName1,
+						},
+					},
+				},
+			}
+
+			interfaceKey0 = client.ObjectKey{
+				Name:      network.NetOPCRName(vm.Name, networkName0, interfaceName0, false),
+				Namespace: vm.Namespace,
+			}
+
+			interfaceKey1 = client.ObjectKey{
+				Name:      network.VPCCRName(vm.Name, networkName1, interfaceName1),
+				Namespace: vm.Namespace,
+			}
+		})
+
+		Context("interfaces not ready", func() {
+			It("creates a NetOP CR for the VDS interface and a SubnetPort for the VPC interface", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+
+				netIf := &netopv1alpha1.NetworkInterface{}
+				Expect(ctx.Client.Get(ctx, interfaceKey0, netIf)).To(Succeed())
+				Expect(metav1.IsControlledBy(netIf, vm)).To(BeTrue())
+				Expect(netIf.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
+				Expect(netIf.Spec.NetworkName).To(Equal(networkName0))
+
+				subnetPort := &vpcv1alpha1.SubnetPort{}
+				Expect(ctx.Client.Get(ctx, interfaceKey1, subnetPort)).To(Succeed())
+				Expect(metav1.IsControlledBy(subnetPort, vm)).To(BeTrue())
+				Expect(subnetPort.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
+				Expect(subnetPort.Spec.SubnetSet).To(Equal(networkName1))
+			})
+		})
+
+		Context("interfaces become ready", func() {
+			It("returns devices with correct ProviderType for each interface", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+
+				By("Mark VDS interface ready", func() {
+					netOPReconcile(interfaceKey0, func(s *netopv1alpha1.NetworkInterfaceStatus) {
+						*s = netopv1alpha1.NetworkInterfaceStatus{
+							NetworkID:  ctx.GetNetwork(0).Backing.Reference().Value,
+							MacAddress: macAddress0,
+							ExternalID: externalID0,
+							Conditions: []netopv1alpha1.NetworkInterfaceCondition{
+								{
+									Type:   netopv1alpha1.NetworkInterfaceReady,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						}
+					})
+				})
+
+				By("Mark VPC interface ready", func() {
+					vpcReconcile(interfaceKey1, func(s *vpcv1alpha1.SubnetPortStatus) {
+						*s = vpcv1alpha1.SubnetPortStatus{
+							Attachment: vpcv1alpha1.PortAttachment{
+								ID: externalID1,
+							},
+							NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
+								LogicalSwitchUUID: ctx.GetNetwork(1).LogicalSwitchUUID,
+								MACAddress:        macAddress1,
+							},
+							Conditions: []vpcv1alpha1.Condition{
+								{
+									Type:   vpcv1alpha1.Ready,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						}
+					})
+				})
+
+				devices, err = network.CreateNetworkDevices(
+					ctx,
+					vm,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(devices).To(HaveLen(2))
+
+				dev0 := devices[0]
+				Expect(dev0.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
+				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+				Expect(dev0.Backing).ToNot(BeNil())
+				Expect(dev0.MacAddress).To(Equal(macAddress0))
+				Expect(dev0.ExternalID).To(Equal(externalID0))
+
+				backing0, err := dev0.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				dvpBacking, ok := backing0.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+				Expect(ok).To(BeTrue(), "VDS device should have DVPort backing")
+				Expect(dvpBacking.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+
+				dev1 := devices[1]
+				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
+				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
+				Expect(dev1.Backing).ToNot(BeNil())
+				Expect(dev1.MacAddress).To(Equal(macAddress1))
+				Expect(dev1.ExternalID).To(Equal(externalID1))
+
+				backing1, err := dev1.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				opaqueBacking, ok := backing1.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+				Expect(ok).To(BeTrue(), "VPC device should have opaque network backing")
+				Expect(opaqueBacking.OpaqueNetworkId).To(Equal(dev1.NetworkID))
+			})
+		})
+
+		Context("partial readiness", func() {
+			markVDSReady := func() {
+				netIf := &netopv1alpha1.NetworkInterface{}
+				Expect(ctx.Client.Get(ctx, interfaceKey0, netIf)).To(Succeed())
+				netIf.Status = netopv1alpha1.NetworkInterfaceStatus{
+					NetworkID:  ctx.GetNetwork(0).Backing.Reference().Value,
+					MacAddress: macAddress0,
+					ExternalID: externalID0,
+					Conditions: []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, netIf)).To(Succeed())
+			}
+
+			markVPCReady := func() {
+				subnetPort := &vpcv1alpha1.SubnetPort{}
+				Expect(ctx.Client.Get(ctx, interfaceKey1, subnetPort)).To(Succeed())
+				subnetPort.Status = vpcv1alpha1.SubnetPortStatus{
+					Attachment: vpcv1alpha1.PortAttachment{ID: externalID1},
+					NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
+						LogicalSwitchUUID: ctx.GetNetwork(1).LogicalSwitchUUID,
+						MACAddress:        macAddress1,
+					},
+					Conditions: []vpcv1alpha1.Condition{
+						{
+							Type:   vpcv1alpha1.Ready,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+			}
+
+			It("returns ErrNetworkInterfaceNotReady when only the VDS interface is ready", func() {
+				// First call creates both CRs but neither is ready yet.
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+
+				markVDSReady()
+
+				// VPC SubnetPort still unready — the call must report not-ready.
+				devices, err = network.CreateNetworkDevices(
+					ctx, vm, ctx.Client, ctx.VCClient.Client, ctx.Finder)
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+			})
+
+			It("returns ErrNetworkInterfaceNotReady when only the VPC interface is ready", func() {
+				// First call creates both CRs but neither is ready yet.
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
+
+				markVPCReady()
+
+				// NetOP NetworkInterface still unready — the call must report not-ready.
+				devices, err = network.CreateNetworkDevices(
+					ctx, vm, ctx.Client, ctx.VCClient.Client, ctx.Finder)
+				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(devices).To(BeEmpty())
 			})
 		})
 	})

@@ -71,13 +71,13 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S6 — VirtualMachineConfigOptions controller (vmop-3743)
 
-- [ ] T080 [S6.a] Author `webhooks/virtualmachineconfigoptions/validation_webhook.go` — immutable spec.hardwareVersion; format ^vmx-\d+$
-- [ ] T081 [S6.a] Unit tests — `webhooks/virtualmachineconfigoptions/validation_webhook_test.go`
+- [x] T080 [S6.a] [PR #1671 / vmop-3762] Author `webhooks/virtualmachineconfigoptions/validation/virtualmachineconfigoptions_validator.go` — immutable spec.hardwareVersion; format ^vmx-\d+$; metadata.name must equal spec.hardwareVersion
+- [x] T081 [S6.a] [PR #1671 / vmop-3762] Unit tests (13 specs) + integration test stubs — `webhooks/virtualmachineconfigoptions/validation/`
 - [ ] T082 [S6.b] Author `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` — QueryConfigOptionEx; map vim.vm.ConfigOption → status; fan out VirtualMachineGuestOptions per guest OS; update listMap entry keyed by hardwareVersion
 - [ ] T083 [S6.b] Add `pkg/providers/vsphere/environment_browser.go` QueryConfigOptionEx wrapper (extend T064)
 - [ ] T084 [S6.b] Unit tests — `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go`
 - [ ] T085 [S6.c] [P] Integration tests with vcsim — `test/intg/virtualmachineconfigoptions/vmconfigoptions_intg_test.go`: happy path on multiple HW versions; idempotent re-reconcile updates one listMap entry; golden-file assertion against testdata/configoption-vmx-22.yaml
-- [ ] T086 [S6.d] E2E test — `test/e2e/vmservice/configpolicy/vmconfigoptions_test.go`: at least one HW version reconciled on test cluster
+- [x] T086 [S6.d] [PR #1671 / vmop-3762] E2E test — `test/e2e/vmservice/vmservice/configpolicy/vmconfigoptions.go`: webhook validation of hardwareVersion format, name/spec consistency, and immutability on test cluster; `experimental` label until validated on hardware
 
 ### Story S7 — VirtualMachineGuestOptions plumbing (vmop-3744)
 

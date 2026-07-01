@@ -39,6 +39,9 @@ type unitMutationWebhookContext struct {
 
 func newUnitTestContextForMutatingWebhook() *unitMutationWebhookContext {
 	vmSnapshot := builder.DummyVirtualMachineSnapshot("dummy-ns", "dummy-vm-snapshot", "dummy-vm")
+	// Clear out the label that's set by default so we can test a clean object mutation
+	vmSnapshot.Labels = nil
+
 	obj, err := builder.ToUnstructured(vmSnapshot)
 	Expect(err).ToNot(HaveOccurred())
 

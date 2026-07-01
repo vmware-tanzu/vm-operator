@@ -206,6 +206,33 @@ func markSnapshotFailed(vmCtx pkgctx.VirtualMachineContext,
 	return nil
 }
 
+// markSnapshotWaitingForDiskRegistration sets a condition on a snapshot to
+// indicate it is blocked waiting for unmanaged disk CnsRegisterVolume objects
+// to complete registration before the snapshot can be triggered.
+func markSnapshotWaitingForDiskRegistration(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
+
+	if pkgcnd.GetReason(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) ==
+		vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason {
+		return nil
+	}
+
+	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+	pkgcnd.MarkFalse(
+		vmSnapshot,
+		vmopv1.VirtualMachineSnapshotCreatedCondition,
+		vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason,
+		"Snapshot cannot be created until all unmanaged disk registrations complete")
+	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); err != nil {
+		return fmt.Errorf("failed to patch snapshot status: %w", err)
+	}
+	vmCtx.Logger.V(4).Info("Marked snapshot as waiting for disk registration",
+		"snapshotName", vmSnapshot.Name)
+	return nil
+}
+
 // getVirtualMachineSnapshotsForVM finds all VirtualMachineSnapshot objects that reference this VM.
 func getVirtualMachineSnapshotsForVM(
 	vmCtx pkgctx.VirtualMachineContext,
@@ -805,6 +832,32 @@ func synthesizeVMSpecForSnapshot(
 	}
 }
 
+// ReconcileSnapshotWaitForCRVCondition sets the WaitingForDiskRegistration
+// condition on every pending snapshot for the VM. It is called from the VM
+// reconcile loop when reconcileConfig exits early due to pending
+// CnsRegisterVolume objects, so that snapshots do not appear stuck with empty
+// conditions.
+func ReconcileSnapshotWaitForCRVCondition(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) error {
+
+	vmSnapshots, err := getVirtualMachineSnapshotsForVM(vmCtx, k8sClient)
+	if err != nil {
+		return err
+	}
+
+	for i := range vmSnapshots {
+		snapshot := &vmSnapshots[i]
+		if pkgcnd.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) {
+			continue
+		}
+		if err := markSnapshotWaitingForDiskRegistration(vmCtx, k8sClient, snapshot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ReconcileCurrentSnapshot reconciles the current snapshot owned by the VM.
 func ReconcileCurrentSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
@@ -842,7 +895,7 @@ func ReconcileCurrentSnapshot(
 		}
 	}
 
-	// When AllDisksArePVCs is enabled, wait for VM's disks to be registered.
+	// When AllDisksArePVCs is enabled, wait for VM's disks to be backfilled.
 	// This is because vSphere cannot register disks as PVCs if there's disk
 	// delta caused by snapshot creation.
 	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
@@ -850,12 +903,6 @@ func ReconcileCurrentSnapshot(
 		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsfil.Condition) {
 			logger.Info("Skipping snapshot as required condition is not ready",
 				"condition", vmconfunmanagedvolsfil.Condition)
-			return nil
-		}
-
-		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
-			logger.Info("Skipping snapshot as required condition is not ready",
-				"condition", vmconfunmanagedvolsreg.Condition)
 			return nil
 		}
 	}
@@ -933,6 +980,36 @@ func ReconcileCurrentSnapshot(
 
 		logger.V(4).Info("Snapshot is in progress, waiting for completion")
 		return nil
+	}
+
+	// When AllDisksArePVCs is enabled, wait for all unmanaged disk registrations
+	// to complete before triggering the snapshot. Taking a snapshot while a
+	// CnsRegisterVolume is in-flight races with CNS: vSphere converts the disk
+	// to a read-only snapshot base, causing CNS to reject the CRV with
+	// vmodl.fault.InvalidArgument and leaving the snapshot permanently stuck.
+	//
+	// We rely solely on the condition here. The register reconciler (step 10)
+	// always runs before this function (step 12) in the same reconcile cycle,
+	// so the condition on vmCtx.VM is already up-to-date. The hasPendingCRVs
+	// check in the register reconciler keeps the condition False when a CRV
+	// exists but its disk has been filtered out by FilterOutLinkedClones (e.g.
+	// after a snapshot converted the backing to a delta chain). Checking
+	// VolumeTypeClassic entries directly would block snapshots permanently on
+	// VMs where promoteDiskMode is disabled, because those disks are always
+	// linked clones and their Classic status entries are never cleaned up.
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+		if !pkgcnd.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
+			logger.Info("Waiting for disk registration before creating snapshot",
+				"vmCondition", vmconfunmanagedvolsreg.Condition,
+				"vmConditionReason", pkgcnd.GetReason(vmCtx.VM, vmconfunmanagedvolsreg.Condition))
+
+			if err := markSnapshotWaitingForDiskRegistration(
+				vmCtx, k8sClient, snapshotToProcess); err != nil {
+				return fmt.Errorf("failed to mark snapshot %q waiting for disk registration: %w",
+					snapshotToProcess.Name, err)
+			}
+			return nil
+		}
 	}
 
 	// Mark the snapshot as in progress before starting the operation to

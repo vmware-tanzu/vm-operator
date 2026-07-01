@@ -836,10 +836,23 @@ func waitForBackupToComplete(
 ) {
 	By("Waiting for backup to complete for all PVCs")
 
+	// Wait until the backfill reconciler has added the OS disk PVC to spec.volumes.
+	vmoperator.WaitOnVirtualMachineCondition(ctx, config, clusterProxy.GetClient(),
+		vm.Namespace, vm.Name, metav1.Condition{
+			Type:   "VirtualMachineUnmanagedVolumesRegistered",
+			Status: metav1.ConditionTrue,
+		})
+
+	v1a2VM := &vmopv1a2.VirtualMachine{}
+	Expect(clusterProxy.GetClient().Get(ctx, ctrlclient.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      vm.Name,
+	}, v1a2VM)).To(Succeed(), "failed to re-fetch VM at v1alpha2 after backfill condition")
+
 	// Get list of PVC names from VM spec
 	expectedPVCNames := make(map[string]struct{})
 
-	for _, vol := range vm.Spec.Volumes {
+	for _, vol := range v1a2VM.Spec.Volumes {
 		if vol.PersistentVolumeClaim != nil {
 			expectedPVCNames[vol.PersistentVolumeClaim.ClaimName] = struct{}{}
 		}

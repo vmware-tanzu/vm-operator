@@ -14,3 +14,7 @@ _output/
 Thumbs.db
 # Git
 .git/
+# E2E test run artifacts — not source, not needed in any build stage
+test/e2e/vmservice/test_logs/
+test/e2e/vmservice/binary
+test/e2e/vmservice/testbed-info.json

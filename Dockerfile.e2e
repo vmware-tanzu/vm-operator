@@ -3,8 +3,9 @@
 
 ARG BASE_IMAGE=mirror.gcr.io/library/photon:5.0
 
-# Build stage - compile tests
-FROM ${BASE_IMAGE} AS builder
+# builder-base: Go toolchain + downloaded dependencies
+# Shared foundation for builder-e2e and builder-packer.
+FROM ${BASE_IMAGE} AS builder-base
 
 # Go module proxy settings. Override at build time to use an internal mirror
 # when proxy.golang.org is not reachable (e.g. network-restricted build systems).
@@ -14,34 +15,67 @@ ARG GONOSUMDB=
 ENV GOPROXY="${GOPROXY}"
 ENV GONOSUMDB="${GONOSUMDB}"
 
-# Build stage setup
 WORKDIR /vm-operator
 
-# Copy all source code needed for compilation
+# Install the Go toolchain first. This layer is only invalidated when BASE_IMAGE
+# changes, not on every source edit.
+RUN tdnf install -y \
+        build-essential \
+        glibc-devel \
+        go && \
+    rm -rf /var/cache/tdnf
+
+# Copy dependency manifests. test/e2e/go.mod has local replace directives pointing
+# to ../../api, ../../external/*, ../../pkg/backup/api, and
+# ../../pkg/constants/testlabels. Go requires the go.mod of each replace target to
+# be present before go mod download can succeed. These directories are stable
+# (external/ is vendored API types that rarely change) so keeping them here
+# preserves the module-download cache across routine source edits.
 COPY go.mod go.sum ./
 COPY api/ ./api/
 COPY external/ ./external/
+COPY pkg/backup/api/ ./pkg/backup/api/
+COPY pkg/constants/testlabels/ ./pkg/constants/testlabels/
+COPY test/e2e/go.mod test/e2e/go.sum ./test/e2e/
+
+# Download all external dependencies. Only re-runs when the manifests above change.
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    cd test/e2e && go mod download
+
+# builder-e2e: compile the e2e test binary
+# Inherits GOPROXY/GONOSUMDB and the cached module download from builder-base.
+FROM builder-base AS builder-e2e
+
+# Copy volatile source. This layer is busted on every code change, but the
+# toolchain install and module download in builder-base remain cached.
 COPY pkg/ ./pkg/
 COPY test/e2e/ ./test/e2e/
-COPY hack/ ./hack/
 COPY Makefile ./
 
-# Install Go dependencies
-RUN tdnf install -y \
-    build-essential \
-    glibc-devel \
-    go
-RUN go mod download
+# Pre-compile test binaries for faster execution.
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd test/e2e/vmservice && go test -c -ldflags="-s -w" -o /vm-operator/e2e-tests .
 
-# Pre-compile test binaries for faster execution
-RUN cd test/e2e/vmservice && go test -c -ldflags="-s -w" -o /vm-operator/e2e-tests .
 
-# Compile packer-plugin-vsphere from source.
-# The source is staged into the build context before docker build runs .
+# Inherits GOPROXY/GONOSUMDB from builder-base. BuildKit runs this concurrently
+# with builder-e2e since there is no dependency between them.
+FROM builder-base AS builder-packer
+
+# Download packer-plugin-vsphere module dependencies before copying full source,
+# so this layer is only re-run when the plugin's go.mod/go.sum changes.
+COPY packer-plugin-vsphere-src/go.mod packer-plugin-vsphere-src/go.sum /packer-plugin-vsphere-src/
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    cd /packer-plugin-vsphere-src && go mod download
+
+# The source is staged into the build context before docker build runs.
 # For local/public builds the default is the public GitHub repo, cloned by
 # the vm-operator Makefile's e2e-image-build target if not already present.
 COPY packer-plugin-vsphere-src/ /packer-plugin-vsphere-src/
-RUN go build -C /packer-plugin-vsphere-src -ldflags="-s -w" -o /usr/local/bin/packer-plugin-vsphere main.go
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -C /packer-plugin-vsphere-src -ldflags="-s -w" \
+             -o /usr/local/bin/packer-plugin-vsphere main.go
 
 # Runtime stage - minimal image with compiled tests
 FROM ${BASE_IMAGE} AS runtime
@@ -62,7 +96,7 @@ LABEL branch="${BUILD_BRANCH}" \
 
 # Install required packages.
 # go/build-essential/glibc-devel are intentionally omitted: the e2e-tests binary
-# is pre-compiled in the builder stage, so no Go toolchain is needed at runtime.
+# is pre-compiled in the builder-e2e stage, so no Go toolchain is needed at runtime.
 # Note: tdnf update is intentionally omitted. The base image is a pinned snapshot.
 # Running tdnf update pulls from the latest snapshot repo and breaks the version
 # consistency guarantee, causing libcap dependency conflicts.
@@ -93,9 +127,8 @@ RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
 ARG PACKER_DOWNLOAD_URL=https://releases.hashicorp.com/packer/1.9.1/packer_1.9.1_linux_amd64.zip
 RUN curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip
 
-# if 7zip is available, prefer to use it
-# otherwise fallback to unzip.
-# Certain Photon5 images versions do not have it
+# If 7zip is available, prefer to use it otherwise fallback to unzip.
+# Certain Photon5 images versions do not have it.
 RUN if tdnf info 7zip > /dev/null 2>&1; then \
         tdnf install -y 7zip && \
         7z x /tmp/packer.zip -o/tmp/packer packer -y; \
@@ -143,15 +176,17 @@ RUN mkdir -p /vm-operator && \
 
 WORKDIR /vm-operator
 
-COPY --from=builder --chown=vmoperator:vmoperator --chmod=755 /vm-operator/hack/e2e/ ./hack/e2e/
+# hack/e2e/ contains only shell scripts — copy directly from the build context
+# rather than routing through builder-e2e, which does not need them for compilation.
+COPY --chown=vmoperator:vmoperator --chmod=755 hack/e2e/ ./hack/e2e/
 
-COPY --from=builder /usr/local/bin/packer-plugin-vsphere /usr/local/bin/packer-plugin-vsphere
+COPY --from=builder-packer /usr/local/bin/packer-plugin-vsphere /usr/local/bin/packer-plugin-vsphere
 
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/config/ ./test/e2e/vmservice/config/
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/fixtures/ ./test/e2e/fixtures/
-COPY --from=builder --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/vmserviceapp/templates/ ./test/e2e/vmservice/vmserviceapp/templates/
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/e2e-tests ./e2e-tests
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/config/ ./test/e2e/vmservice/config/
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/test/e2e/fixtures/ ./test/e2e/fixtures/
+COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/test/e2e/vmservice/vmserviceapp/templates/ ./test/e2e/vmservice/vmserviceapp/templates/
 
 # REPO_ROOT tells vmserviceapp tests where to find bundled Packer HCL templates.
 # PACKER_PLUGIN_DIR_PATH tells Packer where to find the vsphere plugin binary.

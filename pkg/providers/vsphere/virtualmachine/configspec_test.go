@@ -1741,10 +1741,38 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						}
 					})
 
-					// policies are ignored as cluster modules is used for VMs with capv labels
-					It("should ignore both host and zone affinity policies", func() {
-						Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
-						assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
+					// Host affinity is ignored as cluster modules is used for VMs with
+					// capv labels, but zone affinity still applies since the VM has no
+					// zone label pinning it to a zone already.
+					It("should ignore host affinity policies but keep zone affinity policies", func() {
+						pols := []vimtypes.BaseVmPlacementPolicy{
+							&vimtypes.VmVmAffinity{
+								AffinedVmsTag: vimtypes.TagId{
+									NameId: &vimtypes.TagIdNameId{
+										Tag:      "env:prod",
+										Category: vmCtx.VM.Namespace,
+									},
+								},
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							},
+							&vimtypes.VmToVmGroupsAntiAffinity{
+								AntiAffinedVmGroupTags: []vimtypes.TagId{
+									{
+										NameId: &vimtypes.TagIdNameId{
+											Tag:      "env:dev",
+											Category: vmCtx.VM.Namespace,
+										},
+									},
+								},
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							},
+						}
+
+						Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
+						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
+						assertVMTags(configSpec, []string{"env:prod"}, vmCtx.VM.Namespace)
 					})
 				})
 				Context("VKS node VM with both host and zone topology keys with capw labels", func() {
@@ -1799,10 +1827,38 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						}
 					})
 
-					// policies are ignored as cluster modules is used for VMs with capw labels
-					It("should ignore both host affinity and zone affinity policies", func() {
-						Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
-						assertVMTags(configSpec, []string{}, vmCtx.VM.Namespace)
+					// Host affinity is ignored as cluster modules is used for VMs with
+					// capw labels, but zone affinity still applies since the VM has no
+					// zone label pinning it to a zone already.
+					It("should ignore host affinity policies but keep zone affinity policies", func() {
+						pols := []vimtypes.BaseVmPlacementPolicy{
+							&vimtypes.VmVmAffinity{
+								AffinedVmsTag: vimtypes.TagId{
+									NameId: &vimtypes.TagIdNameId{
+										Tag:      "env:prod",
+										Category: vmCtx.VM.Namespace,
+									},
+								},
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							},
+							&vimtypes.VmToVmGroupsAntiAffinity{
+								AntiAffinedVmGroupTags: []vimtypes.TagId{
+									{
+										NameId: &vimtypes.TagIdNameId{
+											Tag:      "env:dev",
+											Category: vmCtx.VM.Namespace,
+										},
+									},
+								},
+								PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+								PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							},
+						}
+
+						Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
+						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(pols))
+						assertVMTags(configSpec, []string{"env:prod"}, vmCtx.VM.Namespace)
 					})
 				})
 			})
@@ -2197,7 +2253,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 				}
 			})
 
-			It("should disable both host and zone rules when VMAffinityDuringExecution is enabled", func() {
+			It("should disable host rules but allow zone rules when it has no zone label", func() {
 				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 					config.Features.VMPlacementPolicies = true
 					config.Features.VMAffinityDuringExecution = true
@@ -2205,10 +2261,10 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 
 				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS node VMs should disable host rules")
-				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "VKS node VMs should never get zonal policies")
+				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS node VMs without a zone label are not yet zone-constrained")
 			})
 
-			It("should ignore zone rules even when VMPlacementPolicies is enabled", func() {
+			It("should allow zone rules when VMPlacementPolicies is enabled and VMAffinityDuringExecution is disabled", func() {
 				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 					config.Features.VMPlacementPolicies = true
 					config.Features.VMAffinityDuringExecution = false
@@ -2216,7 +2272,35 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 
 				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
-				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "VKS node VMs should never get zonal policies")
+				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS node VMs without a zone label are not yet zone-constrained")
+			})
+
+			When("the VM also has a zone label", func() {
+				BeforeEach(func() {
+					vm.Labels[corev1.LabelTopologyZone] = "zone-a"
+				})
+
+				It("should disable both host and zone rules when VMAffinityDuringExecution is enabled", func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMPlacementPolicies = true
+						config.Features.VMAffinityDuringExecution = true
+					})
+
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+					Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS node VMs should disable host rules")
+					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS node VMs are already zone-constrained")
+				})
+
+				It("should disable zone rules even when VMAffinityDuringExecution is disabled", func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMPlacementPolicies = true
+						config.Features.VMAffinityDuringExecution = false
+					})
+
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+					Expect(constraints.ConfigureHostRules).To(BeFalse())
+					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS node VMs are already zone-constrained")
+				})
 			})
 		})
 
@@ -2295,10 +2379,22 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 				})
 			})
 
-			It("should disable both host and zone rules", func() {
+			It("should disable host rules but allow zone rules when it has no zone label", func() {
 				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
-				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "VKS nodes should never get zonal policies")
+				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS nodes without a zone label are not yet zone-constrained")
+			})
+
+			When("the VM also has a zone label", func() {
+				BeforeEach(func() {
+					vm.Labels[corev1.LabelTopologyZone] = "zone-a"
+				})
+
+				It("should disable both host and zone rules", func() {
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+					Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
+					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS nodes are already zone-constrained")
+				})
 			})
 		})
 

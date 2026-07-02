@@ -420,9 +420,10 @@ func vmSnapshotTests() {
 
 		When("snapshot has empty VM name", func() {
 			It("should skip snapshot with empty VM name and process the next one", func() {
-				// Create snapshot1 CR with spec.VMName set to empty and owner reference set to the VM.
-				snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
-				snapshot1.Spec.VMName = ""
+				// Create snapshot1 with empty vmName so both Spec.VMName and
+				// VMNameForSnapshotLabel are empty — label filter excludes it.
+				snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", "")
+
 				Expect(controllerutil.SetOwnerReference(vm, snapshot1, ctx.Scheme)).To(Succeed())
 				Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
 
@@ -444,9 +445,9 @@ func vmSnapshotTests() {
 
 		When("snapshot references different VM", func() {
 			It("should skip snapshot for different VM and process the next one", func() {
-				// Create snapshot1 CR with spec.VMName set to a different VM name than owner reference VM.
-				snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
-				snapshot1.Spec.VMName = "different-vm"
+				// Create snapshot1 with "different-vm" so both Spec.VMName and
+				// VMNameForSnapshotLabel point to a different VM — label filter excludes it.
+				snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", "different-vm")
 				Expect(controllerutil.SetOwnerReference(vm, snapshot1, ctx.Scheme)).To(Succeed())
 				Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
 
@@ -545,7 +546,7 @@ func vmSnapshotTests() {
 				// Reconcile the snapshot.
 				Expect(vsphere.ReconcileCurrentSnapshot(vmCtx, ctx.Client, vcVM)).To(Succeed())
 
-				// Snapshot should not be processed.
+				// Snapshot should not be processed (backfill not ready).
 				verifyK8sVMSnapshot(snapshot1.Name, snapshot1.Namespace, false)
 				verifyNoVcVMSnapshot()
 
@@ -560,6 +561,16 @@ func vmSnapshotTests() {
 				verifyK8sVMSnapshot(snapshot1.Name, snapshot1.Namespace, false)
 				verifyNoVcVMSnapshot()
 
+				// Snapshot should have WaitingForDiskRegistration condition set.
+				updatedSnapshot := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
+					Name:      snapshot1.Name,
+					Namespace: snapshot1.Namespace,
+				}, updatedSnapshot)).To(Succeed())
+				Expect(conditions.GetReason(updatedSnapshot,
+					vmopv1.VirtualMachineSnapshotCreatedCondition)).To(Equal(
+					vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason))
+
 				// Update the VM's disk registration condition to true.
 				conditions.MarkTrue(vm, vmconfunmanagedvolsreg.Condition)
 				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
@@ -569,6 +580,38 @@ func vmSnapshotTests() {
 
 				// Snapshot should be created.
 				verifyK8sVMSnapshot(snapshot1.Name, snapshot1.Namespace, true)
+			})
+
+			It("should set WaitingForDiskRegistration on all pending snapshots when registration is pending", func() {
+				// Both backfill and registration conditions are not set (pending).
+				conditions.MarkTrue(vm, vmconfunmanagedvolsfil.Condition)
+				conditions.MarkFalse(vm, vmconfunmanagedvolsreg.Condition,
+					"PendingRegistration", "CnsRegisterVolume objects are being processed")
+				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+
+				// Create two snapshot CRs.
+				snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+				Expect(controllerutil.SetOwnerReference(vm, snapshot1, ctx.Scheme)).To(Succeed())
+				Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+
+				snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
+				Expect(controllerutil.SetOwnerReference(vm, snapshot2, ctx.Scheme)).To(Succeed())
+				Expect(ctx.Client.Create(ctx, snapshot2)).To(Succeed())
+
+				// ReconcileSnapshotWaitForCRVCondition mirrors what vmprovider_vm.go
+				// calls when reconcileConfig exits early due to pending CRVs.
+				Expect(vsphere.ReconcileSnapshotWaitForCRVCondition(vmCtx, ctx.Client)).To(Succeed())
+
+				// Both snapshots should have WaitingForDiskRegistration condition.
+				for _, name := range []string{snapshot1.Name, snapshot2.Name} {
+					s := &vmopv1.VirtualMachineSnapshot{}
+					Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
+						Name: name, Namespace: vm.Namespace,
+					}, s)).To(Succeed())
+					Expect(conditions.GetReason(s,
+						vmopv1.VirtualMachineSnapshotCreatedCondition)).To(Equal(
+						vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason))
+				}
 			})
 		})
 	})

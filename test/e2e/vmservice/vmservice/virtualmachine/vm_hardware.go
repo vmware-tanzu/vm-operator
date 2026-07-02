@@ -1323,6 +1323,86 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					volumeNames)
 			})
 
+			It("Detaching all non-boot volumes should leave only the boot disk in status.volumes",
+				Label("experimental", "core-functional"), func() {
+					pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
+						StorageClassName: clusterResources.StorageClassName,
+					}, 3)
+
+					vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+						Namespace:        vmSvcNamespace,
+						Name:             vmName,
+						ImageName:        linuxVMIName,
+						VMClassName:      clusterResources.VMClassName,
+						StorageClassName: clusterResources.StorageClassName,
+						PVCs:             pvcs,
+					})
+					vmYamls = append(vmYamls, vmYaml)
+
+					Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+
+					pvcVolumeNames := make(map[string]bool, len(pvcs))
+					volumeNames := make([]string, len(pvcs))
+					for i, pvc := range pvcs {
+						volumeNames[i] = pvc.VolumeName
+						pvcVolumeNames[pvc.VolumeName] = true
+					}
+					// Backfilled volumes (e.g. the boot disk, when the "all disks are PVCs"
+					// capability is enabled) must remain attached; only the PVCs created
+					// above are detached below.
+					backfilledVolumes := getBackfilledVolumes(ctx, config, svClusterClient, vmSvcNamespace, vmName, allDisksArePVCapabilityEnabled)
+					volumeNames = append(volumeNames, backfilledVolumes...)
+					vm := waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, vmName, volumeNames)
+
+					By("Detaching all non-boot volumes from the Virtual Machine")
+
+					vmPatch := vm.DeepCopy()
+					vmPatch.Spec.Volumes = nil
+					for _, vol := range vm.Spec.Volumes {
+						if !pvcVolumeNames[vol.Name] {
+							vmPatch.Spec.Volumes = append(vmPatch.Spec.Volumes, vol)
+						}
+					}
+
+					Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
+						To(Succeed(), "failed to patch virtualmachine to detach all non-boot volumes")
+
+					By("Waiting on virtual machine conditions to become true after detach")
+					vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName,
+						metav1.Condition{Type: "VirtualMachineHardwareVolumesVerified", Status: metav1.ConditionTrue})
+
+					By("Verifying status.volumes only contains the boot disk entry")
+					Eventually(func(g Gomega) {
+						vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
+						g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
+
+						seenCount := make(map[string]int, len(vm.Status.Volumes))
+						for _, vol := range vm.Status.Volumes {
+							seenCount[vol.Name]++
+							g.Expect(pvcVolumeNames[vol.Name]).To(BeFalse(),
+								"status.volumes has a stale entry for detached volume %q", vol.Name)
+						}
+						for name, count := range seenCount {
+							g.Expect(count).To(Equal(1), "status.volumes has a duplicate entry for volume %q", name)
+						}
+
+						if allDisksArePVCapabilityEnabled {
+							g.Expect(vm.Status.Volumes).To(HaveLen(len(backfilledVolumes)),
+								"expected status.volumes to only contain the backfilled boot disk entries")
+							for _, name := range backfilledVolumes {
+								g.Expect(seenCount).To(HaveKey(name),
+									"expected backfilled boot volume %q in status.volumes", name)
+							}
+						} else {
+							g.Expect(vm.Status.Volumes).To(HaveLen(1),
+								"expected status.volumes to only contain the boot disk entry")
+							g.Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1a5.VolumeTypeClassic),
+								"expected the remaining status.volumes entry to be the classic boot disk")
+						}
+					}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+						Should(Succeed(), "Timed out waiting for status.volumes to only contain the boot disk entry")
+				})
+
 			It("PVC resize should succeed", func() {
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,

@@ -79,7 +79,7 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 - [ ] T083 [S6.b] Add `pkg/providers/vsphere/environment_browser.go` QueryConfigOptionEx wrapper (extend T064)
 - [ ] T084 [S6.b] Unit tests — `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go`
 - [ ] T085 [S6.c] [P] Integration tests with vcsim — `test/intg/virtualmachineconfigoptions/vmconfigoptions_intg_test.go`: happy path on multiple HW versions; idempotent re-reconcile updates one listMap entry; golden-file assertion against testdata/configoption-vmx-22.yaml
-- [x] T086 [S6.d] [PR #1671 / vmop-3762] E2E test — `test/e2e/vmservice/vmservice/configpolicy/vmconfigoptions.go`: webhook validation of hardwareVersion format, name/spec consistency, and immutability on test cluster; `experimental` label until validated on hardware
+- [ ] T086 [S6.d] E2E test — `test/e2e/vmservice/vmservice/configpolicy/vmconfigoptions.go`: at least one HW version reconciled on test cluster. Deferred until the VirtualMachineConfigOptions controller (T082-T084) is implemented; webhook validation for hardwareVersion is already covered by the envtest integration suite in `webhooks/virtualmachineconfigoptions/validation/`
 
 ### Story S7 — VirtualMachineGuestOptions plumbing (vmop-3744)
 

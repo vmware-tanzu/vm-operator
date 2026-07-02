@@ -236,14 +236,6 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
-		Context("VM-CONFIG-OPTIONS", func() {
-			configpolicy.VMConfigOptionsSpec(context.TODO(), func() configpolicy.VMConfigOptionsSpecInput {
-				return configpolicy.VMConfigOptionsSpecInput{
-					ClusterProxy: svClusterProxy,
-					Config:       config,
-				}
-			})
-		})
 	})
 
 	Context("CONFIG-POLICY", func() {

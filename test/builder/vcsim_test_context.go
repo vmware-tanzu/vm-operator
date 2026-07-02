@@ -451,6 +451,7 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		}
 
 		var nsRPs []*object.ResourcePool
+		var clusterMoIDs []string
 		for _, ccr := range c.azCCRs[azName] {
 			rp, err := ccr.ResourcePool(c)
 			Expect(err).ToNot(HaveOccurred())
@@ -459,6 +460,7 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 			Expect(err).ToNot(HaveOccurred())
 
 			nsRPs = append(nsRPs, nsRP)
+			clusterMoIDs = append(clusterMoIDs, ccr.Reference().Value)
 		}
 		Expect(nsRPs).To(HaveLen(c.ClustersPerZone))
 		for _, rp := range nsRPs {
@@ -485,8 +487,13 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 				},
 				Spec: topologyv1.ZoneSpec{
 					ManagedVMs: topologyv1.VSphereEntityInfo{
-						FolderMoID: nsInfo.FolderMoId,
-						PoolMoIDs:  nsInfo.PoolMoIDs,
+						FolderMoID:   nsInfo.FolderMoId,
+						PoolMoIDs:    nsInfo.PoolMoIDs,
+						ClusterMoIDs: clusterMoIDs,
+					},
+					Zone: topologyv1.AvailabilityZoneReference{
+						APIVersion: topologyv1.GroupVersion.Version,
+						Name:       azName,
 					},
 				},
 			}

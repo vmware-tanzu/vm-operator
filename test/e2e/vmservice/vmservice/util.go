@@ -842,16 +842,15 @@ func waitForBackupToComplete(
 			Status: metav1.ConditionTrue,
 		})
 
-	v1a2VM := &vmopv1a2.VirtualMachine{}
 	Expect(clusterProxy.GetClient().Get(ctx, ctrlclient.ObjectKey{
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
-	}, v1a2VM)).To(Succeed(), "failed to re-fetch VM at v1alpha2 after backfill condition")
+	}, vm)).To(Succeed(), "failed to re-fetch VM at v1alpha2 after backfill condition")
 
 	// Get list of PVC names from VM spec
 	expectedPVCNames := make(map[string]struct{})
 
-	for _, vol := range v1a2VM.Spec.Volumes {
+	for _, vol := range vm.Spec.Volumes {
 		if vol.PersistentVolumeClaim != nil {
 			expectedPVCNames[vol.PersistentVolumeClaim.ClaimName] = struct{}{}
 		}

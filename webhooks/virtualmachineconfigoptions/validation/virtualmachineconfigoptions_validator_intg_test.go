@@ -76,6 +76,7 @@ func intgTestsValidateCreate() {
 	})
 
 	AfterEach(func() {
+		_ = ctx.Client.Delete(ctx, ctx.vmco)
 		ctx = nil
 	})
 

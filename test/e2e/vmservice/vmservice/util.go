@@ -835,17 +835,43 @@ func waitForBackupToComplete(
 ) {
 	By("Waiting for backup to complete for all PVCs")
 
-	// Wait until the backfill reconciler has added the OS disk PVC to spec.volumes.
-	vmoperator.WaitOnVirtualMachineCondition(ctx, config, clusterProxy.GetClient(),
-		vm.Namespace, vm.Name, metav1.Condition{
+	conditions := []metav1.Condition{
+		{
+			Type:   "VirtualMachineUnmanagedVolumesBackfilled",
+			Status: metav1.ConditionTrue,
+		},
+		{
 			Type:   "VirtualMachineUnmanagedVolumesRegistered",
 			Status: metav1.ConditionTrue,
-		})
+		},
+	}
+	for _, condition := range conditions {
+		vmoperator.WaitOnVirtualMachineCondition(ctx, config, clusterProxy.GetClient(), vm.Namespace, vm.Name, condition)
+	}
 
-	Expect(clusterProxy.GetClient().Get(ctx, ctrlclient.ObjectKey{
-		Namespace: vm.Namespace,
-		Name:      vm.Name,
-	}, vm)).To(Succeed(), "failed to re-fetch VM at v1alpha2 after backfill condition")
+	volumeNames := make([]string, 0)
+	Eventually(func(g Gomega) bool {
+		vm, err := utils.GetVirtualMachineA5(ctx, clusterProxy.GetClient(), vm.Namespace, vm.Name)
+		if err != nil {
+			framework.Logf("retry due to: %v", err)
+			return false
+		}
+
+		for _, vol := range vm.Spec.Volumes {
+			volumeNames = append(volumeNames, vol.Name)
+			if vol.ControllerBusNumber != nil && *vol.ControllerBusNumber == 0 &&
+				vol.UnitNumber != nil && *vol.UnitNumber == 0 {
+				g.Expect(vol.PersistentVolumeClaim).ToNot(BeNil(),
+					"Expected boot disk to have a PersistentVolumeClaim")
+				g.Expect(vol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty(),
+					"Expected boot disk PVC to have a claim name")
+				return true
+			}
+		}
+
+		return false
+	}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+		Should(BeTrue(), "Timed out waiting for boot disk to be found in spec.volumes")
 
 	// Get list of PVC names from VM spec
 	expectedPVCNames := make(map[string]struct{})

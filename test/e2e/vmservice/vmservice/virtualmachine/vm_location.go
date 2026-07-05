@@ -14,8 +14,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
@@ -170,7 +170,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 		e2eframework.Logf("Creating VirtualMachine %s", vmName)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(),
 			"failed to create VM %s", vmName)
@@ -198,7 +198,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	When("VM is created in the correct namespace RP and folder", Label("vmrelocation"), func() {
+	When("VM is created in the correct namespace RP and folder", Label("vmrelocation", "experimental"), func() {
 		It("sets VirtualMachineLocationValid condition to True", func() {
 			createVM()
 
@@ -210,7 +210,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace RP hierarchy", Label("vmrelocation"), func() {
+	When("VM is moved outside the namespace RP hierarchy", Label("vmrelocation", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -269,7 +269,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace Folder hierarchy", Label("vmrelocation"), func() {
+	When("VM is moved outside the namespace Folder hierarchy", Label("vmrelocation", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()

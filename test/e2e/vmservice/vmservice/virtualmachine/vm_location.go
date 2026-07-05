@@ -198,7 +198,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	When("VM is created in the correct namespace RP and folder", Label("vmrelocation", "experimental"), func() {
+	When("VM is created in the correct namespace RP and folder", Label("vmrelocation"), func() {
 		It("sets VirtualMachineLocationValid condition to True", func() {
 			createVM()
 
@@ -210,7 +210,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace RP hierarchy", Label("vmrelocation", "experimental"), func() {
+	When("VM is moved outside the namespace RP hierarchy", Label("vmrelocation"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -269,7 +269,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace Folder hierarchy", Label("vmrelocation", "experimental"), func() {
+	When("VM is moved outside the namespace Folder hierarchy", Label("vmrelocation"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()

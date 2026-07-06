@@ -28,11 +28,102 @@
 #   GINKGO_BIN          - Path to the ginkgo executable (for ginkgo mode).
 #   E2E_PREBUILT_BINARY - Path to the compiled test binary (for prebuilt mode).
 #   E2E_ARTIFACT_FOLDER - Directory to store test results/logs.
+#   TEST_CALLBACK_URL   - Optional HTTP endpoint to POST the overall result to
+#                         once the run completes. No-op when unset.
 ################################################################################
 
 set -o errexit
 set -o nounset
 set -o pipefail
+
+# parse_json_report reads a Ginkgo JSON report (written by --json-report) and
+# emits a JSON array of per-test results suitable for the subtest_details field
+# of a test callback payload. Each element has "testcasename" and "result".
+# Ginkgo's report distinguishes a spec that was excluded by the label/focus
+# filter (State "skipped" with no Failure) from one that called Skip() with a
+# reason at runtime (State "skipped" with a non-empty Failure.Message) or was
+# declared PIt/PDescribe (State "pending"); this maps the former to "Not_Run"
+# and the latter two to "SKIPPED" so the callback payload distinguishes
+# "never attempted" from "test logic decided to skip". Failed specs also get
+# a "syndrome" carrying Failure.Message, the callback API's field for a short
+# failure synopsis.
+parse_json_report() {
+    local json_file="${1}"
+    jq '[.[0].SpecReports[] |
+        ((.ContainerHierarchyTexts + [.LeafNodeText]) | map(select(. != "")) | join(" ")) as $fulltext |
+        ("[" + .LeafNodeType + "]" + (if $fulltext != "" then " " + $fulltext else "" end)
+            + (if (.LeafNodeLabels | length) > 0 then " [" + (.LeafNodeLabels | join(", ")) + "]" else "" end)
+        ) as $name |
+        {
+            testcasename: $name,
+            result: (
+                if .State == "failed" then "FAIL"
+                elif .State == "passed" then "PASS"
+                elif .State == "pending" then "SKIPPED"
+                elif .State == "skipped" then
+                    (if (.Failure != null and .Failure.Message != "") then "SKIPPED" else "Not_Run" end)
+                else "INVALID"
+                end
+            )
+        } + (if .State == "failed" and (.Failure.Message // "") != ""
+             then {syndrome: .Failure.Message}
+             else {} end)
+    ]' "${json_file}"
+}
+
+# report_result POSTs the overall pass/fail and per-test breakdown to a generic
+# callback URL when one is configured in the environment. The variable name is
+# intentionally generic so that this public script does not reference any
+# specific CI system. Set TEST_CALLBACK_URL in the environment to enable
+# reporting; when unset the function is a no-op (safe for local runs).
+report_result() {
+    local exit_code="${1}"
+    local json_report="${2:-}"
+
+    if [ -z "${TEST_CALLBACK_URL:-}" ]; then
+        return 0
+    fi
+
+    local result
+    if [ "${exit_code}" -eq 0 ]; then
+        result="Passed"
+    else
+        result="Failed"
+    fi
+
+    # Build per-test breakdown from the JSON report when available
+    local subtest_details="[]"
+    if [ -f "${json_report}" ]; then
+        subtest_details=$(parse_json_report "${json_report}") || subtest_details="[]"
+    fi
+
+    local count
+    count=$(printf '%s' "${subtest_details}" | jq 'length')
+    echo "[run-e2e] Reporting result '${result}' with ${count} subtests to callback URL..."
+
+    # Build a top-level syndrome from the failed subtests' own syndromes, so
+    # the overall result carries a short synopsis instead of a bare Failed.
+    # The callback API caps "syndrome" at 1024 characters.
+    local syndrome=""
+    if [ "${result}" = "Failed" ]; then
+        syndrome=$(printf '%s' "${subtest_details}" | jq -r '
+            [.[] | select(.result == "FAIL") | (.testcasename + ": " + (.syndrome // "no failure message"))] | join("; ")
+        ' | cut -c1-1024)
+    fi
+
+    local payload
+    payload=$(jq -n \
+        --arg result "${result}" \
+        --arg syndrome "${syndrome}" \
+        --argjson subtests "${subtest_details}" \
+        '{result: $result, subtest_details: $subtests}
+         + (if $syndrome != "" then {syndrome: $syndrome} else {} end)')
+
+    curl --silent --show-error --max-time 30 \
+        -X POST "${TEST_CALLBACK_URL}" \
+        -H "Content-Type: application/json" \
+        -d "${payload}" || echo "[run-e2e] WARNING: callback POST failed (ignored)"
+}
 
 # Inputs from Environment
 MODE="${1:-ginkgo}" 
@@ -42,7 +133,7 @@ ROOT_DIR="${ROOT_DIR:-./}"
 ARTIFACT_FOLDER="${E2E_ARTIFACT_FOLDER:-test_logs}"
 REPORT_DIR="${ARTIFACT_FOLDER}"
 # Ginkgo suite-level timeout. Ginkgo shuts down gracefully when this elapses,
-# writing the JUnit report and running AfterSuite cleanup before exiting.
+# writing the JSON report and running AfterSuite cleanup before exiting.
 # Keep this below the CI container wall-clock limit so the report is written
 # before the container scheduler force-kills the process.
 GINKGO_TIMEOUT="${GINKGO_TIMEOUT:-2h}"
@@ -52,9 +143,9 @@ GINKGO_TIMEOUT="${GINKGO_TIMEOUT:-2h}"
 PREFIX=""
 [ "$MODE" = "prebuilt" ] && PREFIX="ginkgo."
 
-# 1. Initialize Ginkgo Args with verbosity, timeout, and junit-report
-# Logic: --[ginkgo.]v --[ginkgo.]timeout=... --[ginkgo.]junit-report=...
-GINKGO_ARGS=("--${PREFIX}v" "--${PREFIX}timeout=${GINKGO_TIMEOUT}" "--${PREFIX}junit-report=${REPORT_DIR}/test-results.xml")
+# 1. Initialize Ginkgo Args with verbosity, timeout, and json-report
+# Logic: --[ginkgo.]v --[ginkgo.]timeout=... --[ginkgo.]json-report=...
+GINKGO_ARGS=("--${PREFIX}v" "--${PREFIX}timeout=${GINKGO_TIMEOUT}" "--${PREFIX}json-report=${REPORT_DIR}/report.json")
 
 # 2. Map Environment Variables to Ginkgo Flags
 # Syntax: "ENV_VAR_NAME:flag-name"
@@ -83,15 +174,20 @@ fi
 # 4. Define E2E specific arguments
 E2E_ARGS="-e2e.e2e-config=${ROOT_DIR}test/e2e/vmservice/config/wcp.yaml -e2e.artifactFolder=${ARTIFACT_FOLDER}"
 
-# 5. Execute
+# 5. Execute (capture exit code so we can report it before exiting)
+E2E_EXIT=0
 if [ "$MODE" = "prebuilt" ]; then
     echo "Running E2E tests (prebuilt: $PREBUILT_BIN)..."
     echo "$PREBUILT_BIN $E2E_ARGS ${GINKGO_ARGS[*]}"
     # shellcheck disable=SC2086
-    exec "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}"
+    "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}" || E2E_EXIT=$?
 else
     echo "Running E2E tests (ginkgo CLI)..."
     echo "$GINKGO_BIN ${GINKGO_ARGS[*]} ./test/e2e/vmservice/... -- $E2E_ARGS"
     # shellcheck disable=SC2086
-    exec "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS
+    "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS || E2E_EXIT=$?
 fi
+
+# 6. Report result, then propagate the original exit code
+report_result "${E2E_EXIT}" "${REPORT_DIR}/report.json"
+exit "${E2E_EXIT}"

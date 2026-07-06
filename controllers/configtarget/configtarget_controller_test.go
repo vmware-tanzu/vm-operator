@@ -11,6 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -151,7 +152,8 @@ func unitTests() {
 				Expect(got.Status.SupportedMaxMem).ToNot(BeNil())
 				Expect(got.Status.SupportedMaxMem.Value()).To(Equal(int64(8192) * 1024 * 1024))
 
-				// Per this sub-task's scope, devices (including SR-IOV) are left unset.
+				// TODO(vmop-3759): devices (including SR-IOV) are left unset
+				// until per-host discovery lands.
 				Expect(got.Status.ConfigTargetDevices.SRIOV).To(BeEmpty())
 				Expect(got.Status.ConfigTargetDevices.CDROM).To(BeEmpty())
 
@@ -287,7 +289,10 @@ func unitTests() {
 
 		When("the cluster cannot be resolved", func() {
 			BeforeEach(func() {
-				queryErr = fmt.Errorf("cluster %q not found: some fault", clusterMoID)
+				notFound := &vimtypes.ManagedObjectNotFound{
+					Obj: vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: clusterMoID},
+				}
+				queryErr = fmt.Errorf("cluster %q not found: %w", clusterMoID, soap.WrapVimFault(notFound))
 			})
 
 			It("marks Ready=False with a ClusterNotFound-style reason and does not create VirtualMachineConfigOptions", func() {

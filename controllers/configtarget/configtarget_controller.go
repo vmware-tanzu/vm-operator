@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/fault"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -130,8 +131,7 @@ func (r *Reconciler) Reconcile(
 
 	var obj vimv1.ConfigTarget
 
-	err := r.Get(ctx, req.NamespacedName, &obj)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -141,8 +141,7 @@ func (r *Reconciler) Reconcile(
 	}
 
 	defer func() {
-		err := patchHelper.Patch(ctx, &obj)
-		if err != nil {
+		if err := patchHelper.Patch(ctx, &obj); err != nil {
 			if reterr == nil {
 				reterr = err
 			}
@@ -167,9 +166,6 @@ func (r *Reconciler) ReconcileNormal(
 	obj *vimv1.ConfigTarget) error {
 	logger := pkglog.FromContextOrDefault(ctx)
 
-	// The cluster's managed object ID is derived from metadata.name, not
-	// spec.id, per the ConfigTarget controller's naming convention (see
-	// external/vim/doc/controller-workflows.md).
 	clusterMoID := obj.Name
 
 	configTarget, configOptionDescriptors, err := r.VMProvider.GetVirtualMachineConfigTarget(ctx, clusterMoID)
@@ -186,8 +182,7 @@ func (r *Reconciler) ReconcileNormal(
 
 	populateStatus(obj, configTarget)
 
-	err = r.reconcileConfigOptions(ctx, obj, configOptionDescriptors)
-	if err != nil {
+	if err = r.reconcileConfigOptions(ctx, obj, configOptionDescriptors); err != nil {
 		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, QueryConfigOptionDescriptorFailedReason, "%v", err)
 		return err
 	}
@@ -200,10 +195,15 @@ func (r *Reconciler) ReconcileNormal(
 	return nil
 }
 
-// isClusterNotFoundErr returns true if err indicates the cluster named by
-// the ConfigTarget's metadata.name does not resolve in vSphere.
+// isClusterNotFoundErr returns true if err's fault tree contains a
+// ManagedObjectNotFound fault, indicating the cluster named by the
+// ConfigTarget's metadata.name does not resolve in vSphere.
 func isClusterNotFoundErr(err error) bool {
-	return strings.Contains(err.Error(), "not found")
+	var f *vimtypes.ManagedObjectNotFound
+
+	_, ok := fault.As(err, &f)
+
+	return ok
 }
 
 // populateStatus maps the vSphere QueryConfigTarget result onto the
@@ -297,8 +297,7 @@ func (r *Reconciler) garbageCollectConfigOptions(
 	liveKeys sets.Set[string]) error {
 	var list vimv1.VirtualMachineConfigOptionsList
 
-	err := r.List(ctx, &list)
-	if err != nil {
+	if err := r.List(ctx, &list); err != nil {
 		return fmt.Errorf("failed to list VirtualMachineConfigOptions: %w", err)
 	}
 

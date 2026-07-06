@@ -171,7 +171,9 @@ func (r *Reconciler) ReconcileNormal(
 	configTarget, configOptionDescriptors, err := r.VMProvider.GetVirtualMachineConfigTarget(ctx, clusterMoID)
 	if err != nil {
 		reason := QueryConfigTargetFailedReason
-		if isClusterNotFoundErr(err) {
+
+		var notFound *vimtypes.ManagedObjectNotFound
+		if _, ok := fault.As(err, &notFound); ok {
 			reason = ClusterNotFoundReason
 		}
 
@@ -193,17 +195,6 @@ func (r *Reconciler) ReconcileNormal(
 	logger.V(4).Info("Reconciled ConfigTarget", "clusterMoID", clusterMoID)
 
 	return nil
-}
-
-// isClusterNotFoundErr returns true if err's fault tree contains a
-// ManagedObjectNotFound fault, indicating the cluster named by the
-// ConfigTarget's metadata.name does not resolve in vSphere.
-func isClusterNotFoundErr(err error) bool {
-	var f *vimtypes.ManagedObjectNotFound
-
-	_, ok := fault.As(err, &f)
-
-	return ok
 }
 
 // populateStatus maps the vSphere QueryConfigTarget result onto the
@@ -332,19 +323,22 @@ func (r *Reconciler) removeOwnerRefAndDeleteIfOrphaned(
 	ctx context.Context,
 	obj *vimv1.ConfigTarget,
 	vmco *vimv1.VirtualMachineConfigOptions) error {
-	if err := controllerutil.RemoveOwnerReference(obj, vmco, r.Scheme()); err != nil {
-		return fmt.Errorf("failed to remove owner reference from VirtualMachineConfigOptions %q: %w", vmco.Name, err)
-	}
-
-	if len(vmco.OwnerReferences) > 0 {
-		if err := r.Update(ctx, vmco); err != nil {
-			return fmt.Errorf("failed to patch VirtualMachineConfigOptions %q after removing owner reference: %w", vmco.Name, err)
+	// The caller has already confirmed obj owns vmco, so a single remaining
+	// owner reference is obj's own: the object can be deleted outright
+	// without first mutating its owner references.
+	if len(vmco.OwnerReferences) == 1 {
+		if err := r.Delete(ctx, vmco); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete orphaned VirtualMachineConfigOptions %q: %w", vmco.Name, err)
 		}
 		return nil
 	}
 
-	if err := r.Delete(ctx, vmco); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete orphaned VirtualMachineConfigOptions %q: %w", vmco.Name, err)
+	if err := controllerutil.RemoveOwnerReference(obj, vmco, r.Scheme()); err != nil {
+		return fmt.Errorf("failed to remove owner reference from VirtualMachineConfigOptions %q: %w", vmco.Name, err)
+	}
+
+	if err := r.Update(ctx, vmco); err != nil {
+		return fmt.Errorf("failed to patch VirtualMachineConfigOptions %q after removing owner reference: %w", vmco.Name, err)
 	}
 
 	return nil

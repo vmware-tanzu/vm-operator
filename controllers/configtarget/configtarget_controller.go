@@ -323,10 +323,9 @@ func (r *Reconciler) removeOwnerRefAndDeleteIfOrphaned(
 	ctx context.Context,
 	obj *vimv1.ConfigTarget,
 	vmco *vimv1.VirtualMachineConfigOptions) error {
-	// The caller has already confirmed obj owns vmco, so a single remaining
-	// owner reference is obj's own: the object can be deleted outright
+	// If obj is the sole owner reference, the object can be deleted outright
 	// without first mutating its owner references.
-	if len(vmco.OwnerReferences) == 1 {
+	if len(vmco.OwnerReferences) == 1 && vmco.OwnerReferences[0].UID == obj.GetUID() {
 		if err := r.Delete(ctx, vmco); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete orphaned VirtualMachineConfigOptions %q: %w", vmco.Name, err)
 		}

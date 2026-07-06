@@ -116,6 +116,27 @@ metadata:
 webhooks:
 - admissionReviewVersions:
   - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vim-vmware-com-v1alpha1-configtarget
+  failurePolicy: Fail
+  name: default.validating.configtarget.v1alpha1.vim.vmware.com
+  rules:
+  - apiGroups:
+    - vim.vmware.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - configtargets
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
   clientConfig:
     service:
       name: webhook-service

@@ -11,9 +11,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 
@@ -162,6 +164,39 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 						g.Expect(vco.Spec.HardwareVersion).To(Equal(vco.Name),
 							"VirtualMachineConfigOptions %q spec.hardwareVersion should equal its metadata.name", vco.Name)
 					}
+				}).Should(Succeed())
+			})
+
+		It("Should garbage-collect a stale VirtualMachineConfigOptions no longer reported by the cluster",
+			Label("core-functional", "experimental"),
+			func() {
+				var ctList vimv1.ConfigTargetList
+				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).ToNot(BeEmpty(), "expected at least one ConfigTarget in the cluster")
+				owner := &ctList.Items[0]
+
+				// A ConfigTarget's real vSphere cluster will never report this
+				// hardware version, so once the owning ConfigTarget's next
+				// reconcile runs, this object should be garbage-collected as
+				// stale. Creating it with owner as an owner reference (rather
+				// than a controller reference, matching reconcileConfigOptions)
+				// also triggers that reconcile via the controller's
+				// Owns(..., builder.MatchEveryOwner) watch.
+				stale := &vimv1.VirtualMachineConfigOptions{
+					ObjectMeta: metav1.ObjectMeta{Name: "vmx-e2e-stale-vmop-3760"},
+					Spec:       vimv1.VirtualMachineConfigOptionsSpec{HardwareVersion: "vmx-e2e-stale-vmop-3760"},
+				}
+				Expect(controllerutil.SetOwnerReference(owner, stale, svClusterClient.Scheme())).To(Succeed())
+				Expect(svClusterClient.Create(ctx, stale)).To(Succeed())
+
+				DeferCleanup(func() {
+					_ = svClusterClient.Delete(ctx, stale)
+				})
+
+				Eventually(func(g Gomega) {
+					err := svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(stale), &vimv1.VirtualMachineConfigOptions{})
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+						"stale VirtualMachineConfigOptions %q should have been garbage-collected", stale.Name)
 				}).Should(Succeed())
 			})
 	})

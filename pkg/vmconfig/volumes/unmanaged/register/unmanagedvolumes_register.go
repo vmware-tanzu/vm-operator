@@ -198,17 +198,34 @@ func (r reconciler) Reconcile(
 	}
 
 	// Clean up CnsRegisterVolume objects that are complete (PVC is bound).
-	if err := cleanupCompletedCnsRegisterVolumesForVM(
+	hasPendingCRVs, err := cleanupCompletedCnsRegisterVolumesForVM(
 		ctx,
 		k8sClient,
-		vm); err != nil {
-
+		vm)
+	if err != nil {
 		pkgcond.MarkError(
 			vm,
 			Condition,
 			"ErrCleanup",
 			err)
 		return err
+	}
+
+	// If CRVs exist but are not yet registered (e.g. the disk was filtered out
+	// of info.Disks after a snapshot converted its backing to a delta chain),
+	// the PVC-based pending check above would have returned false while the CRV
+	// is still waiting for CNS to process it. Hold the condition False so that
+	// operations that gate on it (e.g. snapshot creation) continue to wait.
+	// We do NOT return ErrPendingRegister here — that would block the entire VM
+	// reconcile (including power state). The condition being False is sufficient
+	// to guard individual operations that care about registration state.
+	if hasPendingCRVs {
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			"PendingRegistration",
+			"")
+		return nil
 	}
 
 	// Clean up the VM status.
@@ -900,10 +917,12 @@ func ensureCnsRegisterVolumeForDisk(
 
 // cleanupCompletedCnsRegisterVolumesForVM cleans up CnsRegisterVolume objects
 // for a VM where the CnsRegisterVolume has been successfully registered.
+// It returns true if any CRVs for the VM still have Status.Registered=false,
+// indicating that CNS has not yet completed processing them.
 func cleanupCompletedCnsRegisterVolumesForVM(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
-	vm *vmopv1.VirtualMachine) error {
+	vm *vmopv1.VirtualMachine) (bool, error) {
 
 	// List all CnsRegisterVolume objects for this VM.
 	crvList := &cnsv1alpha1.CnsRegisterVolumeList{}
@@ -915,7 +934,7 @@ func cleanupCompletedCnsRegisterVolumesForVM(
 			pkgconst.CreatedByLabel: vm.Name,
 		}); err != nil {
 
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"failed to list CnsRegisterVolume objects for VM %s: %w",
 			vm.NamespacedName(), err)
 	}
@@ -934,13 +953,25 @@ func cleanupCompletedCnsRegisterVolumesForVM(
 	// In that case, the CRV never gets to registered, and we will
 	// never clean that up. However, that is an extremely rare case
 	// for which we would want the reconcile to fail.
-	var errs []error
+	var (
+		errs       []error
+		hasPending bool
+	)
 	for _, crv := range crvList.Items {
 		if !crv.Status.Registered {
-			logger.V(4).Info(
-				"Skipping deletion of CnsRegisterVolume - not yet registered",
-				"crv", crv.Name,
-				"crvStatusError", crv.Status.Error)
+			if crv.Status.Error != "" {
+				// The CRV has a permanent error (e.g. CNS rejected it with
+				// vmodl.fault.InvalidArgument after a snapshot race). It will
+				// not self-resolve; manual intervention is required.
+				logger.Error(nil, "CnsRegisterVolume has a permanent error",
+					"crv", crv.Name,
+					"error", crv.Status.Error)
+			} else {
+				logger.V(4).Info(
+					"Skipping deletion of CnsRegisterVolume - not yet registered",
+					"crv", crv.Name)
+			}
+			hasPending = true
 			continue
 		}
 
@@ -956,7 +987,7 @@ func cleanupCompletedCnsRegisterVolumesForVM(
 		}
 	}
 
-	return errors.Join(errs...)
+	return hasPending, errors.Join(errs...)
 }
 
 // cleanupVolumeStatus remove any status entries for classic disks that have

@@ -657,6 +657,9 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 				"vmoperator.vmware.com/virtualmachinesnapshot",
 			},
 			Annotations: map[string]string{},
+			Labels: map[string]string{
+				vmopv1.VMNameForSnapshotLabel: vmName,
+			},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
 			VMName: vmName,

@@ -11,6 +11,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
@@ -31,8 +33,10 @@ type SpecInput struct {
 }
 
 // Spec verifies the VirtualMachineConfigPolicy feature end-to-end.
-// Currently covers zone controller fan-out (S3); policy enforcement
-// (S8/S9) and capability population (S5/S6/S7) will be added here.
+// Currently covers zone controller fan-out (S3) and the ConfigTarget
+// controller's cluster-scope capability discovery (S5.b); per-host
+// discovery (S5.c), option enumeration (S6/S7), and policy enforcement
+// (S8/S9) will be added here.
 func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	const specName = "vm-config-policy"
 
@@ -110,6 +114,55 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 						"VirtualMachineConfigPolicy %q/%q should reference zone %q",
 						input.WCPNamespaceName, z.Name, z.Name)
 				}
+			})
+	})
+
+	Context("When the ConfigTarget controller reconciles a cluster's ConfigTarget", func() {
+		It("Should populate ConfigTarget.status from QueryConfigTarget and mark Ready=True",
+			Label("core-functional", "experimental"),
+			func() {
+				var ctList vimv1.ConfigTargetList
+				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).ToNot(BeEmpty(), "expected at least one ConfigTarget in the cluster")
+
+				for i := range ctList.Items {
+					name := ctList.Items[i].Name
+
+					Eventually(func(g Gomega) {
+						ct := &vimv1.ConfigTarget{}
+						g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: name}, ct)).To(Succeed())
+
+						cond := apimeta.FindStatusCondition(ct.Status.Conditions, vimv1.ReadyConditionType)
+						g.Expect(cond).ToNot(BeNil(), "ConfigTarget %q should have a Ready condition", name)
+						g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "ConfigTarget %q should be Ready", name)
+
+						g.Expect(ct.Status.NumCPUs).To(BeNumerically(">", 0),
+							"ConfigTarget %q status.numCPUs should be populated from QueryConfigTarget", name)
+						g.Expect(ct.Status.MaxCPUsPerVM).To(BeNumerically(">", 0),
+							"ConfigTarget %q status.maxCPUsPerVM should be populated from QueryConfigTarget", name)
+					}).Should(Succeed())
+				}
+			})
+
+		It("Should fan out a VirtualMachineConfigOptions object per supported hardware version",
+			Label("core-functional", "experimental"),
+			func() {
+				var ctList vimv1.ConfigTargetList
+				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).ToNot(BeEmpty(), "expected at least one ConfigTarget in the cluster")
+
+				Eventually(func(g Gomega) {
+					var vcoList vimv1.VirtualMachineConfigOptionsList
+					g.Expect(svClusterClient.List(ctx, &vcoList)).To(Succeed())
+					g.Expect(vcoList.Items).ToNot(BeEmpty(),
+						"expected at least one VirtualMachineConfigOptions fanned out from a ConfigTarget")
+
+					for i := range vcoList.Items {
+						vco := &vcoList.Items[i]
+						g.Expect(vco.Spec.HardwareVersion).To(Equal(vco.Name),
+							"VirtualMachineConfigOptions %q spec.hardwareVersion should equal its metadata.name", vco.Name)
+					}
+				}).Should(Succeed())
 			})
 	})
 }

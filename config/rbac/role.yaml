@@ -280,6 +280,27 @@ rules:
   - vim.vmware.com
   resources:
   - configtargets
+  - virtualmachineconfigoptions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vim.vmware.com
+  resources:
+  - configtargets/status
+  - virtualmachineconfigoptions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vim.vmware.com
+  resources:
   - virtualmachineconfigpolicies
   verbs:
   - create

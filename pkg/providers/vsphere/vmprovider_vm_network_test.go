@@ -181,6 +181,7 @@ func vmNetworkTests() {
 
 	When("multiple NICs are specified", func() {
 		BeforeEach(func() {
+			testConfig.NumNetworks = 0
 			testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 
 			vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
@@ -440,15 +441,19 @@ func vmNetworkTests() {
 						lp, err := netsetutil.TypeToNetworkProvider(netCfg[1].Provider)
 						Expect(err).ToNot(HaveOccurred())
 
-						ns := &netopv1alpha1.NetworkSettings{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "default",
-								Namespace: nsInfo.Namespace,
-							},
-							Provider:       p,
-							LegacyProvider: lp,
-						}
-						Expect(ctx.Client.Create(ctx, ns)).To(Succeed())
+						By("Set legacy network provider", func() {
+							ns := &netopv1alpha1.NetworkSettings{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "default",
+									Namespace: vm.Namespace,
+								},
+							}
+							Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ns), ns)).To(Succeed())
+							Expect(ns.Provider).To(Equal(p))
+							Expect(ns.LegacyProvider).To(BeEmpty())
+							ns.LegacyProvider = lp
+							Expect(ctx.Client.Update(ctx, ns)).To(Succeed())
+						})
 					})
 
 					It("configures both NICs when powered off, does not reconfigure when powered on", func() {
@@ -669,19 +674,35 @@ func vmNetworkTests() {
 
 		Context("simulate vm power on/off", func() {
 			DescribeTableSubtree("with adding/removing network interfaces ",
-				func(networkEnv builder.NetworkEnv, bootstrap string) {
+				func(networkEnv builder.NetworkEnv, bootstrap string, standardPortGroup bool) {
 					var np fakeNetworkProvider
 
 					BeforeEach(func() {
-						testConfig.WithNetworkEnv = networkEnv
+						var providerType pkgcfg.NetworkProviderType
 
 						switch networkEnv {
 						case builder.NetworkEnvVDS:
-							np = vdsNetworkProvider{}
+							providerType = pkgcfg.NetworkProviderTypeVDS
+							np = vdsNetworkProvider{isStandardPG: standardPortGroup}
 						case builder.NetworkEnvNSXT:
+							providerType = pkgcfg.NetworkProviderTypeNSXT
 							np = nsxtNetworkProvider{}
 						case builder.NetworkEnvVPC:
+							providerType = pkgcfg.NetworkProviderTypeVPC
 							np = vpcNetworkProvider{}
+						}
+
+						if standardPortGroup {
+							// Standard PG are only supported with PerNS network providers.
+							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+								config.Features.PerNamespaceNetworkProvider = true
+							})
+						}
+
+						testConfig.NumNetworks = 0
+						testConfig.WithNetworkConfig = []builder.VCSimNetworkConfig{
+							{Provider: providerType, StandardPortGroup: standardPortGroup},
+							{Provider: providerType, StandardPortGroup: standardPortGroup},
 						}
 					})
 
@@ -829,25 +850,43 @@ func vmNetworkTests() {
 						})
 					})
 				},
-				Entry("VDS with CloudInit", builder.NetworkEnvVDS, bsCloudInit),
-				Entry("NSX-T with CloudInit", builder.NetworkEnvNSXT, bsCloudInit),
-				Entry("VPC with Sysprep", builder.NetworkEnvVPC, bsSysprep),
+				Entry("VDS with CloudInit", builder.NetworkEnvVDS, bsCloudInit, false),
+				Entry("VDS Standard Portgroup with CloudInit", builder.NetworkEnvVDS, bsCloudInit, true),
+				Entry("NSX-T with CloudInit", builder.NetworkEnvNSXT, bsCloudInit, false),
+				Entry("VPC with Sysprep", builder.NetworkEnvVPC, bsSysprep, false),
 			)
 
 			DescribeTableSubtree("with modifying network interface",
-				func(networkEnv builder.NetworkEnv, bootstrap string) {
+				func(networkEnv builder.NetworkEnv, bootstrap string, standardPortGroup bool) {
 					var np fakeNetworkProvider
 
 					BeforeEach(func() {
-						testConfig.WithNetworkEnv = networkEnv
+						var providerType pkgcfg.NetworkProviderType
 
 						switch networkEnv {
 						case builder.NetworkEnvVDS:
-							np = vdsNetworkProvider{}
+							providerType = pkgcfg.NetworkProviderTypeVDS
+							np = vdsNetworkProvider{isStandardPG: standardPortGroup}
 						case builder.NetworkEnvNSXT:
+							providerType = pkgcfg.NetworkProviderTypeNSXT
 							np = nsxtNetworkProvider{}
 						case builder.NetworkEnvVPC:
+							providerType = pkgcfg.NetworkProviderTypeVPC
 							np = vpcNetworkProvider{}
+						}
+
+						if standardPortGroup {
+							// Standard PG are only supported with PerNS network providers.
+							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+								config.Features.PerNamespaceNetworkProvider = true
+							})
+						}
+
+						testConfig.NumNetworks = 0
+						testConfig.WithNetworkConfig = []builder.VCSimNetworkConfig{
+							{Provider: providerType, StandardPortGroup: standardPortGroup},
+							{Provider: providerType, StandardPortGroup: standardPortGroup},
+							{Provider: providerType, StandardPortGroup: standardPortGroup},
 						}
 
 						// We assert the device type is preserved when editing an interface spec.
@@ -1084,10 +1123,11 @@ func vmNetworkTests() {
 						})
 					})
 				},
-				Entry("VDS with CloudInit", builder.NetworkEnvVDS, bsCloudInit),
-				Entry("VPC with CloudInit", builder.NetworkEnvVPC, bsCloudInit),
-				Entry("VDS with LinuxPrep", builder.NetworkEnvVDS, bsLinuxPrep),
-				Entry("NSX-T with Sysprep", builder.NetworkEnvNSXT, bsSysprep),
+				Entry("VDS with CloudInit", builder.NetworkEnvVDS, bsCloudInit, false),
+				Entry("VDS Standard Portgroup with CloudInit", builder.NetworkEnvVDS, bsCloudInit, true),
+				Entry("VPC with CloudInit", builder.NetworkEnvVPC, bsCloudInit, false),
+				Entry("VDS with LinuxPrep", builder.NetworkEnvVDS, bsLinuxPrep, false),
+				Entry("NSX-T with Sysprep", builder.NetworkEnvNSXT, bsSysprep, false),
 			)
 		})
 	})
@@ -1127,7 +1167,9 @@ func idxFromInterfaceName(s string) int {
 	return int(i)
 }
 
-type vdsNetworkProvider struct{}
+type vdsNetworkProvider struct {
+	isStandardPG bool
+}
 
 func (vdsNetworkProvider) getTypeMeta() metav1.TypeMeta {
 	return metav1.TypeMeta{
@@ -1183,12 +1225,22 @@ func (v vdsNetworkProvider) assertEthernetCard(
 	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
 
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-	backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-	Expect(ok).Should(BeTrue())
-	ExpectWithOffset(1, backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(networkIdx).Backing.Reference().Value))
+	if v.isStandardPG {
+		backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
+		Expect(ok).Should(BeTrue())
+		expectedBacking, err := ctx.GetNetwork(networkIdx).Backing.EthernetCardBackingInfo(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		expectedBackingInfo, ok := expectedBacking.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
+		Expect(ok).Should(BeTrue())
+		Expect(backingInfo.DeviceName).To(Equal(expectedBackingInfo.DeviceName))
+	} else {
+		backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+		Expect(ok).Should(BeTrue())
+		Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(networkIdx).Backing.Reference().Value))
+	}
+
 	Expect(ethCard.MacAddress).ToNot(BeEmpty())
 	Expect(ethCard.ExternalId).To(Equal(extID(networkName, interfaceName)))
-
 }
 
 func (v vdsNetworkProvider) assertNetworkInterfacesDNE(

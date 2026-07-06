@@ -175,6 +175,18 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				Expect(ctList.Items).ToNot(BeEmpty(), "expected at least one ConfigTarget in the cluster")
 				owner := &ctList.Items[0]
 
+				// The regular supervisor-admin client cannot create
+				// cluster-scoped vim.vmware.com resources (that's normally
+				// only done by the controller's service account), so use an
+				// admin client here, matching the pattern used for
+				// cns.vmware.com resources in UnregisterPVCVolumes.
+				adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
+				Expect(err).ToNot(HaveOccurred(), "failed to get admin cluster proxy for VirtualMachineConfigOptions creation")
+				defer adminProxy.Dispose(ctx)
+
+				adminClient, err := adminProxy.GetAdminClient()
+				Expect(err).ToNot(HaveOccurred(), "failed to get admin client for VirtualMachineConfigOptions creation")
+
 				// A ConfigTarget's real vSphere cluster will never report this
 				// hardware version, so once the owning ConfigTarget's next
 				// reconcile runs, this object should be garbage-collected as
@@ -187,10 +199,10 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					Spec:       vimv1.VirtualMachineConfigOptionsSpec{HardwareVersion: "vmx-e2e-stale-vmop-3760"},
 				}
 				Expect(controllerutil.SetOwnerReference(owner, stale, svClusterClient.Scheme())).To(Succeed())
-				Expect(svClusterClient.Create(ctx, stale)).To(Succeed())
+				Expect(adminClient.Create(ctx, stale)).To(Succeed())
 
 				DeferCleanup(func() {
-					_ = svClusterClient.Delete(ctx, stale)
+					_ = adminClient.Delete(ctx, stale)
 				})
 
 				Eventually(func(g Gomega) {

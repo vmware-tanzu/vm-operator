@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"time"
@@ -1382,13 +1383,12 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				namespaceZones, err := utils.ListZonesByNamespace(ctx, input.ClusterProxy.GetClient(), tmpNamespaceName)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(namespaceZones.Items).ToNot(BeEmpty())
-				preferredZone := namespaceZones.Items[0].Name
 
 				By("Resolving the tiny-core-linux-complex-hw VMI in the temporary namespace")
 				tinyImageVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, "tiny-core-linux-complex-hw")
 				Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", "tiny-core-linux-complex-hw", tmpNamespaceName)
 
-				createCacheVMFunc := func(vmName, groupName, appLabel string, antiAffinity bool) {
+				createCacheVMFunc := func(vmName, groupName, preferredZone, appLabel string, antiAffinity bool) {
 					GinkgoHelper()
 
 					term := vmopv1a5.VMAffinityTerm{
@@ -1442,6 +1442,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				for i := range iterations {
 					By(fmt.Sprintf("Iteration %d: creating both VirtualMachineGroups (AAF and AF) and their VMs", i))
 
+					// choose a random zone for each iteration
+					num := rand.IntN(len(namespaceZones.Items))
+					preferredZone := namespaceZones.Items[num].Name
+
 					aafGroupParameters := manifestbuilders.VirtualMachineGroupYaml{
 						Namespace: tmpNamespaceName,
 						Name:      aafGroupName,
@@ -1474,10 +1478,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(afGroupYaml))
 					Expect(clusterProxy.CreateWithArgs(ctx, afGroupYaml)).To(Succeed())
 
-					createCacheVMFunc(aafVM1, aafGroupName, "cache-cluster-aaf", true)
-					createCacheVMFunc(aafVM2, aafGroupName, "cache-cluster-aaf", true)
-					createCacheVMFunc(afVM1, afGroupName, "cache-cluster-af", false)
-					createCacheVMFunc(afVM2, afGroupName, "cache-cluster-af", false)
+					createCacheVMFunc(aafVM1, aafGroupName, preferredZone, "cache-cluster-aaf", true)
+					createCacheVMFunc(aafVM2, aafGroupName, preferredZone, "cache-cluster-aaf", true)
+					createCacheVMFunc(afVM1, afGroupName, preferredZone, "cache-cluster-af", false)
+					createCacheVMFunc(afVM2, afGroupName, preferredZone, "cache-cluster-af", false)
 
 					By(fmt.Sprintf("Iteration %d: waiting for all VMs to be created in vSphere (powered off)", i))
 					for _, vmName := range allVMNames {
@@ -1511,6 +1515,149 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 					}
 				}
+			})
+
+			It("Should create VMs matching a VKS nodepool AF/AAF scenario across 3 tiers", func() {
+				By("Verifying there are at least 3 zones bound with the Supervisor")
+
+				supervisorID := vcenter.GetSupervisorIDFromKubeconfig(ctx, config.InfraConfig.KubeconfigPath)
+				Expect(supervisorID).ToNot(BeEmpty(), "Supervisor ID should not be empty")
+				zoneList, err := clusterProxy.GetZonesBoundWithSupervisor(supervisorID)
+				Expect(err).ToNot(HaveOccurred(), "failed to get zones bound with Supervisor")
+				Expect(len(zoneList.Zones)).To(BeNumerically(">=", 3))
+
+				// createVKSNodePoolVMFunc builds a VM that mimics a VKS nodepool member: it is
+				// anti-affined (at host topology) with the other member of its own tier, anti-affined
+				// (at zone topology) with members of the other tiers, and affined (at zone topology,
+				// required) with the other member of its own tier so that a tier's two nodes always
+				// land in the same zone while different tiers land in different zones.
+				createVKSNodePoolVMFunc := func(vmName, tier, antiAffinityType string, otherTiers []string) {
+					GinkgoHelper()
+
+					hostnameAntiAffinityTerm := vmopv1a5.VMAffinityTerm{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"tier": tier},
+						},
+						TopologyKey: "kubernetes.io/hostname",
+					}
+					zoneAntiAffinityTerm := vmopv1a5.VMAffinityTerm{
+						LabelSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "tier",
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   otherTiers,
+								},
+							},
+						},
+						TopologyKey: "topology.kubernetes.io/zone",
+					}
+
+					antiAffinityTerms := []vmopv1a5.VMAffinityTerm{hostnameAntiAffinityTerm, zoneAntiAffinityTerm}
+					antiAffinity := &vmopv1a5.VMAntiAffinitySpec{}
+					if antiAffinityType == preferredDuringSchedulingPreferredDuringExecution {
+						antiAffinity.PreferredDuringSchedulingPreferredDuringExecution = antiAffinityTerms
+					} else {
+						antiAffinity.RequiredDuringSchedulingPreferredDuringExecution = antiAffinityTerms
+					}
+
+					vmParameters := manifestbuilders.VirtualMachineYaml{
+						Namespace:        tmpNamespaceName,
+						Name:             vmName,
+						GroupName:        vmgRootName,
+						Labels:           map[string]string{"tier": tier, "capv.vmware.com/cluster.role": "node"},
+						ImageName:        tmpNamespaceVMIName,
+						VMClassName:      clusterResources.VMClassName,
+						StorageClassName: clusterResources.StorageClassName,
+						PowerState:       string(vmopv1a5.VirtualMachinePowerStateOff),
+						Affinity: &vmopv1a5.AffinitySpec{
+							VMAntiAffinity: antiAffinity,
+							VMAffinity: &vmopv1a5.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{"tier": tier},
+										},
+										TopologyKey: "topology.kubernetes.io/zone",
+									},
+								},
+							},
+						},
+					}
+					vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+					e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+					Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+				}
+
+				tier1VM1 := fmt.Sprintf("%s-tier1-vm1", vmgRootName)
+				tier1VM2 := fmt.Sprintf("%s-tier1-vm2", vmgRootName)
+				tier2VM1 := fmt.Sprintf("%s-tier2-vm1", vmgRootName)
+				tier2VM2 := fmt.Sprintf("%s-tier2-vm2", vmgRootName)
+				tier3VM1 := fmt.Sprintf("%s-tier3-vm1", vmgRootName)
+				tier3VM2 := fmt.Sprintf("%s-tier3-vm2", vmgRootName)
+				vmMemberNames = []string{tier1VM1, tier1VM2, tier2VM1, tier2VM2, tier3VM1, tier3VM2}
+
+				By("Creating a VirtualMachineGroup with 6 VM-kind members across 3 tiers")
+
+				vmgParameters := manifestbuilders.VirtualMachineGroupYaml{
+					Namespace: tmpNamespaceName,
+					Name:      vmgRootName,
+					BootOrder: []manifestbuilders.BootOrder{
+						{
+							Members: []vmopv1a5.GroupMember{},
+						},
+					},
+				}
+				for _, v := range vmMemberNames {
+					vmgParameters.BootOrder[0].Members = append(vmgParameters.BootOrder[0].Members,
+						vmopv1a5.GroupMember{Kind: vmKind, Name: v})
+				}
+				vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
+				e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
+				Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+
+				By(fmt.Sprintf("Creating tier-1 VMs (%s preferred, %s required) host AAF within tier, zone AAF against tiers 2 and 3", tier1VM1, tier1VM2))
+				createVKSNodePoolVMFunc(tier1VM1, "1", preferredDuringSchedulingPreferredDuringExecution, []string{"3", "2"})
+				createVKSNodePoolVMFunc(tier1VM2, "1", requiredDuringSchedulingPreferredDuringExecution, []string{"3", "2"})
+
+				By(fmt.Sprintf("Creating tier-2 VMs (%s, %s) required host AAF within tier, zone AAF against tiers 1 and 3", tier2VM1, tier2VM2))
+				createVKSNodePoolVMFunc(tier2VM1, "2", requiredDuringSchedulingPreferredDuringExecution, []string{"3", "1"})
+				createVKSNodePoolVMFunc(tier2VM2, "2", requiredDuringSchedulingPreferredDuringExecution, []string{"3", "1"})
+
+				By(fmt.Sprintf("Creating tier-3 VMs (%s, %s) required host AAF within tier, zone AAF against tiers 1 and 2", tier3VM1, tier3VM2))
+				createVKSNodePoolVMFunc(tier3VM1, "3", requiredDuringSchedulingPreferredDuringExecution, []string{"1", "2"})
+				createVKSNodePoolVMFunc(tier3VM2, "3", requiredDuringSchedulingPreferredDuringExecution, []string{"1", "2"})
+
+				By("Waiting for all VMs to be created in vSphere (powered off)")
+
+				for _, vmName := range vmMemberNames {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+				}
+
+				By("Powering on all VMs")
+				for _, vmName := range vmMemberNames {
+					powerOnVMFunc(vmName)
+				}
+				for _, vmName := range vmMemberNames {
+					vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+				}
+
+				By("Verifying vm.Status.Zone is populated for all VMs after power-on")
+
+				vmZones := make(map[string]string, len(vmMemberNames))
+				for _, vmName := range vmMemberNames {
+					vmZones[vmName] = getVMZoneFunc(vmName)
+				}
+
+				By("Verifying each tier's two VMs are placed in the same zone, per the required zone affinity within the tier")
+				Expect(vmZones[tier1VM1]).To(Equal(vmZones[tier1VM2]))
+				Expect(vmZones[tier2VM1]).To(Equal(vmZones[tier2VM2]))
+				Expect(vmZones[tier3VM1]).To(Equal(vmZones[tier3VM2]))
+
+				By("Verifying each tier is placed in a different zone from the other tiers, per the required zone anti-affinity across tiers")
+				Expect(vmZones[tier1VM1]).ToNot(Equal(vmZones[tier2VM1]))
+				Expect(vmZones[tier1VM1]).ToNot(Equal(vmZones[tier3VM1]))
+				Expect(vmZones[tier2VM1]).ToNot(Equal(vmZones[tier3VM1]))
 			})
 		})
 	})

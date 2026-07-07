@@ -331,38 +331,58 @@ func CreateConfigSpecForPlacement(
 
 // CalculateAffinityConstraints calculates the constraints based on vm object
 // in vmCtx & creation/placement workflow.
+//
+// ConfigureZoneRules is true when the VMPlacementPolicies capability is
+// enabled, except:
+//   - It is disabled during VM Create configspec creation, As DRS only evaluates
+//     zonal policies during placement. Therefore, when the VM is being created,
+//     we want to omit zonal policies from the ConfigSpec
+//   - It is disabled for a VKS node VM (CAPI labels) with a zone label set,
+//     i.e. an explicit zone is already specified by the VM.
+//   - It is disabled when VMAffinityDuringExecution is enabled and the VM has a zone
+//     label set, i.e. an explicit zone is already specified by the VM.
+//
+// ConfigureHostRules is true when the VMAffinityDuringExecution capability
+// is enabled, except for a VKS node VM (CAPI labels), since its host
+// anti-affinity is handled via cluster modules instead.
 func CalculateAffinityConstraints(
 	vmCtx pkgctx.VirtualMachineContext,
 	isCreateVM bool,
 ) AffinityRuleConstraints {
 	constraints := AffinityRuleConstraints{}
+
+	// set base condition for zonal rules based on capability.
 	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
 		constraints.ConfigureZoneRules = true
 	}
 
+	// set base condition for host rules based on capability.
 	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
 		constraints.ConfigureHostRules = true
 	}
 
+	// conditionals are broken down for readability.
+	// Host anti-affinity for CAPI VMs is handled via cluster modules.
 	isVksNodeVM := kubeutil.HasCAPILabels(vmCtx.VM.Labels)
 	if isVksNodeVM {
-		// Host anti-affinity for CAPI VMs is handled via cluster modules.
 		constraints.ConfigureHostRules = false
 	}
 
-	// ConfigureZoneRules = false when:
-	//   1. VM Creation: DRS doesn't differentiate topologies for persisted policies.
-	//   2. VKS Node: Never get zonal policies (VMs are already zone-constrained).
-	//   3. VMAffinityDuringExecution + Zone Label: Already zone-constrained
-	//
-	//   isCreateVM? → isVksNodeVM? → (VMAffinityDuringExecution + ZoneLabel)?
-	//    ↓YES (any)       ↓YES              ↓YES     		↓NO
-	//    FALSE            FALSE             FALSE    		TRUE
-	//
-	if isCreateVM ||
-		isVksNodeVM ||
-		(pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
-			kubeutil.HasZoneLabel(vmCtx.VM.Labels)) {
+	// Drs interprets all persisted policies at host level, hence avoid configuring zonal policies during create.
+	// zonal policies are only considered at placement time.
+	if isCreateVM {
+		constraints.ConfigureZoneRules = false
+	}
+
+	// for vks nodes with zone labels or failure domains set, do not configure zonal affinity rules.
+	// zones are assigned from the zone label.
+	if isVksNodeVM && kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
+		constraints.ConfigureZoneRules = false
+	}
+
+	// for vms with preferred zones, & VMAffinityDuringExecution capability, do not configure zonal rules.
+	// zones are assigned from the zone label.
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution && kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
 		constraints.ConfigureZoneRules = false
 	}
 

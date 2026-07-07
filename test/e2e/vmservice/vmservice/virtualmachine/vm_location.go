@@ -53,6 +53,10 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	const (
 		specName = "vm-location"
 		vmKind   = "VirtualMachine"
+
+		// vmServiceVMMgmtRoleID is the hardcoded vCenter role ID for the VM-Service-VM-Management role.
+		vmServiceVMMgmtRoleID   = int32(1039)
+		vmServiceVMMgmtRoleName = "VM-Service-VM-Management"
 	)
 
 	var (
@@ -102,6 +106,21 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		var err error
 		vCenterAdminClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create vCenter admin client")
+
+		// WCP grants the VM-Service-VM-Management role to the Administrators group directly on the
+		// namespace RP/folder, which overrides the inherited vCenter Administrator role for those
+		// objects. That role does not always include the privileges the specs below need to
+		// relocate a VM between resource pools and move it in/out of the namespace folder, so
+		// ensure they are present here.
+		Expect(vcenter.EnsureRolePrivileges(ctx, vCenterAdminClient, vmServiceVMMgmtRoleID,
+			[]string{
+				"Folder.Move",
+				"Resource.AssignVMToPool",
+				"Resource.ColdMigrate",
+				"Resource.HotMigrate",
+				"VirtualMachine.Inventory.Move",
+			})).To(Succeed(),
+			"failed to ensure %s role has the privileges required for VM relocation", vmServiceVMMgmtRoleName)
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(

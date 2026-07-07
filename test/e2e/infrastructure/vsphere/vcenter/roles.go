@@ -77,6 +77,47 @@ func UpdateRole(ctx context.Context, vimClient *vim25.Client, roleID int32, role
 	return nil
 }
 
+// EnsureRolePrivileges makes sure the role with the given id grants at least the specified
+// privileges, without removing any privileges it already has. It is a no-op if the role
+// already grants every requested privilege.
+func EnsureRolePrivileges(ctx context.Context, vimClient *vim25.Client, roleID int32, privilegeIDs []string) error {
+	authzManager := object.NewAuthorizationManager(vimClient)
+
+	roleList, err := authzManager.RoleList(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list roles: %w", err)
+	}
+
+	role := roleList.ById(roleID)
+	if role == nil {
+		return fmt.Errorf("role %d not found", roleID)
+	}
+
+	have := make(map[string]struct{}, len(role.Privilege))
+	for _, p := range role.Privilege {
+		have[p] = struct{}{}
+	}
+
+	merged := role.Privilege
+	changed := false
+	for _, p := range privilegeIDs {
+		if _, ok := have[p]; !ok {
+			merged = append(merged, p)
+			changed = true
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+
+	if err := authzManager.UpdateRole(ctx, roleID, role.Name, merged); err != nil {
+		return fmt.Errorf("failed to update role %d (%s): %w", roleID, role.Name, err)
+	}
+
+	return nil
+}
+
 // RemoveRole removes the role with specified id in VC.
 func RemoveRole(ctx context.Context, vimClient *vim25.Client, roleID int32) error {
 	authzManager := object.NewAuthorizationManager(vimClient)

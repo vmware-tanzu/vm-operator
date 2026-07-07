@@ -63,7 +63,55 @@ _KUBECTL_VSPHERE_RETRY_INITIAL_DELAY=5 # seconds; doubles each attempt (~2.5 min
 # ---------------------------------------------------------------------------
 _log()  { printf '%s\n'          "$*" >&2; }
 _warn() { printf 'Warning: %s\n' "$*" >&2; }
-_err()  { printf 'Error: %s\n'   "$*" >&2; }
+# _err records its message in _LAST_ERR (used as the callback syndrome if
+# setup fails) in addition to printing it.
+_LAST_ERR=""
+_err()  { _LAST_ERR="$*"; printf 'Error: %s\n' "$*" >&2; }
+
+# _find_sibling_script_dir <marker_file>
+#
+# Resolves the directory containing this script by checking BASH_SOURCE[0] /
+# $0 first (works when executed or sourced from a known path), falling back
+# to a pwd-relative search for callers that source this file via a dynamic
+# path (e.g. "source ./hack/e2e/setup-testbed-env.sh" from the repo root).
+_find_sibling_script_dir() {
+    local -r marker="$1"
+    local d=""
+    if [[ -n "${BASH_VERSION:-}" ]]; then
+        d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    elif [[ -n "${ZSH_VERSION:-}" ]]; then
+        d="$(cd "$(dirname "$0")" && pwd)"
+    fi
+    if [[ -z "${d}" || ! -f "${d}/${marker}" ]]; then
+        local _d
+        for _d in "$(pwd)/hack/e2e" "$(pwd)"; do
+            if [[ -f "${_d}/${marker}" ]]; then
+                d="${_d}"
+                break
+            fi
+        done
+    fi
+    printf '%s' "${d}"
+}
+
+# Source callback.sh so a fatal setup failure can report itself via
+# report_callback before returning. Best-effort: if it can't be found, the
+# entry point below simply skips reporting.
+_CALLBACK_SCRIPT_DIR="$(_find_sibling_script_dir "callback.sh")"
+if [[ -n "${_CALLBACK_SCRIPT_DIR}" ]]; then
+    # shellcheck source=./callback.sh
+    source "${_CALLBACK_SCRIPT_DIR}/callback.sh"
+fi
+
+# _report_setup_failure reports the most recent _err message as a "Failed"
+# callback. Setup failures happen before run-e2e.sh ever runs (the two are
+# chained with "&&" in the E2E container's entrypoint), so without this the
+# callback URL would never hear anything but the container's bare exit code.
+_report_setup_failure() {
+    if declare -F report_callback >/dev/null 2>&1; then
+        report_callback "Failed" "${_LAST_ERR}"
+    fi
+}
 
 # _retry_with_backoff <max_attempts> <initial_delay_seconds> <description> <cmd> [args...]
 #
@@ -638,22 +686,9 @@ EOF
 
     if [[ "${enable_e2e}" == "true" ]]; then
         # Resolve the directory containing this script so we can find siblings
-        # (proxy.sh, kms.sh).  Cascade: bash BASH_SOURCE[0] → zsh $0 → cwd search.
-        local script_dir=""
-        if [[ -n "${BASH_VERSION:-}" ]]; then
-            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        elif [[ -n "${ZSH_VERSION:-}" ]]; then
-            script_dir="$(cd "$(dirname "$0")" && pwd)"
-        fi
-        if [[ -z "${script_dir:-}" || ! -f "${script_dir}/proxy.sh" ]]; then
-            local _d
-            for _d in "$(pwd)/hack/e2e" "$(pwd)"; do
-                if [[ -f "${_d}/proxy.sh" ]]; then
-                    script_dir="${_d}"
-                    break
-                fi
-            done
-        fi
+        # (proxy.sh, kms.sh).
+        local script_dir
+        script_dir="$(_find_sibling_script_dir "proxy.sh")"
         _setup_e2e "${script_dir}"
     fi
 
@@ -693,7 +728,7 @@ EOF
 # being sourced or executed directly.
 # ---------------------------------------------------------------------------
 if [[ "${_SOURCED}" == "true" ]]; then
-    _main "$@" || return $?
+    _main "$@" || { _report_setup_failure; return $?; }
 else
-    _main "$@"
+    _main "$@" || { _report_setup_failure; exit $?; }
 fi

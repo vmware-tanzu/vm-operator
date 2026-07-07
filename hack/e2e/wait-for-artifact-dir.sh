@@ -17,8 +17,19 @@ set -ex
 TIMEOUT_SECONDS=600
 POLL_INTERVAL=5
 
+# Source callback.sh so a failure here can report itself before this step's
+# non-zero exit stops the "&&"-chained entrypoint (wait-for-artifact-dir.sh
+# && setup-testbed-env.sh && run-e2e.sh) short of run-e2e.sh, which is
+# otherwise the only script that ever POSTs to TEST_CALLBACK_URL.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/callback.sh" ]]; then
+    # shellcheck source=./callback.sh
+    source "${SCRIPT_DIR}/callback.sh"
+fi
+
 if [[ -z "$RESULTSDIR" ]]; then
     echo "[wait-for-artifact-dir] ERROR: RESULTSDIR environment variable is not set"
+    declare -F report_callback >/dev/null 2>&1 && report_callback "Failed" "RESULTSDIR environment variable is not set"
     exit 1
 fi
 
@@ -29,6 +40,7 @@ elapsed=0
 while [[ ! -d "$RESULTSDIR" ]]; do
     if [[ $elapsed -ge $TIMEOUT_SECONDS ]]; then
         echo "[wait-for-artifact-dir] ERROR: Timed out after ${TIMEOUT_SECONDS}s waiting for $RESULTSDIR"
+        declare -F report_callback >/dev/null 2>&1 && report_callback "Failed" "Timed out after ${TIMEOUT_SECONDS}s waiting for artifact directory ${RESULTSDIR}"
         exit 1
     fi
     sleep $POLL_INTERVAL

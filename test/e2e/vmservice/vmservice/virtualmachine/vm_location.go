@@ -179,6 +179,38 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		return "", ""
 	}
 
+	// getOtherNamespaceFolder returns the folder MoID and name of a Supervisor Namespace other
+	// than the given one. WCP grants the VM-Service-VM-Management role directly on every
+	// namespace's own folder, so a different namespace's folder is a location that is both
+	// outside the given namespace's folder hierarchy and already permitted for the test's
+	// vCenter account -- unlike an arbitrary vCenter folder (e.g. the Datacenter's root VM
+	// folder), which WCP never grants permissions on.
+	getOtherNamespaceFolder := func(namespace string) (folderMoID, otherNamespace string) {
+		zoneList := &topologyv1.ZoneList{}
+		Expect(svClusterClient.List(ctx, zoneList)).To(Succeed(), "failed to list Zones")
+
+		for _, z := range zoneList.Items {
+			if z.Namespace != namespace && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
+				return z.Spec.ManagedVMs.FolderMoID, z.Namespace
+			}
+		}
+
+		// Fallback: AvailabilityZone.Spec.Namespaces (older cluster configurations).
+		azList := &topologyv1.AvailabilityZoneList{}
+		Expect(svClusterClient.List(ctx, azList)).
+			To(Succeed(), "failed to list AvailabilityZones")
+
+		for _, az := range azList.Items {
+			for ns, nsInfo := range az.Spec.Namespaces {
+				if ns != namespace && nsInfo.PoolMoId != "" {
+					return nsInfo.FolderMoId, ns
+				}
+			}
+		}
+
+		return "", ""
+	}
+
 	// createVM deploys a VM and waits for it to reach Running state.
 	createVM := func() {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
@@ -306,27 +338,22 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			By("Retrieving the correct namespace folder MoID")
 			_, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName)
 
-			By("Retrieving the parent of the namespace folder as the invalid folder location")
-			// The namespace folder's parent (the DC's root VM folder) is always a
-			// Folder-typed MoRef and always lies outside the 2-level hierarchy that
-			// validateVMFolder checks, so it reliably triggers the LocationMismatch.
-			pc := property.DefaultCollector(vCenterAdminClient)
-			var nsFolderMo mo.Folder
-			Expect(pc.RetrieveOne(ctx,
-				vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID},
-				[]string{"parent"},
-				&nsFolderMo,
-			)).To(Succeed(), "failed to fetch namespace folder's parent")
-			Expect(nsFolderMo.Parent).ToNot(BeNil(), "namespace folder has no parent")
-			Expect(nsFolderMo.Parent.Type).To(Equal("Folder"),
-				"namespace folder's parent must be a Folder (got %s %s)",
-				nsFolderMo.Parent.Type, nsFolderMo.Parent.Value)
-			invalidFolderMoID := nsFolderMo.Parent.Value
+			By("Retrieving another Supervisor Namespace's folder as the invalid folder location")
+			// A different namespace's folder always lies outside the 2-level hierarchy
+			// that validateVMFolder checks, so it reliably triggers the LocationMismatch.
+			// Unlike the Datacenter's root VM folder, WCP grants the VM-Service-VM-Management
+			// role directly on every namespace's own folder, so this location is one the
+			// test's vCenter account is already permitted to move VMs into.
+			invalidFolderMoID, otherNamespace := getOtherNamespaceFolder(input.WCPNamespaceName)
+			if invalidFolderMoID == "" {
+				Skip("no other Supervisor Namespace found on this vCenter; " +
+					"cannot exercise cross-namespace folder isolation")
+			}
 			Expect(invalidFolderMoID).ToNot(Equal(nsFolderMoID),
-				"namespace folder's parent unexpectedly equals the namespace folder itself")
-			e2eframework.Logf("invalid folder MoID (parent of namespace folder): %s", invalidFolderMoID)
+				"other namespace's folder unexpectedly equals the namespace folder itself")
+			e2eframework.Logf("invalid folder MoID (folder of namespace %s): %s", otherNamespace, invalidFolderMoID)
 
-			By("Moving VM into the DC root VM folder via MoveIntoFolder (direct inventory move)")
+			By("Moving VM into the other namespace's folder via MoveIntoFolder (direct inventory move)")
 			// Use Folder.MoveInto rather than Relocate.Folder: in WCP, the
 			// Relocate API honors Pool changes but silently ignores the Folder
 			// field because WCP controls namespace folder placement.
@@ -341,6 +368,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			Expect(moveTask.Wait(ctx)).To(Succeed(), "MoveIntoFolder task failed for VM %s", vmMoID)
 
 			By("Verifying the VM actually moved to the invalid folder")
+			pc := property.DefaultCollector(vCenterAdminClient)
 			var vmMoAfterMove mo.VirtualMachine
 			Expect(pc.RetrieveOne(ctx,
 				vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID},
@@ -350,7 +378,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			e2eframework.Logf("VM parent after MoveIntoFolder: type=%s value=%s (expected=%s)",
 				vmMoAfterMove.Parent.Type, vmMoAfterMove.Parent.Value, invalidFolderMoID)
 			Expect(vmMoAfterMove.Parent.Value).To(Equal(invalidFolderMoID),
-				"VM did not move to the DC root VM folder; actual parent: %s", vmMoAfterMove.Parent.Value)
+				"VM did not move to the other namespace's folder; actual parent: %s", vmMoAfterMove.Parent.Value)
 
 			By("Waiting for VirtualMachineLocationValid condition to become False")
 			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient,

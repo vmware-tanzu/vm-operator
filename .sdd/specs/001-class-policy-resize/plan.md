@@ -84,9 +84,9 @@ controllers/
 
 webhooks/
 ├── configtarget/
-│   ├── webhooks.go                      NEW — thin wrapper delegating to validation subpackage (DONE, PR #1711 / vmop-3757)
+│   ├── webhooks.go                      NEW
 │   └── validation/
-│       └── configtarget_validator.go   NEW — immutable spec.id; valid cluster MoID format for metadata.name (DONE, PR #1711 / vmop-3757)
+│       └── configtarget_validator.go   NEW — immutable spec.id; valid cluster MoID format for metadata.name
 ├── virtualmachineconfigoptions/
 │   └── validation_webhook.go           NEW
 ├── virtualmachineconfigpolicy/

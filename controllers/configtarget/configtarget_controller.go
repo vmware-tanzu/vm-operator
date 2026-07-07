@@ -179,14 +179,14 @@ func (r *Reconciler) ReconcileNormal(
 
 		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, reason, "%v", err)
 
-		return err
+		return fmt.Errorf("failed to get virtual machine config target: %w", err)
 	}
 
 	populateStatus(obj, configTarget)
 
 	if err = r.reconcileConfigOptions(ctx, obj, configOptionDescriptors); err != nil {
 		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, QueryConfigOptionDescriptorFailedReason, "%v", err)
-		return err
+		return fmt.Errorf("failed to reconcile config options: %w", err)
 	}
 
 	obj.Status.ObservedGeneration = obj.Generation
@@ -308,7 +308,7 @@ func (r *Reconciler) garbageCollectConfigOptions(
 		}
 
 		if err := r.removeOwnerRefAndDeleteIfOrphaned(ctx, obj, vmco); err != nil {
-			return err
+			return fmt.Errorf("failed to remove owner reference and delete if orphaned: %w", err)
 		}
 	}
 

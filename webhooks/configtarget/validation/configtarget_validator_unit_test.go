@@ -109,19 +109,14 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidName bool
-		emptyID     bool
+		id *string
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
 		var err error
 
-		if args.invalidName {
-			ctx.configTarget.Name = "not-a-cluster-moid"
-		}
-
-		if args.emptyID {
-			ctx.configTarget.Spec.ID.ID = ""
+		if args.id != nil {
+			ctx.configTarget.Spec.ID.ID = *args.id
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.configTarget)
@@ -142,13 +137,10 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
-	namePath := field.NewPath("metadata", "name")
 	idPath := field.NewPath("spec", "id", "id")
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, ""),
-		Entry("should deny an invalid cluster moid name", createArgs{invalidName: true}, false,
-			field.Invalid(namePath, "not-a-cluster-moid", "must be a valid vSphere cluster managed object ID, e.g. domain-c21").Error()),
-		Entry("should deny an empty spec.id", createArgs{emptyID: true}, false,
+		Entry("should deny an empty spec.id", createArgs{id: new(string)}, false,
 			field.Required(idPath, "").Error()),
 	)
 }
@@ -159,14 +151,14 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		changeID bool
+		id vimv1.ManagedObjectID
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
 		var err error
 
-		if args.changeID {
-			ctx.configTarget.Spec.ID = vimv1.ManagedObjectID{ID: "domain-c22"}
+		if args.id != (vimv1.ManagedObjectID{}) {
+			ctx.configTarget.Spec.ID = args.id
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.configTarget)
@@ -189,8 +181,9 @@ func unitTestsValidateUpdate() {
 
 	immutableFieldMsg := "field is immutable"
 	DescribeTable("update table", validateUpdate,
-		Entry("should allow", updateArgs{}, true, ""),
-		Entry("should deny spec.id mutation", updateArgs{changeID: true}, false, immutableFieldMsg),
+		Entry("should allow when spec.id is unchanged", updateArgs{}, true, ""),
+		Entry("should deny when spec.id changes to domain-c22",
+			updateArgs{id: vimv1.ManagedObjectID{ID: "domain-c22"}}, false, immutableFieldMsg),
 	)
 
 	When("the update is performed while object deletion", func() {

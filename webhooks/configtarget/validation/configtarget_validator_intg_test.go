@@ -129,6 +129,12 @@ func intgTestsValidateUpdate() {
 		ctx = nil
 	})
 
+	When("update is performed without changing spec.id", func() {
+		It("should allow the request", func() {
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
 	When("update is performed with a changed spec.id", func() {
 		BeforeEach(func() {
 			ctx.configTarget.Spec.ID = vimv1.ManagedObjectID{ID: "domain-c22"}

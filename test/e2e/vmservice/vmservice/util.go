@@ -814,20 +814,8 @@ func decodeGzipBase64(encoded string) (string, error) {
 
 // WaitForBackupToComplete waits for the VM backup process to complete by verifying
 // that all PVCs in the VM spec have corresponding entries in the backup data stored
-// in the VM's ExtraConfig. This is exported for use in tests that perform in-place restores.
-func WaitForBackupToComplete(
-	ctx context.Context,
-	vm *vmopv1.VirtualMachine,
-	clusterProxy *common.VMServiceClusterProxy,
-	config *config.E2EConfig,
-) {
-	waitForBackupToComplete(ctx, vm, clusterProxy, config)
-}
-
-// waitForBackupToComplete waits for the VM backup process to complete by verifying
-// that all PVCs in the VM spec have corresponding entries in the backup data stored
 // in the VM's ExtraConfig.
-func waitForBackupToComplete(
+func WaitForBackupToComplete(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	clusterProxy *common.VMServiceClusterProxy,
@@ -1027,7 +1015,7 @@ func DeleteVMResource(
 	Expect(err).ToNot(HaveOccurred())
 
 	// Wait for backup to complete before powering off and deleting the VM
-	waitForBackupToComplete(ctx, vm, clusterProxy, config)
+	WaitForBackupToComplete(ctx, vm, clusterProxy, config)
 
 	// When AllDisksArePVCs is enabled, the CSI driver takes a VM snapshot
 	// while registering the boot VMDK as an FCD. If that snapshot is still

@@ -19,6 +19,7 @@ import (
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -109,11 +110,16 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		id *string
+		name *string
+		id   *string
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
 		var err error
+
+		if args.name != nil {
+			ctx.configTarget.Name = *args.name
+		}
 
 		if args.id != nil {
 			ctx.configTarget.Spec.ID.ID = *args.id
@@ -137,9 +143,13 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
+	namePath := field.NewPath("metadata", "name")
 	idPath := field.NewPath("spec", "id", "id")
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, ""),
+		Entry("should deny an invalid cluster moid name",
+			createArgs{name: ptr.To("not-a-cluster-moid")}, false, //nolint:modernize // not the zero value; new(string) would change the assertion
+			field.Invalid(namePath, "not-a-cluster-moid", "must be a valid vSphere cluster managed object ID, e.g. domain-c21").Error()),
 		Entry("should deny an empty spec.id", createArgs{id: new(string)}, false,
 			field.Required(idPath, "").Error()),
 	)
@@ -151,14 +161,14 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		id vimv1.ManagedObjectID
+		id *vimv1.ManagedObjectID
 	}
 
-	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
+	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReasons ...string) {
 		var err error
 
-		if args.id != (vimv1.ManagedObjectID{}) {
-			ctx.configTarget.Spec.ID = args.id
+		if args.id != nil {
+			ctx.configTarget.Spec.ID = *args.id
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.configTarget)
@@ -167,10 +177,13 @@ func unitTestsValidateUpdate() {
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 
-		if expectedReason != "" {
+		for _, expectedReason := range expectedReasons {
 			Expect(string(response.Result.Reason)).To(ContainSubstring(expectedReason))
 		}
 	}
+
+	immutableFieldMsg := "field is immutable"
+	requiredIDMsg := field.Required(field.NewPath("spec", "id", "id"), "").Error()
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
@@ -179,11 +192,12 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
-	immutableFieldMsg := "field is immutable"
 	DescribeTable("update table", validateUpdate,
-		Entry("should allow when spec.id is unchanged", updateArgs{}, true, ""),
+		Entry("should allow when spec.id is unchanged", updateArgs{}, true),
 		Entry("should deny when spec.id changes to domain-c22",
-			updateArgs{id: vimv1.ManagedObjectID{ID: "domain-c22"}}, false, immutableFieldMsg),
+			updateArgs{id: &vimv1.ManagedObjectID{ID: "domain-c22"}}, false, immutableFieldMsg),
+		Entry("should deny with both errors when spec.id is cleared",
+			updateArgs{id: &vimv1.ManagedObjectID{}}, false, immutableFieldMsg, requiredIDMsg),
 	)
 
 	When("the update is performed while object deletion", func() {

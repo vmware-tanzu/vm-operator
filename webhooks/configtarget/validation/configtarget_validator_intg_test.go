@@ -74,10 +74,19 @@ func intgTestsValidateCreate() {
 		ctx *intgValidatingWebhookContext
 	)
 
-	validateCreate := func(expectedAllowed bool, expectedReason string) {
+	type createArgs struct {
+		invalidName bool
+		emptyID     bool
+	}
+
+	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
 		configTarget := ctx.configTarget.DeepCopy()
 
-		if !expectedAllowed {
+		if args.invalidName {
+			configTarget.Name = "not-a-cluster-moid"
+		}
+
+		if args.emptyID {
 			configTarget.Spec.ID.ID = ""
 		}
 
@@ -101,10 +110,14 @@ func intgTestsValidateCreate() {
 		ctx = nil
 	})
 
+	namePath := field.NewPath("metadata", "name")
 	idPath := field.NewPath("spec", "id", "id")
 	DescribeTable("create table", validateCreate,
-		Entry("should work", true, ""),
-		Entry("should not work for an empty spec.id", false, field.Required(idPath, "").Error()),
+		Entry("should work", createArgs{}, true, ""),
+		Entry("should not work for an invalid cluster moid name", createArgs{invalidName: true}, false,
+			field.Invalid(namePath, "not-a-cluster-moid", "must be a valid vSphere cluster managed object ID, e.g. domain-c21").Error()),
+		Entry("should not work for an empty spec.id", createArgs{emptyID: true}, false,
+			field.Required(idPath, "").Error()),
 	)
 }
 

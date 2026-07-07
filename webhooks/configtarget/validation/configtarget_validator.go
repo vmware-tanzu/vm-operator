@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"regexp"
 
 	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,6 +30,15 @@ import (
 const (
 	webHookName = "default"
 )
+
+// clusterMoIDPattern matches the conventional form of the managed object ID
+// vCenter assigns to a ClusterComputeResource, e.g. domain-c21. The vSphere
+// API documents ManagedObjectReference values as opaque strings, but this
+// prefix has been stable across vSphere releases, is how the Zone
+// controller derives ConfigTarget's name (controllers/infra/zone), and is
+// required by this webhook's task spec
+// (.sdd/specs/001-class-policy-resize/tasks.md, T060).
+var clusterMoIDPattern = regexp.MustCompile(`^domain-c[0-9]+$`)
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vim-vmware-com-v1alpha1-configtarget,mutating=false,failurePolicy=fail,groups=vim.vmware.com,resources=configtargets,versions=v1alpha1,name=default.validating.configtarget.v1alpha1.vim.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vim.vmware.com,resources=configtargets,verbs=get;list
@@ -66,7 +76,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	fieldErrs := v.validateSpec(configTarget)
+	fieldErrs := append(v.validateName(configTarget), v.validateSpec(configTarget)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -91,7 +101,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	fieldErrs := v.validateAllowedChanges(configTarget, oldConfigTarget)
+	fieldErrs := append(v.validateSpec(configTarget), v.validateAllowedChanges(configTarget, oldConfigTarget)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -99,6 +109,21 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+}
+
+// validateName returns an error if metadata.name is not a valid vSphere
+// cluster managed object ID.
+func (v validator) validateName(configTarget *vimv1.ConfigTarget) field.ErrorList {
+	if clusterMoIDPattern.MatchString(configTarget.Name) {
+		return nil
+	}
+
+	return field.ErrorList{
+		field.Invalid(
+			field.NewPath("metadata", "name"),
+			configTarget.Name,
+			"must be a valid vSphere cluster managed object ID, e.g. domain-c21"),
+	}
 }
 
 // validateSpec returns an error if spec.id is empty. The CRD's +required

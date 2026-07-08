@@ -22,7 +22,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/util"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -162,7 +162,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		key := ctrlclient.ObjectKey{Name: vmName, Namespace: input.WCPNamespaceName}
 		Eventually(func() bool {
-			vm := &vmopv1a3.VirtualMachine{}
+			vm := &vmopv1.VirtualMachine{}
 
 			err := svClusterClient.Get(ctx, key, vm)
 			if err != nil {
@@ -194,7 +194,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		By("Power on VM")
 		Eventually(func() bool {
-			vm := &vmopv1a3.VirtualMachine{}
+			vm := &vmopv1.VirtualMachine{}
 
 			err := svClusterClient.Get(ctx, key, vm)
 			if err != nil {
@@ -202,7 +202,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 				return false
 			}
 
-			vm.Spec.PowerState = vmopv1a3.VirtualMachinePowerStateOn
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 
 			err = svClusterClient.Update(ctx, vm)
 			if err != nil {
@@ -272,7 +272,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		key := ctrlclient.ObjectKey{Name: vmName, Namespace: input.WCPNamespaceName}
 		Eventually(func() bool {
-			vm := &vmopv1a3.VirtualMachine{}
+			vm := &vmopv1.VirtualMachine{}
 
 			err := svClusterClient.Get(ctx, key, vm)
 			if err != nil {
@@ -308,14 +308,14 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		By("Power on VM")
 		Eventually(func() bool {
-			vm := &vmopv1a3.VirtualMachine{}
+			vm := &vmopv1.VirtualMachine{}
 			err := svClusterClient.Get(ctx, key, vm)
 			if err != nil {
 				e2eframework.Logf("retry due to: %v", err)
 				return false
 			}
 
-			vm.Spec.PowerState = vmopv1a3.VirtualMachinePowerStateOn
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 
 			err = svClusterClient.Update(ctx, vm)
 			if err != nil {

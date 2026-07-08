@@ -36,6 +36,16 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# Source callback.sh for report_callback. Guarded (rather than an
+# unconditional source) so a missing sibling file can't take down the whole
+# script before any test output is produced; report_result below already
+# no-ops when report_callback isn't defined.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${_SCRIPT_DIR}/callback.sh" ]; then
+    # shellcheck source=./callback.sh
+    source "${_SCRIPT_DIR}/callback.sh"
+fi
+
 # parse_json_report reads a Ginkgo JSON report (written by --json-report) and
 # emits a JSON array of per-test results suitable for the subtest_details field
 # of a test callback payload. Each element has "testcasename" and "result".
@@ -71,11 +81,10 @@ parse_json_report() {
     ]' "${json_file}"
 }
 
-# report_result POSTs the overall pass/fail and per-test breakdown to a generic
-# callback URL when one is configured in the environment. The variable name is
-# intentionally generic so that this public script does not reference any
-# specific CI system. Set TEST_CALLBACK_URL in the environment to enable
-# reporting; when unset the function is a no-op (safe for local runs).
+# report_result reports the overall pass/fail and per-test breakdown via
+# report_callback (see callback.sh). Set TEST_CALLBACK_URL in the environment
+# to enable reporting; when unset the callback is a no-op (safe for local
+# runs).
 report_result() {
     local exit_code="${1}"
     local json_report="${2:-}"
@@ -97,32 +106,20 @@ report_result() {
         subtest_details=$(parse_json_report "${json_report}") || subtest_details="[]"
     fi
 
-    local count
-    count=$(printf '%s' "${subtest_details}" | jq 'length')
-    echo "[run-e2e] Reporting result '${result}' with ${count} subtests to callback URL..."
-
     # Build a top-level syndrome from the failed subtests' own syndromes, so
     # the overall result carries a short synopsis instead of a bare Failed.
-    # The callback API caps "syndrome" at 1024 characters.
     local syndrome=""
     if [ "${result}" = "Failed" ]; then
         syndrome=$(printf '%s' "${subtest_details}" | jq -r '
             [.[] | select(.result == "FAIL") | (.testcasename + ": " + (.syndrome // "no failure message"))] | join("; ")
-        ' | cut -c1-1024)
+        ')
     fi
 
-    local payload
-    payload=$(jq -n \
-        --arg result "${result}" \
-        --arg syndrome "${syndrome}" \
-        --argjson subtests "${subtest_details}" \
-        '{result: $result, subtest_details: $subtests}
-         + (if $syndrome != "" then {syndrome: $syndrome} else {} end)')
-
-    curl --silent --show-error --max-time 30 \
-        -X POST "${TEST_CALLBACK_URL}" \
-        -H "Content-Type: application/json" \
-        -d "${payload}" || echo "[run-e2e] WARNING: callback POST failed (ignored)"
+    if declare -F report_callback >/dev/null 2>&1; then
+        report_callback "${result}" "${syndrome}" "${subtest_details}"
+    else
+        echo "[run-e2e] WARNING: report_callback unavailable (callback.sh not found); skipping callback" >&2
+    fi
 }
 
 # Inputs from Environment

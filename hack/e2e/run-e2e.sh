@@ -36,8 +36,15 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-# shellcheck source=./callback.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/callback.sh"
+# Source callback.sh for report_callback. Guarded (rather than an
+# unconditional source) so a missing sibling file can't take down the whole
+# script before any test output is produced; report_result below already
+# no-ops when report_callback isn't defined.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${_SCRIPT_DIR}/callback.sh" ]; then
+    # shellcheck source=./callback.sh
+    source "${_SCRIPT_DIR}/callback.sh"
+fi
 
 # parse_json_report reads a Ginkgo JSON report (written by --json-report) and
 # emits a JSON array of per-test results suitable for the subtest_details field
@@ -108,7 +115,11 @@ report_result() {
         ')
     fi
 
-    report_callback "${result}" "${syndrome}" "${subtest_details}"
+    if declare -F report_callback >/dev/null 2>&1; then
+        report_callback "${result}" "${syndrome}" "${subtest_details}"
+    else
+        echo "[run-e2e] WARNING: report_callback unavailable (callback.sh not found); skipping callback" >&2
+    fi
 }
 
 # Inputs from Environment

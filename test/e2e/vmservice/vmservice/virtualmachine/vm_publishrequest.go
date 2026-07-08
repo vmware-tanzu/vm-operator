@@ -22,7 +22,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	libssh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
@@ -173,9 +173,9 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionSourceValid,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionSourceValid,
 					Status: metav1.ConditionFalse,
-					Reason: vmopv1a2.SourceVirtualMachineNotExistReason,
+					Reason: vmopv1.SourceVirtualMachineNotExistReason,
 				}
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 			})
@@ -185,9 +185,9 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionTargetValid,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 					Status: metav1.ConditionFalse,
-					Reason: vmopv1a2.TargetContentLibraryNotExistReason,
+					Reason: vmopv1.TargetContentLibraryNotExistReason,
 				}
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 			})
@@ -209,9 +209,9 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionTargetValid,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 					Status: metav1.ConditionFalse,
-					Reason: vmopv1a2.TargetContentLibraryNotWritableReason,
+					Reason: vmopv1.TargetContentLibraryNotWritableReason,
 				}
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 			})
@@ -231,7 +231,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionComplete,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 					Status: metav1.ConditionTrue,
 				}
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
@@ -277,7 +277,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				firstPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, firstPubReqName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, firstPubReqBuilder)
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, firstPubReqName, metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionComplete,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 					Status: metav1.ConditionTrue,
 				})
 				DeferCleanup(func() {
@@ -290,9 +290,9 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionTargetValid,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 					Status: metav1.ConditionFalse,
-					Reason: vmopv1a2.TargetItemAlreadyExistsReason,
+					Reason: vmopv1.TargetItemAlreadyExistsReason,
 				}
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 			})
@@ -384,7 +384,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionComplete,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 					Status: metav1.ConditionTrue,
 				})
 
@@ -413,9 +413,9 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				dupPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, dupPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, dupPubReqBuilder)
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName, metav1.Condition{
-					Type:   vmopv1a2.VirtualMachinePublishRequestConditionTargetValid,
+					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 					Status: metav1.ConditionFalse,
-					Reason: vmopv1a2.TargetItemAlreadyExistsReason,
+					Reason: vmopv1.TargetItemAlreadyExistsReason,
 				})
 			})
 		})

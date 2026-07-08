@@ -21,7 +21,6 @@ import (
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
@@ -45,7 +44,6 @@ func GetVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, name s
 	return virtualMachine, nil
 }
 
-
 func DeleteVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, name string) error {
 	virtualMachine := &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
@@ -58,7 +56,7 @@ func DeleteVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, nam
 }
 
 func DeleteVirtualMachineSnapshot(ctx context.Context, client ctrlclient.Client, ns, name string) error {
-	virtualMachineSnapshot := &vmopv1a5.VirtualMachineSnapshot{
+	virtualMachineSnapshot := &vmopv1.VirtualMachineSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
 			Name:      name,
@@ -107,8 +105,8 @@ func ListClusterVirtualMachineImages(ctx context.Context, client ctrlclient.Clie
 	return clusterVirtualMachineImageList, nil
 }
 
-func GetVirtualMachineSnapshot(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a5.VirtualMachineSnapshot, error) {
-	virtualMachineSnapshot := &vmopv1a5.VirtualMachineSnapshot{}
+func GetVirtualMachineSnapshot(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1.VirtualMachineSnapshot, error) {
+	virtualMachineSnapshot := &vmopv1.VirtualMachineSnapshot{}
 
 	key := types.NamespacedName{
 		Namespace: ns,
@@ -140,8 +138,8 @@ func GetVirtualMachinePublishRequest(ctx context.Context, client ctrlclient.Clie
 }
 
 func GetVirtualMachineGroupPublishRequest(ctx context.Context, client ctrlclient.Client, ns, name string) (
-	*vmopv1a5.VirtualMachineGroupPublishRequest, error) {
-	virtualMachineGroupPublishRequest := &vmopv1a5.VirtualMachineGroupPublishRequest{}
+	*vmopv1.VirtualMachineGroupPublishRequest, error) {
+	virtualMachineGroupPublishRequest := &vmopv1.VirtualMachineGroupPublishRequest{}
 
 	key := types.NamespacedName{
 		Namespace: ns,
@@ -157,8 +155,8 @@ func GetVirtualMachineGroupPublishRequest(ctx context.Context, client ctrlclient
 }
 
 func GetVirtualMachineGroup(ctx context.Context, client ctrlclient.Client, ns, name string) (
-	*vmopv1a5.VirtualMachineGroup, error) {
-	virtualMachineGroup := &vmopv1a5.VirtualMachineGroup{}
+	*vmopv1.VirtualMachineGroup, error) {
+	virtualMachineGroup := &vmopv1.VirtualMachineGroup{}
 
 	key := types.NamespacedName{
 		Namespace: ns,
@@ -173,10 +171,10 @@ func GetVirtualMachineGroup(ctx context.Context, client ctrlclient.Client, ns, n
 	return virtualMachineGroup, nil
 }
 
-func GetVirtualMachineGroupMemberStatus(ctx context.Context, client ctrlclient.Client, ns, groupName, memberName, memberKind string) (vmopv1a5.VirtualMachineGroupMemberStatus, error) {
+func GetVirtualMachineGroupMemberStatus(ctx context.Context, client ctrlclient.Client, ns, groupName, memberName, memberKind string) (vmopv1.VirtualMachineGroupMemberStatus, error) {
 	vmg, err := GetVirtualMachineGroup(ctx, client, ns, groupName)
 	if err != nil {
-		return vmopv1a5.VirtualMachineGroupMemberStatus{}, fmt.Errorf("failed to get VirtualMachineGroup: %w", err)
+		return vmopv1.VirtualMachineGroupMemberStatus{}, fmt.Errorf("failed to get VirtualMachineGroup: %w", err)
 	}
 
 	for _, memberStatus := range vmg.Status.Members {
@@ -185,7 +183,7 @@ func GetVirtualMachineGroupMemberStatus(ctx context.Context, client ctrlclient.C
 		}
 	}
 
-	return vmopv1a5.VirtualMachineGroupMemberStatus{}, fmt.Errorf("member %s/%s not found in VirtualMachineGroup %q status", memberKind, memberName, groupName)
+	return vmopv1.VirtualMachineGroupMemberStatus{}, fmt.Errorf("member %s/%s not found in VirtualMachineGroup %q status", memberKind, memberName, groupName)
 }
 
 func GetVWebConsoleRequest(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1a1.WebConsoleRequest, error) {

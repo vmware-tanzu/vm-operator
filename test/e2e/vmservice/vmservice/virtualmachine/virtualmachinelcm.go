@@ -26,7 +26,6 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
@@ -235,7 +234,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineStatusClassUpdated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, newVMClassName)
 
 		classConfigSyncedCondition := metav1.Condition{
-			Type:   vmopv1a2.VirtualMachineClassConfigurationSynced,
+			Type:   vmopv1.VirtualMachineClassConfigurationSynced,
 			Status: metav1.ConditionTrue,
 		}
 		vmoperator.WaitOnVirtualMachineConditionUpdate(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classConfigSyncedCondition)
@@ -461,7 +460,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	It("Should emit a condition for a VMClass that doesn't exist in the cluster for a Virtual Machine creation", func() {
 		vmClassName := "test-vmClass"
 		expectedCondition := metav1.Condition{
-			Type:    vmopv1a2.VirtualMachineConditionClassReady,
+			Type:    vmopv1.VirtualMachineConditionClassReady,
 			Status:  metav1.ConditionFalse,
 			Reason:  "NotFound",
 			Message: fmt.Sprintf("Failed to get VirtualMachineClass %s", vmClassName),
@@ -502,7 +501,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(vmClassInfo.Namespaces).ShouldNot(ContainElement(input.WCPNamespaceName))
 		expectedCondition := metav1.Condition{
-			Type:    vmopv1a2.VirtualMachineConditionClassReady,
+			Type:    vmopv1.VirtualMachineConditionClassReady,
 			Status:  metav1.ConditionFalse,
 			Reason:  "NotFound",
 			Message: fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s", vmClassName, input.WCPNamespaceName),

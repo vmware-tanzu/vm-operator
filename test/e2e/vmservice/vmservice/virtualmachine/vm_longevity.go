@@ -17,7 +17,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
@@ -160,17 +160,17 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 		JustBeforeEach(func() {
 			classReady = metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionClassReady,
+				Type:   vmopv1.VirtualMachineConditionClassReady,
 				Status: metav1.ConditionTrue,
 			}
 
 			imageReady = metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionImageReady,
+				Type:   vmopv1.VirtualMachineConditionImageReady,
 				Status: metav1.ConditionTrue,
 			}
 
 			storageReady = metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionStorageReady,
+				Type:   vmopv1.VirtualMachineConditionStorageReady,
 				Status: metav1.ConditionTrue,
 			}
 
@@ -226,7 +226,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			By("VirtualMachineClassReadyCondition must be set to false")
 
 			classReadyFalseCondition := metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionClassReady,
+				Type:   vmopv1.VirtualMachineConditionClassReady,
 				Status: metav1.ConditionFalse,
 				Reason: "NotFound",
 			}

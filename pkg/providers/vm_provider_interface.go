@@ -91,4 +91,9 @@ type VirtualMachineProviderInterface interface {
 	GetSnapshotSize(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 	// SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
 	SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.VirtualMachine) error
+
+	// GetVirtualMachineConfigTarget returns the vSphere cluster's
+	// EnvironmentBrowser QueryConfigTarget and QueryConfigOptionDescriptor
+	// results for the cluster identified by clusterMoID.
+	GetVirtualMachineConfigTarget(ctx context.Context, clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error)
 }

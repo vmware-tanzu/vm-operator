@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
@@ -693,4 +694,48 @@ func (vs *vSphereVMProvider) VSphereClient(
 		return nil, err
 	}
 	return c.Client, nil
+}
+
+// GetVirtualMachineConfigTarget returns the vSphere cluster's
+// EnvironmentBrowser QueryConfigTarget and QueryConfigOptionDescriptor
+// results for the cluster identified by clusterMoID.
+func (vs *vSphereVMProvider) GetVirtualMachineConfigTarget(
+	ctx context.Context,
+	clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error) {
+	vcClient, err := vs.getVcClient(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ccr := object.NewClusterComputeResource(vcClient.VimClient(),
+		vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: clusterMoID})
+
+	envBrowser, err := ccr.EnvironmentBrowser(ctx)
+	if err != nil {
+		var f *vimtypes.ManagedObjectNotFound
+
+		if _, ok := fault.As(err, &f); ok {
+			return nil, nil, fmt.Errorf("cluster %q not found: %w", clusterMoID, err)
+		}
+
+		return nil, nil, fmt.Errorf("failed to get environment browser for cluster %q: %w", clusterMoID, err)
+	}
+
+	configTarget, err := envBrowser.QueryConfigTarget(ctx, nil)
+	if err != nil {
+		var f *vimtypes.ManagedObjectNotFound
+
+		if _, ok := fault.As(err, &f); ok {
+			return nil, nil, fmt.Errorf("cluster %q not found: %w", clusterMoID, err)
+		}
+
+		return nil, nil, fmt.Errorf("failed to query config target for cluster %q: %w", clusterMoID, err)
+	}
+
+	configOptionDescriptors, err := envBrowser.QueryConfigOptionDescriptor(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query config option descriptor for cluster %q: %w", clusterMoID, err)
+	}
+
+	return configTarget, configOptionDescriptors, nil
 }

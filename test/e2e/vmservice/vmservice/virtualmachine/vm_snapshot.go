@@ -138,7 +138,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 			})
 	})
 
-	When("VM doesn't have PVC", Label("experimental"), func() {
+	When("VM doesn't have PVC", func() {
 		BeforeEach(func() {
 			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
@@ -389,7 +389,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		})
 	})
 
-	When("VM has PVC", Label("experimental"), func() {
+	When("VM has PVC", func() {
 		BeforeEach(func() {
 			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", []manifestbuilders.PVC{
 				{
@@ -455,7 +455,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		})
 	})
 
-	When("VM is imported from vCenter (brownfield)", Label("extended-functional", "experimental"), func() {
+	When("VM is imported from vCenter (brownfield)", Label("extended-functional"), func() {
 		var (
 			vCenterAdminClient *vim25.Client
 			brownfieldVMName   string

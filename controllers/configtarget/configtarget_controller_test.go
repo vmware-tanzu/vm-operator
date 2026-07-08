@@ -350,8 +350,6 @@ func vcsimTests() {
 	BeforeEach(func() {
 		vcsimCtx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 
-		Expect(vimv1.AddToScheme(vcsimCtx.Client.Scheme())).To(Succeed())
-
 		provider := vsphere.NewVSphereVMProviderFromClient(vcsimCtx, vcsimCtx.Client, vcsimCtx.Recorder)
 
 		reconciler = configtarget.NewReconciler(

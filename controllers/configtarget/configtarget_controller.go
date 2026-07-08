@@ -177,7 +177,7 @@ func (r *Reconciler) ReconcileNormal(
 			reason = ClusterNotFoundReason
 		}
 
-		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, reason, "%v", err)
+		pkgcond.MarkError(obj, vimv1.ReadyConditionType, reason, err)
 
 		return fmt.Errorf("failed to get virtual machine config target: %w", err)
 	}
@@ -185,7 +185,7 @@ func (r *Reconciler) ReconcileNormal(
 	populateStatus(obj, configTarget)
 
 	if err = r.reconcileConfigOptions(ctx, obj, configOptionDescriptors); err != nil {
-		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, QueryConfigOptionDescriptorFailedReason, "%v", err)
+		pkgcond.MarkError(obj, vimv1.ReadyConditionType, QueryConfigOptionDescriptorFailedReason, err)
 		return fmt.Errorf("failed to reconcile config options: %w", err)
 	}
 

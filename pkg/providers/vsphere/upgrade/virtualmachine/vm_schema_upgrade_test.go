@@ -447,7 +447,7 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 					When("VC VM has NIC with positive NUMA node assignment", func() {
 						BeforeEach(func() {
 							dev := &vimtypes.VirtualVmxnet3{}
-							dev.NumaNode = 2
+							dev.NumaNode = ptr.To(int32(2))
 							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{dev}
 						})
 						It("should backfill VNUMANodeID from moVM device", func() {

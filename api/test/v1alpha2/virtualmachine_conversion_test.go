@@ -1268,6 +1268,55 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 	})
 
+	t.Run("status.network.interfaces[].vnumaNodeID and vmxnet3 hub-spoke-hub", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Status: vmopv1.VirtualMachineStatus{
+				Network: &vmopv1.VirtualMachineNetworkStatus{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceStatus{
+						{
+							Name:        "eth0",
+							VNUMANodeID: ptrOf(int32(2)),
+							VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
+								UPTv2Enabled:             ptrOf(true),
+								UPTv2Active:              ptrOf(false),
+								UPTv2InactiveReasonVM:    []string{"vm-reason"},
+								UPTv2InactiveReasonOther: []string{"other-reason"},
+							},
+						},
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("status.network.interfaces[].vnumaNodeID and vmxnet3 dropped on spoke", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Status: vmopv1.VirtualMachineStatus{
+				Network: &vmopv1.VirtualMachineNetworkStatus{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceStatus{
+						{
+							Name:        "eth0",
+							VNUMANodeID: ptrOf(int32(2)),
+							VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
+								UPTv2Active:              ptrOf(false),
+								UPTv2InactiveReasonVM:    []string{"vm-reason"},
+								UPTv2InactiveReasonOther: []string{"other-reason"},
+							},
+						},
+					},
+				},
+			},
+		}
+		var spoke vmopv1a2.VirtualMachine
+		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+		g.Expect(spoke.Status.Network).NotTo(BeNil())
+		g.Expect(spoke.Status.Network.Interfaces).To(HaveLen(1))
+		g.Expect(spoke.Status.Network.Interfaces[0].Name).To(Equal("eth0"))
+	})
+
 	t.Run("spec.network.interfaces.dhcp-spoke-override", func(t *testing.T) {
 		// Verify that when hub has DHCP4=*false the spoke user can override it
 		// to true and the up-conversion produces *true, not *false.

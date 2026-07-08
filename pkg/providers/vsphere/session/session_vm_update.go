@@ -46,6 +46,7 @@ import (
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
+	vmconfnetworkextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
@@ -1409,6 +1410,25 @@ func reconcileAdvancedExtraConfig(
 		configSpec)
 }
 
+func reconcileNetworkExtraConfig(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling network extra config")
+
+	return vmconfnetworkextraconfig.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1480,6 +1500,16 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
 		if err := reconcileAdvancedExtraConfig(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+		if err := reconcileNetworkExtraConfig(
 			ctx,
 			k8sClient,
 			vm,

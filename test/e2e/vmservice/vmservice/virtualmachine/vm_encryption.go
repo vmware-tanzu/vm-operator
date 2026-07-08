@@ -12,7 +12,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	crypto "github.com/vmware/govmomi/crypto"
+	"github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -20,9 +20,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -332,7 +330,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: "invalid",
 			},
@@ -403,7 +401,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -457,7 +455,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
 			},
@@ -517,7 +515,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -590,7 +588,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -664,7 +662,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -767,7 +765,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: vmClass.Name,
@@ -781,7 +779,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			condition := meta.FindStatusCondition(vm.GetConditions(), vmopv1a3.VirtualMachineEncryptionSynced)
+			condition := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineEncryptionSynced)
 			g.Expect(condition).ToNot(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse),
 				"expected EncryptionSynced to be False due to mixed provider types, got %s with reason %s: %s",
@@ -820,7 +818,7 @@ func useKeyProvider(
 
 func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client ctrlclient.Client, ns string, vmName string, reason string) *vmopv1.VirtualMachineCryptoStatus {
 	expectedCondition := metav1.Condition{
-		Type:   vmopv1a3.VirtualMachineEncryptionSynced,
+		Type:   vmopv1.VirtualMachineEncryptionSynced,
 		Status: metav1.ConditionTrue,
 	}
 	if reason != "" {

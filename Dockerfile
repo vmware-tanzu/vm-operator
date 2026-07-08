@@ -1,20 +1,38 @@
 ARG BASE_IMAGE=mirror.gcr.io/library/photon:5.0
 
-# Copy the controller-manager into a thin image
-FROM ${BASE_IMAGE}
-
 ## --------------------------------------
-## Cleanup (Distroless image)
+## Build a minimal root filesystem (bottom-up)
 ## --------------------------------------
 
-RUN tdnf makecache && tdnf -y update && \
-    rm /etc/tdnf/protected.d/tdnf.conf && tdnf -y autoremove photon-repos tdnf && \
-    rm -rf /var/cache/tdnf /usr/lib/{rpm,tdnf} /usr/lib/sysimage/{rpm,tdnf} /etc/{rpm,tdnf}
+FROM ${BASE_IMAGE} AS installer
+
+# Install just the FHS layout and the CA trust bundle by extracting the RPM
+# payloads directly (--nodeps --downloadonly + rpm2cpio). A normal `tdnf
+# install ca-certificates` pulls in bash/coreutils/glibc via the package's
+# postinstall scriptlet; ca-certificates-pki ships the pre-built bundle with
+# no scriptlet and no dependencies, which is all the static manager binary
+# needs for its system cert pool.
+RUN tdnf makecache && \
+    tdnf install -y rpm && \
+    mkdir /download && \
+    tdnf install -y --nodeps --downloadonly --downloaddir=/download \
+        --releasever=5.0 filesystem ca-certificates-pki && \
+    mkdir /installroot && \
+    cd /installroot && \
+    for f in /download/*.rpm; do rpm2cpio "$f" | cpio -idmu; done
+
+## --------------------------------------
+## Copy the controller-manager into a thin image
+## --------------------------------------
+
+FROM scratch
 
 ## --------------------------------------
 ## Environment variables
 ## --------------------------------------
 
+ARG TARGETOS
+ARG TARGETARCH
 ENV GOOS=${TARGETOS}
 ENV GOARCH=${TARGETARCH}
 
@@ -42,11 +60,20 @@ LABEL branch="${BUILD_BRANCH}" \
 
 
 ## --------------------------------------
+## Minimal root filesystem (CA bundle only, no tdnf/rpm/shell)
+## --------------------------------------
+
+COPY --from=installer /installroot /
+
+
+## --------------------------------------
 ## Copy the binaries from the builder
 ## --------------------------------------
 
 WORKDIR /
 COPY ./bin/manager .
 COPY ./bin/web-console-validator .
-USER nobody
+# No /etc/passwd on the image
+# we need to use UID instead of nobody
+USER 65534
 ENTRYPOINT ["/manager"]

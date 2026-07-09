@@ -184,6 +184,27 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /default-validate-vim-vmware-com-v1alpha1-virtualmachineconfigoptions
+  failurePolicy: Fail
+  name: default.validating.virtualmachineconfigoptions.v1alpha1.vim.vmware.com
+  rules:
+  - apiGroups:
+    - vim.vmware.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachineconfigoptions
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha6-virtualmachinegroup
   failurePolicy: Fail
   name: default.validating.virtualmachinegroup.v1alpha6.vmoperator.vmware.com

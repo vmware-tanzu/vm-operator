@@ -310,19 +310,6 @@ rules:
   - update
   - watch
 - apiGroups:
-  - vim.vmware.com
-  resources:
-  - virtualmachineconfigoptions
-  verbs:
-  - get
-  - list
-- apiGroups:
-  - vim.vmware.com
-  resources:
-  - virtualmachineconfigoptions/status
-  verbs:
-  - get
-- apiGroups:
   - vmoperator.vmware.com
   resources:
   - clustervirtualmachineimages

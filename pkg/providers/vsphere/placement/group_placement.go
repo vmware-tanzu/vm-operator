@@ -16,15 +16,23 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
+// GroupPlacement places the given group members together via a single
+// DRS PlaceVmsXCluster call.
+//
+// preferredZoneName should be set by the caller only when every VM being
+// placed in this call already has the same, non-empty
+// topology.kubernetes.io/zone label. If any member has no zone label, or
+// members disagree on zone, the caller must pass an empty string so
+// candidates span all zone.
 func GroupPlacement(
 	ctx context.Context,
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
 	finder *find.Finder,
-	namespace, childRPName string,
+	namespace, childRPName, preferredZoneName string,
 	configSpecs []vimtypes.VirtualMachineConfigSpec) (map[string]Result, error) {
 
-	candidates, err := getPlacementCandidates(ctx, client, vcClient, "", namespace, childRPName)
+	candidates, err := getPlacementCandidates(ctx, client, vcClient, preferredZoneName, namespace, childRPName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get placement candidates: %w", err)
 	}

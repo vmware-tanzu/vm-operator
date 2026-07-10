@@ -1323,7 +1323,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					volumeNames)
 			})
 
-			It("Detaching all non-boot volumes should leave only the boot disk in status.volumes", func() {
+			It("Detaching all non-boot volumes should leave only the boot disk in status.volumes", Label("experimental"), func() {
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
 				}, 3)

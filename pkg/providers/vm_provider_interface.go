@@ -81,8 +81,10 @@ type VirtualMachineProviderInterface interface {
 	// storage policy.
 	GetStoragePolicyStatus(ctx context.Context, profileID string) (infrav1.StoragePolicyStatus, error)
 
-	// VSphereClient returns the provider's vSphere client.
-	VSphereClient(context.Context) (*client.Client, error)
+	// VSphereClient returns the provider's vSphere client along with a
+	// release func the caller MUST call (typically via defer) once it is
+	// done using the client.
+	VSphereClient(context.Context) (*client.Client, func(), error)
 
 	// DeleteSnapshot deletes a snapshot from a virtual machine.
 	DeleteSnapshot(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot,

@@ -239,10 +239,11 @@ func (s Service) waitForChanges(ctx context.Context) error {
 		chanSource = cource.FromContextWithBuffer(ctx, "VirtualMachine", 100)
 	)
 
-	vcClient, err := s.provider.VSphereClient(ctx)
+	vcClient, release, err := s.provider.VSphereClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 	logger.Info("Got vsphere client")
 
 	moRefWithIDs, err := s.vmFolderMoRefWithIDs(ctx, vcClient)

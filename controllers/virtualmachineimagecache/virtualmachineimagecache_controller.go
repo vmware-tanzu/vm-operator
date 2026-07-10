@@ -195,10 +195,11 @@ func (r *reconciler) ReconcileNormal(
 	ctx = logr.NewContext(ctx, logger)
 
 	// Get a vSphere client.
-	c, err := r.VMProvider.VSphereClient(ctx)
+	c, release, err := r.VMProvider.VSphereClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get vSphere client: %w", err)
 	}
+	defer release()
 
 	// Get the content library provider.
 	var clProv clprov.Provider

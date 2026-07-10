@@ -437,15 +437,17 @@ func (s *VMProvider) GetStoragePolicyStatus(
 	return infrav1.StoragePolicyStatus{}, nil
 }
 
-func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error) {
+func (s *VMProvider) VSphereClient(
+	ctx context.Context) (*vsclient.Client, func(), error) {
 	_ = pkgcfg.FromContext(ctx)
 
 	s.Lock()
 	defer s.Unlock()
 	if fn := s.VSphereClientFn; fn != nil {
-		return fn(ctx)
+		c, err := fn(ctx)
+		return c, func() {}, err
 	}
-	return nil, nil
+	return nil, func() {}, nil
 }
 
 func (s *VMProvider) DeleteSnapshot(

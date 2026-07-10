@@ -23,6 +23,7 @@ _err()  { echo "[${SCRIPT_NAME}] ERROR: $*" >&2; }
 TESTBED_INFO_JSON=""
 TESTBED_BLOB_URL=""
 OUTPUT_DIR="${RESULTSDIR:-/tmp/support-bundles}"
+_LOCATION_FLAG_GIVEN=false
 
 usage() {
     cat >&2 <<EOF
@@ -42,13 +43,23 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --testbed-info-json) TESTBED_INFO_JSON="$2"; shift 2 ;;
-        --testbed-blob-url)  TESTBED_BLOB_URL="$2";  shift 2 ;;
+        --testbed-info-json) TESTBED_INFO_JSON="$2"; _LOCATION_FLAG_GIVEN=true; shift 2 ;;
+        --testbed-blob-url)  TESTBED_BLOB_URL="$2";  _LOCATION_FLAG_GIVEN=true; shift 2 ;;
         --output-dir)        OUTPUT_DIR="$2";         shift 2 ;;
         -h|--help)           usage; exit 0 ;;
         *) _err "Unknown argument: $1"; usage; exit 1 ;;
     esac
 done
+
+# Fail open: a testbed that was never provisioned (e.g. the provisioning
+# workload itself failed or didn't run) has no support bundle to collect.
+# Only treat a missing --testbed-info-json/--testbed-blob-url flag entirely
+# (a real invocation mistake) as a usage error; an empty value for a flag
+# that WAS passed means "no testbed" and should be a graceful no-op.
+if [[ "${_LOCATION_FLAG_GIVEN}" == "true" && -z "${TESTBED_INFO_JSON}" && -z "${TESTBED_BLOB_URL}" ]]; then
+    _warn "No testbed location provided (empty --testbed-info-json/--testbed-blob-url); testbed was likely never provisioned. Skipping support bundle collection."
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Load testbedInfo.json — from a blob URL or a local file
@@ -60,9 +71,9 @@ if [[ -n "${TESTBED_BLOB_URL}" ]]; then
     TESTBED_TMP="$(mktemp /tmp/testbedInfo.XXXXXX.json)"
     _raw_tmp="$(mktemp /tmp/testbedInfo-raw.XXXXXX.json)"
     if ! curl -sf "${TESTBED_BLOB_URL}" -o "${_raw_tmp}"; then
-        _err "Failed to fetch testbedInfo from ${TESTBED_BLOB_URL}"
+        _warn "Testbed data at ${TESTBED_BLOB_URL} is not accessible (testbed likely never provisioned); skipping support bundle collection."
         rm -f "${_raw_tmp}"
-        exit 1
+        exit 0
     fi
     # Unwrap deliverable_blob if present (UTS test_blob API format); otherwise
     # the URL points directly to the raw testbedInfo.json in the logs directory.
@@ -74,7 +85,10 @@ if [[ -n "${TESTBED_BLOB_URL}" ]]; then
     rm -f "${_raw_tmp}"
     TESTBED_INFO_JSON="${TESTBED_TMP}"
 elif [[ -n "${TESTBED_INFO_JSON}" ]]; then
-    [[ -f "${TESTBED_INFO_JSON}" ]] || { _err "File not found: ${TESTBED_INFO_JSON}"; exit 1; }
+    if [[ ! -f "${TESTBED_INFO_JSON}" ]]; then
+        _warn "Testbed info file ${TESTBED_INFO_JSON} not found (testbed likely never provisioned); skipping support bundle collection."
+        exit 0
+    fi
 else
     _err "Either --testbed-info-json or --testbed-blob-url is required"
     usage; exit 1
@@ -96,8 +110,8 @@ VC_VIM_USER="$(_jq '.vc[0].vimUsername // empty')"
 VC_VIM_PWD="$(_jq '.vc[0].vimPassword // empty')"
 
 if [[ -z "${VC_IP}" || -z "${VC_VIM_USER}" || -z "${VC_VIM_PWD}" ]]; then
-    _err "Could not extract VC IP or vim credentials from testbedInfo.json"
-    exit 1
+    _warn "Could not extract VC IP or vim credentials from testbedInfo.json; testbed is not accessible. Skipping support bundle collection."
+    exit 0
 fi
 
 _log "Collecting WCP support bundle from VC ${VC_IP}..."

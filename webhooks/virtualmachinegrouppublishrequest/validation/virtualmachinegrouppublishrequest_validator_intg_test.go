@@ -59,6 +59,17 @@ func intgTests() {
 		intgTestsValidateCreate,
 	)
 	Describe(
+		"Create",
+		Label(
+			testlabels.Create,
+			testlabels.EnvTest,
+			testlabels.API,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		intgTestsValidateCreateAllowed,
+	)
+	Describe(
 		"Update",
 		Label(
 			testlabels.Update,
@@ -198,16 +209,35 @@ func intgTestsValidateCreate() {
 		})
 	})
 
-	When("spec is filled properly with resources created", func() {
-		BeforeEach(func() {
-			setDefaultSpecValues(ctx)
-			Expect(setCreateRequiredResources(ctx)).To(Succeed())
-		})
-		It("should allow", func() {
-			Expect(createErr).ToNot(HaveOccurred())
-		})
+}
+
+// intgTestsValidateCreateAllowed exercises the happy path as a standalone
+// test outside intgTestsValidateCreate's shared JustBeforeEach, so the
+// Create call can be retried below.
+func intgTestsValidateCreateAllowed() {
+	var ctx *intgValidatingWebhookContext
+
+	BeforeEach(func() {
+		ctx = newIntgValidatingWebhookContext(false)
+		setDefaultSpecValues(ctx)
+		Expect(setCreateRequiredResources(ctx)).To(Succeed())
+	})
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
 	})
 
+	It("should allow", func() {
+		// The source VirtualMachineGroup and target ContentLibrary were just
+		// created above, and the validating webhook checks for their existence
+		// via the manager's cached client. Retry the Create until the cache has
+		// observed those objects, since the informer watch may lag behind the
+		// direct write, otherwise the webhook can transiently deny with "Not
+		// found" errors.
+		Eventually(func() error {
+			return ctx.Client.Create(ctx.Context, ctx.vmGroupPubReq)
+		}).Should(Succeed())
+	})
 }
 
 func intgTestsValidateUpdate() {

@@ -236,15 +236,15 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
-	})
-
-	Context("CONFIG-POLICY", func() {
-		configpolicy.Spec(context.TODO(), func() configpolicy.SpecInput {
-			return configpolicy.SpecInput{
-				ClusterProxy:     svClusterProxy,
-				Config:           config,
-				WCPNamespaceName: wcpNamespaceName,
-			}
+		Context("CONFIG-POLICY", func() {
+			configpolicy.Spec(context.TODO(), func() configpolicy.SpecInput {
+				return configpolicy.SpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
 		})
+
 	})
 })

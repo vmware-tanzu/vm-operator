@@ -13,6 +13,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/fault"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -247,7 +248,12 @@ func populateStatus(obj *vimv1.ConfigTarget, ct *vimtypes.ConfigTarget) {
 // SetControllerReference, because the same hardware-version-keyed
 // VirtualMachineConfigOptions object may be legitimately co-owned by
 // multiple ConfigTarget objects from different clusters that happen to
-// support the same hardware version.
+// support the same hardware version. That fan-in means more than one
+// reconcile can write to the same object's owner references, so the patch
+// uses client.MergeFromWithOptimisticLock: the API server rejects a
+// concurrent write with a conflict error -- no custom retry loop is needed
+// to detect that; the error is simply returned, and controller-runtime's own
+// requeue re-fetches and re-applies on the next attempt.
 func (r *Reconciler) reconcileConfigOptions(
 	ctx context.Context,
 	obj *vimv1.ConfigTarget,
@@ -260,17 +266,42 @@ func (r *Reconciler) reconcileConfigOptions(
 		}
 
 		liveKeys.Insert(d.Key)
+		key := d.Key
 
 		vmco := &vimv1.VirtualMachineConfigOptions{
-			ObjectMeta: metav1.ObjectMeta{Name: d.Key},
+			ObjectMeta: metav1.ObjectMeta{Name: key},
 		}
 
-		_, err := controllerutil.CreateOrPatch(ctx, r.Client, vmco, func() error {
-			vmco.Spec.HardwareVersion = d.Key
-			return controllerutil.SetOwnerReference(obj, vmco, r.Scheme())
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create or patch VirtualMachineConfigOptions %q: %w", d.Key, err)
+		if err := r.Get(ctx, client.ObjectKey{Name: key}, vmco); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get VirtualMachineConfigOptions %q: %w", key, err)
+			}
+			vmco.Spec.HardwareVersion = key
+			if err := controllerutil.SetOwnerReference(obj, vmco, r.Scheme()); err != nil {
+				return fmt.Errorf("failed to set owner reference on VirtualMachineConfigOptions %q: %w", key, err)
+			}
+			if err := r.Create(ctx, vmco); err != nil {
+				return fmt.Errorf("failed to create VirtualMachineConfigOptions %q: %w", key, err)
+			}
+			continue
+		}
+
+		// The same hardware-version-keyed object can be co-owned by
+		// multiple ConfigTargets, so each writer upserts its own owner
+		// reference into a shared list. The optimistic lock makes a racing
+		// writer's patch fail with a conflict instead of dropping an owner
+		// reference; skip the write when nothing changed.
+		base := vmco.DeepCopy()
+		vmco.Spec.HardwareVersion = key
+		if err := controllerutil.SetOwnerReference(obj, vmco, r.Scheme()); err != nil {
+			return fmt.Errorf("failed to set owner reference on VirtualMachineConfigOptions %q: %w", key, err)
+		}
+		if apiequality.Semantic.DeepEqual(base.Spec, vmco.Spec) &&
+			apiequality.Semantic.DeepEqual(base.OwnerReferences, vmco.OwnerReferences) {
+			continue
+		}
+		if err := r.Patch(ctx, vmco, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to patch VirtualMachineConfigOptions %q: %w", key, err)
 		}
 	}
 

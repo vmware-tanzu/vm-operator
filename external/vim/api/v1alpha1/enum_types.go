@@ -52,6 +52,49 @@ const (
 	SupportLevelUnsupported SupportLevel = "Unsupported"
 )
 
+// ToVimType returns the Vim identifier for the SupportLevel.
+func (t SupportLevel) ToVimType() string {
+	switch t {
+	case SupportLevelDeprecated:
+		return "deprecated"
+	case SupportLevelExperimental:
+		return "experimental"
+	case SupportLevelLegacy:
+		return "legacy"
+	case SupportLevelSupported:
+		return "supported"
+	case SupportLevelTechPreview:
+		return "techPreview"
+	case SupportLevelTerminated:
+		return "terminated"
+	case SupportLevelUnsupported:
+		return "unsupported"
+	}
+	return string(t)
+}
+
+// FromVimType returns the SupportLevel from the Vim identifier.
+func (t *SupportLevel) FromVimType(s string) {
+	switch s {
+	case "deprecated":
+		*t = SupportLevelDeprecated
+	case "experimental":
+		*t = SupportLevelExperimental
+	case "legacy":
+		*t = SupportLevelLegacy
+	case "supported":
+		*t = SupportLevelSupported
+	case "techPreview":
+		*t = SupportLevelTechPreview
+	case "terminated":
+		*t = SupportLevelTerminated
+	case "unsupported":
+		*t = SupportLevelUnsupported
+	default:
+		*t = SupportLevel(s)
+	}
+}
+
 // HostDateTimeInfoProtocol describes types of time synchronization protocols.
 // It corresponds to vim.host.DateTimeInfo.Protocol.
 type HostDateTimeInfoProtocol string

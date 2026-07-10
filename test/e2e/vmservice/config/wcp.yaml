@@ -109,6 +109,12 @@ intervals:
   default/wait-policy-evaluation-compliant: ["2m", "10s"]
   default/wait-policy-evaluation-update: ["3m", "10s"]
 
+  default/wait-config-target-condition-update: ["5m", "10s"]
+  default/wait-vm-config-options-creation: ["5m", "10s"]
+  default/wait-vm-config-options-condition-update: ["5m", "10s"]
+  default/wait-vm-guest-options-condition-update: ["5m", "10s"]
+  default/wait-vm-config-options-deletion: ["5m", "10s"]
+
   default/wait-config-map-creation: ["3m", "10s"]
   default/wait-secret-creation: ["3m", "10s"]
   default/wait-pod-ready: ["2m", "10s"]

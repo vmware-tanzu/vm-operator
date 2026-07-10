@@ -86,7 +86,7 @@ The non-negotiables below are constitutional; for the canonical reconcile-loop t
 - Controllers are **thin**: reconcile loops live in `controllers/`; all business logic lives in `pkg/`.
 - No controller may call vSphere APIs directly; use the provider abstraction under `pkg/providers/vsphere/`.
 - Controllers must track `status.observedGeneration` and set a `Ready` condition.
-- Fan-out to child objects uses `controllerutil.CreateOrPatch`; ownership is set via `controllerutil.SetControllerReference` unless the object is cluster-scoped, in which case use labels for ownership tracing.
+- Fan-out to child objects uses `controllerutil.CreateOrPatch` by default; ownership is set via `controllerutil.SetControllerReference` unless the object is cluster-scoped, in which case use labels for ownership tracing. When multiple parents fan-in write to the same *list-typed* field on a shared child (e.g., owner references, a status list each parent upserts an entry into), patch with `client.MergeFromWithOptimisticLock` instead and skip the write when nothing changed — a plain merge patch replaces list fields wholesale with no conflict detection and can silently drop a writer's contribution, whereas the optimistic lock makes a concurrent write fail with a conflict that the next reconcile retries. Disjoint fields or a shared map keyed per writer are unaffected. See [`operator-best-practices.md`](./operator-best-practices.md#fan-out-to-child-objects-patch-vs-createorupdate).
 - Controllers for API groups other than `vmoperator.vmware.com` should not be placed directly in the `controllers/` directory.
 
 ## Webhooks

@@ -66,8 +66,9 @@ func (t *VirtualMachineGuestOSFamily) FromVimType(s string) {
 		*t = VirtualMachineGuestOSFamilySolaris
 	case "windowsGuest":
 		*t = VirtualMachineGuestOSFamilyWindows
+	default:
+		*t = VirtualMachineGuestOSFamily(s)
 	}
-	*t = VirtualMachineGuestOSFamily(s)
 }
 
 // VirtualMachineGuestOSIdentifier identifies a guest operating system.

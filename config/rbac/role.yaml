@@ -281,6 +281,7 @@ rules:
   resources:
   - configtargets
   - virtualmachineconfigoptions
+  - virtualmachineguestoptions
   verbs:
   - create
   - delete
@@ -294,6 +295,7 @@ rules:
   resources:
   - configtargets/status
   - virtualmachineconfigoptions/status
+  - virtualmachineguestoptions/status
   verbs:
   - get
   - patch

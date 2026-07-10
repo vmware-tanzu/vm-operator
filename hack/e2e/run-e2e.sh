@@ -135,6 +135,9 @@ REPORT_DIR="${ARTIFACT_FOLDER}"
 # before the container scheduler force-kills the process.
 GINKGO_TIMEOUT="${GINKGO_TIMEOUT:-2h}"
 
+# Disable color output in CI env.
+export GINKGO_NO_COLOR=${TEST_CALLBACK_URL:+TRUE}
+
 # Define the flag prefix based on mode
 # Prebuilt binaries require the "--ginkgo." prefix for ginkgo-specific flags
 PREFIX=""

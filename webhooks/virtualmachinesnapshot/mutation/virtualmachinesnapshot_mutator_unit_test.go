@@ -5,6 +5,8 @@
 package mutation_test
 
 import (
+	"encoding/json"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -119,11 +121,32 @@ func unitTestsMutating() {
 	})
 
 	Describe("VirtualMachineSnapshotMutator should admit update operations", func() {
-		Context("when updating snapshot", func() {
-			It("should not mutate during update operations", func() {
-				// Set up a snapshot without the VM name label
+		Context("when updating a snapshot that is missing the VM name label", func() {
+			It("should backfill the VM name label", func() {
+				// Simulate a snapshot that predates this label.
 				ctx.vmSnapshot.Labels = map[string]string{
 					"app": "test",
+				}
+				obj, err := builder.ToUnstructured(ctx.vmSnapshot)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.Obj = obj
+
+				rawObj, err := json.Marshal(ctx.vmSnapshot)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.RawObj = rawObj
+
+				ctx.WebhookRequestContext.Op = admissionv1.Update
+				response := ctx.Mutate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(BeTrue())
+
+				Expect(response.Patches).ToNot(BeEmpty())
+			})
+		})
+
+		Context("when updating a snapshot that already has the VM name label", func() {
+			It("should not mutate", func() {
+				ctx.vmSnapshot.Labels = map[string]string{
+					vmopv1.VMNameForSnapshotLabel: "dummy-vm",
 				}
 				obj, err := builder.ToUnstructured(ctx.vmSnapshot)
 				Expect(err).ToNot(HaveOccurred())
@@ -133,8 +156,7 @@ func unitTestsMutating() {
 				response := ctx.Mutate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
 
-				// Should not have any patches since we only update
-				// the object in Create operations.
+				// Already labeled, so there is nothing to backfill.
 				Expect(response.Patches).To(BeEmpty())
 			})
 		})

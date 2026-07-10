@@ -54,7 +54,7 @@ type mutator struct {
 }
 
 func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
-	if ctx.Op != admissionv1.Create {
+	if ctx.Op != admissionv1.Create && ctx.Op != admissionv1.Update {
 		return admission.Allowed("")
 	}
 
@@ -63,7 +63,8 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
-	// Always set the VM name label on create
+	// Fills in the label for snapshots that predate it or were created while
+	// this webhook was unavailable.
 	if wasMutated := SetVMNameLabel(modified); !wasMutated {
 		return admission.Allowed("")
 	}

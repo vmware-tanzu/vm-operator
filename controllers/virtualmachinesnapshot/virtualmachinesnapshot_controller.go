@@ -10,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,6 +55,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
 	)
+
+	// Index by Spec.VMName so per-VM snapshot lookups scale with matches,
+	// not with the total snapshots in a namespace.
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&vmopv1.VirtualMachineSnapshot{},
+		kubeutil.VMSnapshotVMNameFieldIndex,
+		kubeutil.VMSnapshotVMNameIndexerFunc); err != nil {
+		return err
+	}
 
 	r := NewReconciler(
 		ctx,
@@ -164,11 +175,14 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 	}
 
 	vmSnapshot := ctx.VirtualMachineSnapshot
-	ctx.Logger.Info("Fetching VirtualMachine from snapshot object")
 
 	if vmSnapshot.Spec.VMName == "" {
 		return ctrl.Result{}, errors.New("vmName is required")
 	}
+
+	ensureVMNameLabel(vmSnapshot)
+
+	ctx.Logger.Info("Fetching VirtualMachine from snapshot object")
 
 	vm := &vmopv1.VirtualMachine{}
 	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMName, Namespace: vmSnapshot.Namespace}
@@ -179,7 +193,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 	ctx.VM = vm
 
 	// The snapshot must be owned by a VM.  Set an owner reference to the VM.
-	if err := controllerutil.SetOwnerReference(ctx.VM, ctx.VirtualMachineSnapshot, r.Scheme()); err != nil {
+	if err := controllerutil.SetOwnerReference(ctx.VM, vmSnapshot, r.Scheme()); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to set owner reference to snapshot: %w", err)
 	}
 
@@ -300,6 +314,13 @@ func (r *Reconciler) syncVMSSnapshotTreeStatus(ctx *pkgctx.VirtualMachineSnapsho
 		return err
 	}
 	return r.Client.Status().Patch(ctx, ctx.VM, mergePatch)
+}
+
+// ensureVMNameLabel keeps the VM name label in sync with Spec.VMName.
+// Spec.VMName is immutable once set, so this can never introduce a value
+// that later needs to change.
+func ensureVMNameLabel(vmSnapshot *vmopv1.VirtualMachineSnapshot) {
+	metav1.SetMetaDataLabel(&vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, vmSnapshot.Spec.VMName)
 }
 
 // ensureCSIVolumeSyncAnnotation ensures the annotation is set to request

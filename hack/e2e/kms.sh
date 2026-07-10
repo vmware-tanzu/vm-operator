@@ -15,6 +15,8 @@ GATEWAY_VM_USERNAME="${GATEWAY_VM_USERNAME:-root}"
 # GATEWAY_VM_PASSWORD must be set by the caller (setup-testbed-env.sh passes
 # the discovered password). No default — empty fails fast.
 GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
+# Name given to the dedicated PyKMIP clone VM by clone-pykmip-vm.py.
+PYKMIP_VM_NAME="${PYKMIP_VM_NAME:-gce2e-pykmip}"
 script_dir="$(dirname "$0")"
 
 # Common SSH/SCP options for all connections to the gateway VM.
@@ -46,8 +48,29 @@ find_gateway_ip() {
   fi
 }
 
+find_pykmip_vm_ip() {
+  local mgmtCidr="$1"
+  local vm
+  vm=$(govc find / -type m -name "${PYKMIP_VM_NAME}" 2>/dev/null | head -n1 || true)
+  [ -z "$vm" ] && return 0
+
+  if command -v grepcidr >/dev/null 2>&1; then
+    govc vm.ip -a -v4 "$vm" 2>/dev/null | tr ',' '\n' | grepcidr "$mgmtCidr" || true
+  else
+    govc vm.ip -a -v4 "$vm" 2>/dev/null | tr ',' '\n' | grep -v "^169\.254\." | grep "^10\." | head -n1 || true
+  fi
+}
+
 install() {
-  # gce2e-standard requires pykmip running on the gateway VM.
+  # $1=username  $2=gateway_ip  $3=password
+  #
+  # Install target: use the dedicated PyKMIP clone VM when it exists (discovered
+  # via govc by name), otherwise fall back to the gateway VM itself.
+  local pykmip_ip
+  pykmip_ip=$(find_pykmip_vm_ip "$mgmtCidr")
+  pykmip_ip="${pykmip_ip:-${2}}"
+
+  # gce2e-standard requires pykmip running on the target VM.
   # Skip if already green (idempotent for parallel runners).
   if kms_is_green "gce2e-standard"; then
     echo "KMS provider gce2e-standard already green, skipping pykmip install"
@@ -59,22 +82,22 @@ install() {
               -keyout "$crt_dir"/pykmip-key.pem -out "$crt_dir"/pykmip-crt.pem
     fi
 
-    if [ -n "$2" ]; then
-      target="$1@$2"
+    if [ -n "${pykmip_ip}" ]; then
+      target="$1@${pykmip_ip}"
       password=$3
 
       sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
       sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
-        "PIP_INDEX_URL=${PIP_INDEX_URL:-} /bin/bash ./install-pykmip.sh" \
+        "PIP_INDEX_URL=${PIP_INDEX_URL:-} http_proxy=${HTTP_PROXY:-} https_proxy=${HTTPS_PROXY:-} /bin/bash ./install-pykmip.sh" \
         || echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
     else
-      echo "⚠ No gateway IP available — skipping pykmip install for gce2e-standard"
+      echo "⚠ No pykmip target IP available — skipping pykmip install for gce2e-standard"
     fi
   fi
 
   # setup() configures vCenter key providers; kms_is_green checks inside
   # each block make it safe to call from multiple parallel runners.
-  setup "$2"
+  setup "${pykmip_ip}"
 }
 
 # kms_is_green returns 0 if the named provider already exists and has
@@ -91,18 +114,24 @@ kms_is_green() {
 
 # See also: vCenter -> Configure -> Security -> Key Providers
 setup() {
-  ip="$1"
+  # Use the dedicated PyKMIP clone VM when it exists, else fall back to arg $1.
+  local pykmip_ip
+  pykmip_ip=$(find_pykmip_vm_ip "$mgmtCidr")
+  ip="${pykmip_ip:-${1:-}}"
 
-  # gce2e-standard requires a running pykmip server on the gateway VM.
-  # Only configure it when a gateway IP is available; skip silently otherwise.
+  # gce2e-standard requires a running pykmip server on the target VM.
+  # Only configure it when a pykmip IP is available; skip silently otherwise.
   if [ -n "${ip:-}" ]; then
     name=gce2e-standard
     if kms_is_green "$name"; then
       echo "KMS provider ${name} already green, skipping setup"
     else
-      if ! govc kms.ls "$name" 2> /dev/null ; then
-        govc kms.add -n pykmip -a "$ip" "$name"
+      if govc kms.ls "$name" 2>/dev/null; then
+        # Provider exists but is not green — stale IP from a previous clone.
+        # Remove and re-add pointing at the current PyKMIP VM.
+        govc kms.rm "$name" 2>/dev/null || true
       fi
+      govc kms.add -n pykmip -a "$ip" "$name"
       crt=$(cat "$crt_dir/pykmip-crt.pem")
       key=$(cat "$crt_dir/pykmip-key.pem")
 

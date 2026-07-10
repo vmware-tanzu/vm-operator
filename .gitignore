@@ -78,3 +78,8 @@ infrastructure-components.yaml
 e2e-tests
 kubectl
 packer-plugin-vsphere-src/
+
+# Python generated files
+__pycache__/
+*.pyc
+*.pyo

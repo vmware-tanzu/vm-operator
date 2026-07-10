@@ -56,6 +56,10 @@ _KUBECONFIG_RETRY_INITIAL_DELAY=5 # seconds; doubles each attempt (~2.5 min tota
 _KUBECTL_VSPHERE_RETRY_ATTEMPTS=5
 _KUBECTL_VSPHERE_RETRY_INITIAL_DELAY=5 # seconds; doubles each attempt (~2.5 min total)
 
+# PyKMIP VM clone (clone-pykmip-vm.py): total wait budget for the clone task
+# and subsequent DHCP/VMware-Tools IP assignment.
+_PYKMIP_IP_TIMEOUT=300 # seconds
+
 # ---------------------------------------------------------------------------
 # Module-level helpers.
 # All progress/diagnostic output goes to stderr so stdout stays clean for the
@@ -420,7 +424,6 @@ _setup_kubectl_vsphere() {
         *)             plugin_os="linux-amd64"  ;;
     esac
 
-    local -r plugin_url="https://${wcp_ip}/wcp/plugin/${plugin_os}/vsphere-plugin.zip"
     local -r extract_dir="/tmp/vsphere-plugin-$$"
 
     local curl_err
@@ -486,11 +489,115 @@ _probe_gateway_ssh() {
 }
 
 # ---------------------------------------------------------------------------
+# _apply_dns_fix <host> <password>
+#
+# Adds /etc/hosts entries for packages.vcfd.broadcom.net and its sub-domains
+# on the remote <host>, working around a systemd-resolved TCP-mode bug that
+# prevents pip from reaching the internal Broadcom package mirror.
+# Called for both the original gateway VM (squid needs it) and the PyKMIP
+# clone VM (install-pykmip.sh runs pip on the clone).
+# ---------------------------------------------------------------------------
+_apply_dns_fix() {
+    local -r host="$1" password="$2"
+    local -r pkg_host="packages.vcfd.broadcom.net"
+    # Optional pre-resolved IP — used when the target host cannot resolve the
+    # hostname itself (e.g. the PyKMIP clone before its DNS fix is applied).
+    local pkg_ip="${3:-}"
+
+    if [[ -z "${pkg_ip}" ]]; then
+        pkg_ip=$(sshpass -p "${password}" ssh -T "${_SSH_OPTS[@]}" \
+            "root@${host}" \
+            "getent hosts ${pkg_host} 2>/dev/null | awk '{print \$1}' | head -1 || \
+             python3 -c \"import socket; print(socket.gethostbyname('${pkg_host}'))\" 2>/dev/null || \
+             true" 2>/dev/null || true)
+    fi
+    if [[ -n "${pkg_ip}" ]]; then
+        local hosts_entry="${pkg_ip} ${pkg_host}"
+        hosts_entry+=" vsphere-docker-virtual.${pkg_host}"
+        hosts_entry+=" wcp-gc-docker-local.${pkg_host}"
+        hosts_entry+=" vsphere-docker-dev-local.${pkg_host}"
+        hosts_entry+=" vcf-kubernetes-service-dev-docker-local.${pkg_host}"
+        sshpass -p "${password}" ssh -T "${_SSH_OPTS[@]}" "root@${host}" \
+            "sed -i '/${pkg_host}/d' /etc/hosts && echo '${hosts_entry}' >> /etc/hosts" \
+            && _log "✓ DNS fix applied on ${host} (${pkg_host} → ${pkg_ip})" \
+            || _warn "Could not apply DNS fix on ${host}"
+    else
+        _warn "Could not resolve ${pkg_host} on ${host} — skipping DNS fix"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# _clone_pykmip_vm <script_dir>
+#
+# Clones the testbed gateway VM into a dedicated lightweight PyKMIP appliance
+# by running clone-pykmip-vm.py (requires python3 + pyVmomi).  On success, writes the
+# clone's management IP into the caller's pykmip_vm_ip variable (dynamic
+# scoping — must be declared local in _setup_gateway_and_proxy) and exports
+# PYKMIP_VM_IP for use by encryption tests.
+#
+# Fails gracefully: if govc is absent or the clone task fails, a warning is
+# logged and pykmip_vm_ip is left empty so the caller falls back to installing
+# PyKMIP on the gateway VM itself (original behaviour).
+# ---------------------------------------------------------------------------
+_clone_pykmip_vm() {
+    local -r script_dir="$1"
+
+    # Allow a pre-provisioned environment to skip the clone entirely.
+    if [[ -n "${PYKMIP_VM_IP:-}" ]]; then
+        _log "PYKMIP_VM_IP already set (${PYKMIP_VM_IP}) — skipping clone"
+        pykmip_vm_ip="${PYKMIP_VM_IP}"  # used only for the DNS fix below
+        return 0
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        _warn "python3 not found — PyKMIP will be installed on the gateway VM (fallback)"
+        return 0
+    fi
+    if ! python3 -c "import pyVmomi" 2>/dev/null; then
+        _warn "pyVmomi not installed — PyKMIP will be installed on the gateway VM (fallback)"
+        return 0
+    fi
+
+    _log "Cloning gateway VM as dedicated PyKMIP appliance..."
+    local ip
+    if ip=$(
+        VC_URL="${vc_url}" \
+        VC_VIM_USERNAME="${vc_vim_username}" \
+        VC_VIM_PASSWORD="${vc_vim_password}" \
+        PYKMIP_IP_TIMEOUT="${_PYKMIP_IP_TIMEOUT}" \
+        python3 "${script_dir}/clone-pykmip-vm.py"
+    ); then
+        pykmip_vm_ip="${ip}"
+        _export PYKMIP_VM_IP "${pykmip_vm_ip}"
+        _log "✓ PyKMIP VM ready at ${pykmip_vm_ip}"
+    else
+        _warn "clone-pykmip-vm.py exited non-zero — checking if VM exists with an IP..."
+        local fallback_ip
+        fallback_ip=$(
+            GOVC_URL="${vc_url}" GOVC_USERNAME="${vc_vim_username}" \
+            GOVC_PASSWORD="${vc_vim_password}" GOVC_INSECURE=1 \
+            govc vm.ip -a -v4 "${PYKMIP_VM_NAME:-gce2e-pykmip}" 2>/dev/null \
+            | tr ',' '\n' | grep -v '^169\.254\.' | grep '^10\.' | head -1 || true
+        )
+        if [[ -n "${fallback_ip}" ]]; then
+            pykmip_vm_ip="${fallback_ip}"
+            _export PYKMIP_VM_IP "${pykmip_vm_ip}"
+            _log "✓ PyKMIP VM IP recovered: ${pykmip_vm_ip}"
+        else
+            _warn "PyKMIP VM clone failed — PyKMIP will be installed on the gateway VM (fallback)"
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # _setup_kms_providers <script_dir> <govc_url> <cidr> <gw_password> <mode>
 #
 # Configures KMS key providers on vCenter.
 # mode "full"        → pykmip install + gce2e-standard (KMIP) + gce2e-native
 # mode "native-only" → gce2e-native only (no pykmip / gateway VM required)
+#
+# kms.sh auto-discovers the PyKMIP clone VM by name via govc, so no IP needs
+# to be threaded through here.
 # ---------------------------------------------------------------------------
 _setup_kms_providers() {
     local -r script_dir="$1" govc_url="$2" cidr="$3" gw_password="$4" mode="$5"
@@ -499,6 +606,7 @@ _setup_kms_providers() {
     if [[ "${mode}" == "full" ]]; then
         GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
             GATEWAY_VM_PASSWORD="${gw_password}" \
+            PIP_INDEX_URL="${PIP_INDEX_URL:-https://packages.vcfd.broadcom.net/artifactory/api/pypi/pypi-virtual/simple}" \
             "${script_dir}/kms.sh" install "${govc_url}" "${cidr}" >&2 \
             && _log "✓ KMS: gce2e-standard (KMIP) + gce2e-native configured" \
             || _warn "KMS install failed (may already be configured)"
@@ -553,28 +661,23 @@ _setup_gateway_and_proxy() {
         return 0
     fi
 
-    # Fix DNS for packages.vcfd.broadcom.net on the gateway VM.
-    # The gateway's systemd-resolved has a known TCP-mode bug that breaks pip's
-    # access to the internal Broadcom package mirror when resolving this host.
-    local -r pkg_host="packages.vcfd.broadcom.net"
+    # Clone the gateway VM into a dedicated PyKMIP appliance (single NIC, 2 vCPU
+    # / 2 GiB).  Falls back silently when python3/pyVmomi is absent.
+    local pykmip_vm_ip=""
+    _clone_pykmip_vm "${script_dir}"
+
+    # Apply the Broadcom package-mirror DNS fix on the gateway (for squid/pip)
+    # and on the PyKMIP clone (for install-pykmip.sh pip install).
+    # Resolve the IP on the gateway (which has working DNS), then reuse it for
+    # the clone so the clone doesn't need to resolve the hostname itself.
     local pkg_ip
     pkg_ip=$(sshpass -p "${_gw_password}" ssh -T "${_SSH_OPTS[@]}" \
         "root@${gateway_ip}" \
-        "getent hosts ${pkg_host} 2>/dev/null | awk '{print \$1}' | head -1 || \
-         python3 -c \"import socket; print(socket.gethostbyname('${pkg_host}'))\" 2>/dev/null || \
-         true" 2>/dev/null || true)
-    if [[ -n "${pkg_ip}" ]]; then
-        local hosts_entry="${pkg_ip} ${pkg_host}"
-        hosts_entry+=" vsphere-docker-virtual.${pkg_host}"
-        hosts_entry+=" wcp-gc-docker-local.${pkg_host}"
-        hosts_entry+=" vsphere-docker-dev-local.${pkg_host}"
-        hosts_entry+=" vcf-kubernetes-service-dev-docker-local.${pkg_host}"
-        sshpass -p "${_gw_password}" ssh -T "${_SSH_OPTS[@]}" "root@${gateway_ip}" \
-            "sed -i '/${pkg_host}/d' /etc/hosts && echo '${hosts_entry}' >> /etc/hosts" \
-            && _log "✓ DNS fix applied on gateway VM (${pkg_host} → ${pkg_ip})" \
-            || _warn "Could not apply DNS fix on gateway VM"
-    else
-        _warn "Could not resolve ${pkg_host} on gateway VM — skipping DNS fix"
+        "getent hosts packages.vcfd.broadcom.net 2>/dev/null | awk '{print \$1}' | head -1 || true" \
+        2>/dev/null || true)
+    _apply_dns_fix "${gateway_ip}" "${_gw_password}" "${pkg_ip}"
+    if [[ -n "${pykmip_vm_ip}" && "${pykmip_vm_ip}" != "${gateway_ip}" ]]; then
+        _apply_dns_fix "${pykmip_vm_ip}" "${_gw_password}" "${pkg_ip}"
     fi
 
     _log "Installing squid proxy on gateway VM..."
@@ -596,7 +699,11 @@ _setup_gateway_and_proxy() {
     _export GATEWAY_VM_PASSWORD "${_gw_password}"
     _log "✓ HTTP_PROXY=${gateway_ip}:3128  NO_PROXY=${no_proxy_val}"
 
-    _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "${_gw_password}" "full"
+    # Install PyKMIP on the clone (or the gateway itself when clone is absent)
+    # and register the target IP in vCenter as the gce2e-standard KMS server.
+    # kms.sh discovers the clone's DHCP IP itself via govc vm.ip.
+    _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" \
+        "${_gw_password}" "full"
 }
 
 # ---------------------------------------------------------------------------
@@ -610,8 +717,7 @@ _setup_e2e() {
     _log "=== E2E Testbed Setup ==="
     if ! _retry_with_backoff "${_KUBECTL_VSPHERE_RETRY_ATTEMPTS}" "${_KUBECTL_VSPHERE_RETRY_INITIAL_DELAY}" \
             "Install kubectl-vsphere" _setup_kubectl_vsphere; then
-        _err "Failed to install kubectl-vsphere after ${_KUBECTL_VSPHERE_RETRY_ATTEMPTS} attempts"
-        return 1
+        _warn "Failed to install kubectl-vsphere after ${_KUBECTL_VSPHERE_RETRY_ATTEMPTS} attempts — continuing without it"
     fi
     _setup_gateway_and_proxy "${script_dir}"
     _log "=== E2E Testbed Setup Complete ==="
@@ -718,6 +824,7 @@ EOF
         _log "  SUPERVISOR_CLUSTER_IP:      ${SUPERVISOR_CLUSTER_IP}"
         _log "  HTTP_PROXY:                 ${HTTP_PROXY:-not set}"
         _log "  GATEWAY_IP:                 ${GATEWAY_IP:-not set}"
+        _log "  PYKMIP_VM_IP:               ${PYKMIP_VM_IP:-not set (PyKMIP on gateway VM)}"
     fi
     _log ""
 }

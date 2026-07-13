@@ -25,7 +25,74 @@ import (
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	pkgdatastore "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/datastore"
 )
+
+// deleteVMDir deletes dirPath via fm and, if nm is non-nil, clears its
+// namespace mapping at dsPath.
+func deleteVMDir(
+	ctx context.Context,
+	fm *object.FileManager,
+	datacenter *object.Datacenter,
+	dirPath string,
+	nm *object.DatastoreNamespaceManager,
+	dsPath string) error {
+
+	t, err := fm.DeleteDatastoreFile(ctx, dirPath, datacenter)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to call delete api for dir %q: %w",
+			dirPath, err)
+	}
+
+	taskWaitErr := t.Wait(ctx)
+	if taskWaitErr != nil {
+		if fault.Is(taskWaitErr, &vimtypes.FileNotFound{}) {
+			taskWaitErr = nil
+		} else {
+			taskWaitErr = fmt.Errorf(
+				"failed to delete dir %q: %w",
+				dirPath, taskWaitErr)
+		}
+	}
+
+	if nm == nil {
+		return taskWaitErr
+	}
+
+	if dsPath == "" {
+		return errors.Join(
+			taskWaitErr,
+			fmt.Errorf("datastore path cannot be empty"))
+	}
+
+	if err := nm.DeleteDirectory(ctx, datacenter, dsPath); err != nil &&
+		!fault.Is(err, &vimtypes.FileNotFound{}) {
+
+		return errors.Join(taskWaitErr, fmt.Errorf(
+			"failed to delete dir namespace mapping %q: %w",
+			dsPath, err))
+	}
+
+	return taskWaitErr
+}
+
+// staleVMDirExists reports whether vmDirName already exists on ds.
+func staleVMDirExists(
+	ctx context.Context,
+	ds *object.Datastore,
+	vmDirName string) (bool, error) {
+
+	if _, err := ds.Stat(ctx, vmDirName); err != nil {
+		if pkgdatastore.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf(
+			"failed to stat vm dir %q: %w", vmDirName, err)
+	}
+
+	return true, nil
+}
 
 //nolint:gocyclo
 func fastDeploy(
@@ -66,11 +133,50 @@ func fastDeploy(
 
 	// Create the directory where the VM will be created.
 	var (
-		vmDirPath     string
+		vmDirPath     = vmDir
 		vmDirUUIDPath string
 		nm            *object.DatastoreNamespaceManager
 		fm            = object.NewFileManager(vimClient)
 	)
+
+	ds := object.NewDatastore(vimClient, createArgs.Datastores[0].MoRef)
+
+	// Register cleanup defer before any directory creation, so it also
+	// cleans up a stale directory detected just below.
+	defer func() {
+		if retErr == nil {
+			// Do not delete the VM directory if this function
+			// succeeded.
+			return
+		}
+
+		// Use a context that is not cancelled when the parent is, so
+		// cleanup runs even if the request is cancelled. Preserves the
+		// VC opID so cleanup is correlated with the failed create in VC
+		// logs.
+		ctx := context.WithoutCancel(vmCtx.Context)
+
+		// Delete the VM directory and its contents, and, for non-TLD
+		// datastores, its namespace mapping too.
+		if err := deleteVMDir(
+			ctx, fm, datacenter, vmDirPath, nm,
+			vmDirUUIDPath); err != nil {
+
+			retErr = errors.Join(retErr, err)
+		}
+	}()
+
+	exists, err := staleVMDirExists(vmCtx, ds, vmDirName)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		// The deferred cleanup above deletes the stale directory before
+		// this error reaches the caller.
+		return nil, fmt.Errorf(
+			"found stale vm dir %q from a prior create attempt",
+			vmDir)
+	}
 
 	if createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
 		//
@@ -79,21 +185,20 @@ func fastDeploy(
 		if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
 			return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
 		}
-		vmDirPath = vmDir
 	} else {
 		//
 		// The datastore does NOT support TLD creation, so use the datastore
 		// namespace manager to create the new directory.
 		//
-		nm = object.NewDatastoreNamespaceManager(vimClient)
-		vdp, err := nm.CreateDirectory(
-			vmCtx,
-			object.NewDatastore(vimClient, createArgs.Datastores[0].MoRef),
-			vmDirName,
-			"")
+		dnm := object.NewDatastoreNamespaceManager(vimClient)
+		vdp, err := dnm.CreateDirectory(vmCtx, ds, vmDirName, "")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create vm dir: %w", err)
 		}
+
+		// Set nm only now that CreateDirectory succeeded, so it and
+		// vmDirUUIDPath stay consistent for the defer above.
+		nm = dnm
 
 		// The vmDirUUIDPath value will look something like the following:
 		//
@@ -134,55 +239,6 @@ func fastDeploy(
 	logger.Info("Updated vm dir paths",
 		"vmDirPath", vmDirPath,
 		"vmPathName", createArgs.ConfigSpec.Files.VmPathName)
-
-	// Register cleanup defer immediately after directory creation.
-	defer func() {
-		if retErr == nil {
-			// Do not delete the VM directory if this function succeeded.
-			return
-		}
-
-		// Use a context that is not cancelled when the parent is, so cleanup
-		// runs even if the request is cancelled. Preserves the VC opID so
-		// cleanup is correlated with the failed create in VC logs.
-		ctx := context.WithoutCancel(vmCtx.Context)
-
-		// Delete the VM directory and its contents.
-		// Always use FileManager.DeleteDatastoreFile() first as it can delete
-		// non-empty directories recursively. Note that DeleteDirectory() on a
-		// non-empty directory will return an error, which is why we delete the
-		// directory contents first using DeleteDatastoreFile().
-		t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
-		if err != nil {
-			retErr = fmt.Errorf(
-				"failed to call delete api for vm dir %q: %w,%w",
-				vmDirPath, err, retErr)
-			return
-		}
-
-		// Wait for the delete call to return.
-		if err := t.Wait(ctx); err != nil &&
-			!fault.Is(err, &vimtypes.FileNotFound{}) {
-
-			retErr = fmt.Errorf(
-				"failed to delete vm dir %q: %w,%w",
-				vmDirPath, err, retErr)
-		}
-
-		// For non-TLD datastores, also clean up the namespace mapping.
-		if !createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
-			if err := nm.DeleteDirectory(
-				ctx,
-				datacenter,
-				vmDirUUIDPath); err != nil &&
-				!fault.Is(err, &vimtypes.FileNotFound{}) {
-
-				retErr = fmt.Errorf(
-					"failed to delete vm dir namespace mapping %q: %w,%w",
-					vmDirUUIDPath, err, retErr)
-			}
-		}
-	}()
 
 	var (
 		disks                      []*vimtypes.VirtualDisk

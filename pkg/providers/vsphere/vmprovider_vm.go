@@ -191,10 +191,20 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	// releaseClient tracks whether this function must release the vc client
+	// itself on return, or whether that responsibility has been handed off
+	// to the async create goroutine below (which releases it when the
+	// goroutine, and thus its use of client, is actually done).
+	releaseClient := true
+	defer func() {
+		if releaseClient {
+			release()
+		}
+	}()
 
 	// Set the VC UUID annotation on the VM before attempting creation or
 	// update. Among other things, the annotation facilitates differential
@@ -302,16 +312,20 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	copyOfCtx := vmCtx
 	copyOfCtx.VM = vmCtx.VM.DeepCopy()
 
-	// Start a goroutine to create the VM in the background.
+	// Start a goroutine to create the VM in the background. The goroutine
+	// takes over responsibility for releasing the vc client, since it, not
+	// this function, is what actually finishes using client.
 	chanErr := make(chan error)
 	go vs.createVirtualMachineAsync(
 		copyOfCtx,
 		client,
 		createArgs,
 		chanErr,
-		cleanupFn)
+		cleanupFn,
+		release)
 
 	asyncCreateStarted = true
+	releaseClient = false
 
 	// Return with the error channel. The VM will be re-enqueued once the create
 	// completes with success or failure.
@@ -341,10 +355,11 @@ func (vs *vSphereVMProvider) CleanupVirtualMachine(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, false)
 	if err != nil {
@@ -385,10 +400,11 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, false)
 	if err != nil {
@@ -486,10 +502,11 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 		vmCtx.Context = ctx
 	}
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get vCenter client: %w", err)
 	}
+	defer release()
 
 	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
 		v1a2contentLibrary := &imgregv1.ContentLibrary{}
@@ -540,10 +557,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return "", err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
@@ -569,10 +587,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineProperties(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(vmCtx)
+	client, release, err := vs.getVcClient(vmCtx)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
@@ -628,10 +647,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineFiles(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
@@ -662,10 +682,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return "", err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
@@ -690,10 +711,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return 0, err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
@@ -883,11 +905,13 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 	vcClient *vcclient.Client,
 	args *VMCreateArgs,
 	chanErr chan error,
-	cleanupFn func()) {
+	cleanupFn func(),
+	release func()) {
 
 	defer func() {
 		close(chanErr)
 		cleanupFn()
+		release()
 	}()
 
 	moRef, vimErr := vmlifecycle.CreateVirtualMachine(
@@ -2012,7 +2036,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 	}
 
 	var (
-		datacenterID = vs.vcClient.Datacenter().Reference().Value
+		datacenterID = vcClient.Datacenter().Reference().Value
 		datastoreID  = createArgs.Datastores[0].MoRef.Value
 		itemID       = createArgs.ImageStatus.ProviderItemID
 		itemVersion  = createArgs.ImageStatus.ProviderContentVersion
@@ -2960,11 +2984,12 @@ func (vs *vSphereVMProvider) getConfigSpecFromVM(
 	vmiCache vmopv1.VirtualMachineImageCache,
 	vmClass vmopv1.VirtualMachineClass) (vimtypes.VirtualMachineConfigSpec, error) {
 
-	vcClient, err := vs.getVcClient(vmCtx)
+	vcClient, release, err := vs.getVcClient(vmCtx)
 	if err != nil {
 		return vimtypes.VirtualMachineConfigSpec{},
 			fmt.Errorf("failed to get vc client: %w", err)
 	}
+	defer release()
 
 	vm := object.NewVirtualMachine(
 		vcClient.VimClient(),

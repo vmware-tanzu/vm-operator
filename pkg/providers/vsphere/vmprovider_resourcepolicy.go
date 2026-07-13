@@ -27,10 +27,11 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 		return err
 	}
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	vimClient := client.VimClient()
 	var errs []error
@@ -90,10 +91,11 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 		return err
 	}
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	vimClient := client.VimClient()
 	var errs []error

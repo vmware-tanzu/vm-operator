@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/waitgroup"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
@@ -64,7 +66,39 @@ type vSphereVMProvider struct {
 	minCPUFreq        uint64
 
 	vcClientLock sync.Mutex
-	vcClient     *vcclient.Client
+	vcClientGen  *vcClientGeneration
+}
+
+// vcClientGeneration pairs a vSphere client with a count of callers
+// currently using it, so a superseded client is not logged out while it
+// may still be in active use.
+type vcClientGeneration struct {
+	client *vcclient.Client
+	wg     waitgroup.SafeWaitGroup
+}
+
+// vcClientRelease guards a single release of an acquired vcClientGeneration
+// reference. The returned func is safe to call more than once; only the
+// first call has an effect. If a caller loses the returned func without
+// calling it, a cleanup runs as a backstop so the generation's WaitGroup is
+// not held indefinitely.
+type vcClientRelease struct {
+	once  sync.Once
+	done  func()
+	clean runtime.Cleanup
+}
+
+func (r *vcClientRelease) release() {
+	r.once.Do(func() {
+		r.clean.Stop()
+		r.done()
+	})
+}
+
+func newVcClientRelease(done func()) func() {
+	r := &vcClientRelease{done: done}
+	r.clean = runtime.AddCleanup(r, func(fn func()) { fn() }, done)
+	return r.release
 }
 
 func NewVSphereVMProviderFromClient(
@@ -105,77 +139,100 @@ func getExtraConfig(ctx context.Context) map[string]string {
 	return ec
 }
 
-func (vs *vSphereVMProvider) getVcClient(ctx context.Context) (*vcclient.Client, error) {
+// getVcClient returns the current vSphere client along with a release func
+// that the caller MUST call (typically via defer) once it is done using the
+// client. Until release is called, the client is guaranteed not to be
+// logged out from under the caller.
+func (vs *vSphereVMProvider) getVcClient(
+	ctx context.Context) (*vcclient.Client, func(), error) {
 	vs.vcClientLock.Lock()
 	defer vs.vcClientLock.Unlock()
 
-	if vs.vcClient != nil {
-		return vs.vcClient, nil
+	if gen := vs.vcClientGen; gen != nil {
+		if err := gen.wg.Add(1); err != nil {
+			return nil, nil, fmt.Errorf("failed to acquire vc client: %w", err)
+		}
+		return gen.client, newVcClientRelease(gen.wg.Done), nil
 	}
 
 	config, err := vcconfig.GetProviderConfig(ctx, vs.k8sClient)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	vcClient, err := vcclient.NewClient(ctx, config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	vs.vcClient = vcClient
+	gen := &vcClientGeneration{client: vcClient}
+	vs.vcClientGen = gen
 
-	return vcClient, nil
+	if err := gen.wg.Add(1); err != nil {
+		return nil, nil, fmt.Errorf("failed to acquire vc client: %w", err)
+	}
+
+	return gen.client, newVcClientRelease(gen.wg.Done), nil
 }
 
-func (vs *vSphereVMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
-	updated, err := vcconfig.UpdateVcInConfigMap(ctx, vs.k8sClient, vcPNID, vcPort)
+// rotateVcClientGen retires the current client generation, if one exists and
+// isStale returns true for it, so the next call to getVcClient creates a new
+// client. It then waits, without blocking the caller, for existing callers
+// of the retired generation to finish before logging it out.
+func (vs *vSphereVMProvider) rotateVcClientGen(
+	ctx context.Context, isStale func(*vcClientGeneration) bool) {
+
+	oldGen := func() *vcClientGeneration {
+		vs.vcClientLock.Lock()
+		defer vs.vcClientLock.Unlock()
+
+		gen := vs.vcClientGen
+		if gen == nil || !isStale(gen) {
+			return nil
+		}
+
+		vs.vcClientGen = nil
+		return gen
+	}()
+
+	if oldGen == nil {
+		return
+	}
+
+	// Use a context that is not cancelled when ctx is, so the logout
+	// below still runs even though this call returns immediately and
+	// ctx may be cancelled long before the old generation's existing
+	// callers finish using it.
+	logoutCtx := context.WithoutCancel(ctx)
+	go func() {
+		oldGen.wg.Wait()
+		oldGen.client.Logout(logoutCtx)
+	}()
+}
+
+func (vs *vSphereVMProvider) UpdateVcPNID(
+	ctx context.Context, vcPNID, vcPort string) error {
+	updated, err := vcconfig.UpdateVcInConfigMap(
+		ctx, vs.k8sClient, vcPNID, vcPort)
 	if err != nil || !updated {
 		return err
 	}
 
-	oldVcClient := func() *vcclient.Client {
-		vs.vcClientLock.Lock()
-		defer vs.vcClientLock.Unlock()
-
-		if vcClient := vs.vcClient; vcClient != nil {
-			// Clear and logout existing clean so new client will be created next call to getVcClient().
-			vs.vcClient = nil
-			return vcClient
-		}
-
-		return nil
-	}()
-
-	if oldVcClient != nil {
-		oldVcClient.Logout(ctx)
-	}
+	vs.rotateVcClientGen(ctx, func(*vcClientGeneration) bool { return true })
 
 	return nil
 }
 
-func (vs *vSphereVMProvider) UpdateVcCreds(ctx context.Context, data map[string][]byte) error {
+func (vs *vSphereVMProvider) UpdateVcCreds(
+	ctx context.Context, data map[string][]byte) error {
 	newVcCreds, err := vccreds.ExtractVCCredentials(data)
 	if err != nil {
 		return err
 	}
 
-	oldVcClient := func() *vcclient.Client {
-		vs.vcClientLock.Lock()
-		defer vs.vcClientLock.Unlock()
-
-		if vcClient := vs.vcClient; vcClient != nil && vcClient.Config().VcCreds != newVcCreds {
-			// Clear and logout existing clean so new client will be created next call to getVcClient().
-			vs.vcClient = nil
-			return vcClient
-		}
-
-		return nil
-	}()
-
-	if oldVcClient != nil {
-		oldVcClient.Logout(ctx)
-	}
+	vs.rotateVcClientGen(ctx, func(gen *vcClientGeneration) bool {
+		return gen.client.Config().VcCreds != newVcCreds
+	})
 
 	return nil
 }
@@ -366,10 +423,11 @@ func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeployVM(
 	vmi ctrlclient.Object,
 	vmMoID string) error {
 
-	vcClient, err := vs.getVcClient(ctx)
+	vcClient, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get a vc client for image vm: %w", err)
 	}
+	defer release()
 
 	vm := object.NewVirtualMachine(
 		vcClient.VimClient(),
@@ -420,10 +478,11 @@ func (vs *vSphereVMProvider) syncVirtualMachineImage(
 func (vs *vSphereVMProvider) getOvfEnvelope(
 	ctx context.Context, itemID string) (*ovf.Envelope, error) {
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	p := contentlibrary.NewProvider(ctx, client.RestClient())
 	return p.RetrieveOvfEnvelopeByLibraryItemID(ctx, itemID)
@@ -437,10 +496,11 @@ func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx context.Context,
 	pkglog.FromContextOrDefault(ctx).V(4).Info("Get item from ContentLibrary",
 		"UUID", contentLibrary, "item name", itemName)
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	contentLibraryProvider := contentlibrary.NewProvider(ctx, client.RestClient())
 	return contentLibraryProvider.GetLibraryItem(ctx, contentLibrary, itemName, false)
@@ -450,10 +510,11 @@ func (vs *vSphereVMProvider) GetItemFromInventoryByName(
 	ctx context.Context,
 	contentLibrary, itemName string) (object.Reference, error) {
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	c := client.VimClient()
 
@@ -499,10 +560,11 @@ func (vs *vSphereVMProvider) ContainsExtraConfigEntry(
 func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
 	pkglog.FromContextOrDefault(ctx).V(4).Info("Update Content Library Item", "itemID", itemID)
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	contentLibraryProvider := contentlibrary.NewProvider(ctx, client.RestClient())
 	return contentLibraryProvider.UpdateLibraryItem(ctx, itemID, newName, newDescription)
@@ -566,10 +628,11 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx context.Context) (uint64
 		return 0, err
 	}
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return 0, err
 	}
+	defer release()
 
 	var errs []error
 
@@ -600,10 +663,11 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, vm *vmopv1.Vir
 	ctx = pkgctx.WithVCOpID(ctx, vm, "getTasksByActID")
 	logger := pkglog.FromContextOrDefault(ctx)
 
-	vcClient, err := vs.getVcClient(ctx)
+	vcClient, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	taskManager := task.NewManager(vcClient.VimClient())
 	filterSpec := vimtypes.TaskFilterSpec{}
@@ -662,10 +726,11 @@ func (vs *vSphereVMProvider) DoesProfileSupportEncryption(
 	ctx context.Context,
 	profileID string) (bool, error) {
 
-	c, err := vs.getVcClient(ctx)
+	c, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return false, err
 	}
+	defer release()
 
 	return c.PbmClient().SupportsEncryption(ctx, profileID)
 }
@@ -673,10 +738,11 @@ func (vs *vSphereVMProvider) DoesProfileSupportEncryption(
 func (vs *vSphereVMProvider) GetStoragePolicyStatus(
 	ctx context.Context, profileID string) (infrav1.StoragePolicyStatus, error) {
 
-	c, err := vs.getVcClient(ctx)
+	c, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return infrav1.StoragePolicyStatus{}, err
 	}
+	defer release()
 
 	return storutil.GetStoragePolicyStatus(
 		ctx,
@@ -687,13 +753,13 @@ func (vs *vSphereVMProvider) GetStoragePolicyStatus(
 }
 
 func (vs *vSphereVMProvider) VSphereClient(
-	ctx context.Context) (*vsclient.Client, error) {
+	ctx context.Context) (*vsclient.Client, func(), error) {
 
-	c, err := vs.getVcClient(ctx)
+	c, release, err := vs.getVcClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return c.Client, nil
+	return c.Client, release, nil
 }
 
 // GetVirtualMachineConfigTarget returns the vSphere cluster's
@@ -702,10 +768,11 @@ func (vs *vSphereVMProvider) VSphereClient(
 func (vs *vSphereVMProvider) GetVirtualMachineConfigTarget(
 	ctx context.Context,
 	clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error) {
-	vcClient, err := vs.getVcClient(ctx)
+	vcClient, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+	defer release()
 
 	ccr := object.NewClusterComputeResource(vcClient.VimClient(),
 		vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: clusterMoID})

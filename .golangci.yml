@@ -96,6 +96,8 @@ linters:
           pkg: sigs.k8s.io/controller-runtime/pkg/client
         - alias: ctrlmgr
           pkg: sigs.k8s.io/controller-runtime/pkg/manager
+        - alias: whconversion
+          pkg: sigs.k8s.io/controller-runtime/pkg/webhook/conversion
 
         - alias: vim25
           pkg: github.com/vmware/govmomi/vim25

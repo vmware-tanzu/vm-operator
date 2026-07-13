@@ -10,6 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -36,9 +37,10 @@ type SpecInput struct {
 
 // Spec verifies the VirtualMachineConfigPolicy feature end-to-end.
 // Currently covers zone controller fan-out (S3) and the ConfigTarget
-// controller's cluster-scope capability discovery (S5.b); per-host
-// discovery (S5.c), option enumeration (S6/S7), and policy enforcement
-// (S8/S9) will be added here.
+// controller's cluster-scope capability discovery, including
+// status.maxHardwareVersion and non-SR-IOV device categories (S5.b/S5.c).
+// SR-IOV per-host enrichment, option enumeration (S6/S7), and policy
+// enforcement (S8/S9) will be added here.
 func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	const specName = "vm-config-policy"
 
@@ -142,6 +144,38 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 							"ConfigTarget %q status.numCPUs should be populated from QueryConfigTarget", name)
 						g.Expect(ct.Status.MaxCPUsPerVM).To(BeNumerically(">", 0),
 							"ConfigTarget %q status.maxCPUsPerVM should be populated from QueryConfigTarget", name)
+					}).Should(Succeed())
+				}
+			})
+
+		It("Should populate status.maxHardwareVersion and non-SR-IOV device categories",
+			Label("core-functional", "experimental"),
+			func() {
+				var ctList vimv1.ConfigTargetList
+				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).ToNot(BeEmpty(), "expected at least one ConfigTarget in the cluster")
+
+				for i := range ctList.Items {
+					name := ctList.Items[i].Name
+
+					Eventually(func(g Gomega) {
+						ct := &vimv1.ConfigTarget{}
+						g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: name}, ct)).To(Succeed())
+
+						g.Expect(ct.Status.MaxHardwareVersion).ToNot(BeEmpty(),
+							"ConfigTarget %q status.maxHardwareVersion should be populated", name)
+						_, err := vimtypes.ParseHardwareVersion(ct.Status.MaxHardwareVersion)
+						g.Expect(err).ToNot(HaveOccurred(),
+							"ConfigTarget %q status.maxHardwareVersion %q should be a valid hardware version",
+							name, ct.Status.MaxHardwareVersion)
+
+						// CDROM is asserted here because every ESX host reports
+						// at least one virtual CD-ROM backing; other categories
+						// (VGPU, SGX, SR-IOV-adjacent) depend on optional
+						// hardware and would make this flaky on infra that
+						// lacks it.
+						g.Expect(ct.Status.ConfigTargetDevices.CDROM).ToNot(BeEmpty(),
+							"ConfigTarget %q status.cdrom should be populated from QueryConfigTarget", name)
 					}).Should(Succeed())
 				}
 			})

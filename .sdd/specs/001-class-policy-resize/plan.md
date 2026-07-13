@@ -84,7 +84,9 @@ controllers/
 
 webhooks/
 ├── configtarget/
-│   └── validation_webhook.go           NEW
+│   ├── webhooks.go                      NEW
+│   └── validation/
+│       └── configtarget_validator.go   NEW — immutable spec.id; valid cluster MoID format for metadata.name
 ├── virtualmachineconfigoptions/
 │   └── validation_webhook.go           NEW
 ├── virtualmachineconfigpolicy/

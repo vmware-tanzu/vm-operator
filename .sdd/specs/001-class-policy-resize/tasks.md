@@ -57,16 +57,17 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S5 — ConfigTarget controller (vmop-3742)
 
-- [ ] T060 [S5.a] Author `webhooks/configtarget/validation_webhook.go` — immutable spec.id; valid cluster MoID format for metadata.name
-- [ ] T061 [S5.a] Register ConfigTarget validation webhook in `webhooks/` suite files
+- [x] T060 [S5.a] [PR #1711 / vmop-3757] Author `webhooks/configtarget/validation/configtarget_validator.go` — immutable spec.id; valid cluster MoID format for metadata.name
+- [ ] T061 [S5.a] [PR #1711 / vmop-3757 — webhook half only] Register ConfigTarget webhook in `controllers/controllers.go` and `webhooks/` suite files
 - [x] T061a [S5.a] Register ConfigTarget controller in `controllers/controllers.go`, gated on `Features.VirtualMachineConfigPolicy`
-- [ ] T062 [S5.a] Unit tests — `webhooks/configtarget/validation_webhook_test.go`
+- [x] T062 [S5.a] [PR #1711 / vmop-3757] Unit and integration tests — `webhooks/configtarget/validation/configtarget_validator_unit_test.go`, `configtarget_validator_intg_test.go`
 - [x] T063 [S5.b] Author `controllers/configtarget/configtarget_controller.go` — cluster-scope path: QueryConfigTarget + QueryConfigOptionDescriptor; populate status; fan out VirtualMachineConfigOptions
 - [x] T064 [S5.b] Add `GetVirtualMachineConfigTarget` (QueryConfigTarget + QueryConfigOptionDescriptor) — implemented directly on `pkg/providers/vsphere/vmprovider.go` (see note below) instead of a new `environment_browser.go` file
 - [x] T065 [S5.b] Unit tests — `controllers/configtarget/configtarget_controller_test.go` (includes vcsim-backed integration coverage in the same file)
 
 > **Implementation note (T063–T065):** `metadata.name` (not `spec.id`) is the cluster MoID key. This is confirmed correct, not just a convention choice: `spec.md`'s acceptance criteria key every `ConfigTarget` lookup off `metadata.name` (`spec.id` is referenced only as an immutability constraint), and the merged Zone controller (vmop-3740, PR #1695) sets `spec.id.ID` to the same value as `metadata.name` on every `ConfigTarget` it creates — so the two fields are always identical in practice. `GetVirtualMachineConfigTarget` was placed directly on `vSphereVMProvider` in `vmprovider.go` — consistent with other single-purpose vSphere queries in that file (`DoesProfileSupportEncryption`, `GetStoragePolicyStatus`) — rather than the `pkg/providers/vsphere/environment_browser.go` sketched in the plan; that file can still be introduced later once `QueryConfigOptionEx` (S6) and the per-host iteration (S5.c) grow the surface area.
 >
+
 - [ ] T066 [S5.c / vmop-3759] Extend controller with the per-host iteration — enumerate cluster hosts via `ClusterComputeResource.host`; for each host, run one `PropertyCollector` RPC for `config.defaultHardwareVersion`, `capability.supportedHardwareVersions`, `config.pciPassthruInfo` (filtered to `sriovCapable=true`), and `hardware.dvxClasses` (where `sriovNic=true`); aggregate `max(defaultHardwareVersion)` into `ConfigTarget.status.maxHardwareVersion`; build per-(host, NIC) `VirtualMachineSriovInfo` entries and write them to `ConfigTarget.status.sriov`. Treat per-host RPC failure as a warning event; do not block the rest of the iteration.
 - [ ] T066a [S5.c / vmop-3797] Add `ConfigTargetStatus.MaxHardwareVersion` to `external/vim/api/v1alpha1/config_target_types.go`; extend `VirtualMachineSriovInfo` in `external/vim/api/v1alpha1/config_target_devices_types.go` with `HostMoID` (required), `Active`, `MaxVFs`, `NumVFs`, `DVXClass`, `DVXCheckpointSupported`, `DVXSWDMATracingSupported`; add `+listType=map` with `+listMapKey=hostMoID` and `+listMapKey=pciDevice.id` to `status.sriov`; regenerate `zz_generated.deepcopy.go` and `vim.vmware.com_configtargets.yaml`. T066 cannot be merged before T066a.
 - [ ] T067 [S5.c] Unit tests for the per-host iteration — `max(defaultHardwareVersion)` aggregation across mixed hosts; SR-IOV entries carry `hostMoID`; DVX class enrichment correlates correctly; partial-failure (one host RPC fails) leaves the other hosts' data intact and triggers a re-queue.

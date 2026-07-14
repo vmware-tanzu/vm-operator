@@ -80,6 +80,13 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		return err
 	}
 
+	// Index PersistentVolumeClaims by any VirtualMachine OwnerReference's
+	// UID so ReconcileDelete can efficiently find the PVCs owned by a VM
+	// being deleted.
+	if err := kubeutil.IndexPVCByVMOwnerRef(ctx, mgr); err != nil {
+		return err
+	}
+
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
@@ -313,6 +320,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="events.k8s.io",resources=events,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=encryption.vmware.com,resources=encryptionclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;patch
 
 // Reconcile the object.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
@@ -535,6 +543,17 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 			if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); err != nil {
 				return err
 			}
+		}
+
+		// Remove this VM's OwnerRef from any PVC that is no longer attached
+		// to it. Without this, Kubernetes garbage collection would delete
+		// every PVC still OwnerRef'd to the VM once the finalizer below is
+		// removed, even PVCs whose disks were detached from the VM prior to
+		// deletion. This runs regardless of whether the underlying vCenter
+		// VM was deleted or merely unregistered above, since the Kubernetes
+		// cascade-delete risk exists either way.
+		if err := kubeutil.RemoveStaleVMOwnerRefFromPVCs(ctx, r.Client, ctx.VM); err != nil {
+			return fmt.Errorf("failed to remove stale pvc owner refs: %w", err)
 		}
 
 		controllerutil.RemoveFinalizer(ctx.VM, finalizerName)

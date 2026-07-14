@@ -17,7 +17,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2/textlogger"
@@ -499,6 +501,82 @@ func intgTestsReconcile() {
 				Eventually(func(g Gomega) {
 					g.Expect(getVirtualMachine(ctx, vmKey)).To(BeNil())
 				}).Should(Succeed())
+			})
+		})
+
+		It("Removes the VM's OwnerRef from a detached PVC but not an attached one", func() {
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				builder.DummyPVCVolume("disk-1", "attached-pvc"),
+			}
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+			// Wait for initial reconcile.
+			waitForVirtualMachineFinalizer(ctx, vmKey)
+
+			createdVM := getVirtualMachine(ctx, vmKey)
+			Expect(createdVM).ToNot(BeNil())
+			Expect(createdVM.UID).ToNot(BeEmpty())
+
+			ownerRef := metav1.OwnerReference{
+				APIVersion: vmopv1.GroupVersion.String(),
+				Kind:       "VirtualMachine",
+				Name:       createdVM.Name,
+				UID:        createdVM.UID,
+			}
+
+			newPVC := func(name string, annotations map[string]string) *corev1.PersistentVolumeClaim {
+				return &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            name,
+						Namespace:       vm.Namespace,
+						Annotations:     annotations,
+						OwnerReferences: []metav1.OwnerReference{ownerRef},
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				}
+			}
+
+			attachedPVC := newPVC("attached-pvc", nil)
+			detachedPVC := newPVC("detached-pvc", nil)
+			detachedKeptPVC := newPVC("detached-kept-pvc", map[string]string{
+				pkgconst.KeepOwnerRefAnnotationKey: "",
+			})
+			Expect(ctx.Client.Create(ctx, attachedPVC)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, detachedPVC)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, detachedKeptPVC)).To(Succeed())
+
+			Expect(ctx.Client.Delete(ctx, vm)).To(Succeed())
+
+			By("VirtualMachine should be deleted", func() {
+				Eventually(func(g Gomega) {
+					g.Expect(getVirtualMachine(ctx, vmKey)).To(BeNil())
+				}).Should(Succeed())
+			})
+
+			By("detached PVC's OwnerRef is removed", func() {
+				Eventually(func(g Gomega) {
+					got := &corev1.PersistentVolumeClaim{}
+					g.Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(detachedPVC), got)).To(Succeed())
+					g.Expect(got.OwnerReferences).To(BeEmpty())
+				}).Should(Succeed())
+			})
+
+			By("attached PVC keeps its OwnerRef", func() {
+				got := &corev1.PersistentVolumeClaim{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(attachedPVC), got)).To(Succeed())
+				Expect(got.OwnerReferences).To(ConsistOf(ownerRef))
+			})
+
+			By("detached PVC with the keep-owner-ref annotation keeps its OwnerRef", func() {
+				got := &corev1.PersistentVolumeClaim{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(detachedKeptPVC), got)).To(Succeed())
+				Expect(got.OwnerReferences).To(ConsistOf(ownerRef))
 			})
 		})
 

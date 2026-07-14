@@ -261,4 +261,11 @@ const (
 	// PVCEncryptionClassNameAnnotation specifies the name of an EncryptionClass
 	// on a PVC.
 	PVCEncryptionClassNameAnnotation = "csi.vsphere.encryption-class"
+
+	// KeepOwnerRefAnnotationKey is the annotation that, when present on a
+	// PersistentVolumeClaim, opts it out of having a VirtualMachine's
+	// OwnerReference removed when the PVC is no longer attached to that VM
+	// at the time the VM is deleted. Presence of the key is sufficient; the
+	// value is never inspected.
+	KeepOwnerRefAnnotationKey = "vmoperator.vmware.com/keep-owner-ref"
 )

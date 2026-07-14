@@ -63,6 +63,7 @@ func Default() Config {
 		WebhookSecretName:            defaultPrefix + "webhook-server-cert",
 		WebhookSecretNamespace:       defaultPrefix + "system",
 		WebhookSecretVolumeMountPath: "/etc/vmware/wcp/webhook-certs",
+		ISOHTTPServerImage:           defaultPrefix + "iso-httpserver:" + pkg.BuildVersion,
 		CRDCleanupEnabled:            false,
 	}
 }

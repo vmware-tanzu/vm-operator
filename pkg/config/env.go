@@ -34,6 +34,7 @@ func FromEnv() Config {
 	setString(env.FastDeployMode, &config.FastDeployMode)
 	setString(env.VCCredsSecretName, &config.VCCredsSecretName)
 	setBool(env.CRDCleanupEnabled, &config.CRDCleanupEnabled)
+	setString(env.ISOHTTPServerImage, &config.ISOHTTPServerImage)
 
 	setDuration(env.InstanceStoragePVPlacementFailedTTL, &config.InstanceStorage.PVPlacementFailedTTL)
 	setFloat64(env.InstanceStorageJitterMaxFactor, &config.InstanceStorage.JitterMaxFactor)
@@ -68,6 +69,7 @@ func FromEnv() Config {
 	setBool(env.FSSVMIncrementalRestore, &config.Features.VMIncrementalRestore)
 	setBool(env.FSSBringYourOwnEncryptionKey, &config.Features.BringYourOwnEncryptionKey)
 	setBool(env.FSSFastDeploy, &config.Features.FastDeploy)
+	setBool(env.FSSAutoISO, &config.Features.AutoISO)
 	setBool(env.FSSSVAsyncUpgrade, &config.Features.SVAsyncUpgrade)
 	if !config.Features.SVAsyncUpgrade {
 		// When SVAsyncUpgrade is enabled, we'll later use the capability CM to determine if

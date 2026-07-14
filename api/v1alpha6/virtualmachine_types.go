@@ -135,6 +135,10 @@ const (
 	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
 	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
 	VirtualMachineConditionComputeConfigSynced = "VirtualMachineComputeConfigSynced"
+
+	// VirtualMachineBootstrapISOSynced indicates that the ISO bootstrap
+	// process (boot commands and/or ephemeral HTTP server) has been applied.
+	VirtualMachineBootstrapISOSynced = "VirtualMachineBootstrapISOSynced"
 )
 
 const (
@@ -196,6 +200,20 @@ const (
 	// VirtualMachineNetworkErrorReason indicates that reconciliation of
 	// VirtualMachineNetworkConfigSynced failed with an unexpected error.
 	VirtualMachineNetworkErrorReason = "Error"
+
+	// VirtualMachineBootstrapISOHTTPServerNotReadyReason indicates that the
+	// ephemeral HTTP server used to serve ISO bootstrap assets is not yet
+	// ready.
+	VirtualMachineBootstrapISOHTTPServerNotReadyReason = "HTTPServerNotReady"
+
+	// VirtualMachineBootstrapISOKeyboardSendFailedReason indicates that
+	// sending boot commands via the virtual USB keyboard failed.
+	VirtualMachineBootstrapISOKeyboardSendFailedReason = "KeyboardSendFailed"
+
+	// VirtualMachineBootstrapISOAssetNotFoundReason indicates that a
+	// referenced Secret or key in spec.bootstrap.iso.assets could not be
+	// found.
+	VirtualMachineBootstrapISOAssetNotFoundReason = "AssetNotFound"
 )
 
 const (

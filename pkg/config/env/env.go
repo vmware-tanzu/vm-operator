@@ -51,6 +51,7 @@ const (
 	WebhookSecretName
 	WebhookSecretNamespace
 	CRDCleanupEnabled
+	ISOHTTPServerImage
 	FSSInstanceStorage
 	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
@@ -62,6 +63,7 @@ const (
 	FSSBringYourOwnEncryptionKey
 	FSSSVAsyncUpgrade
 	FSSFastDeploy
+	FSSAutoISO
 	_varNameEnd
 )
 
@@ -169,6 +171,8 @@ func (n VarName) String() string {
 		return "WEBHOOK_SECRET_NAMESPACE"
 	case CRDCleanupEnabled:
 		return "CRD_CLEANUP_ENABLED"
+	case ISOHTTPServerImage:
+		return "VSPHERE_ISO_HTTP_SERVER_IMAGE"
 
 	//
 	// Features/Capabilities
@@ -195,6 +199,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_SUPERVISOR_ASYNC_UPGRADE"
 	case FSSFastDeploy:
 		return "FSS_WCP_VMSERVICE_FAST_DEPLOY"
+	case FSSAutoISO:
+		return "FSS_WCP_VMSERVICE_AUTO_ISO"
 	}
 	panic("unknown environment variable")
 }

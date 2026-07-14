@@ -4,7 +4,7 @@
   - **Fork**: `akutz/vm-operator`
   - **PR target**: `vmware-tanzu/vm-operator`
 - **Created**: 2026-06-29
-- **Status**: In Progress (Architecture phase; code not yet started)
+- **Status**: In Progress (framework and US1/US2 (Ubuntu) implemented; US3 (Windows) and US4 (RHEL family) not yet started)
 - **Epic**: vmop-TBD
 - **Wiki parent**: VM Service: Auto ISO
 - **Spike (done)**: vmop-TBD
@@ -132,6 +132,27 @@ For Windows systems it would be similar, the boot commands may differ, ex.:
 
 ## Reconciliation pipeline (big picture)
 
+1. A DevOps user applies a `VirtualMachine` with `spec.bootstrap.iso` set, a
+   `spec.hardware.cdrom` entry referencing an ISO-type `VirtualMachineImage`,
+   and a Secret in the same namespace holding the referenced
+   `spec.bootstrap.iso.assets`.
+2. Before power-on, the CD-ROM reconciler attaches and connects the ISO. The
+   validation webhook confirms the CD-ROM is ISO-typed, no conflicting
+   bootstrap provider is set, and every asset's Secret name is well-formed.
+3. VM Operator creates an ephemeral HTTP server (a Pod + `LoadBalancer`
+   Service, named deterministically from the VM) that serves each asset at
+   `/<secretName>/<key>`, reachable from the VM's workload network.
+4. Once the VM is powered on and the ephemeral Service has an address, VM
+   Operator sends `spec.bootstrap.iso.commands` to the VM's virtual USB
+   keyboard, resolving Go template expressions (network config, the
+   ephemeral server's address via `{{V1Alpha6_BootstrapService}}`) first.
+   This happens exactly once per generation of `spec.bootstrap.iso` (tracked
+   via an annotation hash).
+5. The guest OS installer fetches its assets from the ephemeral HTTP server
+   and completes an unattended install.
+6. Once the VM reports a primary IP (or a configurable timeout elapses), VM
+   Operator tears down the ephemeral Pod/Service and marks the
+   `VirtualMachineBootstrapISOSynced` condition `True`.
 
 
 ---
@@ -140,16 +161,67 @@ For Windows systems it would be similar, the boot commands may differ, ex.:
 
 ### US1 — API changes (Priority: P0)
 
+- **Given** a DevOps user is authoring a `VirtualMachine` manifest, **When**
+  they set `spec.bootstrap.iso.commands` and `spec.bootstrap.iso.assets`,
+  **Then** the API accepts the manifest so long as no other bootstrap
+  provider (CloudInit, LinuxPrep, Sysprep, VAppConfig) is also set, and at
+  least one `spec.hardware.cdrom` entry references an ISO-type image.
+- **Given** a `VirtualMachine` already has `spec.bootstrap.iso` set and boot
+  commands have been sent, **When** the DevOps user attempts to change
+  `spec.bootstrap.iso.commands` while the VM is powered on, **Then** the API
+  rejects the update.
+
 ### US2 - Support Ubuntu Server 26.04 LTS (Priority: P0)
+
+- **Given** a DevOps user applies a `VirtualMachine` referencing an Ubuntu
+  Server ISO-type image, with `spec.bootstrap.iso.assets` pointing at a
+  Secret containing `user-data` (an `autoinstall:` document) and `meta-data`,
+  **When** the VM powers on, **Then** VM Operator sends boot commands that
+  configure static networking on the GRUB2-loaded kernel and boot the
+  installer with `autoinstall ds="nocloud-net;seedfrom=http://<ephemeral
+  service>/"`, and the guest completes an unattended install without any
+  VNC/console access.
+- **Given** the Ubuntu install has completed and the VM reports a primary
+  IP, **When** VM Operator next reconciles the VM, **Then** the ephemeral
+  HTTP server Pod/Service are deleted and `VirtualMachineBootstrapISOSynced`
+  is `True`.
 
 ### US3 - Support Windows Server 2025 (Priority: P0)
 
+_Not yet implemented — see `plan.md`'s Windows end-to-end section for the
+planned approach (reuses the same USB-keyboard/HTTP-server framework as
+US2/US4, with a Windows-specific boot-command token sequence)._
+
 ### US4 - Support Ubuntu, Photon, Rocky, RHEL, other Linux distributions (Priority: P1)
+
+_Not yet implemented beyond Ubuntu (US2) — see `plan.md`'s RHEL/Rocky/
+AlmaLinux end-to-end section for the planned Kickstart-based approach, which
+reuses the same framework as US2._
 
 ---
 
 ## Edge cases
 
+- **Boot commands with excessive wait time**: the sum of every `<waitN>`
+  token in `spec.bootstrap.iso.commands` is capped at 120 seconds; exceeding
+  it fails the reconcile with a clear error before any keystrokes are sent
+  (see `plan.md` OI-1).
+- **Ephemeral HTTP server never gets an address**: VM Operator does not block
+  waiting for the `LoadBalancer` Service's address; it requeues and retries,
+  surfacing `HTTPServerNotReady` on `VirtualMachineBootstrapISOSynced` in the
+  meantime.
+- **Referenced asset Secret or key does not exist**: the reconcile fails with
+  `AssetNotFound` on `VirtualMachineBootstrapISOSynced`; the same condition
+  applies if the Secret is deleted after boot commands were already sent.
+  (Discovering a missing asset before power-on, at admission time, is not
+  currently validated — the webhook checks asset name well-formedness, not
+  Secret/key existence.)
+- **Guest reports an IP before the installer finishes**: the heuristic used
+  to tear down the ephemeral HTTP server (primary IP populated, or a 60
+  minute timeout) can be wrong in either direction; see `plan.md` OI-5.
+- **Non-US keyboard layouts**: the virtual USB keyboard driver's scan-code
+  table assumes a US QWERTY layout; VMs with a non-US layout configured in
+  BIOS/UEFI may receive incorrect characters.
 
 ---
 

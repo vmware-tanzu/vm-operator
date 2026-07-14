@@ -77,6 +77,7 @@ export KUBEBUILDER_ASSETS := $(abspath $(TOOLS_BIN_DIR))
 MANAGER                := $(BIN_DIR)/manager
 WEB_CONSOLE_VALIDATOR  := $(BIN_DIR)/web-console-validator
 VMCLASS                := $(BIN_DIR)/vmclass
+ISO_HTTPSERVER         := $(BIN_DIR)/iso-httpserver
 
 # Tooling binaries
 CRD_REF_DOCS       := $(TOOLS_BIN_DIR)/crd-ref-docs
@@ -106,6 +107,9 @@ BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
 IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
+
+# Image URL for the ephemeral ISO bootstrap HTTP server image
+ISO_HTTPSERVER_IMAGE ?= vmoperator-iso-httpserver
 
 # E2E test image configuration
 E2E_BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
@@ -275,6 +279,14 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 vmclass: $(VMCLASS) ## Build vmclass binary
 $(VMCLASS): cmd/vmclass/main.go
 	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=$(CGO_ENABLED) go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/vmclass/main.go
+
+.PHONY: $(ISO_HTTPSERVER) iso-httpserver-only
+iso-httpserver-only: $(ISO_HTTPSERVER) ## Build iso-httpserver binary only
+$(ISO_HTTPSERVER):
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/iso-httpserver/main.go
+
+.PHONY: iso-httpserver
+iso-httpserver: prereqs generate lint-go iso-httpserver-only ## Build iso-httpserver binary
 
 
 ## --------------------------------------
@@ -897,6 +909,19 @@ image-build-amd64: ## Build amd64 container image
 image-build-arm64: GOARCH=arm64
 image-build-arm64: image-build
 image-build-arm64: ## Build arm64 container image
+
+.PHONY: iso-httpserver-image-build
+iso-httpserver-image-build: GOOS=linux
+iso-httpserver-image-build: iso-httpserver-only
+iso-httpserver-image-build: ## Build the ephemeral ISO bootstrap HTTP server container image
+	$(CRI_BIN) build \
+	  -f cmd/iso-httpserver/Dockerfile \
+	  -t "$(ISO_HTTPSERVER_IMAGE):$(IMAGE_TAG)" \
+	  --build-arg BUILD_BRANCH="$(BUILD_BRANCH)" \
+	  --build-arg BUILD_COMMIT="$(BUILD_COMMIT)" \
+	  --build-arg BUILD_NUMBER="$(BUILD_NUMBER)" \
+	  --build-arg BUILD_VERSION="$(BUILD_VERSION)" \
+	  .
 
 .PHONY: image-push
 image-push: ## Push container image

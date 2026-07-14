@@ -104,6 +104,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_BYOK", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_SUPERVISOR_ASYNC_UPGRADE", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_FAST_DEPLOY", "true")).To(Succeed())
+					Expect(os.Setenv("FSS_WCP_VMSERVICE_AUTO_ISO", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_PODVMONSTRETCHEDSUPERVISOR", "false")).To(Succeed())
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
 					Expect(os.Setenv("POWERED_ON_VM_HAS_IP_REQUEUE_DELAY", "126h")).To(Succeed())
@@ -112,6 +113,7 @@ var _ = Describe(
 					Expect(os.Setenv("DEPLOYMENT_NAME", "129")).To(Succeed())
 					Expect(os.Setenv("SIGUSR2_RESTART_ENABLED", "true")).To(Succeed())
 					Expect(os.Setenv("CRD_CLEANUP_ENABLED", "true")).To(Succeed())
+					Expect(os.Setenv("VSPHERE_ISO_HTTP_SERVER_IMAGE", "130")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
@@ -150,6 +152,7 @@ var _ = Describe(
 						WebhookSecretNamespace:       "124",
 						WebhookSecretVolumeMountPath: pkgcfg.Default().WebhookSecretVolumeMountPath,
 						CRDCleanupEnabled:            true,
+						ISOHTTPServerImage:           "130",
 						Features: pkgcfg.FeatureStates{
 							InstanceStorage:           false,
 							K8sWorkloadMgmtAPI:        true,
@@ -161,6 +164,7 @@ var _ = Describe(
 							SVAsyncUpgrade:            false, // Capability gate so tested below
 							WorkloadDomainIsolation:   true,
 							FastDeploy:                true,
+							AutoISO:                   true,
 						},
 						CreateVMRequeueDelay:         125 * time.Hour,
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,

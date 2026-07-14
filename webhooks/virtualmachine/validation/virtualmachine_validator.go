@@ -153,7 +153,6 @@ var (
 		"vnet":                        true,
 		"wakeonpcktrcv":               true,
 	}
-
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -424,6 +423,7 @@ func (v validator) validateBootstrap(
 		linuxPrep  *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
 		sysPrep    *vmopv1.VirtualMachineBootstrapSysprepSpec
 		vAppConfig *vmopv1.VirtualMachineBootstrapVAppConfigSpec
+		iso        *vmopv1.VirtualMachineBootstrapISOSpec
 	)
 
 	if vm.Spec.Bootstrap != nil {
@@ -431,12 +431,13 @@ func (v validator) validateBootstrap(
 		linuxPrep = vm.Spec.Bootstrap.LinuxPrep
 		sysPrep = vm.Spec.Bootstrap.Sysprep
 		vAppConfig = vm.Spec.Bootstrap.VAppConfig
+		iso = vm.Spec.Bootstrap.ISO
 	}
 
 	if cloudInit != nil {
 		p := bootstrapPath.Child("cloudInit")
 
-		if linuxPrep != nil || sysPrep != nil || vAppConfig != nil {
+		if linuxPrep != nil || sysPrep != nil || vAppConfig != nil || iso != nil {
 			allErrs = append(allErrs, field.Forbidden(p,
 				"CloudInit may not be used with any other bootstrap provider"))
 		}
@@ -454,9 +455,9 @@ func (v validator) validateBootstrap(
 	if linuxPrep != nil {
 		p := bootstrapPath.Child("linuxPrep")
 
-		if cloudInit != nil || sysPrep != nil {
+		if cloudInit != nil || sysPrep != nil || iso != nil {
 			allErrs = append(allErrs, field.Forbidden(p,
-				"LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"))
+				"LinuxPrep may not be used with either CloudInit, Sysprep, or ISO bootstrap providers"))
 		}
 
 		if pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity {
@@ -487,9 +488,9 @@ func (v validator) validateBootstrap(
 	if sysPrep != nil {
 		p := bootstrapPath.Child("sysprep")
 
-		if cloudInit != nil || linuxPrep != nil {
+		if cloudInit != nil || linuxPrep != nil || iso != nil {
 			allErrs = append(allErrs, field.Forbidden(p,
-				"Sysprep may not be used with either CloudInit or LinuxPrep bootstrap providers"))
+				"Sysprep may not be used with either CloudInit, LinuxPrep, or ISO bootstrap providers"))
 		}
 
 		if sysPrep.Sysprep != nil && sysPrep.RawSysprep != nil {
@@ -508,9 +509,9 @@ func (v validator) validateBootstrap(
 	if vAppConfig != nil {
 		p := bootstrapPath.Child("vAppConfig")
 
-		if cloudInit != nil {
+		if cloudInit != nil || iso != nil {
 			allErrs = append(allErrs, field.Forbidden(p,
-				"vAppConfig may not be used in conjunction with CloudInit bootstrap provider"))
+				"vAppConfig may not be used in conjunction with either CloudInit or ISO bootstrap providers"))
 		}
 
 		if len(vAppConfig.Properties) != 0 && len(vAppConfig.RawProperties) != 0 {
@@ -529,6 +530,17 @@ func (v validator) validateBootstrap(
 			}
 		}
 
+	}
+
+	if iso != nil {
+		p := bootstrapPath.Child("iso")
+
+		if cloudInit != nil || linuxPrep != nil || sysPrep != nil || vAppConfig != nil {
+			allErrs = append(allErrs, field.Forbidden(p,
+				"ISO may not be used with any other bootstrap provider"))
+		}
+
+		allErrs = append(allErrs, v.validateISO(ctx, p, vm, iso)...)
 	}
 
 	return allErrs
@@ -2365,6 +2377,7 @@ func (v validator) validateUpdatesWhenPoweredOn(
 	}
 
 	allErrs = append(allErrs, v.validateHardwareWhenPoweredOn(ctx, vm, oldVM)...)
+	allErrs = append(allErrs, v.validateISOWhenPoweredOn(ctx, vm, oldVM)...)
 
 	// TODO: More checks.
 
@@ -3652,7 +3665,6 @@ func isFirstClassVMAdvancedProperty(key string) bool {
 	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
 	return ok
 }
-
 
 func isSystemReservedNetworkDeviceProperty(key string) bool {
 	return systemReservedNetworkDeviceProperties[key]

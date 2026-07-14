@@ -5,16 +5,22 @@
 package vmlifecycle_test
 
 import (
+	"errors"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
@@ -298,7 +304,7 @@ var _ = Describe("DoBootstrap", func() {
 	})
 
 	JustBeforeEach(func() {
-		bsErr = vmlifecycle.DoBootstrap(vmCtx, vcVM, configInfo, bsArgs)
+		bsErr = vmlifecycle.DoBootstrap(vmCtx, vcVM, ctx.Client, configInfo, bsArgs)
 	})
 
 	AfterEach(func() {
@@ -431,6 +437,72 @@ var _ = Describe("DoBootstrap", func() {
 
 			It("Noop", func() {
 				Expect(bsErr).ToNot(HaveOccurred())
+			})
+		})
+	})
+
+	Context("ISO", func() {
+		BeforeEach(func() {
+			vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				ISO: &vmopv1.VirtualMachineBootstrapISOSpec{
+					Commands: []string{"boot"},
+				},
+			}
+		})
+
+		When("the AutoISO feature is disabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.AutoISO = false
+				})
+			})
+
+			It("returns an error", func() {
+				Expect(bsErr).To(HaveOccurred())
+				Expect(bsErr.Error()).To(ContainSubstring("AutoISO"))
+			})
+		})
+
+		When("the AutoISO feature is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.AutoISO = true
+				})
+			})
+
+			// vcsim does not implement PutUsbScanCodes (there is no simulated
+			// USB keyboard), so the ephemeral HTTP server's Service never
+			// gets a LoadBalancer address from a real controller in this
+			// fake-client-backed test environment either. This dispatch
+			// therefore always observes "not ready yet" and requeues before
+			// ever reaching the keyboard-send step -- that step (and the
+			// annotation-hash idempotency guard around it) is covered by the
+			// fake-ScanCodeSender unit tests in bootstrap_iso_test.go. What
+			// this proves is that DoBootstrap correctly dispatches to
+			// BootstrapISO (not the LinuxPrep default) and that it plumbs a
+			// real ctrlclient.Client through to create the Pod/Service.
+			It("dispatches to BootstrapISO and creates the ephemeral HTTP server", func() {
+				var requeueErr pkgerr.RequeueError
+				Expect(errors.As(bsErr, &requeueErr)).To(BeTrue())
+
+				pod := &corev1.Pod{}
+				podKey := ctrlclient.ObjectKey{
+					Namespace: vmCtx.VM.Namespace,
+					Name:      vmCtx.VM.Name + "-iso-bootstrap",
+				}
+				Expect(ctx.Client.Get(ctx, podKey, pod)).To(Succeed())
+
+				svc := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, podKey, svc)).To(Succeed())
+				Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
+			})
+
+			It("is idempotent across repeated calls", func() {
+				Expect(vmlifecycle.DoBootstrap(vmCtx, vcVM, ctx.Client, configInfo, bsArgs)).ToNot(Succeed())
+
+				pods := &corev1.PodList{}
+				Expect(ctx.Client.List(ctx, pods, ctrlclient.InNamespace(vmCtx.VM.Namespace))).To(Succeed())
+				Expect(pods.Items).To(HaveLen(1))
 			})
 		})
 	})

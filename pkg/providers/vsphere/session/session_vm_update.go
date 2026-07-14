@@ -1192,6 +1192,7 @@ func (s *Session) reconcileNetworkAndGuestCustomizationState(
 	return vmlifecycle.DoBootstrap(
 		vmCtx,
 		vcVM,
+		s.K8sClient,
 		vmCtx.MoVM.Config,
 		bootstrapArgs)
 }

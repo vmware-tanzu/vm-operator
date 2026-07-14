@@ -1942,7 +1942,7 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
-						`spec.bootstrap.linuxPrep: Forbidden: LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers`),
+						`spec.bootstrap.linuxPrep: Forbidden: LinuxPrep may not be used with either CloudInit, Sysprep, or ISO bootstrap providers`),
 				},
 			),
 			Entry("disallow CloudInit and Sysprep specified at the same time",
@@ -1957,7 +1957,7 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
-						`spec.bootstrap.sysprep: Forbidden: Sysprep may not be used with either CloudInit or LinuxPrep bootstrap providers`,
+						`spec.bootstrap.sysprep: Forbidden: Sysprep may not be used with either CloudInit, LinuxPrep, or ISO bootstrap providers`,
 					),
 				},
 			),
@@ -1971,7 +1971,7 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
-						`spec.bootstrap.vAppConfig: Forbidden: vAppConfig may not be used in conjunction with CloudInit bootstrap provider`,
+						`spec.bootstrap.vAppConfig: Forbidden: vAppConfig may not be used in conjunction with either CloudInit or ISO bootstrap providers`,
 					),
 				},
 			),
@@ -1986,8 +1986,8 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.bootstrap.linuxPrep: Forbidden: LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers`,
-						`spec.bootstrap.sysprep: Forbidden: Sysprep may not be used with either CloudInit or LinuxPrep bootstrap providers`,
+						`spec.bootstrap.linuxPrep: Forbidden: LinuxPrep may not be used with either CloudInit, Sysprep, or ISO bootstrap providers`,
+						`spec.bootstrap.sysprep: Forbidden: Sysprep may not be used with either CloudInit, LinuxPrep, or ISO bootstrap providers`,
 					),
 				},
 			),
@@ -3412,63 +3412,63 @@ func unitTestsValidateCreate() {
 				primaryProviderType pkgcfg.NetworkProviderType,
 				legacyProviderType pkgcfg.NetworkProviderType,
 			) {
-			var (
-				primaryCapProvider netopv1alpha1.NetworkProvider
-				legacyCapProvider  netopv1alpha1.NetworkProvider
+				var (
+					primaryCapProvider netopv1alpha1.NetworkProvider
+					legacyCapProvider  netopv1alpha1.NetworkProvider
 
-				primaryAPIVersion string
-				primaryKind       string
+					primaryAPIVersion string
+					primaryKind       string
 
-				legacyAPIVersion string
-				legacyKind       string
+					legacyAPIVersion string
+					legacyKind       string
 
-				unrelatedAPIVersion    string
-				unrelatedKind          string
-				unrelatedAPIVersionMsg string
-				crossGroupKindMsg      string
-			)
+					unrelatedAPIVersion    string
+					unrelatedKind          string
+					unrelatedAPIVersionMsg string
+					crossGroupKindMsg      string
+				)
 
-			//nolint:goconst
-			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.PerNamespaceNetworkProvider = true
-				})
+				//nolint:goconst
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.PerNamespaceNetworkProvider = true
+					})
 
-				switch primaryProviderType {
-				case pkgcfg.NetworkProviderTypeVPC:
-					primaryCapProvider = netopv1alpha1.NetworkProviderVPC
-					primaryAPIVersion = "crd.nsx.vmware.com/v1alpha1"
-					primaryKind = "SubnetSet"
-				default:
-					Fail(fmt.Sprintf("unsupported primaryProviderType: %v", primaryProviderType))
-				}
+					switch primaryProviderType {
+					case pkgcfg.NetworkProviderTypeVPC:
+						primaryCapProvider = netopv1alpha1.NetworkProviderVPC
+						primaryAPIVersion = "crd.nsx.vmware.com/v1alpha1"
+						primaryKind = "SubnetSet"
+					default:
+						Fail(fmt.Sprintf("unsupported primaryProviderType: %v", primaryProviderType))
+					}
 
-				switch legacyProviderType {
-				case pkgcfg.NetworkProviderTypeVDS:
-					legacyCapProvider = netopv1alpha1.NetworkProviderVSphereDistributed
-					legacyAPIVersion = "netoperator.vmware.com/v1alpha1"
-					legacyKind = "Network"
-					unrelatedAPIVersion = "vmware.com/v1alpha1"
-					unrelatedKind = "VirtualNetwork"
-				case pkgcfg.NetworkProviderTypeNSXT:
-					legacyCapProvider = netopv1alpha1.NetworkProviderNSXTier1
-					legacyAPIVersion = "vmware.com/v1alpha1"
-					legacyKind = "VirtualNetwork"
-					unrelatedAPIVersion = "netoperator.vmware.com/v1alpha1"
-					unrelatedKind = "Network"
-				default:
-					Fail(fmt.Sprintf("unsupported legacyProviderType: %v", legacyProviderType))
-				}
+					switch legacyProviderType {
+					case pkgcfg.NetworkProviderTypeVDS:
+						legacyCapProvider = netopv1alpha1.NetworkProviderVSphereDistributed
+						legacyAPIVersion = "netoperator.vmware.com/v1alpha1"
+						legacyKind = "Network"
+						unrelatedAPIVersion = "vmware.com/v1alpha1"
+						unrelatedKind = "VirtualNetwork"
+					case pkgcfg.NetworkProviderTypeNSXT:
+						legacyCapProvider = netopv1alpha1.NetworkProviderNSXTier1
+						legacyAPIVersion = "vmware.com/v1alpha1"
+						legacyKind = "VirtualNetwork"
+						unrelatedAPIVersion = "netoperator.vmware.com/v1alpha1"
+						unrelatedKind = "Network"
+					default:
+						Fail(fmt.Sprintf("unsupported legacyProviderType: %v", legacyProviderType))
+					}
 
-				// Both switches must run before computing derived messages.
-				unrelatedAPIVersionMsg = fmt.Sprintf(
-					`spec.network.interfaces[0].network.apiVersion: Unsupported value: %q: supported values: %q, %q`,
-					unrelatedAPIVersion, primaryAPIVersion, legacyAPIVersion)
-				crossGroupKindMsg = fmt.Sprintf(
-					`spec.network.interfaces[0].network.kind: Unsupported value: %q: supported values: %q`,
-					primaryKind, legacyKind)
+					// Both switches must run before computing derived messages.
+					unrelatedAPIVersionMsg = fmt.Sprintf(
+						`spec.network.interfaces[0].network.apiVersion: Unsupported value: %q: supported values: %q, %q`,
+						unrelatedAPIVersion, primaryAPIVersion, legacyAPIVersion)
+					crossGroupKindMsg = fmt.Sprintf(
+						`spec.network.interfaces[0].network.kind: Unsupported value: %q: supported values: %q`,
+						primaryKind, legacyKind)
 
-				Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
+					Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "default",
 							Namespace: ctx.vm.Namespace,
@@ -3538,10 +3538,10 @@ func unitTestsValidateCreate() {
 					var err error
 					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 					Expect(err).ToNot(HaveOccurred())
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				doValidateWithMsg(unrelatedAPIVersionMsg)(response)
-			})
+					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+					Expect(response.Allowed).To(BeFalse())
+					doValidateWithMsg(unrelatedAPIVersionMsg)(response)
+				})
 
 				It("denies an interface whose group matches the legacy provider but whose kind belongs to the primary provider", func() {
 					// legacyAPIVersion group is valid, but primaryKind belongs to a
@@ -3564,9 +3564,9 @@ func unitTestsValidateCreate() {
 					var err error
 					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 					Expect(err).ToNot(HaveOccurred())
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				doValidateWithMsg(crossGroupKindMsg)(response)
+					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+					Expect(response.Allowed).To(BeFalse())
+					doValidateWithMsg(crossGroupKindMsg)(response)
 				})
 			},
 

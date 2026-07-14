@@ -35,6 +35,19 @@ type Bootstrap struct {
 	Sysprep    *Sysprep    `json:"sysprep,omitempty"`
 	VAppConfig *VAppConfig `json:"vAppConfig,omitempty"`
 	LinuxPrep  *LinuxPrep  `json:"linuxPrep,omitempty"`
+	ISO        *ISO        `json:"iso,omitempty"`
+}
+
+// ISO describes spec.bootstrap.iso (v1alpha6+).
+type ISO struct {
+	Commands []string   `json:"commands,omitempty"`
+	Assets   []ISOAsset `json:"assets,omitempty"`
+}
+
+// ISOAsset describes a single entry in spec.bootstrap.iso.assets.
+type ISOAsset struct {
+	Name string `json:"name,omitempty"`
+	Key  string `json:"key,omitempty"`
 }
 
 type Cdrom struct {

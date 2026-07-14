@@ -458,6 +458,17 @@ func restore_v1alpha6_VirtualMachineBootstrapDisabled(dst, src *vmopv1.VirtualMa
 	}
 }
 
+func restore_v1alpha6_VirtualMachineBootstrapISO(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if bs.ISO != nil {
+			if dst.Spec.Bootstrap == nil {
+				dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+			}
+			dst.Spec.Bootstrap.ISO = bs.ISO.DeepCopy()
+		}
+	}
+}
+
 func restore_v1alpha6_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
 }
@@ -516,6 +527,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha6_VirtualMachineBootstrapSysprep(dst, restored)
 	restore_v1alpha6_VirtualMachineBootstrapDisabled(dst, restored)
+	restore_v1alpha6_VirtualMachineBootstrapISO(dst, restored)
 	restore_v1alpha6_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha6_VirtualMachineBootOptions(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumes(dst, restored)

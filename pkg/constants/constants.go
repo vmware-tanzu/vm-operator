@@ -149,6 +149,21 @@ const (
 	// customization spec used to bootstrap a VM's guest information.
 	BootstrapHashCustomSpecAnnotationKey = "vmoperator.vmware.com/bootstrap-hash-customspec"
 
+	// BootstrapISOHashAnnotationKey is the annotation used to track the hash
+	// of the spec.bootstrap.iso used to send boot commands to a VM.
+	BootstrapISOHashAnnotationKey = "vmoperator.vmware.com/bootstrap-iso-hash"
+
+	// BootstrapISOStartedAtAnnotationKey records the RFC3339 timestamp at
+	// which boot commands were last sent for spec.bootstrap.iso. It is used
+	// to bound how long the ephemeral ISO bootstrap HTTP server is kept
+	// running before being torn down.
+	BootstrapISOStartedAtAnnotationKey = "vmoperator.vmware.com/bootstrap-iso-started-at"
+
+	// ISOBootstrapVMLabelKey labels the ephemeral Pod and Service created to
+	// serve spec.bootstrap.iso.assets with the name of the VirtualMachine
+	// they were created for.
+	ISOBootstrapVMLabelKey = "vmoperator.vmware.com/iso-bootstrap-vm"
+
 	// SkipDeletePlatformResourceKey is a privileged annotation that may be used
 	// to skip the deletion of a Kubernetes object's underlying platform
 	// resource. For example, when applied to a VM, deleting the VirtualMachine

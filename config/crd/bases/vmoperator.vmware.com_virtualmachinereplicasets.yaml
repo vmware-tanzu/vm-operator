@@ -8809,6 +8809,73 @@ spec:
                               even if a bootstrap provider such as CloudInit, LinuxPrep, Sysprep, or
                               VAppConfig is specified.
                             type: boolean
+                          iso:
+                            description: |-
+                              ISO may be used to automate the installation of a VM from an ISO image.
+
+                              Boot commands are sent via the virtual USB keyboard to the VM console
+                              immediately after power-on. User-supplied assets (kickstart files,
+                              autoinstall configs, Windows answer files, etc.) are served from an
+                              ephemeral HTTP server Pod on the Supervisor, reachable from the VM's
+                              workload network.
+
+                              This bootstrap provider may not be used in conjunction with the
+                              CloudInit, LinuxPrep, Sysprep, or VAppConfig bootstrap providers.
+                            properties:
+                              assets:
+                                description: |-
+                                  Assets is a list of references to keys in Secret resources in the same
+                                  namespace. Each referenced key's value is served as a file by an
+                                  ephemeral HTTP server that VM Operator creates and tears down for this
+                                  VM, reachable from the VM during installation.
+
+                                  The served URL path is /<secretName>/<key>. The address of the HTTP
+                                  server is available in Commands via the {{V1Alpha6_BootstrapService}}
+                                  template function.
+                                items:
+                                  description: |-
+                                    VirtualMachineBootstrapISOAsset references a single key in a Secret
+                                    resource that is served by the ephemeral bootstrap HTTP server.
+                                  properties:
+                                    key:
+                                      description: Key is the key within the Secret
+                                        whose value is the file content to serve.
+                                      minLength: 1
+                                      type: string
+                                    name:
+                                      description: Name is the name of the Secret
+                                        resource in the same namespace as the VM.
+                                      minLength: 1
+                                      type: string
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              commands:
+                                description: |-
+                                  Commands is an ordered list of boot commands sent to the VM via the
+                                  virtual USB keyboard immediately after power-on.
+
+                                  Each element may contain:
+                                    - Literal printable ASCII characters (typed one at a time).
+                                    - Special key tokens: <esc>, <enter>, <tab>, <bs>, <del>,
+                                      <spacebar>, <f1>-<f12>, <up>, <down>, <left>, <right>.
+                                    - Wait tokens: <wait> (1s), <wait5> (5s), <wait10> (10s), or an
+                                      arbitrary Go duration, e.g. <wait3m30s>.
+                                    - Modifier hold/release: <leftShiftOn>x<leftShiftOff>.
+                                    - Go text/template expressions evaluated against the VM's intended
+                                      network config.
+
+                                  The sum of all wait tokens across Commands may not exceed 120 seconds.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
                           linuxPrep:
                             description: |-
                               LinuxPrep may be used to bootstrap Linux guests.

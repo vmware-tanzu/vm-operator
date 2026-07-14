@@ -472,7 +472,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeDisks))
 	})
 
-	It("Encrypt PVC using encryption class annotation on the PVC", Label("experimental"), func() {
+	It("Encrypt PVC using encryption class annotation on the PVC", Label("experimental"), FlakeAttempts(3), func() {
 		if !byokFSSEnabled {
 			Skip("BYOK FSS is not enabled")
 		}

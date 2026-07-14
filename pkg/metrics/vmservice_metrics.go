@@ -5,6 +5,7 @@
 package metrics
 
 import (
+	"context"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -13,7 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 var (
@@ -73,42 +74,34 @@ func NewVMMetrics() *VMMetrics {
 	return vmMetrics
 }
 
-func (vmm *VMMetrics) RegisterVMCreateOrUpdateMetrics(vmCtx *pkgctx.VirtualMachineContext) {
-	vmm.registerVMStatusConditions(vmCtx)
-	vmm.registerVMStatusCreationPhase(vmCtx)
-	vmm.registerVMPowerState(vmCtx)
-	vmm.registerVMStatusIP(vmCtx)
+func (vmm *VMMetrics) RegisterVMCreateOrUpdateMetrics(ctx context.Context, vm *vmopv1.VirtualMachine) {
+	vmm.registerVMStatusConditions(ctx, vm)
+	vmm.registerVMStatusCreationPhase(ctx, vm)
+	vmm.registerVMPowerState(ctx, vm)
+	vmm.registerVMStatusIP(ctx, vm)
 }
 
 // DeleteMetrics deletes metrics for a specific VM post deletion reconcile.
 // It is critical to stop reporting metrics for a deleted VM resource.
-func (vmm *VMMetrics) DeleteMetrics(vmCtx *pkgctx.VirtualMachineContext) {
-	vm := vmCtx.VM
-	vmCtx.Logger.V(5).Info("Deleting metrics for VM")
+func (vmm *VMMetrics) DeleteMetrics(ctx context.Context, name, namespace string) {
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("Deleting metrics for VM")
 
 	labels := prometheus.Labels{
-		vmNameLabel:      vm.Name,
-		vmNamespaceLabel: vm.Namespace,
+		vmNameLabel:      name,
+		vmNamespaceLabel: namespace,
 	}
 
-	// Delete the 'vm.status.condition' metrics.
 	vmm.statusConditionStatus.DeletePartialMatch(labels)
-
-	// Delete the 'vm.status.phase' metrics.
 	vmm.statusPhase.DeletePartialMatch(labels)
-
-	// Delete the 'vm.spec.powerState' metrics.
 	vmm.powerState.DeletePartialMatch(labels)
-
-	// Delete the 'vm.status.ip' metrics.
 	vmm.statusIP.DeletePartialMatch(labels)
 }
 
-func (vmm *VMMetrics) registerVMStatusConditions(vmCtx *pkgctx.VirtualMachineContext) {
-	vm := vmCtx.VM
-	vmCtx.Logger.V(5).Info("Adding metrics for VM condition")
+func (vmm *VMMetrics) registerVMStatusConditions(ctx context.Context, vm *vmopv1.VirtualMachine) {
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("Adding metrics for VM condition")
 
-	// Delete the previous metrics to address any VM condition reason update.
 	labels := prometheus.Labels{
 		vmNameLabel:      vm.Name,
 		vmNamespaceLabel: vm.Namespace,
@@ -122,25 +115,14 @@ func (vmm *VMMetrics) registerVMStatusConditions(vmCtx *pkgctx.VirtualMachineCon
 			conditionTypeLabel:   condition.Type,
 			conditionReasonLabel: condition.Reason,
 		}
-		vmm.statusConditionStatus.With(labels).Set(func() float64 {
-			switch condition.Status {
-			case metav1.ConditionTrue:
-				return 1
-			case metav1.ConditionFalse:
-				return 0
-			case metav1.ConditionUnknown:
-				return -1
-			}
-			return -1
-		}())
+		vmm.statusConditionStatus.With(labels).Set(conditionStatusToFloat(condition.Status))
 	}
 }
 
-func (vmm *VMMetrics) registerVMStatusCreationPhase(vmCtx *pkgctx.VirtualMachineContext) {
-	vmCtx.Logger.V(5).Info("Adding metrics for VM status creation phase")
-	vm := vmCtx.VM
+func (vmm *VMMetrics) registerVMStatusCreationPhase(ctx context.Context, vm *vmopv1.VirtualMachine) {
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("Adding metrics for VM status creation phase")
 
-	// Delete the previous metrics to address any VM status phase update.
 	labels := prometheus.Labels{
 		vmNameLabel:      vm.Name,
 		vmNamespaceLabel: vm.Namespace,
@@ -150,7 +132,7 @@ func (vmm *VMMetrics) registerVMStatusCreationPhase(vmCtx *pkgctx.VirtualMachine
 	var phase string
 	// v1a2 dropped the Phase field. In practice, the only Phase we'd typically see is
 	// Created & Creating so use the created condition to determine that.
-	if c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionCreated); c != nil {
+	if c := conditions.Get(vm, vmopv1.VirtualMachineConditionCreated); c != nil {
 		switch c.Status {
 		case metav1.ConditionTrue:
 			phase = "Created"
@@ -169,11 +151,10 @@ func (vmm *VMMetrics) registerVMStatusCreationPhase(vmCtx *pkgctx.VirtualMachine
 	vmm.statusPhase.With(newLabels).Set(1)
 }
 
-func (vmm *VMMetrics) registerVMPowerState(vmCtx *pkgctx.VirtualMachineContext) {
-	vm := vmCtx.VM
-	vmCtx.Logger.V(5).Info("Adding metrics for VM power state")
+func (vmm *VMMetrics) registerVMPowerState(ctx context.Context, vm *vmopv1.VirtualMachine) {
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("Adding metrics for VM power state")
 
-	// Delete the existing power state metrics to address any VM's power state change.
 	labels := prometheus.Labels{
 		vmNameLabel:      vm.Name,
 		vmNamespaceLabel: vm.Namespace,
@@ -189,9 +170,9 @@ func (vmm *VMMetrics) registerVMPowerState(vmCtx *pkgctx.VirtualMachineContext) 
 	vmm.powerState.With(newLabels).Set(1)
 }
 
-func (vmm *VMMetrics) registerVMStatusIP(vmCtx *pkgctx.VirtualMachineContext) {
-	vm := vmCtx.VM
-	vmCtx.Logger.V(5).Info("Adding metrics for VM IP address assignment status")
+func (vmm *VMMetrics) registerVMStatusIP(ctx context.Context, vm *vmopv1.VirtualMachine) {
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(5).Info("Adding metrics for VM IP address assignment status")
 
 	labels := prometheus.Labels{
 		vmNameLabel:      vm.Name,
@@ -209,4 +190,15 @@ func (vmm *VMMetrics) registerVMStatusIP(vmCtx *pkgctx.VirtualMachineContext) {
 		}
 		return 1
 	}())
+}
+
+func conditionStatusToFloat(status metav1.ConditionStatus) float64 {
+	switch status {
+	case metav1.ConditionTrue:
+		return 1
+	case metav1.ConditionFalse:
+		return 0
+	default:
+		return -1
+	}
 }

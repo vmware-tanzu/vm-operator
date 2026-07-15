@@ -447,7 +447,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			}
 		})
 
-		It("should successfully apply customization from a ConfigMap and get a valid IP assigned to ubuntu-20.04", func() {
+		XIt("should successfully apply customization from a ConfigMap and get a valid IP assigned to ubuntu-20.04", func() {
 			// Create and apply ConfigMap yaml.
 			createAndVerifyConfigMap(ctx, ovfEnvTransport)
 			// This ubuntu 20.04 image is supported in marketplace

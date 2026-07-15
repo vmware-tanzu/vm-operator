@@ -81,25 +81,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		return err
 	}
 
-	// Set up field index for VirtualMachine by ClaimName to efficiently query VMs
-	// referencing a PVC.
-	if err := mgr.GetFieldIndexer().IndexField(
-		ctx,
-		&vmopv1.VirtualMachine{},
-		"spec.volumes.persistentVolumeClaim.claimName",
-		func(rawObj client.Object) []string {
-			vm := rawObj.(*vmopv1.VirtualMachine)
-			pvcs := make([]string, 0, len(vm.Spec.Volumes))
-			for _, volume := range vm.Spec.Volumes {
-				if pvc := volume.PersistentVolumeClaim; pvc != nil && pvc.ClaimName != "" {
-					pvcs = append(pvcs, pvc.ClaimName)
-				}
-			}
-			return pvcs
-		}); err != nil {
-		return err
-	}
-
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),

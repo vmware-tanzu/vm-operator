@@ -517,6 +517,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 		Context("Requested Capacity Estimation", Ordered, func() {
 			var (
 				inventoryFolderName string
+				inventoryCLName     string
 				inventoryFolder     *object.Folder
 				inventoryCL         *imgregv1a2.ContentLibrary
 			)
@@ -543,9 +544,10 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				_, inventoryFolder = createLibraryFolder(ctx, finder, inventoryFolderName)
 
 				By("Creating an inventory content library", func() {
-					inventoryCL = createInventoryContentLibraryCR(ctx, svClusterClient, imgregv1a2.ResourceNamingStrategyPreferItemSourceID, input.WCPNamespaceName, targetContentLibraryName, inventoryFolder.Reference().Value, true, true)
+					inventoryCLName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "quota-cl", capiutil.RandomString(4))
+					inventoryCL = createInventoryContentLibraryCR(ctx, svClusterClient, imgregv1a2.ResourceNamingStrategyPreferItemSourceID, input.WCPNamespaceName, inventoryCLName, inventoryFolder.Reference().Value, true, true)
 					// Validate CL itself exists and reconciled.
-					validateContentLibraryV2(ctx, svClusterClient, inventoryCL, inventoryFolder, targetContentLibraryName, input.WCPNamespaceName, "")
+					validateContentLibraryV2(ctx, svClusterClient, inventoryCL, inventoryFolder, inventoryCLName, input.WCPNamespaceName, "")
 				})
 			})
 

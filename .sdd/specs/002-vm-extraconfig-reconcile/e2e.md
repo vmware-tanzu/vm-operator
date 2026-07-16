@@ -16,7 +16,7 @@ grouped by the capability each one guards.
 ## Suite
 
 - `VMExtraConfigSpec`, in `test/e2e/vmservice/vmservice/virtualmachine/vm_extraconfig.go`, registered from `test/e2e/vmservice/vmservice_test.go` under a `Context("VM-EXTRACONFIG", ...)` block.
-- Every scenario carries `Label("extraconfig", ...)` plus either `"core-functional"` or `"extended-functional"` — the latter for scenarios that need direct `govmomi` access to vSphere (out-of-band power-off, out-of-band destroy) and are more disruptive to the test VM's lifecycle.
+- Every scenario carries either `"core-functional"` or `"extended-functional"` — the latter for scenarios that need direct `govmomi` access to vSphere (out-of-band power-off, out-of-band destroy) and are more disruptive to the test VM's lifecycle. Every scenario also carries `"experimental"` per `e2e-testing.md`, to be dropped once verified on a real Supervisor (see `tasks.md` T016).
 - The suite requires one new wait-interval key in `test/e2e/vmservice/config/wcp.yaml`: `default/wait-vm-extraconfig-synced` (5m/10s), used for every wait on the `ExtraConfigSynced` condition. Power-state transitions reuse the existing `default/wait-virtual-machine-powerstate` key (via `vmoperator.WaitForVirtualMachinePowerState`/`UpdateVirtualMachinePowerState`) — do not add a second, extraconfig-specific power-state interval; those helpers hardcode the shared key and are used by many other suites.
 - The suite requires a capability constant in `test/e2e/vmservice/consts/consts.go`: `TelcoVMServiceAPICapabilityName = "supports_telco_vm_service_api"`.
 - Each scenario MUST create its own VM and clean it up independently (`DeferCleanup`), so every `It` block is independently runnable via `TEST_FOCUS`/`LABEL_FILTER`.
@@ -63,7 +63,7 @@ The suite MUST skip entirely when the `supports_telco_vm_service_api` Supervisor
 
 | Scenario | Verifies |
 |----------|----------|
-| re-applies all extraConfig keys when the VM is deleted via Kubernetes and recreated with an identical spec | First-class fields and bag keys are fully re-applied from spec on the recreated VM — no key is silently skipped because it was already applied to the previous underlying vSphere VM |
+| re-applies all extraConfig keys when the VM object is deleted through the Kubernetes API (normal finalizer-driven vSphere teardown — contrast with the out-of-band vSphere deletion below) and recreated with an identical spec | First-class fields and bag keys are fully re-applied from spec on the recreated VM — no key is silently skipped because it was already applied to the previous underlying vSphere VM |
 | resolves `PowerCyclePending` after an out-of-band vSphere power-off | Powering the VM off directly via `govmomi` (bypassing VM Operator) is detected, the pending PowerCycle-mode change applies while the VM is off, `ExtraConfigSynced` reaches `True`, and the operator's normal drift recovery restores `spec.powerState`'s desired `PoweredOn` state afterward — with extraConfig still intact post-recovery |
 | re-applies extraConfig after the vSphere VM is destroyed out-of-band | Destroying the underlying vSphere VM directly (the Kubernetes object survives) and then toggling `spec.powerState` to `PoweredOn` MUST cause the operator to recreate the VM (`status.uniqueID` changes) and re-apply every first-class/bag key from spec on the new VM — not silently leave the object orphaned or extraConfig-less |
 

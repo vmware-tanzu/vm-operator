@@ -912,7 +912,7 @@ The above data does _not_ represent the _observed_ network configuration of the 
 
 VM advanced settings can be configured using optional fields under `spec.advanced`. For adapter-specific VMX keys, use the per-interface `spec.network.interfaces[]` fields along with their respective `advancedProperties`. The `spec.advanced.extraConfig` field should be reserved exclusively for VM-wide keys that lack a first-class field below.
 
-| Field | Description | Mode |
+| Field | Description | Change applies on |
 |-------|-------------|:----:|
 | `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. | _NA_ |
 | `defaultVolumeProvisioningMode` | Default provisioning mode for PVCs owned by this VM. | _NA_ |
@@ -925,7 +925,7 @@ VM advanced settings can be configured using optional fields under `spec.advance
 | `pnumaNodeAffinity` | Pin the VM to listed physical host NUMA node IDs (distinct from per-NIC `vnumaNodeID`). | PowerCycle |
 | `extraConfig` | Fallback list of VM-wide VMX key/value pairs not modeled above. Keys that duplicate a first-class field, or that match a reserved key or the `vmservice.`/`guestinfo.` prefixes, are rejected by the admission webhook. | _NA_* |
 
-The `Mode` column reflects how a change to that field is applied when the VM is already powered on:
+The `Change applies on` column reflects how a change to that field is applied when the VM is already powered on:
 
 * **PowerCycle** — the new value is written immediately, but the change is not considered fully synced until the VM is next power-cycled (powered off, then on).
 * **PowerOff** — the change cannot be applied while the VM is powered on; it is deferred until the VM is powered off, at which point it is applied.

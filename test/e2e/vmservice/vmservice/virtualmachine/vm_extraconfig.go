@@ -15,9 +15,9 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -27,8 +27,8 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
-	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
+	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
@@ -38,11 +38,11 @@ import (
 
 // VMX key names for first-class advanced fields (mirrors the vmx struct tags).
 const (
-	vmxPreferHT       = "numa.vcpu.preferHT"
-	vmxHugePages      = "sched.mem.lpage.enable1GPage"
-	vmxTimeTracker    = "timeTracker.lowLatency"
-	vmxCPUAffinity    = "sched.cpu.affinity.exclusiveNoStats"
-	vmxVMXSwap        = "sched.swap.vmxSwapEnabled"
+	vmxPreferHT          = "numa.vcpu.preferHT"
+	vmxHugePages         = "sched.mem.lpage.enable1GPage"
+	vmxTimeTracker       = "timeTracker.lowLatency"
+	vmxCPUAffinity       = "sched.cpu.affinity.exclusiveNoStats"
+	vmxVMXSwap           = "sched.swap.vmxSwapEnabled"
 	vmxPNUMANodeAffinity = "numa.nodeAffinity"
 )
 
@@ -139,15 +139,19 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// ExtraConfigSynced=True, then exercises bag key CRUD and verifies status.extraConfig
 	// reflects the changes.
 	It("creates VM with first-class fields and bag keys, syncs immediately, reflects bag key CRUD",
-		Label("extraconfig", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-core-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
 			By("Creating VM with PowerCycle first-class fields and two bag keys")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass,
-				&vmopv1.VirtualMachineAdvancedSpec{
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					PreferHTEnabled:                    ptr.To(true),
 					TimeTrackerLowLatencyEnabled:       ptr.To(true),
 					CPUAffinityExclusiveNoStatsEnabled: ptr.To(false),
@@ -156,11 +160,13 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 						{Key: "custom.test.foo", Value: "bar"},
 						{Key: "custom.test.baz", Value: "qux"},
 					},
-				})
+				},
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
@@ -188,15 +194,15 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 
 			// Phase 2: bag key CRUD.
 			By("Patching spec: add new bag key, update existing value, omit one to trigger deletion")
-			Eventually(func(g Gomega) {
-				g.Expect(svClusterClient.Get(ctx, vmKey, vm)).To(Succeed())
-				vm.Spec.Advanced.ExtraConfig = []vmopv1common.KeyValuePair{
-					{Key: "custom.test.foo", Value: "updated"},
-					{Key: "custom.test.new", Value: "newval"},
-				}
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed(),
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.Advanced.ExtraConfig = []vmopv1common.KeyValuePair{
+				{Key: "custom.test.foo", Value: "updated"},
+				{Key: "custom.test.new", Value: "newval"},
+			}
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
 				"failed to patch VM %s bag keys", vmName)
+			vm = vmPatch
 
 			By("Waiting for status.extraConfig to reflect the bag key changes")
 			Eventually(func(g Gomega) {
@@ -212,37 +218,46 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// Flips a PowerCycle-mode field on a running VM, verifies PowerCyclePending,
 	// then power-cycles to apply and verifies the new value.
 	It("marks PowerCyclePending when a PowerCycle-mode field changes while VM is powered on",
-		Label("extraconfig", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-pc-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
 			By("Creating VM with PowerCycle first-class fields")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass,
-				&vmopv1.VirtualMachineAdvancedSpec{
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					PreferHTEnabled:                    ptr.To(true),
 					TimeTrackerLowLatencyEnabled:       ptr.To(true),
 					CPUAffinityExclusiveNoStatsEnabled: ptr.To(false),
 					VMXSwapEnabled:                     ptr.To(true),
-				})
+				},
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+			vmoperator.WaitForVirtualMachinePowerState(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 
 			By("Flipping VMXSwapEnabled=false (PowerCycle-mode field) while VM is powered on")
-			Eventually(func(g Gomega) {
-				g.Expect(svClusterClient.Get(ctx, vmKey, vm)).To(Succeed())
-				vm.Spec.Advanced.VMXSwapEnabled = ptr.To(false)
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed())
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.Advanced.VMXSwapEnabled = ptr.To(false)
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s VMXSwapEnabled", vmName)
+			vm = vmPatch
 
 			By("Waiting for ExtraConfigSynced=False/PowerCyclePending")
 			cond := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
@@ -276,15 +291,19 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// that the key is absent from status while deferred, then powers off and verifies
 	// all keys applied.
 	It("defers a PowerOff-mode field while VM is powered on, applies it after power-off",
-		Label("extraconfig", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-po-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
 			By("Creating VM with first-class fields and one bag key")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass,
-				&vmopv1.VirtualMachineAdvancedSpec{
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					PreferHTEnabled:                    ptr.To(true),
 					TimeTrackerLowLatencyEnabled:       ptr.To(true),
 					CPUAffinityExclusiveNoStatsEnabled: ptr.To(false),
@@ -292,24 +311,29 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					ExtraConfig: []vmopv1common.KeyValuePair{
 						{Key: "custom.test.foo", Value: "bar"},
 					},
-				})
+				},
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+			vmoperator.WaitForVirtualMachinePowerState(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 
 			By("Adding HugePages1GEnabled=true (PowerOff-mode) while VM is powered on")
-			Eventually(func(g Gomega) {
-				g.Expect(svClusterClient.Get(ctx, vmKey, vm)).To(Succeed())
-				vm.Spec.Advanced.HugePages1GEnabled = ptr.To(true)
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed())
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.Advanced.HugePages1GEnabled = ptr.To(true)
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s HugePages1GEnabled", vmName)
+			vm = vmPatch
 
 			By("Waiting for ExtraConfigSynced=False/PowerOffRequired")
 			cond := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
@@ -346,7 +370,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// Deletes a VM via the Kubernetes API and recreates it with an identical spec,
 	// verifying that the operator re-applies all extraConfig keys from scratch.
 	It("re-applies all extraConfig keys when VM is deleted via Kubernetes and recreated",
-		Label("extraconfig", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-recreate-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
@@ -363,8 +387,14 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			}
 
 			By("Creating VM with first-class fields and bag keys")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass, advanced)
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced:     advanced,
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
@@ -378,15 +408,23 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 
 			By("Deleting VM via Kubernetes API")
-			deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+			vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 
 			By("Recreating VM with identical spec")
-			vm = buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass, advanced)
+			vm = buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced:     advanced,
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to recreate VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
@@ -410,24 +448,30 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// through vSphere directly. Verifies that the operator detects the power-off,
 	// applies the pending change, and restores the VM to PoweredOn.
 	It("resolves PowerCyclePending after an out-of-band vSphere power-off",
-		Label("extraconfig", "extended-functional"), func() {
+		Label("extended-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-oob-off-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
 			By("Creating VM with first-class fields, all synced")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass,
-				&vmopv1.VirtualMachineAdvancedSpec{
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					PreferHTEnabled:                    ptr.To(true),
 					TimeTrackerLowLatencyEnabled:       ptr.To(true),
 					CPUAffinityExclusiveNoStatsEnabled: ptr.To(false),
 					VMXSwapEnabled:                     ptr.To(true),
-				})
+				},
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
@@ -436,11 +480,12 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			By("Flipping PreferHTEnabled=false (PowerCycle-mode) to create PowerCyclePending")
-			Eventually(func(g Gomega) {
-				g.Expect(svClusterClient.Get(ctx, vmKey, vm)).To(Succeed())
-				vm.Spec.Advanced.PreferHTEnabled = ptr.To(false)
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed())
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.Advanced.PreferHTEnabled = ptr.To(false)
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PreferHTEnabled", vmName)
+			vm = vmPatch
 
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
 				metav1.ConditionFalse, extraConfigReasonPowerCyclePending)
@@ -477,15 +522,19 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// that the operator detects the orphaned K8s object, recreates the VM in vSphere,
 	// and re-applies all extraConfig keys from the spec.
 	It("re-applies extraConfig after the vSphere VM is destroyed out-of-band",
-		Label("extraconfig", "extended-functional"), func() {
+		Label("extended-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-oob-del-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
 			By("Creating VM with first-class fields and a bag key")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass,
-				&vmopv1.VirtualMachineAdvancedSpec{
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					PreferHTEnabled:                    ptr.To(true),
 					TimeTrackerLowLatencyEnabled:       ptr.To(true),
 					CPUAffinityExclusiveNoStatsEnabled: ptr.To(false),
@@ -493,11 +542,13 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					ExtraConfig: []vmopv1common.KeyValuePair{
 						{Key: "custom.test.foo", Value: "bar"},
 					},
-				})
+				},
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
@@ -532,11 +583,12 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			Expect(destroyTask.Wait(ctx)).To(Succeed(), "vSphere VM destroy task failed")
 
 			By("Setting spec.powerState=PoweredOn so the operator powers on the recreated VM")
-			Eventually(func(g Gomega) {
-				g.Expect(svClusterClient.Get(ctx, vmKey, vm)).To(Succeed())
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed())
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s spec.powerState", vmName)
+			vm = vmPatch
 
 			By("Waiting for operator to recreate the VM (UniqueID change proves a new vSphere VM)")
 			Eventually(func(g Gomega) {
@@ -565,21 +617,27 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// is encoded correctly as a comma-separated string, triggers PowerCyclePending
 	// when changed while the VM is running, and resolves after a power cycle.
 	It("handles PNUMANodeAffinity ([]int32 field): syncs, marks PowerCyclePending on change, resolves after power-off",
-		Label("extraconfig", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-pnuma-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
 			By("Creating VM with PNUMANodeAffinity pinned to NUMA node 0")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass,
-				&vmopv1.VirtualMachineAdvancedSpec{
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					PNUMANodeAffinity: []int32{0},
-				})
+				},
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
@@ -593,11 +651,12 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				"expected %s=0 in status", vmxPNUMANodeAffinity)
 
 			By("Clearing PNUMANodeAffinity (nil) while VM is powered on — should mark PowerCyclePending")
-			Eventually(func(g Gomega) {
-				g.Expect(svClusterClient.Get(ctx, vmKey, vm)).To(Succeed())
-				vm.Spec.Advanced.PNUMANodeAffinity = nil
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed())
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.Advanced.PNUMANodeAffinity = nil
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PNUMANodeAffinity", vmName)
+			vm = vmPatch
 
 			By("Waiting for ExtraConfigSynced=False/PowerCyclePending")
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
@@ -624,7 +683,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// ExtraConfigSynced reaches True even while SvMotion may be in flight,
 	// catching ordering or resource-conflict bugs between the two reconcilers.
 	It("applies extraConfig correctly while disk promotion runs (default PromoteDisksMode=Online)",
-		Label("extraconfig", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-promo-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
@@ -658,7 +717,8 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
@@ -681,21 +741,27 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 	// both change simultaneously on a running VM, PowerOffRequired must take
 	// priority over PowerCyclePending in the ExtraConfigSynced condition.
 	It("PowerOffRequired takes priority over PowerCyclePending when both key types change simultaneously",
-		Label("extraconfig", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 
 			vmName := fmt.Sprintf("%s-prio-%s", specName, capiutil.RandomString(4))
 			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
 			By("Creating VM with VMXSwapEnabled=true, no HugePages")
-			vm := buildExtraConfigVM(
-				vmName, input.WCPNamespaceName, vmClassName, linuxVMIName, storageClass,
-				&vmopv1.VirtualMachineAdvancedSpec{
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					VMXSwapEnabled: ptr.To(true),
-				})
+				},
+			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
 			DeferCleanup(func() {
 				if !input.SkipCleanup {
-					deleteExtraConfigVM(ctx, svClusterClient, config, vmKey)
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
 				}
 			})
 
@@ -704,12 +770,13 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			By("Simultaneously adding HugePages1GEnabled=true (PowerOff) and flipping VMXSwapEnabled=false (PowerCycle)")
-			Eventually(func(g Gomega) {
-				g.Expect(svClusterClient.Get(ctx, vmKey, vm)).To(Succeed())
-				vm.Spec.Advanced.HugePages1GEnabled = ptr.To(true)
-				vm.Spec.Advanced.VMXSwapEnabled = ptr.To(false)
-				g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
-			}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed())
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.Advanced.HugePages1GEnabled = ptr.To(true)
+			vmPatch.Spec.Advanced.VMXSwapEnabled = ptr.To(false)
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s HugePages1GEnabled/VMXSwapEnabled", vmName)
+			vm = vmPatch
 
 			By("Asserting ExtraConfigSynced=False/PowerOffRequired (PowerOff takes priority)")
 			cond := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
@@ -722,30 +789,39 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+// buildExtraConfigVMOpts holds the parameters for buildExtraConfigVM. Using a
+// struct instead of a long positional parameter list means adding an optional
+// field later won't require touching every call site.
+type buildExtraConfigVMOpts struct {
+	Name         string
+	Namespace    string
+	ClassName    string
+	ImageName    string
+	StorageClass string
+	Advanced     *vmopv1.VirtualMachineAdvancedSpec
+}
+
 // buildExtraConfigVM constructs a v1alpha6 VirtualMachine with the given advanced spec.
 // Bootstrap is disabled to avoid cloud-init customization delays.
-func buildExtraConfigVM(
-	name, namespace, className, imageName, storageClass string,
-	advanced *vmopv1.VirtualMachineAdvancedSpec,
-) *vmopv1.VirtualMachine {
+func buildExtraConfigVM(opts buildExtraConfigVMOpts) *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      opts.Name,
+			Namespace: opts.Namespace,
 			Labels: map[string]string{
 				"e2e.vmoperator.vmware.com/extraconfig-test": "true",
 			},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
-			ClassName:        className,
-			ImageName:        imageName,
-			StorageClass:     storageClass,
+			ClassName:        opts.ClassName,
+			ImageName:        opts.ImageName,
+			StorageClass:     opts.StorageClass,
 			PowerState:       vmopv1.VirtualMachinePowerStateOn,
 			PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
 			Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 				Disabled: true,
 			},
-			Advanced: advanced,
+			Advanced: opts.Advanced,
 		},
 	}
 }
@@ -819,25 +895,6 @@ func getExtraConfigVM(ctx context.Context, client ctrlclient.Client, key types.N
 	vm := &vmopv1.VirtualMachine{}
 	Expect(client.Get(ctx, key, vm)).To(Succeed(), "failed to get VM %s", key)
 	return vm
-}
-
-// deleteExtraConfigVM deletes the VM and waits for it to be fully removed from Kubernetes.
-func deleteExtraConfigVM(
-	ctx context.Context,
-	client ctrlclient.Client,
-	config *e2eConfig.E2EConfig,
-	key types.NamespacedName,
-) {
-	vm := &vmopv1.VirtualMachine{}
-	if err := client.Get(ctx, key, vm); err != nil {
-		e2eframework.Logf("VM %s not found during cleanup (may already be deleted): %v", key, err)
-		return
-	}
-	if err := client.Delete(ctx, vm); err != nil {
-		e2eframework.Logf("failed to delete VM %s: %v", key, err)
-		return
-	}
-	vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, client, key.Namespace, key.Name)
 }
 
 // waitForBiosUUID polls until vm.Status.BiosUUID is non-empty and returns it.

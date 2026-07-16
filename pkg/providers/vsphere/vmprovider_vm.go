@@ -944,6 +944,7 @@ var VMUpdatePropertiesSelector = []string{
 	"runtime",
 	"snapshot",
 	"summary",
+	"parent",
 }
 
 func getReconcileErr(msg string, reconcileErr, err error) error {
@@ -964,11 +965,11 @@ func errOrReconcileErr(reconcileErr, err error) error {
 // updateVirtualMachine performs the following operations in the stated order:
 //
 //  1. Fetch properties
-//  2. Reconcile location
-//  3. Fetch recent tasks
-//  4. Fetch attached tags
-//  5. Fetch volume info
-//  6. Reconcile status
+//  2. Fetch recent tasks
+//  3. Fetch attached tags
+//  4. Fetch volume info
+//  5. Reconcile status
+//  6. Reconcile location
 //  7. Reconcile schema upgrade
 //  8. Reconcile backup state
 //  9. Reconcile snapshot revert
@@ -997,17 +998,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 2. Reconcile location
-	//
-	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
-		if pkgerr.IsNoRequeueError(err) {
-			return errOrReconcileErr(reconcileErr, err)
-		}
-		reconcileErr = getReconcileErr("location", reconcileErr, err)
-	}
-
-	//
-	// 3. Get the recent tasks.
+	// 2. Get the recent tasks.
 	//
 	ctxWithRecentTaskInfo, err := vs.getRecentTaskInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1016,7 +1007,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
-	// 4. Get the attached tags.
+	// 3. Get the attached tags.
 	//
 	ctxWithAttachedTags, err := vs.getTags(vmCtx, vcClient)
 	if err != nil {
@@ -1025,7 +1016,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithAttachedTags
 
 	//
-	// 5. Get the volume info.
+	// 4. Get the volume info.
 	//
 	ctxWithVolumeInfo, err := vs.getVolumeInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1034,13 +1025,23 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithVolumeInfo
 
 	//
-	// 6. Reconcile status
+	// 5. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
 			return errOrReconcileErr(reconcileErr, err)
 		}
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
+	}
+
+	//
+	// 6. Reconcile location
+	//
+	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("location", reconcileErr, err)
 	}
 
 	//
@@ -1134,21 +1135,27 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	return reconcileErr
 }
 
+// reconcileLocation validates that the VM is within its expected namespace
+// ResourcePool and Folder hierarchy. If the VM is found outside this hierarchy,
+// all further reconciliation is blocked until the VM is returned to the correct
+// location. This prevents unintended changes to VMs that have been manually
+// moved in the vCenter inventory.
 func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContext, vcClient *vcclient.Client) error {
-	logger := pkglog.FromContextOrDefault(vmCtx)
+	vmCtx.Logger.V(4).Info("Reconciling VirtualMachine location")
 	if vmCtx.MoVM.ResourcePool == nil {
-		return fmt.Errorf("VM %s is not assigned to any resource pools", vmCtx.VM.Name)
+		return fmt.Errorf("VM is not assigned to any resource pools")
+	}
+	if vmCtx.MoVM.Parent == nil {
+		return fmt.Errorf("VM has no parent folder")
 	}
 
-	// If the VM doesn't have a topology zone label, skip location validation.
-	// This can happen in unit tests or when the zone is being determined.
-	// Similar to how vmlifecycle/update_status.go handles missing zone labels.
-	zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]
+	zoneName := vmCtx.VM.Status.Zone
 	if zoneName == "" {
+		vmCtx.Logger.Info("VM has no zone set; skipping location validation")
 		return nil
 	}
 
-	_, expectedRootRPMoID, err := topology.GetNamespaceFolderAndRPMoID(
+	expectedFolder, expectedRootRPMoID, err := topology.GetNamespaceFolderAndRPMoID(
 		vmCtx,
 		vs.k8sClient,
 		zoneName,
@@ -1158,35 +1165,103 @@ func (vs *vSphereVMProvider) reconcileLocation(vmCtx pkgctx.VirtualMachineContex
 		return fmt.Errorf("failed to get expected namespace resource pool: %w", err)
 	}
 
-	// Check if the VM is in the Root RP or a Child RP
-	isValid, err := vcenter.IsVMInValidResourcePool(
-		vmCtx,
-		vcClient.VimClient(),
-		vmCtx.MoVM.ResourcePool.Value,
-		expectedRootRPMoID,
-	)
+	isVMInValidRP, err := validateVMResourcePool(vmCtx, expectedRootRPMoID, vcClient)
 	if err != nil {
-		logger.Error(err, "failed to validate VM resource pool")
-		return err
+		return fmt.Errorf("failed to validate VM resource pool: %w", err)
+	}
+	isVMInValidFolder, err := validateVMFolder(vmCtx, expectedFolder, vcClient)
+	if err != nil {
+		return fmt.Errorf("failed to validate VM folder: %w", err)
 	}
 
-	// Handle Mismatch
-	if !isValid {
+	// If the VM is outside its expected RP or Folder hierarchy, block all further
+	// reconciliation by returning a NoRequeueError. The VM will not be reconciled
+	// again until its inventory location changes.
+	if !isVMInValidRP || !isVMInValidFolder {
+		var reason string
+		switch {
+		case !isVMInValidRP && !isVMInValidFolder:
+			reason = "ResourcePoolAndFolderMismatch"
+		case !isVMInValidRP:
+			reason = "ResourcePoolMismatch"
+		default:
+			reason = "FolderMismatch"
+		}
 		pkgcond.MarkFalse(
 			vmCtx.VM,
-			vmopv1.VirtualMachineInValidLocation,
-			"LocationMismatch",
-			"VM is in an invalid Resource Pool. Move the VM back to the Resource Pool hierarchy for namespace %s to resume reconciliation.",
-			vmCtx.VM.Namespace,
+			vmopv1.VirtualMachineLocationValid,
+			reason,
+			"VM was moved to an unexpected ResourcePool or Folder",
 		)
 
 		return pkgerr.NoRequeueError{Message: fmt.Sprintf(
-			"reconciliation paused for the VM %s because it is moved to invalid Resource Pool. Expected Resource Pool MoRef: %s, Current Resource Pool MoRef: %s",
-			vmCtx.VM.Name, expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value)}
+			"VM %s/%s relocated outside expected hierarchy: "+
+				"expected RP %s got %s, expected folder %s got %s",
+			vmCtx.VM.Namespace, vmCtx.VM.Name,
+			expectedRootRPMoID, vmCtx.MoVM.ResourcePool.Value,
+			expectedFolder, vmCtx.MoVM.Parent.Value,
+		)}
 	}
 
-	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineInValidLocation)
+	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineLocationValid)
 	return nil
+}
+
+// validateVMResourcePool checks that the VM resides within the expected
+// namespace ResourcePool hierarchy. It accepts the VM being directly in the
+// namespace RP or in an immediate child RP (e.g. a VKS workload pool). Only
+// one level of depth is validated: deeper nesting is not a supported
+// configuration and would not be detected as valid here.
+func validateVMResourcePool(
+	vmCtx pkgctx.VirtualMachineContext,
+	expectedRootRPMoID string,
+	vcClient *vcclient.Client) (bool, error) {
+
+	if vmCtx.MoVM.ResourcePool.Value == expectedRootRPMoID {
+		return true, nil
+	}
+
+	moPool, err := vcenter.GetResourcePoolProperties(
+		vmCtx,
+		vcClient.VimClient(),
+		vmCtx.MoVM.ResourcePool.Value,
+	)
+	if err != nil {
+		return false, err
+	}
+	if moPool.Parent != nil && moPool.Parent.Value == expectedRootRPMoID {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// validateVMFolder checks that the VM resides within the expected namespace
+// Folder hierarchy. It accepts the VM being directly in the namespace Folder
+// or in an immediate child Folder (e.g. a VKS workload folder). Only one
+// level of depth is validated: deeper nesting is not a supported configuration
+// and would not be detected as valid here.
+func validateVMFolder(
+	vmCtx pkgctx.VirtualMachineContext,
+	expectedFolder string,
+	vcClient *vcclient.Client) (bool, error) {
+
+	if vmCtx.MoVM.Parent.Value == expectedFolder {
+		return true, nil
+	}
+	moFolder, err := vcenter.GetFolderProperties(
+		vmCtx,
+		vcClient.VimClient(),
+		vmCtx.MoVM.Parent.Value,
+	)
+	if err != nil {
+		return false, err
+	}
+	// Accept VMs in an immediate child of the namespace folder (e.g. VKS node folders).
+	if moFolder.Parent != nil && moFolder.Parent.Value == expectedFolder {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (vs *vSphereVMProvider) reconcileStatus(

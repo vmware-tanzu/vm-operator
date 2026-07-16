@@ -402,7 +402,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 	})
 
 	It("creates VM with live-mode ExtraConfig and verifies both coalescingScheme and coalescingParams",
-		Label("nic-extra-config", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 			vmName := "nic-ec-live-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
@@ -449,7 +449,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		})
 
 	It("sets PowerCyclePending for all powercycle-mode fields and verifies positive and negative wire values across two power cycles",
-		Label("nic-extra-config", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 			vmName := "nic-ec-pc-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
@@ -473,6 +473,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmName)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKey,
 				"ethernet0.coalescingScheme", "adapt")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
+				string(vmopv1a6.VirtualMachinePowerStateOn))
 
 			By("Phase 3: patching all four powercycle-mode fields to positive values")
 
@@ -553,7 +555,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		})
 
 	It("manages AdvancedProperties bag lifecycle",
-		Label("nic-extra-config", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 			vmName := "nic-ec-bag-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
@@ -630,7 +632,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		})
 
 	It("applies UPTv2Enabled hot-pluggable DeviceChange and checks prerequisite gate",
-		Label("nic-extra-config", "extended-functional"), func() {
+		Label("extended-functional", "experimental"), func() {
 			hwVersion20 := int32(20)
 
 			By("Step A: prereq check — VM without full memory reservation should block UPTv2")
@@ -734,7 +736,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		})
 
 	It("applies VNUMANodeID poweroff-required DeviceChange and checks prerequisite gates",
-		Label("nic-extra-config", "extended-functional"), func() {
+		Label("extended-functional", "experimental"), func() {
 			hwVersion20 := int32(20)
 
 			By("Step A: EFI prereq check — VM without EFI firmware should block VNUMANodeID")
@@ -812,6 +814,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmNameB)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKeyB,
 				"ethernet0.coalescingScheme", "adapt")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmNameB,
+				string(vmopv1a6.VirtualMachinePowerStateOn))
 
 			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmNameB, func(vm *vmopv1a6.VirtualMachine) {
 				vm.Spec.Network.Interfaces[0].VNUMANodeID = ptr.To(int32(1))
@@ -866,7 +870,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		})
 
 	It("applies live-mode ExtraConfig on a VM with PromoteDisksMode=Online",
-		Label("nic-extra-config", "core-functional"), func() {
+		Label("core-functional", "experimental"), func() {
 			vmName := "nic-ec-promotedisks-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 

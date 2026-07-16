@@ -815,7 +815,7 @@ Each `spec.network.interfaces[]` entry may include an optional `type` of `VMXNet
 
 Use `spec.network.interfaces[].vmxnet3` only when `type` is `VMXNet3`. The API rejects this block for other adapter types.
 
-| Field | Description | Mode |
+| Field | Description | Change applies on |
 |-------|-------------|:----:|
 | `uptv2Enabled` | Enables UPT v2 (uniform passthrough) for this adapter. VM Operator only validates a sufficiently high VM hardware version and full memory reservation before applying; UPT-capable physical hardware and a current VMXNet3 guest driver are additional vSphere-level requirements that are *not* validated by VM Operator. | Live* |
 | `ctxPerDev` | Transmit context threading: `PerVM` (default), `PerDevice`, or `PerQueue` (often used with RSS for high throughput). | PowerCycle |
@@ -825,7 +825,7 @@ Use `spec.network.interfaces[].vmxnet3` only when `type` is `VMXNet3`. The API r
 | `coalescingScheme` | Interrupt coalescing mode: `Disabled`, `Adapt`, `Static`, or `RateBasedCoalescing`. | Live |
 | `coalescingParams` | Parameter string for `Static` or `RateBasedCoalescing` (packet queue limit or interrupts per second, depending on scheme). Ignored for `Disabled` or `Adapt`. | Live |
 
-The `Mode` column reflects how a change to that field is applied when the VM is already powered on: **Live** fields apply and report synced immediately; **PowerCycle** fields are written to the VM immediately but are not considered fully synced — and the VM reports `NetworkConfigSynced=False/PowerCyclePending` — until the VM is next power-cycled (powered off, then on). See [NetworkConfigSynced condition](#networkconfigsynced-condition) below for the full set of reasons this condition can report.
+The `Change applies on` column reflects how a change to that field is applied when the VM is already powered on: **Live** fields apply and report synced immediately; **PowerCycle** fields are written to the VM immediately but are not considered fully synced — and the VM reports `NetworkConfigSynced=False/PowerCyclePending` — until the VM is next power-cycled (powered off, then on). See [NetworkConfigSynced condition](#networkconfigsynced-condition) below for the full set of reasons this condition can report.
 
 `*` `uptv2Enabled` is hot-pluggable and, once its prerequisite is met, applies immediately like a `Live` field — it does not use the ExtraConfig PowerCycle mechanism and never produces `PowerCyclePending`. If the prerequisite is not met, it instead produces `PrerequisiteNotMet`.
 

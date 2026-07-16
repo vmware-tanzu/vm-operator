@@ -1375,24 +1375,20 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, vmName)
 					g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
-					seenCount := make(map[string]int, len(vm.Status.Volumes))
-					for _, vol := range vm.Status.Volumes {
-						seenCount[vol.Name]++
-						g.Expect(pvcVolumeNames[vol.Name]).To(BeFalse(),
-							"status.volumes has a stale entry for detached volume %q", vol.Name)
-					}
-					for name, count := range seenCount {
-						g.Expect(count).To(Equal(1), "status.volumes has a duplicate entry for volume %q", name)
+					statusVolNames := make([]string, len(vm.Status.Volumes))
+					for i, vol := range vm.Status.Volumes {
+						statusVolNames[i] = vol.Name
 					}
 
 					if allDisksArePVCapabilityEnabled {
-						g.Expect(vm.Status.Volumes).To(HaveLen(len(backfilledVolumes)),
-							"expected status.volumes to only contain the backfilled boot disk entries")
-						for _, name := range backfilledVolumes {
-							g.Expect(seenCount).To(HaveKey(name),
-								"expected backfilled boot volume %q in status.volumes", name)
-						}
+						// Only the backfilled boot disk(s) should remain. ConsistOf is
+						// an exact set match, so it also enforces no stale entries for
+						// the detached PVCs and no duplicate entries.
+						g.Expect(statusVolNames).To(ConsistOf(backfilledVolumes),
+							"expected status.volumes to contain exactly the backfilled boot disk entries")
 					} else {
+						// Only the classic boot disk should remain. HaveLen(1) enforces
+						// no stale entries for the detached PVCs and no duplicates.
 						g.Expect(vm.Status.Volumes).To(HaveLen(1),
 							"expected status.volumes to only contain the boot disk entry")
 						g.Expect(vm.Status.Volumes[0].Type).To(Equal(vmopv1a5.VolumeTypeClassic),

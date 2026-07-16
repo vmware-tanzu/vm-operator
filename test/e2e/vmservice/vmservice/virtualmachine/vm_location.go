@@ -123,12 +123,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			"failed to ensure %s role has the privileges required for VM relocation", vmServiceVMMgmtRoleName)
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
-		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(
-			ctx, &config.Config, svClusterClient,
-			input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(),
-			"failed to get VMI name for display name %q in namespace %q",
-			linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 	})

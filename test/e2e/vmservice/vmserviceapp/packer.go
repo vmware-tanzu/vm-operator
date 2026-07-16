@@ -105,8 +105,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 		DeferCleanup(cancelPodWatches)
 
 		vmName = fmt.Sprintf("source-%s", capiutil.RandomString(4))
-		vmiObjName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, ubuntuImageName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VM Image name: %s", ubuntuImageName)
+		vmiObjName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, ubuntuImageName)
 
 		vmiName = vmiObjName
 		vmserviceCLID = vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
@@ -137,6 +136,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 
 		By("Ensure the packer template file is available in the packer plugin directory")
 
+		var err error
 		templateFilePath, err = GetTemplatePathInPackerPluginDir(packerSpecTemplateName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(templateFilePath).NotTo(BeEmpty())
@@ -256,8 +256,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 			Expect(err).NotTo(HaveOccurred(), "failed to run packer build command, output: %s", string(cmdOut))
 
 			// Ensure the published image is available with expected display name under the namespace.
-			publishedImageCRName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, publishImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get the published VM Image by displayed name %s", publishImageDisplayName)
+			publishedImageCRName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, publishImageDisplayName)
 			Expect(publishedImageCRName).NotTo(BeEmpty(), "published VM Image resource name is empty")
 
 			Expect(wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(input.WCPNamespaceName, publishCLID)).To(Succeed())

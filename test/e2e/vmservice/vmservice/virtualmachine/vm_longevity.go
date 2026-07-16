@@ -17,11 +17,11 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
@@ -83,9 +83,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		svClusterClient = clusterProxy.GetClient()
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
-		var vmiErr error
-		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		By("Create a second namespace without VMClass")
 
@@ -128,11 +126,11 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			// Skip testing if WCP_Namespaced_VM_Class FSS is not enabled.
 			skipper.SkipUnlessNamespacedVMClassFSSEnabled(ctx, svClusterClient, config)
 
-			vmclass, err := vmoperator.GetVMClassInNamespace(ctx, svClusterClient, config, input.WCPNamespaceName, vmClassName)
+			vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
 			Expect(vmclass).ToNot(BeNil())
 			Expect(err).ToNot(HaveOccurred(), "vmclass should exist in namespace where it's associated with")
 
-			vmclass, err = vmoperator.GetVMClassInNamespace(ctx, svClusterClient, config, secondNamespaceName, vmClassName)
+			vmclass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, secondNamespaceName, vmClassName)
 			Expect(vmclass).To(BeNil())
 			Expect(err).To(HaveOccurred(), "vmclass shouldn't exist in namespace where it's not associated with")
 		})
@@ -162,17 +160,17 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 		JustBeforeEach(func() {
 			classReady = metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionClassReady,
+				Type:   vmopv1.VirtualMachineConditionClassReady,
 				Status: metav1.ConditionTrue,
 			}
 
 			imageReady = metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionImageReady,
+				Type:   vmopv1.VirtualMachineConditionImageReady,
 				Status: metav1.ConditionTrue,
 			}
 
 			storageReady = metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionStorageReady,
+				Type:   vmopv1.VirtualMachineConditionStorageReady,
 				Status: metav1.ConditionTrue,
 			}
 
@@ -189,11 +187,6 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 		It("VMClass CR should get changed but not impact VM", func() {
 			// Update VMClass
-			var (
-				vmclass1, vmclass2 *vmopv1a2.VirtualMachineClass
-				err                error
-			)
-
 			updatedCpu := 4
 			updatedMemory := 2048
 			updatedSpec, err := vmservice.GenerateVMClassSpecFunction("customize", vmClassName, updatedCpu, updatedMemory, "customize-description")
@@ -202,12 +195,14 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 			By("Updating VMClass in dcli will trigger VMClass CR get updated in both associated namespace")
 			Eventually(func() bool {
-				if vmclass1, err = vmoperator.GetVMClassInNamespace(ctx, svClusterClient, config, input.WCPNamespaceName, vmClassName); err != nil {
+				vmclass1, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
+				if err != nil {
 					e2eframework.Logf("failed to get vmclass in namespace %s. err: %v", input.WCPNamespaceName, err)
 					return false
 				}
 
-				if vmclass2, err = vmoperator.GetVMClassInNamespace(ctx, svClusterClient, config, secondNamespaceName, vmClassName); err != nil {
+				vmclass2, err := utils.GetVirtualMachineClass(ctx, svClusterClient, secondNamespaceName, vmClassName)
+				if err != nil {
 					e2eframework.Logf("failed to get vmclass in namespace %s. err: %v", secondNamespaceName, err)
 					return false
 				}
@@ -231,7 +226,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			By("VirtualMachineClassReadyCondition must be set to false")
 
 			classReadyFalseCondition := metav1.Condition{
-				Type:   vmopv1a2.VirtualMachineConditionClassReady,
+				Type:   vmopv1.VirtualMachineConditionClassReady,
 				Status: metav1.ConditionFalse,
 				Reason: "NotFound",
 			}

@@ -294,8 +294,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		var bootstrapYAML []byte
 
 		BeforeEach(func() {
-			imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get the VM Image name in namespace %q", input.WCPNamespaceName)
+			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 			vmParameters.ImageName = imageName
 			vmParameters.Transport = cloudInitTransport
@@ -393,8 +392,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 	Context("LinuxPrep", func() {
 		BeforeEach(func() {
 			skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
-			imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get the VM Image name in namespace %q", input.WCPNamespaceName)
+			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 			v1a2vmParameters.ImageName = imageName
 			v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{
@@ -416,8 +414,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		Context("LinuxPrep with CustomizeAtNextPowerOn latch", func() {
 			BeforeEach(func() {
 				t := true
-				imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-				Expect(err).NotTo(HaveOccurred(), "Failed to get the VM Image name in namespace %q", input.WCPNamespaceName)
+				imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 				v1a5vmParameters.ImageName = imageName
 				v1a5vmParameters.Bootstrap = manifestbuilders.Bootstrap{
@@ -455,8 +452,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			createAndVerifyConfigMap(ctx, ovfEnvTransport)
 			// This ubuntu 20.04 image is supported in marketplace
 			vmImageName := ubuntuMarketplaceImage
-			imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmImageName)
-			Expect(err).NotTo(HaveOccurred())
+			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmImageName)
 
 			vmParameters.ImageName = imageName
 			vmParameters.ConfigMapName = configMapName
@@ -472,8 +468,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			CreateAndVerifySecret(ctx, ovfEnvTransport)
 			// This centos stream 8 image is supported in marketplace
 			vmImageName := centosMarketplaceImage
-			imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmImageName)
-			Expect(err).NotTo(HaveOccurred())
+			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmImageName)
 
 			vmParameters.ImageName = imageName
 			vmParameters.SecretName = secretName
@@ -488,8 +483,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 	Context("vAppConfig", func() {
 		BeforeEach(func() {
 			skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
-			imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get the VM Image name in namespace %q", input.WCPNamespaceName)
+			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 			v1a2vmParameters.ImageName = imageName
 			v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{
@@ -526,8 +520,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			BeforeEach(func() {
 				// Use the OVF image from content library that contains more properties to test
 				ovfImageName := "photon-ovf-vapp-properties"
-				imageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, ovfImageName)
-				Expect(err).NotTo(HaveOccurred(), "Failed to get the OVF image name %q in namespace %q", ovfImageName, input.WCPNamespaceName)
+				imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, ovfImageName)
 
 				v1a2vmParameters.ImageName = imageName
 				v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{

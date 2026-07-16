@@ -67,8 +67,7 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 		DeferCleanup(cancelPodWatches)
 
 		vmName = fmt.Sprintf("source-%s", capiutil.RandomString(4))
-		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, ubuntuImageName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VM Image name: %s", ubuntuImageName)
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, ubuntuImageName)
 
 		ubuntuVMIName = vmiName
 
@@ -86,6 +85,7 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 
 		By("Ensure the Jenkins template file is available in the packer plugin directory")
 
+		var err error
 		templateFilePath, err = GetTemplatePathInPackerPluginDir(jenkinsSpecTemplateName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(templateFilePath).NotTo(BeEmpty())

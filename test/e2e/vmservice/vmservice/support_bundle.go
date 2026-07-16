@@ -8,13 +8,14 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"k8s.io/kubernetes/test/e2e/framework"
+
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
 const supportBundleImage = "wcp-gc-docker-local.packages.vcfd.broadcom.net/utils/tkc-support-bundler:v1.2.0"
 
-func runSupportBundleCLI(vm *vmopv1a3.VirtualMachine, svKubeconfig, testName string) error {
+func runSupportBundleCLI(vm *vmopv1.VirtualMachine, svKubeconfig, testName string) error {
 	output := fmt.Sprintf("${SUPPORT_BUNDLE_DIR}/%s-%s", vm.Name, testName)
 
 	err := runCommand("mkdir -p " + output)
@@ -33,7 +34,7 @@ func runSupportBundleCLI(vm *vmopv1a3.VirtualMachine, svKubeconfig, testName str
 	return nil
 }
 
-func CollectSupportBundle(vm *vmopv1a3.VirtualMachine, svKubeconfig, testName string) {
+func CollectSupportBundle(vm *vmopv1.VirtualMachine, svKubeconfig, testName string) {
 	testName = strings.ReplaceAll(testName, " ", "-")
 
 	supportBundleErr := runSupportBundleCLI(vm, svKubeconfig, testName)

@@ -306,16 +306,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
 
 				By("Attaching the target content library to the namespace as writable")
-				if !tarLocationCLIsAttached {
-					Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(input.WCPNamespaceName, wcp.ContentLibrarySpec{
-						ContentLibrary: targetLocationCLID,
-						Writable:       true,
-					})).To(Succeed(), "failed to attach content library '%s' to namespace '%s'", targetLocationCLID, input.WCPNamespaceName)
-					tarLocationCLIsAttached = true
-				}
-
-				targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, input.WCPNamespaceName, targetLocationCLID)
-				Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
+				targetLocationK8sCLName := attachTargetLocationCLAsWritable(ctx, config, svClusterClient, wcpClient, input.WCPNamespaceName, targetLocationCLID, &tarLocationCLIsAttached)
 
 				By("Creating a source VM with an explicit vAppConfig property")
 				sourceImageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmservice.GetDefaultImageDisplayName(clusterResources))
@@ -725,6 +716,32 @@ func publishRequestCompletedWithReadyImage(
 	vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterClient, namespace, publishedImageCRName)
 
 	return publishedImageCRName
+}
+
+// attachTargetLocationCLAsWritable attaches the target-location content
+// library to the namespace as writable, unless attached already indicates
+// this has been done, then returns the content library's corresponding
+// Kubernetes resource name.
+func attachTargetLocationCLAsWritable(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	svClusterClient ctrlclient.Client,
+	wcpClient wcp.WorkloadManagementAPI,
+	namespace, clID string,
+	attached *bool) string {
+
+	if !*attached {
+		Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(namespace, wcp.ContentLibrarySpec{
+			ContentLibrary: clID,
+			Writable:       true,
+		})).To(Succeed(), "failed to attach content library '%s' to namespace '%s'", clID, namespace)
+		*attached = true
+	}
+
+	targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, namespace, clID)
+	Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
+
+	return targetLocationK8sCLName
 }
 
 func createLibraryFolder(ctx context.Context, finder *find.Finder, libFolder string) (*object.DatacenterFolders, *object.Folder) {

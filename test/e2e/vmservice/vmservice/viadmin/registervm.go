@@ -1069,7 +1069,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 	})
 
 	Context("RegisterVM - Restore to new", func() {
-		It("Should register VM when no pre-existing VM CR exists", func() {
+		It("Should register VM when no pre-existing VM CR exists", Label("experimental"), func() {
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}
@@ -1116,6 +1116,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				})
 
 			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			expectedVolCount := len(existingVM.Spec.Volumes)
 			Expect(err).ToNot(HaveOccurred())
 			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
 			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, input.WCPNamespaceName, clusterProxy, wcpClient)
@@ -1126,7 +1127,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(taskInfo.Error).To(BeNil())
 			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
 
-			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, len(existingVM.Spec.Volumes), clusterProxy, config, svClusterClient, wcpClient)
+			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, expectedVolCount, clusterProxy, config, svClusterClient, wcpClient)
 			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})

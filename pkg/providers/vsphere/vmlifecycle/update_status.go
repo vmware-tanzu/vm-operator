@@ -37,6 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine/extraconfig"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine/networkextraconfig"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -79,6 +80,7 @@ func ReconcileStatus(
 
 	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
 		errs = append(errs, reconcileStatusExtraConfig(vmCtx, k8sClient, vcVM, data)...)
+		errs = append(errs, reconcileStatusNetworkExtraConfig(vmCtx, k8sClient, vcVM, data)...)
 	}
 
 	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
@@ -2222,4 +2224,214 @@ func reconcileStatusExtraConfig(
 	}
 
 	return nil
+}
+
+// reconcileStatusNetworkExtraConfig appends NIC-level ExtraConfig entries
+// (first-class VMXNet3 fields and spec.network.interfaces[].advancedProperties
+// bag keys) onto status.ExtraConfig, populates the device-spec status fields
+// (VNUMANodeID, VMXNet3), and sets NetworkConfigSynced from that same
+// observed state. It always reflects moVM as fetched at the start of this
+// reconcile, so the condition is only ever set from vSphere's confirmed
+// state — never optimistically from a configSpec this reconcile is still in
+// the process of applying, and never by mutating vmCtx.MoVM's device objects
+// (see ReconcileNICFields's dryRun).
+//
+// It must run after reconcileStatusExtraConfig, since that function resets
+// status.ExtraConfig via assignment — this one only appends.
+//
+// This function is the sole source of the condition for every case except a
+// real Reconfigure task failure, which only networkextraconfig.OnResult can
+// see (it runs after the Reconfigure attempt, with the resulting error). So
+// there is no correctness dependency between the two on ordering or on
+// OnResult running in the same pass: whichever last touches the condition
+// this cycle wins, and both independently agree on non-error cases.
+func reconcileStatusNetworkExtraConfig(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	vm := vmCtx.VM
+	moVM := vmCtx.MoVM
+	if moVM.Config == nil || vm.Spec.Network == nil {
+		return nil
+	}
+
+	ci := *moVM.Config
+	observed := pkgutil.OptionValues(ci.ExtraConfig)
+	poweredOn := vm.Status.PowerState == vmopv1.VirtualMachinePowerStateOn
+	matcher := networkextraconfig.DefaultNICMatcher(ci.Hardware.Device)
+	nicKeyMap := vmopv1util.VMXNet3NICKeyMap()
+
+	var overlay pkgutil.OptionValues
+	var blocked, blockedPowerOff []string
+
+	log := pkglog.FromContextOrDefault(vmCtx)
+	for i, iface := range vm.Spec.Network.Interfaces {
+		matchedDev := matcher(iface, i)
+		if matchedDev == nil {
+			log.V(4).Info("no hardware device for spec NIC; skipping status update", "interfaceName", iface.Name, "specIdx", i)
+			continue
+		}
+
+		namespaceIdx, ok := networkextraconfig.EthernetDeviceIndex(matchedDev)
+		if !ok {
+			continue
+		}
+		devKey := matchedDev.GetVirtualDevice().Key
+		mkKey := fmt.Sprintf(constants.NICExtraConfigManagedKeysKeyFmt, namespaceIdx)
+		managed := extraconfig.LoadDeviceManagedKeys(observed, mkKey)
+		prefix := vmopv1util.EthernetExtraConfigPrefix(devKey)
+
+		overlay = append(overlay, networkextraconfig.DesiredNICExtraConfig(vmCtx, iface, devKey, managed)...)
+
+		// First-class ExtraConfig fields: expand template keys with the
+		// device's namespace index to get the live VMX key.
+		for tmplKey := range nicKeyMap {
+			fullKey := fmt.Sprintf(tmplKey, namespaceIdx)
+			if v, ok2 := observed.GetString(fullKey); ok2 && v != "" {
+				vm.Status.ExtraConfig = append(vm.Status.ExtraConfig,
+					common.KeyValuePair{Key: fullKey, Value: v})
+			}
+		}
+
+		// Managed bag keys. Same "also check spec-requested keys" reasoning
+		// as reconcileStatusExtraConfig's bagKeyCandidates.
+		bagKeyCandidates := networkextraconfig.NICSpecBagKeys(vmCtx, iface)
+		for _, mk := range managed {
+			bagKeyCandidates[mk] = true
+		}
+		for _, k := range sets.List(sets.KeySet(bagKeyCandidates)) {
+			fullKey := prefix + k
+			if v, ok2 := observed.GetString(fullKey); ok2 && v != "" {
+				vm.Status.ExtraConfig = append(vm.Status.ExtraConfig,
+					common.KeyValuePair{Key: fullKey, Value: v})
+			}
+		}
+
+		// Device-spec fields in status.network.interfaces[i].
+		updateInterfaceStatus(vm, iface, matchedDev, moVM)
+
+		// Device-spec Blocked/PowerOffRequired reasons, dry-run: never
+		// mutates matchedDev (and therefore never mutates vmCtx.MoVM).
+		b, bpo := networkextraconfig.ReconcileNICFields(*vm, iface, matchedDev, ci, &vimtypes.VirtualMachineConfigSpec{}, true)
+		blocked = append(blocked, b...)
+		blockedPowerOff = append(blockedPowerOff, bpo...)
+	}
+
+	// Diff the assembled overlay against observed (scoped to only this NIC
+	// set's own keys, via a nil existingEC, so an unrelated reconciler's
+	// pending change can't be mistaken for a NIC ExtraConfig mismatch) and
+	// route it by vmxmode, mirroring networkextraconfig.Reconcile's use of
+	// the same diff.
+	applied, deferred, powerCyclePending := networkextraconfig.NICExtraConfigDiff(
+		vmCtx, observed, overlay, nil, poweredOn)
+	blockedPowerOff = append(blockedPowerOff, deferred...)
+
+	// A prior cycle may have left vmx.reboot.powerCycle=TRUE on the VM: see
+	// reconcileStatusExtraConfig's powerCycleOnVM for the same reasoning.
+	var powerCycleOnVM bool
+	if poweredOn {
+		_, powerCycleOnVM = observed.GetString(constants.ExtraConfigReservedKeyVMXRebootPowerCycle)
+	}
+
+	switch {
+	case len(blocked) > 0:
+		conditions.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineNetworkConfigSynced,
+			vmopv1.VirtualMachinePrerequisiteNotMetReason,
+			"Prerequisites not met: %s", strings.Join(blocked, "; "))
+	case len(blockedPowerOff) > 0:
+		conditions.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineNetworkConfigSynced,
+			vmopv1.VirtualMachinePowerOffRequiredReason,
+			"VM power off required to apply: %s", strings.Join(blockedPowerOff, ", "))
+	case powerCyclePending || powerCycleOnVM:
+		conditions.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineNetworkConfigSynced,
+			vmopv1.VirtualMachinePowerCyclePendingReason,
+			"Applied changes take effect on next power cycle")
+	case len(applied) == 0:
+		conditions.MarkTrue(vm, vmopv1.VirtualMachineNetworkConfigSynced)
+	default:
+		// A genuine pending change that is neither deferred nor
+		// power-cycle-mode (e.g. a bag key just added). Mark it explicitly
+		// rather than leaving a stale True or a stale reason from a prior
+		// cycle in place — it resolves to True on the reconcile after this
+		// one's Reconfigure completes and a fresh Properties() read
+		// confirms it.
+		conditions.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineNetworkConfigSynced,
+			vmopv1.VirtualMachineNetworkConfigMismatchReason,
+			"Spec network interfaces ExtraConfig differs from the live vSphere configuration")
+	}
+
+	return nil
+}
+
+// updateInterfaceStatus populates the device-spec status fields
+// (VNUMANodeID, VMXNet3) for interface i in vm.Status.Network.Interfaces.
+func updateInterfaceStatus(
+	vm *vmopv1.VirtualMachine,
+	iface vmopv1.VirtualMachineNetworkInterfaceSpec,
+	matchedDev vimtypes.BaseVirtualDevice,
+	moVM mo.VirtualMachine,
+) {
+	if vm.Status.Network == nil {
+		return
+	}
+
+	// Find the matching status entry by interface name or index.
+	var statusIface *vmopv1.VirtualMachineNetworkInterfaceStatus
+	for j := range vm.Status.Network.Interfaces {
+		if vm.Status.Network.Interfaces[j].Name == iface.Name {
+			statusIface = &vm.Status.Network.Interfaces[j]
+			break
+		}
+	}
+	if statusIface == nil {
+		return
+	}
+
+	vdev := matchedDev.GetVirtualDevice()
+
+	// VNUMANodeID: reflect observed device NumaNode; nil or negative means no affinity.
+	numaNode := vdev.NumaNode
+	if numaNode != nil && *numaNode >= 0 {
+		statusIface.VNUMANodeID = numaNode
+	} else {
+		statusIface.VNUMANodeID = nil
+	}
+
+	// VMXNet3-specific status.
+	vmxnet3Dev, isVMXNet3 := matchedDev.(*vimtypes.VirtualVmxnet3)
+	if !isVMXNet3 {
+		statusIface.VMXNet3 = nil
+		return
+	}
+
+	vmxnet3Status := &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
+		UPTv2Enabled: vmxnet3Dev.Uptv2Enabled,
+	}
+
+	// UPTv2 runtime state from moVM.Runtime.Device.
+	for _, rdi := range moVM.Runtime.Device {
+		if rdi.Key != vdev.Key {
+			continue
+		}
+		ethState, ok := rdi.RuntimeState.(*vimtypes.VirtualMachineDeviceRuntimeInfoVirtualEthernetCardRuntimeState)
+		if !ok {
+			break
+		}
+		vmxnet3Status.UPTv2Active = ethState.Uptv2Active
+		vmxnet3Status.UPTv2InactiveReasonVM = ethState.Uptv2InactiveReasonVm
+		vmxnet3Status.UPTv2InactiveReasonOther = ethState.Uptv2InactiveReasonOther
+		break
+	}
+
+	statusIface.VMXNet3 = vmxnet3Status
 }

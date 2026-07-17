@@ -49,21 +49,35 @@ power-state semantics:
    `status.extraConfig` once cleared.
 
 Prerequisite gates surface as `PrerequisiteNotMet` and take priority over
-`PowerOffRequired`/`PowerCyclePending` in `OnResult`'s condition routing:
+`PowerOffRequired`/`PowerCyclePending`. The condition is computed by
+`reconcileStatusNetworkExtraConfig`
+(`pkg/providers/vsphere/vmlifecycle/update_status.go`) as part of status
+reconciliation, fresh from the VM's confirmed vSphere state on every
+reconcile — not by `networkextraconfig.OnResult`, which only ever marks the
+condition `False`/`NetworkConfigError` on a genuine Reconfigure task failure;
+every other case below is decided independently of whether `OnResult` runs in
+the same pass:
 
 ```
-len(Blocked) > 0            → False / PrerequisiteNotMet
+len(Blocked) > 0             → False / PrerequisiteNotMet
 len(BlockedPowerOff) > 0     → False / PowerOffRequired
 PowerCyclePending flag set   → False / PowerCyclePending
-otherwise                    → True
+observed == desired          → True
+otherwise (pending, but      → False / NetworkConfigMismatch
+  neither blocked nor
+  power-cycle — e.g. a bag
+  key just added; resolves
+  to True once the next
+  reconcile observes it)
 ```
 
 ## Gating
 
 The suite MUST skip entirely when the `supports_telco_vm_service_api`
-Supervisor capability is disabled — the reconciler's `Reconcile` and
-`OnResult` are no-ops without it (`pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI`),
-so there is nothing to observe.
+Supervisor capability is disabled — the reconciler's `Reconcile`,
+`OnResult`, and `reconcileStatusNetworkExtraConfig` are all no-ops without it
+(`pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI`), so there is nothing
+to observe.
 
 ## Scenarios
 

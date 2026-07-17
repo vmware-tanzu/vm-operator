@@ -6344,6 +6344,182 @@ var _ = Describe("ExtraConfig status", func() {
 	})
 })
 
+var _ = Describe("NetworkExtraConfig status", func() {
+	var (
+		ctx   *builder.TestContextForVCSim
+		vmCtx pkgctx.VirtualMachineContext
+		data  vmlifecycle.ReconcileStatusData
+		vcVM  *object.VirtualMachine
+		vm    *vmopv1.VirtualMachine
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.TelcoVMServiceAPI = true
+		})
+
+		vm = builder.DummyVirtualMachine()
+		vm.Name = "networkextraconfig-status-test"
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+
+		var err error
+		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(vcVM.Properties(
+			ctx,
+			vcVM.Reference(),
+			vsphere.VMUpdatePropertiesSelector,
+			&vmCtx.MoVM)).To(Succeed())
+
+		data = vmlifecycle.ReconcileStatusData{
+			NetworkDeviceKeysToSpecIdx: map[int32]int{4000: 0},
+		}
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	When("TelcoVMServiceAPI is disabled", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = false
+			})
+			vm.Spec.Network.Interfaces[0].AdvancedProperties = []vmopv1common.KeyValuePair{
+				{Key: "foo", Value: "bar"},
+			}
+		})
+
+		It("does not touch status.ExtraConfig or the condition", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(BeEmpty())
+			Expect(conditions.Get(vmCtx.VM, vmopv1.VirtualMachineNetworkConfigSynced)).To(BeNil())
+		})
+	})
+
+	When("vm.Spec.Network is nil", func() {
+		BeforeEach(func() {
+			vm.Spec.Network = nil
+		})
+
+		It("does not set the condition", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(conditions.Get(vmCtx.VM, vmopv1.VirtualMachineNetworkConfigSynced)).To(BeNil())
+		})
+	})
+
+	When("spec.advanced ExtraConfig has already populated status.ExtraConfig", func() {
+		BeforeEach(func() {
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
+			vm.Spec.Network.Interfaces[0].VMXNet3 = &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+				RSSOffloadEnabled: ptr.To(true),
+			}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+				&vimtypes.OptionValue{Key: "ethernet0.rssoffload", Value: "TRUE"},
+			}
+		})
+
+		It("appends NIC entries onto status.ExtraConfig rather than overwriting the advanced entries", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(Equal([]vmopv1common.KeyValuePair{
+				{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+				{Key: "ethernet0.rssoffload", Value: "TRUE"},
+			}))
+		})
+	})
+
+	When("observed fully matches spec.network.interfaces", func() {
+		BeforeEach(func() {
+			vm.Spec.Network.Interfaces[0].VMXNet3 = &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+				RSSOffloadEnabled: ptr.To(true),
+			}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "ethernet0.rssoffload", Value: "TRUE"},
+			}
+		})
+
+		It("marks NetworkConfigSynced=True", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineNetworkConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	When("a PowerCycle-mode NIC key is pending on a powered-on VM", func() {
+		BeforeEach(func() {
+			vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+			vm.Spec.Network.Interfaces[0].VMXNet3 = &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+				RSSOffloadEnabled: ptr.To(true),
+			}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "ethernet0.rssoffload", Value: "FALSE"},
+			}
+		})
+
+		It("marks NetworkConfigSynced=False/PowerCyclePending", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineNetworkConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePowerCyclePendingReason))
+		})
+	})
+
+	When("a bag key is newly requested (mismatch, not blocked)", func() {
+		BeforeEach(func() {
+			vm.Spec.Network.Interfaces[0].AdvancedProperties = []vmopv1common.KeyValuePair{
+				{Key: "foo", Value: "bar"},
+			}
+		})
+
+		It("marks NetworkConfigSynced=False/NetworkConfigMismatch", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineNetworkConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineNetworkConfigMismatchReason))
+		})
+
+		It("populates status.ExtraConfig with the new bag key", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(BeEmpty(),
+				"the bag key isn't observed on the VM yet, so it shouldn't be reported until confirmed")
+		})
+	})
+
+	When("a device-spec field is blocked because the VM is powered on (not hot-pluggable)", func() {
+		BeforeEach(func() {
+			vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+			vmCtx.MoVM.Config.Version = "vmx-21" // VNUMANodeID requires hwVer >= vmx-20.
+			vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+				Firmware: vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+			}
+			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{VNUMANodeCount: ptr.To(int32(2))},
+			}
+			vm.Spec.Network.Interfaces[0].VNUMANodeID = ptr.To(int32(1))
+		})
+
+		It("marks NetworkConfigSynced=False/PowerOffRequired", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineNetworkConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePowerOffRequiredReason))
+		})
+	})
+})
+
 var _ = Describe("Guest status", func() {
 	var (
 		ctx   *builder.TestContextForVCSim

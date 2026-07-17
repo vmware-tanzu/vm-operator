@@ -11,8 +11,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -20,8 +20,8 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 )
 
 var errFake = errors.New("fake error")
@@ -69,7 +69,6 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 		ctx = pkgcfg.UpdateContext(ctx, func(cfg *pkgcfg.Config) {
 			cfg.Features.TelcoVMServiceAPI = true
 		})
-		ctx = r.WithContext(ctx)
 
 		vm = &vmopv1.VirtualMachine{}
 		vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
@@ -234,19 +233,10 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 			// No memoryAdvanced set → prerequisite blocked.
 		})
 
-		It("sets the condition to PrerequisiteNotMet and emits no DeviceChange", func() {
+		It("emits no DeviceChange when memory reservation prerequisite is unmet", func() {
 			Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
-			Expect(r.OnResult(ctx, vm, moVM, nil)).To(Succeed())
-
 			Expect(collectEditChanges(configSpec)).To(BeEmpty(),
 				"expected no DeviceChange when memory reservation prerequisite is unmet")
-
-			cond := findCondition(vm)
-			Expect(cond).NotTo(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePrerequisiteNotMetReason))
-			Expect(cond.Message).To(ContainSubstring("full memory reservation required:"))
-			Expect(cond.Message).To(ContainSubstring("reservationLockedToMax=true"))
 		})
 
 		It("unblocks when spec.resources.requests.memory equals spec.resources.size.memory", func() {
@@ -258,15 +248,10 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 			vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
 
 			Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
-			Expect(r.OnResult(ctx, vm, moVM, nil)).To(Succeed())
 
 			edits := collectEditChanges(configSpec)
 			Expect(edits).To(HaveLen(1))
 			Expect(edits[0].Device.(*vimtypes.VirtualVmxnet3).Uptv2Enabled).To(Equal(ptr.To(true)))
-
-			cond := findCondition(vm)
-			Expect(cond).NotTo(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		})
 
 		It("still blocks when spec requests.memory != size.memory (partial reservation)", func() {
@@ -278,12 +263,7 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 			}
 
 			Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
-			Expect(r.OnResult(ctx, vm, moVM, nil)).To(Succeed())
-
 			Expect(collectEditChanges(configSpec)).To(BeEmpty())
-			cond := findCondition(vm)
-			Expect(cond).NotTo(BeNil())
-			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePrerequisiteNotMetReason))
 		})
 	})
 
@@ -307,15 +287,10 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 
 		It("applies the DeviceChange without a memory reservation prerequisite", func() {
 			Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
-			Expect(r.OnResult(ctx, vm, moVM, nil)).To(Succeed())
 
 			edits := collectEditChanges(configSpec)
 			Expect(edits).To(HaveLen(1))
 			Expect(edits[0].Device.(*vimtypes.VirtualVmxnet3).Uptv2Enabled).To(Equal(ptr.To(false)))
-
-			cond := findCondition(vm)
-			Expect(cond).NotTo(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		})
 	})
 
@@ -367,6 +342,12 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 	})
 })
 
+// OnResult now only ever marks NetworkConfigSynced=False, and only for a real
+// Reconfigure task failure. Everything else — True, PrerequisiteNotMet,
+// PowerOffRequired, PowerCyclePending — is decided by
+// reconcileStatusNetworkExtraConfig (pkg/providers/vsphere/vmlifecycle),
+// computed fresh from moVM and spec.network every reconcile. See that
+// package's "NetworkExtraConfig status" tests for those cases.
 var _ = Describe("networkextraconfig.OnResult", func() {
 	var (
 		ctx  context.Context
@@ -380,7 +361,6 @@ var _ = Describe("networkextraconfig.OnResult", func() {
 		ctx = pkgcfg.UpdateContext(ctx, func(cfg *pkgcfg.Config) {
 			cfg.Features.TelcoVMServiceAPI = true
 		})
-		ctx = r.WithContext(ctx)
 
 		vm = &vmopv1.VirtualMachine{}
 		vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
@@ -409,20 +389,16 @@ var _ = Describe("networkextraconfig.OnResult", func() {
 	})
 
 	Context("with a NoRequeueNoErr sentinel (e.g. ErrCreate, ErrHasTask)", func() {
-		It("does not mark condition false", func() {
+		It("does not mark the condition", func() {
 			Expect(r.OnResult(ctx, vm, moVM, pkgerr.NoRequeueNoErr("created vm"))).To(Succeed())
-			cond := findCondition(vm)
-			Expect(cond).NotTo(BeNil())
-			Expect(string(cond.Status)).To(Equal("True"))
+			Expect(findCondition(vm)).To(BeNil())
 		})
 	})
 
-	Context("with no state set (no reconcile call)", func() {
-		It("marks condition true", func() {
+	Context("on success", func() {
+		It("leaves the condition untouched", func() {
 			Expect(r.OnResult(ctx, vm, moVM, nil)).To(Succeed())
-			cond := findCondition(vm)
-			Expect(cond).NotTo(BeNil())
-			Expect(string(cond.Status)).To(Equal("True"))
+			Expect(findCondition(vm)).To(BeNil())
 		})
 	})
 })

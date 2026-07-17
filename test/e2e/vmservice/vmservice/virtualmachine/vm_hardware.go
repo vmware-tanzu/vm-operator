@@ -514,10 +514,6 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			func(specGetter func() testSpec) {
 				spec := specGetter()
 
-				// For specs with many PVCs, create the claims first and wait
-				// for them to exist so the VM's first reconcile finds all of
-				// its claims and does not fall into a "PVC not found" backoff
-				// storm (see testSpec.preCreatePVCs).
 				if spec.preCreatePVCs {
 					By("Creating the PVCs before the VM")
 					for _, pvc := range spec.pvcs {
@@ -972,10 +968,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}, 64+1) // Full bus number slots plus one.
 
 				return testSpec{
-					pvcs: pvcs,
-					// Create the PVCs before the VM: with this many claims,
-					// applying the VM and its PVCs together races the VM
-					// controller against PVC creation and stalls it in backoff.
+					pvcs:          pvcs,
 					preCreatePVCs: true,
 				}
 			}),

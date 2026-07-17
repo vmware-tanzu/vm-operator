@@ -433,53 +433,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		})
 	})
 
-	// TODO: Remove this as OvfEnv is deprecated.
-	Context("OvfEnv", func() {
-		// VMs with OvfEnv transport do not support restore due to the defer-cloud-init configuration.
-		// Once a VM is booted, the defer-cloud-init is not re-applied hence causing the race between
-		// vmtools and cloud-init to configure networking during the second boot from the restore.
-		// Therefore, VerifyRegisterVM is not called for these images using OvfEnv transport.
-		BeforeEach(func() {
-			vmParameters.Transport = ovfEnvTransport
-
-			if os.Getenv("RUN_CANONICAL_TEST") == "true" {
-				Skip("These tests will be skipped for Canonical OVA testing.")
-			}
-		})
-
-		XIt("should successfully apply customization from a ConfigMap and get a valid IP assigned to ubuntu-20.04", func() {
-			// Create and apply ConfigMap yaml.
-			createAndVerifyConfigMap(ctx, ovfEnvTransport)
-			// This ubuntu 20.04 image is supported in marketplace
-			vmImageName := ubuntuMarketplaceImage
-			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmImageName)
-
-			vmParameters.ImageName = imageName
-			vmParameters.ConfigMapName = configMapName
-			CreateAndVerifyVM(ctx, vmParameters)
-			vmIp := vmoperator.GetVirtualMachineIP(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			cmds := []string{"cat /helloworld"}
-			expectedOutput := []string{"Hello World"}
-			verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
-		})
-
-		XIt("should successfully apply customization from a Secret and get a valid IP assigned to centos-stream-8", func() {
-			// Create and apply Secret yaml.
-			CreateAndVerifySecret(ctx, ovfEnvTransport)
-			// This centos stream 8 image is supported in marketplace
-			vmImageName := centosMarketplaceImage
-			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmImageName)
-
-			vmParameters.ImageName = imageName
-			vmParameters.SecretName = secretName
-			CreateAndVerifyVM(ctx, vmParameters)
-			vmIp := vmoperator.GetVirtualMachineIP(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			cmds := []string{"cat /helloworld"}
-			expectedOutput := []string{"Hello World"}
-			verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
-		})
-	})
-
 	Context("vAppConfig", func() {
 		BeforeEach(func() {
 			skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)

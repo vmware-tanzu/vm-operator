@@ -157,6 +157,33 @@ type VirtualMachineSnapshotStatus struct {
 	// Storage describes the observed amount of storage used by a
 	// VirtualMachineSnapshot, including the space for FCDs.
 	Storage *VirtualMachineSnapshotStorageStatus `json:"storage,omitempty"`
+
+	// +optional
+
+	// Disks represents the list of disks included in the snapshot.
+	// +listType=map
+	// +listMapKey=id
+	Disks []VirtualMachineSnapshotDiskStatus `json:"disks,omitempty"`
+}
+
+// VirtualMachineSnapshotDiskStatus defines the status of a specific disk
+// captured in the VirtualMachineSnapshot.
+type VirtualMachineSnapshotDiskStatus struct {
+	// ID is the unique identifier of the disk in the snapshot.
+	ID string `json:"id"`
+
+	// +optional
+
+	// ChangedBlockTrackingID represents the Change Block Tracking (CBT) change ID
+	// for the disk at the time the snapshot was taken. This value may be empty
+	// if CBT is not enabled or not applicable.
+	ChangedBlockTrackingID string `json:"changedBlockTrackingID,omitempty"`
+
+	// +optional
+
+	// PVCName is the name of the PersistentVolumeClaim (PVC) associated with the disk.
+	// This field is only applicable for disks backed by a PVC.
+	PVCName string `json:"pvcName,omitempty"`
 }
 
 // VirtualMachineSnapshotStorageStatus defines the observed state of a

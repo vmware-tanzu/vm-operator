@@ -11,6 +11,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -681,8 +683,10 @@ func vcsimTests() {
 	})
 
 	When("the ConfigTarget names a real vcsim cluster", func() {
+		var ccr *object.ClusterComputeResource
+
 		BeforeEach(func() {
-			ccr := vcsimCtx.GetFirstClusterFromFirstZone()
+			ccr = vcsimCtx.GetFirstClusterFromFirstZone()
 			Expect(ccr).ToNot(BeNil())
 
 			obj = &vimv1.ConfigTarget{
@@ -741,6 +745,186 @@ func vcsimTests() {
 			// of ConfigOptionDescriptor keys that cannot be shrunk without
 			// restarting the simulator, so this behavior is only covered by
 			// the fake-provider-backed unit test above.
+		})
+
+		It("maps device inventory from a QueryConfigTarget result fed through the real EnvironmentBrowser", func() {
+			// vcsim's own QueryConfigTarget computation never populates the
+			// device-category fields (only CPU/NUMA/datastore/network), so
+			// device-mapping fidelity through the real vSphere SOAP client
+			// -- as opposed to the fake-provider-backed unit test above,
+			// which stubs the provider and never touches EnvironmentBrowser
+			// at all -- can only be exercised by pre-seeding vcsim's
+			// EnvironmentBrowser.QueryConfigTargetResponse override, which
+			// short-circuits vcsim's own computation and hands this value
+			// straight back to the client.
+			envBrowserRef, err := ccr.EnvironmentBrowser(vcsimCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			simEnvBrowser, ok := vcsimCtx.SimulatorContext().Map.Get(envBrowserRef.Reference()).(*simulator.EnvironmentBrowser)
+			Expect(ok).To(BeTrue())
+
+			simEnvBrowser.QueryConfigTargetResponse.Returnval = &vimtypes.ConfigTarget{
+				NumCpus: 1,
+				CdRom: []vimtypes.VirtualMachineCdromInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "cdrom0"},
+				}},
+				Floppy: []vimtypes.VirtualMachineFloppyInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "floppy0"},
+				}},
+				Serial: []vimtypes.VirtualMachineSerialInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "serial0"},
+				}},
+				Parallel: []vimtypes.VirtualMachineParallelInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "parallel0"},
+				}},
+				Sound: []vimtypes.VirtualMachineSoundInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "sound0"},
+				}},
+				Usb: []vimtypes.VirtualMachineUsbInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "usb0"},
+				}},
+				PciPassthrough: []vimtypes.BaseVirtualMachinePciPassthroughInfo{
+					&vimtypes.VirtualMachinePciPassthroughInfo{
+						VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "pci0"},
+						PciDevice:                vimtypes.HostPciDevice{Id: "0000:03:00.0", DeviceName: "NIC"},
+						SystemId:                 "host-1",
+					},
+					&vimtypes.VirtualMachineSriovInfo{
+						VirtualMachinePciPassthroughInfo: vimtypes.VirtualMachinePciPassthroughInfo{
+							VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "sriov0"},
+							PciDevice:                vimtypes.HostPciDevice{Id: "0000:04:00.0"},
+							SystemId:                 "host-1",
+						},
+						VirtualFunction: true,
+					},
+				},
+				DynamicPassthrough: []vimtypes.VirtualMachineDynamicPassthroughInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "dyn0"},
+					VendorName:               "NVIDIA",
+					DeviceName:               "GPU",
+				}},
+				VgpuDeviceInfo: []vimtypes.VirtualMachineVgpuDeviceInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "vgpu0"},
+					DeviceName:               "grid",
+				}},
+				VgpuProfileInfo: []vimtypes.VirtualMachineVgpuProfileInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "profile0"},
+					ProfileName:              "grid_p1",
+				}},
+				SharedGpuPassthroughTypes: []vimtypes.VirtualMachinePciSharedGpuPassthroughInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "shared0"},
+					Vgpu:                     "grid_p1",
+				}},
+				SgxTargetInfo: &vimtypes.VirtualMachineSgxTargetInfo{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "sgx"},
+					MaxEpcSize:               1024,
+				},
+				PrecisionClockInfo: []vimtypes.VirtualMachinePrecisionClockInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "ptp0"},
+					SystemClockProtocol:      "ptp",
+				}},
+				VendorDeviceGroupInfo: []vimtypes.VirtualMachineVendorDeviceGroupInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "vdg0"},
+					DeviceGroupName:          "group1",
+				}},
+				DvxClassInfo: []vimtypes.VirtualMachineDvxClassInfo{{
+					DeviceClass: &vimtypes.ElementDescription{Key: "dvxnic"},
+					VendorName:  "Mellanox",
+					SriovNic:    true,
+				}},
+				IdeDisk: []vimtypes.VirtualMachineIdeDiskDeviceInfo{{
+					VirtualMachineDiskDeviceInfo: vimtypes.VirtualMachineDiskDeviceInfo{
+						VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "ide0"},
+						Capacity:                 1024,
+					},
+				}},
+				ScsiDisk: []vimtypes.VirtualMachineScsiDiskDeviceInfo{{
+					VirtualMachineDiskDeviceInfo: vimtypes.VirtualMachineDiskDeviceInfo{
+						VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "scsi0"},
+						Capacity:                 2048,
+					},
+					Disk: &vimtypes.HostScsiDisk{
+						ScsiLun: vimtypes.ScsiLun{
+							HostDevice: vimtypes.HostDevice{DeviceName: "/dev/sda", DeviceType: "disk"},
+							Uuid:       "uuid1",
+						},
+					},
+				}},
+				ScsiPassthrough: []vimtypes.VirtualMachineScsiPassthroughInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "scsipt0"},
+					ScsiClass:                "tape",
+				}},
+				VFlashModule: []vimtypes.VirtualMachineVFlashModuleInfo{{
+					VirtualMachineTargetInfo: vimtypes.VirtualMachineTargetInfo{Name: "vflash0"},
+					VFlashModule: vimtypes.HostVFlashManagerVFlashCacheConfigInfoVFlashModuleConfigOption{
+						VFlashModule:    "vfc",
+						MaxDiskSizeInKB: 1048576,
+					},
+				}},
+			}
+
+			_, err = reconciler.Reconcile(vcsimCtx, objReq)
+			Expect(err).ToNot(HaveOccurred())
+
+			var got vimv1.ConfigTarget
+			Expect(vcsimCtx.Client.Get(vcsimCtx, ctrlclient.ObjectKeyFromObject(obj), &got)).To(Succeed())
+			Expect(pkgcond.IsTrue(&got, vimv1.ReadyConditionType)).To(BeTrue())
+
+			devices := got.Status.ConfigTargetDevices
+			Expect(devices.CDROM).To(ConsistOf(vimv1.VirtualMachineCdromInfo{
+				VirtualMachineTargetInfo: vimv1.VirtualMachineTargetInfo{Name: "cdrom0"},
+			}))
+			Expect(devices.Floppy).To(ConsistOf(vimv1.VirtualMachineTargetInfo{Name: "floppy0"}))
+			Expect(devices.Serial).To(ConsistOf(vimv1.VirtualMachineTargetInfo{Name: "serial0"}))
+			Expect(devices.Parallel).To(ConsistOf(vimv1.VirtualMachineTargetInfo{Name: "parallel0"}))
+			Expect(devices.Sound).To(ConsistOf(vimv1.VirtualMachineTargetInfo{Name: "sound0"}))
+			Expect(devices.USB).To(HaveLen(1))
+			Expect(devices.USB[0].Name).To(Equal("usb0"))
+
+			Expect(devices.SRIOV).To(BeEmpty(), "ct.Sriov must not be mapped")
+			Expect(devices.PCIPassthrough).To(HaveLen(1), "the SR-IOV union entry must be excluded")
+			Expect(devices.PCIPassthrough[0].Name).To(Equal("pci0"))
+			Expect(devices.PCIPassthrough[0].SystemID).To(Equal("host-1"))
+
+			Expect(devices.DynamicPassthroughDevices).To(HaveLen(1))
+			Expect(devices.DynamicPassthroughDevices[0].VendorName).To(Equal("NVIDIA"))
+
+			Expect(devices.VGPUDevice).To(HaveLen(1))
+			Expect(devices.VGPUDevice[0].DeviceName).To(Equal("grid"))
+
+			Expect(devices.VGPUProfile).To(HaveLen(1))
+			Expect(devices.VGPUProfile[0].ProfileName).To(Equal("grid_p1"))
+
+			Expect(devices.SharedGPUPassthroughTypes).To(HaveLen(1))
+			Expect(devices.SharedGPUPassthroughTypes[0].VGPU).To(Equal("grid_p1"))
+
+			Expect(devices.SGXTargetInfo).ToNot(BeNil())
+			Expect(devices.SGXTargetInfo.MaxEpcSize).To(Equal(int64(1024)))
+
+			Expect(devices.PrecisionClockInfo).To(HaveLen(1))
+			Expect(devices.PrecisionClockInfo[0].SystemClockProtocol).To(Equal(vimv1.HostDateTimeInfoProtocol("ptp")))
+
+			Expect(devices.VendorDeviceGroupInfo).To(HaveLen(1))
+			Expect(devices.VendorDeviceGroupInfo[0].DeviceGroupName).To(Equal("group1"))
+
+			Expect(devices.DVXClassInfo).To(HaveLen(1))
+			Expect(devices.DVXClassInfo[0].DeviceClass.Key).To(Equal("dvxnic"))
+			Expect(devices.DVXClassInfo[0].SriovNic).To(BeTrue())
+
+			Expect(devices.IDEDisks).To(HaveLen(1))
+			Expect(devices.IDEDisks[0].Capacity).ToNot(BeNil())
+			Expect(devices.IDEDisks[0].Capacity.Value()).To(Equal(int64(1024) * 1024))
+
+			Expect(devices.SCSIDisks).To(HaveLen(1))
+			Expect(devices.SCSIDisks[0].Disk).ToNot(BeNil())
+			Expect(devices.SCSIDisks[0].Disk.UUID).To(Equal("uuid1"))
+
+			Expect(devices.SCSIPassthrough).To(HaveLen(1))
+			Expect(devices.SCSIPassthrough[0].SCSIClass).To(Equal("tape"))
+
+			Expect(devices.VFlashModule).To(HaveLen(1))
+			Expect(devices.VFlashModule[0].VFlashModule.VFlashModule).To(Equal("vfc"))
+			Expect(devices.VFlashModule[0].VFlashModule.MaxDiskSize.Value()).To(Equal(int64(1048576) * 1024))
 		})
 	})
 

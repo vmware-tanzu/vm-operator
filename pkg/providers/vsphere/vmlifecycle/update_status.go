@@ -29,12 +29,14 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine/extraconfig"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -74,6 +76,10 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusZone(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusController(vmCtx, k8sClient, vcVM, data)...)
+
+	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		errs = append(errs, reconcileStatusExtraConfig(vmCtx, k8sClient, vcVM, data)...)
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
 		errs = append(errs, reconcileHardwareCondition(vmCtx, k8sClient, vcVM, data)...)
@@ -2093,6 +2099,127 @@ func reconcileStatusController(
 	})
 
 	vm.Status.Hardware.Controllers = ctlStatuses
+
+	return nil
+}
+
+// reconcileStatusExtraConfig populates status.ExtraConfig with the
+// first-class advanced VMX keys and spec.advanced.extraConfig bag keys
+// currently observed on the VM, and sets ExtraConfigSynced from that same
+// observed state: True once it fully matches spec.advanced and no power
+// cycle is pending, or False with a specific reason (PowerOffRequired,
+// PowerCyclePending, or ExtraConfigMismatch for a pending change that is
+// neither) otherwise. It always reflects moVM as fetched at the start of
+// this reconcile, so the condition is only ever set from vSphere's confirmed
+// state — never optimistically from a configSpec this reconcile is still in
+// the process of applying.
+//
+// This function is the sole source of the condition for every case except a
+// real Reconfigure task failure, which only extraconfig.OnResult can see (it
+// runs after the Reconfigure attempt, with the resulting error). So there is
+// no correctness dependency between the two on ordering or on OnResult
+// running in the same pass: whichever last touches the condition this cycle
+// wins, and both independently agree on non-error cases.
+func reconcileStatusExtraConfig(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	vm := vmCtx.VM
+	moVM := vmCtx.MoVM
+	if moVM.Config == nil {
+		return nil
+	}
+
+	observed := pkgutil.OptionValues(moVM.Config.ExtraConfig)
+	managedKeys := extraconfig.LoadVMManagedKeys(observed)
+
+	var statusEC []common.KeyValuePair
+	for _, k := range vmopv1util.SortedAdvancedVMXKeys() {
+		if v, ok := observed.GetString(k); ok && v != "" {
+			statusEC = append(statusEC, common.KeyValuePair{Key: k, Value: v})
+		}
+	}
+
+	// Bag keys have no fixed candidate list like first-class keys do (their
+	// names are arbitrary), so the previously-tracked managedKeys marker is
+	// normally what tells us which keys to look up in observed. That marker
+	// is empty until this reconciler has applied a given bag key at least
+	// once, so also check any bag key currently requested in spec — covering
+	// a key that already exists on the VM (e.g. pre-set by the class) before
+	// this reconciler has ever applied it, matching how a first-class key's
+	// current value is reported regardless of whether it matches desired.
+	bagKeyCandidates := extraconfig.SpecBagKeys(vm.Spec.Advanced)
+	for _, k := range managedKeys {
+		bagKeyCandidates[k] = true
+	}
+	for _, k := range sets.List(sets.KeySet(bagKeyCandidates)) {
+		if v, ok := observed.GetString(k); ok && v != "" {
+			statusEC = append(statusEC, common.KeyValuePair{Key: k, Value: v})
+		}
+	}
+	vm.Status.ExtraConfig = statusEC
+
+	// Comparing spec.advanced against observed below is only meaningful once
+	// this VM has been through the one-time TelcoVMServiceAPI schema-upgrade
+	// backfill (pkg/providers/vsphere/upgrade/virtualmachine/backfill). Before
+	// that, spec.advanced may still be nil/zero for a field a VM Class already
+	// applied directly to vSphere, and comparing against it here would
+	// misreport a pending clear for a value nothing actually wants cleared.
+	fv := vmopv1util.ParseFeatureVersion(vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey])
+	if !fv.Has(vmopv1util.FeatureVersionTelcoVMServiceAPI) {
+		return nil
+	}
+
+	poweredOn := vm.Status.PowerState == vmopv1.VirtualMachinePowerStateOn
+
+	// A prior cycle may have left vmx.reboot.powerCycle=TRUE on the VM: the
+	// value already matches (so it won't appear in semanticResult below), but
+	// the change only takes effect once the guest actually reboots. While the
+	// VM is on, that flag — not value-matching alone — is authoritative for
+	// "synced". Once the VM is off, all config is applied and ESXi clears the
+	// flag automatically on next boot, so it's no longer treated as pending.
+	var powerCycleOnVM bool
+	if poweredOn {
+		_, powerCycleOnVM = observed.GetString(constants.ExtraConfigReservedKeyVMXRebootPowerCycle)
+	}
+
+	// Diff spec.advanced against observed (scoped to only its own keys, via a
+	// nil existingEC, so an unrelated reconciler's pending change can't be
+	// mistaken for an ExtraConfig mismatch) and route it by vmxmode, mirroring
+	// extraconfig.Reconcile's use of the same diff.
+	applied, deferred, powerCyclePending := extraconfig.VMExtraConfigDiff(
+		vmCtx, vm, observed, managedKeys, nil)
+
+	switch {
+	case len(deferred) > 0:
+		conditions.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineExtraConfigSynced,
+			vmopv1.VirtualMachinePowerOffRequiredReason,
+			"VM power off required to apply: %s", strings.Join(deferred, ", "))
+	case powerCyclePending || powerCycleOnVM:
+		conditions.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineExtraConfigSynced,
+			vmopv1.VirtualMachinePowerCyclePendingReason,
+			"Applied changes take effect on next power cycle")
+	case len(applied) == 0:
+		conditions.MarkTrue(vm, vmopv1.VirtualMachineExtraConfigSynced)
+	default:
+		// A genuine pending change that is neither deferred nor
+		// power-cycle-mode (e.g. a bag key just added). Mark it explicitly
+		// rather than leaving a stale True or a stale reason from a prior
+		// cycle in place — it resolves to True on the reconcile after this
+		// one's Reconfigure completes and a fresh Properties() read
+		// confirms it.
+		conditions.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineExtraConfigSynced,
+			vmopv1.VirtualMachineExtraConfigMismatchReason,
+			"Spec extraconfig differs from the live vSphere configuration")
+	}
 
 	return nil
 }

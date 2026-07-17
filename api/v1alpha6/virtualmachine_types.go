@@ -200,6 +200,14 @@ const (
 	// VirtualMachineExtraConfigErrorReason indicates that reconciliation of
 	// VirtualMachineExtraConfigSynced failed with an unexpected error.
 	VirtualMachineExtraConfigErrorReason = "ExtraConfigError"
+
+	// VirtualMachineExtraConfigMismatchReason is used on the ExtraConfigSynced
+	// condition when the VM's observed ExtraConfig does not yet match
+	// spec.advanced, but the pending change is neither deferred (see
+	// VirtualMachinePowerOffRequiredReason) nor power-cycle-pending (see
+	// VirtualMachinePowerCyclePendingReason). This is expected to resolve to
+	// True once a later reconcile observes the applied change.
+	VirtualMachineExtraConfigMismatchReason = "ExtraConfigMismatch"
 )
 
 const (

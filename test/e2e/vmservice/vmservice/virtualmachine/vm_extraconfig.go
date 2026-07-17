@@ -46,12 +46,6 @@ const (
 	vmxPNUMANodeAffinity = "numa.nodeAffinity"
 )
 
-// Condition reason values for VirtualMachineExtraConfigSynced (mirrors reconciler constants).
-const (
-	extraConfigReasonPowerOffRequired  = "PowerOffRequired"
-	extraConfigReasonPowerCyclePending = "PowerCyclePending"
-)
-
 // VMExtraConfigSpecInput is the input for the ExtraConfig test spec.
 type VMExtraConfigSpecInput struct {
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
@@ -125,13 +119,9 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 		storageClass = clusterResources.StorageClassName
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
-		var err error
-		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(
 			ctx, &config.Config, svClusterClient,
 			input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(),
-			"failed to get VMI name for display name %q in namespace %q",
-			linuxImageDisplayName, input.WCPNamespaceName)
 	})
 
 	// ── It block 1: phases 1-2 ────────────────────────────────────────────────
@@ -261,7 +251,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 
 			By("Waiting for ExtraConfigSynced=False/PowerCyclePending")
 			cond := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
-				metav1.ConditionFalse, extraConfigReasonPowerCyclePending)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerCyclePendingReason)
 			Expect(cond).NotTo(BeNil())
 
 			By("Power-cycling VM via spec to apply the pending change")
@@ -333,11 +323,10 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			vmPatch.Spec.Advanced.HugePages1GEnabled = ptr.To(true)
 			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
 				"failed to patch VM %s HugePages1GEnabled", vmName)
-			vm = vmPatch
 
 			By("Waiting for ExtraConfigSynced=False/PowerOffRequired")
 			cond := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
-				metav1.ConditionFalse, extraConfigReasonPowerOffRequired)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerOffRequiredReason)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Message).To(ContainSubstring(vmxHugePages),
 				"condition message should name the deferred VMX key")
@@ -396,6 +385,12 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				Advanced:     advanced,
 			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
+			DeferCleanup(func() {
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
+				}
+			})
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -421,12 +416,6 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				Advanced:     advanced,
 			})
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to recreate VM %s", vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
-				}
-			})
 
 			By("Waiting for recreated VM to be created in vSphere")
 			vmoperator.WaitForVirtualMachineConditionCreated(
@@ -485,10 +474,9 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			vmPatch.Spec.Advanced.PreferHTEnabled = ptr.To(false)
 			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
 				"failed to patch VM %s PreferHTEnabled", vmName)
-			vm = vmPatch
 
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
-				metav1.ConditionFalse, extraConfigReasonPowerCyclePending)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerCyclePendingReason)
 
 			By("Getting VM BiosUUID for vSphere lookup")
 			biosUUID := waitForBiosUUID(ctx, svClusterClient, config, vmKey)
@@ -656,11 +644,10 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			vmPatch.Spec.Advanced.PNUMANodeAffinity = nil
 			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
 				"failed to patch VM %s PNUMANodeAffinity", vmName)
-			vm = vmPatch
 
 			By("Waiting for ExtraConfigSynced=False/PowerCyclePending")
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
-				metav1.ConditionFalse, extraConfigReasonPowerCyclePending)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerCyclePendingReason)
 
 			By("Powering off VM to apply the pending clear")
 			vmoperator.UpdateVirtualMachinePowerState(
@@ -776,11 +763,10 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			vmPatch.Spec.Advanced.VMXSwapEnabled = ptr.To(false)
 			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
 				"failed to patch VM %s HugePages1GEnabled/VMXSwapEnabled", vmName)
-			vm = vmPatch
 
 			By("Asserting ExtraConfigSynced=False/PowerOffRequired (PowerOff takes priority)")
 			cond := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
-				metav1.ConditionFalse, extraConfigReasonPowerOffRequired)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerOffRequiredReason)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Message).To(ContainSubstring(vmxHugePages),
 				"condition message should name the deferred PowerOff key")

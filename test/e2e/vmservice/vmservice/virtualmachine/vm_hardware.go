@@ -962,7 +962,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 				}
 			}),
-			Entry("creating multiple implicit PVCs", func() testSpec {
+			Entry("creating multiple implicit PVCs", Label("experimental"), func() testSpec {
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,
 				}, 64+1) // Full bus number slots plus one.

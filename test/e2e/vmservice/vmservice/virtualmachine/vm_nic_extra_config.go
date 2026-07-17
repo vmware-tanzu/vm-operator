@@ -14,14 +14,13 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1a6common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -47,17 +46,17 @@ type VMNICExtraConfigSpecInput struct {
 
 // nicExtraConfigVMOptions holds optional fields for buildNICExtraConfigVM.
 type nicExtraConfigVMOptions struct {
-	PowerState                   vmopv1a6.VirtualMachinePowerState
-	PromoteDisksMode             vmopv1a6.VirtualMachinePromoteDisksMode
-	CoalescingScheme             vmopv1a6.CoalescingScheme
+	PowerState                   vmopv1.VirtualMachinePowerState
+	PromoteDisksMode             vmopv1.VirtualMachinePromoteDisksMode
+	CoalescingScheme             vmopv1.CoalescingScheme
 	CoalescingParams             *string
-	CtxPerDev                    vmopv1a6.TxContextThreadingMode
+	CtxPerDev                    vmopv1.TxContextThreadingMode
 	RSSOffloadEnabled            *bool
-	UDPRSSEnabled                *vmopv1a6.UDPRSSMode
-	PNICFeatures                 []vmopv1a6.PNICQueueFeature
+	UDPRSSEnabled                *vmopv1.UDPRSSMode
+	PNICFeatures                 []vmopv1.PNICQueueFeature
 	UPTv2Enabled                 *bool
 	VNUMANodeID                  *int32
-	AdvancedProperties           []vmopv1a6common.KeyValuePair
+	AdvancedProperties           []vmopv1common.KeyValuePair
 	MinHardwareVersion           *int32
 	Firmware                     string
 	VNUMANodeCount               *int32
@@ -67,40 +66,40 @@ type nicExtraConfigVMOptions struct {
 
 // buildNICExtraConfigVM constructs a VirtualMachine with a single VMXNet3 NIC
 // whose properties are controlled by opts.
-func buildNICExtraConfigVM(name, namespace, className, imageName, storageClass string, opts nicExtraConfigVMOptions) *vmopv1a6.VirtualMachine {
-	ps := vmopv1a6.VirtualMachinePowerStateOn
+func buildNICExtraConfigVM(name, namespace, className, imageName, storageClass string, opts nicExtraConfigVMOptions) *vmopv1.VirtualMachine {
+	ps := vmopv1.VirtualMachinePowerStateOn
 	if opts.PowerState != "" {
 		ps = opts.PowerState
 	}
-	promoteDisksMode := vmopv1a6.VirtualMachinePromoteDisksModeDisabled
+	promoteDisksMode := vmopv1.VirtualMachinePromoteDisksModeDisabled
 	if opts.PromoteDisksMode != "" {
 		promoteDisksMode = opts.PromoteDisksMode
 	}
-	vm := &vmopv1a6.VirtualMachine{
+	vm := &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: vmopv1a6.VirtualMachineSpec{
+		Spec: vmopv1.VirtualMachineSpec{
 			ClassName:        className,
 			ImageName:        imageName,
 			StorageClass:     storageClass,
 			PromoteDisksMode: promoteDisksMode,
 			PowerState:       ps,
-			Bootstrap: &vmopv1a6.VirtualMachineBootstrapSpec{
+			Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 				Disabled: true,
 			},
 		},
 	}
 
 	// Build the single network interface.
-	iface := vmopv1a6.VirtualMachineNetworkInterfaceSpec{
+	iface := vmopv1.VirtualMachineNetworkInterfaceSpec{
 		Name: "eth0",
-		Type: vmopv1a6.VirtualMachineNetworkInterfaceTypeVMXNet3,
+		Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
 	}
 
 	// Populate VMXNet3-specific fields.
-	vmxnet3 := &vmopv1a6.VirtualMachineNetworkInterfaceVMXNet3Spec{}
+	vmxnet3 := &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{}
 	hasVMXNet3 := false
 
 	if opts.CoalescingScheme != "" {
@@ -142,8 +141,8 @@ func buildNICExtraConfigVM(name, namespace, className, imageName, storageClass s
 		iface.AdvancedProperties = opts.AdvancedProperties
 	}
 
-	vm.Spec.Network = &vmopv1a6.VirtualMachineNetworkSpec{
-		Interfaces: []vmopv1a6.VirtualMachineNetworkInterfaceSpec{iface},
+	vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+		Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{iface},
 	}
 
 	// Apply VM-level options.
@@ -152,24 +151,24 @@ func buildNICExtraConfigVM(name, namespace, className, imageName, storageClass s
 	}
 	if opts.Firmware != "" {
 		if vm.Spec.BootOptions == nil {
-			vm.Spec.BootOptions = &vmopv1a6.VirtualMachineBootOptions{}
+			vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{}
 		}
-		vm.Spec.BootOptions.Firmware = vmopv1a6.VirtualMachineBootOptionsFirmwareType(opts.Firmware)
+		vm.Spec.BootOptions.Firmware = vmopv1.VirtualMachineBootOptionsFirmwareType(opts.Firmware)
 	}
 	if opts.VNUMANodeCount != nil || opts.CoresPerSocket != nil {
-		topo := &vmopv1a6.VirtualMachineCPUTopologySpec{}
+		topo := &vmopv1.VirtualMachineCPUTopologySpec{}
 		if opts.VNUMANodeCount != nil {
 			topo.VNUMANodeCount = opts.VNUMANodeCount
 		}
 		if opts.CoresPerSocket != nil {
 			topo.CoresPerSocket = opts.CoresPerSocket
 		}
-		vm.Spec.CPUAdvanced = &vmopv1a6.VirtualMachineCPUAdvancedSpec{
+		vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 			Topology: topo,
 		}
 	}
 	if opts.MemoryReservationLockedToMax != nil {
-		vm.Spec.MemoryAdvanced = &vmopv1a6.VirtualMachineMemoryAdvancedSpec{
+		vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
 			ReservationLockedToMax: opts.MemoryReservationLockedToMax,
 		}
 	}
@@ -179,7 +178,7 @@ func buildNICExtraConfigVM(name, namespace, className, imageName, storageClass s
 
 // statusExtraConfigMap converts vm.Status.ExtraConfig into a key→value map for
 // easy lookup.
-func statusExtraConfigMap(vm *vmopv1a6.VirtualMachine) map[string]string {
+func statusExtraConfigMap(vm *vmopv1.VirtualMachine) map[string]string {
 	m := make(map[string]string, len(vm.Status.ExtraConfig))
 	for _, kv := range vm.Status.ExtraConfig {
 		m[kv.Key] = kv.Value
@@ -189,7 +188,7 @@ func statusExtraConfigMap(vm *vmopv1a6.VirtualMachine) map[string]string {
 
 // statusNICInterface returns the first interface status entry whose Name matches
 // ifaceName, or nil if not found.
-func statusNICInterface(vm *vmopv1a6.VirtualMachine, ifaceName string) *vmopv1a6.VirtualMachineNetworkInterfaceStatus {
+func statusNICInterface(vm *vmopv1.VirtualMachine, ifaceName string) *vmopv1.VirtualMachineNetworkInterfaceStatus {
 	if vm.Status.Network == nil {
 		return nil
 	}
@@ -203,9 +202,9 @@ func statusNICInterface(vm *vmopv1a6.VirtualMachine, ifaceName string) *vmopv1a6
 
 // getNICExtraConfigCondition returns the VirtualMachineNetworkConfigSynced condition
 // from the VM status, or nil if it is not present.
-func getNICExtraConfigCondition(vm *vmopv1a6.VirtualMachine) *metav1.Condition {
+func getNICExtraConfigCondition(vm *vmopv1.VirtualMachine) *metav1.Condition {
 	for i := range vm.Status.Conditions {
-		if vm.Status.Conditions[i].Type == vmopv1a6.VirtualMachineNetworkConfigSynced {
+		if vm.Status.Conditions[i].Type == vmopv1.VirtualMachineNetworkConfigSynced {
 			return &vm.Status.Conditions[i]
 		}
 	}
@@ -228,7 +227,7 @@ func waitForNICExtraConfigSynced(
 	afterTime ...metav1.Time,
 ) {
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA6(ctx, svClusterClient, key.Namespace, key.Name)
+		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, key.Namespace, key.Name)
 		g.Expect(err).NotTo(HaveOccurred())
 		cond := getNICExtraConfigCondition(vm)
 		g.Expect(cond).NotTo(BeNil())
@@ -278,7 +277,7 @@ func waitForNICExtraConfigSyncedWithExtraConfigs(
 ) *metav1.Condition {
 	var matched *metav1.Condition
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA6(ctx, svClusterClient, key.Namespace, key.Name)
+		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, key.Namespace, key.Name)
 		g.Expect(err).NotTo(HaveOccurred())
 		cond := getNICExtraConfigCondition(vm)
 		g.Expect(cond).NotTo(BeNil())
@@ -306,7 +305,7 @@ func waitForNICExtraConfigSyncedWithExtraConfigAbsent(
 ) *metav1.Condition {
 	var matched *metav1.Condition
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA6(ctx, svClusterClient, key.Namespace, key.Name)
+		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, key.Namespace, key.Name)
 		g.Expect(err).NotTo(HaveOccurred())
 		cond := getNICExtraConfigCondition(vm)
 		g.Expect(cond).NotTo(BeNil())
@@ -317,35 +316,6 @@ func waitForNICExtraConfigSyncedWithExtraConfigAbsent(
 	}, config.GetIntervals("default", "wait-vm-nic-extra-config-synced")...).Should(Succeed())
 	time.Sleep(time.Second)
 	return matched
-}
-
-// deleteNICExtraConfigVM deletes the named VM and waits until it is gone.
-func deleteNICExtraConfigVM(ctx context.Context, client ctrlclient.Client, ns, name string) {
-	vm := &vmopv1a6.VirtualMachine{}
-	vm.Name = name
-	vm.Namespace = ns
-	_ = client.Delete(ctx, vm)
-	Eventually(func() bool {
-		err := client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, vm)
-		return err != nil
-	}, "2m", "5s").Should(BeTrue())
-}
-
-// retryUpdateVMA6 retries the get-mutate-update sequence on any error (including
-// 409 Conflict when a controller write races the test's read-modify-write).
-func retryUpdateVMA6(
-	ctx context.Context,
-	client ctrlclient.Client,
-	config *e2eConfig.E2EConfig,
-	namespace, name string,
-	mutate func(*vmopv1a6.VirtualMachine),
-) {
-	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA6(ctx, client, namespace, name)
-		g.Expect(err).NotTo(HaveOccurred())
-		mutate(vm)
-		g.Expect(client.Update(ctx, vm)).To(Succeed())
-	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(Succeed())
 }
 
 // VMNICExtraConfigSpec exercises the NIC ExtraConfig feature through five It
@@ -395,10 +365,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		})
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
-		var err error
-		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmNamespace, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(),
-			"failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, vmNamespace)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmNamespace, linuxImageDisplayName)
 	})
 
 	It("creates VM with live-mode ExtraConfig and verifies both coalescingScheme and coalescingParams",
@@ -407,7 +374,10 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
 			DeferCleanup(func() {
-				deleteNICExtraConfigVM(ctx, svClusterClient, vmNamespace, vmName)
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
+				}
 			})
 
 			By("Phase 1: creating VM with CoalescingScheme=Disabled")
@@ -416,8 +386,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				vmName, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:       vmopv1a6.VirtualMachinePowerStateOn,
-					CoalescingScheme: vmopv1a6.CoalescingSchemeDisabled,
+					PowerState:       vmopv1.VirtualMachinePowerStateOn,
+					CoalescingScheme: vmopv1.CoalescingSchemeDisabled,
 				},
 			)
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
@@ -432,12 +402,14 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			By("Phase 2: patching CoalescingScheme=Static + CoalescingParams=32")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				schemeStatic := vmopv1a6.CoalescingSchemeStatic
-				params32 := "32"
-				vm.Spec.Network.Interfaces[0].VMXNet3.CoalescingScheme = &schemeStatic
-				vm.Spec.Network.Interfaces[0].VMXNet3.CoalescingParams = &params32
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			schemeStatic := vmopv1.CoalescingSchemeStatic
+			params32 := "32"
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.CoalescingScheme = &schemeStatic
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.CoalescingParams = &params32
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s CoalescingScheme/CoalescingParams", vmName)
 
 			By("Waiting for ethernet0.coalescingScheme=static and ethernet0.coalescingParams=32 in status.extraConfig")
 
@@ -454,7 +426,10 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
 			DeferCleanup(func() {
-				deleteNICExtraConfigVM(ctx, svClusterClient, vmNamespace, vmName)
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
+				}
 			})
 
 			By("Creating VM with live-mode baseline CoalescingScheme=Adapt")
@@ -463,8 +438,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				vmName, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:       vmopv1a6.VirtualMachinePowerStateOn,
-					CoalescingScheme: vmopv1a6.CoalescingSchemeAdapt,
+					PowerState:       vmopv1.VirtualMachinePowerStateOn,
+					CoalescingScheme: vmopv1.CoalescingSchemeAdapt,
 				},
 			)
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
@@ -474,37 +449,43 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKey,
 				"ethernet0.coalescingScheme", "adapt")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1a6.VirtualMachinePowerStateOn))
+				string(vmopv1.VirtualMachinePowerStateOn))
 
 			By("Phase 3: patching all four powercycle-mode fields to positive values")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				modePerQueue := vmopv1a6.TxContextThreadingModePerQueue
-				udpEnabled := vmopv1a6.UDPRSSModeEnabled
-				vm.Spec.Network.Interfaces[0].VMXNet3.CtxPerDev = &modePerQueue
-				vm.Spec.Network.Interfaces[0].VMXNet3.RSSOffloadEnabled = ptr.To(true)
-				vm.Spec.Network.Interfaces[0].VMXNet3.UDPRSSEnabled = &udpEnabled
-				vm.Spec.Network.Interfaces[0].VMXNet3.PNICFeatures = []vmopv1a6.PNICQueueFeature{
-					vmopv1a6.PNICQueueFeatureReceiveSideScaling,
-				}
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			modePerQueue := vmopv1.TxContextThreadingModePerQueue
+			udpEnabled := vmopv1.UDPRSSModeEnabled
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.CtxPerDev = &modePerQueue
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.RSSOffloadEnabled = ptr.To(true)
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.UDPRSSEnabled = &udpEnabled
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.PNICFeatures = []vmopv1.PNICQueueFeature{
+				vmopv1.PNICQueueFeatureReceiveSideScaling,
+			}
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s powercycle-mode fields", vmName)
 
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKey,
-				metav1.ConditionFalse, vmopv1a6.VirtualMachinePowerCyclePendingReason)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerCyclePendingReason)
 
 			By("Phase 4: power cycling the VM")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOff
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PowerState=Off", vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1a6.VirtualMachinePowerStateOff))
+				string(vmopv1.VirtualMachinePowerStateOff))
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOn
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PowerState=On", vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1a6.VirtualMachinePowerStateOn))
+				string(vmopv1.VirtualMachinePowerStateOn))
 
 			condPhase4 := waitForNICExtraConfigSyncedWithExtraConfigs(ctx, svClusterClient, config, vmKey,
 				map[string]string{
@@ -518,30 +499,36 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			t1 := condPhase4.LastTransitionTime
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				udpDisabled := vmopv1a6.UDPRSSModeDisabled
-				vm.Spec.Network.Interfaces[0].VMXNet3.RSSOffloadEnabled = ptr.To(false)
-				vm.Spec.Network.Interfaces[0].VMXNet3.UDPRSSEnabled = &udpDisabled
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			udpDisabled := vmopv1.UDPRSSModeDisabled
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.RSSOffloadEnabled = ptr.To(false)
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.UDPRSSEnabled = &udpDisabled
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s negative wire values", vmName)
 
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKey,
-				metav1.ConditionFalse, vmopv1a6.VirtualMachinePowerCyclePendingReason,
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerCyclePendingReason,
 				t1)
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOff
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PowerState=Off", vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1a6.VirtualMachinePowerStateOff))
+				string(vmopv1.VirtualMachinePowerStateOff))
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOn
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PowerState=On", vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1a6.VirtualMachinePowerStateOn))
+				string(vmopv1.VirtualMachinePowerStateOn))
 
 			Eventually(func(g Gomega) {
-				vm2, err2 := utils.GetVirtualMachineA6(ctx, svClusterClient, vmNamespace, vmName)
+				vm2, err2 := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 				g.Expect(err2).NotTo(HaveOccurred())
 				cond := getNICExtraConfigCondition(vm2)
 				g.Expect(cond).NotTo(BeNil())
@@ -560,24 +547,27 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
 			DeferCleanup(func() {
-				deleteNICExtraConfigVM(ctx, svClusterClient, vmNamespace, vmName)
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
+				}
 			})
 
 			By("Creating VM with live-mode and powercycle-mode fields")
 
-			udpEnabled := vmopv1a6.UDPRSSModeEnabled
-			modePerQueue := vmopv1a6.TxContextThreadingModePerQueue
+			udpEnabled := vmopv1.UDPRSSModeEnabled
+			modePerQueue := vmopv1.TxContextThreadingModePerQueue
 			vm := buildNICExtraConfigVM(
 				vmName, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:        vmopv1a6.VirtualMachinePowerStateOn,
-					CoalescingScheme:  vmopv1a6.CoalescingSchemeAdapt,
+					PowerState:        vmopv1.VirtualMachinePowerStateOn,
+					CoalescingScheme:  vmopv1.CoalescingSchemeAdapt,
 					CtxPerDev:         modePerQueue,
 					RSSOffloadEnabled: ptr.To(true),
 					UDPRSSEnabled:     &udpEnabled,
-					PNICFeatures: []vmopv1a6.PNICQueueFeature{
-						vmopv1a6.PNICQueueFeatureReceiveSideScaling,
+					PNICFeatures: []vmopv1.PNICQueueFeature{
+						vmopv1.PNICQueueFeatureReceiveSideScaling,
 					},
 				},
 			)
@@ -590,17 +580,21 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			By("Power cycling so all powercycle-mode fields go live")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOff
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PowerState=Off", vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1a6.VirtualMachinePowerStateOff))
+				string(vmopv1.VirtualMachinePowerStateOff))
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOn
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s PowerState=On", vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1a6.VirtualMachinePowerStateOn))
+				string(vmopv1.VirtualMachinePowerStateOn))
 
 			waitForNICExtraConfigSyncedWithExtraConfigs(ctx, svClusterClient, config, vmKey,
 				map[string]string{
@@ -612,20 +606,24 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			By("Step A: adding AdvancedProperties bag key innerRSS=TRUE")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.Network.Interfaces[0].AdvancedProperties = []vmopv1a6common.KeyValuePair{
-					{Key: "innerRSS", Value: "TRUE"},
-				}
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			vmPatch.Spec.Network.Interfaces[0].AdvancedProperties = []vmopv1common.KeyValuePair{
+				{Key: "innerRSS", Value: "TRUE"},
+			}
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s AdvancedProperties add", vmName)
 
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKey,
 				"ethernet0.innerRSS", "TRUE")
 
 			By("Step B: removing AdvancedProperties bag key and verifying it disappears from status.extraConfig")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.Network.Interfaces[0].AdvancedProperties = []vmopv1a6common.KeyValuePair{}
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch = vm.DeepCopy()
+			vmPatch.Spec.Network.Interfaces[0].AdvancedProperties = []vmopv1common.KeyValuePair{}
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s AdvancedProperties clear", vmName)
 
 			waitForNICExtraConfigSyncedWithExtraConfigAbsent(ctx, svClusterClient, config, vmKey,
 				"ethernet0.innerRSS")
@@ -642,9 +640,9 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				vmNameA, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:         vmopv1a6.VirtualMachinePowerStateOn,
+					PowerState:         vmopv1.VirtualMachinePowerStateOn,
 					MinHardwareVersion: &hwVersion20,
-					CoalescingScheme:   vmopv1a6.CoalescingSchemeAdapt,
+					CoalescingScheme:   vmopv1.CoalescingSchemeAdapt,
 					// MemoryAdvanced intentionally omitted to trigger the prereq gate.
 				},
 			)
@@ -656,52 +654,45 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				types.NamespacedName{Namespace: vmNamespace, Name: vmNameA},
 				"ethernet0.coalescingScheme", "adapt")
 
-			// Retry only on 409 Conflict; a webhook rejection (4xx != 409) is a
-			// valid terminal outcome and must not be retried.
-			var currentVMA *vmopv1a6.VirtualMachine
-			var updateErr error
-			Eventually(func(g Gomega) {
-				vma, err := utils.GetVirtualMachineA6(ctx, svClusterClient, vmNamespace, vmNameA)
-				g.Expect(err).NotTo(HaveOccurred())
-				vma.Spec.Network.Interfaces[0].VMXNet3.UPTv2Enabled = ptr.To(true)
-				currentVMA = vma
-				updateErr = svClusterClient.Update(ctx, vma)
-				if apierrors.IsConflict(updateErr) {
-					g.Expect(updateErr).NotTo(HaveOccurred())
-				}
-			}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(Succeed())
-			if updateErr != nil {
-				// Webhook rejected the update — prereq gate enforced at admission.
-				By(fmt.Sprintf("webhook rejected UPTv2 update for %s (expected): %v", vmNameA, updateErr))
+			// A Patch/MergeFrom needs no resourceVersion match, so unlike the
+			// Update this replaced, it cannot 409 against a concurrent
+			// controller write — a webhook rejection is the only outcome to
+			// branch on here.
+			vmA = getExtraConfigVM(ctx, svClusterClient, types.NamespacedName{Namespace: vmNamespace, Name: vmNameA})
+			vmAPatch := vmA.DeepCopy()
+			vmAPatch.Spec.Network.Interfaces[0].VMXNet3.UPTv2Enabled = ptr.To(true)
+			patchErr := svClusterClient.Patch(ctx, vmAPatch, ctrlclient.MergeFrom(vmA))
+			if patchErr != nil {
+				// Webhook rejected the patch — prereq gate enforced at admission.
+				By(fmt.Sprintf("webhook rejected UPTv2 update for %s (expected): %v", vmNameA, patchErr))
 			} else {
 				// Webhook allowed through — expect condition to reflect the prereq failure.
 				waitForNICExtraConfigSynced(ctx, svClusterClient, config,
 					types.NamespacedName{Namespace: vmNamespace, Name: vmNameA},
-					metav1.ConditionFalse, vmopv1a6.VirtualMachinePrerequisiteNotMetReason)
+					metav1.ConditionFalse, vmopv1.VirtualMachinePrerequisiteNotMetReason)
 			}
 
-			Expect(svClusterClient.Delete(ctx, currentVMA)).To(Succeed())
-			Eventually(func() bool {
-				tmp := &vmopv1a6.VirtualMachine{}
-				err := svClusterClient.Get(ctx, types.NamespacedName{Namespace: vmNamespace, Name: vmNameA}, tmp)
-				return err != nil
-			}, "2m", "5s").Should(BeTrue())
+			vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameA)
+			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmNameA)
 
 			By("Step B: happy path — VM with full memory reservation should allow UPTv2")
 
 			vmNameB := "nic-ec-uptv2-" + capiutil.RandomString(5)
 			vmKeyB := types.NamespacedName{Namespace: vmNamespace, Name: vmNameB}
 			DeferCleanup(func() {
-				deleteNICExtraConfigVM(ctx, svClusterClient, vmNamespace, vmNameB)
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameB)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmNameB)
+				}
 			})
 
 			vmB := buildNICExtraConfigVM(
 				vmNameB, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:                   vmopv1a6.VirtualMachinePowerStateOn,
+					PowerState:                   vmopv1.VirtualMachinePowerStateOn,
 					MinHardwareVersion:           &hwVersion20,
-					CoalescingScheme:             vmopv1a6.CoalescingSchemeAdapt,
+					CoalescingScheme:             vmopv1.CoalescingSchemeAdapt,
 					MemoryReservationLockedToMax: ptr.To(true),
 				},
 			)
@@ -712,21 +703,23 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKeyB,
 				"ethernet0.coalescingScheme", "adapt")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmNameB, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.Network.Interfaces[0].VMXNet3.UPTv2Enabled = ptr.To(true)
-			})
+			vmB = getExtraConfigVM(ctx, svClusterClient, vmKeyB)
+			vmBPatch := vmB.DeepCopy()
+			vmBPatch.Spec.Network.Interfaces[0].VMXNet3.UPTv2Enabled = ptr.To(true)
+			Expect(svClusterClient.Patch(ctx, vmBPatch, ctrlclient.MergeFrom(vmB))).To(Succeed(),
+				"failed to patch VM %s UPTv2Enabled", vmNameB)
 
 			// Wait until the condition exits PrerequisiteNotMet — any other state is a success.
 			Eventually(func(g Gomega) {
-				vm2, err2 := utils.GetVirtualMachineA6(ctx, svClusterClient, vmNamespace, vmNameB)
+				vm2, err2 := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameB)
 				g.Expect(err2).NotTo(HaveOccurred())
 				cond := getNICExtraConfigCondition(vm2)
 				g.Expect(cond).NotTo(BeNil())
-				g.Expect(cond.Reason).NotTo(Equal(vmopv1a6.VirtualMachinePrerequisiteNotMetReason))
+				g.Expect(cond.Reason).NotTo(Equal(vmopv1.VirtualMachinePrerequisiteNotMetReason))
 			}, config.GetIntervals("default", "wait-vm-nic-extra-config-synced")...).Should(Succeed())
 
 			// If status.Network.Interfaces is populated, verify UPTv2 is reflected.
-			finalVMB, err := utils.GetVirtualMachineA6(ctx, svClusterClient, vmNamespace, vmNameB)
+			finalVMB, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameB)
 			Expect(err).NotTo(HaveOccurred())
 			ifaceStatus := statusNICInterface(finalVMB, "eth0")
 			if ifaceStatus != nil && ifaceStatus.VMXNet3 != nil && ifaceStatus.VMXNet3.UPTv2Enabled != nil {
@@ -746,15 +739,15 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				vmNameA, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:         vmopv1a6.VirtualMachinePowerStateOn,
+					PowerState:         vmopv1.VirtualMachinePowerStateOn,
 					MinHardwareVersion: &hwVersion20,
 					VNUMANodeCount:     ptr.To(int32(2)),
 					CoresPerSocket:     ptr.To(int32(1)),
-					CoalescingScheme:   vmopv1a6.CoalescingSchemeAdapt,
+					CoalescingScheme:   vmopv1.CoalescingSchemeAdapt,
 					// Explicitly BIOS: the VM class/image may default to EFI on
 					// newer hardware versions, which would satisfy the EFI
 					// prerequisite and mask the gate this step is testing.
-					Firmware: string(vmopv1a6.VirtualMachineBootOptionsFirmwareTypeBIOS),
+					Firmware: string(vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS),
 				},
 			)
 			Expect(svClusterClient.Create(ctx, vmA)).To(Succeed(),
@@ -765,47 +758,46 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				types.NamespacedName{Namespace: vmNamespace, Name: vmNameA},
 				"ethernet0.coalescingScheme", "adapt")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmNameA, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.Network.Interfaces[0].VNUMANodeID = ptr.To(int32(1))
-			})
+			vmA = getExtraConfigVM(ctx, svClusterClient, types.NamespacedName{Namespace: vmNamespace, Name: vmNameA})
+			vmAPatch := vmA.DeepCopy()
+			vmAPatch.Spec.Network.Interfaces[0].VNUMANodeID = ptr.To(int32(1))
+			Expect(svClusterClient.Patch(ctx, vmAPatch, ctrlclient.MergeFrom(vmA))).To(Succeed(),
+				"failed to patch VM %s VNUMANodeID", vmNameA)
 
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmNameA},
-				metav1.ConditionFalse, vmopv1a6.VirtualMachinePrerequisiteNotMetReason)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePrerequisiteNotMetReason)
 
-			vmA2, err := utils.GetVirtualMachineA6(ctx, svClusterClient, vmNamespace, vmNameA)
+			vmA2, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameA)
 			Expect(err).NotTo(HaveOccurred())
 			condA := getNICExtraConfigCondition(vmA2)
 			Expect(condA).NotTo(BeNil())
 			Expect(condA.Message).To(ContainSubstring("EFI firmware required"))
 
-			Expect(svClusterClient.Delete(ctx, &vmopv1a6.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{Namespace: vmNamespace, Name: vmNameA},
-			})).To(Succeed())
-			Eventually(func() bool {
-				tmp := &vmopv1a6.VirtualMachine{}
-				err := svClusterClient.Get(ctx, types.NamespacedName{Namespace: vmNamespace, Name: vmNameA}, tmp)
-				return err != nil
-			}, "2m", "5s").Should(BeTrue())
+			vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameA)
+			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmNameA)
 
 			By("Step B: happy path — EFI + vNUMA topology + poweroff lifecycle")
 
 			vmNameB := "nic-ec-vnuma-" + capiutil.RandomString(5)
 			vmKeyB := types.NamespacedName{Namespace: vmNamespace, Name: vmNameB}
 			DeferCleanup(func() {
-				deleteNICExtraConfigVM(ctx, svClusterClient, vmNamespace, vmNameB)
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameB)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmNameB)
+				}
 			})
 
 			vmB := buildNICExtraConfigVM(
 				vmNameB, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:         vmopv1a6.VirtualMachinePowerStateOn,
+					PowerState:         vmopv1.VirtualMachinePowerStateOn,
 					MinHardwareVersion: &hwVersion20,
-					Firmware:           string(vmopv1a6.VirtualMachineBootOptionsFirmwareTypeEFI),
+					Firmware:           string(vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI),
 					VNUMANodeCount:     ptr.To(int32(2)),
 					CoresPerSocket:     ptr.To(int32(1)),
-					CoalescingScheme:   vmopv1a6.CoalescingSchemeAdapt,
+					CoalescingScheme:   vmopv1.CoalescingSchemeAdapt,
 				},
 			)
 			Expect(svClusterClient.Create(ctx, vmB)).To(Succeed(),
@@ -815,28 +807,32 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKeyB,
 				"ethernet0.coalescingScheme", "adapt")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmNameB,
-				string(vmopv1a6.VirtualMachinePowerStateOn))
+				string(vmopv1.VirtualMachinePowerStateOn))
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmNameB, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.Network.Interfaces[0].VNUMANodeID = ptr.To(int32(1))
-			})
+			vmB = getExtraConfigVM(ctx, svClusterClient, vmKeyB)
+			vmBPatch := vmB.DeepCopy()
+			vmBPatch.Spec.Network.Interfaces[0].VNUMANodeID = ptr.To(int32(1))
+			Expect(svClusterClient.Patch(ctx, vmBPatch, ctrlclient.MergeFrom(vmB))).To(Succeed(),
+				"failed to patch VM %s VNUMANodeID", vmNameB)
 
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKeyB,
-				metav1.ConditionFalse, vmopv1a6.VirtualMachinePowerOffRequiredReason)
+				metav1.ConditionFalse, vmopv1.VirtualMachinePowerOffRequiredReason)
 
 			By("Powering off to apply the VNUMANodeID assignment")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmNameB, func(vm *vmopv1a6.VirtualMachine) {
-				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOff
-			})
+			vmB = getExtraConfigVM(ctx, svClusterClient, vmKeyB)
+			vmBPatch = vmB.DeepCopy()
+			vmBPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			Expect(svClusterClient.Patch(ctx, vmBPatch, ctrlclient.MergeFrom(vmB))).To(Succeed(),
+				"failed to patch VM %s PowerState=Off", vmNameB)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmNameB,
-				string(vmopv1a6.VirtualMachinePowerStateOff))
+				string(vmopv1.VirtualMachinePowerStateOff))
 
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKeyB,
 				metav1.ConditionTrue, "")
 
 			// If status.Network.Interfaces is populated, verify VNUMANodeID is reflected.
-			finalVMB, err := utils.GetVirtualMachineA6(ctx, svClusterClient, vmNamespace, vmNameB)
+			finalVMB, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameB)
 			Expect(err).NotTo(HaveOccurred())
 			ifaceStatus := statusNICInterface(finalVMB, "eth0")
 			if ifaceStatus != nil && ifaceStatus.VNUMANodeID != nil {
@@ -875,7 +871,10 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
 			DeferCleanup(func() {
-				deleteNICExtraConfigVM(ctx, svClusterClient, vmNamespace, vmName)
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
+				}
 			})
 
 			By("Creating VM with PromoteDisksMode=Online and CoalescingScheme=Disabled")
@@ -884,9 +883,9 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				vmName, vmNamespace,
 				clusterResources.VMClassName, linuxVMIName, clusterResources.StorageClassName,
 				nicExtraConfigVMOptions{
-					PowerState:       vmopv1a6.VirtualMachinePowerStateOn,
-					PromoteDisksMode: vmopv1a6.VirtualMachinePromoteDisksModeOnline,
-					CoalescingScheme: vmopv1a6.CoalescingSchemeDisabled,
+					PowerState:       vmopv1.VirtualMachinePowerStateOn,
+					PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOnline,
+					CoalescingScheme: vmopv1.CoalescingSchemeDisabled,
 				},
 			)
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
@@ -901,10 +900,12 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			By("Patching CoalescingScheme=Static and verifying the live update is applied")
 
-			retryUpdateVMA6(ctx, svClusterClient, config, vmNamespace, vmName, func(vm *vmopv1a6.VirtualMachine) {
-				schemeStatic := vmopv1a6.CoalescingSchemeStatic
-				vm.Spec.Network.Interfaces[0].VMXNet3.CoalescingScheme = &schemeStatic
-			})
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmPatch := vm.DeepCopy()
+			schemeStatic := vmopv1.CoalescingSchemeStatic
+			vmPatch.Spec.Network.Interfaces[0].VMXNet3.CoalescingScheme = &schemeStatic
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+				"failed to patch VM %s CoalescingScheme", vmName)
 
 			By("Waiting for ethernet0.coalescingScheme=static in status.extraConfig")
 
@@ -913,9 +914,9 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			By("Verifying PromoteDisksMode is preserved in the VM spec after NIC ExtraConfig reconciliation")
 
-			finalVM, err := utils.GetVirtualMachineA6(ctx, svClusterClient, vmNamespace, vmName)
+			finalVM, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(finalVM.Spec.PromoteDisksMode).To(Equal(vmopv1a6.VirtualMachinePromoteDisksModeOnline),
+			Expect(finalVM.Spec.PromoteDisksMode).To(Equal(vmopv1.VirtualMachinePromoteDisksModeOnline),
 				"PromoteDisksMode must remain Online after NIC ExtraConfig reconciliation")
 		})
 }

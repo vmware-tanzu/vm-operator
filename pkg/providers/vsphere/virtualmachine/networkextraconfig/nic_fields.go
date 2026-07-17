@@ -127,16 +127,21 @@ var nicFields = []nicFieldDef{
 	},
 }
 
-// reconcileNICFields evaluates all nicFields entries for a single
-// spec interface / hardware device pair and applies changes to cs.
+// ReconcileNICFields evaluates all nicFields entries for a single spec
+// interface / hardware device pair. When dryRun is false, it applies changes
+// to cs (the normal Reconcile path). When dryRun is true, it never calls
+// apply — cs is only used to look up a pre-existing DeviceChange entry, and
+// dev (and the moVM it's aliased from) is never mutated — for status/condition
+// computation, which must not stamp not-yet-confirmed values onto vmCtx.MoVM.
 // Returns the names of blocked (prerequisite failure) and blockedPowerOff
-// (hot-plug not possible) fields.
-func reconcileNICFields(
+// (hot-plug not possible) fields either way.
+func ReconcileNICFields(
 	vm vmopv1.VirtualMachine,
 	iface vmopv1.VirtualMachineNetworkInterfaceSpec,
 	dev vimtypes.BaseVirtualDevice,
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs *vimtypes.VirtualMachineConfigSpec,
+	dryRun bool,
 ) (blocked, blockedPowerOff []string) {
 	hwVer, _ := vimtypes.ParseHardwareVersion(ci.Version)
 	poweredOn := vm.Status.PowerState == vmopv1.VirtualMachinePowerStateOn
@@ -164,7 +169,7 @@ func reconcileNICFields(
 
 		if poweredOn && !f.hotPluggable(vm, iface, dev, ci) {
 			blockedPowerOff = append(blockedPowerOff, f.fieldName)
-		} else {
+		} else if !dryRun {
 			f.apply(vm, iface, dev, ci, cs)
 		}
 	}

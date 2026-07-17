@@ -17,7 +17,7 @@ import (
 // advancing per call).
 type NICDeviceMatcher func(iface vmopv1.VirtualMachineNetworkInterfaceSpec, specIdx int) vimtypes.BaseVirtualDevice
 
-// defaultNICMatcher returns a NICDeviceMatcher that positionally zips each
+// DefaultNICMatcher returns a NICDeviceMatcher that positionally zips each
 // managed ethernet spec interface to the corresponding ethernet device in the
 // hardware list. SR-IOV and other non-VMX-namespace adapters are excluded from
 // both sides.
@@ -26,7 +26,7 @@ type NICDeviceMatcher func(iface vmopv1.VirtualMachineNetworkInterfaceSpec, spec
 //
 // TODO: Replace positional zip with identity-based matching once device-order
 // semantics are fully understood.
-func defaultNICMatcher(hwDevs []vimtypes.BaseVirtualDevice) NICDeviceMatcher {
+func DefaultNICMatcher(hwDevs []vimtypes.BaseVirtualDevice) NICDeviceMatcher {
 	managed := collectManagedEthernetDevices(hwDevs)
 
 	pos := 0
@@ -43,10 +43,10 @@ func defaultNICMatcher(hwDevs []vimtypes.BaseVirtualDevice) NICDeviceMatcher {
 	}
 }
 
-// ethernetDeviceIndex returns the ethernetN namespace index for an ethernet
+// EthernetDeviceIndex returns the ethernetN namespace index for an ethernet
 // device (N = deviceKey - EthernetDeviceKeyBase). Returns (0, false) for
 // non-ethernet devices.
-func ethernetDeviceIndex(dev vimtypes.BaseVirtualDevice) (int32, bool) {
+func EthernetDeviceIndex(dev vimtypes.BaseVirtualDevice) (int32, bool) {
 	if !isEthernetDevice(dev) {
 		return 0, false
 	}

@@ -2108,6 +2108,7 @@ func autoConvert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachine
 		out.Sysprep = nil
 	}
 	out.VAppConfig = (*VirtualMachineBootstrapVAppConfigSpec)(unsafe.Pointer(in.VAppConfig))
+	// WARNING: in.ISO requires manual conversion: does not exist in peer-type
 	// WARNING: in.Disabled requires manual conversion: does not exist in peer-type
 	return nil
 }

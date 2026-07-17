@@ -236,6 +236,18 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-ISO-BOOTSTRAP", func() {
+			virtualmachine.ISOBootstrapSpec(context.TODO(), func() virtualmachine.ISOBootstrapSpecInput {
+				return virtualmachine.ISOBootstrapSpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					ArtifactFolder:   artifactFolder,
+					SkipCleanup:      skipCleanup,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("CONFIG-POLICY", func() {
 			configpolicy.Spec(context.TODO(), func() configpolicy.SpecInput {
 				return configpolicy.SpecInput{

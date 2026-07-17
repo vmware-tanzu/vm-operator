@@ -74,8 +74,8 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 	return &unitValidatingWebhookContext{
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj),
-		vmco:    vmco,
-		oldVMCO: oldVMCO,
+		vmco:                                vmco,
+		oldVMCO:                             oldVMCO,
 	}
 }
 

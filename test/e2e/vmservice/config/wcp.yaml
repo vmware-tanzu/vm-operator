@@ -39,6 +39,7 @@ variables:
   EnvFSSIncrementalRestore: "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
   EnvFSSVMResizeCPUMemory: "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
   EnvFSSIsoSupport: "FSS_WCP_VMSERVICE_ISO_SUPPORT"
+  EnvFSSAutoISO: "FSS_WCP_VMSERVICE_AUTO_ISO"
   EnvNetworkProvider: "NETWORK_PROVIDER"
   EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
   EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
@@ -62,6 +63,7 @@ variables:
   EnvFSSIncrementalRestore: "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
   EnvFSSVMResizeCPUMemory: "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
   EnvFSSIsoSupport: "FSS_WCP_VMSERVICE_ISO_SUPPORT"
+  EnvFSSAutoISO: "FSS_WCP_VMSERVICE_AUTO_ISO"
   EnvNetworkProvider: "NETWORK_PROVIDER"
   EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
   EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
@@ -100,6 +102,7 @@ intervals:
   default/wait-virtual-machine-cns-node-batch-attachment-creation: ["10m", "5s"]
   default/wait-virtual-machine-cns-node-batch-attachment-deletion: ["5m", "5s"]
   default/wait-content-library-name: ["2m", "5s"]
+  default/wait-virtual-machine-iso-bootstrap: ["30m", "15s"]
   default/wait-storage-class-ready: ["5m", "15s"]
   default/wait-namespace-ready: ["5m", "10s"]
   default/wait-kms-cluster-ready: ["2m", "5s"]

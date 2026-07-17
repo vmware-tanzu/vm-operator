@@ -107,6 +107,11 @@ type Config struct {
 	WebhookSecretNamespace       string
 	WebhookSecretVolumeMountPath string
 
+	// ISOHTTPServerImage is the container image used for the ephemeral HTTP
+	// server Pod that serves spec.bootstrap.iso.assets during automated ISO
+	// installation.
+	ISOHTTPServerImage string
+
 	// LogSensitiveData means that logs will potentially contain sensitive data
 	// such as passwords. Defaults to false.
 	LogSensitiveData bool
@@ -206,6 +211,7 @@ type FeatureStates struct {
 	PerNamespaceNetworkProvider bool
 	WorkloadIPv6                bool
 	VirtualMachineConfigPolicy  bool
+	AutoISO                     bool // FSS_WCP_VMSERVICE_AUTO_ISO
 }
 
 type InstanceStorage struct {

@@ -78,6 +78,7 @@ var (
 func DoBootstrap( //nolint:gocyclo
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
+	k8sClient ctrlclient.Client,
 	config *vimtypes.VirtualMachineConfigInfo,
 	bootstrapArgs BootstrapArgs) error {
 
@@ -117,7 +118,15 @@ func DoBootstrap( //nolint:gocyclo
 		linuxPrep  = bootstrap.LinuxPrep
 		sysPrep    = bootstrap.Sysprep
 		vAppConfig = bootstrap.VAppConfig
+		iso        = bootstrap.ISO
 	)
+
+	if iso != nil {
+		if !pkgcfg.FromContext(vmCtx).Features.AutoISO {
+			return errors.New("spec.bootstrap.iso requires the AutoISO feature to be enabled")
+		}
+		return BootstrapISO(vmCtx, vcVM, k8sClient, iso, &bootstrapArgs)
+	}
 
 	if sysPrep != nil || vAppConfig != nil {
 		bootstrapArgs.TemplateRenderFn = GetTemplateRenderFunc(vmCtx, &bootstrapArgs)

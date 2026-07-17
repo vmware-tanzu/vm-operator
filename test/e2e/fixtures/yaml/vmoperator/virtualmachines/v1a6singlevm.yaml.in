@@ -25,7 +25,7 @@ spec:
   {{- if .GuestID}}
   guestID: {{.GuestID}}
   {{- end}}
-  {{- if and .Bootstrap (or .Bootstrap.CloudInit .Bootstrap.Sysprep .Bootstrap.VAppConfig .Bootstrap.LinuxPrep)}}
+  {{- if and .Bootstrap (or .Bootstrap.CloudInit .Bootstrap.Sysprep .Bootstrap.VAppConfig .Bootstrap.LinuxPrep .Bootstrap.ISO)}}
   bootstrap:
     {{if .Bootstrap.CloudInit }}
     cloudInit:
@@ -68,6 +68,22 @@ spec:
       hardwareClockIsUTC: {{ .Bootstrap.LinuxPrep.HardwareClockIsUTC }}
       timeZone: {{ .Bootstrap.LinuxPrep.TimeZone }}
       customizeAtNextPowerOn: {{ .Bootstrap.LinuxPrep.CustomizeAtNextPowerOn }}
+    {{end}}
+    {{if .Bootstrap.ISO }}
+    iso:
+      {{if .Bootstrap.ISO.Commands}}
+      commands:
+        {{- range .Bootstrap.ISO.Commands}}
+        - {{printf "%q" .}}
+        {{- end}}
+      {{end}}
+      {{if .Bootstrap.ISO.Assets}}
+      assets:
+        {{- range .Bootstrap.ISO.Assets}}
+        - name: {{.Name}}
+          key: {{.Key}}
+        {{- end}}
+      {{end}}
     {{end}}
   {{end}}
 {{- if .PowerState}}

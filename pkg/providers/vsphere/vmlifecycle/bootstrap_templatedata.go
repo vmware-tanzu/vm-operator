@@ -24,9 +24,18 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 )
 
+// GetTemplateRenderFunc returns the render function used to evaluate Go
+// templates against the VM's network/hostname/etc. status.
+//
+// extraFuncMaps, if provided, are merged into the returned function's
+// template.FuncMap after every versioned function map, so their entries take
+// precedence. This lets a single caller (e.g. BootstrapISO) register a
+// function -- V1Alpha6_BootstrapService -- without making it available to
+// every other bootstrap provider's render calls.
 func GetTemplateRenderFunc(
 	vmCtx pkgctx.VirtualMachineContext,
 	bsArgs *BootstrapArgs,
+	extraFuncMaps ...template.FuncMap,
 ) TemplateRenderFunc {
 
 	// There is a lot of duplication here, especially since the "template" types are the same in v1a1
@@ -146,6 +155,11 @@ func GetTemplateRenderFunc(
 	}
 	for k, v := range v1a6FuncMap {
 		funcMap[k] = v
+	}
+	for _, extra := range extraFuncMaps {
+		for k, v := range extra {
+			funcMap[k] = v
+		}
 	}
 
 	// Skip parsing when encountering escape character('\{',"\}")
@@ -1214,8 +1228,8 @@ func v1a6TemplateFunctions(
 		constants.V1alpha6FirstIPFromNIC:    v1alpha6FirstIPFromNIC,
 		constants.V1alpha6IPsFromNIC:        v1alpha6IPsFromNIC,
 		constants.V1alpha6FormatNameservers: v1alpha6FormatNameservers,
-		constants.V1alpha6SubnetMask: v1alpha6SubnetMask,
-		constants.V1alpha6IP:         v1alpha6IP,
-		constants.V1alpha6FormatIP:   v1alpha6FormatIP,
+		constants.V1alpha6SubnetMask:        v1alpha6SubnetMask,
+		constants.V1alpha6IP:                v1alpha6IP,
+		constants.V1alpha6FormatIP:          v1alpha6FormatIP,
 	}
 }

@@ -39,6 +39,19 @@ test/e2e/
 2. **vSphere environment** with proper permissions
 3. **Kubeconfig** for the WCP supervisor cluster
 4. **Go 1.26+** installed locally
+5. **ISO-type content library items**, published to the namespace's content
+   library before running any ISO-related test (`VM-LCM`'s CD-ROM scenario,
+   `VM-HARDWARE`'s CD-ROM scenarios, and `VM-ISO-BOOTSTRAP`):
+   - `ubuntu-24.04-live-server-amd64` — the Ubuntu Server installation ISO,
+     used by `VM-ISO-BOOTSTRAP` to drive an unattended
+     `spec.bootstrap.iso` install (gated on the `FSS_WCP_VMSERVICE_AUTO_ISO`
+     feature state). The bootstrap assets Secret this test creates has two
+     keys, `user-data` (a cloud-init `autoinstall:` document) and
+     `meta-data` (may be empty) — see
+     `test/e2e/vmservice/vmservice/virtualmachine/iso_bootstrap.go`.
+   - The tests resolve each ISO's `VirtualMachineImage` by display name via
+     `vmoperator.WaitForVirtualMachineImageName`; the content library item
+     must already exist and be synced before the suite runs.
 
 ### Configuration
 

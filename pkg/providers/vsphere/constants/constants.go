@@ -240,4 +240,6 @@ const (
 	V1alpha6SubnetMask = "V1alpha6_SubnetMask"
 	// V1alpha6FormatNameservers is an alias for versioned templating function V1alpha6_FormatNameservers.
 	V1alpha6FormatNameservers = "V1alpha6_FormatNameservers"
+	// V1alpha6BootstrapService is an alias for versioned templating function V1Alpha6_BootstrapService.
+	V1alpha6BootstrapService = "V1Alpha6_BootstrapService"
 )

@@ -12,6 +12,7 @@ There are a number of methods that may be used to bootstrap a virtual machine's 
 | [LinuxPrep](#linuxprep)     | [Guest OS Customization](https://vdc-download.vmware.com/vmwb-repository/dcr-public/c476b64b-c93c-4b21-9d76-be14da0148f9/04ca12ad-59b9-4e1c-8232-fd3d4276e52c/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.customization.Specification.html) (GOSC) |    ✓   |         | LinuxPrep is used by VMware to customize Linux images on first-boot or at runtime |
 | [Sysprep](#sysprep)         | [Guest OS Customization](https://vdc-download.vmware.com/vmwb-repository/dcr-public/c476b64b-c93c-4b21-9d76-be14da0148f9/04ca12ad-59b9-4e1c-8232-fd3d4276e52c/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.customization.Specification.html) (GOSC) |       |     ✓    | Microsoft Sysprep is used by VMware to customize Windows images on first-boot |
 | [vAppConfig](#vappconfig)   | Bespoke                       |   ✓   |         | For images with bespoke, bootstrap engines driven by vAppConfig properties |
+| [ISO](#iso)                 | Kernel command line / netsh   |   ✓   |         | Automates OS installation from an ISO image by typing boot commands over a virtual USB keyboard; no bootstrap engine (or even an installed OS) is required |
 
 ## Cloud-Init
 
@@ -585,6 +586,103 @@ The following table lists the functions VM Operator defines and passes into the 
 | V1alpha6_IP | `func(IP string) string` | Format an IP address with the default netmask CIDR. If the specified IP is invalid, the template string is not parsed. |
 | V1alpha6_IPsFromNIC | `func (index int) []string` | List all IPs, formatted with the network length, from the n'th NIC. If the specified index is out-of-bounds, the template string is not parsed. |
 | V1alpha6_SubnetMask | `func(cidr string) (string, error)` | Get a subnet mask from an IP address formatted with a network length. |
+
+## ISO
+
+!!! note "Ubuntu Server only, for now"
+
+    The `ISO` bootstrap provider is currently only supported for Ubuntu
+    Server. Support for other Linux distributions and Windows is planned,
+    reusing the same framework described below with per-OS boot command
+    sequences -- see the `003-auto-iso` spec for details.
+
+The `ISO` bootstrap provider automates installing a guest operating system
+from an ISO image with no VNC/console access and no pre-baked answer-file
+media. It works by:
+
+1. Attaching the ISO as a `spec.hardware.cdrom` device (VM Operator requires
+   at least one `cdrom` entry referencing an ISO-type `VirtualMachineImage`
+   when `spec.bootstrap.iso` is set).
+2. Creating an ephemeral HTTP server (a Pod and Service that VM Operator
+   creates and tears down automatically) that serves the files referenced by
+   `spec.bootstrap.iso.assets` -- e.g. a cloud-init `autoinstall:` document --
+   at `/<secretName>/<key>`.
+3. Sending `spec.bootstrap.iso.commands` to the VM's console via a virtual
+   USB keyboard immediately after power-on, in place of VNC.
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha6
+kind: VirtualMachine
+metadata:
+  name:      my-vm
+  namespace: my-namespace
+spec:
+  className:    my-vm-class
+  imageName:    ubuntu-24.04-iso
+  storageClass: my-storage-class
+  guestID:      ubuntu64Guest
+  hardware:
+    cdrom:
+    - name: cdrom1
+      image:
+        name: ubuntu-24.04-iso
+        kind: VirtualMachineImage
+      connected: true
+      allowGuestControl: true
+  bootstrap:
+    iso:
+      commands:
+      - "<esc><wait>"
+      - "ifname=bootnet:{{V1alpha6_FirstNicMacAddr}};ip={{(V1alpha6_FormatIP V1alpha6_FirstIP \"\")}}:{{(index .V1alpha6.VM.Status.Network.Config.Interfaces 0).Gateway4}}:{{(V1alpha6_SubnetMask V1alpha6_FirstIP)}}:{{.V1alpha6.VM.Status.Network.Config.DNS.HostName}}:bootnet "
+      - "<wait3s>c<wait3s>"
+      - "linux /casper/vmlinuz --- autoinstall ds=\"nocloud-net;seedfrom=http://{{V1Alpha6_BootstrapService}}/\""
+      - "<enter><wait>"
+      - "initrd /casper/initrd"
+      - "<enter><wait>"
+      - "boot"
+      - "<enter>"
+      assets:
+      - name: my-vm-bootstrap-data
+        key: user-data
+      - name: my-vm-bootstrap-data
+        key: meta-data
+```
+
+### Boot command syntax
+
+Each entry in `commands` may contain:
+
+- Literal printable ASCII characters, typed one at a time.
+- Special key tokens: `<esc>`, `<enter>`, `<tab>`, `<bs>`, `<del>`,
+  `<spacebar>`, `<f1>`-`<f12>`, `<up>`, `<down>`, `<left>`, `<right>`.
+- Wait tokens: `<wait>` (1 second), `<wait5>`/`<wait10>` (5/10 seconds), or an
+  arbitrary Go duration, e.g. `<wait3m30s>`.
+- Modifier hold/release pairs, e.g. `<leftShiftOn>1<leftShiftOff>`.
+- Go [`text/template`](https://pkg.go.dev/text/template) expressions,
+  evaluated against the same [`VirtualMachineTemplate`](#input-object) input
+  and [pre-defined functions](#pre-defined-functions) available to vApp
+  properties, plus one ISO-specific function:
+
+| Query name | Signature | Description |
+| -------- | -------- | -------- |
+| V1Alpha6_BootstrapService | `func() string` | The `<address>:<port>` of the ephemeral HTTP server VM Operator created for this VM's `spec.bootstrap.iso.assets`. Only resolvable from within `spec.bootstrap.iso.commands` -- it is not available to vApp properties, since no ephemeral server exists outside the ISO bootstrap path. |
+
+The sum of every wait token across `commands` may not exceed 120 seconds; VM
+Operator rejects the boot commands (before sending any of them) if it does.
+
+### Assets
+
+Each entry in `spec.bootstrap.iso.assets` references a key in a Secret
+resource in the same namespace as the VM. The referenced key's value is
+served as a file at `/<secretName>/<key>` by the ephemeral HTTP server, and
+that server's address is available to `commands` via
+`{{V1Alpha6_BootstrapService}}`.
+
+### Immutability
+
+Once VM Operator has sent boot commands for a given generation of
+`spec.bootstrap.iso` (tracked internally via an annotation), `commands` may
+not be changed while the VM is powered on.
 
 ## Deprecated
 

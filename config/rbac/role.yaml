@@ -10,6 +10,7 @@ rules:
   - configmaps
   - endpoints
   - persistentvolumeclaims
+  - pods
   - services
   verbs:
   - create

@@ -84,6 +84,20 @@ type VirtualMachineBootstrapSpec struct {
 
 	// +optional
 
+	// ISO may be used to automate the installation of a VM from an ISO image.
+	//
+	// Boot commands are sent via the virtual USB keyboard to the VM console
+	// immediately after power-on. User-supplied assets (kickstart files,
+	// autoinstall configs, Windows answer files, etc.) are served from an
+	// ephemeral HTTP server Pod on the Supervisor, reachable from the VM's
+	// workload network.
+	//
+	// This bootstrap provider may not be used in conjunction with the
+	// CloudInit, LinuxPrep, Sysprep, or VAppConfig bootstrap providers.
+	ISO *VirtualMachineBootstrapISOSpec `json:"iso,omitempty"`
+
+	// +optional
+
 	// Disabled is a flag that indicates whether or not to disable bootstrap
 	// for this VM.
 	//
@@ -288,4 +302,57 @@ type VirtualMachineBootstrapVAppConfigSpec struct {
 	//
 	// Please note this field and Properties are mutually exclusive.
 	RawProperties string `json:"rawProperties,omitempty"`
+}
+
+// VirtualMachineBootstrapISOSpec describes the ISO-based automated
+// installation configuration used to bootstrap the VM.
+type VirtualMachineBootstrapISOSpec struct {
+	// +optional
+	// +listType=atomic
+
+	// Commands is an ordered list of boot commands sent to the VM via the
+	// virtual USB keyboard immediately after power-on.
+	//
+	// Each element may contain:
+	//   - Literal printable ASCII characters (typed one at a time).
+	//   - Special key tokens: <esc>, <enter>, <tab>, <bs>, <del>,
+	//     <spacebar>, <f1>-<f12>, <up>, <down>, <left>, <right>.
+	//   - Wait tokens: <wait> (1s), <wait5> (5s), <wait10> (10s), or an
+	//     arbitrary Go duration, e.g. <wait3m30s>.
+	//   - Modifier hold/release: <leftShiftOn>x<leftShiftOff>.
+	//   - Go text/template expressions evaluated against the VM's intended
+	//     network config.
+	//
+	// The sum of all wait tokens across Commands may not exceed 120 seconds.
+	Commands []string `json:"commands,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+
+	// Assets is a list of references to keys in Secret resources in the same
+	// namespace. Each referenced key's value is served as a file by an
+	// ephemeral HTTP server that VM Operator creates and tears down for this
+	// VM, reachable from the VM during installation.
+	//
+	// The served URL path is /<secretName>/<key>. The address of the HTTP
+	// server is available in Commands via the {{V1Alpha6_BootstrapService}}
+	// template function.
+	Assets []VirtualMachineBootstrapISOAsset `json:"assets,omitempty"`
+}
+
+// VirtualMachineBootstrapISOAsset references a single key in a Secret
+// resource that is served by the ephemeral bootstrap HTTP server.
+type VirtualMachineBootstrapISOAsset struct {
+	// +required
+	// +kubebuilder:validation:MinLength=1
+
+	// Name is the name of the Secret resource in the same namespace as the VM.
+	Name string `json:"name"`
+
+	// +required
+	// +kubebuilder:validation:MinLength=1
+
+	// Key is the key within the Secret whose value is the file content to serve.
+	Key string `json:"key"`
 }

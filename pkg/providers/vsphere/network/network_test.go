@@ -5,6 +5,7 @@
 package network_test
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -57,6 +58,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 	var (
 		testConfig builder.VCSimTestConfig
+		parentCtx  context.Context
 		ctx        *builder.TestContextForVCSim
 
 		vmCtx       pkgctx.VirtualMachineContext
@@ -70,7 +72,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 	BeforeEach(func() {
 		network.RetryTimeout = 1 * time.Millisecond
+
 		testConfig = builder.VCSimTestConfig{}
+		parentCtx = pkgcfg.NewContextWithDefaultConfig()
 
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -85,7 +89,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
+		ctx = builder.NewTestContextForVCSim(parentCtx, testConfig, initObjects...)
 
 		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
@@ -113,6 +117,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		const networkName = "DC0_DVPG0"
 
 		BeforeEach(func() {
+			testConfig.NumNetworks = 0
 			testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 		})
 
@@ -138,7 +143,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(err).ToNot(HaveOccurred())
 					backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).To(BeTrue())
-					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+					dvpg, err := ctx.Finder.Network(ctx, networkName)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(backingInfo.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
 				})
 
 				Expect(result.DHCP4).To(BeFalse())
@@ -409,6 +416,111 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
 					Expect(ipConfig.IsIPv4).To(BeFalse())
 					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
+				})
+			})
+		})
+
+		Context("Standard Portgroup", func() {
+			BeforeEach(func() {
+				testConfig.WithNetworkEnv = ""
+				testConfig.WithNetworkConfig = []builder.VCSimNetworkConfig{
+					{Provider: pkgcfg.NetworkProviderTypeVDS, StandardPortGroup: true},
+				}
+
+				pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+					config.Features.PerNamespaceNetworkProvider = true
+				})
+
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: &common.PartialObjectRef{
+							TypeMeta: netOPNetworkTypeMeta,
+							Name:     networkName,
+						},
+					},
+				}
+			})
+
+			simulateReady := func() {
+				netInterface := &netopv1alpha1.NetworkInterface{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+						Namespace: vm.Namespace,
+					},
+				}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+				Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
+
+				netInterface.Status.NetworkID = ctx.GetNetwork(0).Backing.Reference().Value
+				netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+					{
+						Type:   netopv1alpha1.NetworkInterfaceReady,
+						Status: corev1.ConditionTrue,
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+			}
+
+			When("PerNamespaceNetworkProvider is enabled", func() {
+				It("resolves to a standard Network backing", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NetOP reconcile", simulateReady)
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+					Expect(result.Backing).ToNot(BeNil())
+
+					backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
+					Expect(ok).To(BeTrue())
+
+					expectedBacking, err := ctx.GetNetwork(0).Backing.EthernetCardBackingInfo(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					expectedBackingInfo, ok := expectedBacking.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
+					Expect(ok).To(BeTrue())
+					Expect(backingInfo.DeviceName).To(Equal(expectedBackingInfo.DeviceName))
+				})
+			})
+
+			When("PerNamespaceNetworkProvider is disabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.Features.PerNamespaceNetworkProvider = false
+					})
+				})
+
+				It("returns an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NetOP reconcile", simulateReady)
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceBackingNotSupported))
+					Expect(results.Results).To(BeEmpty())
 				})
 			})
 		})
@@ -1843,15 +1955,18 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 	})
 
 	Context("Named Network", func() {
-		const namedNetwork = "DC0_DVPG0"
+		// Use network vcsim automatically creates.
+		const networkName = "DC0_DVPG0"
 
 		BeforeEach(func() {
+			testConfig.NumNetworks = 0
 			testConfig.WithNetworkEnv = builder.NetworkEnvNamed
+
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name:    interfaceName0,
-						Network: &common.PartialObjectRef{Name: namedNetwork},
+						Network: &common.PartialObjectRef{Name: networkName},
 					},
 				},
 			}
@@ -1867,7 +1982,9 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			Expect(err).ToNot(HaveOccurred())
 			backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 			Expect(ok).To(BeTrue())
-			Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+			dvpg, err := ctx.Finder.Network(ctx, networkName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(backingInfo.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
 		})
 
 		Context("Named Network with MAC address", func() {

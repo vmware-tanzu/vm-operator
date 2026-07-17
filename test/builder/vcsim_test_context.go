@@ -61,6 +61,8 @@ import (
 	//nolint:godot
 	// _ "github.com/vmware/govmomi/pbm/simulator"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
@@ -74,6 +76,7 @@ import (
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
@@ -158,6 +161,11 @@ type VCSimTestConfig struct {
 // to configure on vcsim.
 type VCSimNetworkConfig struct {
 	Provider pkgcfg.NetworkProviderType
+
+	// StandardPortGroup, when true, backs this network with a standard
+	// (non-distributed) vSphere Network instead of a DVPG. Only valid
+	// when Provider is NetworkProviderTypeVDS.
+	StandardPortGroup bool
 }
 
 type TestContextForVCSim struct {
@@ -269,6 +277,10 @@ func NewTestContextForVCSim(
 	config VCSimTestConfig,
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
+	if _, err := logr.FromContext(parentCtx); err != nil {
+		parentCtx = logr.NewContext(parentCtx, logf.Log)
+	}
+
 	ctx := newTestContextForVCSim(parentCtx, config, initObjects)
 
 	ctx.setupEnv(config)
@@ -336,9 +348,9 @@ func (s *TestSuite) NewTestContextForVCSim(
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
 	ctx := pkgcfg.NewContextWithDefaultConfig()
-	ctx = logr.NewContext(ctx, logf.Log)
 	ctx = ctxop.WithContext(ctx)
 	ctx = ovfcache.WithContext(ctx)
+
 	return NewTestContextForVCSim(ctx, config, initObjects...)
 }
 
@@ -346,10 +358,6 @@ func (s *TestSuite) NewTestContextForVCSimWithParentContext(
 	ctx context.Context,
 	config VCSimTestConfig,
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
-
-	if _, err := logr.FromContext(ctx); err != nil {
-		ctx = logr.NewContext(ctx, logf.Log)
-	}
 
 	return NewTestContextForVCSim(ctx, config, initObjects...)
 }
@@ -571,6 +579,22 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 			&encryptionClass2KeyID)
 	}
 
+	if pkgcfg.FromContext(c).Features.PerNamespaceNetworkProvider {
+		if len(c.networkConfig) > 0 {
+			p, err := netsetutil.TypeToNetworkProvider(c.networkConfig[0].Provider)
+			Expect(err).ToNot(HaveOccurred())
+
+			netset := &netopv1alpha1.NetworkSettings{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "default",
+					Namespace: ns.Name,
+				},
+				Provider: p,
+			}
+			Expect(c.Client.Create(c, netset)).To(Succeed())
+		}
+	}
+
 	// Make trip through the Finder to populate InventoryPath.
 	objRef, err := c.Finder.ObjectReference(c, nsFolder.Reference())
 	Expect(err).ToNot(HaveOccurred())
@@ -676,13 +700,23 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	}
 
 	for i, cfg := range c.networkConfig {
+		if cfg.Provider == pkgcfg.NetworkProviderTypeNamed {
+			continue
+		}
+
 		network := VCSimNetwork{
 			Provider: cfg.Provider,
 		}
 
-		networkRef, err := c.Finder.Network(c, fmt.Sprintf("DC0_DVPG%d", i))
-		Expect(err).ToNot(HaveOccurred())
-		network.Backing = networkRef
+		switch {
+		case cfg.StandardPortGroup:
+			Expect(cfg.Provider).To(Equal(pkgcfg.NetworkProviderTypeVDS))
+			network.Backing = c.createStandardPortGroup(fmt.Sprintf("VMOP VM Network %d", i))
+		default:
+			var err error
+			network.Backing, err = c.Finder.Network(c, fmt.Sprintf("DC0_DVPG%d", i))
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 		switch cfg.Provider {
 		case pkgcfg.NetworkProviderTypeVDS:
@@ -696,7 +730,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 			}
 
 			task, err := object.NewDistributedVirtualPortgroup(
-				c.VCClient.Client, networkRef.Reference()).Reconfigure(c, dvpgSpec)
+				c.VCClient.Client, network.Backing.Reference()).Reconfigure(c, dvpgSpec)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(task.Wait(c)).To(Succeed())
 		}
@@ -714,6 +748,28 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	if p, ok := simulator.DefaultLogin.Password(); ok {
 		c.VCClientConfig.Password = p
 	}
+}
+
+// createStandardPortGroup creates an additional standard (non-distributed)
+// portgroup on the first host's default vSwitch. vcsim always creates one
+// standard "VM Network" per Datacenter already; this is used to create
+// additional standard networks beyond that default.
+func (c *TestContextForVCSim) createStandardPortGroup(name string) object.NetworkReference {
+	hosts, err := c.Finder.HostSystemList(c, "*")
+	Expect(err).ToNot(HaveOccurred())
+	Expect(hosts).ToNot(BeEmpty())
+
+	netSys, err := hosts[0].ConfigManager().NetworkSystem(c)
+	Expect(err).ToNot(HaveOccurred())
+
+	Expect(netSys.AddPortGroup(c, vimtypes.HostPortGroupSpec{
+		Name:        name,
+		VswitchName: "vSwitch0",
+	})).To(Succeed())
+
+	networkRef, err := c.Finder.Network(c, name)
+	Expect(err).ToNot(HaveOccurred())
+	return networkRef
 }
 
 //nolint:gocyclo

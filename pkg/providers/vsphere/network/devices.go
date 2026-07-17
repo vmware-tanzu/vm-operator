@@ -163,9 +163,18 @@ func findMatchingEthCardNetOpNetIf(
 			}
 		}
 
-		dvpg, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-		if ok && dvpg.Port.PortgroupKey == netIf.Status.NetworkID {
-			return i
+		switch b := ethCard.Backing.(type) {
+		case *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo:
+			if b.Port.PortgroupKey == netIf.Status.NetworkID {
+				return i
+			}
+		case *vimtypes.VirtualEthernetCardNetworkBackingInfo:
+			// The server resolves and reports back the Network MoRef for a
+			// standard portgroup backing even though it is not required
+			// when configuring the device.
+			if b.Network != nil && b.Network.Value == netIf.Status.NetworkID {
+				return i
+			}
 		}
 	}
 

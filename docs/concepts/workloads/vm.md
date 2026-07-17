@@ -910,26 +910,48 @@ The above data does _not_ represent the _observed_ network configuration of the 
 
 ## Advanced VM settings
 
-`spec.advanced` groups optional VM-wide settings that are not covered by the VM class, image, or basic hardware blocks. Under the default VM Service configuration, these fields are available on the `VirtualMachine` CRD. Use per-interface `spec.network.interfaces[]` fields (and `advancedProperties` there) for adapter-specific VMX keys; use `spec.advanced.extraConfig` only for VM-wide keys that do not have a first-class field below.
+VM advanced settings can be configured using optional fields under `spec.advanced`. For adapter-specific VMX keys, use the per-interface `spec.network.interfaces[]` fields along with their respective `advancedProperties`. The `spec.advanced.extraConfig` field should be reserved exclusively for VM-wide keys that lack a first-class field below.
 
-| Field | Description |
-|-------|-------------|
-| `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. |
-| `defaultVolumeProvisioningMode` | Default provisioning mode for PVCs owned by this VM. |
-| `changeBlockTracking` | Enables change block tracking for backup integrations. |
-| `preferHtEnabled` | Prefer scheduling vCPUs on hyperthreads of the same core for locality. |
-| `hugePages1GEnabled` | Use 1 GiB huge pages for VM memory. Cannot be changed while the VM is powered on. |
-| `timeTrackerLowLatencyEnabled` | Low-latency time tracking; often used with high latency sensitivity. |
-| `cpuAffinityExclusiveNoStatsEnabled` | Disable per-VM CPU accounting statistics; often used with high latency sensitivity. |
-| `vmxSwapEnabled` | Allow or disallow VMX process swap; set `false` to reduce swap-related jitter. |
-| `pnumaNodeAffinity` | Pin the VM to listed physical host NUMA node IDs (distinct from per-NIC `vnumaNodeID`). |
-| `extraConfig` | Fallback list of VM-wide VMX key/value pairs not modeled above. Keys that duplicate a first-class field or reserved prefixes are rejected. Per-adapter keys belong under `spec.network.interfaces[]`. |
+| Field | Description | Change applies on |
+|-------|-------------|:----:|
+| `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. | _NA_ |
+| `defaultVolumeProvisioningMode` | Default provisioning mode for PVCs owned by this VM. | _NA_ |
+| `changeBlockTracking` | Enables change block tracking for backup integrations. | _NA_ |
+| `preferHtEnabled` | Prefer scheduling vCPUs on hyperthreads of the same core for locality. | PowerCycle |
+| `hugePages1GEnabled` | Use 1 GiB huge pages for VM memory. | PowerOff |
+| `timeTrackerLowLatencyEnabled` | Low-latency time tracking; often used with high latency sensitivity. | PowerCycle |
+| `cpuAffinityExclusiveNoStatsEnabled` | Disable per-VM CPU accounting statistics; often used with high latency sensitivity. | PowerCycle |
+| `vmxSwapEnabled` | Allow or disallow VMX process swap; set `false` to reduce swap-related jitter. | PowerCycle |
+| `pnumaNodeAffinity` | Pin the VM to listed physical host NUMA node IDs (distinct from per-NIC `vnumaNodeID`). | PowerCycle |
+| `extraConfig` | Fallback list of VM-wide VMX key/value pairs not modeled above. Keys that duplicate a first-class field, or that match a reserved key or the `vmservice.`/`guestinfo.` prefixes, are rejected by the admission webhook. | _NA_* |
 
-`status.extraConfig` lists the effective VM-wide VMX map the operator is managing for observation. Conditions such as `VirtualMachineExtraConfigSynced` and `VirtualMachineNetworkConfigSynced` report whether VM-wide and per-interface advanced settings have been applied.
+The `Change applies on` column reflects how a change to that field is applied when the VM is already powered on:
+
+* **PowerCycle** — the new value is written immediately, but the change is not considered fully synced until the VM is next power-cycled (powered off, then on).
+* **PowerOff** — the change cannot be applied while the VM is powered on; it is deferred until the VM is powered off, at which point it is applied.
+* **_NA_** — not subject to this mode; applies without a power transition.
+
+`*` `extraConfig` bag keys are always written immediately, regardless of power state, and are never deferred. VM Operator has no semantic knowledge of an arbitrary VMX key, so it cannot know whether that key actually requires a power cycle to take effect on the running VM — determining that, and power-cycling the VM if needed, is the user's responsibility.
+
+Removing a key from `spec.advanced.extraConfig` removes it from the VM's VMX and from `status.extraConfig` — it is not left stale.
+
+### ExtraConfigSynced condition
+
+`status.extraConfig` reflects the effective VMX extraConfig currently applied to the VM, merged from the VM Image, VM Class, `spec.network.interfaces[]` advanced properties, and `spec.advanced.extraConfig`.
+
+The `VirtualMachineExtraConfigSynced` condition (and the analogous `VirtualMachineNetworkConfigSynced` for per-interface settings) reports whether these VM-wide and per-interface advanced settings have been applied. When `status: False`, the `reason` field explains why:
+
+| Reason | Description |
+|--------|-------------|
+| `PowerCyclePending` | A `PowerCycle`-mode first-class field changed while the VM was powered on. The value applies immediately, but a power-cycle is required to fully converge. |
+| `PowerOffRequired` | A `PowerOff`-mode first-class field changed while the VM was powered on. The change is deferred, and the key is absent from `status.extraConfig`, until the VM is powered off. |
+| `ExtraConfigError` | The reconciler failed to apply the desired configuration. |
+
+If a `PowerOff`-mode field and a `PowerCycle`-mode field both change in the same update, `PowerOffRequired` takes priority and is reported instead of `PowerCyclePending`.
+
+These reasons are only ever produced by first-class fields. A `spec.advanced.extraConfig` bag key change is applied immediately and the condition reports `True` right away, even if that particular key actually requires a power cycle to take effect — VM Operator does not track this for arbitrary keys.
 
 ## Compute Reconfiguration
-
-> **Capability required:** `TelcoVMServiceAPI`. Fields in this section are absent from the CRD schema when the capability is not activated on the Supervisor.
 
 `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` enable field-level override of compute settings for Telco VNF workloads requiring deterministic scheduling or hardware-pinned resources.
 

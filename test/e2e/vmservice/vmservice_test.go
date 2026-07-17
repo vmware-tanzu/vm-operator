@@ -249,14 +249,24 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 		Context("VM-LOCATION", func() {
 			virtualmachine.VMLocationSpec(context.TODO(), func() virtualmachine.VMLocationSpecInput {
 				return virtualmachine.VMLocationSpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					ArtifactFolder:   artifactFolder,
-					WCPNamespaceName: wcpNamespaceName,
+					ClusterProxy:   svClusterProxy,
+					Config:         config,
+					WCPClient:      wcpClient,
+					ArtifactFolder: artifactFolder,
 				}
 			})
 		})
 
+		Context("VM-EXTRACONFIG", func() {
+			virtualmachine.VMExtraConfigSpec(context.TODO(), func() virtualmachine.VMExtraConfigSpecInput {
+				return virtualmachine.VMExtraConfigSpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					ArtifactFolder:   artifactFolder,
+					SkipCleanup:      skipCleanup,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
 	})
 })

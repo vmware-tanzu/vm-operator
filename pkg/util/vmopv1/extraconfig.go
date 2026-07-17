@@ -15,6 +15,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vsphereconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -72,12 +74,25 @@ type vmxTagMaps struct {
 var (
 	cachedAdvancedVMXMaps = sync.OnceValue(buildAdvancedVMXMaps[vmopv1.VirtualMachineAdvancedSpec])
 	cachedVMXNet3NICMaps  = sync.OnceValue(buildVMXNet3NICMaps[vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec])
+
+	// cachedSortedAdvancedVMXKeys is the sorted list of VMX keys mapped to
+	// first-class VirtualMachineAdvancedSpec fields. Precomputed once since
+	// callers (e.g. status reconciliation) rebuild it on every call otherwise.
+	cachedSortedAdvancedVMXKeys = sync.OnceValue(func() []string {
+		return sets.List(sets.KeySet(AdvancedVMXKeyMap()))
+	})
 )
 
 // AdvancedVMXKeyMap returns the shared, lazily-built map of vmx struct tags
 // to field indices for VirtualMachineAdvancedSpec.
 func AdvancedVMXKeyMap() map[string]int {
 	return cachedAdvancedVMXMaps().keys
+}
+
+// SortedAdvancedVMXKeys returns the shared, lazily-built, sorted list of vmx
+// struct tags for VirtualMachineAdvancedSpec (the keys of AdvancedVMXKeyMap).
+func SortedAdvancedVMXKeys() []string {
+	return cachedSortedAdvancedVMXKeys()
 }
 
 // AdvancedVMXModeMap returns the shared, lazily-built map of vmx tag value →

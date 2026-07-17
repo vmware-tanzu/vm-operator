@@ -30,6 +30,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -39,6 +40,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -5943,6 +5945,401 @@ var _ = Describe("Hardware status", func() {
 					Expect(vmCtx.VM.Status.Crypto).To(BeNil())
 				})
 			})
+		})
+	})
+})
+
+var _ = Describe("ExtraConfig status", func() {
+	var (
+		ctx   *builder.TestContextForVCSim
+		vmCtx pkgctx.VirtualMachineContext
+		data  vmlifecycle.ReconcileStatusData
+		vcVM  *object.VirtualMachine
+		vm    *vmopv1.VirtualMachine
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.TelcoVMServiceAPI = true
+		})
+
+		vm = builder.DummyVirtualMachine()
+		vm.Name = "extraconfig-status-test"
+		// Most tests below exercise the spec-vs-observed comparison, which
+		// only runs once this VM has been through the one-time
+		// TelcoVMServiceAPI schema-upgrade backfill. The "has not yet been
+		// backfilled" case is covered separately.
+		vm.SetAnnotation(
+			pkgconst.UpgradedToFeatureVersionAnnotationKey,
+			vmopv1util.FeatureVersionTelcoVMServiceAPI.String())
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+
+		var err error
+		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(vcVM.Properties(
+			ctx,
+			vcVM.Reference(),
+			vsphere.VMUpdatePropertiesSelector,
+			&vmCtx.MoVM)).To(Succeed())
+
+		data = vmlifecycle.ReconcileStatusData{
+			NetworkDeviceKeysToSpecIdx: map[int32]int{},
+		}
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	When("TelcoVMServiceAPI is disabled", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = false
+			})
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+			}
+		})
+
+		It("does not populate status.ExtraConfig", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(BeEmpty())
+		})
+	})
+
+	When("this VM has not yet been through the TelcoVMServiceAPI schema-upgrade backfill", func() {
+		BeforeEach(func() {
+			// No UpgradedToFeatureVersionAnnotationKey annotation at all,
+			// simulating a VM whose class set a value directly on vSphere
+			// before spec.advanced.PreferHTEnabled has been backfilled from it.
+			delete(vm.Annotations, pkgconst.UpgradedToFeatureVersionAnnotationKey)
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+			}
+		})
+
+		It("still populates status.ExtraConfig from observed", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(ContainElement(
+				vmopv1common.KeyValuePair{Key: "numa.vcpu.preferHT", Value: "TRUE"}))
+		})
+
+		It("does not touch ExtraConfigSynced (spec.advanced isn't backfilled yet, so a comparison would be meaningless)", func() {
+			// spec.advanced.PreferHTEnabled is nil here even though vSphere
+			// already has numa.vcpu.preferHT=TRUE (from the class). Without
+			// the guard this would misreport a pending clear.
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)).To(BeNil())
+		})
+	})
+
+	When("moVM.Config is nil", func() {
+		BeforeEach(func() {
+			existing := []vmopv1common.KeyValuePair{{Key: "numa.vcpu.preferHT", Value: "TRUE"}}
+			vmCtx.VM.Status.ExtraConfig = existing
+			vmCtx.MoVM.Config = nil
+		})
+
+		It("leaves status.ExtraConfig unchanged", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(Equal(
+				[]vmopv1common.KeyValuePair{{Key: "numa.vcpu.preferHT", Value: "TRUE"}}))
+		})
+	})
+
+	When("vm.Spec.Advanced is nil and nothing is observed", func() {
+		BeforeEach(func() {
+			vm.Spec.Advanced = nil
+			vmCtx.MoVM.Config.ExtraConfig = nil
+		})
+
+		It("marks ExtraConfigSynced=True", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	When("first-class and managed bag keys are observed on the VM", func() {
+		BeforeEach(func() {
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				PreferHTEnabled:                    ptr.To(true),
+				TimeTrackerLowLatencyEnabled:       ptr.To(true),
+				CPUAffinityExclusiveNoStatsEnabled: ptr.To(true),
+				ExtraConfig:                        []vmopv1common.KeyValuePair{{Key: "foo", Value: "bar"}},
+			}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+				&vimtypes.OptionValue{Key: "timeTracker.lowLatency", Value: "TRUE"},
+				&vimtypes.OptionValue{Key: "sched.cpu.affinity.exclusiveNoStats", Value: "TRUE"},
+				&vimtypes.OptionValue{Key: "foo", Value: "bar"},
+				&vimtypes.OptionValue{Key: constants.ExtraConfigManagedKeysKey, Value: "foo"},
+				&vimtypes.OptionValue{Key: "tools.guest.desktop.autolock", Value: "FALSE"}, // class-derived, not managed
+				&vimtypes.OptionValue{Key: "disk.enableUUID", Value: "TRUE"},                // internal, not managed
+			}
+		})
+
+		It("populates status.ExtraConfig with only user-controlled keys, first-class keys sorted first", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(Equal([]vmopv1common.KeyValuePair{
+				{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+				{Key: "sched.cpu.affinity.exclusiveNoStats", Value: "TRUE"},
+				{Key: "timeTracker.lowLatency", Value: "TRUE"},
+				{Key: "foo", Value: "bar"},
+			}))
+		})
+
+		It("marks ExtraConfigSynced=True since observed fully matches spec.advanced", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+
+		When("ESXi returns a first-class bool value in a different case", func() {
+			BeforeEach(func() {
+				// "true" vs "TRUE": must still be treated as a semantic match,
+				// not a pending change, matching extraconfig.SemanticDiff.
+				for _, ov := range vmCtx.MoVM.Config.ExtraConfig {
+					if kv := ov.GetOptionValue(); kv != nil && kv.Key == "numa.vcpu.preferHT" {
+						kv.Value = "true"
+					}
+				}
+			})
+
+			It("still marks ExtraConfigSynced=True", func() {
+				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+				cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+				Expect(cond).ToNot(BeNil())
+				Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			})
+		})
+	})
+
+	When("a first-class key is desired but not yet observed on the VM", func() {
+		BeforeEach(func() {
+			// Simulates the pass right after Reconfigure submitted the change:
+			// moVM here predates that Reconfigure, so the key is not observed
+			// yet. VM is off, so this is a plain pending mismatch — neither
+			// deferred nor power-cycle-mode routing applies.
+			vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
+			vmCtx.MoVM.Config.ExtraConfig = nil
+		})
+
+		It("omits the key until vSphere actually reports it", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			for _, kv := range vmCtx.VM.Status.ExtraConfig {
+				Expect(kv.Key).ToNot(Equal("numa.vcpu.preferHT"))
+			}
+		})
+
+		It("marks ExtraConfigSynced=False with ExtraConfigMismatch (resolves once a later reconcile observes it)", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineExtraConfigMismatchReason))
+		})
+	})
+
+	When("a bag key is desired but not yet observed on the VM (first pass, nothing applied yet)", func() {
+		BeforeEach(func() {
+			// Brand new bag key in spec; vSphere has neither the value nor
+			// the managed-keys marker yet. managedKeys is read from the
+			// observed marker, not spec, so on this pass it's empty too.
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				ExtraConfig: []vmopv1common.KeyValuePair{{Key: "foo", Value: "bar"}},
+			}
+			vmCtx.MoVM.Config.ExtraConfig = nil
+		})
+
+		It("omits the key until vSphere actually reports it", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).ToNot(ContainElement(
+				vmopv1common.KeyValuePair{Key: "foo", Value: "bar"}))
+		})
+
+		It("marks ExtraConfigSynced=False with ExtraConfigMismatch", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineExtraConfigMismatchReason))
+		})
+	})
+
+	When("a bag key is desired and already exists on the VM, but not yet tracked as managed", func() {
+		BeforeEach(func() {
+			// Simulates a bag key pre-set on vSphere by something other than
+			// this reconciler (e.g. the VM Class) before this reconciler has
+			// ever applied it: the value is observed, but the managed-keys
+			// marker doesn't mention it yet.
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				ExtraConfig: []vmopv1common.KeyValuePair{{Key: "foo", Value: "bar"}},
+			}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "foo", Value: "old-value"},
+			}
+		})
+
+		It("reports the key's current observed value in status.ExtraConfig", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(ContainElement(
+				vmopv1common.KeyValuePair{Key: "foo", Value: "old-value"}))
+		})
+
+		It("marks ExtraConfigSynced=False with ExtraConfigMismatch, since the value differs from desired", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineExtraConfigMismatchReason))
+		})
+	})
+
+	When("a bag key removed from spec is still observed on the VM (managed cleanup pending)", func() {
+		BeforeEach(func() {
+			// Spec no longer has "foo", but it is still observed and tracked as
+			// managed — desiredVMExtraConfig must emit a clear for it so this
+			// isn't mistaken for already-synced.
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "foo", Value: "bar"},
+				&vimtypes.OptionValue{Key: constants.ExtraConfigManagedKeysKey, Value: "foo"},
+			}
+		})
+
+		It("marks ExtraConfigSynced=False with ExtraConfigMismatch", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineExtraConfigMismatchReason))
+		})
+
+		It("still reports the key in status.ExtraConfig, since it is genuinely still on the VM", func() {
+			// managedKeys is read from the observed marker, not from
+			// spec.Advanced.ExtraConfig — if it were spec-derived, this key
+			// would vanish from status the instant it's removed from spec,
+			// even though vSphere hasn't cleared it yet.
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			Expect(vmCtx.VM.Status.ExtraConfig).To(ContainElement(
+				vmopv1common.KeyValuePair{Key: "foo", Value: "bar"}))
+		})
+	})
+
+	When("a PowerOff-mode key differs from spec on a powered-on VM (deferred)", func() {
+		BeforeEach(func() {
+			// Unlike the leftover vmx.reboot.powerCycle flag, a deferred key's
+			// "not yet applied" state IS a value mismatch — extraconfig.Reconcile
+			// excludes it from configSpec precisely because observed != desired.
+			// So SemanticDiff (called independently here, not via OnResult) must
+			// already catch it on its own.
+			vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{HugePages1GEnabled: ptr.To(true)}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "sched.mem.lpage.enable1GPage", Value: "FALSE"},
+			}
+		})
+
+		It("marks PowerOffRequired, without extraconfig.OnResult ever running", func() {
+			// This test calls only vmlifecycle.ReconcileStatus, never
+			// extraconfig.OnResult — proving reconcileStatusExtraConfig alone,
+			// with no help from OnResult, correctly reports deferred.
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePowerOffRequiredReason))
+			Expect(cond.Message).To(ContainSubstring("sched.mem.lpage.enable1GPage"))
+		})
+	})
+
+	When("a power cycle is still pending on a powered-on VM", func() {
+		BeforeEach(func() {
+			// Values already match spec (a prior cycle applied them), but the
+			// leftover vmx.reboot.powerCycle flag means the guest hasn't
+			// actually rebooted to pick up the change yet.
+			// reconcileStatusPowerState (which runs before reconcileStatusExtraConfig)
+			// derives vm.Status.PowerState from this, so set it here rather
+			// than on vm.Status directly.
+			vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+				&vimtypes.OptionValue{Key: constants.ExtraConfigReservedKeyVMXRebootPowerCycle, Value: "TRUE"},
+			}
+		})
+
+		It("marks PowerCyclePending even though observed values match", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePowerCyclePendingReason))
+		})
+
+		When("the VM is powered off", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+			})
+
+			It("marks ExtraConfigSynced=True since ESXi clears the flag on next boot", func() {
+				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+				cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+				Expect(cond).ToNot(BeNil())
+				Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			})
+		})
+	})
+
+	When("PNUMANodeAffinity ([]int32 field) changes on a powered-on VM", func() {
+		BeforeEach(func() {
+			vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PNUMANodeAffinity: []int32{0}}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "numa.nodeAffinity", Value: "1,2"},
+			}
+		})
+
+		It("marks PowerCyclePending", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePowerCyclePendingReason))
+		})
+	})
+
+	When("a PowerOff-mode key and a PowerCycle-mode key both differ on a powered-on VM", func() {
+		BeforeEach(func() {
+			vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+			vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				HugePages1GEnabled: ptr.To(true),  // poweroff -> deferred
+				VMXSwapEnabled:     ptr.To(false), // powercycle -> pending
+			}
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "sched.mem.lpage.enable1GPage", Value: "FALSE"},
+				&vimtypes.OptionValue{Key: "sched.swap.vmxSwapEnabled", Value: "TRUE"},
+			}
+		})
+
+		It("marks PowerOffRequired, taking priority over PowerCyclePending", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineExtraConfigSynced)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Reason).To(Equal(vmopv1.VirtualMachinePowerOffRequiredReason))
+			Expect(cond.Message).To(ContainSubstring("sched.mem.lpage.enable1GPage"))
 		})
 	})
 })

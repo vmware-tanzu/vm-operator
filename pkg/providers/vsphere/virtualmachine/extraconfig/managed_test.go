@@ -209,3 +209,98 @@ var _ = Describe("TranslateFirstClass + SemanticDiff round-trip", func() {
 		Expect(out).To(BeNil(), "expected no diff for semantically identical state")
 	})
 })
+
+var _ = Describe("DesiredVMExtraConfig", func() {
+	ctx := context.Background()
+
+	It("returns only first-class clears when advanced is nil", func() {
+		out := extraconfig.DesiredVMExtraConfig(ctx, nil, nil)
+		v, ok := out.GetString("numa.vcpu.preferHT")
+		Expect(ok).To(BeTrue())
+		Expect(v).To(Equal(""))
+	})
+
+	It("includes first-class translations", func() {
+		adv := &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
+		out := extraconfig.DesiredVMExtraConfig(ctx, adv, nil)
+		v, ok := out.GetString("numa.vcpu.preferHT")
+		Expect(ok).To(BeTrue())
+		Expect(v).To(Equal("TRUE"))
+	})
+
+	It("includes bag keys from spec, skipping reserved and first-class keys", func() {
+		adv := &vmopv1.VirtualMachineAdvancedSpec{
+			ExtraConfig: []vmopv1common.KeyValuePair{
+				{Key: "foo", Value: "bar"},
+				{Key: vsphereconst.EnableDiskUUIDExtraConfigKey, Value: "TRUE"},
+			},
+		}
+		out := extraconfig.DesiredVMExtraConfig(ctx, adv, nil)
+		v, ok := out.GetString("foo")
+		Expect(ok).To(BeTrue())
+		Expect(v).To(Equal("bar"))
+		_, ok = out.GetString(vsphereconst.EnableDiskUUIDExtraConfigKey)
+		Expect(ok).To(BeFalse())
+	})
+
+	It("emits a clear for a managed key no longer in spec", func() {
+		out := extraconfig.DesiredVMExtraConfig(ctx, &vmopv1.VirtualMachineAdvancedSpec{}, []string{"foo"})
+		v, ok := out.GetString("foo")
+		Expect(ok).To(BeTrue())
+		Expect(v).To(Equal(""))
+	})
+
+	It("does not clear a managed key still present in spec", func() {
+		adv := &vmopv1.VirtualMachineAdvancedSpec{
+			ExtraConfig: []vmopv1common.KeyValuePair{{Key: "foo", Value: "bar"}},
+		}
+		out := extraconfig.DesiredVMExtraConfig(ctx, adv, []string{"foo"})
+		v, ok := out.GetString("foo")
+		Expect(ok).To(BeTrue())
+		Expect(v).To(Equal("bar"))
+	})
+})
+
+var _ = Describe("RouteByVMXMode", func() {
+	modeMap := vmopv1util.AdvancedVMXModeMap()
+
+	It("returns everything applied, nothing deferred, when VM is powered off", func() {
+		diff := ovList("sched.mem.lpage.enable1GPage", "TRUE")
+		applied, deferred, powerCyclePending := extraconfig.RouteByVMXMode(diff, modeMap, false)
+		Expect(applied).To(HaveLen(1))
+		Expect(deferred).To(BeEmpty())
+		Expect(powerCyclePending).To(BeFalse())
+	})
+
+	It("defers a PowerOff-mode key while powered on", func() {
+		diff := ovList("sched.mem.lpage.enable1GPage", "TRUE")
+		applied, deferred, powerCyclePending := extraconfig.RouteByVMXMode(diff, modeMap, true)
+		Expect(applied).To(BeEmpty())
+		Expect(deferred).To(ConsistOf("sched.mem.lpage.enable1GPage"))
+		Expect(powerCyclePending).To(BeFalse())
+	})
+
+	It("applies a PowerCycle-mode key and flags powerCyclePending while powered on", func() {
+		diff := ovList("numa.vcpu.preferHT", "TRUE")
+		applied, deferred, powerCyclePending := extraconfig.RouteByVMXMode(diff, modeMap, true)
+		Expect(applied).To(HaveLen(1))
+		Expect(deferred).To(BeEmpty())
+		Expect(powerCyclePending).To(BeTrue())
+	})
+
+	It("applies a PowerCycle-mode key without flagging powerCyclePending while powered off", func() {
+		diff := ovList("numa.vcpu.preferHT", "TRUE")
+		applied, deferred, powerCyclePending := extraconfig.RouteByVMXMode(diff, modeMap, false)
+		Expect(applied).To(HaveLen(1))
+		Expect(deferred).To(BeEmpty())
+		Expect(powerCyclePending).To(BeFalse())
+	})
+
+	It("always applies non-first-class (bag) keys regardless of power state", func() {
+		diff := ovList("custom.bag.key", "v")
+		applied, deferred, powerCyclePending := extraconfig.RouteByVMXMode(diff, modeMap, true)
+		Expect(applied).To(HaveLen(1))
+		Expect(deferred).To(BeEmpty())
+		Expect(powerCyclePending).To(BeFalse())
+	})
+})

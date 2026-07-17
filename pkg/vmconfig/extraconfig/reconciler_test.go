@@ -53,7 +53,7 @@ func telcoCtx() context.Context {
 }
 
 var _ = Describe("New", func() {
-	It("returns a non-nil ReconcilerWithContext", func() {
+	It("returns a non-nil Reconciler", func() {
 		Expect(vmconfextraconfig.New()).ToNot(BeNil())
 	})
 	It("has name 'extraconfig'", func() {
@@ -68,12 +68,12 @@ var _ = Describe("Reconcile", func() {
 		vm         *vmopv1.VirtualMachine
 		moVM       mo.VirtualMachine
 		configSpec *vimtypes.VirtualMachineConfigSpec
-		r          vmconfig.ReconcilerWithContext
+		r          vmconfig.Reconciler
 	)
 
 	BeforeEach(func() {
 		r = vmconfextraconfig.New()
-		ctx = r.WithContext(telcoCtx())
+		ctx = telcoCtx()
 		vm = makeVM()
 		moVM = moVMWithEC()
 		configSpec = &vimtypes.VirtualMachineConfigSpec{}
@@ -91,7 +91,6 @@ var _ = Describe("Reconcile", func() {
 
 	It("no-ops when TelcoVMServiceAPI is off", func() {
 		offCtx := vmconfig.WithContext(pkgcfg.NewContextWithDefaultConfig())
-		offCtx = vmconfextraconfig.New().WithContext(offCtx)
 		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
 		Expect(vmconfextraconfig.Reconcile(offCtx, nil, nil, vm, moVM, configSpec)).To(Succeed())
 		Expect(configSpec.ExtraConfig).To(BeEmpty())
@@ -247,31 +246,49 @@ var _ = Describe("Reconcile", func() {
 		Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
 		Expect(getECVal(configSpec.ExtraConfig, "numa.vcpu.preferHT")).To(Equal("TRUE"))
 	})
+
+	It("injects vmx.reboot.powerCycle when PNUMANodeAffinity changes on powered-on VM", func() {
+		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PNUMANodeAffinity: []int32{0}}
+		moVM = moVMWithEC("numa.nodeAffinity", "1,2")
+		Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
+		Expect(getECVal(configSpec.ExtraConfig, "numa.nodeAffinity")).To(Equal("0"))
+		Expect(getECVal(configSpec.ExtraConfig,
+			vsphereconst.ExtraConfigReservedKeyVMXRebootPowerCycle)).To(Equal("TRUE"))
+	})
+
+	It("defers clearing a PowerOff-mode key when VM is powered on", func() {
+		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+		// Spec sets HugePages to nil (clear intent), observed still has the key.
+		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{HugePages1GEnabled: nil}
+		moVM = moVMWithEC("sched.mem.lpage.enable1GPage", "TRUE")
+		Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
+		// The clear is deferred — no entries emitted.
+		Expect(configSpec.ExtraConfig).To(BeEmpty())
+	})
 })
 
+// OnResult now only ever marks ExtraConfigSynced=False, and only for a real
+// Reconfigure task failure. Everything else — True, PowerOffRequired,
+// PowerCyclePending — is decided by reconcileStatusExtraConfig
+// (pkg/providers/vsphere/vmlifecycle), computed fresh from moVM and
+// spec.advanced every reconcile. See that package's "ExtraConfig status"
+// tests for those cases.
 var _ = Describe("OnResult", func() {
 
 	var (
-		ctx        context.Context
-		vm         *vmopv1.VirtualMachine
-		moVM       mo.VirtualMachine
-		r          vmconfig.ReconcilerWithContext
-		configSpec *vimtypes.VirtualMachineConfigSpec
+		ctx  context.Context
+		vm   *vmopv1.VirtualMachine
+		moVM mo.VirtualMachine
+		r    vmconfig.Reconciler
 	)
 
 	BeforeEach(func() {
 		r = vmconfextraconfig.New()
-		ctx = r.WithContext(telcoCtx())
+		ctx = telcoCtx()
 		vm = makeVM()
 		moVM = moVMWithEC()
-		configSpec = &vimtypes.VirtualMachineConfigSpec{}
 	})
-
-	reconcileAndOnResult := func(resultErr error) {
-		GinkgoHelper()
-		Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())
-		Expect(r.OnResult(ctx, vm, moVM, resultErr)).To(Succeed())
-	}
 
 	It("panics when ctx is nil", func() {
 		Expect(func() { _ = vmconfextraconfig.New().OnResult(nil, vm, moVM, nil) }).To(Panic()) //nolint:staticcheck
@@ -282,7 +299,6 @@ var _ = Describe("OnResult", func() {
 
 	It("no-ops when TelcoVMServiceAPI is off", func() {
 		offCtx := vmconfig.WithContext(pkgcfg.NewContextWithDefaultConfig())
-		offCtx = vmconfextraconfig.New().WithContext(offCtx)
 		Expect(vmconfextraconfig.New().OnResult(offCtx, vm, moVM, nil)).To(Succeed())
 		Expect(findCond(vm)).To(BeNil())
 	})
@@ -292,132 +308,20 @@ var _ = Describe("OnResult", func() {
 		cond := findCond(vm)
 		Expect(cond).ToNot(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-		Expect(cond.Reason).To(Equal(vmconfextraconfig.ReasonError))
+		Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineExtraConfigErrorReason))
 	})
 
-	It("does not set Error condition on NoRequeueNoErr sentinel", func() {
-		Expect(r.OnResult(ctx, vm, moVM, pkgerr.NoRequeueNoErr("created vm"))).To(Succeed())
-		cond := findCond(vm)
-		Expect(cond).ToNot(BeNil())
-		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+	It("does not set Error condition on NoRequeueNoError", func() {
+		// NoRequeueNoError is a sentinel used for non-error stop conditions
+		// (e.g. snapshot revert, VM just created); it must not be treated as
+		// a Reconfigure failure.
+		Expect(r.OnResult(ctx, vm, moVM, pkgerr.NoRequeueNoErr("updated vm"))).To(Succeed())
+		Expect(findCond(vm)).To(BeNil())
 	})
 
-	It("sets True condition when spec matches observed", func() {
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
-		moVM = moVMWithEC("numa.vcpu.preferHT", "TRUE")
-		reconcileAndOnResult(nil)
-		cond := findCond(vm)
-		Expect(cond).ToNot(BeNil())
-		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-	})
-
-	It("sets True condition with no advanced spec", func() {
-		reconcileAndOnResult(nil)
-		cond := findCond(vm)
-		Expect(cond).ToNot(BeNil())
-		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-	})
-
-	It("sets PowerOffRequired when HugePages deferred on powered-on VM", func() {
-		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{HugePages1GEnabled: ptr.To(true)}
-		moVM = moVMWithEC("sched.mem.lpage.enable1GPage", "FALSE")
-		reconcileAndOnResult(nil)
-		cond := findCond(vm)
-		Expect(cond).ToNot(BeNil())
-		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-		Expect(cond.Reason).To(Equal(vmconfextraconfig.ReasonPowerOffRequired))
-		Expect(cond.Message).To(ContainSubstring("sched.mem.lpage.enable1GPage"))
-	})
-
-	It("sets PowerCyclePending when first-class key injected this cycle", func() {
-		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(false)}
-		moVM = moVMWithEC("numa.vcpu.preferHT", "TRUE")
-		reconcileAndOnResult(nil)
-		cond := findCond(vm)
-		Expect(cond).ToNot(BeNil())
-		Expect(cond.Reason).To(Equal(vmconfextraconfig.ReasonPowerCyclePending))
-	})
-
-	It("persists PowerCyclePending when vmx.reboot.powerCycle already on powered-on VM", func() {
-		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
-		moVM = moVMWithEC(
-			"numa.vcpu.preferHT", "TRUE",
-			vsphereconst.ExtraConfigReservedKeyVMXRebootPowerCycle, "TRUE",
-		)
-		reconcileAndOnResult(nil)
-		cond := findCond(vm)
-		Expect(cond).ToNot(BeNil())
-		Expect(cond.Reason).To(Equal(vmconfextraconfig.ReasonPowerCyclePending))
-	})
-
-	It("sets True when vmx.reboot.powerCycle is on VM but VM is powered off", func() {
-		// VM is off: config fully applied, ESXi clears the flag on next boot automatically.
-		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
-		moVM = moVMWithEC(
-			"numa.vcpu.preferHT", "TRUE",
-			vsphereconst.ExtraConfigReservedKeyVMXRebootPowerCycle, "TRUE",
-		)
-		reconcileAndOnResult(nil)
-		cond := findCond(vm)
-		Expect(cond).ToNot(BeNil())
-		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-	})
-
-	It("status.ExtraConfig omits first-class keys not yet on the VM (observed-based)", func() {
-		// Spec sets preferHT=true but the VM doesn't have it yet (e.g. first apply).
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
-		moVM = moVMWithEC() // preferHT not in observed yet
-		reconcileAndOnResult(nil)
-		for _, kv := range vm.Status.ExtraConfig {
-			Expect(kv.Key).ToNot(Equal("numa.vcpu.preferHT"),
-				"status should reflect observed VM, not desired")
-		}
-	})
-
-	It("status.ExtraConfig is sorted by key when multiple first-class keys are present", func() {
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-			PreferHTEnabled:                   ptr.To(true),
-			TimeTrackerLowLatencyEnabled:      ptr.To(true),
-			CPUAffinityExclusiveNoStatsEnabled: ptr.To(true),
-		}
-		moVM = moVMWithEC(
-			"numa.vcpu.preferHT", "TRUE",
-			"timeTracker.lowLatency", "TRUE",
-			"sched.cpu.affinity.exclusiveNoStats", "TRUE",
-		)
-		reconcileAndOnResult(nil)
-		Expect(vm.Status.ExtraConfig).To(Equal([]vmopv1common.KeyValuePair{
-			{Key: "numa.vcpu.preferHT", Value: "TRUE"},
-			{Key: "sched.cpu.affinity.exclusiveNoStats", Value: "TRUE"},
-			{Key: "timeTracker.lowLatency", Value: "TRUE"},
-		}))
-	})
-
-	It("populates status.ExtraConfig with only user-controlled keys", func() {
-		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-			PreferHTEnabled: ptr.To(true),
-			ExtraConfig:     []vmopv1common.KeyValuePair{{Key: "foo", Value: "bar"}},
-		}
-		moVM = moVMWithEC(
-			"numa.vcpu.preferHT", "TRUE",
-			"tools.guest.desktop.autolock", "FALSE", // class-derived, not in spec
-			"disk.enableUUID", "TRUE", // internal
-			"foo", "bar",
-			vsphereconst.ExtraConfigManagedKeysKey, "foo",
-		)
-		reconcileAndOnResult(nil)
-		statusKeys := make(map[string]string)
-		for _, kv := range vm.Status.ExtraConfig {
-			statusKeys[kv.Key] = kv.Value
-		}
-		Expect(statusKeys).To(HaveKey("numa.vcpu.preferHT"))
-		Expect(statusKeys).To(HaveKey("foo"))
-		Expect(statusKeys).ToNot(HaveKey("tools.guest.desktop.autolock"))
-		Expect(statusKeys).ToNot(HaveKey("disk.enableUUID"))
+	It("leaves the condition untouched on success", func() {
+		Expect(r.OnResult(ctx, vm, moVM, nil)).To(Succeed())
+		Expect(findCond(vm)).To(BeNil())
 	})
 })
 

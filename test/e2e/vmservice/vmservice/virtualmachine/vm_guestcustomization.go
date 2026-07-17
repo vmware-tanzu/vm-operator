@@ -44,13 +44,11 @@ type VMGOSCSpecInput struct {
 }
 
 const (
-	specName               = "vm-guest-customization"
-	inlineCloudInit        = "inlineCloudInit"
-	cloudInitTransport     = "CloudInit"
-	ovfEnvTransport        = "OvfEnv"
-	vAppConfigTransport    = "vAppConfig"
-	ubuntuMarketplaceImage = "ubuntu-20.04-vmservice-v1alpha1.20210528"
-	centosMarketplaceImage = "centos-stream-8-vmservice-v1alpha1.20210528"
+	specName            = "vm-guest-customization"
+	inlineCloudInit     = "inlineCloudInit"
+	cloudInitTransport  = "CloudInit"
+	ovfEnvTransport     = "OvfEnv"
+	vAppConfigTransport = "vAppConfig"
 )
 
 var (

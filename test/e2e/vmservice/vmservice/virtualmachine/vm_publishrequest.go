@@ -14,8 +14,12 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
@@ -24,6 +28,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	libssh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -296,6 +301,78 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				}
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 			})
+
+			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional", "experimental"), func() {
+				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
+
+				By("Attaching the target content library to the namespace as writable")
+				targetLocationK8sCLName := attachTargetLocationCLAsWritable(ctx, config, svClusterClient, wcpClient, input.WCPNamespaceName, targetLocationCLID, &tarLocationCLIsAttached)
+
+				By("Creating a source VM with an explicit vAppConfig property")
+				sourceImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmservice.GetDefaultImageDisplayName(clusterResources))
+
+				expectedVAppProperties := []manifestbuilders.KeyValueOrSecretKeySelectorPair{
+					{
+						Key: "prop-1",
+						Value: manifestbuilders.ValueOrSecretKeySelector{
+							Value: "my-val-1",
+						},
+					},
+				}
+
+				sourceVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-src", capiutil.RandomString(4))
+				sourceVMBuilder := manifestbuilders.VirtualMachineYaml{
+					Namespace:        input.WCPNamespaceName,
+					Name:             sourceVMName,
+					ImageName:        sourceImageName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					ResourcePolicy:   clusterResources.VMResourcePolicyName,
+					PowerState:       "PoweredOn",
+					Bootstrap: manifestbuilders.Bootstrap{
+						// LinuxPrep is needed here for the VM to get a valid IP address.
+						LinuxPrep: &manifestbuilders.LinuxPrep{},
+						VAppConfig: &manifestbuilders.VAppConfig{
+							Properties: &expectedVAppProperties,
+						},
+					},
+				}
+				sourceVMYaml := manifestbuilders.GetVirtualMachineYamlA2(sourceVMBuilder)
+				Expect(clusterProxy.CreateWithArgs(ctx, sourceVMYaml)).NotTo(HaveOccurred(), "failed to create source virtualmachine with vAppConfig", string(sourceVMYaml))
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
+				DeferCleanup(func() {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName)
+				})
+
+				By("Publishing the source VM to the target content library")
+				vAppPubReqName := fmt.Sprintf("%s-vapp", vmPublishRequestName)
+				vAppTargetItemName := fmt.Sprintf("%s-vapp-item", vmPubTargetItemName)
+				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vAppPubReqName, sourceVMName, vAppTargetItemName, targetLocationK8sCLName)
+				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				DeferCleanup(func() {
+					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, vAppPubReqName)
+					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vAppPubReqName)
+				})
+
+				publishedImageCRName := publishRequestCompletedWithReadyImage(ctx, config, svClusterClient, input.WCPNamespaceName, vAppPubReqName)
+
+				By("Deploying a new VM from the published image without bootstrap overrides")
+				// Without bootstrap overrides, the deployed VM's vApp properties come purely
+				// from the defaults captured during publish.
+				deployedVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-vm", capiutil.RandomString(4))
+				deployedVMBuilder := generateVMBuilder(input.WCPNamespaceName, deployedVMName, publishedImageCRName, *clusterResources)
+				deployedVMYaml := manifestbuilders.GetVirtualMachineYamlA2(deployedVMBuilder)
+				Expect(clusterProxy.CreateWithArgs(ctx, deployedVMYaml)).NotTo(HaveOccurred(), "failed to create virtualmachine from the published image", string(deployedVMYaml))
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, deployedVMName)
+				DeferCleanup(func() {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, deployedVMName)
+				})
+
+				By("Verifying the deployed VM inherited the vAppConfig property from the published image")
+				vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, deployedVMName)
+				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				verifyVAppConfigs(ctx, vCenterClient, vmmoid, expectedVAppProperties)
+			})
 		})
 
 		Context("Inventory Content Library", Ordered, func() {
@@ -419,6 +496,133 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				})
 			})
 		})
+
+		// This context creates its own Inventory-type ContentLibrary with the admin
+		// client instead of reusing the "Inventory Content Library" context's setup.
+		// The requestedCapacity computation only reads the VM's layout as admin, so it
+		// doesn't need that context's non-admin user and SSO (kubectl-vsphere) login.
+		Context("Requested Capacity Estimation", Ordered, func() {
+			var (
+				inventoryFolderName string
+				inventoryCLName     string
+				inventoryFolder     *object.Folder
+				inventoryCL         *imgregv1a2.ContentLibrary
+			)
+
+			BeforeAll(func() {
+				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.InventoryContentLibraryCapabilityName)
+
+				kubeConfig := clusterProxy.GetKubeconfigPath()
+				svClusterClient = clusterProxy.GetClient()
+
+				var err error
+
+				vCenterHostname := vcenter.GetVCPNIDFromKubeconfig(ctx, kubeConfig)
+				vimClient, err = vcenter.NewVimClient(
+					vCenterHostname,
+					testbed.AdminUsername,
+					testbed.AdminPassword,
+				)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Creating library folder")
+				inventoryFolderName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "quota-folder", capiutil.RandomString(4))
+				finder := find.NewFinder(vimClient, false)
+				_, inventoryFolder = createLibraryFolder(ctx, finder, inventoryFolderName)
+
+				By("Creating an inventory content library", func() {
+					inventoryCLName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "quota-cl", capiutil.RandomString(4))
+					inventoryCL = createInventoryContentLibraryCR(ctx, svClusterClient, imgregv1a2.ResourceNamingStrategyPreferItemSourceID, input.WCPNamespaceName, inventoryCLName, inventoryFolder.Reference().Value, true, true)
+					// Validate CL itself exists and reconciled.
+					validateContentLibraryV2(ctx, svClusterClient, inventoryCL, inventoryFolder, inventoryCLName, input.WCPNamespaceName, "")
+				})
+			})
+
+			AfterAll(func() {
+				if inventoryFolder != nil {
+					vcenter.DeleteFolder(ctx, inventoryFolder)
+					inventoryFolder = nil
+					inventoryCL = nil
+				}
+			})
+
+			It("should compute the requestedCapacity annotation from the VM's actual used storage, not its provisioned disk size", Label("extended-functional", "experimental"), func() {
+				// Labeling the target ContentLibrary opts the publish request into the async
+				// storage-quota check, normally driven by an external VCFA component. This lets
+				// us exercise the controller's capacity estimation (see checkContentLibraryQuota)
+				// without that dependency. Since the component isn't present to clear the check,
+				// the request never reaches Complete — so we only assert on the annotation.
+				By("Labeling the content library to opt into the async storage-quota check")
+				Eventually(func(g Gomega) {
+					var cl imgregv1a2.ContentLibrary
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: inventoryCL.Name}, &cl)).To(Succeed())
+
+					if cl.Labels == nil {
+						cl.Labels = map[string]string{}
+					}
+					cl.Labels[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
+
+					g.Expect(svClusterClient.Update(ctx, &cl)).To(Succeed())
+				}).Should(Succeed(), "failed to label content library %q for async quota validation", inventoryCL.Name)
+
+				By("Issuing a publish request against the inventory content library")
+				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
+				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				DeferCleanup(func() {
+					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
+					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
+				})
+
+				By("Computing the VM's actual used storage from vCenter's file layout")
+				// Mirror the controller's own calculation (see checkContentLibraryQuota)
+				// so the expected requestedCapacity is built the same way the controller does.
+				vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
+				vmMoRef := vimtypes.ManagedObjectReference{
+					Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
+					Value: vmmoid,
+				}
+
+				var vmMO mo.VirtualMachine
+				propCollector := property.DefaultCollector(vimClient)
+				Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"layoutEx", "config.hardware"}, &vmMO)).To(Succeed(), "failed to retrieve VM layout and hardware from vCenter")
+				Expect(vmMO.LayoutEx).ToNot(BeNil(), "VM should have a layoutEx")
+				Expect(vmMO.Config).ToNot(BeNil(), "VM should have a config")
+
+				var actualUsedBytes int64
+				for _, f := range vmMO.LayoutEx.File {
+					switch vimtypes.VirtualMachineFileLayoutExFileType(f.Type) {
+					case vimtypes.VirtualMachineFileLayoutExFileTypeConfig,
+						vimtypes.VirtualMachineFileLayoutExFileTypeNvram,
+						vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor,
+						vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent:
+						actualUsedBytes += f.Size
+					}
+				}
+				requestedCapacity := resource.NewQuantity(actualUsedBytes, resource.BinarySI)
+
+				// Provisioned disk capacity is only computed for visibility in the failure
+				// message below — it is not itself asserted on.
+				var provisionedBytes int64
+				for _, device := range vmMO.Config.Hardware.Device {
+					if disk, ok := device.(*vimtypes.VirtualDisk); ok {
+						provisionedBytes += disk.CapacityInBytes
+					}
+				}
+				Expect(provisionedBytes).To(BeNumerically(">", 0), "expected the source VM to report a non-zero provisioned disk capacity")
+				GinkgoWriter.Printf("expected requestedCapacity: %s, provisioned disk capacity: %d bytes\n", requestedCapacity.String(), provisionedBytes)
+
+				By("Verifying the requestedCapacity annotation equals the VM's actual used storage")
+				Eventually(func(g Gomega) {
+					vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
+					g.Expect(err).NotTo(HaveOccurred())
+
+					g.Expect(vmPub.Annotations).To(HaveKeyWithValue(
+						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, requestedCapacity.String()),
+						"requestedCapacity annotation should equal the VM's actual used storage, not its provisioned disk capacity (%d bytes)", provisionedBytes)
+				}, config.GetIntervals("default", "wait-virtual-machine-publish-request-condition")...).Should(Succeed(),
+					"Timed out waiting for the requestedCapacity annotation to be set on VirtualMachinePublishRequest %s", vmPublishRequestName)
+			})
+		})
 	})
 }
 
@@ -480,6 +684,56 @@ func createVMPublishRequest(
 
 		return vmPub != nil
 	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-creation")...).Should(Equal(true), "Timed out waiting for VirtualMachinePublishRequest %s to be created", name)
+}
+
+// publishRequestCompletedWithReadyImage waits for the named publish request to
+// reach the Complete condition and for its published VirtualMachineImage to be
+// ready, returning the published image CR name.
+func publishRequestCompletedWithReadyImage(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	svClusterClient ctrlclient.Client,
+	namespace, pubReqName string) string {
+
+	vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, namespace, pubReqName, metav1.Condition{
+		Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
+		Status: metav1.ConditionTrue,
+	})
+
+	// Ensure the published image is available with expected display name under the namespace.
+	expectedPublishedImageCRName, err := vmoperator.GetVirtualMachinePublishRequestTargetItemName(ctx, config, svClusterClient, namespace, pubReqName)
+	Expect(err).NotTo(HaveOccurred(), "failed to get the published target item name in namespace %q", namespace)
+	publishedImageCRName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, namespace, expectedPublishedImageCRName)
+	Expect(publishedImageCRName).NotTo(BeEmpty(), "published VM Image resource name is empty")
+	vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterClient, namespace, publishedImageCRName)
+
+	return publishedImageCRName
+}
+
+// attachTargetLocationCLAsWritable attaches the target-location content
+// library to the namespace as writable, unless attached already indicates
+// this has been done, then returns the content library's corresponding
+// Kubernetes resource name.
+func attachTargetLocationCLAsWritable(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	svClusterClient ctrlclient.Client,
+	wcpClient wcp.WorkloadManagementAPI,
+	namespace, clID string,
+	attached *bool) string {
+
+	if !*attached {
+		Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(namespace, wcp.ContentLibrarySpec{
+			ContentLibrary: clID,
+			Writable:       true,
+		})).To(Succeed(), "failed to attach content library '%s' to namespace '%s'", clID, namespace)
+		*attached = true
+	}
+
+	targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, namespace, clID)
+	Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
+
+	return targetLocationK8sCLName
 }
 
 func createLibraryFolder(ctx context.Context, finder *find.Finder, libFolder string) (*object.DatacenterFolders, *object.Folder) {

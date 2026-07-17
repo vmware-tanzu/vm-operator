@@ -617,6 +617,45 @@ var _ = Describe(
 							vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason))
 					}
 				})
+
+				// Selection must key off Spec.VMName, not the label, since the
+				// label can be absent or stale independently of the VM it names.
+				DescribeTable("selecting which snapshot to mark WaitingForDiskRegistration",
+					func(labelBelongsToThisVM, specBelongsToThisVM, wantTouched bool) {
+						resolve := func(belongsToThisVM bool) string {
+							if belongsToThisVM {
+								return vm.Name
+							}
+							return "other-vm"
+						}
+
+						conditions.MarkTrue(vm, vmconfunmanagedvolsfil.Condition)
+						conditions.MarkFalse(vm, vmconfunmanagedvolsreg.Condition,
+							"PendingRegistration", "CnsRegisterVolume objects are being processed")
+						Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+
+						snapshot1 = builder.DummyVirtualMachineSnapshot(
+							vm.Namespace, "snapshot-1", resolve(specBelongsToThisVM))
+						metav1.SetMetaDataLabel(&snapshot1.ObjectMeta,
+							vmopv1.VMNameForSnapshotLabel, resolve(labelBelongsToThisVM))
+						Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+
+						Expect(vsphere.ReconcileSnapshotWaitForCRVCondition(vmCtx, ctx.Client)).To(Succeed())
+
+						got := &vmopv1.VirtualMachineSnapshot{}
+						Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
+							Name: snapshot1.Name, Namespace: vm.Namespace,
+						}, got)).To(Succeed())
+
+						touched := conditions.GetReason(got, vmopv1.VirtualMachineSnapshotCreatedCondition) ==
+							vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason
+						Expect(touched).To(Equal(wantTouched))
+					},
+					Entry("label and Spec.VMName both belong to this VM", true, true, true),
+					Entry("label and Spec.VMName both belong to a different VM", false, false, false),
+					Entry("Spec.VMName belongs to this VM but the label is stale/wrong", false, true, true),
+					Entry("label belongs to this VM but Spec.VMName belongs elsewhere", true, false, false),
+				)
 			})
 		})
 	})

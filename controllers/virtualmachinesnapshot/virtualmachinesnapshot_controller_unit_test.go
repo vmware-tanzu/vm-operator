@@ -303,6 +303,25 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("object is missing the VM name label", func() {
+			BeforeEach(func() {
+				vmSnapshot.Labels = nil
+				vm.Status.UniqueID = dummyVMUUID
+				initObjects = nil
+				initObjects = append(initObjects, vm, vmSnapshot)
+			})
+
+			It("backfills the label and continues reconciling in the same pass", func() {
+				Expect(err).NotTo(HaveOccurred())
+				vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, snapshotObjKey, vmSnapshotObj)).To(Succeed())
+				Expect(vmSnapshotObj.Labels).To(HaveKeyWithValue(
+					vmopv1.VMNameForSnapshotLabel, vmSnapshot.Spec.VMName))
+				// A populated status confirms the reconcile did not stop early.
+				Expect(vmSnapshotObj.Status.Storage).ToNot(BeNil())
+			})
+		})
+
 		When("snapshot's created condition is not set", func() {
 			BeforeEach(func() {
 				vm.Status.UniqueID = dummyVMUUID

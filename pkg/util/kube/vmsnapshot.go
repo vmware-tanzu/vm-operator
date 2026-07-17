@@ -20,6 +20,22 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
+// VMSnapshotVMNameFieldIndex is the field index key for looking up
+// VirtualMachineSnapshot objects by Spec.VMName.
+const VMSnapshotVMNameFieldIndex = "spec.vmName"
+
+// VMSnapshotVMNameIndexerFunc extracts the value indexed by
+// VMSnapshotVMNameFieldIndex from a VirtualMachineSnapshot object. Shared
+// between the field indexer registration and any fake client used in tests,
+// so the two can never drift apart.
+func VMSnapshotVMNameIndexerFunc(rawObj ctrlclient.Object) []string {
+	vmSnapshot := rawObj.(*vmopv1.VirtualMachineSnapshot)
+	if vmSnapshot.Spec.VMName == "" {
+		return nil
+	}
+	return []string{vmSnapshot.Spec.VMName}
+}
+
 // CalculateReservedForSnapshotPerStorageClass calculates the reserved capacity for a snapshot.
 // And return the requested capacity categorized by each storage class.
 // 1. Space required for classic disks.

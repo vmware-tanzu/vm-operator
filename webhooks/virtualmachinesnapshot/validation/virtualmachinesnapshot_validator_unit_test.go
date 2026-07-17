@@ -88,14 +88,19 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		emptyVMName   bool
-		createVKSNode bool
-		hardware      *vmopv1.VirtualMachineHardwareSpec
+		emptyVMName           bool
+		mismatchedVMNameLabel bool
+		createVKSNode         bool
+		hardware              *vmopv1.VirtualMachineHardwareSpec
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		if args.emptyVMName {
 			ctx.vmSnapshot.Spec.VMName = ""
+		}
+
+		if args.mismatchedVMNameLabel {
+			metav1.SetMetaDataLabel(&ctx.vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, "some-other-vm")
 		}
 
 		// Create a VM with CAPI labels to simulate a VKS/TKG node
@@ -144,6 +149,15 @@ func unitTestsValidateCreate() {
 			createArgs{emptyVMName: true},
 			false,
 			field.Required(vmNameField, "vmName must be provided").Error(),
+			nil,
+		),
+		Entry("should deny VMNameForSnapshotLabel that does not match spec.vmName",
+			createArgs{mismatchedVMNameLabel: true},
+			false,
+			field.Invalid(
+				field.NewPath("metadata", "labels").Key(vmopv1.VMNameForSnapshotLabel),
+				"some-other-vm",
+				`must match spec.vmName "dummy-vm"`).Error(),
 			nil,
 		),
 		Entry("should deny snapshot for VKS/TKG node",
@@ -212,6 +226,7 @@ func unitTestsValidateUpdate() {
 		updateQuiesce     bool
 		updateVMRef       bool
 		updateVMNameLabel bool
+		oldLabelMissing   bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -229,6 +244,10 @@ func unitTestsValidateUpdate() {
 			ctx.vmSnapshot.Spec.VMName = "another-vm"
 		}
 
+		if args.oldLabelMissing {
+			delete(ctx.oldVMSnapshot.Labels, vmopv1.VMNameForSnapshotLabel)
+		}
+
 		if args.updateVMNameLabel {
 			// Try to change the VM name label to a different value
 			metav1.SetMetaDataLabel(&ctx.vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, "different-vm-name")
@@ -243,7 +262,7 @@ func unitTestsValidateUpdate() {
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			Expect(string(response.Result.Reason)).To(HaveSuffix(expectedReason))
+			Expect(string(response.Result.Reason)).To(ContainSubstring(expectedReason))
 		}
 		if expectedErr != nil {
 			Expect(response.Result.Message).To(Equal(expectedErr.Error()))
@@ -284,10 +303,22 @@ func unitTestsValidateUpdate() {
 			"field is immutable",
 			nil,
 		),
-		Entry("should not allow updating VM name label",
+		Entry("should not allow updating VM name label to a value that disagrees with spec.vmName",
 			updateArgs{updateVMNameLabel: true},
 			false,
-			"field is immutable",
+			`must match spec.vmName "dummy-vm"`,
+			nil,
+		),
+		Entry("should allow backfilling the VM name label when the old object was missing it",
+			updateArgs{oldLabelMissing: true},
+			true,
+			"",
+			nil,
+		),
+		Entry("should not allow backfilling the VM name label to a value that disagrees with spec.vmName",
+			updateArgs{oldLabelMissing: true, updateVMNameLabel: true},
+			false,
+			`must match spec.vmName "dummy-vm"`,
 			nil,
 		),
 	)

@@ -227,30 +227,27 @@ func markSnapshotWaitingForDiskRegistration(
 	return nil
 }
 
-// getVirtualMachineSnapshotsForVM finds all VirtualMachineSnapshot objects that reference this VM.
+// getVirtualMachineSnapshotsForVM returns all VirtualMachineSnapshot objects
+// for this VM. The lookup is indexed so it scales with matching snapshots,
+// not with every snapshot in the namespace.
 func getVirtualMachineSnapshotsForVM(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) ([]vmopv1.VirtualMachineSnapshot, error) {
 
-	// List all VirtualMachineSnapshot objects in the VM's namespace
 	var snapshotList vmopv1.VirtualMachineSnapshotList
-	if err := k8sClient.List(vmCtx, &snapshotList, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
+	if err := k8sClient.List(
+		vmCtx,
+		&snapshotList,
+		ctrlclient.InNamespace(vmCtx.VM.Namespace),
+		ctrlclient.MatchingFields{kubeutil.VMSnapshotVMNameFieldIndex: vmCtx.VM.Name},
+	); err != nil {
 		return nil, fmt.Errorf("failed to list VirtualMachineSnapshot objects: %w", err)
 	}
 
-	// Filter snapshots that reference this VM. We do this by checking
-	// the VMName, and by filtering the snapshots owned by this VM.
-	var vmSnapshots []vmopv1.VirtualMachineSnapshot
-	for _, snapshot := range snapshotList.Items {
-		if snapshot.Spec.VMName == vmCtx.VM.Name {
-			vmSnapshots = append(vmSnapshots, snapshot)
-		}
-	}
-
 	vmCtx.Logger.V(4).Info("Current count of VirtualMachineSnapshot objects for VM",
-		"count", len(vmSnapshots))
+		"count", len(snapshotList.Items))
 
-	return vmSnapshots, nil
+	return snapshotList.Items, nil
 }
 
 func (vs *vSphereVMProvider) reconcileSnapshotRevert(

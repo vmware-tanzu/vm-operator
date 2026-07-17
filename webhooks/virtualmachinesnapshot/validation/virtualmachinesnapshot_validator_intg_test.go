@@ -120,18 +120,16 @@ func intgTestsValidateUpdate() {
 	})
 
 	When("trying to update VM name label", func() {
-		It("should reject attempt to change VM name label", func() {
+		It("should reject a value that disagrees with spec.vmName", func() {
 			ctx.vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel] = "different-vm-name"
 			err := ctx.Client.Update(ctx, ctx.vmSnapshot)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+			Expect(err.Error()).To(ContainSubstring("must match spec.vmName"))
 		})
 
-		It("should reject attempt to remove VM name label", func() {
+		It("should allow removing the VM name label", func() {
 			delete(ctx.vmSnapshot.Labels, vmopv1.VMNameForSnapshotLabel)
-			err := ctx.Client.Update(ctx, ctx.vmSnapshot)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+			Expect(ctx.Client.Update(ctx, ctx.vmSnapshot)).To(Succeed())
 		})
 	})
 }

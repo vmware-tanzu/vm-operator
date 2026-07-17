@@ -89,6 +89,12 @@ func createPvcsFromSpec(
 type testSpec struct {
 	pvcs     []manifestbuilders.PVC
 	hardware vmopv1.VirtualMachineHardwareSpec
+	// preCreatePVCs creates the spec's PVCs and waits for them to exist
+	// before the VM is created. Specs that declare many PVCs otherwise race
+	// the VM controller against PVC creation (the VM is created before its
+	// claims exist), producing a "PVC not found" backoff storm that can
+	// exceed the spec timeout.
+	preCreatePVCs bool
 }
 
 func waitForVMAndBatchAttach(
@@ -508,6 +514,28 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			func(specGetter func() testSpec) {
 				spec := specGetter()
 
+				// For specs with many PVCs, create the claims first and wait
+				// for them to exist so the VM's first reconcile finds all of
+				// its claims and does not fall into a "PVC not found" backoff
+				// storm (see testSpec.preCreatePVCs).
+				if spec.preCreatePVCs {
+					By("Creating the PVCs before the VM")
+					for _, pvc := range spec.pvcs {
+						Expect(clusterProxy.ApplyWithArgs(ctx, manifestbuilders.GetPersistentVolumeClaimYaml(pvc))).
+							To(Succeed(), "failed to pre-create PVC %s", pvc.ClaimName)
+					}
+
+					By("Waiting for the pre-created PVCs to exist")
+					Eventually(func(g Gomega) {
+						for _, pvc := range spec.pvcs {
+							g.Expect(svClusterClient.Get(ctx,
+								types.NamespacedName{Namespace: vmSvcNamespace, Name: pvc.ClaimName},
+								&corev1.PersistentVolumeClaim{})).
+								To(Succeed(), "PVC %s does not exist yet", pvc.ClaimName)
+						}
+					}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+				}
+
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
@@ -519,7 +547,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				})
 				vmYamls = append(vmYamls, vmYaml)
 
-				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
+				if spec.preCreatePVCs {
+					// The VM document also contains the (already-created) PVC
+					// objects; apply is idempotent, so the existing claims are
+					// not treated as create conflicts.
+					Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				} else {
+					Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
+				}
 
 				By("Waiting for the VirtualMachine to be created")
 
@@ -938,6 +973,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				return testSpec{
 					pvcs: pvcs,
+					// Create the PVCs before the VM: with this many claims,
+					// applying the VM and its PVCs together races the VM
+					// controller against PVC creation and stalls it in backoff.
+					preCreatePVCs: true,
 				}
 			}),
 		)

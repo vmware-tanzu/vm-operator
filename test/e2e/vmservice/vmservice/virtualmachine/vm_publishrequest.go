@@ -309,10 +309,8 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				targetLocationK8sCLName := attachTargetLocationCLAsWritable(ctx, config, svClusterClient, wcpClient, input.WCPNamespaceName, targetLocationCLID, &tarLocationCLIsAttached)
 
 				By("Creating a source VM with an explicit vAppConfig property")
-				sourceImageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmservice.GetDefaultImageDisplayName(clusterResources))
-				Expect(err).NotTo(HaveOccurred(), "failed to get the default VM Image name in namespace %q", input.WCPNamespaceName)
+				sourceImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmservice.GetDefaultImageDisplayName(clusterResources))
 
-				// Explicit vAppConfig properties to set on the source VM before publishing.
 				expectedVAppProperties := []manifestbuilders.KeyValueOrSecretKeySelectorPair{
 					{
 						Key: "prop-1",
@@ -356,12 +354,11 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vAppPubReqName)
 				})
 
-				// Wait for the publish request to complete and the published OVF image to be ready.
 				publishedImageCRName := publishRequestCompletedWithReadyImage(ctx, config, svClusterClient, input.WCPNamespaceName, vAppPubReqName)
 
 				By("Deploying a new VM from the published image without bootstrap overrides")
-				// Deploy a new VM from the published image without any bootstrap overrides so the
-				// deployed VM's vApp properties come purely from the defaults captured during publish.
+				// Without bootstrap overrides, the deployed VM's vApp properties come purely
+				// from the defaults captured during publish.
 				deployedVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-vm", capiutil.RandomString(4))
 				deployedVMBuilder := generateVMBuilder(input.WCPNamespaceName, deployedVMName, publishedImageCRName, *clusterResources)
 				deployedVMYaml := manifestbuilders.GetVirtualMachineYamlA2(deployedVMBuilder)
@@ -500,11 +497,10 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			})
 		})
 
-		// This context creates its own Inventory-type ContentLibrary directly with the
-		// admin client rather than reusing the "Inventory Content Library" context's
-		// non-admin-user setup. The requestedCapacity computation doesn't exercise
-		// non-admin RBAC, so there's no need to pay for (or depend on) the SSO
-		// kubectl-vsphere login that the RBAC-focused context above requires.
+		// This context creates its own Inventory-type ContentLibrary with the admin
+		// client instead of reusing the "Inventory Content Library" context's setup.
+		// The requestedCapacity computation only reads the VM's layout as admin, so it
+		// doesn't need that context's non-admin user and SSO (kubectl-vsphere) login.
 		Context("Requested Capacity Estimation", Ordered, func() {
 			var (
 				inventoryFolderName string
@@ -551,12 +547,11 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			})
 
 			It("should compute the requestedCapacity annotation from the VM's actual used storage, not its provisioned disk size", Label("extended-functional", "experimental"), func() {
-				// Labeling the target ContentLibrary opts the publish request into the
-				// async storage-quota check, which is normally driven by an external VCFA
-				// component. This lets us exercise the controller's capacity estimation
-				// logic (see checkContentLibraryQuota) without that external dependency.
-				// Because nothing in this testbed ever clears the check, the request will
-				// not reach the Complete condition — we only assert on the annotation.
+				// Labeling the target ContentLibrary opts the publish request into the async
+				// storage-quota check, normally driven by an external VCFA component. This lets
+				// us exercise the controller's capacity estimation (see checkContentLibraryQuota)
+				// without that dependency. Since the component isn't present to clear the check,
+				// the request never reaches Complete — so we only assert on the annotation.
 				By("Labeling the content library to opt into the async storage-quota check")
 				Eventually(func(g Gomega) {
 					var cl imgregv1a2.ContentLibrary
@@ -579,10 +574,8 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				})
 
 				By("Computing the VM's actual used storage from vCenter's file layout")
-				// Independently compute the VM's actual used storage from vCenter's file
-				// layout, mirroring the controller's own calculation (see
-				// checkContentLibraryQuota), to build the expected requestedCapacity value
-				// the same way the controller does.
+				// Mirror the controller's own calculation (see checkContentLibraryQuota)
+				// so the expected requestedCapacity is built the same way the controller does.
 				vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
 				vmMoRef := vimtypes.ManagedObjectReference{
 					Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
@@ -703,15 +696,14 @@ func publishRequestCompletedWithReadyImage(
 	namespace, pubReqName string) string {
 
 	vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, namespace, pubReqName, metav1.Condition{
-		Type:   vmopv1a2.VirtualMachinePublishRequestConditionComplete,
+		Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 		Status: metav1.ConditionTrue,
 	})
 
 	// Ensure the published image is available with expected display name under the namespace.
 	expectedPublishedImageCRName, err := vmoperator.GetVirtualMachinePublishRequestTargetItemName(ctx, config, svClusterClient, namespace, pubReqName)
 	Expect(err).NotTo(HaveOccurred(), "failed to get the published target item name in namespace %q", namespace)
-	publishedImageCRName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, namespace, expectedPublishedImageCRName)
-	Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", namespace)
+	publishedImageCRName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, namespace, expectedPublishedImageCRName)
 	Expect(publishedImageCRName).NotTo(BeEmpty(), "published VM Image resource name is empty")
 	vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterClient, namespace, publishedImageCRName)
 

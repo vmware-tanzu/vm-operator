@@ -849,6 +849,28 @@ func ReconcileSnapshotWaitForCRVCondition(
 	return nil
 }
 
+// getDisksFromSnapshot retrieves the hardware configuration of the snapshot and extracts the disks.
+func getDisksFromSnapshot(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualMachine, snapRef vimtypes.ManagedObjectReference, logger logr.Logger) []vmopv1.VirtualMachineSnapshotDiskStatus {
+	var moSnap mo.VirtualMachineSnapshot
+	if err := vcVM.Properties(vmCtx, snapRef, []string{"config.hardware.device"}, &moSnap); err != nil {
+		logger.Error(err, "failed to fetch snapshot hardware configuration")
+		return nil
+	}
+
+	var disks []vmopv1.VirtualMachineSnapshotDiskStatus
+	for _, dev := range moSnap.Config.Hardware.Device {
+		if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+			if backing, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
+				disks = append(disks, vmopv1.VirtualMachineSnapshotDiskStatus{
+					ID:                     backing.Uuid,
+					ChangedBlockTrackingID: backing.ChangeId,
+				})
+			}
+		}
+	}
+	return disks
+}
+
 // ReconcileCurrentSnapshot reconciles the current snapshot owned by the VM.
 func ReconcileCurrentSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
@@ -1031,6 +1053,9 @@ func ReconcileCurrentSnapshot(
 			snapshotToProcess.Name, err)
 	}
 
+	logger.Info("Fetching snapshot hardware configuration")
+	disks := getDisksFromSnapshot(vmCtx, vcVM, snapNode.Snapshot, logger)
+
 	// Update the snapshot status with the successful result
 	if err = kubeutil.PatchSnapshotSuccessStatus(
 		vmCtx,
@@ -1038,7 +1063,8 @@ func ReconcileCurrentSnapshot(
 		k8sClient,
 		snapshotToProcess,
 		snapNode,
-		vmCtx.VM.Spec.PowerState); err != nil {
+		vmCtx.VM.Spec.PowerState,
+		disks); err != nil {
 
 		return fmt.Errorf("failed to update snapshot %q status: %w",
 			snapshotToProcess.Name, err)

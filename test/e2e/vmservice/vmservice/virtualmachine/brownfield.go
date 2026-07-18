@@ -20,7 +20,7 @@ import (
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -129,12 +129,11 @@ func ImportBrownfieldVM(input ImportBrownfieldVMInput) BrownfieldVMResult {
 
 	const photonImageDisplayName = "photon-5.0"
 
-	photonImageName, err := vmoperator.WaitForVirtualMachineImageName(
+	photonImageName := vmoperator.WaitForVirtualMachineImageName(
 		ctx, &input.Config.Config, input.SVClusterClient,
 		input.Namespace, photonImageDisplayName)
-	Expect(err).ToNot(HaveOccurred(), "Failed to find photon image")
 
-	photonImage := vmopv1a5.VirtualMachineImage{}
+	photonImage := vmopv1.VirtualMachineImage{}
 	Expect(input.SVClusterClient.Get(ctx, ctrlclient.ObjectKey{
 		Name:      photonImageName,
 		Namespace: input.Namespace,

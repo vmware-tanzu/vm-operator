@@ -12,15 +12,15 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	crypto "github.com/vmware/govmomi/crypto"
+	"github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -131,8 +131,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
-		vmiName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VM Image name in namespace %q", tmpNamespaceName)
+		vmiName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 		By(utils.E2EEncryptionStorageProfileName + " should exist")
 		Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient,
@@ -331,7 +330,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: "invalid",
 			},
@@ -402,7 +401,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -456,7 +455,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
 			},
@@ -469,8 +468,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify VM config and disks are encrypted")
 		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
-		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1a3.VirtualMachineEncryptionTypeConfig))
-		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1a3.VirtualMachineEncryptionTypeDisks))
+		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeConfig))
+		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeDisks))
 	})
 
 	It("Encrypt PVC using encryption class annotation on the PVC", Label("experimental"), func() {
@@ -516,7 +515,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -534,7 +533,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify crypto status of volumes reflects volume is encrypted using encryption class from annotation")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Volumes).To(HaveLen(2))
@@ -589,7 +588,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -607,7 +606,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify crypto status of volumes reflects volume is encrypted using the default key provider")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Volumes).To(HaveLen(2))
@@ -663,7 +662,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: class.Name,
@@ -689,7 +688,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify VM is re-encrypted with new key")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Crypto).NotTo(BeNil())
@@ -700,7 +699,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify crypto status of volumes reflects the encryption class")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(vm.Status.Volumes).To(HaveLen(2))
@@ -766,7 +765,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			VMClassName:      "best-effort-small",
 			StorageClassName: utils.E2EEncryptionStorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       string(vmopv1a3.VirtualMachinePowerStateOn),
+			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
 				EncryptionClassName: vmClass.Name,
@@ -777,10 +776,10 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Verify the encryption synced condition reports an error due to mixed provider types")
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			condition := vmoperator.GetVirtualMachineConditionA3(vm, vmopv1a3.VirtualMachineEncryptionSynced)
+			condition := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineEncryptionSynced)
 			g.Expect(condition).ToNot(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse),
 				"expected EncryptionSynced to be False due to mixed provider types, got %s with reason %s: %s",
@@ -817,9 +816,9 @@ func useKeyProvider(
 	Expect(cryptoManager.SetDefaultKmsClusterId(ctx, keyProviderID, nil)).To(Succeed())
 }
 
-func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client ctrlclient.Client, ns string, vmName string, reason string) *vmopv1a3.VirtualMachineCryptoStatus {
+func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client ctrlclient.Client, ns string, vmName string, reason string) *vmopv1.VirtualMachineCryptoStatus {
 	expectedCondition := metav1.Condition{
-		Type:   vmopv1a3.VirtualMachineEncryptionSynced,
+		Type:   vmopv1.VirtualMachineEncryptionSynced,
 		Status: metav1.ConditionTrue,
 	}
 	if reason != "" {
@@ -833,10 +832,10 @@ func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client 
 	// - Check Reason before Status, gives more context on failure
 	// - Much shorter timeout
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := vmoperator.GetVirtualMachineConditionA3(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 
 		if actualCondition.Status == metav1.ConditionFalse {
@@ -848,7 +847,7 @@ func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client 
 
 	By("Checking VirtualMachine.Status.Crypto")
 
-	vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 	Expect(err).To(BeNil())
 
 	if expectedCondition.Status == metav1.ConditionTrue {

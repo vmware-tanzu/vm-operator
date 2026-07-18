@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25"
+	"k8s.io/apimachinery/pkg/api/meta"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,11 +29,7 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
@@ -44,10 +41,7 @@ import (
 const virtualMachineKind = "VirtualMachine"
 
 const (
-	vmopConfigurationConfigMap  = "vsphere.provider.config.vmoperator.vmware.com"
-	vmClassBestEffortSmall      = "best-effort-small"
-	vmClassBestEffortExtraSmall = "best-effort-xsmall"
-	NetworkProviderTypeVPC      = "NSXT_VPC"
+	NetworkProviderTypeVPC = "NSXT_VPC"
 )
 
 // NetworkProviderInfo contains the network provider information for a VM.
@@ -65,8 +59,8 @@ func IsNetworkNsxtVPC(ctx context.Context, client ctrlclient.Client, config *con
 	return envs[config.GetVariable("EnvNetworkProvider")] == NetworkProviderTypeVPC
 }
 
-// Utility function to ensure that a VirtualMachine with given name either exists or not, returns as soon as the CR exists in etcd.
-// To check if the vSphere VM has been created, see WaitForVirtualMachineConditionCreated.
+// WaitForVirtualMachineToExist waits for the VM to be created in etcd, as
+// indicated by the Get() retuning success.
 func WaitForVirtualMachineToExist(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
 	By("Verifying the existence of VM CR in etcd")
 	Eventually(func() bool {
@@ -80,27 +74,24 @@ func WaitForVirtualMachineToExist(ctx context.Context, config *config.E2EConfig,
 	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(), "Timed out waiting for k8s VirtualMachine %s to exist", vmName)
 }
 
-// Utility function to wait for a VM to exist, VirtualMachineCreated condition to exist and expect to be True.
-// This function fails when VirtualMachineCreated.Status == ConditionFalse, meaning the vSphere VM failed to be created.
-// Use this function before helpers that wait on vSphere VM properties,
-// such as WaitForVirtualMachinePowerState and WaitForVirtualMachineIP.
+// WaitForVirtualMachineConditionCreated waits for the VM to be created on VC,
+// as indicated by the VirtualMachineConditionCreated condition.
 func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
-	kind := vmopv1a3.VirtualMachineConditionCreated
-
 	By("Waiting for vSphere VM to be created")
 	Eventually(func(g Gomega) bool {
-		vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false
 		}
 
-		actualCondition := GetVirtualMachineConditionA3(vm, kind)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineConditionCreated)
 		g.Expect(actualCondition).ToNot(BeNil())
 		g.Expect(actualCondition.Status).To(Equal(metav1.ConditionTrue))
 
 		return true
-	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(), "Timed out waiting for VirtualMachine %s to be created", vmName)
+	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(),
+		"Timed out waiting for VirtualMachine %s to be created on VC", vmName)
 }
 
 // WaitForVirtualMachineImageCacheReady waits for VirtualMachineConditionImageCacheReady to become True.
@@ -111,7 +102,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 	By("Waiting for VirtualMachine image cache to be ready")
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry waiting for image cache: %v", err)
 			g.Expect(err).ToNot(HaveOccurred())
@@ -119,7 +110,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		}
 
 		for _, cond := range vm.Status.Conditions {
-			if cond.Type == vmopv1a5.VirtualMachineConditionImageCacheReady {
+			if cond.Type == vmopv1.VirtualMachineConditionImageCacheReady {
 				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
 					"VirtualMachineConditionImageCacheReady is %s: %s", cond.Status, cond.Message)
 				return
@@ -134,10 +125,11 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 
-// Utility function to wait for the VM's Status.Class.Name to be updated.
+// WaitForVirtualMachineStatusClassUpdated waits for the VM Status to
+// report the expected class name.
 func WaitForVirtualMachineStatusClassUpdated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, className string) {
 	Eventually(func(g Gomega) bool {
-		vm, err := utils.GetVirtualMachineA3(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false
@@ -168,16 +160,6 @@ func UpdateVirtualMachineClassName(ctx context.Context, config *config.E2EConfig
 	}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(BeTrue(), "Timed out updating VirtualMachines %s ClassName to %s", vmName, className)
 }
 
-func GetVirtualMachineCondition(vm *vmopv1a2.VirtualMachine, conditionType string) *metav1.Condition {
-	for _, condition := range vm.Status.Conditions {
-		if condition.Type == conditionType {
-			return &condition
-		}
-	}
-
-	return nil
-}
-
 // Utility function to check a particular condition consistency on a given list of Virtual Machine.
 func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client,
 	ns string, vmName string, expectedCondition metav1.Condition) {
@@ -185,7 +167,7 @@ func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := GetVirtualMachineCondition(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
 
@@ -195,30 +177,12 @@ func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config
 	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed(), "VirtualMachine conditions changed")
 }
 
-func GetVirtualMachineConditionA3(vm *vmopv1a3.VirtualMachine, conditionType string) *metav1.Condition {
-	var condition *metav1.Condition
-
-	for _, c := range vm.Status.Conditions {
-		if c.Type == conditionType {
-			if condition != nil {
-				if condition.LastTransitionTime.After(c.LastTransitionTime.Time) {
-					continue
-				}
-			}
-
-			condition = &c
-		}
-	}
-
-	return condition
-}
-
 // Utility function to check Virtual Machine creation.
 func WaitForVirtualMachineCreation(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
 	By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
 	WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
 	WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
-	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1a5.VirtualMachinePowerStateOn))
+	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 	WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
 }
 
@@ -239,7 +203,8 @@ func WaitForVirtualMachineIP(ctx context.Context, config *config.E2EConfig, svCl
 }
 
 // Utility function to check Virtual Machine Status MoID.
-func WaitForVirtualMachineMOID(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
+func WaitForVirtualMachineMOID(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) string {
+	var moID string
 	By("Verify that the VirtualMachine has a Unique ID/MOID")
 	Eventually(func() bool {
 		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
@@ -248,8 +213,11 @@ func WaitForVirtualMachineMOID(ctx context.Context, config *config.E2EConfig, sv
 			return false
 		}
 
-		return vm.Status.UniqueID != ""
+		moID = vm.Status.UniqueID
+		return moID != ""
 	}, config.GetIntervals("default", "wait-virtual-machine-moid")...).Should(BeTrue())
+
+	return moID
 }
 
 // Utility function to check PVC Attachment with Virtual Machine Status.
@@ -304,7 +272,7 @@ func WaitOnVirtualMachineConditionUpdate(ctx context.Context, config *config.E2E
 			return false
 		}
 
-		actualCondition := GetVirtualMachineCondition(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		if actualCondition == nil {
 			return false
 		}
@@ -339,7 +307,7 @@ func WaitOnVirtualMachineCondition(
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := GetVirtualMachineCondition(vm, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 
 		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
@@ -405,7 +373,7 @@ func UpdateVirtualMachinePowerState(ctx context.Context, config *config.E2EConfi
 			return false
 		}
 
-		vm.Spec.PowerState = vmopv1a2.VirtualMachinePowerState(powerState)
+		vm.Spec.PowerState = vmopv1.VirtualMachinePowerState(powerState)
 		if err := client.Update(ctx, vm); err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false
@@ -428,7 +396,7 @@ func WaitForVirtualMachinePowerState(
 			return false
 		}
 
-		return vm.Status.PowerState == vmopv1a2.VirtualMachinePowerState(expectedPowerState)
+		return vm.Status.PowerState == vmopv1.VirtualMachinePowerState(expectedPowerState)
 	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(BeTrue(), "Timed out waiting for VirtualMachines %s PowerState to be updated to %s", vmName, expectedPowerState)
 }
 
@@ -438,7 +406,7 @@ func WaitForLinuxPrepCustomizeNextPowerOnFalse(
 	client ctrlclient.Client,
 	ns, vmName string) {
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(vm.Spec.Bootstrap).ToNot(BeNil())
 		g.Expect(vm.Spec.Bootstrap.LinuxPrep).ToNot(BeNil())
@@ -490,24 +458,6 @@ func DeleteSubnetOrSubnetSet(ctx context.Context, client ctrlclient.Client, ns, 
 	Expect(client.Delete(ctx, obj)).To(Succeed())
 }
 
-// DescribeAllVirtualMachinesInNamespace logs the output of `kubectl describe vm` for all VMs in the given namespace.
-func DescribeAllVirtualMachinesInNamespace(ctx context.Context, client ctrlclient.Client, kubeconfigPath, ns string) {
-	e2eframework.Logf("Describing all VMs in namespace %s", ns)
-
-	vmList := &vmopv1a2.VirtualMachineList{}
-	Expect(client.List(ctx, vmList, ctrlclient.InNamespace(ns))).Should(Succeed())
-
-	for _, vm := range vmList.Items {
-		stdout, stderr, err := framework.KubectlDescribeWithNamespacedName(ctx, kubeconfigPath, "vm", ns, vm.Name)
-		if err != nil {
-			e2eframework.Logf("Failed to run kubectl describe for VM '%s/%s': %s", ns, vm.Name, stderr)
-			continue
-		}
-
-		e2eframework.Logf("kubectl describe vm -n %s %s:\n%s", ns, vm.Name, stdout)
-	}
-}
-
 // DescribeResourceIfExists logs the output of `kubectl describe <resource>` if the given resource exists.
 func DescribeResourceIfExists(ctx context.Context, client ctrlclient.Client, kubeconfigPath, ns, resourceName, resource string) {
 	stdout, stderr, err := framework.KubectlDescribeWithNamespacedName(ctx, kubeconfigPath, resource, ns, resourceName)
@@ -522,18 +472,9 @@ func DescribeResourceIfExists(ctx context.Context, client ctrlclient.Client, kub
 
 // Utility function to get a image k8s name given its display name.
 func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Config,
-	client ctrlclient.Client, namespace, imageDisplayName string) (string, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
+	client ctrlclient.Client, namespace, imageDisplayName string) string {
 
-	var options []ctrlclient.ListOption
-	if vmImageRegistryFss {
-		options = append(options, ctrlclient.InNamespace(namespace))
-	}
-
+	options := []ctrlclient.ListOption{ctrlclient.InNamespace(namespace)}
 	var imageName string
 
 	Eventually(func(g Gomega) bool {
@@ -551,25 +492,17 @@ func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Confi
 	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).Should(BeTrue(),
 		fmt.Sprintf("failed to find vm image with display name %s", imageDisplayName))
 
-	return imageName, nil
+	return imageName
 }
 
 // Utility function to wait for a VMI to have its Status.Disks populated.
 func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, namespace, imageName string) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if !vmImageRegistryFss {
-		namespace = ""
-	}
 
 	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
 
 	Eventually(func(g Gomega) {
-		vmi := &vmopv1a3.VirtualMachineImage{}
+		vmi := &vmopv1.VirtualMachineImage{}
 		g.Expect(client.Get(ctx, objKey, vmi)).To(Succeed())
 		g.Expect(vmi.Status.Disks).ToNot(BeEmpty())
 	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).Should(Succeed(),
@@ -586,19 +519,11 @@ func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framewor
 // so WaitForVirtualMachineImageStatusDisks is sufficient there.
 func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, namespace, imageName string) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if !vmImageRegistryFss {
-		namespace = ""
-	}
 
 	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
 
 	Eventually(func(g Gomega) {
-		vmi := &vmopv1a3.VirtualMachineImage{}
+		vmi := &vmopv1.VirtualMachineImage{}
 		g.Expect(client.Get(ctx, objKey, vmi)).To(Succeed())
 		g.Expect(vmi.Status.Disks).ToNot(BeEmpty())
 		// ProviderContentVersion must be non-empty before the validating webhook
@@ -611,14 +536,6 @@ func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.C
 // Utility function to get a ClusterVirtualMachineImage k8s object's name by its display name.
 func WaitForClusterVirtualMachineImageName(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, imageDisplayName string) (string, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if !vmImageRegistryFss {
-		return "", fmt.Errorf("cannot get ClusterVirtualMachineImage as image-registry FSS is not enabled")
-	}
 
 	var cvmiName string
 
@@ -640,91 +557,8 @@ func WaitForClusterVirtualMachineImageName(ctx context.Context, config *framewor
 	return cvmiName, nil
 }
 
-func GetClusterScopedVirtualMachineImage(ctx context.Context, config *framework.Config, client ctrlclient.Client, name string) (ctrlclient.Object, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if vmImageRegistryFss {
-		virtualMachineImage := &vmopv1a2.ClusterVirtualMachineImage{}
-
-		err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-		if err != nil {
-			return nil, err
-		}
-
-		return virtualMachineImage, nil
-	}
-
-	virtualMachineImage := &vmopv1a2.VirtualMachineImage{}
-
-	err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachineImage, nil
-}
-
-func GetClusterScopedVirtualMachineImageV1A1(ctx context.Context, config *framework.Config, client ctrlclient.Client, name string) (ctrlclient.Object, error) {
-	vmImageRegistryFss := utils.IsFssEnabled(ctx, client,
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSVMImageRegistry"))
-	if vmImageRegistryFss {
-		virtualMachineImage := &vmopv1a1.ClusterVirtualMachineImage{}
-
-		err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-		if err != nil {
-			return nil, err
-		}
-
-		return virtualMachineImage, nil
-	}
-
-	virtualMachineImage := &vmopv1a1.VirtualMachineImage{}
-
-	err := client.Get(ctx, ctrlclient.ObjectKey{Name: name}, virtualMachineImage)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachineImage, nil
-}
-
-func GetVMClassInNamespace(ctx context.Context, client ctrlclient.Client, config *config.E2EConfig, ns, vmclassName string) (*vmopv1a2.VirtualMachineClass, error) {
-	vmclass := &vmopv1a2.VirtualMachineClass{}
-
-	e2eframework.Logf("Getting Namespace scoped VMClass %s in namespace %s", vmclassName, ns)
-
-	err := client.Get(ctx, ctrlclient.ObjectKey{Name: vmclassName, Namespace: ns}, vmclass)
-	if err != nil {
-		return nil, err
-	}
-
-	return vmclass, nil
-}
-
 func MemoryQuantityToMb(q resource.Quantity) int {
 	return int(math.Ceil(float64(q.Value()) / float64(1024*1024)))
-}
-
-func GetVMClassesNameForUpdate(ctx context.Context, config *framework.Config, client ctrlclient.Client) (oldVMClassName, newVMClassName string, _ error) {
-	// By default, we use the name directly from vcenter with the assumption that best-effort-small and
-	// best-effort-medium exist, and we cannot assume the vm class CR presents.
-	return vmClassBestEffortExtraSmall, vmClassBestEffortSmall, nil
-}
-
-func getVirtualMachinePublishRequestCondition(vmPub *vmopv1a2.VirtualMachinePublishRequest, conditionType string) *metav1.Condition {
-	for _, condition := range vmPub.Status.Conditions {
-		if condition.Type == conditionType {
-			return &condition
-		}
-	}
-
-	return nil
 }
 
 // VerifyVirtualMachinePublishRequestCondition waits until the expected condition is met on the VirtualMachinePublishRequest.
@@ -738,7 +572,7 @@ func VerifyVirtualMachinePublishRequestCondition(
 		vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, client, ns, vmPubName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := getVirtualMachinePublishRequestCondition(vmPub, expectedCondition.Type)
+		actualCondition := meta.FindStatusCondition(vmPub.GetConditions(), expectedCondition.Type)
 		g.Expect(actualCondition).ToNot(BeNil())
 
 		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
@@ -770,7 +604,7 @@ func VerifyVirtualMachineGroupPublishRequestCompleted(
 		}
 
 		for _, condition := range vmGroupPub.Status.Conditions {
-			if condition.Type == vmopv1a5.VirtualMachineGroupPublishRequestConditionComplete {
+			if condition.Type == vmopv1.VirtualMachineGroupPublishRequestConditionComplete {
 				return condition.Status == metav1.ConditionTrue
 			}
 		}
@@ -797,10 +631,10 @@ func VerifyVirtualMachineGroupLinked(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	expectedMembers sets.Set[vmopv1a5.GroupMember]) {
+	expectedMembers sets.Set[vmopv1.GroupMember]) {
 	e2eframework.Logf("%s expected members: %v", name, expectedMembers)
 
-	var lastActualMembers sets.Set[vmopv1a5.GroupMember]
+	var lastActualMembers sets.Set[vmopv1.GroupMember]
 
 	Eventually(func(g Gomega) bool {
 		vmGroup, err := utils.GetVirtualMachineGroup(ctx, client, ns, name)
@@ -809,13 +643,13 @@ func VerifyVirtualMachineGroupLinked(
 			return false
 		}
 
-		actualMembers := make(sets.Set[vmopv1a5.GroupMember])
+		actualMembers := make(sets.Set[vmopv1.GroupMember])
 
 		for _, member := range vmGroup.Status.Members {
 			for _, condition := range member.Conditions {
-				if condition.Type == vmopv1a5.VirtualMachineGroupMemberConditionGroupLinked &&
+				if condition.Type == vmopv1.VirtualMachineGroupMemberConditionGroupLinked &&
 					condition.Status == metav1.ConditionTrue {
-					actualMembers.Insert(vmopv1a5.GroupMember{
+					actualMembers.Insert(vmopv1.GroupMember{
 						Name: member.Name,
 						Kind: member.Kind,
 					})
@@ -1196,28 +1030,14 @@ func WaitForVirtualMachineGroupToBeDeleted(ctx context.Context, config *config.E
 	}, config.GetIntervals("default", "wait-virtual-machine-group-deletion")...).Should(Succeed(), "Timed out waiting for VirtualMachineGroup %s to be deleted", groupName)
 }
 
-func VerifyVirtualMachineSnapshotDeleted(
-	ctx context.Context,
-	config *config.E2EConfig,
-	client ctrlclient.Client,
-	ns, name string) {
-	GinkgoHelper()
-
-	Eventually(func(g Gomega) bool {
-		_, err := utils.GetVirtualMachineSnapshot(ctx, client, ns, name)
-		return apierrors.IsNotFound(err)
-	}, config.GetIntervals("default", "wait-virtual-machine-snapshot-deletion")...).Should(BeTrue(),
-		"Timed out waiting for VirtualMachineSnapshot to be deleted")
-}
-
 func VerifyVirtualMachineSnapshotCondition(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	powerState vmopv1a5.VirtualMachinePowerState,
+	powerState vmopv1.VirtualMachinePowerState,
 	quiesced bool,
-	children []vmopv1a5.VirtualMachineSnapshotReference,
+	children []vmopv1.VirtualMachineSnapshotReference,
 ) {
 	GinkgoHelper()
 
@@ -1235,7 +1055,7 @@ func VerifyVirtualMachineSnapshotCondition(
 		}
 
 		for _, condition := range vmSnapshot.Status.Conditions {
-			if condition.Type == vmopv1a5.VirtualMachineSnapshotReadyCondition {
+			if condition.Type == vmopv1.VirtualMachineSnapshotReadyCondition {
 				return condition.Status == metav1.ConditionTrue
 			}
 		}
@@ -1268,14 +1088,14 @@ func VerifySnapshotStatusOnVirtualMachine(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	currentSnapshot *vmopv1a5.VirtualMachineSnapshotReference,
-	rootSnapshots []vmopv1a5.VirtualMachineSnapshotReference,
-	powerState vmopv1a5.VirtualMachinePowerState,
+	currentSnapshot *vmopv1.VirtualMachineSnapshotReference,
+	rootSnapshots []vmopv1.VirtualMachineSnapshotReference,
+	powerState vmopv1.VirtualMachinePowerState,
 ) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, name)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, name)
 		g.Expect(err).To(Succeed())
 		g.Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty(),
 			"spec.CurrentSnapshotName should be empty")
@@ -1296,12 +1116,12 @@ func VerifyVirtualMachineRestartMode(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, name string,
-	restartMode vmopv1a5.VirtualMachinePowerOpMode,
+	restartMode vmopv1.VirtualMachinePowerOpMode,
 ) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, name)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, name)
 		g.Expect(err).To(Succeed())
 		g.Expect(vm.Spec.RestartMode).To(Equal(restartMode))
 	}, config.GetIntervals("default", "wait-virtual-machine-snapshot-related-resource")...).Should(Succeed(),
@@ -1378,7 +1198,7 @@ func VerifyVMDeleted(
 	vmSvcE2EConfig *config.E2EConfig,
 	ns, name string) {
 	Eventually(func() bool {
-		err := utils.DeleteVirtualMachineA5(ctx, client, ns, name)
+		err := utils.DeleteVirtualMachine(ctx, client, ns, name)
 		if err != nil && apierrors.IsNotFound(err) {
 			return true
 		}
@@ -1410,7 +1230,7 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA6(ctx, k8sClient, namespace, name)
+		vm, err := utils.GetVirtualMachine(ctx, k8sClient, namespace, name)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		g.Expect(vm.Spec.StorageClass).NotTo(BeEmpty(),
@@ -1425,7 +1245,7 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 		g.Expect(boot).NotTo(BeNil(),
 			"no boot disk found in status.volumes for VirtualMachine %s/%s", namespace, name)
 
-		if boot.Type == vmopv1a6.VolumeTypeManaged {
+		if boot.Type == vmopv1.VolumeTypeManaged {
 			g.Expect(boot.DiskUUID).NotTo(BeEmpty(),
 				"boot disk %q in VirtualMachine %s/%s has no diskUUID yet", boot.Name, namespace, name)
 		}
@@ -1502,9 +1322,9 @@ func WaitForVMCnsRegisterVolumesRegistered(
 			}
 		}
 
-	e2eframework.Logf("All %d CnsRegisterVolume(s) for VM %s/%s are registered",
-		len(crvList.Items), ns, vmName)
-	return true
-}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(),
-	"Timed out waiting for CnsRegisterVolumes to be registered for VM %s/%s", ns, vmName)
+		e2eframework.Logf("All %d CnsRegisterVolume(s) for VM %s/%s are registered",
+			len(crvList.Items), ns, vmName)
+		return true
+	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-creation")...).Should(BeTrue(),
+		"Timed out waiting for CnsRegisterVolumes to be registered for VM %s/%s", ns, vmName)
 }

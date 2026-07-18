@@ -209,8 +209,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ubuntuImageDisplayName := config.InfraConfig.ManagementClusterConfig.Resources.UbuntuImageDisplayName
 		Expect(ubuntuImageDisplayName).ToNot(BeEmpty(), "ubuntuImageDisplayName is not set in %s", configFilePath)
 
-		ubuntuVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, ubuntuImageDisplayName)
-		Expect(err).ToNot(HaveOccurred(), "failed to get the Canonical Ubuntu VMI name in namespace %q", wcpNamespaceName)
+		ubuntuVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, ubuntuImageDisplayName)
 
 		By("Deploying an Canonical Ubuntu VM under the common WCP namespace to make it available for all test specs")
 		// We only deploy the VM here and not block to wait for it to be ready.
@@ -221,8 +220,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		By("Ensure the Photon image is available in the WCP namespace")
 
 		photonImageDisplayName := config.InfraConfig.ManagementClusterConfig.Resources.PhotonImageDisplayName
-		photonVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, photonImageDisplayName)
-		Expect(err).ToNot(HaveOccurred(), "failed to get the VMI name in namespace %q", wcpNamespaceName)
+		photonVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, photonImageDisplayName)
 
 		By("Waiting for Photon image content to be fully downloaded")
 		vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, photonVMIName)
@@ -242,8 +240,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			By("Get the Windows VMI name from the image display name")
 
 			windowsImageDisplayName := config.InfraConfig.ManagementClusterConfig.Resources.WindowsImageDisplayName
-			windowsVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsImageDisplayName)
-			Expect(err).ToNot(HaveOccurred(), "failed to get the VMI name in namespace %q", wcpNamespaceName)
+			windowsVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsImageDisplayName)
 
 			By("Waiting for Windows image content to be fully downloaded")
 			vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsVMIName)

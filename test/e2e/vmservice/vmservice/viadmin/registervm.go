@@ -13,10 +13,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware/govmomi/alarm"
 	"github.com/vmware/govmomi/cns"
 	cnstypes "github.com/vmware/govmomi/cns/types"
@@ -30,10 +26,17 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
@@ -50,7 +53,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 )
 
 const trueString = "true"
@@ -99,9 +101,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(config.InfraConfig.ManagementClusterConfig.Resources)
 
-		var vmiErr error
-		linuxVMIName, vmiErr = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(vmiErr).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 		incrementalRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIncrementalRestore"))
@@ -301,10 +301,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			base := vm.DeepCopy()
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 			// Collect all PVC names from the VM spec
@@ -405,7 +402,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// is processed; if removable is missing the disk may be misclassified
 			// during a restore pass.
 			By("Set all PVC volumes as removable=true before backup is captured")
-			vmA5, err := utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vmA5, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			baseRemovable := vmA5.DeepCopy()
 			for i := range vmA5.Spec.Volumes {
@@ -452,13 +449,13 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Use v1alpha3 here to make sure this doesn't blow up in product branches older than v1a5.
 			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", vmParameters.PVCNames))
 
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			baseA3 := vm.DeepCopy()
-			vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1a3.VirtualMachineVolume{
+			vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 				Name: pvcNameB,
-				VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
-					PersistentVolumeClaim: &vmopv1a3.PersistentVolumeClaimVolumeSource{
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 							ClaimName: pvcNameB,
 						},
@@ -476,19 +473,16 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation and set all volumes as removable")
 
-			vm, err = utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Use v1alpha5 to access the Removable field. RegisterVM restores from
-			// the backup yaml (pvcA only), requiring pvcB removal; the validating
-			// webhook blocks that unless Removable=true on every volume.
-			vmA5, err = utils.GetVirtualMachineA5(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			// RegisterVM restores from the backup yaml (pvcA only), requiring pvcB
+			// removal; the validating webhook blocks that unless Removable=true on
+			// every volume.
+			vmA5, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			basePause := vmA5.DeepCopy()
-			if vmA5.Annotations == nil {
-				vmA5.Annotations = make(map[string]string)
-			}
-			vmA5.Annotations[vmopv1a5.PauseAnnotation] = trueString
+			metav1.SetMetaDataAnnotation(&vmA5.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 			for i := range vmA5.Spec.Volumes {
 				vmA5.Spec.Volumes[i].Removable = ptr.To(true)
 			}
@@ -886,10 +880,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			base := vm.DeepCopy()
-			if vm.Annotations == nil {
-				vm.Annotations = make(map[string]string)
-			}
-			vm.Annotations[vmopv1a3.PauseAnnotation] = trueString
+			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 			var vmMO mo.VirtualMachine
@@ -1039,14 +1030,14 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
 
 			// Fetch the restored VM and verify that it has the expected number of volumes.
-			restoredVM, err := utils.GetVirtualMachineA3(ctx, svClusterClient, existingVM.Namespace, existingVM.Name)
+			restoredVM, err := utils.GetVirtualMachine(ctx, svClusterClient, existingVM.Namespace, existingVM.Name)
 			Expect(err).ToNot(HaveOccurred())
 
 			e2eframework.Logf("VM has been restored: %v", restoredVM)
 
 			Expect(len(restoredVM.Spec.Volumes)).To(Equal(2)) // one base disk and one PVC
 
-			var restoredVol *vmopv1a3.VirtualMachineVolume
+			var restoredVol *vmopv1.VirtualMachineVolume
 
 			for _, vol := range restoredVM.Spec.Volumes {
 				// The volume with restored- prefix is the one that was restored.

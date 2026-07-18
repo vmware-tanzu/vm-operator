@@ -42,8 +42,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsunregistervolumev1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/cnsunregistervolume/v1alpha1"
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -818,7 +817,7 @@ func decodeGzipBase64(encoded string) (string, error) {
 // in the VM's ExtraConfig. This is exported for use in tests that perform in-place restores.
 func WaitForBackupToComplete(
 	ctx context.Context,
-	vm *vmopv1a2.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 ) {
@@ -830,7 +829,7 @@ func WaitForBackupToComplete(
 // in the VM's ExtraConfig.
 func waitForBackupToComplete(
 	ctx context.Context,
-	vm *vmopv1a2.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 ) {
@@ -1028,18 +1027,14 @@ func DeleteVMResource(
 	vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Power off the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
+	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
 	By("Add the pause annotation to VM")
-
 	vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 	Expect(err).ToNot(HaveOccurred())
 	base := vm.DeepCopy()
-	if vm.Annotations == nil {
-		vm.Annotations = make(map[string]string)
-	}
-	vm.Annotations[vmopv1a2.PauseAnnotation] = trueString
+	metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 	Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 	// Collect all PVC names from the VM spec
@@ -1062,13 +1057,9 @@ func DeleteVMResource(
 	By("Remove the VMOP finalizer to ensure deletion of K8s VM")
 	Eventually(func() bool {
 		vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-		if apierrors.IsNotFound(err) {
-			// VM is already deleted, nothing to do.
-			return true
-		}
-
 		if err != nil {
-			return false
+			// If VM is already deleted, nothing to do.
+			return apierrors.IsNotFound(err)
 		}
 
 		if vm.DeletionTimestamp.IsZero() {
@@ -1129,7 +1120,7 @@ func VerifyPostRegisterVM(
 	wcpClient wcp.WorkloadManagementAPI) {
 	By("Verify that the VM has been created in PoweredOff state")
 	vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmNamespace, vmName)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
 	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 	Expect(err).ToNot(HaveOccurred())
@@ -1150,8 +1141,8 @@ func VerifyPostRegisterVM(
 		expectedRestoredPVCCount, actualRestoredPVCCount)
 
 	By("Power on the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOn))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1a2.VirtualMachinePowerStateOn))
+	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 
 	By("Verify that the VM has an IP assigned")
 	vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, vmNamespace, vmName)
@@ -1258,8 +1249,7 @@ func DeployVMWithCloudInit(
 	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
 
 	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
-	linuxVMIName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
-	Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, ns)
+	linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
 
 	vmParameters := manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,
@@ -1352,7 +1342,7 @@ func CreateSnapshotInVC(
 	vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 	defer vcenter.LogoutVimClient(vCenterClient)
 
-	vm, err := utils.GetVirtualMachineA5(ctx, clusterProxy.GetClient(), vmNamespace, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, clusterProxy.GetClient(), vmNamespace, vmName)
 	Expect(err).NotTo(HaveOccurred())
 
 	vmMoID := vm.Status.UniqueID
@@ -1390,13 +1380,13 @@ func RevertVMSnapshot(
 	vmSvcClusterProxy *common.VMServiceClusterProxy,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
-	currentSnapshot *vmopv1a5.VirtualMachineSnapshotReference,
+	currentSnapshot *vmopv1.VirtualMachineSnapshotReference,
 ) {
 	GinkgoHelper()
 
 	Expect(currentSnapshot.Name).NotTo(BeEmpty())
 
-	vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 	Expect(err).NotTo(HaveOccurred())
 
 	vmPatch := vm.DeepCopy()
@@ -1404,7 +1394,7 @@ func RevertVMSnapshot(
 	Expect(vmSvcClusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed())
 	framework.Logf("Revert to VirtualMachineSnapshot:\n%s", currentSnapshot.Name)
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(vm.Status.CurrentSnapshot).To(Equal(currentSnapshot))
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-snapshot-revert")...).Should(Succeed())
@@ -1415,11 +1405,11 @@ func UpdateVMRestartMode(
 	vmSvcClusterProxy *common.VMServiceClusterProxy,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
-	restartMode vmopv1a5.VirtualMachinePowerOpMode,
+	restartMode vmopv1.VirtualMachinePowerOpMode,
 ) {
 	GinkgoHelper()
 
-	vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+	vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 	Expect(err).NotTo(HaveOccurred())
 
 	vmPatch := vm.DeepCopy()
@@ -1427,7 +1417,7 @@ func UpdateVMRestartMode(
 	Expect(vmSvcClusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed())
 	framework.Logf("Update VM RestartMode:\n%s", restartMode)
 	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachineA5(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(vm.Spec.RestartMode).To(Equal(restartMode))
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-restart-mode-update")...).Should(Succeed())
@@ -1470,7 +1460,7 @@ func VerifyVMTagsAndPolicyAssignment(
 
 	Eventually(func(g Gomega) {
 		// Verify the K8s VM CR has the expected policies in status.
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get K8s VM CR")
 
 		vmStatusPolicyNames := make([]string, len(vm.Status.Policies))

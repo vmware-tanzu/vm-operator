@@ -26,8 +26,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
@@ -67,25 +66,21 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	)
 
 	var (
-		input                             VMSpecInput
-		wcpClient                         wcp.WorkloadManagementAPI
-		vCenterClient                     *vim25.Client
-		propCollector                     *property.Collector
-		config                            *e2eConfig.E2EConfig
-		clusterProxy                      *common.VMServiceClusterProxy
-		svClusterClient                   ctrlclient.Client
-		clusterResources                  *e2eConfig.Resources
-		tmpNamespaceCtx                   wcpframework.NamespaceContext
-		vmYaml                            []byte
-		vmName                            string
-		instanceStorageFssEnabled         bool
-		vmClassAsConfigDaynDateFssEnabled bool
-		namespacedVMClassFSSEnabled       bool
-		vmResizeCPUMemoryFssEnabled       bool
-		isoSupportFSSEnabled              bool
-		linuxImageDisplayName             string
-		linuxVMIName                      string
-		linuxImageGuestID                 string
+		input                     VMSpecInput
+		wcpClient                 wcp.WorkloadManagementAPI
+		vCenterClient             *vim25.Client
+		propCollector             *property.Collector
+		config                    *e2eConfig.E2EConfig
+		clusterProxy              *common.VMServiceClusterProxy
+		svClusterClient           ctrlclient.Client
+		clusterResources          *e2eConfig.Resources
+		tmpNamespaceCtx           wcpframework.NamespaceContext
+		vmYaml                    []byte
+		vmName                    string
+		instanceStorageFssEnabled bool
+		linuxImageDisplayName     string
+		linuxVMIName              string
+		linuxImageGuestID         string
 	)
 
 	BeforeEach(func() {
@@ -107,9 +102,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxImageGuestID = vmservice.GetDefaultImageGuestID()
 
-		var err error
-		linuxVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name for display name %q in namespace %q", linuxImageDisplayName, input.WCPNamespaceName)
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
@@ -118,10 +111,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		propCollector = property.DefaultCollector(vCenterClient)
 
 		instanceStorageFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSInstanceStorage"))
-		vmClassAsConfigDaynDateFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMClassAsConfigDaynDate"))
-		namespacedVMClassFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSNamespacedVMClass"))
-		vmResizeCPUMemoryFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMResizeCPUMemory"))
-		isoSupportFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIsoSupport"))
 
 		vmYaml = nil
 		tmpNamespaceCtx = wcpframework.NamespaceContext{}
@@ -163,7 +152,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 		By("Verifying VM gets expected BIOS and instance UUID")
-		virtualMachine, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		virtualMachine, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 		e2eframework.ExpectNoError(err)
 		Expect(virtualMachine.Spec.BiosUUID).To(Equal(virtualMachine.Status.BiosUUID))
 
@@ -175,11 +164,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(virtualMachine.Spec.InstanceUUID).To(Equal(vmMO.Config.InstanceUuid))
 	})
 
-	It("Should create expected resources for a single poweredOff VirtualMachine when VM_Class_as_Config_DaynDate Enabled", func() {
-		if !vmClassAsConfigDaynDateFssEnabled {
-			Skip("VM_Class_as_Config_DaynDate FSS is not enabled")
-		}
-
+	It("Should create expected resources for a single poweredOff VirtualMachine", func() {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
@@ -194,29 +179,22 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
 
 		var vmMO mo.VirtualMachine
 		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
 		e2eframework.ExpectNoError(err)
 
-		hw := vmMO.Config.Hardware
-		var vmClass *vmopv1a2.VirtualMachineClass
-		// Depending on namespacedVMClassFSS, return namespaced VM Class or cluster scoped VM Class
-		vmClass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, clusterResources.VMClassName, input.WCPNamespaceName, namespacedVMClassFSSEnabled)
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
 		e2eframework.ExpectNoError(err)
 
+		hw := vmMO.Config.Hardware
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 	})
 
-	It("Should resize powered off VirtualMachine when VM_Resize_CPU_Memory is Enabled", func() {
-		if !vmResizeCPUMemoryFssEnabled {
-			Skip("VM_Resize_CPU_Memory FSS is not enabled")
-		}
-
+	It("Should resize powered off VirtualMachine", func() {
 		const newVMClassName = "guaranteed-large"
 
 		Expect(vmservice.EnsureNamespaceHasAccess(input.WCPClient, clusterResources.VMClassName, input.WCPNamespaceName)).To(Succeed())
@@ -236,16 +214,15 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 
 		By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", input.WCPNamespaceName, vmName))
-		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
 
 		var vmMO mo.VirtualMachine
 		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
 		e2eframework.ExpectNoError(err)
 
 		// Verify initial CPU and memory.
-		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, clusterResources.VMClassName, input.WCPNamespaceName, namespacedVMClassFSSEnabled)
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
 		e2eframework.ExpectNoError(err)
 		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
@@ -257,12 +234,12 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineStatusClassUpdated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, newVMClassName)
 
 		classConfigSyncedCondition := metav1.Condition{
-			Type:   vmopv1a2.VirtualMachineClassConfigurationSynced,
+			Type:   vmopv1.VirtualMachineClassConfigurationSynced,
 			Status: metav1.ConditionTrue,
 		}
 		vmoperator.WaitOnVirtualMachineConditionUpdate(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classConfigSyncedCondition)
 
-		newVMClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, newVMClassName, input.WCPNamespaceName, namespacedVMClassFSSEnabled)
+		newVMClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, newVMClassName)
 		e2eframework.ExpectNoError(err)
 		// Assert that we can tell that a resize happened.
 		Expect(vmClass.Spec.Hardware.Cpus).ToNot(Equal(newVMClass.Spec.Hardware.Cpus))
@@ -286,11 +263,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmservice.VerifyVMClassDeletion(wcpClient, newVMClassName)
 	})
 
-	It("Should create expected resources for a single VirtualMachine when VM_Class_as_Config_DaynDate Enabled", func() {
-		if !vmClassAsConfigDaynDateFssEnabled {
-			Skip("VM_Class_as_Config_DaynDate FSS is not enabled")
-		}
-
+	It("Should create expected resources for a single VirtualMachine", func() {
 		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassE1000)).To(Succeed())
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{
@@ -331,9 +304,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(ecMap).To(HaveKeyWithValue("hello-test-key", "hello-test-value"))
 
 		// verify cpu and memory
-		var vmClass *vmopv1a2.VirtualMachineClass
-		// Depending on namespacedVMClassFSS, return namespaced VM Class or cluster scoped VM Class
-		vmClass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassE1000, input.WCPNamespaceName, namespacedVMClassFSSEnabled)
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassE1000)
 		e2eframework.ExpectNoError(err)
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
@@ -375,8 +346,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(hwVersion).To(Equal("vmx-22"))
 
 		// verify cpu and memory
-		var vmClass *vmopv1a2.VirtualMachineClass
-		vmClass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassVMX22, input.WCPNamespaceName, namespacedVMClassFSSEnabled)
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassVMX22)
 		e2eframework.ExpectNoError(err)
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
@@ -428,8 +398,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
 		// Ensure the Linux VMI name is present in the temp namespace.
-		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        tmpNamespaceName,
@@ -459,8 +428,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
 		// Ensure the Linux VMI name is present in the temp namespace.
-		vmiName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
+		vmiName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 		vmParameters.ImageName = vmiName
 
 		// Create a new VM and verify the creation is successful.
@@ -492,7 +460,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	It("Should emit a condition for a VMClass that doesn't exist in the cluster for a Virtual Machine creation", func() {
 		vmClassName := "test-vmClass"
 		expectedCondition := metav1.Condition{
-			Type:    vmopv1a2.VirtualMachineConditionClassReady,
+			Type:    vmopv1.VirtualMachineConditionClassReady,
 			Status:  metav1.ConditionFalse,
 			Reason:  "NotFound",
 			Message: fmt.Sprintf("Failed to get VirtualMachineClass %s", vmClassName),
@@ -533,7 +501,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(vmClassInfo.Namespaces).ShouldNot(ContainElement(input.WCPNamespaceName))
 		expectedCondition := metav1.Condition{
-			Type:    vmopv1a2.VirtualMachineConditionClassReady,
+			Type:    vmopv1.VirtualMachineConditionClassReady,
 			Status:  metav1.ConditionFalse,
 			Reason:  "NotFound",
 			Message: fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s", vmClassName, input.WCPNamespaceName),
@@ -606,8 +574,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassInstanceStorage, vSANDDStoragePolicyIDInt)).To(Succeed())
 		Expect(vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassInstanceStorage, tmpNamespaceName)).To(Succeed())
 
-		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get VMI name in namespace: %s", tmpNamespaceName)
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        tmpNamespaceName,
@@ -626,10 +593,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 		By("Verify that instance volumes are attached to virtual machine as expected")
-		var vmcInfo *vmopv1a2.VirtualMachineClass
-		// Depending on namespacedVMClassFSS, return namespaced VM Class or cluster scoped VM Class
-		vmcInfo, err = utils.GetVirtualMachineClass(ctx, svClusterClient, vmservice.VMClassInstanceStorage, tmpNamespaceName, namespacedVMClassFSSEnabled)
-
+		vmcInfo, err := utils.GetVirtualMachineClass(ctx, svClusterClient, tmpNamespaceName, vmservice.VMClassInstanceStorage)
 		Expect(err).NotTo(HaveOccurred())
 		vmcISVols := vmcInfo.Spec.Hardware.InstanceStorage.Volumes
 
@@ -663,9 +627,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 	It("Should create expected resources for a VirtualMachine deployed from ISO", func() {
 		skipper.SkipUnlessInfraIs(config.InfraConfig.InfraName, "wcp")
-		if !isoSupportFSSEnabled {
-			Skip("ISO Support FSS is not enabled")
-		}
 
 		if os.Getenv("RUN_CANONICAL_TEST") == "true" {
 			Skip("These tests will be skipped for Canonical OVA testing.")
@@ -673,8 +634,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		By("Get the ISO-type image CR name")
 		isoImageDisplayName := "ubuntu-24.04-live-server-amd64"
-		isoImageName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, isoImageDisplayName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", input.WCPNamespaceName)
+		isoImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, isoImageDisplayName)
 
 		By("Create a VM with CD-ROM attached and backed by the ISO-type image")
 		vmParameters := manifestbuilders.VirtualMachineYaml{
@@ -705,7 +665,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		By(fmt.Sprintf("Verifying VM status field has the expected network config info: %+v", netInfo))
 		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachineA3(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(vm.Status.Network).NotTo(BeNil())
 			g.Expect(vm.Status.Network.Config).NotTo(BeNil())
@@ -768,8 +728,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	It("When deploying VM with many controllers", Label("experimental"), func() {
 		tinyCoreImageName := "tiny-core-linux-complex-hw"
 		// Ensure the vmi name is present in the temp namespace.
-		vmiName, err := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, tinyCoreImageName)
-		Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", input.WCPNamespaceName)
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, tinyCoreImageName)
 
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
@@ -786,7 +745,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		By("Waiting for VM creation")
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1a5.VirtualMachinePowerStateOn))
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 	})
 
 	Context("IaaS Policies", func() {
@@ -857,8 +816,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
 			By("Deploying a VM without any explicit policies")
-			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get the VMI name in namespace %q", tmpNamespaceName)
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 			vmParameters := manifestbuilders.VirtualMachineYaml{
 				Namespace:        tmpNamespaceName,
 				Name:             vmName,
@@ -1001,7 +959,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				StorageClassName: clusterResources.StorageClassName,
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,
 				PowerState:       "PoweredOn",
-				Policies: []vmopv1a5.PolicySpec{
+				Policies: []vmopv1.PolicySpec{
 					{
 						APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 						Kind:       "ComputePolicy",
@@ -1020,7 +978,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 			By("Updating the VM's labels and policies to match by label")
 			vmParameters.Labels = matchLabel
-			vmParameters.Policies = []vmopv1a5.PolicySpec{
+			vmParameters.Policies = []vmopv1.PolicySpec{
 				{
 					APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 					Kind:       "ComputePolicy",
@@ -1036,7 +994,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
 
 			By("Updating the VM's label to not match the policies and remove the explicit optional policy")
-			vmObj, err := utils.GetVirtualMachineA5(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vmObj, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 			Expect(err).NotTo(HaveOccurred(), "failed to get existing VM")
 			vmLabels := vmObj.Labels
 			for key := range matchLabel {
@@ -1044,7 +1002,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				delete(vmLabels, key)
 			}
 			vmParameters.Labels = vmLabels
-			vmParameters.Policies = []vmopv1a5.PolicySpec{}
+			vmParameters.Policies = []vmopv1.PolicySpec{}
 			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 			e2eframework.Logf("Updating VM's labels:\n%s", string(vmYaml))
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML")
@@ -1089,8 +1047,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
 
 			By("Resolving VMI name for the namespace")
-			tmpNamespaceVMIName, err = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get VMI name in namespace %q", tmpNamespaceName)
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
 			By("Creating tag category for placement policies")
 			tagCategoryName := fmt.Sprintf("placement-policy-test-%s", tmpNamespaceName)
@@ -1189,7 +1146,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					StorageClassName: clusterResources.StorageClassName,
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "PoweredOn",
-					Policies: []vmopv1a5.PolicySpec{
+					Policies: []vmopv1.PolicySpec{
 						{
 							APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 							Kind:       "ComputePolicy",

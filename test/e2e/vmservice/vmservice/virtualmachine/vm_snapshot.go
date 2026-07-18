@@ -15,7 +15,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -61,13 +61,13 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		vmSnapshot3Name string
 	)
 
-	vmSnapshotReference := func(name ...string) *vmopv1a5.VirtualMachineSnapshotReference {
-		res := &vmopv1a5.VirtualMachineSnapshotReference{
-			Type: vmopv1a5.VirtualMachineSnapshotReferenceTypeUnmanaged,
+	vmSnapshotReference := func(name ...string) *vmopv1.VirtualMachineSnapshotReference {
+		res := &vmopv1.VirtualMachineSnapshotReference{
+			Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
 		}
 		if len(name) > 0 {
-			res = &vmopv1a5.VirtualMachineSnapshotReference{
-				Type: vmopv1a5.VirtualMachineSnapshotReferenceTypeManaged,
+			res = &vmopv1.VirtualMachineSnapshotReference{
+				Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
 				Name: name[0],
 			}
 		}
@@ -142,10 +142,10 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		BeforeEach(func() {
 			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-		vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
-	})
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+		})
 
-	It("successfully create, update, revert to, and delete vm snapshots", Label("smoke"), func() {
+		It("successfully create, update, revert to, and delete vm snapshots", Label("smoke"), func() {
 			By("create vm snapshot 1")
 			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
 				Namespace: vmSvcNamespace,
@@ -160,9 +160,9 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmSnapshot1Name,
-				vmopv1a5.VirtualMachinePowerStateOn,
+				vmopv1.VirtualMachinePowerStateOn,
 				true,
-				[]vmopv1a5.VirtualMachineSnapshotReference{})
+				[]vmopv1.VirtualMachineSnapshotReference{})
 
 			By("Verifying VM's Snapshot related status")
 			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
@@ -170,8 +170,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot1Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("update vm snapshot 1")
 			vmservice.UpdateVMSnapshot(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
@@ -196,18 +196,18 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmSnapshot2Name,
-				vmopv1a5.VirtualMachinePowerStateOff,
+				vmopv1.VirtualMachinePowerStateOff,
 				false,
-				[]vmopv1a5.VirtualMachineSnapshotReference{})
+				[]vmopv1.VirtualMachineSnapshotReference{})
 
 			By("Verifying Snapshot 1's status, it should have snapshot 2 as child")
 			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmSnapshot1Name,
-				vmopv1a5.VirtualMachinePowerStateOn,
+				vmopv1.VirtualMachinePowerStateOn,
 				true,
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot2Name)})
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot2Name)})
 
 			By("Verifying VM's Snapshot related status")
 			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
@@ -215,8 +215,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot2Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("create a new vm snapshot 3")
 			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
@@ -230,18 +230,18 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmSnapshot3Name,
-				vmopv1a5.VirtualMachinePowerStateOff,
+				vmopv1.VirtualMachinePowerStateOff,
 				false,
-				[]vmopv1a5.VirtualMachineSnapshotReference{})
+				[]vmopv1.VirtualMachineSnapshotReference{})
 
 			By("Verifying Snapshot 2's status, it should have snapshot 3 as child")
 			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmSnapshot2Name,
-				vmopv1a5.VirtualMachinePowerStateOff,
+				vmopv1.VirtualMachinePowerStateOff,
 				false,
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot3Name)})
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot3Name)})
 
 			By("Verifying VM's Snapshot related status")
 			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
@@ -249,8 +249,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot3Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("Revert to vm snapshot 2")
 			vmservice.RevertVMSnapshot(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
@@ -262,8 +262,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot2Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOff)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOff)
 
 			By("Revert to vm snapshot 1")
 			vmservice.RevertVMSnapshot(ctx,
@@ -276,8 +276,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot1Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("Verifying Snapshot's quota usage")
 			vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
@@ -296,8 +296,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot1Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("Delete vm snapshot 2")
 			vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
@@ -311,9 +311,9 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmSnapshot1Name,
-				vmopv1a5.VirtualMachinePowerStateOn,
+				vmopv1.VirtualMachinePowerStateOn,
 				true,
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot3Name)})
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot3Name)})
 
 			By("Delete vm")
 			vmoperator.VerifyVMDeleted(ctx, vmSvcClusterProxy.GetClient(),
@@ -346,8 +346,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference()},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference()},
+				vmopv1.VirtualMachinePowerStateOn)
 		})
 
 		It("successfully revert to imported Snapshot", func() {
@@ -368,12 +368,12 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot1Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("Set restart mode to hard")
 			vmservice.UpdateVMRestartMode(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
-				vmName, vmSvcNamespace, vmopv1a5.VirtualMachinePowerOpModeHard)
+				vmName, vmSvcNamespace, vmopv1.VirtualMachinePowerOpModeHard)
 
 			By("Revert to imported snapshot")
 			vmservice.RevertVMSnapshot(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
@@ -385,7 +385,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmName,
-				vmopv1a5.VirtualMachinePowerOpModeHard)
+				vmopv1.VirtualMachinePowerOpModeHard)
 		})
 	})
 
@@ -401,10 +401,10 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				},
 			})
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-		vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
-	})
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+		})
 
-	It("successfully create, and delete vm snapshots", func() {
+		It("successfully create, and delete vm snapshots", func() {
 			By("create vm snapshot 1")
 			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
 				Namespace: vmSvcNamespace,
@@ -417,9 +417,9 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcClusterProxy.GetClient(),
 				vmSvcNamespace,
 				vmSnapshot1Name,
-				vmopv1a5.VirtualMachinePowerStateOff,
+				vmopv1.VirtualMachinePowerStateOff,
 				false,
-				[]vmopv1a5.VirtualMachineSnapshotReference{})
+				[]vmopv1.VirtualMachineSnapshotReference{})
 
 			By("Verifying VM's Snapshot related status")
 			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
@@ -427,8 +427,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				vmSvcNamespace,
 				vmName,
 				vmSnapshotReference(vmSnapshot1Name),
-				[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-				vmopv1a5.VirtualMachinePowerStateOn)
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("Verifying Snapshot's quota usage")
 			vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
@@ -542,9 +542,9 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 					vmSvcClusterProxy.GetClient(),
 					vmSvcNamespace,
 					vmSnapshot1Name,
-					vmopv1a5.VirtualMachinePowerStateOff,
+					vmopv1.VirtualMachinePowerStateOff,
 					false,
-					[]vmopv1a5.VirtualMachineSnapshotReference{})
+					[]vmopv1.VirtualMachineSnapshotReference{})
 
 				By("Verifying the snapshot is reflected in the VM's snapshot status")
 				vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
@@ -552,8 +552,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 					vmSvcNamespace,
 					importedVMName,
 					vmSnapshotReference(vmSnapshot1Name),
-					[]vmopv1a5.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
-					vmopv1a5.VirtualMachinePowerStateOn)
+					[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+					vmopv1.VirtualMachinePowerStateOn)
 
 				By("Verifying snapshot storage quota is calculated correctly")
 				vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),

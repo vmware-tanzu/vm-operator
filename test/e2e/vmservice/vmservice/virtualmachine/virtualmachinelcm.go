@@ -443,7 +443,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
-			ImageName:        linuxImageDisplayName,
+			ImageName:        linuxVMIName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,

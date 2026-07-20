@@ -1466,28 +1466,28 @@ func unitTestsValidateCreate() {
 	Context("Readiness Probe", func() {
 
 		DescribeTable("create", doTest,
-		Entry("should fail when Readiness probe has multiple actions #1",
-			testParams{
-				setup: func(ctx *unitValidatingWebhookContext) {
-					cm := &corev1.ConfigMap{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      config.ProviderConfigMapName,
-							Namespace: ctx.Namespace,
-						},
-						Data: make(map[string]string),
-					}
-					Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
+			Entry("should fail when Readiness probe has multiple actions #1",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						cm := &corev1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      config.ProviderConfigMapName,
+								Namespace: ctx.Namespace,
+							},
+							Data: make(map[string]string),
+						}
+						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
 
-					ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
-						TCPSocket:      &vmopv1.TCPSocketAction{},
-						GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
-					}
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							TCPSocket:      &vmopv1.TCPSocketAction{},
+							GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.readinessProbe: Forbidden: only one action can be specified`),
 				},
-				validate: doValidateWithMsg(
-					`spec.readinessProbe: Forbidden: only one action can be specified`),
-			},
-		),
-		Entry("should fail when Readiness probe has multiple actions #2",
+			),
+			Entry("should fail when Readiness probe has multiple actions #2",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
@@ -3440,63 +3440,63 @@ func unitTestsValidateCreate() {
 				primaryProviderType pkgcfg.NetworkProviderType,
 				legacyProviderType pkgcfg.NetworkProviderType,
 			) {
-			var (
-				primaryCapProvider netopv1alpha1.NetworkProvider
-				legacyCapProvider  netopv1alpha1.NetworkProvider
+				var (
+					primaryCapProvider netopv1alpha1.NetworkProvider
+					legacyCapProvider  netopv1alpha1.NetworkProvider
 
-				primaryAPIVersion string
-				primaryKind       string
+					primaryAPIVersion string
+					primaryKind       string
 
-				legacyAPIVersion string
-				legacyKind       string
+					legacyAPIVersion string
+					legacyKind       string
 
-				unrelatedAPIVersion    string
-				unrelatedKind          string
-				unrelatedAPIVersionMsg string
-				crossGroupKindMsg      string
-			)
+					unrelatedAPIVersion    string
+					unrelatedKind          string
+					unrelatedAPIVersionMsg string
+					crossGroupKindMsg      string
+				)
 
-			//nolint:goconst
-			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.PerNamespaceNetworkProvider = true
-				})
+				//nolint:goconst
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.PerNamespaceNetworkProvider = true
+					})
 
-				switch primaryProviderType {
-				case pkgcfg.NetworkProviderTypeVPC:
-					primaryCapProvider = netopv1alpha1.NetworkProviderVPC
-					primaryAPIVersion = "crd.nsx.vmware.com/v1alpha1"
-					primaryKind = "SubnetSet"
-				default:
-					Fail(fmt.Sprintf("unsupported primaryProviderType: %v", primaryProviderType))
-				}
+					switch primaryProviderType {
+					case pkgcfg.NetworkProviderTypeVPC:
+						primaryCapProvider = netopv1alpha1.NetworkProviderVPC
+						primaryAPIVersion = "crd.nsx.vmware.com/v1alpha1"
+						primaryKind = "SubnetSet"
+					default:
+						Fail(fmt.Sprintf("unsupported primaryProviderType: %v", primaryProviderType))
+					}
 
-				switch legacyProviderType {
-				case pkgcfg.NetworkProviderTypeVDS:
-					legacyCapProvider = netopv1alpha1.NetworkProviderVSphereDistributed
-					legacyAPIVersion = "netoperator.vmware.com/v1alpha1"
-					legacyKind = "Network"
-					unrelatedAPIVersion = "vmware.com/v1alpha1"
-					unrelatedKind = "VirtualNetwork"
-				case pkgcfg.NetworkProviderTypeNSXT:
-					legacyCapProvider = netopv1alpha1.NetworkProviderNSXTier1
-					legacyAPIVersion = "vmware.com/v1alpha1"
-					legacyKind = "VirtualNetwork"
-					unrelatedAPIVersion = "netoperator.vmware.com/v1alpha1"
-					unrelatedKind = "Network"
-				default:
-					Fail(fmt.Sprintf("unsupported legacyProviderType: %v", legacyProviderType))
-				}
+					switch legacyProviderType {
+					case pkgcfg.NetworkProviderTypeVDS:
+						legacyCapProvider = netopv1alpha1.NetworkProviderVSphereDistributed
+						legacyAPIVersion = "netoperator.vmware.com/v1alpha1"
+						legacyKind = "Network"
+						unrelatedAPIVersion = "vmware.com/v1alpha1"
+						unrelatedKind = "VirtualNetwork"
+					case pkgcfg.NetworkProviderTypeNSXT:
+						legacyCapProvider = netopv1alpha1.NetworkProviderNSXTier1
+						legacyAPIVersion = "vmware.com/v1alpha1"
+						legacyKind = "VirtualNetwork"
+						unrelatedAPIVersion = "netoperator.vmware.com/v1alpha1"
+						unrelatedKind = "Network"
+					default:
+						Fail(fmt.Sprintf("unsupported legacyProviderType: %v", legacyProviderType))
+					}
 
-				// Both switches must run before computing derived messages.
-				unrelatedAPIVersionMsg = fmt.Sprintf(
-					`spec.network.interfaces[0].network.apiVersion: Unsupported value: %q: supported values: %q, %q`,
-					unrelatedAPIVersion, primaryAPIVersion, legacyAPIVersion)
-				crossGroupKindMsg = fmt.Sprintf(
-					`spec.network.interfaces[0].network.kind: Unsupported value: %q: supported values: %q`,
-					primaryKind, legacyKind)
+					// Both switches must run before computing derived messages.
+					unrelatedAPIVersionMsg = fmt.Sprintf(
+						`spec.network.interfaces[0].network.apiVersion: Unsupported value: %q: supported values: %q, %q`,
+						unrelatedAPIVersion, primaryAPIVersion, legacyAPIVersion)
+					crossGroupKindMsg = fmt.Sprintf(
+						`spec.network.interfaces[0].network.kind: Unsupported value: %q: supported values: %q`,
+						primaryKind, legacyKind)
 
-				Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
+					Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "default",
 							Namespace: ctx.vm.Namespace,
@@ -3566,10 +3566,10 @@ func unitTestsValidateCreate() {
 					var err error
 					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 					Expect(err).ToNot(HaveOccurred())
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				doValidateWithMsg(unrelatedAPIVersionMsg)(response)
-			})
+					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+					Expect(response.Allowed).To(BeFalse())
+					doValidateWithMsg(unrelatedAPIVersionMsg)(response)
+				})
 
 				It("denies an interface whose group matches the legacy provider but whose kind belongs to the primary provider", func() {
 					// legacyAPIVersion group is valid, but primaryKind belongs to a
@@ -3592,9 +3592,9 @@ func unitTestsValidateCreate() {
 					var err error
 					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 					Expect(err).ToNot(HaveOccurred())
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				doValidateWithMsg(crossGroupKindMsg)(response)
+					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+					Expect(response.Allowed).To(BeFalse())
+					doValidateWithMsg(crossGroupKindMsg)(response)
 				})
 			},
 
@@ -11105,7 +11105,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
 					},
 				),
 				Entry("should reject vmservice.* prefix",
@@ -11118,7 +11118,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject guestinfo.* prefix",
@@ -11131,7 +11131,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.custom.data: this key is reserved for the system`),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.custom.data: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject vmx.reboot.powerCycle exact key",
@@ -11144,7 +11144,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmx.reboot.powerCycle: this key is reserved for the system`),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmx.reboot.powerCycle: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject GOSC reserved keys",
@@ -11157,7 +11157,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: tools.deployPkg.fileName: this key is reserved for the system`),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: tools.deployPkg.fileName: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject ethernet device-scoped keys",
@@ -11170,7 +11170,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead`),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead`),
 					},
 				),
 			)
@@ -11213,7 +11213,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
+						validate:      doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
 					},
 				),
 				Entry("should reject first-class NIC properties (device-prefixed)",
@@ -11232,7 +11232,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
+						validate:      doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
 					},
 				),
 				Entry("should reject generic ethernet device-scoped keys",
@@ -11251,7 +11251,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix`),
+						validate:      doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix`),
 					},
 				),
 				Entry("should reject system reserved network device properties",
@@ -11445,7 +11445,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					expectAllowed: false,
-					validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
+					validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
 				},
 			),
 			Entry("should reject vmservice.* prefix on create",
@@ -11458,7 +11458,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					expectAllowed: false,
-					validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
+					validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
 				},
 			),
 			Entry("should reject guestinfo. prefix on create",
@@ -11471,7 +11471,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					expectAllowed: false,
-					validate: doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.myKey: this key is reserved for the system`),
+					validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.myKey: this key is reserved for the system`),
 				},
 			),
 		)

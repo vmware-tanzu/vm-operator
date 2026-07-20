@@ -304,11 +304,15 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				By(fmt.Sprintf("VM boot timing: VM1: %v, VM2: %v (delay from VM1: %v), VM3: %v (delay from VM2: %v)",
 					vm1BootTime, vm2BootTime, vm2DelayFromVM1, vm3BootTime, vm3DelayFromVM2))
 
-				// Allow some tolerance (±10 seconds) for VM controller to reconcile and actually power on the VMs.
-				Expect(vm2DelayFromVM1).To(BeNumerically(">=", 20*time.Second), "VM2 boot delay should be at least 20s from VM1")
-				Expect(vm2DelayFromVM1).To(BeNumerically("<=", 40*time.Second), "VM2 boot delay should be at most 40s from VM1")
-				Expect(vm3DelayFromVM2).To(BeNumerically(">=", 50*time.Second), "VM3 boot delay should be at least 50s from VM2")
-				Expect(vm3DelayFromVM2).To(BeNumerically("<=", 70*time.Second), "VM3 boot delay should be at most 70s from VM2")
+				// Allow some tolerance (±15 seconds) for VM controller to reconcile and actually power on the VMs.
+				// The measured delay is the gap between vCenter runtime.bootTime values, which reflects
+				// per-VM PowerOn task latency (placement, datastore, VMX startup) in addition to the
+				// configured PowerOnDelay, so it can legitimately land further from the configured value
+				// than the delay enforced between PowerOn requests.
+				Expect(vm2DelayFromVM1).To(BeNumerically(">=", 15*time.Second), "VM2 boot delay should be at least 15s from VM1")
+				Expect(vm2DelayFromVM1).To(BeNumerically("<=", 45*time.Second), "VM2 boot delay should be at most 45s from VM1")
+				Expect(vm3DelayFromVM2).To(BeNumerically(">=", 45*time.Second), "VM3 boot delay should be at least 45s from VM2")
+				Expect(vm3DelayFromVM2).To(BeNumerically("<=", 75*time.Second), "VM3 boot delay should be at most 75s from VM2")
 			})
 
 			By("Creating a new standalone VM4 with spec.groupName unset and spec.powerState set to PoweredOn")

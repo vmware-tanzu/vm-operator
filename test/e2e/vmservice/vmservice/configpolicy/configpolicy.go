@@ -294,7 +294,7 @@ func queryRealConfigTarget(ctx context.Context, vCenterClient *vim25.Client, clu
 // configTargetDeviceCategory pairs a ConfigTargetDevices category with
 // functions to check its presence in vSphere's live QueryConfigTarget result
 // and in the corresponding ConfigTarget.status field, mirroring the mapping
-// in pkg/providers/vsphere/configtarget/convert.go's populateConfigTargetDevices.
+// in pkg/util/vsphere/configtarget/convert.go's populateConfigTargetDevices.
 type configTargetDeviceCategory struct {
 	name          string
 	realPresent   func(ct *vimtypes.ConfigTarget) bool

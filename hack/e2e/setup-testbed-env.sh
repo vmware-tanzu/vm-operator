@@ -293,13 +293,17 @@ _export_common_vars() {
     _export GOVC_PASSWORD "${vc_vim_password}"
     _export VCSA_PASSWORD "${vc_vim_password}"
 
+    # Honour a NETWORK value the caller already exported (e.g. the UTS
+    # pipeline job spec) instead of overwriting it with the auto-detected
+    # value below, which falls back to "vds" whenever the testbed JSON
+    # doesn't carry a recognized topology field.
     local networking_type
     networking_type=$(jq -r '
         .deliverable_blob.networking //
         .networking //
         (if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" then "nsx" else "vds" end)
     ' <<< "${testbed_data}")
-    _export NETWORK "${networking_type}"
+    _export NETWORK "${NETWORK:-${networking_type}}"
 
     # Honour values already set in the environment; fall back to safe defaults.
     _export TEST_SKIP  "${TEST_SKIP:-}"

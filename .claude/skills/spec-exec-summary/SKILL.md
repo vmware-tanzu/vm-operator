@@ -46,8 +46,10 @@ Skip `research.md` unless a specific open question needs it.
 - Classify each story: **Done** (all tasks checked), **Not started** (none
   checked), **In progress** (partial — note the fraction).
 - Note tickets/PRs referenced on *done* tasks (e.g. `[PR #1695 / vmop-3740]`)
-  so completed bullets can be concrete about what shipped, but don't dump
-  raw PR lists into the summary — use them as evidence, not content.
+  and collect the distinct PR numbers per completed capability — each
+  **Done** bullet should end with the PR link(s) that shipped it, so the
+  summary stays concrete about what shipped. Dedupe PRs that recur across
+  several tasks in the same bullet (list once, not once per task).
 - Note any story marked retired/"Won't Implement" in prose (e.g. "Story S4
   was retired") — exclude it from both the denominator and the remaining
   list, but keep the rationale in mind for scope callouts.
@@ -70,7 +72,9 @@ Done:
 <3-6 bullets, one capability per bullet, in plain language — what now
 works, not which tasks are checked. Merge multiple completed tasks into one
 statement of delivered capability. Mention a controller/webhook/CRD by name
-once, not by file path.>
+once, not by file path. End each bullet with the PR link(s) that delivered
+it, e.g. "(PR #1695, PR #1711)" — omit only if tasks.md has no PR reference
+for that capability.>
 
 Remaining for next release:
 <numbered list, dependency order, one item per not-started/in-progress
@@ -109,9 +113,9 @@ Exec Summary — VM Service Class Policy and Resize (SR-IOV excluded from scope)
 Where we are: ~35% complete.
 
 Done:
-Feature gate and CRDs installed and wired into the platform.
-Zone controller automatically provisions the cluster capability record (ConfigTarget) and a default policy object when a Zone is created.
-ConfigTarget webhook (validation) and the core controller that reads basic cluster capabilities (CPU/memory limits, security features) from vCenter — done and merged.
+Feature gate and CRDs installed and wired into the platform. (PR #1649, PR #1667)
+Zone controller automatically provisions the cluster capability record (ConfigTarget) and a default policy object when a Zone is created. (PR #1695)
+ConfigTarget webhook (validation) and the core controller that reads basic cluster capabilities (CPU/memory limits, security features) from vCenter — done and merged. (PR #1711)
 
 Remaining for next release:
 1. Max hardware version detection: Still needs to determine whether we need to traverse through the hosts for this or getting the value from the cluster resource is sufficient.

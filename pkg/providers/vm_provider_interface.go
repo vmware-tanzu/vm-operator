@@ -96,4 +96,11 @@ type VirtualMachineProviderInterface interface {
 	// EnvironmentBrowser QueryConfigTarget and QueryConfigOptionDescriptor
 	// results for the cluster identified by clusterMoID.
 	GetVirtualMachineConfigTarget(ctx context.Context, clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error)
+
+	// QueryConfigOptionEx returns the VirtualMachineConfigOption for a given
+	// cluster and hardware version. The clusterMoID is the managed object ID of
+	// the vSphere cluster (e.g. "domain-c1234"). The hardwareVersion is the
+	// desired hardware version string (e.g. "vmx-22"). Returns nil without error
+	// when no config option is found.
+	QueryConfigOptionEx(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/storage"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigoptions"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegrouppublishrequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimagecache"
@@ -93,8 +94,13 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
+		// ConfigTarget fans out VirtualMachineConfigOptions, so it's
+		// registered first.
 		if err := configtarget.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize ConfigTarget controller: %w", err)
+		}
+		if err := virtualmachineconfigoptions.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineConfigOptions controller: %w", err)
 		}
 	}
 

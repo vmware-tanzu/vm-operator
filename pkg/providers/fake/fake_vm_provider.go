@@ -69,6 +69,7 @@ type funcs struct {
 	SyncVMSnapshotTreeStatusFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 
 	GetVirtualMachineConfigTargetFn func(ctx context.Context, clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error)
+	QueryConfigOptionExFn           func(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error)
 }
 
 type VMProvider struct {
@@ -502,6 +503,15 @@ func (s *VMProvider) GetVirtualMachineConfigTarget(
 	}
 
 	return &vimtypes.ConfigTarget{}, nil, nil
+}
+
+func (s *VMProvider) QueryConfigOptionEx(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.QueryConfigOptionExFn != nil {
+		return s.QueryConfigOptionExFn(ctx, clusterMoID, hardwareVersion)
+	}
+	return nil, nil
 }
 
 func NewVMProvider() *VMProvider {

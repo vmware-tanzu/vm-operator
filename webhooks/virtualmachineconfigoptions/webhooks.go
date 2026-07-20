@@ -11,7 +11,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineconfigoptions/validation"
 )
 
-// AddToManager registers all VirtualMachineConfigOptions webhooks.
+// AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	return validation.AddToManager(ctx, mgr)
 }

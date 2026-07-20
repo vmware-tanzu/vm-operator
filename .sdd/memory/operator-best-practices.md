@@ -181,6 +181,47 @@ func relatedToMyResourceMapper(c client.Client) func(context.Context, client.Obj
 }
 ```
 
+## Fan-out to Child Objects (patch vs. CreateOrUpdate)
+
+`controllerutil.CreateOrPatch` uses a JSON merge patch: map fields merge
+key-by-key, but **list fields are replaced wholesale** and there is **no
+`resourceVersion` precondition**. Fine for disjoint fields or a shared map
+keyed per writer; unsafe for a shared list.
+
+When multiple parents fan-in write to the same *list*-typed field (owner
+references, or a status list each parent upserts an entry into), a plain merge
+patch can silently drop a concurrent writer's entry with no error to trigger a
+retry. Patch with an optimistic lock, and skip the write when nothing changed:
+
+```go
+base := obj.DeepCopy()
+// mutate obj toward desired ...
+if !apiequality.Semantic.DeepEqual(base.Spec, obj.Spec) ||
+    !apiequality.Semantic.DeepEqual(base.OwnerReferences, obj.OwnerReferences) {
+    // MergeFromWithOptimisticLock sends base's resourceVersion, so a racing
+    // writer's patch fails with a conflict instead of overwriting. Reconcile
+    // is idempotent, so just return the error and let the requeue retry.
+    if err := c.Patch(ctx, obj, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+        return err
+    }
+}
+```
+
+- **Compare with `apiequality.Semantic.DeepEqual`** (`k8s.io/apimachinery/pkg/api/equality`),
+  not `reflect.DeepEqual` — plain reflection false-diffs on types like
+  `resource.Quantity` that carry an unexported lazy-formatted-string cache, so a
+  freshly-built value and its round-tripped-through-the-API-server equivalent
+  compare unequal even when identical. That silently defeats the skip-if-unchanged
+  guard below.
+- **Skip unchanged writes** so an idle reconcile does not bump
+  `resourceVersion` and re-trigger watchers. (`CreateOrUpdate`'s `Update` gets
+  the same conflict guarantee but writes the whole object; prefer the patch.)
+- **Status is a subresource:** persist it separately via `c.Status().Patch(...)`
+  (same optimistic lock, same skip guard) after the object exists.
+- **In tests**, register the type with `WithStatusSubresource` (all VM Operator
+  types already are — `test/builder/fake.go` `KnownObjectTypes`) so the fake
+  client enforces the spec/status split and catches a missing status write.
+
 ## VM Update Reconcile Order
 
 The `updateVirtualMachine` method in the vSphere provider follows a strict, intentional ordering. Each step depends on the state established by prior steps. Do NOT reorder these without understanding the dependencies:
@@ -206,6 +247,50 @@ Key ordering rationale:
 - **Snapshot create last**: Captures the final converged state after all changes.
 
 Each step uses `getReconcileErr` to accumulate errors while continuing through subsequent steps where possible. A `NoRequeueError` from any step short-circuits the remaining steps via `errOrReconcileErr`.
+
+## VC Operation IDs (WithVCOpID)
+
+Any code path that calls into vCenter — govmomi, the property collector, or a
+package-level helper in `pkg/providers/vsphere/*.go` that takes a
+`*vim25.Client` directly — MUST wrap the context with `pkgctx.WithVCOpID`
+before making that call, so the operation can be correlated with VC-side
+logs.
+
+**Set it inside the provider method, not in the calling controller.** When a
+controller reaches vCenter through the `VMProvider` interface (the normal
+case), the wrapping belongs at the top of the concrete
+`pkg/providers/vsphere/*.go` method that actually talks to VC — the
+controller just calls the interface method with a plain `ctx`:
+
+```go
+// pkg/providers/vsphere/vmprovider.go
+func (vs *vSphereVMProvider) QueryConfigOptionEx(
+    ctx context.Context,
+    clusterMoID string,
+    hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error) {
+
+    ctx = pkgctx.WithVCOpID(ctx, nil, "queryConfigOptionEx")
+
+    client, err := vs.getVcClient(ctx)
+    ...
+}
+```
+
+- The object parameter is nil-safe — pass the Kubernetes object being
+  reconciled when the provider method has one in scope (e.g.
+  `pkgctx.WithVCOpID(ctx, vm, "properties")`), or `nil` when the method only
+  takes primitive args (e.g. a `clusterMoID` string) and has no object to
+  fold into the op ID.
+- `operation` is a short, camelCase label naming the specific VC call/step
+  (e.g. `"properties"`, `"createOrUpdateVM"`, `"queryConfigOptionEx"`), not a
+  generic term like `"reconcile"`. The resulting string is
+  `vmoperator-<objName>-<operation>-<reconcileID>`.
+- Usually one op ID per provider method is enough: set it once near the top of
+  the `pkg/providers/vsphere/*.go` method that reaches vCenter rather than
+  labeling every individual govmomi/property-collector call it makes. This is a
+  default to steer toward when nothing else dictates otherwise, not a hard rule
+  — if a method does genuinely distinct operations worth telling apart in
+  VC-side logs, giving them their own op IDs is fine.
 
 ## Requeue and Error Semantics (pkgerr)
 

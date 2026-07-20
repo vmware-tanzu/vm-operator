@@ -147,7 +147,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 							"ConfigTarget %q status.numCPUs should be populated from QueryConfigTarget", name)
 						g.Expect(ct.Status.MaxCPUsPerVM).To(BeNumerically(">", 0),
 							"ConfigTarget %q status.maxCPUsPerVM should be populated from QueryConfigTarget", name)
-					}).Should(Succeed())
+					}, input.Config.GetIntervals("default", "wait-config-target-condition-update")...).Should(Succeed())
 				}
 			})
 
@@ -223,7 +223,106 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 						g.Expect(vco.Spec.HardwareVersion).To(Equal(vco.Name),
 							"VirtualMachineConfigOptions %q spec.hardwareVersion should equal its metadata.name", vco.Name)
 					}
-				}).Should(Succeed())
+				}, input.Config.GetIntervals("default", "wait-vm-config-options-creation")...).Should(Succeed())
+			})
+
+		It("Should populate status.guestOSIdentifiers on each VirtualMachineConfigOptions",
+			Label("core-functional", "experimental"),
+			func() {
+				var vcoList vimv1.VirtualMachineConfigOptionsList
+				Expect(svClusterClient.List(ctx, &vcoList)).To(Succeed())
+				Expect(vcoList.Items).ToNot(BeEmpty(), "expected at least one VirtualMachineConfigOptions in the cluster")
+
+				for i := range vcoList.Items {
+					name := vcoList.Items[i].Name
+
+					Eventually(func(g Gomega) {
+						vco := &vimv1.VirtualMachineConfigOptions{}
+						g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: name}, vco)).To(Succeed())
+
+						cond := apimeta.FindStatusCondition(vco.Status.Conditions, vimv1.ReadyConditionType)
+						g.Expect(cond).ToNot(BeNil(), "VirtualMachineConfigOptions %q should have a Ready condition", name)
+						g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "VirtualMachineConfigOptions %q should be Ready", name)
+						g.Expect(vco.Status.ObservedGeneration).To(Equal(vco.Generation),
+							"VirtualMachineConfigOptions %q status.observedGeneration should match metadata.generation", name)
+
+						g.Expect(vco.Status.Description).ToNot(BeEmpty(),
+							"VirtualMachineConfigOptions %q status.description should be populated from QueryConfigOptionEx", name)
+
+						g.Expect(vco.Status.GuestOSIdentifiers).ToNot(BeEmpty(),
+							"VirtualMachineConfigOptions %q status.guestOSIdentifiers should be populated from QueryConfigOptionEx", name)
+						g.Expect(int(vco.Status.GuestOSDefaultIndex)).To(BeNumerically(">=", 0),
+							"VirtualMachineConfigOptions %q status.guestOSDefaultIndex should be a valid index", name)
+						g.Expect(int(vco.Status.GuestOSDefaultIndex)).To(BeNumerically("<", len(vco.Status.GuestOSIdentifiers)),
+							"VirtualMachineConfigOptions %q status.guestOSDefaultIndex should index into status.guestOSIdentifiers", name)
+
+						// "otherGuest" and "otherLinuxGuest" are the generic
+						// catch-all guest identifiers that every vSphere
+						// release has supported since the earliest hardware
+						// versions vm-operator targets; asserting on them
+						// (rather than a testbed-specific guest list) keeps
+						// this check meaningful without being brittle to
+						// whichever real cluster CI happens to run against.
+						g.Expect(vco.Status.GuestOSIdentifiers).To(ContainElement(
+							vimv1.VirtualMachineGuestOSIdentifier("otherGuest")),
+							"VirtualMachineConfigOptions %q status.guestOSIdentifiers should include the universal 'otherGuest' fallback", name)
+					}, input.Config.GetIntervals("default", "wait-vm-config-options-condition-update")...).Should(Succeed())
+				}
+			})
+
+		It("Should fan out a VirtualMachineGuestOptions object for each guest OS reported by the cluster",
+			Label("core-functional", "experimental"),
+			func() {
+				Eventually(func(g Gomega) {
+					var vcoList vimv1.VirtualMachineConfigOptionsList
+					g.Expect(svClusterClient.List(ctx, &vcoList)).To(Succeed())
+					g.Expect(vcoList.Items).ToNot(BeEmpty(), "expected at least one VirtualMachineConfigOptions in the cluster")
+
+					var totalGuestIDs int
+					for i := range vcoList.Items {
+						totalGuestIDs += len(vcoList.Items[i].Status.GuestOSIdentifiers)
+					}
+					g.Expect(totalGuestIDs).To(BeNumerically(">", 0),
+						"expected at least one VirtualMachineConfigOptions with a populated status.guestOSIdentifiers")
+
+					var vgoList vimv1.VirtualMachineGuestOptionsList
+					g.Expect(svClusterClient.List(ctx, &vgoList)).To(Succeed())
+					g.Expect(vgoList.Items).ToNot(BeEmpty(),
+						"expected at least one VirtualMachineGuestOptions fanned out from a VirtualMachineConfigOptions")
+
+					for i := range vcoList.Items {
+						vco := &vcoList.Items[i]
+
+						for _, guestID := range vco.Status.GuestOSIdentifiers {
+							var match *vimv1.VirtualMachineGuestOptions
+							for j := range vgoList.Items {
+								if vgoList.Items[j].Spec.ID == guestID {
+									match = &vgoList.Items[j]
+									break
+								}
+							}
+							g.Expect(match).ToNot(BeNil(),
+								"expected a VirtualMachineGuestOptions with spec.id %q reported by VirtualMachineConfigOptions %q",
+								guestID, vco.Name)
+
+							g.Expect(match.Status.FullName).ToNot(BeEmpty(),
+								"VirtualMachineGuestOptions %q status.fullName should be populated", match.Name)
+							g.Expect(match.Status.Family).ToNot(BeEmpty(),
+								"VirtualMachineGuestOptions %q status.family should be populated", match.Name)
+
+							var hwEntry *vimv1.VirtualMachineGuestOptionsHardwareVersionStatus
+							for k := range match.Status.HardwareVersions {
+								if match.Status.HardwareVersions[k].HardwareVersion == vco.Spec.HardwareVersion {
+									hwEntry = &match.Status.HardwareVersions[k]
+									break
+								}
+							}
+							g.Expect(hwEntry).ToNot(BeNil(),
+								"VirtualMachineGuestOptions %q should have a status.hardwareVersions entry for %q",
+								match.Name, vco.Spec.HardwareVersion)
+						}
+					}
+				}, input.Config.GetIntervals("default", "wait-vm-guest-options-condition-update")...).Should(Succeed())
 			})
 
 		It("Should garbage-collect a stale VirtualMachineConfigOptions no longer reported by the cluster",
@@ -268,7 +367,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					err := svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(stale), &vimv1.VirtualMachineConfigOptions{})
 					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
 						"stale VirtualMachineConfigOptions %q should have been garbage-collected", stale.Name)
-				}).Should(Succeed())
+				}, input.Config.GetIntervals("default", "wait-vm-config-options-deletion")...).Should(Succeed())
 			})
 	})
 }

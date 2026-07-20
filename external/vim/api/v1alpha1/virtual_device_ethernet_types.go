@@ -4,7 +4,7 @@
 
 package v1alpha1
 
-// +kubebuilder:validation:Enum=VirtualE1000e;VirtualE1000e;VirtualPCNet32;VirtualSriovEthernetCard;VirtualVmxnet;VirtualVmxnet2;VirtualVmxnet3;VirtualVmxnet3Vrdma
+// +kubebuilder:validation:Enum=VirtualE1000;VirtualE1000e;VirtualPCNet32;VirtualSriovEthernetCard;VirtualVmxnet;VirtualVmxnet2;VirtualVmxnet3;VirtualVmxnet3Vrdma
 
 // EthernetCardType identifies the concrete type of a virtual Ethernet
 // card in a virtual machine.

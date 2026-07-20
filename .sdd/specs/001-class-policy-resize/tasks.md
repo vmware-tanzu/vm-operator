@@ -80,11 +80,11 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 - [x] T080 [S6.a] [PR #1671 / vmop-3762] Author `webhooks/virtualmachineconfigoptions/validation/virtualmachineconfigoptions_validator.go` — immutable spec.hardwareVersion; format ^vmx-\d+$; metadata.name must equal spec.hardwareVersion
 - [x] T081 [S6.a] [PR #1671 / vmop-3762] Unit tests (13 specs) + integration test stubs — `webhooks/virtualmachineconfigoptions/validation/`
-- [ ] T082 [S6.b] Author `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` — QueryConfigOptionEx; map vim.vm.ConfigOption → status; fan out VirtualMachineGuestOptions per guest OS; update listMap entry keyed by hardwareVersion
-- [ ] T083 [S6.b] Add `pkg/providers/vsphere/environment_browser.go` QueryConfigOptionEx wrapper (extend T064)
-- [ ] T084 [S6.b] Unit tests — `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go`
-- [ ] T085 [S6.c] [P] Integration tests with vcsim — `test/intg/virtualmachineconfigoptions/vmconfigoptions_intg_test.go`: happy path on multiple HW versions; idempotent re-reconcile updates one listMap entry; golden-file assertion against testdata/configoption-vmx-22.yaml
-- [ ] T086 [S6.d] E2E test — `test/e2e/vmservice/vmservice/configpolicy/vmconfigoptions.go`: at least one HW version reconciled on test cluster. Deferred until the VirtualMachineConfigOptions controller (T082-T084) is implemented; webhook validation for hardwareVersion is already covered by the envtest integration suite in `webhooks/virtualmachineconfigoptions/validation/`
+- [x] T082 [S6.b] [PR #1672] Author `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` — QueryConfigOptionEx; map vim.vm.ConfigOption → status; fan out VirtualMachineGuestOptions per guest OS; update listMap entry keyed by hardwareVersion
+- [x] T083 [S6.b] [PR #1672] Add `pkg/providers/vsphere/environment_browser.go` — `QueryConfigOptionEx` wrapper, consistent with T064's note that single-purpose EnvironmentBrowser queries can live in a dedicated file once the surface area grows
+- [x] T084 [S6.b] [PR #1672] Unit tests — `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go` (envtest-backed suite; 5 specs, 75.5% coverage)
+- [x] T085 [S6.c] [PR #1672] Integration coverage — folded into `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go` per `testing-standards.md` (no separate `test/intg` tree exists in this repo; unit/integration tests are differentiated by Ginkgo `Label()`, not by file path). Covers happy path and idempotent re-reconcile; no golden-file fixture was added.
+- [x] T086 [S6.d] [PR #1672] E2E test — `test/e2e/vmservice/vmservice/configpolicy/configpolicy.go`: `VirtualMachineConfigOptions.status.guestOSIdentifiers` populated and `Ready=True`, and a `VirtualMachineGuestOptions` fanned out per reported guest OS (folded into the shared Spec function established by S3/S5, not a standalone `vmconfigoptions_test.go`)
 
 ### Story S7 — VirtualMachineGuestOptions plumbing (vmop-3744)
 

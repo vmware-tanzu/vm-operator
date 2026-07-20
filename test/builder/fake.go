@@ -95,6 +95,7 @@ func KnownObjectTypes() []client.Object {
 		&vimv1.ConfigTarget{},
 		&vimv1.VirtualMachineConfigOptions{},
 		&vimv1.VirtualMachineConfigPolicy{},
+		&vimv1.VirtualMachineGuestOptions{},
 	}
 }
 

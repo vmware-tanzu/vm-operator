@@ -293,7 +293,7 @@ spec:
                         RecommendedEthernetCard is the recommended default ethernet adapter type
                         for this guest.
                       enum:
-                      - VirtualE1000e
+                      - VirtualE1000
                       - VirtualE1000e
                       - VirtualPCNet32
                       - VirtualSriovEthernetCard
@@ -390,7 +390,7 @@ spec:
                           EthernetCardType identifies the concrete type of a virtual Ethernet
                           card in a virtual machine.
                         enum:
-                        - VirtualE1000e
+                        - VirtualE1000
                         - VirtualE1000e
                         - VirtualPCNet32
                         - VirtualSriovEthernetCard
@@ -636,7 +636,7 @@ spec:
                           EthernetCardType identifies the concrete type of a virtual Ethernet
                           card in a virtual machine.
                         enum:
-                        - VirtualE1000e
+                        - VirtualE1000
                         - VirtualE1000e
                         - VirtualPCNet32
                         - VirtualSriovEthernetCard

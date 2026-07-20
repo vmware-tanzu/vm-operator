@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers"
@@ -45,6 +47,7 @@ import (
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/pkg/mem"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	"github.com/vmware-tanzu/vm-operator/services"
@@ -92,6 +95,8 @@ func main() {
 
 	initCRDs()
 
+	initClusterNetworkProviderTypes()
+
 	initRateLimiting()
 
 	waitForWebhookCertificates()
@@ -135,6 +140,36 @@ func initFeatures() {
 
 	setupLog.Info("Initial features from capabilities",
 		"features", pkgcfg.FromContext(ctx).Features)
+}
+
+// initClusterNetworkProviderTypes resolves the network provider types supported by
+// this cluster and stores them in the Config, so the various controllers added in
+// initManager don't each need to independently query the WorkloadNetworkConfiguration CR.
+func initClusterNetworkProviderTypes() {
+	scheme := runtime.NewScheme()
+	_ = netopv1alpha1.AddToScheme(scheme)
+
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "Failed to create client for getting cluster network provider types, exiting")
+		os.Exit(1)
+	}
+
+	types, err := netsetutil.GetClusterSupportedProviderTypes(ctx, c)
+	if err != nil {
+		setupLog.Error(err, "Failed to get cluster network provider types, exiting")
+		os.Exit(1)
+	}
+
+	pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+		s := make([]string, 0, len(types))
+		for _, t := range types {
+			s = append(s, string(t))
+		}
+		config.ClusterNetworkProviderTypes = pkgcfg.SliceToString(s)
+	})
+
+	setupLog.Info("Resolved cluster network provider types", "types", types)
 }
 
 func initCRDs() {

@@ -15,11 +15,22 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
-// defaultNetworkSettingsName is the well known name of the NetworkSettings
-// in each namespace.
-const defaultNetworkSettingsName = "default"
+const (
+	// networkSettingsName is the well known name of the NetworkSettings
+	// in each namespace.
+	networkSettingsName = "default"
+
+	// WorkloadNetworkConfigurationName is the well known name of the cluster-scoped
+	// WorkloadNetworkConfiguration singleton.
+	WorkloadNetworkConfigurationName = "default"
+
+	// reservedSupervisorNamespace is the namespace that is unique in that it implicitly
+	// supports VDS despite it not being a legacy provider.
+	reservedSupervisorNamespace = "vmware-system-supervisor"
+)
 
 var (
 	// ErrNetworkSettingsNotFound is returned when the NetworkSettings CR for the
@@ -27,6 +38,10 @@ var (
 	// namespace creation, so it is an unfortunate race if actually observed and
 	// should be transient.
 	ErrNetworkSettingsNotFound = errors.New("NetworkSettings has not been created for this namespace")
+
+	// ErrWorkloadNetworkConfigurationNotFound is returned when the cluster-scoped
+	// WorkloadNetworkConfiguration CR does not exist.
+	ErrWorkloadNetworkConfigurationNotFound = errors.New("WorkloadNetworkConfiguration has not been created")
 )
 
 // GetProviderType returns the NetworkProviderType for the given namespace. When the
@@ -77,15 +92,84 @@ func GetSupportedProviderTypes(
 
 	t = append(t, defaultProvider)
 
-	if ns.LegacyProvider != "" {
+	switch {
+	case ns.LegacyProvider != "":
 		legacyProvider, err := NetworkProviderToType(ns.LegacyProvider)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("legacy provider: %w", err)
 		}
 		t = append(t, legacyProvider)
+
+	case namespace == reservedSupervisorNamespace:
+		// This is a hack: the namespace supports VDS but is not a legacy provider.
+		// The NetworkSettings should really be the source of truth for this since
+		// its purpose is to indicate which providers are supported.
+		if defaultProvider != pkgcfg.NetworkProviderTypeVDS {
+			t = append(t, pkgcfg.NetworkProviderTypeVDS)
+		}
 	}
 
 	return t, nil
+}
+
+// GetClusterSupportedProviderTypes returns the NetworkProviderTypes declared as
+// available on the cluster, as specified by the WorkloadNetworkConfiguration
+// singleton CR. When the WorkloadNetworkConfiguration capability is disabled,
+// it returns the global config NetworkProviderType.
+func GetClusterSupportedProviderTypes(
+	ctx context.Context,
+	reader ctrlclient.Reader) ([]pkgcfg.NetworkProviderType, error) {
+
+	if !pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration {
+		return []pkgcfg.NetworkProviderType{
+			pkgcfg.FromContext(ctx).NetworkProviderType,
+		}, nil
+	}
+
+	wnc, err := getWorkloadNetworkConfiguration(ctx, reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return GetClusterSupportedProviderTypesFromWNC(wnc)
+}
+
+// GetClusterSupportedProviderTypesFromWNC returns the supported network provider
+// types from the WorkloadNetworkConfiguration CR.
+func GetClusterSupportedProviderTypesFromWNC(
+	wnc *netopv1alpha1.WorkloadNetworkConfiguration) ([]pkgcfg.NetworkProviderType, error) {
+
+	t := make([]pkgcfg.NetworkProviderType, 0, 2)
+
+	for _, entry := range wnc.Spec.Providers {
+		pt, err := NetworkProviderToType(entry.Type)
+		if err != nil {
+			return nil, err
+		}
+		t = append(t, pt)
+	}
+
+	return t, nil
+}
+
+// GetClusterSupportedProviderTypesFromConfig gets the cluster supported network
+// providers from the Config in the context.
+func GetClusterSupportedProviderTypesFromConfig(
+	ctx context.Context) []pkgcfg.NetworkProviderType {
+
+	providerTypes := pkgcfg.StringToSlice(pkgcfg.FromContext(ctx).ClusterNetworkProviderTypes)
+	if len(providerTypes) == 0 {
+		pkglog.FromContextOrDefault(ctx).Info(
+			"No cluster network provider types set in context config")
+		return nil
+	}
+
+	t := make([]pkgcfg.NetworkProviderType, 0, 2)
+	for _, p := range providerTypes {
+		t = append(t, pkgcfg.NetworkProviderType(p))
+	}
+
+	return t
 }
 
 func getNetworkSettings(
@@ -94,7 +178,7 @@ func getNetworkSettings(
 	namespace string) (*netopv1alpha1.NetworkSettings, error) {
 
 	var ns netopv1alpha1.NetworkSettings
-	err := reader.Get(ctx, ctrlclient.ObjectKey{Name: defaultNetworkSettingsName, Namespace: namespace}, &ns)
+	err := reader.Get(ctx, ctrlclient.ObjectKey{Name: networkSettingsName, Namespace: namespace}, &ns)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, ErrNetworkSettingsNotFound
@@ -103,6 +187,22 @@ func getNetworkSettings(
 	}
 
 	return &ns, nil
+}
+
+func getWorkloadNetworkConfiguration(
+	ctx context.Context,
+	reader ctrlclient.Reader) (*netopv1alpha1.WorkloadNetworkConfiguration, error) {
+
+	var wnc netopv1alpha1.WorkloadNetworkConfiguration
+	err := reader.Get(ctx, ctrlclient.ObjectKey{Name: WorkloadNetworkConfigurationName}, &wnc)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, ErrWorkloadNetworkConfigurationNotFound
+		}
+		return nil, err
+	}
+
+	return &wnc, nil
 }
 
 // NetworkProviderToType maps a netopv1alpha1.NetworkProvider value to the

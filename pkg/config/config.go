@@ -78,6 +78,19 @@ type Config struct {
 	VSphereNetworking    bool
 	LoadBalancerProvider string
 
+	// ClusterNetworkProviderTypes is the list of network provider types
+	// that are supported on this cluster.
+	// When the WorkloadNetworkConfiguration capability is disabled, this
+	// will contain one entry that matches the NetworkProviderType. When
+	// enabled, this will contain the provider types in the cluster-scoped
+	// singleton WorkloadNetworkConfiguration CR. This field is immutable.
+	// If a new provider type is supported in cluster, as indicated by an
+	// update to the WorkloadNetworkConfiguration, the VMOP deployment will
+	// be restarted.
+	// Use GetClusterSupportedProviderTypesFromConfig to split this into a
+	// slice of pkgcfg.NetworkProviderType.
+	ClusterNetworkProviderTypes string
+
 	PodName               string
 	PodNamespace          string
 	PodServiceAccountName string
@@ -176,36 +189,37 @@ func (c Config) GetMaxDeployThreadsOnProvider() int {
 }
 
 type FeatureStates struct {
-	InstanceStorage             bool // FSS_WCP_INSTANCE_STORAGE
-	K8sWorkloadMgmtAPI          bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
-	PodVMOnStretchedSupervisor  bool // FSS_PODVMONSTRETCHEDSUPERVISOR
-	TKGMultipleCL               bool // to be fetched dynamically from capability
-	VMResize                    bool // FSS_WCP_VMSERVICE_RESIZE
-	VMResizeCPUMemory           bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
-	VMImportNewNet              bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
-	WorkloadDomainIsolation     bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
-	VMIncrementalRestore        bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
-	BringYourOwnEncryptionKey   bool // FSS_WCP_VMSERVICE_BYOK
-	SVAsyncUpgrade              bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
-	FastDeploy                  bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
-	MutableNetworks             bool
-	VMGroups                    bool
-	ImmutableClasses            bool
-	VMSnapshots                 bool
-	InventoryContentLibrary     bool
-	VMPlacementPolicies         bool
-	VSpherePolicies             bool
-	VMWaitForFirstConsumerPVC   bool
-	VMSharedDisks               bool
-	GuestCustomizationVCDParity bool
-	AllDisksArePVCs             bool
-	VMAffinityDuringExecution   bool
-	StoragePolicyMutability     bool
-	VMVlanSubinterface          bool
-	TelcoVMServiceAPI           bool
-	PerNamespaceNetworkProvider bool
-	WorkloadIPv6                bool
-	VirtualMachineConfigPolicy  bool
+	InstanceStorage              bool // FSS_WCP_INSTANCE_STORAGE
+	K8sWorkloadMgmtAPI           bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
+	PodVMOnStretchedSupervisor   bool // FSS_PODVMONSTRETCHEDSUPERVISOR
+	TKGMultipleCL                bool // to be fetched dynamically from capability
+	VMResize                     bool // FSS_WCP_VMSERVICE_RESIZE
+	VMResizeCPUMemory            bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
+	VMImportNewNet               bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
+	WorkloadDomainIsolation      bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
+	VMIncrementalRestore         bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
+	BringYourOwnEncryptionKey    bool // FSS_WCP_VMSERVICE_BYOK
+	SVAsyncUpgrade               bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
+	FastDeploy                   bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
+	MutableNetworks              bool
+	VMGroups                     bool
+	ImmutableClasses             bool
+	VMSnapshots                  bool
+	InventoryContentLibrary      bool
+	VMPlacementPolicies          bool
+	VSpherePolicies              bool
+	VMWaitForFirstConsumerPVC    bool
+	VMSharedDisks                bool
+	GuestCustomizationVCDParity  bool
+	AllDisksArePVCs              bool
+	VMAffinityDuringExecution    bool
+	StoragePolicyMutability      bool
+	VMVlanSubinterface           bool
+	TelcoVMServiceAPI            bool
+	PerNamespaceNetworkProvider  bool
+	WorkloadIPv6                 bool
+	VirtualMachineConfigPolicy   bool
+	WorkloadNetworkConfiguration bool
 }
 
 type InstanceStorage struct {

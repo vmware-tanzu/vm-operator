@@ -87,7 +87,7 @@ type Config struct {
 	// If a new provider type is supported in cluster, as indicated by an
 	// update to the WorkloadNetworkConfiguration, the VMOP deployment will
 	// be restarted.
-	// Use SplitClusterSupportedProviderTypesConfigStr to split this into a
+	// Use GetClusterSupportedProviderTypesFromConfig to split this into a
 	// slice of pkgcfg.NetworkProviderType.
 	ClusterNetworkProviderTypes string
 

@@ -26,6 +26,10 @@ const (
 	// WorkloadNetworkConfigurationName is the well known name of the cluster-scoped
 	// WorkloadNetworkConfiguration singleton.
 	WorkloadNetworkConfigurationName = "default"
+
+	// reservedSupervisorNamespace is the namespace that is unique in that it implicitly
+	// supports VDS despite it not being a legacy provider.
+	reservedSupervisorNamespace = "vmware-system-supervisor"
 )
 
 var (
@@ -88,12 +92,21 @@ func GetSupportedProviderTypes(
 
 	t = append(t, defaultProvider)
 
-	if ns.LegacyProvider != "" {
+	switch {
+	case ns.LegacyProvider != "":
 		legacyProvider, err := NetworkProviderToType(ns.LegacyProvider)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("legacy provider: %w", err)
 		}
 		t = append(t, legacyProvider)
+
+	case namespace == reservedSupervisorNamespace:
+		// This is a hack: the namespace supports VDS but is not a legacy provider.
+		// The NetworkSettings should really be the source of truth for this since
+		// its purpose is to indicate which providers are supported.
+		if defaultProvider != pkgcfg.NetworkProviderTypeVDS {
+			t = append(t, pkgcfg.NetworkProviderTypeVDS)
+		}
 	}
 
 	return t, nil

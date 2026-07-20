@@ -168,7 +168,6 @@ var _ = Describe("GetProviderType", func() {
 })
 
 var _ = Describe("GetSupportedProviderTypes", func() {
-	const namespace = "test-ns"
 
 	var (
 		ctx         context.Context
@@ -176,11 +175,13 @@ var _ = Describe("GetSupportedProviderTypes", func() {
 		withObjects []ctrlclient.Object
 		withFuncs   interceptor.Funcs
 		result      []pkgcfg.NetworkProviderType
+		namespace   string
 		err         error
 	)
 
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContext()
+		namespace = "test-ns"
 		withFuncs = interceptor.Funcs{}
 		withObjects = nil
 	})
@@ -369,6 +370,46 @@ var _ = Describe("GetSupportedProviderTypes", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(ContainSubstring("unknown network provider")))
 				Expect(result).To(BeNil())
+			})
+		})
+
+		Context("reserved supervisor namespace", func() {
+			BeforeEach(func() {
+				namespace = "vmware-system-supervisor"
+			})
+
+			Context("default provider is VDS", func() {
+				BeforeEach(func() {
+					withObjects = append(withObjects, &netopv1alpha1.NetworkSettings{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "default",
+							Namespace: namespace,
+						},
+						Provider: netopv1alpha1.NetworkProviderVSphereDistributed,
+					})
+				})
+
+				It("returns a single-element slice with NetworkProviderTypeVDS", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(ConsistOf(pkgcfg.NetworkProviderTypeVDS))
+				})
+			})
+
+			Context("default provider is not VDS", func() {
+				BeforeEach(func() {
+					withObjects = append(withObjects, &netopv1alpha1.NetworkSettings{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "default",
+							Namespace: namespace,
+						},
+						Provider: netopv1alpha1.NetworkProviderVPC,
+					})
+				})
+
+				It("returns NetworkProviderTypeVPC and NetworkProviderTypeVDS", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(ConsistOf(pkgcfg.NetworkProviderTypeVPC, pkgcfg.NetworkProviderTypeVDS))
+				})
 			})
 		})
 	})

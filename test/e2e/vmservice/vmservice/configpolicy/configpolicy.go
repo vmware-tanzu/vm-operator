@@ -10,6 +10,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -19,6 +22,7 @@ import (
 
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
@@ -36,9 +40,10 @@ type SpecInput struct {
 
 // Spec verifies the VirtualMachineConfigPolicy feature end-to-end.
 // Currently covers zone controller fan-out (S3) and the ConfigTarget
-// controller's cluster-scope capability discovery (S5.b); per-host
-// discovery (S5.c), option enumeration (S6/S7), and policy enforcement
-// (S8/S9) will be added here.
+// controller's cluster-scope capability discovery, including
+// status.maxHardwareVersion and non-SR-IOV device categories (S5.b/S5.c).
+// SR-IOV per-host enrichment, option enumeration (S6/S7), and policy
+// enforcement (S8/S9) will be added here.
 func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	const specName = "vm-config-policy"
 
@@ -146,6 +151,60 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				}
 			})
 
+		It("Should populate status.maxHardwareVersion and non-SR-IOV device categories from the cluster's real inventory",
+			Label("core-functional", "experimental"),
+			func() {
+				var ctList vimv1.ConfigTargetList
+				Expect(svClusterClient.List(ctx, &ctList)).To(Succeed())
+				Expect(ctList.Items).ToNot(BeEmpty(), "expected at least one ConfigTarget in the cluster")
+
+				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, svClusterProxy.GetKubeconfigPath())
+				defer vcenter.LogoutVimClient(vCenterClient)
+
+				categories := configTargetDeviceCategories()
+
+				for i := range ctList.Items {
+					name := ctList.Items[i].Name
+
+					// ConfigTarget is named after the cluster MoID (asserted
+					// in the earlier spec above), and QueryConfigTarget is
+					// re-queried live rather than cached, so this always
+					// reflects the cluster's current inventory.
+					realCT := queryRealConfigTarget(ctx, vCenterClient, name)
+
+					Eventually(func(g Gomega) {
+						ct := &vimv1.ConfigTarget{}
+						g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: name}, ct)).To(Succeed())
+
+						g.Expect(ct.Status.MaxHardwareVersion).ToNot(BeEmpty(),
+							"ConfigTarget %q status.maxHardwareVersion should be populated", name)
+						_, err := vimtypes.ParseHardwareVersion(ct.Status.MaxHardwareVersion)
+						g.Expect(err).ToNot(HaveOccurred(),
+							"ConfigTarget %q status.maxHardwareVersion %q should be a valid hardware version",
+							name, ct.Status.MaxHardwareVersion)
+
+						// Assert presence-parity against the cluster's real,
+						// live QueryConfigTarget inventory instead of
+						// hardcoding which categories are expected: a
+						// category this cluster's hardware doesn't happen to
+						// expose (VGPU, SGX, SR-IOV-adjacent, ...) is skipped
+						// rather than asserted empty, avoiding flakiness on
+						// infra that lacks it, while every category the
+						// cluster does report is verified to have been
+						// propagated into status.
+						for _, category := range categories {
+							if !category.realPresent(realCT) {
+								continue
+							}
+							g.Expect(category.statusPresent(ct.Status.ConfigTargetDevices)).To(BeTrue(),
+								"ConfigTarget %q status.configTargetDevices.%s should be populated: "+
+									"the cluster's live QueryConfigTarget reports this category present",
+								name, category.name)
+						}
+					}).Should(Succeed())
+				}
+			})
+
 		It("Should fan out a VirtualMachineConfigOptions object per supported hardware version",
 			Label("core-functional", "experimental"),
 			func() {
@@ -212,4 +271,106 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				}).Should(Succeed())
 			})
 	})
+}
+
+// queryRealConfigTarget fetches the cluster's live vSphere EnvironmentBrowser
+// QueryConfigTarget result directly via govmomi, mirroring
+// vs.GetVirtualMachineConfigTarget in pkg/providers/vsphere/vmprovider.go, so
+// device-category assertions can be driven by the cluster's actual inventory
+// instead of a hardcoded expectation of which categories are present.
+func queryRealConfigTarget(ctx context.Context, vCenterClient *vim25.Client, clusterMoID string) *vimtypes.ConfigTarget {
+	ccr := object.NewClusterComputeResource(vCenterClient,
+		vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: clusterMoID})
+
+	envBrowser, err := ccr.EnvironmentBrowser(ctx)
+	Expect(err).ToNot(HaveOccurred(), "failed to get environment browser for cluster %q", clusterMoID)
+
+	realCT, err := envBrowser.QueryConfigTarget(ctx, nil)
+	Expect(err).ToNot(HaveOccurred(), "failed to query config target for cluster %q", clusterMoID)
+
+	return realCT
+}
+
+// configTargetDeviceCategory pairs a ConfigTargetDevices category with
+// functions to check its presence in vSphere's live QueryConfigTarget result
+// and in the corresponding ConfigTarget.status field, mirroring the mapping
+// in pkg/util/vsphere/configtarget/convert.go's populateConfigTargetDevices.
+type configTargetDeviceCategory struct {
+	name          string
+	realPresent   func(ct *vimtypes.ConfigTarget) bool
+	statusPresent func(devices vimv1.ConfigTargetDevices) bool
+}
+
+func configTargetDeviceCategories() []configTargetDeviceCategory {
+	return []configTargetDeviceCategory{
+		{"cdrom",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.CdRom) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.CDROM) > 0 }},
+		{"floppy",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.Floppy) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.Floppy) > 0 }},
+		{"serial",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.Serial) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.Serial) > 0 }},
+		{"parallel",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.Parallel) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.Parallel) > 0 }},
+		{"sound",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.Sound) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.Sound) > 0 }},
+		{"usb",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.Usb) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.USB) > 0 }},
+		{"pciPassthrough", hasNonSRIOVPCIPassthrough,
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.PCIPassthrough) > 0 }},
+		{"dynamicPassthroughDevices",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.DynamicPassthrough) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.DynamicPassthroughDevices) > 0 }},
+		{"vgpuDevice",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.VgpuDeviceInfo) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.VGPUDevice) > 0 }},
+		{"vgpuProfile",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.VgpuProfileInfo) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.VGPUProfile) > 0 }},
+		{"sharedGpuPassthroughTypes",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.SharedGpuPassthroughTypes) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.SharedGPUPassthroughTypes) > 0 }},
+		{"sgxTargetInfo",
+			func(ct *vimtypes.ConfigTarget) bool { return ct.SgxTargetInfo != nil },
+			func(d vimv1.ConfigTargetDevices) bool { return d.SGXTargetInfo != nil }},
+		{"precisionClockInfo",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.PrecisionClockInfo) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.PrecisionClockInfo) > 0 }},
+		{"vendorDeviceGroupInfo",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.VendorDeviceGroupInfo) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.VendorDeviceGroupInfo) > 0 }},
+		{"dvxClassInfo",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.DvxClassInfo) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.DVXClassInfo) > 0 }},
+		{"ideDisks",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.IdeDisk) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.IDEDisks) > 0 }},
+		{"scsiDisks",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.ScsiDisk) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.SCSIDisks) > 0 }},
+		{"scsiPassthrough",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.ScsiPassthrough) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.SCSIPassthrough) > 0 }},
+		{"vflashModule",
+			func(ct *vimtypes.ConfigTarget) bool { return len(ct.VFlashModule) > 0 },
+			func(d vimv1.ConfigTargetDevices) bool { return len(d.VFlashModule) > 0 }},
+	}
+}
+
+// hasNonSRIOVPCIPassthrough reports whether ct.PciPassthrough contains at
+// least one plain *vimtypes.VirtualMachinePciPassthroughInfo entry, matching
+// convertPciPassthroughUnion's type-switch: *VirtualMachineSriovInfo entries
+// are excluded since SR-IOV is not supported yet (vmop-3926, T121).
+func hasNonSRIOVPCIPassthrough(ct *vimtypes.ConfigTarget) bool {
+	for _, item := range ct.PciPassthrough {
+		if _, ok := item.(*vimtypes.VirtualMachinePciPassthroughInfo); ok {
+			return true
+		}
+	}
+	return false
 }

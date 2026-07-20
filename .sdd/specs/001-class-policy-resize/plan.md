@@ -183,76 +183,22 @@ The only API change for this consolidation is additive on `ConfigTarget`:
 **Modify** `external/vim/api/v1alpha1/config_target_types.go` — add a new field on `ConfigTargetStatus`:
 
 ```go
-// MaxHardwareVersion is the highest virtual hardware version available
-// in this cluster, computed as the max of each host's
-// HostConfigInfo.defaultHardwareVersion (queried per host during reconcile).
-// A VM whose effective hardware version is <= MaxHardwareVersion can be
-// created on at least one host in the cluster. The VM admission webhook
-// uses this field to reject hardware-version-infeasible VMs without
-// needing to read per-host objects or labels.
+// MaxHardwareVersion is the highest virtual hardware version creatable
+// on at least one host in this cluster, computed from the
+// CreateSupported descriptors returned by the cluster's
+// EnvironmentBrowser.QueryConfigOptionDescriptor. A VM whose effective
+// hardware version is <= MaxHardwareVersion can be created on at least
+// one host in the cluster. The VM admission webhook uses this field to
+// reject hardware-version-infeasible VMs without needing to read
+// per-host objects or labels.
 
 // +optional
 MaxHardwareVersion string `json:"maxHardwareVersion,omitempty"`
 ```
 
-**Modify** `external/vim/api/v1alpha1/config_target_devices_types.go` — extend `VirtualMachineSriovInfo` so the cluster-aggregated list still attributes each NIC to a specific host and exposes the same DVX-related capabilities the dropped `HostSRIOVNIC` type carried:
+`HostConfigInfo` has no `defaultHardwareVersion`-equivalent property. `MaxHardwareVersion` is computed from `QueryConfigOptionDescriptor`'s `CreateSupported`/`Key` fields, which the `ConfigTarget` controller already fetches for the `VirtualMachineConfigOptions` fan-out; no per-host PropertyCollector call is needed for this field. See I3 for the full computation.
 
-```go
-// HostMoID is the ManagedObjectID of the ESX host whose
-// HostConfigInfo.pciPassthruInfo contributed this entry. The same SR-IOV
-// NIC observed on multiple hosts produces multiple entries that differ
-// in HostMoID.
-
-// +required
-HostMoID string `json:"hostMoID"`
-
-// Active indicates SR-IOV is both enabled and in effect on this NIC,
-// meaning the host has been rebooted since SR-IOV was enabled
-// (HostSriovInfo.sriovActive).
-
-// +optional
-Active bool `json:"active,omitempty"`
-
-// MaxVFs is the maximum number of Virtual Functions this NIC can expose,
-// as reported by HostSriovInfo.maxVirtualFunctionSupported.
-
-// +optional
-MaxVFs int32 `json:"maxVFs,omitempty"`
-
-// NumVFs is the number of Virtual Functions currently present on this
-// NIC, as reported by HostSriovInfo.numVirtualFunction.
-
-// +optional
-NumVFs int32 `json:"numVFs,omitempty"`
-
-// DVXClass is the Device Virtualization Extensions class name for this
-// NIC, populated when the NIC's device class appears in
-// HostHardwareInfo.dvxClasses with sriovNic=true (vSphere 8.0.0.1+).
-// Empty when this NIC does not belong to any DVX class.
-
-// +optional
-DVXClass string `json:"dvxClass,omitempty"`
-
-// DVXCheckpointSupported indicates whether live migration with
-// checkpoint is supported for VMs using this NIC via DVX
-// (HostDvxClass.checkpointSupported). Only meaningful when DVXClass is set.
-
-// +optional
-DVXCheckpointSupported bool `json:"dvxCheckpointSupported,omitempty"`
-
-// DVXSWDMATracingSupported indicates whether software DMA tracing is
-// supported for this NIC via DVX (HostDvxClass.swDMATracingSupported).
-// Only meaningful when DVXClass is set.
-
-// +optional
-DVXSWDMATracingSupported bool `json:"dvxSwDmaTracingSupported,omitempty"`
-```
-
-`ConfigTarget.status.sriov` gains `+listType=map` with `+listMapKey=hostMoID` plus `+listMapKey=id` so that the same physical NIC on different hosts is patchable as distinct entries.
-
-Regenerate `zz_generated.deepcopy.go` and the `vim.vmware.com_configtargets.yaml` CRD manifest via `make generate manifests`.
-
-**No new CRD, no new controller, no new webhook, no new RBAC.** All per-host data acquisition happens in the existing `ConfigTarget` controller; see I3.
+**No new CRD, no new controller, no new webhook, no new RBAC.** The `VirtualMachineSriovInfo` type extension originally scoped here is covered by I8.
 
 #### I2. Zone controller fan-out (Story S3 / vmop-3740)
 
@@ -273,18 +219,13 @@ New controller `controllers/configtarget/configtarget_controller.go`:
 3. Call `EnvironmentBrowser.QueryConfigOptionDescriptor` → enumerate HW version keys.
 4. For each HW version key: `CreateOrPatch` a `VirtualMachineConfigOptions`.
 
-**Per-host iteration** (S5.c, vmop-3759):
-1. Enumerate cluster hosts via `ClusterComputeResource.host`.
-2. For each host, issue a single `PropertyCollector` RPC fetching:
-   - `config.defaultHardwareVersion`
-   - `capability.supportedHardwareVersions`
-   - `config.pciPassthruInfo` (filtered for `HostSriovInfo` entries where `sriovCapable == true`)
-   - `hardware.dvxClasses` (entries where `sriovNic == true`)
-3. Aggregate `max(config.defaultHardwareVersion)` across the responding hosts and write it to `ConfigTarget.status.maxHardwareVersion`.
-4. Build per-host `VirtualMachineSriovInfo` entries from the SR-IOV / DVX data and write them to `ConfigTarget.status.sriov`. Each entry carries `hostMoID` for attribution.
-5. Per-host RPC failures are logged + emitted as warning events; they are not fatal. The reconcile is requeued so the absent host's data lands on a later pass. The successful hosts' data is still written.
+**Non-SR-IOV device mapping** (S5.b):
+`QueryConfigTarget`'s cluster-scope result already carries every `ConfigTargetDevices` category except SR-IOV (CD-ROM, floppy, serial, parallel, sound, USB, PCI passthrough, dynamic passthrough, vGPU device/profile, shared GPU passthrough, SGX, precision clock, vendor device group, DVX class, IDE/SCSI disks, SCSI passthrough, vFlash module). `controllers/configtarget/convert.go` maps these directly from the already-fetched result — no per-host query needed. SR-IOV entries (both `ct.Sriov` and any `VirtualMachineSriovInfo` found inside the `PciPassthrough` union) are excluded; see below.
 
-No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget.status`. There is no second controller and no watch wiring between `ConfigTarget` and any per-host kind.
+**MaxHardwareVersion aggregation** (S5.c, vmop-3759):
+`HostConfigInfo` has no `defaultHardwareVersion`-equivalent property, so this is not computed per host. Instead: `EnvironmentBrowser.QueryConfigOptionDescriptor` — already called by the cluster-scope path for the `VirtualMachineConfigOptions` fan-out — returns one descriptor per hardware-version `Key` with a `CreateSupported` flag meaning "usable for VM creation on a given host or cluster." This is exactly how vSphere derives the highest creatable hardware version for a cluster: it computes each host's hardware version from its ESXi build, takes the max across the cluster's hosts, and marks every descriptor up to that max as `CreateSupported`. `ConfigTarget.status.maxHardwareVersion` is therefore `max(Key)` among `CreateSupported == true` descriptors — no host enumeration, no `PropertyCollector` RPCs, and no bounded-concurrency helper are needed. This value is scoped to a single cluster only; cross-cluster aggregation for namespace/zone-wide VM admission is tracked separately (vmop-3746) and is not part of this controller.
+
+SR-IOV per-host enrichment is covered by I8; it does not create a per-host CRD or a second controller — the per-host data is owned entirely by `ConfigTarget.status`.
 
 **Garbage collection**: Each `VirtualMachineConfigOptions` object carries an owner reference pointing back to the `ConfigTarget` that created it. When a hardware version is no longer returned by `QueryConfigOptionDescriptor` for a given cluster, the `ConfigTarget` reconciler removes its owner reference from the corresponding `VirtualMachineConfigOptions` object. Kubernetes garbage-collects the object only once it has no remaining owner references, which naturally handles the case where multiple `ConfigTarget` objects (e.g. from different clusters that share the same hardware-version key) co-own the same `VirtualMachineConfigOptions`. This prevents a race where a manual delete could conflict with another `ConfigTarget` that still depends on the object.
 
@@ -353,6 +294,76 @@ if vmHardwareVersion(vm) > ct.Status.MaxHardwareVersion {
 ```
 
 Single informer-cached `Get`. No list across per-host objects, no label selector match.
+
+#### I8. ConfigTarget SR-IOV per-host enrichment (Story S10 / vmop-3926)
+
+**Modify** `external/vim/api/v1alpha1/config_target_devices_types.go` — extend `VirtualMachineSriovInfo` so the cluster-aggregated list still attributes each NIC to a specific host and exposes the same DVX-related capabilities the dropped `HostSRIOVNIC` type carried:
+
+```go
+// HostMoID is the ManagedObjectID of the ESX host whose
+// HostConfigInfo.pciPassthruInfo contributed this entry. The same SR-IOV
+// NIC observed on multiple hosts produces multiple entries that differ
+// in HostMoID.
+
+// +required
+HostMoID string `json:"hostMoID"`
+
+// Active indicates SR-IOV is both enabled and in effect on this NIC,
+// meaning the host has been rebooted since SR-IOV was enabled
+// (HostSriovInfo.sriovActive).
+
+// +optional
+Active bool `json:"active,omitempty"`
+
+// MaxVFs is the maximum number of Virtual Functions this NIC can expose,
+// as reported by HostSriovInfo.maxVirtualFunctionSupported.
+
+// +optional
+MaxVFs int32 `json:"maxVFs,omitempty"`
+
+// NumVFs is the number of Virtual Functions currently present on this
+// NIC, as reported by HostSriovInfo.numVirtualFunction.
+
+// +optional
+NumVFs int32 `json:"numVFs,omitempty"`
+
+// DVXClass is the Device Virtualization Extensions class name for this
+// NIC, populated when the NIC's device class appears in
+// HostHardwareInfo.dvxClasses with sriovNic=true (vSphere 8.0.0.1+).
+// Empty when this NIC does not belong to any DVX class.
+
+// +optional
+DVXClass string `json:"dvxClass,omitempty"`
+
+// DVXCheckpointSupported indicates whether live migration with
+// checkpoint is supported for VMs using this NIC via DVX
+// (HostDvxClass.checkpointSupported). Only meaningful when DVXClass is set.
+
+// +optional
+DVXCheckpointSupported bool `json:"dvxCheckpointSupported,omitempty"`
+
+// DVXSWDMATracingSupported indicates whether software DMA tracing is
+// supported for this NIC via DVX (HostDvxClass.swDMATracingSupported).
+// Only meaningful when DVXClass is set.
+
+// +optional
+DVXSWDMATracingSupported bool `json:"dvxSwDmaTracingSupported,omitempty"`
+```
+
+`ConfigTarget.status.sriov` gains `+listType=map` with `+listMapKey=hostMoID` plus `+listMapKey=id` so that the same physical NIC on different hosts is patchable as distinct entries.
+
+Regenerate `zz_generated.deepcopy.go` and the `vim.vmware.com_configtargets.yaml` CRD manifest via `make generate manifests`.
+
+**Modify** `controllers/configtarget/configtarget_controller.go` with a per-host enrichment path, additive to the cluster-scope path in I3:
+
+1. Enumerate cluster hosts via `ClusterComputeResource.host`.
+2. For each host, issue a single `PropertyCollector` RPC fetching:
+   - `config.pciPassthruInfo` (filtered for `HostSriovInfo` entries where `sriovCapable == true`)
+   - `hardware.dvxClasses` (entries where `sriovNic == true`)
+3. Build per-host `VirtualMachineSriovInfo` entries from the SR-IOV / DVX data and write them to `ConfigTarget.status.sriov`. Each entry carries `hostMoID` for attribution.
+4. Per-host RPC failures are logged + emitted as warning events; they are not fatal. The reconcile is requeued so the absent host's data lands on a later pass. The successful hosts' data is still written.
+
+No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget.status`. There is no second controller and no watch wiring between `ConfigTarget` and any per-host kind.
 
 ---
 

@@ -14,7 +14,6 @@ import (
 	"github.com/vmware/govmomi/fault"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/configtarget"
 )
 
 const (
@@ -48,10 +48,6 @@ const (
 	// transient error.
 	QueryConfigOptionDescriptorFailedReason = "QueryConfigOptionDescriptorFailed"
 )
-
-// bytesPerMB is used to convert vSphere's MB-denominated memory fields into
-// the byte-denominated resource.Quantity fields used by ConfigTargetStatus.
-const bytesPerMB = 1024 * 1024
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
 // same name since Controller-Runtime has a global singleton registry to
@@ -182,7 +178,7 @@ func (r *Reconciler) ReconcileNormal(
 		return fmt.Errorf("failed to get virtual machine config target: %w", err)
 	}
 
-	populateStatus(obj, configTarget)
+	configtarget.PopulateStatus(obj, configTarget, configOptionDescriptors)
 
 	if err = r.reconcileConfigOptions(ctx, obj, configOptionDescriptors); err != nil {
 		pkgcond.MarkError(obj, vimv1.ReadyConditionType, QueryConfigOptionDescriptorFailedReason, err)
@@ -195,47 +191,6 @@ func (r *Reconciler) ReconcileNormal(
 	logger.V(4).Info("Reconciled ConfigTarget", "clusterMoID", clusterMoID)
 
 	return nil
-}
-
-// populateStatus maps the vSphere QueryConfigTarget result onto the
-// ConfigTarget's status. Per this sub-task's scope, only numeric limits,
-// memory quantities, and security flags are populated; all
-// ConfigTargetDevices fields (including SR-IOV) and the per-host-derived
-// hardware version fields are left unset — see VMSVC-3759.
-func populateStatus(obj *vimv1.ConfigTarget, ct *vimtypes.ConfigTarget) {
-	if ct == nil {
-		return
-	}
-
-	obj.Status.NumCPUs = ct.NumCpus
-	obj.Status.NumCPUCores = ct.NumCpuCores
-	obj.Status.NumNumaNodes = ct.NumNumaNodes
-	obj.Status.MaxCPUsPerVM = ct.MaxCpusPerHost
-	obj.Status.MaxSimultaneousThreads = ct.MaxSimultaneousThreads
-	obj.Status.SMCPresent = ct.SmcPresent
-
-	if ct.MaxMemMBOptimalPerf > 0 {
-		obj.Status.MaxMemOptimalPerf = resource.NewQuantity(int64(ct.MaxMemMBOptimalPerf)*bytesPerMB, resource.BinarySI)
-	} else {
-		obj.Status.MaxMemOptimalPerf = nil
-	}
-
-	if ct.SupportedMaxMemMB > 0 {
-		obj.Status.SupportedMaxMem = resource.NewQuantity(int64(ct.SupportedMaxMemMB)*bytesPerMB, resource.BinarySI)
-	} else {
-		obj.Status.SupportedMaxMem = nil
-	}
-
-	if ct.AvailablePersistentMemoryReservationMB > 0 {
-		obj.Status.AvailablePersistentMemoryReservation = resource.NewQuantity(
-			ct.AvailablePersistentMemoryReservationMB*bytesPerMB, resource.BinarySI)
-	} else {
-		obj.Status.AvailablePersistentMemoryReservation = nil
-	}
-
-	obj.Status.SEVSupported = ct.SevSupported != nil && *ct.SevSupported
-	obj.Status.SEVSNPSupported = ct.SevSnpSupported != nil && *ct.SevSnpSupported
-	obj.Status.TDXSupported = ct.TdxSupported != nil && *ct.TdxSupported
 }
 
 // reconcileConfigOptions creates or patches a VirtualMachineConfigOptions
@@ -303,6 +258,7 @@ func (r *Reconciler) garbageCollectConfigOptions(
 		if err != nil {
 			return fmt.Errorf("failed to check owner reference on VirtualMachineConfigOptions %q: %w", vmco.Name, err)
 		}
+
 		if !owned {
 			continue
 		}
@@ -329,6 +285,7 @@ func (r *Reconciler) removeOwnerRefAndDeleteIfOrphaned(
 		if err := r.Delete(ctx, vmco); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete orphaned VirtualMachineConfigOptions %q: %w", vmco.Name, err)
 		}
+
 		return nil
 	}
 

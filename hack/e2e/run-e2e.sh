@@ -56,7 +56,10 @@ fi
 # and the latter two to "SKIPPED" so the callback payload distinguishes
 # "never attempted" from "test logic decided to skip". Failed specs also get
 # a "syndrome" carrying Failure.Message, the callback API's field for a short
-# failure synopsis.
+# failure synopsis. Failure.Message is Gomega's full failure output (often an
+# object diff or YAML dump running well past 1024 characters), so it is
+# truncated to the same 1024-character cap the callback API enforces on
+# "syndrome" fields — otherwise the callback POST is rejected outright.
 parse_json_report() {
     local json_file="${1}"
     jq '[.[0].SpecReports[] |
@@ -76,7 +79,7 @@ parse_json_report() {
                 end
             )
         } + (if .State == "failed" and (.Failure.Message // "") != ""
-             then {syndrome: .Failure.Message}
+             then {syndrome: (.Failure.Message[0:1024])}
              else {} end)
     ]' "${json_file}"
 }

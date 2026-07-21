@@ -16,16 +16,18 @@ set -x
 #  pip3 already installed
 if ! type -p pykmip-server >/dev/null ; then
   if ! type -p pip3 >/dev/null ; then
-    python3 -m ensurepip
-    pip3 install --upgrade \
-      ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
-      pip
+    # On VDS/Photon OS, ensurepip installs pip as a Python module but does not
+    # create a pip3 binary in PATH. Use --upgrade so the module is up to date,
+    # then invoke pip via the module throughout to avoid the missing-binary error.
+    python3 -m ensurepip --upgrade
   fi
 
   # PIP_INDEX_URL can be set by the caller to redirect pip to an internal
   # package mirror (e.g. a corporate Artifactory instance). If unset, pip
   # uses its default index (public PyPI).
-  pip3 install \
+  # Use "python3 -m pip" rather than "pip3" so this works on platforms where
+  # ensurepip installed pip but did not add a pip3 binary to PATH (e.g. Photon OS).
+  python3 -m pip install \
     ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
     pykmip
 

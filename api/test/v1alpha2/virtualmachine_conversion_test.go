@@ -1239,6 +1239,25 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 	})
 
+	t.Run("spec.volumes.virtualMachineSnapshot hub-spoke-hub", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name: "snap-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
+								Name:   "my-snap",
+								DiskID: "my-disk",
+							},
+						},
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
 	t.Run("status.network.interfaces[].vnumaNodeID and vmxnet3 hub-spoke-hub", func(t *testing.T) {
 		g := NewWithT(t)
 		hub := vmopv1.VirtualMachine{

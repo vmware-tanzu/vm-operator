@@ -112,7 +112,7 @@ func (r reconciler) Reconcile(
 		// changes. Not part of the diff below since it's pure bookkeeping,
 		// not a vmxmode-routed field.
 		specBagKeys := networkextraconfig.NICSpecBagKeys(ctx, iface)
-		nextMK := sets.List(sets.KeySet(specBagKeys))
+		nextMK := sets.List(specBagKeys)
 		if strings.Join(nextMK, ",") != strings.Join(managed, ",") {
 			overlay = append(overlay, &vimtypes.OptionValue{Key: mkKey, Value: strings.Join(nextMK, ",")})
 		}

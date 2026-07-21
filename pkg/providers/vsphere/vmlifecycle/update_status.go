@@ -2342,67 +2342,13 @@ func reconcileStatusNetworkExtraConfig(
 		return nil
 	}
 
-	ci := *moVM.Config
-	observed := pkgutil.OptionValues(ci.ExtraConfig)
+	configInfo := *moVM.Config
+	observed := pkgutil.OptionValues(configInfo.ExtraConfig)
 	poweredOn := vm.Status.PowerState == vmopv1.VirtualMachinePowerStateOn
-	matcher := networkextraconfig.DefaultNICMatcher(ci.Hardware.Device)
-	nicKeyMap := vmopv1util.VMXNet3NICKeyMap()
+	matcher := networkextraconfig.DefaultNICMatcher(configInfo.Hardware.Device)
 
-	var overlay pkgutil.OptionValues
-	var blocked, blockedPowerOff []string
-
-	log := pkglog.FromContextOrDefault(vmCtx)
-	for i, iface := range vm.Spec.Network.Interfaces {
-		matchedDev := matcher(iface, i)
-		if matchedDev == nil {
-			log.V(4).Info("no hardware device for spec NIC; skipping status update", "interfaceName", iface.Name, "specIdx", i)
-			continue
-		}
-
-		namespaceIdx, ok := networkextraconfig.EthernetDeviceIndex(matchedDev)
-		if !ok {
-			continue
-		}
-		devKey := matchedDev.GetVirtualDevice().Key
-		mkKey := fmt.Sprintf(constants.NICExtraConfigManagedKeysKeyFmt, namespaceIdx)
-		managed := extraconfig.LoadDeviceManagedKeys(observed, mkKey)
-		prefix := vmopv1util.EthernetExtraConfigPrefix(devKey)
-
-		overlay = append(overlay, networkextraconfig.DesiredNICExtraConfig(vmCtx, iface, devKey, managed)...)
-
-		// First-class ExtraConfig fields: expand template keys with the
-		// device's namespace index to get the live VMX key.
-		for tmplKey := range nicKeyMap {
-			fullKey := fmt.Sprintf(tmplKey, namespaceIdx)
-			if v, ok2 := observed.GetString(fullKey); ok2 && v != "" {
-				vm.Status.ExtraConfig = append(vm.Status.ExtraConfig,
-					common.KeyValuePair{Key: fullKey, Value: v})
-			}
-		}
-
-		// Managed bag keys. Same "also check spec-requested keys" reasoning
-		// as reconcileStatusExtraConfig's bagKeyCandidates.
-		bagKeyCandidates := networkextraconfig.NICSpecBagKeys(vmCtx, iface)
-		for _, mk := range managed {
-			bagKeyCandidates[mk] = true
-		}
-		for _, k := range sets.List(sets.KeySet(bagKeyCandidates)) {
-			fullKey := prefix + k
-			if v, ok2 := observed.GetString(fullKey); ok2 && v != "" {
-				vm.Status.ExtraConfig = append(vm.Status.ExtraConfig,
-					common.KeyValuePair{Key: fullKey, Value: v})
-			}
-		}
-
-		// Device-spec fields in status.network.interfaces[i].
-		updateInterfaceStatus(vm, iface, matchedDev, moVM)
-
-		// Device-spec Blocked/PowerOffRequired reasons, dry-run: never
-		// mutates matchedDev (and therefore never mutates vmCtx.MoVM).
-		b, bpo := networkextraconfig.ReconcileNICFields(*vm, iface, matchedDev, ci, &vimtypes.VirtualMachineConfigSpec{}, true)
-		blocked = append(blocked, b...)
-		blockedPowerOff = append(blockedPowerOff, bpo...)
-	}
+	overlay, blocked, blockedPowerOff := reconcileStatusNetworkExtraConfigInterfaces(
+		vmCtx, moVM, configInfo, observed, matcher)
 
 	// Diff the assembled overlay against observed (scoped to only this NIC
 	// set's own keys, via a nil existingEC, so an unrelated reconciler's
@@ -2458,6 +2404,76 @@ func reconcileStatusNetworkExtraConfig(
 	return nil
 }
 
+// reconcileStatusNetworkExtraConfigInterfaces iterates vm.Spec.Network.Interfaces,
+// updating vm.Status.ExtraConfig and vm.Status.Network.Interfaces[i] in place
+// for each spec interface with a matched hardware device. It returns the
+// assembled desired-state overlay for the diff in reconcileStatusNetworkExtraConfig,
+// plus any prerequisite/power-off blockers collected along the way.
+func reconcileStatusNetworkExtraConfigInterfaces(
+	vmCtx pkgctx.VirtualMachineContext,
+	moVM mo.VirtualMachine,
+	configInfo vimtypes.VirtualMachineConfigInfo,
+	observed pkgutil.OptionValues,
+	matcher networkextraconfig.NICDeviceMatcher,
+) (overlay pkgutil.OptionValues, blocked, blockedPowerOff []string) {
+
+	vm := vmCtx.VM
+	sortedNICKeys := vmopv1util.SortedVMXNet3NICKeys()
+	log := pkglog.FromContextOrDefault(vmCtx)
+
+	for i, iface := range vm.Spec.Network.Interfaces {
+		matchedDev := matcher(iface, i)
+		if matchedDev == nil {
+			log.V(4).Info("no hardware device for spec NIC; skipping status update", "interfaceName", iface.Name, "specIdx", i)
+			continue
+		}
+
+		namespaceIdx, ok := networkextraconfig.EthernetDeviceIndex(matchedDev)
+		if !ok {
+			continue
+		}
+		devKey := matchedDev.GetVirtualDevice().Key
+		mkKey := fmt.Sprintf(constants.NICExtraConfigManagedKeysKeyFmt, namespaceIdx)
+		managed := extraconfig.LoadDeviceManagedKeys(observed, mkKey)
+		prefix := vmopv1util.EthernetExtraConfigPrefix(devKey)
+
+		overlay = append(overlay, networkextraconfig.DesiredNICExtraConfig(vmCtx, iface, devKey, managed)...)
+
+		// First-class ExtraConfig fields: expand template keys with the
+		// device's namespace index to get the live VMX key.
+		for _, tmplKey := range sortedNICKeys {
+			fullKey := fmt.Sprintf(tmplKey, namespaceIdx)
+			if v, found := observed.GetString(fullKey); found && v != "" {
+				vm.Status.ExtraConfig = append(vm.Status.ExtraConfig,
+					common.KeyValuePair{Key: fullKey, Value: v})
+			}
+		}
+
+		// Managed bag keys. Same "also check spec-requested keys" reasoning
+		// as reconcileStatusExtraConfig's bagKeyCandidates.
+		bagKeyCandidates := networkextraconfig.NICSpecBagKeys(vmCtx, iface)
+		bagKeyCandidates.Insert(managed...)
+		for _, k := range sets.List(bagKeyCandidates) {
+			fullKey := prefix + k
+			if v, found := observed.GetString(fullKey); found && v != "" {
+				vm.Status.ExtraConfig = append(vm.Status.ExtraConfig,
+					common.KeyValuePair{Key: fullKey, Value: v})
+			}
+		}
+
+		// Device-spec fields in status.network.interfaces[i].
+		updateInterfaceStatus(vm, iface, matchedDev, moVM)
+
+		// Device-spec Blocked/PowerOffRequired reasons, dry-run: never
+		// mutates matchedDev (and therefore never mutates vmCtx.MoVM).
+		b, bpo := networkextraconfig.ReconcileNICFields(*vm, iface, matchedDev, configInfo, &vimtypes.VirtualMachineConfigSpec{}, true)
+		blocked = append(blocked, b...)
+		blockedPowerOff = append(blockedPowerOff, bpo...)
+	}
+
+	return overlay, blocked, blockedPowerOff
+}
+
 // updateInterfaceStatus populates the device-spec status fields
 // (VNUMANodeID, VMXNet3) for interface i in vm.Status.Network.Interfaces.
 func updateInterfaceStatus(
@@ -2470,17 +2486,14 @@ func updateInterfaceStatus(
 		return
 	}
 
-	// Find the matching status entry by interface name or index.
-	var statusIface *vmopv1.VirtualMachineNetworkInterfaceStatus
-	for j := range vm.Status.Network.Interfaces {
-		if vm.Status.Network.Interfaces[j].Name == iface.Name {
-			statusIface = &vm.Status.Network.Interfaces[j]
-			break
-		}
-	}
-	if statusIface == nil {
+	// Find the matching status entry by interface name.
+	idx := slices.IndexFunc(vm.Status.Network.Interfaces, func(s vmopv1.VirtualMachineNetworkInterfaceStatus) bool {
+		return s.Name == iface.Name
+	})
+	if idx == -1 {
 		return
 	}
+	statusIface := &vm.Status.Network.Interfaces[idx]
 
 	vdev := matchedDev.GetVirtualDevice()
 

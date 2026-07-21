@@ -869,7 +869,7 @@ The `VirtualMachineNetworkConfigSynced` condition reports whether these per-inte
 | Reason | Description |
 |--------|-------------|
 | `PrerequisiteNotMet` | A field's prerequisite (hardware version, EFI firmware, or vNUMA topology) is not met. Only `vnumaNodeID` and `uptv2Enabled` can trigger this reason. |
-| `PowerOffRequired` | A field that is never hot-pluggable (`vnumaNodeID`) changed while the VM was powered on. The change is deferred until the VM is powered off. |
+| `PowerOffRequired` | A field that requires the VM to be powered off to take effect (`vnumaNodeID`) changed while the VM was powered on; the change applies once the VM is powered off — no subsequent power-on is required. |
 | `PowerCyclePending` | A `PowerCycle`-mode `vmxnet3` field (`ctxPerDev`, `rssOffloadEnabled`, `udpRssEnabled`, or `pnicFeatures`) changed while the VM was powered on. The value is written immediately, but a power-cycle is required to fully converge. |
 | `NetworkConfigError` | The reconciler failed to apply the desired configuration. |
 

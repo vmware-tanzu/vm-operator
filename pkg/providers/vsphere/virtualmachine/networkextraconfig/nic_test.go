@@ -62,6 +62,56 @@ var _ = Describe("DefaultNICMatcher / EthernetDeviceIndex", func() {
 		matcher := networkextraconfig.DefaultNICMatcher(nil)
 		Expect(matcher(vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth0"}, 0)).To(BeNil())
 	})
+
+	// Characterization test: pins today's known limitation that positional
+	// matching has no notion of interface identity, so reordering
+	// spec.network.interfaces (same Names/props, swapped slice positions)
+	// cross-wires each interface's ExtraConfig onto the wrong physical
+	// device — no hardware change required. See the TODO on
+	// DefaultNICMatcher: this must be revisited (and this test rewritten
+	// to assert the opposite) once matching moves to a stable per-NIC
+	// identity (e.g. the NIC unit-number feature).
+	It("cross-wires ExtraConfig when spec interfaces are reordered (documents current positional-matching limitation)", func() {
+		hwDevs := []vimtypes.BaseVirtualDevice{newVMXNet3Dev(4000), newVMXNet3Dev(4001)}
+		ctx := context.Background()
+
+		eth1 := vmopv1.VirtualMachineNetworkInterfaceSpec{
+			Name:    "eth1",
+			VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{RSSOffloadEnabled: ptr.To(true)},
+		}
+		eth2 := vmopv1.VirtualMachineNetworkInterfaceSpec{
+			Name:    "eth2",
+			VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{RSSOffloadEnabled: ptr.To(false)},
+		}
+
+		// Before: spec call order [eth1, eth2] lines up with hardware order
+		// [4000, 4001] — device 4000 (ethernet0) gets eth1's value.
+		before := networkextraconfig.DefaultNICMatcher(hwDevs)
+		dev := before(eth1, 0)
+		ec := networkextraconfig.DesiredNICExtraConfig(ctx, eth1, dev.GetVirtualDevice().Key, nil)
+		v, _ := getVal(ec, "ethernet0.rssoffload")
+		Expect(v).To(Equal("TRUE"), "eth1 (RSSOffloadEnabled=true) lands on device 4000")
+
+		dev = before(eth2, 1)
+		ec = networkextraconfig.DesiredNICExtraConfig(ctx, eth2, dev.GetVirtualDevice().Key, nil)
+		v, _ = getVal(ec, "ethernet1.rssoffload")
+		Expect(v).To(Equal("FALSE"), "eth2 (RSSOffloadEnabled=false) lands on device 4001")
+
+		// After: the spec array is reordered — eth2 called first, eth1
+		// second — while the hardware device list is untouched. Matching
+		// is purely call-order based, so it silently swaps which
+		// interface's properties reach which physical device.
+		after := networkextraconfig.DefaultNICMatcher(hwDevs)
+		dev = after(eth2, 0)
+		ec = networkextraconfig.DesiredNICExtraConfig(ctx, eth2, dev.GetVirtualDevice().Key, nil)
+		v, _ = getVal(ec, "ethernet0.rssoffload")
+		Expect(v).To(Equal("FALSE"), "device 4000 (ethernet0) now gets eth2's value instead of eth1's")
+
+		dev = after(eth1, 1)
+		ec = networkextraconfig.DesiredNICExtraConfig(ctx, eth1, dev.GetVirtualDevice().Key, nil)
+		v, _ = getVal(ec, "ethernet1.rssoffload")
+		Expect(v).To(Equal("TRUE"), "device 4001 (ethernet1) now gets eth1's value instead of eth2's")
+	})
 })
 
 var _ = Describe("DesiredNICExtraConfig", func() {

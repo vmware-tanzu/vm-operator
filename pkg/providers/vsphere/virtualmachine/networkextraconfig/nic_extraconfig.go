@@ -9,6 +9,8 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine/extraconfig"
@@ -18,8 +20,8 @@ import (
 
 // NICSpecBagKeys returns the set of valid bag-key names in iface's
 // AdvancedProperties, skipping first-class VMXNet3 keys.
-func NICSpecBagKeys(ctx context.Context, iface vmopv1.VirtualMachineNetworkInterfaceSpec) map[string]bool {
-	keys := make(map[string]bool)
+func NICSpecBagKeys(ctx context.Context, iface vmopv1.VirtualMachineNetworkInterfaceSpec) sets.Set[string] {
+	keys := sets.New[string]()
 	for _, kv := range iface.AdvancedProperties {
 		if vmopv1util.IsFirstClassVMXnet3NICKey(kv.Key) {
 			pkglog.FromContextOrDefault(ctx).Info(
@@ -28,7 +30,7 @@ func NICSpecBagKeys(ctx context.Context, iface vmopv1.VirtualMachineNetworkInter
 				"key", kv.Key)
 			continue
 		}
-		keys[kv.Key] = true
+		keys.Insert(kv.Key)
 	}
 	return keys
 }
@@ -56,12 +58,12 @@ func DesiredNICExtraConfig(
 	}
 
 	for _, kv := range iface.AdvancedProperties {
-		if specBagKeys[kv.Key] {
+		if specBagKeys.Has(kv.Key) {
 			desired = append(desired, &vimtypes.OptionValue{Key: prefix + kv.Key, Value: kv.Value})
 		}
 	}
 	for _, mk := range managedKeys {
-		if !specBagKeys[mk] {
+		if !specBagKeys.Has(mk) {
 			desired = append(desired, &vimtypes.OptionValue{Key: prefix + mk, Value: ""})
 		}
 	}

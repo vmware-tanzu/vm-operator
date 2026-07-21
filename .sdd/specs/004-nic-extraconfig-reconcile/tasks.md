@@ -3,21 +3,7 @@
 - **E2E plan**: [`e2e.md`](./e2e.md)
 - **Epic**: vmop-3782
 
-<!--
-TODO: fill in per-task [vmop-NNN] story/sub-task tags once filed under the epic.
-spec.md and plan.md for the underlying networkextraconfig reconciler are
-tracked separately and not required to complete this task list; this file
-only decomposes the E2E suite described in e2e.md.
--->
-
-This task list produces the E2E suite specified in `e2e.md`: coverage for
-per-NIC ExtraConfig and device-spec reconciliation — live-mode and
-PowerCycle-mode ExtraConfig fields, AdvancedProperties bag CRUD, and the
-DeviceChange prerequisite gates for `uptv2Enabled` and `vnumaNodeID`. It
-assumes the `VirtualMachineNetworkConfigSynced` condition and its
-`PrerequisiteNotMet`/`PowerOffRequired`/`PowerCyclePending` reasons already
-exist as reconciler surface (`pkg/vmconfig/networkextraconfig/`) to test
-against; no product-code task is included here.
+This task list produces the E2E suite specified in `e2e.md`: coverage for per-NIC ExtraConfig and device-spec reconciliation — live-mode and PowerCycle-mode ExtraConfig fields, AdvancedProperties bag CRUD, and the DeviceChange prerequisite gates for `uptv2Enabled` and `vnumaNodeID`. It assumes the `VirtualMachineNetworkConfigSynced` condition and its `PrerequisiteNotMet`/`PowerOffRequired`/`PowerCyclePending` reasons already exist as reconciler surface (`pkg/vmconfig/networkextraconfig/`) to test against; no product-code task is included here.
 
 ## Phase 1 — Setup
 
@@ -30,7 +16,7 @@ against; no product-code task is included here.
 - [x] T004 [P] Add the VM builder in the same file: `nicExtraConfigVMOptions` (live-mode, PowerCycle-mode, DeviceChange, AdvancedProperties, and VM-level prerequisite fields) and `buildNICExtraConfigVM`
 - [x] T005 [P] Add status/condition accessors in the same file: `statusExtraConfigMap`, `statusNICInterface`, `getNICExtraConfigCondition`
 - [x] T006 [P] Add wait helpers in the same file: `waitForNICExtraConfigSynced` (status/reason, with an optional `LastTransitionTime` sentinel to guard against reading a stale `True`), `waitForNICExtraConfigSyncedWithExtraConfig`, `waitForNICExtraConfigSyncedWithExtraConfigs` (multi-key composite guard — required whenever more than one wire value must be asserted atomically), `waitForNICExtraConfigSyncedWithExtraConfigAbsent`
-- [x] T007 [P] Add `deleteNICExtraConfigVM` and `retryUpdateVMA6` (get-mutate-update retried on any error, including `409 Conflict` races against the reconciler) in the same file
+- [x] T007 [P] Reuse `getExtraConfigVM` (`vm_extraconfig.go`) and `vmoperator.DeleteVirtualMachine`/`WaitForVirtualMachineToBeDeleted` for VM get/delete; spec mutations use `svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))`, which sends no resourceVersion precondition and therefore cannot 409-conflict against a concurrent controller write, so no retry helper is needed
 - [x] T008 Register `Context("VM-NIC-EXTRA-CONFIG", ...)` calling `virtualmachine.VMNICExtraConfigSpec` from `test/e2e/vmservice/vmservice_test.go`
 
 ## Phase 3 — User Story: live-mode ExtraConfig applies immediately, independent of power state and concurrent disk promotion
@@ -48,11 +34,15 @@ against; no product-code task is included here.
 
 ## Phase 6 — User Story: DeviceChange fields are gated by prerequisites and, when met, apply per their power-state mode
 
-- [x] T013 [US4] Add scenario: patch `uptv2Enabled=true` on a VM without `memoryAdvanced.reservationLockedToMax`, accept either a webhook rejection or `NetworkConfigSynced=False/PrerequisiteNotMet` as the outcome, delete the VM; then create a second VM with `reservationLockedToMax=true`+`minHardwareVersion=20`, patch `uptv2Enabled=true`, and assert the condition reason is never `PrerequisiteNotMet` (`vm_nic_extra_config.go`)
+- [x] T013 [US4] Add scenario: patch `uptv2Enabled=true` on a VM without `memoryAdvanced.reservationLockedToMax`, assert the patch is deterministically rejected at admission with the memory-reservation validation message (`validateUPTv2MemoryReservation` always runs under `TelcoVMServiceAPI`, so `PrerequisiteNotMet` is unreachable here), delete the VM; then create a second VM with `reservationLockedToMax=true`+`minHardwareVersion=20`, patch `uptv2Enabled=true`, and assert the condition reason is never `PrerequisiteNotMet` (`vm_nic_extra_config.go`)
 - [x] T014 [P] [US4] Add scenario: patch `vnumaNodeID=1` on a VM with `minHardwareVersion=20`+`vnumaNodeCount=2` but no EFI firmware, assert `NetworkConfigSynced=False/PrerequisiteNotMet` and assert the condition `Message` contains `"EFI firmware required"`, delete the VM; then create a second VM with `minHardwareVersion=20`+`bootOptions.firmware=EFI`+`cpuAdvanced.topology.vnumaNodeCount=2`+`cpuAdvanced.topology.coresPerSocket=1`, patch `vnumaNodeID=1` while powered on, assert `PowerOffRequired`, power off, assert `NetworkConfigSynced=True`, and independently verify via govmomi that the `VirtualVmxnet3` device's `NumaNode` equals `1` (`vm_nic_extra_config.go`)
+
+## Phase 7 — Characterization: spec-level NIC reordering cross-wires ExtraConfig (known limitation)
+
+- [x] T018 Add a unit test to `nic_test.go`'s `DefaultNICMatcher` describe block that runs `DefaultNICMatcher` + `DesiredNICExtraConfig` for two interfaces before and after swapping their spec-array positions (hardware device list unchanged), proving the computed ExtraConfig for a given physical device flips — not just that the matcher returns a different device object. Documented as a characterization test to be rewritten (asserting no cross-wiring) once matching moves off pure positional order (e.g. the NIC unit-number feature).
+- [x] T019 [P] Add the e2e counterpart to `vm_nic_extra_config.go`: create a VM with `eth0`/`eth1`/`eth2` each carrying a distinct `coalescingScheme`, swap the array positions of `eth1`/`eth2` via a spec patch (no hardware change, no out-of-band vSphere action), and assert `ethernet1`/`ethernet2` end up with each other's former values (`e2e.md` "Capability: spec-level NIC reordering")
 
 ## Phase Final — Polish
 
 - [x] T015 Add `Label("experimental", ...)` to every `It` block in `vm_nic_extra_config.go` per `e2e-testing.md`
 - [ ] T016 Run every scenario in this file against a real Supervisor at least once; drop the `"experimental"` label only after that run passes
-- [ ] T017 File a follow-up spec/task for resilience coverage (VM recreation, out-of-band vSphere drift) for `pkg/vmconfig/networkextraconfig/`, mirroring the `spec.advanced` VM-level ExtraConfig suite's resilience scenarios (see `e2e.md` "Scope boundaries") — not part of this task list's scope

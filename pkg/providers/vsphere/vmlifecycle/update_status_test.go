@@ -6437,6 +6437,42 @@ var _ = Describe("NetworkExtraConfig status", func() {
 		})
 	})
 
+	When("observed has multiple first-class NIC keys", func() {
+		BeforeEach(func() {
+			vm.Spec.Network.Interfaces[0].VMXNet3 = &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+				CtxPerDev:         ptr.To(vmopv1.TxContextThreadingModePerQueue),
+				RSSOffloadEnabled: ptr.To(true),
+				UDPRSSEnabled:     ptr.To(vmopv1.UDPRSSModeEnabled),
+				PNICFeatures:      []vmopv1.PNICQueueFeature{vmopv1.PNICQueueFeatureReceiveSideScaling},
+			}
+			// All four first-class VMXNet3 keys populated (not a subset), so
+			// a map-iteration bug can't hide behind a lucky rotation of a
+			// smaller key set. Deliberately listed out of sorted order here,
+			// to prove the result is re-sorted rather than just echoing
+			// input/observed order.
+			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "ethernet0.udpRSS", Value: "TRUE"},
+				&vimtypes.OptionValue{Key: "ethernet0.ctxPerDev", Value: "PerQueue"},
+				&vimtypes.OptionValue{Key: "ethernet0.pnicFeatures", Value: "ReceiveSideScaling"},
+				&vimtypes.OptionValue{Key: "ethernet0.rssoffload", Value: "TRUE"},
+			}
+		})
+
+		It("appends them onto status.ExtraConfig in sorted key order", func() {
+			Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+			// Order must be deterministic (sorted), not map-iteration order:
+			// an unsorted order would vary randomly across reconciles and
+			// cause a spurious status patch every time even though nothing
+			// actually changed.
+			Expect(vmCtx.VM.Status.ExtraConfig).To(Equal([]vmopv1common.KeyValuePair{
+				{Key: "ethernet0.ctxPerDev", Value: "PerQueue"},
+				{Key: "ethernet0.pnicFeatures", Value: "ReceiveSideScaling"},
+				{Key: "ethernet0.rssoffload", Value: "TRUE"},
+				{Key: "ethernet0.udpRSS", Value: "TRUE"},
+			}))
+		})
+	})
+
 	When("observed fully matches spec.network.interfaces", func() {
 		BeforeEach(func() {
 			vm.Spec.Network.Interfaces[0].VMXNet3 = &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{

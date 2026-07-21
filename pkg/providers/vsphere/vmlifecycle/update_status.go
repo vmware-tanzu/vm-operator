@@ -2261,7 +2261,7 @@ func reconcileStatusNetworkExtraConfig(
 	observed := pkgutil.OptionValues(ci.ExtraConfig)
 	poweredOn := vm.Status.PowerState == vmopv1.VirtualMachinePowerStateOn
 	matcher := networkextraconfig.DefaultNICMatcher(ci.Hardware.Device)
-	nicKeyMap := vmopv1util.VMXNet3NICKeyMap()
+	sortedNICKeys := vmopv1util.SortedVMXNet3NICKeys()
 
 	var overlay pkgutil.OptionValues
 	var blocked, blockedPowerOff []string
@@ -2287,7 +2287,7 @@ func reconcileStatusNetworkExtraConfig(
 
 		// First-class ExtraConfig fields: expand template keys with the
 		// device's namespace index to get the live VMX key.
-		for tmplKey := range nicKeyMap {
+		for _, tmplKey := range sortedNICKeys {
 			fullKey := fmt.Sprintf(tmplKey, namespaceIdx)
 			if v, ok2 := observed.GetString(fullKey); ok2 && v != "" {
 				vm.Status.ExtraConfig = append(vm.Status.ExtraConfig,

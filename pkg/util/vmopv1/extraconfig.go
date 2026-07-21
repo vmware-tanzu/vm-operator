@@ -81,6 +81,14 @@ var (
 	cachedSortedAdvancedVMXKeys = sync.OnceValue(func() []string {
 		return sets.List(sets.KeySet(AdvancedVMXKeyMap()))
 	})
+
+	// cachedSortedVMXNet3NICKeys is the sorted list of template VMX keys
+	// mapped to first-class VirtualMachineNetworkInterfaceVMXNet3Spec
+	// fields. Precomputed once for the same reason as
+	// cachedSortedAdvancedVMXKeys.
+	cachedSortedVMXNet3NICKeys = sync.OnceValue(func() []string {
+		return sets.List(sets.KeySet(VMXNet3NICKeyMap()))
+	})
 )
 
 // AdvancedVMXKeyMap returns the shared, lazily-built map of vmx struct tags
@@ -113,6 +121,13 @@ func VMXNet3NICKeyMap() map[string]int {
 // VirtualMachineNetworkInterfaceVMXNet3Spec.
 func VMXNet3NICModeMap() map[string]VMXMode {
 	return cachedVMXNet3NICMaps().modes
+}
+
+// SortedVMXNet3NICKeys returns the shared, lazily-built, sorted list of
+// template VMX keys for VirtualMachineNetworkInterfaceVMXNet3Spec (the keys
+// of VMXNet3NICKeyMap).
+func SortedVMXNet3NICKeys() []string {
+	return cachedSortedVMXNet3NICKeys()
 }
 
 // isDeviceProperty reports whether tag matches the device-namespace VMX pattern

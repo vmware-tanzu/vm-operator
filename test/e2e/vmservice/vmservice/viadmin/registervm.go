@@ -296,12 +296,19 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 
-			By("Add the pause annotation to VM")
+			By("Add the pause annotation and set all volumes as removable")
 
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			base := vm.DeepCopy()
 			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
+			// RegisterVM's incremental restore replaces the auto-backfilled boot
+			// disk volume entry with a freshly registered one; the validating
+			// webhook blocks that swap unless Removable=true on the existing
+			// entry (mirrors the "...and PVCs" variant of this test below).
+			for i := range vm.Spec.Volumes {
+				vm.Spec.Volumes[i].Removable = ptr.To(true)
+			}
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 			// Collect all PVC names from the VM spec

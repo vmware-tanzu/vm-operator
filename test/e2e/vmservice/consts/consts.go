@@ -28,6 +28,10 @@ const (
 
 	JumpboxPodVMName = "jumpbox"
 
+	// VM condition type strings used when waiting on backfill/registration lifecycle.
+	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
+	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"
+
 	VMGroupsCapabilityName                   = "supports_VM_service_VM_groups"
 	VirtualMachineSnapshotCapabilityName     = "supports_VM_service_VM_snapshots"
 	VMPlacementPoliciesCapabilityName        = "supports_VM_service_VM_placement_policies"

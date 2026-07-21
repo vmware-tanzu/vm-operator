@@ -1128,13 +1128,11 @@ func VerifyPostRegisterVM(
 	// restored PVCs asynchronously after RegisterVM's task reports success,
 	// so a single read here can race and observe a stale, partially-restored
 	// volume list. Poll until it settles instead of asserting once.
-	actualRestoredPVCCount := 0
-
-	Eventually(func() int {
+	Eventually(func(g Gomega) {
 		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-		Expect(err).ToNot(HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
 
-		actualRestoredPVCCount = 0
+		actualRestoredPVCCount := 0
 		for _, vol := range vm.Spec.Volumes {
 			// Volume and PVC both contain "restored-" prefix, so validate that.
 			if vol.PersistentVolumeClaim != nil &&
@@ -1142,10 +1140,10 @@ func VerifyPostRegisterVM(
 				actualRestoredPVCCount++
 			}
 		}
-		return actualRestoredPVCCount
-	}, config.GetIntervals("default", "wait-backup-to-complete")...).Should(Equal(expectedRestoredPVCCount),
-		"Timed out waiting for restored VM to have expected number of restored volumes, expected %d, got %d",
-		expectedRestoredPVCCount, actualRestoredPVCCount)
+		g.Expect(actualRestoredPVCCount).To(Equal(expectedRestoredPVCCount),
+			"Restored VM must have expected number of restored volumes, expected %d, got %d",
+			expectedRestoredPVCCount, actualRestoredPVCCount)
+	}, config.GetIntervals("default", "wait-backup-to-complete")...).Should(Succeed())
 
 	By("Power on the VM")
 	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))

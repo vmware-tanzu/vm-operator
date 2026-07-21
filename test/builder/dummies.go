@@ -1018,6 +1018,23 @@ func DummyVirtualMachineConfigOptions(name, hardwareVersion string) *vimv1.Virtu
 	}
 }
 
+// DummyVirtualMachineGuestOptions returns a dummy VirtualMachineGuestOptions
+// with the given name and spec.id.
+func DummyVirtualMachineGuestOptions(name, id string) *vimv1.VirtualMachineGuestOptions {
+	return &vimv1.VirtualMachineGuestOptions{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "VirtualMachineGuestOptions",
+			APIVersion: vimv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: vimv1.VirtualMachineGuestOptionsSpec{
+			ID: vimv1.VirtualMachineGuestOSIdentifier(id),
+		},
+	}
+}
+
 // DummyClassicVirtualMachineVolume returns a dummy VirtualMachineVolume for a classic disk.
 // Classic disks have controller placement information but no PersistentVolumeClaim source.
 func DummyClassicVirtualMachineVolume(

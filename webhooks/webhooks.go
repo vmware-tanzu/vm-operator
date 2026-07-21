@@ -20,6 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineconfigoptions"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinegrouppublishrequest"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineguestoptions"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineservice"
@@ -86,6 +87,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		}
 		if err := configtarget.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize ConfigTarget webhooks: %w", err)
+		}
+		if err := virtualmachineguestoptions.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineGuestOptions webhooks: %w", err)
 		}
 	}
 

@@ -8,6 +8,18 @@ set -x
 # Install https://github.com/OpenKMIP/PyKMIP
 # Used as KMS for encrypting VMs
 
+# Generate the TLS cert on this gateway VM if it does not already exist.
+# Cert generation lives here (on the gateway) rather than in the calling
+# test-runner container so that all parallel containers fetch and register
+# the same cert via govc kms.trust, preventing a race where containers push
+# different certs and PyKMIP ends up serving a cert that vCenter no longer
+# trusts.
+if [ ! -e /root/pykmip-crt.pem ] ; then
+  openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+          -subj "/C=US/ST=CA/L=PA/O=Broadcom/OU=VCF/CN=pykmip" \
+          -keyout /root/pykmip-key.pem -out /root/pykmip-crt.pem
+fi
+
 # VDS/photon:
 #  server == /usr/bin/pykmip-server
 #  pip3 not installed

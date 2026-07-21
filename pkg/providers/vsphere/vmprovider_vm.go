@@ -1504,10 +1504,10 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 		return err
 	}
 
-	// Check if the VM's power state should be delayed.
-	// Currently, only power-on can be delayed by a parent group.
+	// Check if the VM's power state should be delayed by a parent group.
 	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
-		vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn {
+		(vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
+			vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff) {
 		if val := vmCtx.VM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation]; val != "" {
 			when, err := time.Parse(time.RFC3339Nano, val)
 			if err != nil {

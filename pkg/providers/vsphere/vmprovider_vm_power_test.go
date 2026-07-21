@@ -255,6 +255,44 @@ func vmPowerStateTests() {
 
 			})
 
+			When("there is a apply power state change time annotation", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMGroups = true
+					})
+				})
+
+				When("the time is in the future", func() {
+					JustBeforeEach(func() {
+						vm.Annotations = map[string]string{
+							pkgconst.ApplyPowerStateTimeAnnotation: time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano),
+						}
+					})
+
+					It("should not power off the VM and requeue after remaining time", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						var requeueErr pkgerr.RequeueError
+						Expect(errors.As(err, &requeueErr)).To(BeTrue())
+						Expect(requeueErr.After).To(BeNumerically("~", time.Minute, time.Second))
+					})
+				})
+
+				When("the time is in the past", func() {
+					JustBeforeEach(func() {
+						vm.Annotations = map[string]string{
+							pkgconst.ApplyPowerStateTimeAnnotation: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano),
+						}
+					})
+
+					It("should power off the VM and remove the annotation", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						Expect(vm.Annotations).ToNot(HaveKey(pkgconst.ApplyPowerStateTimeAnnotation))
+					})
+				})
+			})
+
 			DescribeTable("powerOffModes",
 				func(mode vmopv1.VirtualMachinePowerOpMode) {
 					vm.Spec.PowerOffMode = mode

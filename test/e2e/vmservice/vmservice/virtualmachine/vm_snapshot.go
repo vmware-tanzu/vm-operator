@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	vmSnapshotSpecName = "v1alpha5-vmsnapshot"
+	vmSnapshotSpecName = "vm-snapshot"
 )
 
 type VMSnapshotSpecInput struct {

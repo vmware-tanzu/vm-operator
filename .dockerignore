@@ -16,3 +16,8 @@ Thumbs.db
 .git/
 # E2E test run test logs
 test/e2e/vmservice/test_logs/
+
+# Python generated files
+__pycache__/
+*.pyc
+*.pyo

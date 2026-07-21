@@ -169,6 +169,13 @@ Consistently(func(g Gomega) {
 }).Should(Succeed())
 ```
 
+Always use the `func(g Gomega)` form for `Eventually`/`Consistently`, not a bare closure that returns a value (`func() int`, `func() bool`, etc.) with assertions against the polled value made outside the closure. With the bare-closure form:
+
+- Any `Expect(...)` called *inside* the closure (instead of `g.Expect(...)`) fails the spec immediately on the first iteration instead of being retried — defeating the retry entirely.
+- An assertion against the returned value made *after* `Eventually(...)` (e.g. `Eventually(func() int {...}).Should(Equal(x)); Expect(finalVal).To(...)`) only runs once, after the polling loop exits, so it does not benefit from retrying either.
+
+Put the entire check — the read, any error assertion, and the final comparison — inside the `func(g Gomega)` closure, asserting with `g.Expect(...)`, and close with `.Should(Succeed())`. That way every part of the check is retried on every poll.
+
 ### Common Matchers
 
 ```go
@@ -195,3 +202,4 @@ fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vm
 4. **Do NOT test implementation details** - Test observable behavior only
 5. **Always clean up** - Use `AfterEach` with `ctx.AfterEach()`
 6. **Use descriptive names** - `When("VM does not have VMware Tools", func() { ... })`
+7. **Do NOT use a bare `Eventually(func() T {...})` closure with `Expect`/comparisons outside it** - Use `Eventually(func(g Gomega) {...}).Should(Succeed())` and assert with `g.Expect(...)` inside the closure so the whole check (read + assertions) retries on every poll; see Async Assertions above.

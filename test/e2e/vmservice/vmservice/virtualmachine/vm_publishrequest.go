@@ -47,7 +47,7 @@ import (
 )
 
 const (
-	vmPubSpecName       = "vmpub"
+	vmPubSpecName       = "vm-publish"
 	vmPubTargetItemName = "vm-publish-request-target-item-name"
 )
 
@@ -79,14 +79,14 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 		BeforeAll(func() {
 			input = inputGetter()
-			Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.E2EConfig can't be nil when calling %s spec", CurrentSpecReport)
-			Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig can't be nil when calling %s spec", CurrentSpecReport)
+			Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.E2EConfig can't be nil when calling %s spec", vmPubSpecName)
+			Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig can't be nil when calling %s spec", vmPubSpecName)
 			skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 
-			Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.SVClusterProxy can't be nil when calling %s spec", CurrentSpecReport)
-			Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", CurrentSpecReport)
-			Expect(input.LinuxVMName).ToNot(BeEmpty(), "Invalid argument. input.LinuxVMName can't be empty when calling %s spec", CurrentSpecReport)
-			Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", CurrentSpecReport)
+			Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.SVClusterProxy can't be nil when calling %s spec", vmPubSpecName)
+			Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", vmPubSpecName)
+			Expect(input.LinuxVMName).ToNot(BeEmpty(), "Invalid argument. input.LinuxVMName can't be empty when calling %s spec", vmPubSpecName)
+			Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", vmPubSpecName)
 
 			wcpClient = input.WCPClient
 			config = input.Config

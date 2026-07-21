@@ -69,7 +69,7 @@ type InstanceVolumeClaimVolumeSource struct {
 	Size resource.Quantity `json:"size"`
 }
 
-// +kubebuilder:validation:Enum=Classic;Managed
+// +kubebuilder:validation:Enum=Classic;Managed;VirtualMachineSnapshotDisk
 
 // VirtualMachineVolumeType describes the type of a VirtualMachine volume.
 type VirtualMachineVolumeType string
@@ -83,6 +83,9 @@ const (
 	// VirtualMachineStorageDiskTypeManaged describes a managed virtual disk,
 	// such as persistent volumes.
 	VirtualMachineStorageDiskTypeManaged VirtualMachineVolumeType = "Managed"
+
+	// VirtualMachineStorageDiskTypeVirtualMachineSnapshotDisk describes a virtual disk derived from a VirtualMachineSnapshot.
+	VirtualMachineStorageDiskTypeVirtualMachineSnapshotDisk VirtualMachineVolumeType = "VirtualMachineSnapshotDisk"
 )
 
 type VirtualMachineVolumeCryptoStatus struct {

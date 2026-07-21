@@ -328,19 +328,24 @@ func WaitForBootDiskPVC(
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, vmName string,
-) string {
+) (string, *vmopv1.VirtualMachine) {
 	By("Waiting on virtual machine conditions to become true")
 	for _, condition := range []metav1.Condition{
-		{Type: "VirtualMachineUnmanagedVolumesBackfilled", Status: metav1.ConditionTrue},
-		{Type: "VirtualMachineUnmanagedVolumesRegistered", Status: metav1.ConditionTrue},
+		{Type: consts.VMUnmanagedVolumesBackfilledCondition, Status: metav1.ConditionTrue},
+		{Type: consts.VMUnmanagedVolumesRegisteredCondition, Status: metav1.ConditionTrue},
 	} {
 		WaitOnVirtualMachineCondition(ctx, config, client, ns, vmName, condition)
 	}
 
 	By("Waiting for the boot disk to be promoted to a PVC")
-	var bootDiskVolName string
+	var (
+		bootDiskVolName string
+		vm              *vmopv1.VirtualMachine
+	)
+
 	Eventually(func(g Gomega) bool {
-		vm, err := utils.GetVirtualMachineA5(ctx, client, ns, vmName)
+		var err error
+		vm, err = utils.GetVirtualMachine(ctx, client, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry due to: %v", err)
 			return false
@@ -360,7 +365,7 @@ func WaitForBootDiskPVC(
 	}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
 		Should(BeTrue(), "Timed out waiting for boot disk to be found in spec.volumes")
 
-	return bootDiskVolName
+	return bootDiskVolName, vm
 }
 
 // Utility function to ensure that a VirtualMachine is deleted.

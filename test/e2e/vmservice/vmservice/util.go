@@ -817,22 +817,15 @@ func decodeGzipBase64(encoded string) (string, error) {
 // in the VM's ExtraConfig.
 func WaitForBackupToComplete(
 	ctx context.Context,
-	vm *vmopv1.VirtualMachine,
+	vmName string,
+	vmNamespace string,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
-) {
+) *vmopv1.VirtualMachine {
 	By("Waiting for backup to complete for all PVCs")
 
-	// If AllDisksArePVC is not enabled, then we end up waiting forever.
-	asyncSVFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, clusterProxy.GetClient())
-	Expect(err).ToNot(HaveOccurred())
-	if utils.IsSupervisorCapabilityEnabled(ctx, clusterProxy.GetClientSet(), clusterProxy.GetDynamicClient(),
-		consts.AllDisksArePVCapabilityName, asyncSVFSSEnabled) {
-		vmoperator.WaitForBootDiskPVC(ctx, config, clusterProxy.GetClient(), vm.Namespace, vm.Name)
-		Expect(clusterProxy.GetClient().Get(ctx,
-			ctrlclient.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}, vm)).
-			To(Succeed(), "failed to re-fetch VM after boot disk backfill")
-	}
+	var vm *vmopv1.VirtualMachine
+	_, vm = vmoperator.WaitForBootDiskPVC(ctx, config, clusterProxy.GetClient(), vmNamespace, vmName)
 
 	// Get list of PVC names from VM spec
 	expectedPVCNames := make(map[string]struct{})
@@ -846,7 +839,7 @@ func WaitForBackupToComplete(
 	// If there are no PVCs, no need to wait
 	if len(expectedPVCNames) == 0 {
 		framework.Logf("No PVCs found in VM spec, skipping backup wait")
-		return
+		return vm
 	}
 
 	framework.Logf("Expected PVCs to be backed up: %v", strings.Join(slices.Collect(maps.Keys(expectedPVCNames)), ", "))
@@ -917,6 +910,8 @@ func WaitForBackupToComplete(
 
 		return true
 	}, config.GetIntervals("default", "wait-backup-to-complete")...).Should(BeTrue(), "backup did not complete for all PVCs")
+
+	return vm
 }
 
 // UnregisterPVCVolumes unregisters all PVCs in the provided list using CnsUnregisterVolume.
@@ -1011,11 +1006,12 @@ func DeleteVMResource(
 	svClusterClient ctrlclient.Client) string {
 	By("Get VM before powering off")
 
-	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-	Expect(err).ToNot(HaveOccurred())
+	var (
+		err error
+	)
 
 	// Wait for backup to complete before powering off and deleting the VM
-	WaitForBackupToComplete(ctx, vm, clusterProxy, config)
+	vm := WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config)
 
 	// When AllDisksArePVCs is enabled, the CSI driver takes a VM snapshot
 	// while registering the boot VMDK as an FCD. If that snapshot is still
@@ -1030,8 +1026,7 @@ func DeleteVMResource(
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
 	By("Add the pause annotation to VM")
-	vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-	Expect(err).ToNot(HaveOccurred())
+
 	base := vm.DeepCopy()
 	metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 	Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())

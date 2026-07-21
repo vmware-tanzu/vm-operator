@@ -408,21 +408,52 @@ func intgTestsReconcile() {
 
 					svcKey := client.ObjectKeyFromObject(vmService)
 					svc := &corev1.Service{}
-				Consistently(func(g Gomega) {
-					err := ctx.Client.Get(ctx, svcKey, svc)
-					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-				}, "3s").Should(Succeed())
+					Consistently(func(g Gomega) {
+						err := ctx.Client.Get(ctx, svcKey, svc)
+						g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					}, "3s").Should(Succeed())
 				})
 			})
 		})
 
-		Context("Reconciles after VirtualMachineService after VMs labels no longer match", func() {
+		Context("Reconciles after a VM's Endpoints-relevant fields change", func() {
 			BeforeEach(func() {
 				vmServiceName = "test-vm-service-unmatched-vm"
 			})
 
-			// The VM mapping function needs to be fixed for this to work.
-			XIt("Simulate workflow", func() {
+			// Each By below exercises one of the conditions checked by
+			// virtualMachineEndpointsChanged(): label changes, deletion,
+			// primary IP changes, readiness probe presence, and the Ready
+			// condition status.
+			It("Simulate workflow", func() {
+				vmService := &vmopv1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      vmServiceName,
+						Namespace: ctx.Namespace,
+					},
+					Spec: vmopv1.VirtualMachineServiceSpec{
+						Type:       vmopv1.VirtualMachineServiceTypeLoadBalancer,
+						Ports:      []vmopv1.VirtualMachineServicePort{vmServicePort},
+						Selector:   selector,
+						IPFamilies: []corev1.IPFamily{corev1.IPv4Protocol},
+					},
+				}
+
+				objKey := client.ObjectKeyFromObject(vmService)
+
+				By("Create VirtualMachineService", func() {
+					Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
+				})
+
+				By("Underlying Service and Endpoints should be created", func() {
+					Eventually(func(g Gomega) {
+						service := &corev1.Service{}
+						g.Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+					}).Should(Succeed())
+				})
+
 				readyVM := &vmopv1.VirtualMachine{}
 				By("Create ready VM with selected labels", func() {
 					readyVM = &vmopv1.VirtualMachine{
@@ -444,25 +475,6 @@ func intgTestsReconcile() {
 					Expect(ctx.Client.Status().Update(ctx, readyVM)).To(Succeed())
 				})
 
-				vmService := &vmopv1.VirtualMachineService{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      vmServiceName,
-						Namespace: ctx.Namespace,
-					},
-					Spec: vmopv1.VirtualMachineServiceSpec{
-						Type:       vmopv1.VirtualMachineServiceTypeLoadBalancer,
-						Ports:      []vmopv1.VirtualMachineServicePort{vmServicePort},
-						Selector:   selector,
-						IPFamilies: []corev1.IPFamily{corev1.IPv4Protocol},
-					},
-				}
-
-				objKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
-
-				By("Create VirtualMachineService", func() {
-					Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
-				})
-
 				By("Ready VM should be added to Endpoints", func() {
 					endpoints := &corev1.Endpoints{}
 					Eventually(func(g Gomega) {
@@ -474,10 +486,8 @@ func intgTestsReconcile() {
 					Expect(subsets).To(HaveLen(1))
 
 					subset := subsets[0]
-					Expect(subset.Addresses).To(HaveLen(1))
-
-					address := subset.Addresses[0]
-					Expect(address.IP).To(Equal(readyVM.Status.Network.PrimaryIP4))
+					Expect(subset.Addresses).To(ConsistOf(HaveField("IP", readyVM.Status.Network.PrimaryIP4)))
+					Expect(subset.NotReadyAddresses).To(BeEmpty())
 
 					Expect(subset.Ports).To(HaveLen(1))
 					port := subset.Ports[0]
@@ -486,17 +496,115 @@ func intgTestsReconcile() {
 					Expect(port.Protocol).To(BeEquivalentTo(corev1.ProtocolTCP))
 				})
 
-				By("Change VM Labels so it no longer matches selector", func() {
+				By("VM's labels no longer matching the selector removes it from Endpoints", func() {
 					readyVM.Labels = map[string]string{"some-other": "label"}
 					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
-				})
 
-				By("VM should be removed from Endpoints", func() {
-					endpoints := &corev1.Endpoints{}
 					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
 						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
 						g.Expect(endpoints.Subsets).To(BeEmpty())
 					}).Should(Succeed())
+				})
+
+				By("VM's labels matching the selector again adds it back to Endpoints", func() {
+					readyVM.Labels = vmLabels
+					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						g.Expect(endpoints.Subsets[0].Addresses).To(ConsistOf(HaveField("IP", vmIP1)))
+					}).Should(Succeed())
+				})
+
+				By("VM's primary IP changing updates its Endpoints address", func() {
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(readyVM), readyVM)).To(Succeed())
+					readyVM.Status.Network.PrimaryIP4 = vmIP2
+					Expect(ctx.Client.Status().Update(ctx, readyVM)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						g.Expect(endpoints.Subsets[0].Addresses).To(ConsistOf(HaveField("IP", vmIP2)))
+					}).Should(Succeed())
+				})
+
+				By("VM's Ready condition becoming False moves it to NotReadyAddresses", func() {
+					conditions.MarkFalse(readyVM, vmopv1.ReadyConditionType, "not_ready", "VM should be not ready")
+					Expect(ctx.Client.Status().Update(ctx, readyVM)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						g.Expect(endpoints.Subsets[0].Addresses).To(BeEmpty())
+						g.Expect(endpoints.Subsets[0].NotReadyAddresses).To(ConsistOf(HaveField("IP", vmIP2)))
+					}).Should(Succeed())
+				})
+
+				By("Removing the VM's readiness probe marks it ready regardless of the Ready condition", func() {
+					readyVM.Spec.ReadinessProbe = nil
+					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						g.Expect(endpoints.Subsets[0].Addresses).To(ConsistOf(HaveField("IP", vmIP2)))
+						g.Expect(endpoints.Subsets[0].NotReadyAddresses).To(BeEmpty())
+					}).Should(Succeed())
+				})
+
+				By("Adding a readiness probe back marks the VM not ready again", func() {
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(readyVM), readyVM)).To(Succeed())
+					readyVM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+					}
+					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						g.Expect(endpoints.Subsets[0].Addresses).To(BeEmpty())
+						g.Expect(endpoints.Subsets[0].NotReadyAddresses).To(ConsistOf(HaveField("IP", vmIP2)))
+					}).Should(Succeed())
+				})
+
+				By("VM's Ready condition becoming True adds it back to Addresses", func() {
+					conditions.MarkTrue(readyVM, vmopv1.ReadyConditionType)
+					Expect(ctx.Client.Status().Update(ctx, readyVM)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(HaveLen(1))
+						g.Expect(endpoints.Subsets[0].Addresses).To(ConsistOf(HaveField("IP", vmIP2)))
+						g.Expect(endpoints.Subsets[0].NotReadyAddresses).To(BeEmpty())
+					}).Should(Succeed())
+				})
+
+				By("VM being marked for deletion removes it from Endpoints", func() {
+					// Add a finalizer so the VM is only marked for deletion (its
+					// DeletionTimestamp is set) rather than immediately removed,
+					// mirroring how the VirtualMachine controller's finalizer
+					// behaves in practice.
+					readyVM.Finalizers = append(readyVM.Finalizers, "dummy.test.finalizer")
+					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
+					Expect(ctx.Client.Delete(ctx, readyVM)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						endpoints := &corev1.Endpoints{}
+						g.Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+						g.Expect(endpoints.Subsets).To(BeEmpty())
+					}).Should(Succeed())
+
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(readyVM), readyVM)).To(Succeed())
+					readyVM.Finalizers = nil
+					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
 				})
 			})
 		})

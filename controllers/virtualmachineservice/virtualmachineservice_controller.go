@@ -7,6 +7,7 @@ package virtualmachineservice
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -16,10 +17,12 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -72,7 +75,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Watches(&corev1.Endpoints{},
 			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &vmopv1.VirtualMachineService{})).
 		Watches(&vmopv1.VirtualMachine{},
-			handler.EnqueueRequestsFromMapFunc(r.virtualMachineToVirtualMachineServiceMapper())).
+			r.virtualMachineToVirtualMachineServiceHandler()).
 		Complete(r)
 }
 
@@ -294,28 +297,168 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualM
 	return nil
 }
 
-// virtualMachineToVirtualMachineServiceMapper returns a mapper function that returns reconcile requests for
-// VirtualMachineServices that select a given VM via label selectors.
-// TODO: The VM's labels could have been changed so this should also return VirtualMachineServices that the
-// VM is currently an Endpoint for, because otherwise the VM won't be removed in a timely manner.
-func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper() func(_ context.Context, o client.Object) []reconcile.Request {
-	return func(_ context.Context, o client.Object) []reconcile.Request {
-		vm := o.(*vmopv1.VirtualMachine)
+// virtualMachineToVirtualMachineServiceHandler returns an event handler that
+// enqueues the VirtualMachineServices whose label selector matches a given
+// VirtualMachine.
+//
+// On update, a VM's labels may have changed such that it now matches a
+// different set of VirtualMachineServices than it did before. To ensure a VM is
+// promptly removed from the Endpoints of a VirtualMachineService it no longer
+// matches, the update handler enqueues the union of the VirtualMachineServices
+// that matched the VM's previous labels and those that match its current
+// labels. This mirrors how the core Kubernetes endpoints controller reacts to
+// Pod updates (it computes the service memberships of both the old and new Pod
+// and reconciles the combined set).
+//
+// Recomputing service memberships on every VirtualMachine event would be
+// wasteful because a VM is updated for many reasons unrelated to its Endpoints.
+// The update handler therefore skips the lookup entirely unless a change
+// relevant to the Endpoints occurred; see virtualMachineEndpointsChanged.
+func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceHandler() handler.EventHandler {
+	return handler.Funcs{
+		CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if vm, ok := e.Object.(*vmopv1.VirtualMachine); ok {
+				r.enqueueVirtualMachineServicesSelectingVM(ctx, vm, q)
+			}
+		},
+		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			oldVM, ok := e.ObjectOld.(*vmopv1.VirtualMachine)
+			if !ok {
+				return
+			}
+			newVM, ok := e.ObjectNew.(*vmopv1.VirtualMachine)
+			if !ok {
+				return
+			}
 
-		reconcileRequests, err := r.getVirtualMachineServicesSelectingVirtualMachine(context.Background(), vm)
-		if err != nil {
-			return nil
+			changed, labelsChanged := virtualMachineEndpointsChanged(oldVM, newVM)
+			if !changed {
+				return
+			}
+
+			// When the labels have changed, reconcile the services that the VM
+			// previously selected so the VM is removed from services it no longer
+			// selects, in addition to the services it now selects.
+			if labelsChanged {
+				r.enqueueVirtualMachineServicesSelectingLabelSets(ctx, newVM.Namespace, q, oldVM.Labels, newVM.Labels)
+			} else {
+				r.enqueueVirtualMachineServicesSelectingVM(ctx, newVM, q)
+			}
+		},
+		DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if vm, ok := e.Object.(*vmopv1.VirtualMachine); ok {
+				r.enqueueVirtualMachineServicesSelectingVM(ctx, vm, q)
+			}
+		},
+		GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if vm, ok := e.Object.(*vmopv1.VirtualMachine); ok {
+				r.enqueueVirtualMachineServicesSelectingVM(ctx, vm, q)
+			}
+		},
+	}
+}
+
+// enqueueVirtualMachineServicesSelectingVM enqueues a reconcile request for
+// every VirtualMachineService whose label selector matches the given
+// VirtualMachine's labels.
+func (r *ReconcileVirtualMachineService) enqueueVirtualMachineServicesSelectingVM(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+
+	if len(vm.Labels) != 0 {
+		r.enqueueVirtualMachineServicesSelectingLabelSets(ctx, vm.Namespace, q, vm.Labels)
+	}
+}
+
+// enqueueVirtualMachineServicesSelectingLabelSets lists the
+// VirtualMachineServices in ns once and enqueues a reconcile request for each
+// whose selector matches any of the given label sets.
+func (r *ReconcileVirtualMachineService) enqueueVirtualMachineServicesSelectingLabelSets(
+	ctx context.Context,
+	ns string,
+	q workqueue.TypedRateLimitingInterface[reconcile.Request],
+	labelSets ...map[string]string) {
+
+	vmServiceList := &vmopv1.VirtualMachineServiceList{}
+	if err := r.List(ctx, vmServiceList, client.InNamespace(ns)); err != nil {
+		pkglog.FromContextOrDefault(ctx).Error(err, "Failed to list VirtualMachineServices")
+		return
+	}
+
+	for _, vmService := range vmServiceList.Items {
+		if len(vmService.Spec.Selector) == 0 {
+			continue
 		}
 
-		if len(reconcileRequests) != 0 && r.log.V(4).Enabled() {
-			logger := r.log.WithValues("VirtualMachine", client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name})
-			for _, r := range reconcileRequests {
-				logger.V(4).Info("Generating reconcile request for VM Service due to event on VM", "VirtualMachineService", r.NamespacedName)
+		selector := labels.SelectorFromValidatedSet(vmService.Spec.Selector)
+		for _, l := range labelSets {
+			if len(l) != 0 && selector.Matches(labels.Set(l)) {
+				q.Add(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&vmService)})
+				break
 			}
 		}
-
-		return reconcileRequests
 	}
+}
+
+// virtualMachineEndpointsChanged returns true if the difference between the old
+// and new VirtualMachine could affect the Endpoints of any VirtualMachineService.
+// The second bool return is true if the labels has changed, since that requires
+// reconciling the services that might no longer select the VM.
+func virtualMachineEndpointsChanged(oldVM, newVM *vmopv1.VirtualMachine) (bool, bool) {
+	// VM's changed labels may select different services.
+	if !maps.Equal(oldVM.Labels, newVM.Labels) {
+		return true, true
+	}
+
+	// VM's being deleted are not included in the ready Endpoints.
+	if oldVM.DeletionTimestamp.IsZero() != newVM.DeletionTimestamp.IsZero() {
+		return true, false
+	}
+
+	// We don't have the Service at this point so we don't know which IP families
+	// it cares about, but IPs changing is not an expected common occurrence so
+	// reconcile if either changes.
+	oldIP4, oldIP6 := virtualMachinePrimaryIPs(oldVM)
+	newIP4, newIP6 := virtualMachinePrimaryIPs(newVM)
+	if oldIP4 != newIP4 || oldIP6 != newIP6 {
+		return true, false
+	}
+
+	// The Ready condition mirrors probe results but is not cleared when the
+	// probe itself is removed, so a probe being added or removed must be
+	// compared directly rather than relying solely on the condition.
+	if virtualMachineHasReadinessProbe(oldVM) != virtualMachineHasReadinessProbe(newVM) {
+		return true, false
+	}
+
+	// The VM's Readiness probe (if it had/has one) will update the ready condition.
+	return virtualMachineReadyStatus(oldVM) != virtualMachineReadyStatus(newVM), false
+}
+
+// virtualMachineHasReadinessProbe returns whether the VM has a configured
+// readiness probe that generateSubsetsForService uses to gate readiness.
+func virtualMachineHasReadinessProbe(vm *vmopv1.VirtualMachine) bool {
+	probe := vm.Spec.ReadinessProbe
+	return probe != nil && (probe.TCPSocket != nil || probe.GuestHeartbeat != nil || len(probe.GuestInfo) != 0)
+}
+
+// virtualMachinePrimaryIPs returns the VM's primary IPv4 and IPv6 addresses.
+func virtualMachinePrimaryIPs(vm *vmopv1.VirtualMachine) (ip4, ip6 string) {
+	if vm.Status.Network != nil {
+		ip4 = vm.Status.Network.PrimaryIP4
+		ip6 = vm.Status.Network.PrimaryIP6
+	}
+	return ip4, ip6
+}
+
+// virtualMachineReadyStatus returns the status of the VM's Ready condition, or
+// the empty string if the condition is not present.
+func virtualMachineReadyStatus(vm *vmopv1.VirtualMachine) metav1.ConditionStatus {
+	if c := pkgcond.Get(vm, vmopv1.ReadyConditionType); c != nil {
+		return c.Status
+	}
+	return ""
 }
 
 // Set labels and annotations on the Service from the VirtualMachineService. Some load balancer
@@ -545,37 +688,6 @@ func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
 	return vmToSubsetsMap
 }
 
-func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(
-	ctx context.Context,
-	lookupVM *vmopv1.VirtualMachine) ([]reconcile.Request, error) {
-
-	if len(lookupVM.Labels) == 0 {
-		return nil, nil
-	}
-
-	vmServiceList := &vmopv1.VirtualMachineServiceList{}
-	err := r.List(ctx, vmServiceList, client.InNamespace(lookupVM.Namespace))
-	if err != nil {
-		return nil, err
-	}
-
-	var matchingVMServices []reconcile.Request
-	vmLabels := labels.Set(lookupVM.Labels)
-
-	for _, vmService := range vmServiceList.Items {
-		if len(vmService.Spec.Selector) != 0 {
-			sel := labels.SelectorFromValidatedSet(vmService.Spec.Selector)
-			if sel.Matches(vmLabels) {
-				matchingVMServices = append(matchingVMServices, reconcile.Request{
-					NamespacedName: client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name},
-				})
-			}
-		}
-	}
-
-	return matchingVMServices, nil
-}
-
 // createOrUpdateEndpoints updates the Endpoints for VirtualMachineService.
 func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *pkgctx.VirtualMachineServiceContext, service *corev1.Service) error {
 	ctx.Logger.V(5).Info("Updating VirtualMachineService Endpoints")
@@ -662,19 +774,22 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		vm := vmList.Items[i]
 		logger := ctx.Logger.WithValues("virtualMachine", vm.NamespacedName())
 
+		// NOTE: Anything that is changed here may need to be reflected in
+		// virtualMachineEndpointsChanged(), so that the service is timely
+		// reconciled when the VM changes.
+
 		if !vm.DeletionTimestamp.IsZero() {
 			logger.Info("Skipping VM marked for deletion")
 			continue
 		}
 
 		var vmIPs []string
-		if vm.Status.Network != nil {
-			if vm.Status.Network.PrimaryIP4 != "" && allowedFamilies[corev1.IPv4Protocol] {
-				vmIPs = append(vmIPs, vm.Status.Network.PrimaryIP4)
-			}
-			if vm.Status.Network.PrimaryIP6 != "" && allowedFamilies[corev1.IPv6Protocol] {
-				vmIPs = append(vmIPs, vm.Status.Network.PrimaryIP6)
-			}
+		ipV4, ipV6 := virtualMachinePrimaryIPs(&vm)
+		if ipV4 != "" && allowedFamilies[corev1.IPv4Protocol] {
+			vmIPs = append(vmIPs, ipV4)
+		}
+		if ipV6 != "" && allowedFamilies[corev1.IPv6Protocol] {
+			vmIPs = append(vmIPs, ipV6)
 		}
 
 		if len(vmIPs) == 0 {
@@ -692,7 +807,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		// Otherwise, a VM that does not have a ReadinessProbe is implicitly ready.
 		ready := true
 
-		if probe := vm.Spec.ReadinessProbe; probe != nil && (probe.TCPSocket != nil || probe.GuestHeartbeat != nil || len(probe.GuestInfo) != 0) {
+		if virtualMachineHasReadinessProbe(&vm) {
 			if condition := pkgcond.Get(&vm, vmopv1.ReadyConditionType); condition == nil {
 				if vmInSubsetsMap == nil {
 					vmInSubsetsMap = r.getVMsReferencedByServiceEndpoints(ctx, service)

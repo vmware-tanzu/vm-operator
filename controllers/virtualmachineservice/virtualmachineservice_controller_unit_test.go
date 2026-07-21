@@ -26,7 +26,6 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -186,7 +185,7 @@ func unitTestsReconcile() {
 				Expect(ownerRefs).To(HaveLen(1))
 				ownerRef := ownerRefs[0]
 				Expect(ownerRef.Name).To(Equal(vmService.Name))
-				Expect(ownerRef.Controller).To(Equal(ptr.To(true)))
+				Expect(ownerRef.Controller).To(HaveValue(BeTrue()))
 			})
 
 			It("With Expected Spec", func() {
@@ -656,7 +655,7 @@ func unitTestsReconcile() {
 				Expect(ownerRefs).To(HaveLen(1))
 				ownerRef := ownerRefs[0]
 				Expect(ownerRef.Name).To(Equal(vmService.Name))
-				Expect(ownerRef.Controller).To(Equal(ptr.To(true)))
+				Expect(ownerRef.Controller).To(HaveValue(BeTrue()))
 			})
 
 			It("With Expected Annotations and Labels", func() {

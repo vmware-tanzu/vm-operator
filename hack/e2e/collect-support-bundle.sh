@@ -87,13 +87,28 @@ _jq() { jq -r "$@" "${TESTBED_INFO_JSON}"; }
 
 # ---------------------------------------------------------------------------
 # Parse vCenter credentials
-# Supports both VDS (.vc[] array) and VPC (.vc{} object) testbed shapes.
+# Supports both VDS (.vc[] array) and VPC (.vc{} object, keyed by runid)
+# testbed shapes; .vc[0] only works for the array shape, so pick the first
+# entry regardless of which shape is present.
 # vimUsername/vimPassword are SSO credentials required by the namespace-management
 # API; root is a local vCenter account that lacks namespace-management privileges.
+# Some testbed shapes (e.g. VPC) label the same SSO account plain
+# username/password instead of vimUsername/vimPassword, so fall back to those.
 # ---------------------------------------------------------------------------
-VC_IP="$(_jq '.vc[0].ip4 // .vc[0].ip // empty')"
-VC_VIM_USER="$(_jq '.vc[0].vimUsername // empty')"
-VC_VIM_PWD="$(_jq '.vc[0].vimPassword // empty')"
+IFS=$'\t' read -r VC_IP VC_VIM_USER VC_VIM_PWD < <(_jq '
+    def firstvc:
+      if (.vc | type) == "array" then .vc[0]
+      else (.vc | to_entries | sort_by(.key | tonumber) | .[0].value)
+      end;
+    # username/password fall back to the plain (non-"root") account when
+    # vimUsername/vimPassword are absent; never fall back to root itself.
+    def ssouser: firstvc.vimUsername // (if firstvc.username == "root" then empty else firstvc.username end);
+    [
+      firstvc.ip4 // firstvc.ip // "",
+      ssouser // "",
+      (if firstvc.vimUsername then firstvc.vimPassword else (if firstvc.username == "root" then empty else firstvc.password end) end) // ""
+    ] | @tsv
+')
 
 if [[ -z "${VC_IP}" || -z "${VC_VIM_USER}" || -z "${VC_VIM_PWD}" ]]; then
     _err "Could not extract VC IP or vim credentials from testbedInfo.json"

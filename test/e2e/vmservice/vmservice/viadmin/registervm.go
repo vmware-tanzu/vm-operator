@@ -57,6 +57,49 @@ import (
 
 const trueString = "true"
 
+// deleteSecretOrIgnore deletes the named Secret, ignoring a not-found error.
+func deleteSecretOrIgnore(ctx context.Context, c ctrlclient.Client, namespace, name string) {
+	_ = c.Delete(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+	})
+}
+
+// deletePVCOrIgnore deletes the named PersistentVolumeClaim, ignoring a not-found error.
+func deletePVCOrIgnore(ctx context.Context, c ctrlclient.Client, namespace, name string) {
+	_ = c.Delete(ctx, &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+	})
+}
+
+// deleteRegisteredVMAndPVCs deletes the VM and every PVC currently attached to it.
+// The register/restore flow attaches PVCs (named "restored-<hash>") that have no
+// ownerReference to the VM, so deleting the VM alone does not garbage collect them
+// and they otherwise leak for the lifetime of the shared e2e namespace.
+func deleteRegisteredVMAndPVCs(
+	ctx context.Context,
+	svClusterClient ctrlclient.Client,
+	clusterProxy *common.VMServiceClusterProxy,
+	namespace, vmName string,
+	vmYaml []byte) {
+
+	var pvcNames []string
+	if vm, err := utils.GetVirtualMachine(ctx, svClusterClient, namespace, vmName); err == nil {
+		for _, vol := range vm.Spec.Volumes {
+			if vol.PersistentVolumeClaim != nil {
+				pvcNames = append(pvcNames, vol.PersistentVolumeClaim.ClaimName)
+			}
+		}
+	}
+
+	_ = clusterProxy.DeleteWithArgs(ctx, vmYaml)
+
+	for _, name := range pvcNames {
+		_ = svClusterClient.Delete(ctx, &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		})
+	}
+}
+
 type VIAdminRegisterVMSpecInput struct {
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
 	Config           *config.E2EConfig
@@ -238,6 +281,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
 			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 
@@ -260,6 +304,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
 			// End create new VM
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -343,7 +388,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
 
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, len(existingVM.Spec.Volumes), clusterProxy, config, svClusterClient, wcpClient)
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})
 
@@ -364,10 +408,12 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
 			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 			pvcNameA := vmName + "-pvc-a"
 			testutils.AssertCreatePVC(svClusterClientSet, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
+			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameA)
 
 			vmParameters := manifestbuilders.VirtualMachineYaml{
 				Namespace:        input.WCPNamespaceName,
@@ -389,6 +435,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.
@@ -445,6 +492,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Create and attach another pvc to the VM.
 			pvcNameB := vmName + "-pvc-b"
 			testutils.AssertCreatePVC(svClusterClientSet, pvcNameB, input.WCPNamespaceName, resources.StorageClassName)
+			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameB)
 
 			// Use v1alpha3 here to make sure this doesn't blow up in product branches older than v1a5.
 			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", vmParameters.PVCNames))
@@ -534,7 +582,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// There should be two restored volumes: one from classic disk, and one for pvc-a since pvc-b was added after backup.
 			expectedRestoredPVCCount := 2
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, expectedRestoredPVCCount, clusterProxy, config, svClusterClient, wcpClient)
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})
 
@@ -599,6 +646,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
 			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 			vmParameters := manifestbuilders.VirtualMachineYaml{
@@ -620,6 +668,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
@@ -784,8 +833,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}, config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "Timed out waiting for success event")
 			By("Verify triggered alarm was cleared by success event")
 			Expect(triggeredAlarm()).To(BeNil())
-
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})
 
@@ -828,10 +875,12 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
 			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, vmNamespace, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 			pvcNameA := vmName + "-pvc-a"
 			testutils.AssertCreatePVC(svClusterClientSet, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
+			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, vmNamespace, pvcNameA)
 
 			vmParameters := manifestbuilders.VirtualMachineYaml{
 				Namespace:        vmNamespace,
@@ -853,6 +902,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, vmNamespace, vmName, vmYaml)
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.
@@ -1063,7 +1113,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// We can't use len(existingVM.Spec.Volumes) here because we are only restoring one disk.
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, 1, clusterProxy, config, svClusterClient, wcpClient)
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})
 }

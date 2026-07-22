@@ -33,6 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/kubernetes/test/e2e/framework"
 
@@ -1737,6 +1738,35 @@ func kubeCreateAlreadyExists(stderr []byte) bool {
 	return strings.Contains(s, "AlreadyExists") || strings.Contains(s, "already exists")
 }
 
+// runKubectlCreateWithRetry runs a kubectl create Command, retrying with exponential backoff
+// on transient failures (e.g. a dropped connection to the supervisor API server). Without this,
+// a single blip during SetupClusterRoleBindings aborts SynchronizedBeforeSuite and fails the
+// entire e2e run before a single spec has executed, forcing a full pipeline-level retry instead
+// of a cheap in-process one. Stops retrying as soon as the command succeeds or fails with
+// AlreadyExists, since the caller treats that as a non-fatal, already-satisfied outcome.
+func runKubectlCreateWithRetry(ctx context.Context, cmd *e2eframework.Command) (stderr []byte, err error) {
+	backoff := wait.Backoff{
+		Steps:    5,
+		Duration: 5 * time.Second,
+		Factor:   2,
+		Jitter:   0.1,
+	}
+
+	if pollErr := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		_, stderr, err = cmd.Run(ctx)
+		if err == nil || kubeCreateAlreadyExists(stderr) {
+			return true, nil
+		}
+		framework.Logf("kubectl create failed, retrying: %v\nstderr: %s", err, string(stderr))
+		return false, nil
+	}); pollErr != nil && err == nil {
+		// The command never got to run at all (e.g. context canceled before the first attempt).
+		err = pollErr
+	}
+
+	return stderr, err
+}
+
 // SetupClusterRoleBindings creates the necessary cluster role bindings for vm-operator e2e tests.
 // This replaces the Python logic from roles_helper.py that was called by gce2e_prerequisite.py.
 // It SSHes into the supervisor control plane as root to run kubectl with admin.conf, exactly as
@@ -1818,7 +1848,7 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 			e2eframework.WithArgs(createRoleArgs...),
 		)
 
-		_, stderr, err := createRoleCmd.Run(ctx)
+		stderr, err := runKubectlCreateWithRetry(ctx, createRoleCmd)
 		if err != nil {
 			if kubeCreateAlreadyExists(stderr) {
 				framework.Logf("Info: cluster role %q already exists, skipping create", role.Name)
@@ -1840,7 +1870,7 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 			e2eframework.WithArgs(createBindingArgs...),
 		)
 
-		_, stderr, err = createBindingCmd.Run(ctx)
+		stderr, err = runKubectlCreateWithRetry(ctx, createBindingCmd)
 		if err != nil {
 			if kubeCreateAlreadyExists(stderr) {
 				framework.Logf("Info: cluster role binding %q already exists, skipping create", role.Name)

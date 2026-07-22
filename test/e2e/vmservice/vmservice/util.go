@@ -1744,7 +1744,7 @@ func kubeCreateAlreadyExists(stderr []byte) bool {
 // entire e2e run before a single spec has executed, forcing a full pipeline-level retry instead
 // of a cheap in-process one. Stops retrying as soon as the command succeeds or fails with
 // AlreadyExists, since the caller treats that as a non-fatal, already-satisfied outcome.
-func runKubectlCreateWithRetry(ctx context.Context, cmd *e2eframework.Command) (stdout, stderr []byte, err error) {
+func runKubectlCreateWithRetry(ctx context.Context, cmd *e2eframework.Command) (stderr []byte, err error) {
 	backoff := wait.Backoff{
 		Steps:    5,
 		Duration: 5 * time.Second,
@@ -1753,7 +1753,7 @@ func runKubectlCreateWithRetry(ctx context.Context, cmd *e2eframework.Command) (
 	}
 
 	if pollErr := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
-		stdout, stderr, err = cmd.Run(ctx)
+		_, stderr, err = cmd.Run(ctx)
 		if err == nil || kubeCreateAlreadyExists(stderr) {
 			return true, nil
 		}
@@ -1764,7 +1764,7 @@ func runKubectlCreateWithRetry(ctx context.Context, cmd *e2eframework.Command) (
 		err = pollErr
 	}
 
-	return stdout, stderr, err
+	return stderr, err
 }
 
 // SetupClusterRoleBindings creates the necessary cluster role bindings for vm-operator e2e tests.
@@ -1848,7 +1848,7 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 			e2eframework.WithArgs(createRoleArgs...),
 		)
 
-		_, stderr, err := runKubectlCreateWithRetry(ctx, createRoleCmd)
+		stderr, err := runKubectlCreateWithRetry(ctx, createRoleCmd)
 		if err != nil {
 			if kubeCreateAlreadyExists(stderr) {
 				framework.Logf("Info: cluster role %q already exists, skipping create", role.Name)
@@ -1870,7 +1870,7 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 			e2eframework.WithArgs(createBindingArgs...),
 		)
 
-		_, stderr, err = runKubectlCreateWithRetry(ctx, createBindingCmd)
+		stderr, err = runKubectlCreateWithRetry(ctx, createBindingCmd)
 		if err != nil {
 			if kubeCreateAlreadyExists(stderr) {
 				framework.Logf("Info: cluster role binding %q already exists, skipping create", role.Name)

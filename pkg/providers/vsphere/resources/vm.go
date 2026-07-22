@@ -116,11 +116,15 @@ func (vm *VirtualMachine) Reconfigure(
 // vim.fault.SharedBusControllerNotSupported. vSphere never allows a
 // bus-sharing (Physical/Virtual) SCSI controller to be added to a VM that
 // has a snapshot, and the reverse -- taking a snapshot of a VM with such a
-// controller -- is also unsupported. This is a VM-wide, disk-mode-agnostic
-// restriction, distinct from the disk-level MultiWriter flag (see
-// vmopv1util.GetControllerSharingMode). Once a VM is in this state,
-// retrying the same reconfigure will fail identically forever, so callers
-// should stop requeuing instead of retrying in a tight loop.
+// controller -- is also unsupported:
+//   - https://knowledge.broadcom.com/external/article/314360
+//   - https://knowledge.broadcom.com/external/article/311074
+//
+// This is a VM-wide, disk-mode-agnostic restriction, distinct from the
+// disk-level MultiWriter flag (see vmopv1util.GetControllerSharingMode).
+// Once a VM is in this state, retrying the same reconfigure will fail
+// identically forever, so callers should stop requeuing instead of
+// retrying in a tight loop.
 func IsSharedBusControllerNotSupportedFault(err error) bool {
 	return fault.Is(err, &vimtypes.SharedBusControllerNotSupported{})
 }

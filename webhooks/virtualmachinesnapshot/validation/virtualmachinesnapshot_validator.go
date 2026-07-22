@@ -163,7 +163,9 @@ func (v validator) validateVMNotVKSNode(
 }
 
 // validateVMControllerSharingMode checks if the referenced VM has controller
-// with sharingMode that's not None.
+// with sharingMode that's not None. vSphere never allows a snapshot to be
+// taken of a VM with a bus-sharing (Physical/Virtual) SCSI controller:
+// https://knowledge.broadcom.com/external/article/311074
 func (v validator) validateVMControllerSharingMode(
 	vm vmopv1.VirtualMachine,
 	vmNameField *field.Path) field.ErrorList {
@@ -192,9 +194,10 @@ func (v validator) validateVMControllerSharingMode(
 // dependent-mode volume (Persistent/NonPersistent) with sharingMode
 // MultiWriter. vSphere does not support snapshotting a VM with such a
 // volume, because the snapshot's redo log can't be shared across
-// concurrent writers. Independent-mode MultiWriter volumes (e.g. OracleRAC,
-// which is always IndependentPersistent) are excluded from VM snapshots
-// entirely, so this restriction does not apply to them.
+// concurrent writers: https://knowledge.broadcom.com/external/article/383195
+// Independent-mode MultiWriter volumes (e.g. OracleRAC, which is always
+// IndependentPersistent) are excluded from VM snapshots entirely, so this
+// restriction does not apply to them.
 func (v validator) validateVMVolumeSharingMode(
 	vm vmopv1.VirtualMachine,
 	vmNameField *field.Path) field.ErrorList {

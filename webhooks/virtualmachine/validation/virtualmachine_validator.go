@@ -1918,8 +1918,9 @@ func (v validator) validateSharedVolumesOrControllers(
 	if vm.Status.CurrentSnapshot != nil {
 		// A MultiWriter disk only conflicts with a snapshot when the disk
 		// uses a dependent mode (Persistent/NonPersistent): a snapshot's
-		// redo log can't be shared across concurrent writers. Independent
-		// disks (e.g. OracleRAC volumes, which are always
+		// redo log can't be shared across concurrent writers
+		// (https://knowledge.broadcom.com/external/article/383195).
+		// Independent disks (e.g. OracleRAC volumes, which are always
 		// IndependentPersistent) are excluded from VM snapshots entirely,
 		// so this restriction does not apply to them.
 		independentDiskMode := vol.DiskMode == vmopv1.VolumeDiskModeIndependentPersistent ||
@@ -1933,7 +1934,8 @@ func (v validator) validateSharedVolumesOrControllers(
 
 		// Bus-sharing (Physical/Virtual) SCSI controllers are a VM-wide
 		// restriction: vSphere never allows a bus-sharing controller to be
-		// added to a VM that has a snapshot, regardless of disk mode. The
+		// added to a VM that has a snapshot, regardless of disk mode
+		// (https://knowledge.broadcom.com/external/article/314360). The
 		// ReconfigVM_Task fails with vim.fault.SharedBusControllerNotSupported
 		// and vm-operator has no way to recover other than the snapshot
 		// being removed.

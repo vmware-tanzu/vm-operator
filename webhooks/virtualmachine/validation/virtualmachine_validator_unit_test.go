@@ -10568,6 +10568,40 @@ func commonCreateAndUpdateValidations(
 				},
 			),
 
+			Entry("should deny (not panic on) a WSFC volume with no controllerBusNumber set on a VM that has a snapshot",
+				testParams{
+					// Skip auto-assigning a controllerBusNumber so the
+					// default WSFC sharing mode (Physical, computed from
+					// ApplicationType alone) is exercised with a nil
+					// vol.ControllerBusNumber -- controllerShared must not
+					// dereference it.
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
+							Name: "snap-1",
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: nonEncryptedPVCName,
+										},
+									},
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+								DiskMode:        vmopv1.VolumeDiskModeIndependentPersistent,
+								ControllerType:  vmopv1.VirtualControllerTypeSCSI,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						"Controller with sharing mode Physical is not supported for a VM that has a snapshot",
+					),
+				},
+			),
+
 			Entry("should deny a Physical sharing-mode controller volume on a VM that has a snapshot",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

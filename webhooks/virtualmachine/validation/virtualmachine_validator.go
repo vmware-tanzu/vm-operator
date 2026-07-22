@@ -1940,9 +1940,14 @@ func (v validator) validateSharedVolumesOrControllers(
 		// and vm-operator has no way to recover other than the snapshot
 		// being removed.
 		if controllerShared {
+			var busNumber string
+			if vol.ControllerBusNumber != nil {
+				busNumber = strconv.Itoa(int(*vol.ControllerBusNumber))
+			}
+
 			allErrs = append(allErrs, field.Invalid(
 				volPath.Child("controllerBusNumber"),
-				fmt.Sprintf("%s:%d", vol.ControllerType, *vol.ControllerBusNumber),
+				fmt.Sprintf("%s:%s", vol.ControllerType, busNumber),
 				fmt.Sprintf("Controller with sharing mode %s is not supported for a VM that has a snapshot",
 					controllerSharingMode)))
 		}

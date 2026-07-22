@@ -98,8 +98,10 @@ func (vm *VirtualMachine) Reconfigure(
 		// localized message and all fault messages, skipping it when it's
 		// identical to err.Error() (e.g. when the fault has no additional
 		// FaultMessage detail) to avoid duplicating the same text twice.
-		if errMsg := taskutil.ErrorMessageFromTaskInfo(taskInfo); errMsg != "" && errMsg != err.Error() {
-			err = fmt.Errorf("%s: %w", errMsg, err)
+		if taskInfo != nil {
+			if errMsg := taskutil.ErrorMessageFromTaskInfo(taskInfo); errMsg != "" && errMsg != err.Error() {
+				err = fmt.Errorf("%s: %w", errMsg, err)
+			}
 		}
 
 		if IsSharedBusControllerNotSupportedFault(err) {

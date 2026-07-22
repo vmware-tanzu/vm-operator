@@ -1,3 +1,6 @@
+# Do not vendor a temp file used to mount into a claude container.
+.git.claude
+
 # Only vendor the net-op CRDs that we need.
 config/crd/external-crds/netoperator.vmware.com_*
 !config/crd/external-crds/netoperator.vmware.com_networkinterfaces.yaml

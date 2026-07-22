@@ -24,6 +24,7 @@ var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
 func TestWebhook(t *testing.T) {
 	pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
 		config.Features.VMSharedDisks = true
+		config.Features.VirtualMachineConfigPolicy = true
 		config.BuildVersion = testBuildVersion // Match annotations set in test VMs
 	})
 

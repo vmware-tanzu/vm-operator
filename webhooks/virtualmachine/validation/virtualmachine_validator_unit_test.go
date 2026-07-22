@@ -10537,7 +10537,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					validate: doValidateWithMsg(
-						"MultiWriter disk sharing is not supported for a dependent-mode volume on a VM that has a snapshot",
+						`spec.volumes[0].sharingMode: Invalid value: "MultiWriter": MultiWriter disk sharing is not supported for a dependent-mode volume on a VM that has a snapshot`,
 					),
 				},
 			),
@@ -10597,7 +10597,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					validate: doValidateWithMsg(
-						"Controller with sharing mode Physical is not supported for a VM that has a snapshot",
+						`spec.volumes[0].controllerBusNumber: Invalid value: "SCSI:": Controller with sharing mode Physical is not supported for a VM that has a snapshot`,
 					),
 				},
 			),
@@ -10632,7 +10632,7 @@ func commonCreateAndUpdateValidations(
 						}
 					},
 					validate: doValidateWithMsg(
-						"Controller with sharing mode Physical is not supported for a VM that has a snapshot",
+						`spec.volumes[0].controllerBusNumber: Invalid value: "SCSI:0": Controller with sharing mode Physical is not supported for a VM that has a snapshot`,
 					),
 				},
 			),

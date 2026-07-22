@@ -48,6 +48,7 @@ import (
 const (
 	poweredOnState  = "PoweredOn"
 	poweredOffState = "PoweredOff"
+	suspendedState  = "Suspended"
 )
 
 type VMSpecInput struct {
@@ -383,6 +384,38 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		e2eframework.Logf("Updating the VM's PowerState to '%v'", vmParameters.PowerState)
 		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to power-off virtualmachine", string(vmYaml))
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+	})
+
+	Context("when suspending a VM", Label("core-functional", "experimental"), func() {
+		BeforeEach(func() {
+			By("Creating a powered on VirtualMachine to suspend")
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        input.WCPNamespaceName,
+				Name:             vmName,
+				ImageName:        linuxVMIName,
+				VMClassName:      clusterResources.VMClassName,
+				StorageClassName: clusterResources.StorageClassName,
+				ResourcePolicy:   clusterResources.VMResourcePolicyName,
+				PowerState:       poweredOnState,
+			}
+			vmYaml = manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOnState)
+
+			// Wait for the guest to obtain an IP so that VMware Tools is running
+			// and can service graceful (Soft / TrySoft) suspend requests.
+			vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		})
+
+		DescribeTable("Should suspend and resume a VM using the configured suspend mode",
+			func(suspendMode vmopv1.VirtualMachinePowerOpMode) {
+				suspendAndResumeVirtualMachine(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, suspendMode)
+			},
+			Entry("using Hard suspend mode", vmopv1.VirtualMachinePowerOpModeHard),
+			Entry("using Soft suspend mode", vmopv1.VirtualMachinePowerOpModeSoft),
+			Entry("using TrySoft suspend mode", vmopv1.VirtualMachinePowerOpModeTrySoft),
+		)
 	})
 
 	It("Should create expected resources for a VirtualMachine on Namespaces recreated with identical names", func() {
@@ -1329,4 +1362,35 @@ func verifyCdromConnectionState(
 	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "VM CD-ROM did not have expected connection state")
 
 	return cdrom
+}
+
+// suspendAndResumeVirtualMachine suspends the VM by patching its
+// spec.suspendMode and spec.powerState to Suspended, waits for it to reach the
+// suspended power state, then resumes it by patching spec.powerState back to
+// PoweredOn and waits for it to power on again.
+func suspendAndResumeVirtualMachine(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	client ctrlclient.Client,
+	ns, vmName string,
+	suspendMode vmopv1.VirtualMachinePowerOpMode) {
+
+	By(fmt.Sprintf("Suspending the VirtualMachine using %q suspend mode", suspendMode))
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+	Expect(err).NotTo(HaveOccurred())
+	vmPatch := vm.DeepCopy()
+	vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+	vmPatch.Spec.SuspendMode = suspendMode
+	Expect(client.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+		"failed to patch VM %s to suspended power state", vmName)
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, client, ns, vmName, suspendedState)
+
+	By("Resuming the VirtualMachine by powering it back on")
+	vm, err = utils.GetVirtualMachine(ctx, client, ns, vmName)
+	Expect(err).NotTo(HaveOccurred())
+	vmPatch = vm.DeepCopy()
+	vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+	Expect(client.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
+		"failed to patch VM %s to powered on power state", vmName)
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, client, ns, vmName, poweredOnState)
 }

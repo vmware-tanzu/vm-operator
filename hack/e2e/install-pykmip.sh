@@ -14,11 +14,16 @@ set -x
 # the same cert via govc kms.trust, preventing a race where containers push
 # different certs and PyKMIP ends up serving a cert that vCenter no longer
 # trusts.
-if [ ! -e /root/pykmip-crt.pem ] ; then
+# flock serializes this block across parallel SSH sessions so only one
+# openssl invocation runs on a fresh gateway. The second runner blocks until
+# the lock is released, then the inner [ -e ] exits early without regenerating
+# the cert — guaranteeing both runners share the same matched cert+key pair.
+flock -x /root/pykmip.lock bash -c '
+  [ -e /root/pykmip-crt.pem ] && exit 0
   openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
           -subj "/C=US/ST=CA/L=PA/O=Broadcom/OU=VCF/CN=pykmip" \
           -keyout /root/pykmip-key.pem -out /root/pykmip-crt.pem
-fi
+'
 
 # VDS/photon:
 #  server == /usr/bin/pykmip-server

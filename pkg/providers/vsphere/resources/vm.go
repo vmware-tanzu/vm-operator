@@ -95,8 +95,10 @@ func (vm *VirtualMachine) Reconfigure(
 		// When a task fails, WaitForResult returns an error that contains the
 		// LocalizedMessage, but taskInfo.Error contains the full fault details.
 		// Extract a comprehensive error message that includes both the
-		// localized message and all fault messages.
-		if errMsg := taskutil.ErrorMessageFromTaskInfo(taskInfo); errMsg != "" {
+		// localized message and all fault messages, skipping it when it's
+		// identical to err.Error() (e.g. when the fault has no additional
+		// FaultMessage detail) to avoid duplicating the same text twice.
+		if errMsg := taskutil.ErrorMessageFromTaskInfo(taskInfo); errMsg != "" && errMsg != err.Error() {
 			err = fmt.Errorf("%s: %w", errMsg, err)
 		}
 

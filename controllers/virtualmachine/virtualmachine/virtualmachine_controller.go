@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -75,6 +76,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
 	)
+
+	// Set up field index for VirtualMachine by ClaimName to efficiently query VMs
+	// referencing a PVC. This index is also used by the batch controller.
+	if err := kubeutil.IndexVMSpecVolumesPVCs(ctx, mgr); err != nil {
+		return err
+	}
 
 	proberManager, err := prober.AddToManager(ctx, mgr, ctx.VMProvider)
 	if err != nil {
@@ -220,6 +227,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			)
 		}
 	}
+
+	builder = builder.WatchesRawSource(source.Kind(
+		mgr.GetCache(),
+		&corev1.PersistentVolumeClaim{},
+		handler.TypedEnqueueRequestsFromMapFunc(
+			vmopv1util.PVCToVirtualMachineVolumeClaimNameMapper(ctx, r.Client),
+		),
+	))
 
 	// Watch CnsNodeVMBatchAttachment in order to account for the volume
 	// registration race outlined/fixed in

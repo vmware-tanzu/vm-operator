@@ -528,12 +528,15 @@ func PVCToVirtualMachineVolumeClaimNameMapper(
 			WithValues("name", pvc.Name, "namespace", pvc.Namespace)
 		logger.V(4).Info("Reconciling VMs by ClaimName due to PVC event")
 
+		// TODO(BMV): Can't use VMSpecVolumesPVCsIndexKey due to import cycles.
+		const key = "spec.volumes.persistentVolumeClaim.claimName"
+
 		list := &vmopv1.VirtualMachineList{}
 		err := k8sClient.List(
 			ctx,
 			list,
 			client.InNamespace(pvc.Namespace),
-			client.MatchingFields{"spec.volumes.persistentVolumeClaim.claimName": pvc.Name})
+			client.MatchingFields{key: pvc.Name})
 		if err != nil {
 			logger.Error(err, "Failed to list VirtualMachines by ClaimName for PVC")
 			return nil

@@ -31,6 +31,7 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -1277,7 +1278,6 @@ var _ = Describe("CnsNodeVMBatchAttachmentToVirtualMachineMapper", func() {
 var _ = Describe("PVCToVirtualMachineVolumeClaimNameMapper", func() {
 	const (
 		namespaceName = "fake"
-		fieldName     = "spec.volumes.persistentVolumeClaim.claimName"
 	)
 
 	var (
@@ -1363,17 +1363,8 @@ var _ = Describe("PVCToVirtualMachineVolumeClaimNameMapper", func() {
 			WithObjects(withObjs...).
 			WithIndex(
 				&vmopv1.VirtualMachine{},
-				fieldName,
-				func(rawObj ctrlclient.Object) []string {
-					vm := rawObj.(*vmopv1.VirtualMachine)
-					pvcs := make([]string, 0, len(vm.Spec.Volumes))
-					for _, volume := range vm.Spec.Volumes {
-						if pvc := volume.PersistentVolumeClaim; pvc != nil && pvc.ClaimName != "" {
-							pvcs = append(pvcs, pvc.ClaimName)
-						}
-					}
-					return pvcs
-				},
+				kubeutil.VMSpecVolumesPVCsIndexKey,
+				kubeutil.VMSpecVolumesPVCsIndexerFunc,
 			).
 			Build()
 	})

@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -484,6 +485,89 @@ func intgTestsReconcile() {
 					vm := getVirtualMachine(ctx, vmKey)
 					g.Expect(vm).NotTo(BeNil())
 					g.Expect(vm.Status.InstanceUUID).To(Equal(instanceUUID))
+				}).Should(Succeed())
+			})
+		})
+
+		It("Reconciles after PVC referenced by a volume is updated", func() {
+			const (
+				pvcName       = "dummy-pvc"
+				annotationKey = "dummy-annotation"
+			)
+
+			vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name: "my-volume",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: pvcName,
+							},
+						},
+					},
+				},
+			}
+
+			// Reflect the PVC's current annotation value onto the VM's
+			// status on every reconcile. Reconciles unrelated to the PVC
+			// (e.g. the VM's own create/requeue lifecycle churn) are
+			// harmless no-ops here since they just re-copy whatever the PVC
+			// currently holds -- unlike a call counter, there's nothing to
+			// race against or wait to "settle." What proves the PVC watch
+			// works is that this value can only ever advance to what the
+			// PVC is annotated with *after* the update below, and nothing
+			// else in this test can produce a reconcile at that point.
+			providerfake.SetCreateOrUpdateFunction(
+				ctx,
+				intgFakeVMProvider,
+				func(_ context.Context, vm *vmopv1.VirtualMachine) error {
+					conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+
+					pvc := &corev1.PersistentVolumeClaim{}
+					pvcKey := client.ObjectKey{Namespace: vm.Namespace, Name: pvcName}
+					if err := ctx.Client.Get(ctx, pvcKey, pvc); err == nil {
+						vm.Status.InstanceUUID = pvc.Annotations[annotationKey]
+					}
+					return nil
+				},
+			)
+
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+			// Wait for initial reconcile.
+			waitForVirtualMachineFinalizer(ctx, vmKey)
+
+			By("VirtualMachine should be reconciled", func() {
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).NotTo(BeNil())
+					g.Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+				}).Should(Succeed())
+			})
+
+			pvc := builder.DummyPersistentVolumeClaim()
+			pvc.Name = pvcName
+			pvc.Namespace = vm.Namespace
+			pvc.Annotations = map[string]string{annotationKey: "before-update"}
+			Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+			By("VirtualMachine should be reconciled due to PVC creation", func() {
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).NotTo(BeNil())
+					g.Expect(vm.Status.InstanceUUID).To(Equal("before-update"))
+				}).Should(Succeed())
+			})
+
+			By("Update the PVC", func() {
+				pvc.Annotations[annotationKey] = "after-update"
+				Expect(ctx.Client.Update(ctx, pvc)).To(Succeed())
+			})
+
+			By("VirtualMachine should be reconciled due to PVC update", func() {
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).NotTo(BeNil())
+					g.Expect(vm.Status.InstanceUUID).To(Equal("after-update"))
 				}).Should(Succeed())
 			})
 		})

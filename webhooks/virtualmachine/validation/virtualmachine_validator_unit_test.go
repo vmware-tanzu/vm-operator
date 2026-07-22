@@ -10515,6 +10515,118 @@ func commonCreateAndUpdateValidations(
 				},
 			),
 
+			Entry("should deny a dependent-mode MultiWriter volume on a VM that has a snapshot",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
+							Name: "snap-1",
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: nonEncryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+								DiskMode:    vmopv1.VolumeDiskModePersistent,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						"MultiWriter disk sharing is not supported for a dependent-mode volume on a VM that has a snapshot",
+					),
+				},
+			),
+
+			Entry("should allow an independent-mode MultiWriter volume (e.g. OracleRAC) on a VM that has a snapshot",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
+							Name: "snap-1",
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: nonEncryptedPVCName,
+										},
+									},
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								SharingMode:     vmopv1.VolumeSharingModeMultiWriter,
+								DiskMode:        vmopv1.VolumeDiskModeIndependentPersistent,
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should deny a Physical sharing-mode controller volume on a VM that has a snapshot",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
+							Name: "snap-1",
+						}
+						ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+							},
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: nonEncryptedPVCName,
+										},
+									},
+								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(0)),
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						"Controller with sharing mode Physical is not supported for a VM that has a snapshot",
+					),
+				},
+			),
+
+			Entry("should allow a non-shared volume on a VM that has a snapshot",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
+							Name: "snap-1",
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "test-volume",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: nonEncryptedPVCName,
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
 			Entry("should deny encrypted PVC with Physical controller sharing",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

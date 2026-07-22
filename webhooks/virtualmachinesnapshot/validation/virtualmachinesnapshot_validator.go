@@ -32,6 +32,7 @@ const (
 
 const (
 	errUnsupportedVMControllerSharingModeFmt = "controller type %s bus %d is using unsupported sharingMode for snapshot: %s"
+	errUnsupportedVMVolumeSharingModeFmt     = "volume %s is using unsupported sharingMode for snapshot: %s"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachinesnapshot,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinesnapshots,versions=v1alpha6,name=default.validating.virtualmachinesnapshot.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -187,6 +188,37 @@ func (v validator) validateVMControllerSharingMode(
 	return allErrs
 }
 
+// validateVMVolumeSharingMode checks if the referenced VM has a
+// dependent-mode volume (Persistent/NonPersistent) with sharingMode
+// MultiWriter. vSphere does not support snapshotting a VM with such a
+// volume, because the snapshot's redo log can't be shared across
+// concurrent writers. Independent-mode MultiWriter volumes (e.g. OracleRAC,
+// which is always IndependentPersistent) are excluded from VM snapshots
+// entirely, so this restriction does not apply to them.
+func (v validator) validateVMVolumeSharingMode(
+	vm vmopv1.VirtualMachine,
+	vmNameField *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	for _, vol := range vm.Spec.Volumes {
+		independentDiskMode := vol.DiskMode == vmopv1.VolumeDiskModeIndependentPersistent ||
+			vol.DiskMode == vmopv1.VolumeDiskModeIndependentNonPersistent
+
+		if vol.SharingMode == vmopv1.VolumeSharingModeMultiWriter && !independentDiskMode {
+			allErrs = append(allErrs,
+				field.NotSupported(vmNameField,
+					fmt.Sprintf(errUnsupportedVMVolumeSharingModeFmt,
+						vol.Name,
+						vol.SharingMode), []string{string(vmopv1.VolumeSharingModeNone)},
+				),
+			)
+		}
+	}
+
+	return allErrs
+}
+
 func (v validator) validateVMFields(
 	ctx *pkgctx.WebhookRequestContext,
 	vmName, namespace string,
@@ -220,6 +252,13 @@ func (v validator) validateVMFields(
 	// Check if the reference VM has controllers with unsupported sharingMode.
 	fieldErrs = append(fieldErrs,
 		v.validateVMControllerSharingMode(
+			vm,
+			vmNameField)...,
+	)
+
+	// Check if the reference VM has volumes with unsupported sharingMode.
+	fieldErrs = append(fieldErrs,
+		v.validateVMVolumeSharingMode(
 			vm,
 			vmNameField)...,
 	)

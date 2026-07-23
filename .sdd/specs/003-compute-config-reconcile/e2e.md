@@ -9,13 +9,13 @@ This document specifies the end-to-end test suite for this feature: the scenario
 ## Suite
 
 - `VMComputeConfigSpec`, in `test/e2e/vmservice/vmservice/virtualmachine/vm_compute_config.go`, registered from `test/e2e/vmservice/vmservice_test.go` under a `Context("VM-COMPUTE-CONFIG", ...)` block.
-- Every scenario carries `Label("compute-config", ...)` plus either `"core-functional"` or `"extended-functional"` — the latter for scenarios that need direct `govmomi` access (drift injection, out-of-band power operations, host-property lookups) and skip when that access isn't available.
+- Every scenario carries either `"core-functional"` or `"extended-functional"` — the latter for scenarios that need direct `govmomi` access (drift injection, out-of-band power operations, host-property lookups) and skip when that access isn't available. A feature-specific label like `"compute-config"` is unnecessary: `TEST_FOCUS="VM-COMPUTE-CONFIG"` already matches the `Context` name for the same filtering. Every scenario also carries `"experimental"` per `e2e-testing.md`, to be dropped once verified on a real Supervisor.
 - The suite requires two new wait-interval keys in `test/e2e/vmservice/config/wcp.yaml`: `default/wait-vm-compute-config-synced` (5m/10s) and `default/wait-vm-compute-config-powerstate` (3m/10s).
 - The suite requires a capability constant in `test/e2e/vmservice/consts/consts.go`: `TelcoVMServiceAPICapabilityName = "supports_telco_vm_service_api"`.
 
 ## Gating
 
-The suite skips entirely when the `supports_telco_vm_service_api` Supervisor capability is disabled. This is a coarser check than US4's acceptance criteria in `spec.md` (which also expects the webhook to actively reject the fields when disabled) — no scenario in this suite asserts the rejection behavior itself; that belongs at the webhook unit-test layer (`virtualmachine_validator_compute_test.go`). See "Known gaps" below.
+The suite skips entirely when the `supports_telco_vm_service_api` Supervisor capability is disabled. This is a coarser check than US4's acceptance criteria in `spec.md` (which also expects the webhook to actively reject the fields when disabled) — no scenario in this suite asserts the rejection behavior itself; that belongs at the webhook unit-test layer (`virtualmachine_validator_compute_test.go`). See "Scope boundaries" below.
 
 ## Scenarios
 

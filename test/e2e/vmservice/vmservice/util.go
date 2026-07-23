@@ -1123,23 +1123,28 @@ func VerifyPostRegisterVM(
 	vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmNamespace, vmName)
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
-	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-	Expect(err).ToNot(HaveOccurred())
-
 	By("Restored VM must have expected number of restored volumes")
 
-	actualRestoredPVCCount := 0
+	// The volume-registration reconciler patches spec.volumes with the
+	// restored PVCs asynchronously after RegisterVM's task reports success,
+	// so a single read here can race and observe a stale, partially-restored
+	// volume list. Poll until it settles instead of asserting once.
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+		g.Expect(err).ToNot(HaveOccurred())
 
-	for _, vol := range vm.Spec.Volumes {
-		// Volume and PVC both contain "restored-" prefix, so validate that.
-		if vol.PersistentVolumeClaim != nil &&
-			strings.HasPrefix(vol.PersistentVolumeClaim.ClaimName, "restored-") {
-			actualRestoredPVCCount++
+		actualRestoredPVCCount := 0
+		for _, vol := range vm.Spec.Volumes {
+			// Volume and PVC both contain "restored-" prefix, so validate that.
+			if vol.PersistentVolumeClaim != nil &&
+				strings.HasPrefix(vol.PersistentVolumeClaim.ClaimName, "restored-") {
+				actualRestoredPVCCount++
+			}
 		}
-	}
-
-	Expect(actualRestoredPVCCount).To(Equal(expectedRestoredPVCCount), "Restored VM must have expected number of restored volumes, expected %d, got %d",
-		expectedRestoredPVCCount, actualRestoredPVCCount)
+		g.Expect(actualRestoredPVCCount).To(Equal(expectedRestoredPVCCount),
+			"Restored VM must have expected number of restored volumes, expected %d, got %d",
+			expectedRestoredPVCCount, actualRestoredPVCCount)
+	}, config.GetIntervals("default", "wait-backup-to-complete")...).Should(Succeed())
 
 	By("Power on the VM")
 	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))

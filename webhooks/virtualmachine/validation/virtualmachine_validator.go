@@ -153,7 +153,6 @@ var (
 		"vnet":                        true,
 		"wakeonpcktrcv":               true,
 	}
-
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -251,6 +250,10 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBiosUUID(ctx, vm)...)
+
+	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
+		fieldErrs = append(fieldErrs, v.validateConfigPolicy(ctx, vm, nil)...)
+	}
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -367,6 +370,10 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
+
+	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
+		fieldErrs = append(fieldErrs, v.validateConfigPolicy(ctx, vm, oldVM)...)
+	}
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -3652,7 +3659,6 @@ func isFirstClassVMAdvancedProperty(key string) bool {
 	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
 	return ok
 }
-
 
 func isSystemReservedNetworkDeviceProperty(key string) bool {
 	return systemReservedNetworkDeviceProperties[key]

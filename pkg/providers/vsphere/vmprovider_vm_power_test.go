@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -22,6 +23,8 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+
+	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/cloudinit"
@@ -36,6 +39,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -58,6 +63,10 @@ func vmPowerStateTests() {
 		parentCtx = ctxop.WithContext(parentCtx)
 		parentCtx = ovfcache.WithContext(parentCtx)
 		parentCtx = cource.WithContext(parentCtx)
+		// Registered unconditionally (matching vmExtraConfigTests); inert
+		// unless a spec also enables Features.TelcoVMServiceAPI.
+		parentCtx = vmconfig.WithContext(parentCtx)
+		parentCtx = vmconfig.Register(parentCtx, vmconfextraconfig.New())
 		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 			config.AsyncCreateEnabled = false
 			config.AsyncSignalEnabled = false
@@ -594,6 +603,208 @@ func vmPowerStateTests() {
 				It("should not power on the VM", func() {
 					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+				})
+			})
+
+			When("the namespace's VirtualMachineConfigPolicy denies power-on", func() {
+				var (
+					zoneName string
+					policy   *vimv1.VirtualMachineConfigPolicy
+				)
+
+				BeforeEach(func() {
+					// Constrain placement to a single zone/cluster so the
+					// zone label set below is guaranteed to match wherever
+					// the VM actually lands -- with more than one candidate
+					// zone, placement may choose a different one, which
+					// trips the unrelated "moved to invalid Resource Pool"
+					// zone-consistency check before this test's scenario
+					// ever runs.
+					testConfig.NumFaultDomains = 1
+				})
+
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VirtualMachineConfigPolicy = true
+						// spec.advanced.extraConfig is only synced to vSphere
+						// when this capability is enabled.
+						config.Features.TelcoVMServiceAPI = true
+					})
+
+					Expect(ctx.ZoneNames).ToNot(BeEmpty())
+					zoneName = ctx.ZoneNames[0]
+					vm.Labels = map[string]string{corev1.LabelTopologyZone: zoneName}
+
+					policy = &vimv1.VirtualMachineConfigPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      zoneName,
+							Namespace: nsInfo.Namespace,
+						},
+						Spec: vimv1.VirtualMachineConfigPolicySpec{
+							Zone:        zoneName,
+							PowerOnMode: vimv1.VirtualMachineConfigPolicyModeDeny,
+							VMClassMode: vimv1.VirtualMachineConfigPolicyVMClassModeAsConfig,
+						},
+					}
+				})
+
+				When("the VM's actual extraConfig has a key the policy denies", func() {
+					JustBeforeEach(func() {
+						policy.Spec.ExtraConfig =
+							&vimv1.VirtualMachineConfigPolicyExtraConfigSpec{
+								Denied: []vimv1.VirtualMachineConfigPolicyExtraConfigKey{
+									{Type: vimv1.MatchTypeFixed, Key: "vmop-test.custom-denied-key"},
+								},
+							}
+						Expect(ctx.Client.Create(ctx, policy)).To(Succeed())
+
+						vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []vmopv1common.KeyValuePair{
+								{Key: "vmop-test.custom-denied-key", Value: "true"},
+							},
+						}
+					})
+
+					It("denies power-on and marks the condition false", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(
+							ContainSubstring("power-on denied by VirtualMachineConfigPolicy"))
+						Expect(err.Error()).To(ContainSubstring("vmop-test.custom-denied-key"))
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						Expect(conditions.IsFalse(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeTrue())
+					})
+				})
+
+				When("the actual hardware version exceeds hardwareVersions.max", func() {
+					JustBeforeEach(func() {
+						policy.Spec.HardwareVersions = &vimv1.HardwareVersionRange{
+							Max: vimv1.MustParseHardwareVersion("vmx-04"),
+						}
+						Expect(ctx.Client.Create(ctx, policy)).To(Succeed())
+					})
+
+					It("denies power-on and marks the condition false", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(
+							ContainSubstring("power-on denied by VirtualMachineConfigPolicy"))
+						Expect(err.Error()).To(
+							ContainSubstring("exceeds the maximum hardware version"))
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						Expect(conditions.IsFalse(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeTrue())
+					})
+				})
+
+				When("the actual hardware version is below hardwareVersions.min", func() {
+					JustBeforeEach(func() {
+						policy.Spec.HardwareVersions = &vimv1.HardwareVersionRange{
+							Min: vimv1.MustParseHardwareVersion("vmx-99"),
+						}
+						Expect(ctx.Client.Create(ctx, policy)).To(Succeed())
+					})
+
+					It("denies power-on and marks the condition false", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(
+							ContainSubstring("power-on denied by VirtualMachineConfigPolicy"))
+						Expect(err.Error()).To(
+							ContainSubstring("below the minimum hardware version"))
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						Expect(conditions.IsFalse(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeTrue())
+					})
+				})
+
+				When("powerOnMode allows power-on despite a denied key", func() {
+					JustBeforeEach(func() {
+						policy.Spec.PowerOnMode = vimv1.VirtualMachineConfigPolicyModeAllow
+						policy.Spec.ExtraConfig =
+							&vimv1.VirtualMachineConfigPolicyExtraConfigSpec{
+								Denied: []vimv1.VirtualMachineConfigPolicyExtraConfigKey{
+									{Type: vimv1.MatchTypeFixed, Key: "vmop-test.custom-denied-key"},
+								},
+							}
+						Expect(ctx.Client.Create(ctx, policy)).To(Succeed())
+
+						vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []vmopv1common.KeyValuePair{
+								{Key: "vmop-test.custom-denied-key", Value: "true"},
+							},
+						}
+					})
+
+					It("allows power-on but still marks the condition false", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						Expect(conditions.IsFalse(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeTrue())
+					})
+				})
+
+				When("the VM's actual configuration adheres to the policy", func() {
+					JustBeforeEach(func() {
+						Expect(ctx.Client.Create(ctx, policy)).To(Succeed())
+					})
+
+					It("allows power-on and marks the condition true", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						Expect(conditions.IsTrue(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeTrue())
+					})
+				})
+
+				When("no policy governs the VM's zone", func() {
+					It("allows power-on without setting the condition", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						Expect(conditions.Has(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeFalse())
+					})
+				})
+
+				When("the VM is not yet placed in a zone", func() {
+					JustBeforeEach(func() {
+						vm.Labels = nil
+					})
+
+					It("allows power-on without setting the condition", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						Expect(conditions.Has(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeFalse())
+					})
+				})
+
+				When("vmClassMode=AsPolicy bypasses VM Class-derived config", func() {
+					JustBeforeEach(func() {
+						policy.Spec.VMClassMode =
+							vimv1.VirtualMachineConfigPolicyVMClassModeAsPolicy
+						policy.Spec.ExtraConfig =
+							&vimv1.VirtualMachineConfigPolicyExtraConfigSpec{
+								Denied: []vimv1.VirtualMachineConfigPolicyExtraConfigKey{
+									{Type: vimv1.MatchTypeFixed, Key: "vmop-test.custom-denied-key"},
+								},
+							}
+						Expect(ctx.Client.Create(ctx, policy)).To(Succeed())
+
+						vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []vmopv1common.KeyValuePair{
+								{Key: "vmop-test.custom-denied-key", Value: "true"},
+							},
+						}
+					})
+
+					It("allows power-on without setting the condition", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						Expect(conditions.Has(
+							vm, vmopv1.VirtualMachineConfigPolicyVerified)).To(BeFalse())
+					})
 				})
 			})
 

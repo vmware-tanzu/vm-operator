@@ -6,8 +6,23 @@ package v1alpha1
 
 import "k8s.io/apimachinery/pkg/api/resource"
 
-// IntRange describes a range of 32-bit integer values with min, max,
-// and default.
+// HardwareVersionRange describes a range of hardware versions with min
+// and max.
+type HardwareVersionRange struct {
+	// +optional
+
+	// Min is the minimum value.
+	// A zero value means there is no minimum.
+	Min HardwareVersion `json:"min,omitempty"`
+
+	// +optional
+
+	// Max is the maximum value.
+	// A zero value means there is no maximum.
+	Max HardwareVersion `json:"max,omitempty"`
+}
+
+// IntRange describes a range of 32-bit integer values with min and max.
 type IntRange struct {
 	// +required
 
@@ -20,8 +35,8 @@ type IntRange struct {
 	Max int32 `json:"max"`
 }
 
-// LongRange describes a range of 64-bit integer values with min, max,
-// and default.
+// LongRange describes a range of 64-bit integer values with min and
+// max.
 type LongRange struct {
 	// +required
 
@@ -35,7 +50,7 @@ type LongRange struct {
 }
 
 // ResourceQuantityRange describes a range of resource.Quantity values with
-// min, max, and default.
+// min and max.
 type ResourceQuantityRange struct {
 	// +required
 

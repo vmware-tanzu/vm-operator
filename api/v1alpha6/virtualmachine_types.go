@@ -135,6 +135,11 @@ const (
 	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
 	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
 	VirtualMachineConditionComputeConfigSynced = "VirtualMachineComputeConfigSynced"
+
+	// VirtualMachineConfigPolicyVerified indicates whether or not the VM
+	// adheres to the VirtualMachineConfigPolicy that governs the zone in which
+	// the VM is located.
+	VirtualMachineConfigPolicyVerified = "VirtualMachineConfigPolicyVerified"
 )
 
 const (
@@ -208,6 +213,12 @@ const (
 	// VirtualMachinePowerCyclePendingReason). This is expected to resolve to
 	// True once a later reconcile observes the applied change.
 	VirtualMachineExtraConfigMismatchReason = "ExtraConfigMismatch"
+
+	// VirtualMachineConfigPolicyNotVerifiedReason indicates that the VM's
+	// actual vSphere configuration does not adhere to the
+	// VirtualMachineConfigPolicy that governs the zone in which the VM is
+	// located.
+	VirtualMachineConfigPolicyNotVerifiedReason = "NotVerified"
 )
 
 const (

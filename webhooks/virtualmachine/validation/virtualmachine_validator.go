@@ -1915,6 +1915,44 @@ func (v validator) validateSharedVolumesOrControllers(
 		(controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical ||
 			controllerSharingMode == vmopv1.VirtualControllerSharingModeVirtual)
 
+	if vm.Status.CurrentSnapshot != nil {
+		// A MultiWriter disk only conflicts with a snapshot when the disk
+		// uses a dependent mode (Persistent/NonPersistent): a snapshot's
+		// redo log can't be shared across concurrent writers
+		// (https://knowledge.broadcom.com/external/article/383195).
+		// Independent disks (e.g. OracleRAC volumes, which are always
+		// IndependentPersistent) are excluded from VM snapshots entirely,
+		// so this restriction does not apply to them.
+		independentDiskMode := vol.DiskMode == vmopv1.VolumeDiskModeIndependentPersistent ||
+			vol.DiskMode == vmopv1.VolumeDiskModeIndependentNonPersistent
+		if volShared && !independentDiskMode {
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("sharingMode"),
+				vol.SharingMode,
+				"MultiWriter disk sharing is not supported for a dependent-mode volume on a VM that has a snapshot"))
+		}
+
+		// Bus-sharing (Physical/Virtual) SCSI controllers are a VM-wide
+		// restriction: vSphere never allows a bus-sharing controller to be
+		// added to a VM that has a snapshot, regardless of disk mode
+		// (https://knowledge.broadcom.com/external/article/314360). The
+		// ReconfigVM_Task fails with vim.fault.SharedBusControllerNotSupported
+		// and vm-operator has no way to recover other than the snapshot
+		// being removed.
+		if controllerShared {
+			var busNumber string
+			if vol.ControllerBusNumber != nil {
+				busNumber = strconv.Itoa(int(*vol.ControllerBusNumber))
+			}
+
+			allErrs = append(allErrs, field.Invalid(
+				volPath.Child("controllerBusNumber"),
+				fmt.Sprintf("%s:%s", vol.ControllerType, busNumber),
+				fmt.Sprintf("Controller with sharing mode %s is not supported for a VM that has a snapshot",
+					controllerSharingMode)))
+		}
+	}
+
 	// MultiWriter volumes or shared controllers (Physical/Virtual) cannot be encrypted.
 	if pvcEncrypted {
 		if volShared {

@@ -127,26 +127,28 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			})
 
 			AfterEach(func() {
-				// Detach the content library from the namespace if attached and not keeping it attached.
-				if tarLocationCLIsAttached && !keepTargetLocationCLAttached {
-					Expect(wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(input.WCPNamespaceName, targetLocationCLID)).To(Succeed(), "failed to detach content library '%s' from namespace '%s'", targetLocationCLID, input.WCPNamespaceName)
+				if !keepTargetLocationCLAttached {
+					// Detach the content library from the namespace if attached and not keeping it attached.
+					if tarLocationCLIsAttached {
+						err := wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(input.WCPNamespaceName, targetLocationCLID)
+						Expect(err).ToNot(HaveOccurred(), "failed to detach content library '%s' from namespace '%s'", targetLocationCLID, input.WCPNamespaceName)
+						// Wait for the namespace update to fully propagate before deleting the CL.
+						// The dcli namespace update is asynchronous — vCenter marks the CL "in use"
+						// until the namespace config_status returns to RUNNING.
+						wcp.WaitForNamespaceReady(wcpClient, input.WCPNamespaceName)
 
-					// Wait for the namespace update to fully propagate before deleting the CL.
-					// The dcli namespace update is asynchronous — vCenter marks the CL "in use"
-					// until the namespace config_status returns to RUNNING.
-					wcp.WaitForNamespaceReady(wcpClient, input.WCPNamespaceName)
-
-					tarLocationCLIsAttached = false
-				}
-
-				// Delete the content library if exists and not keeping it attached to the namespace.
-				if targetLocationCLID != "" && !keepTargetLocationCLAttached {
-					if err := wcpClient.DeleteLocalContentLibrary(targetLocationCLID); err != nil {
-						// Log but don't fail — the CL may be temporarily in use by a parallel
-						// runner (NotAllowedInCurrentState) or already deleted (NotFound).
-						GinkgoWriter.Printf("Warning: failed to delete publish content library %s: %v\n", targetLocationCLID, err)
+						tarLocationCLIsAttached = false
 					}
-					targetLocationCLID = ""
+
+					// Delete the content library if exists and not keeping it attached to the namespace.
+					if targetLocationCLID != "" {
+						if err := wcpClient.DeleteLocalContentLibrary(targetLocationCLID); err != nil {
+							// Log but don't fail — the CL may be temporarily in use by a parallel
+							// runner (NotAllowedInCurrentState) or already deleted (NotFound).
+							GinkgoWriter.Printf("Warning: failed to delete publish content library %s: %v\n", targetLocationCLID, err)
+						}
+						targetLocationCLID = ""
+					}
 				}
 
 				vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
@@ -222,6 +224,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			})
 
 			It("should publish the VM when all conditions meet and successfully deploy from the published VM", Label("smoke"), func() {
+				By("Attaching the target content library to the namespace as writable")
 				Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(input.WCPNamespaceName, wcp.ContentLibrarySpec{
 					ContentLibrary: targetLocationCLID,
 					Writable:       true,
@@ -232,15 +235,37 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, input.WCPNamespaceName, targetLocationCLID)
 				Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
 
+				By("Publishing the VM to the target content library")
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
 
+				By("Waiting for the publish request to report Complete=True")
 				vmPubCondition := metav1.Condition{
 					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 					Status: metav1.ConditionTrue,
 				}
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 
+				By("Duplicate TargetName should result in TargetItemAlreadyExistsReason condition", func() {
+					By("Publishing the VM again with the same target item name to trigger duplicate detection")
+					dupPublishRequestName := fmt.Sprintf("%s-dup", vmPublishRequestName)
+					dupPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, dupPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
+					createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, dupPubReqBuilder)
+					DeferCleanup(func() {
+						vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
+						vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
+					})
+
+					By("Verifying the second publish request reports TargetValid=False with reason TargetItemAlreadyExists")
+					dupVMPubCondition := metav1.Condition{
+						Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+						Status: metav1.ConditionFalse,
+						Reason: vmopv1.TargetItemAlreadyExistsReason,
+					}
+					vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName, dupVMPubCondition)
+				})
+
+				By("Verifying the published VirtualMachineImage is available and ready")
 				// Ensure the published image is available with expected display name under the namespace.
 				expectedPublishedImageCRName, err := vmoperator.GetVirtualMachinePublishRequestTargetItemName(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				Expect(err).NotTo(HaveOccurred(), "failed to get the published target item name in namespace %q", input.WCPNamespaceName)
@@ -251,6 +276,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// Keep the published image attached to the namespace for the next test case.
 				keepTargetLocationCLAttached = true
 
+				By("Deploying a new VM from the published image")
 				// Use the published the vmi to deploy a new VM should succeed with VM powered on and IP assigned.
 				newVmName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vm", capiutil.RandomString(4))
 				newVMBuilder := generateVMBuilder(input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources)
@@ -258,48 +284,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				Expect(clusterProxy.CreateWithArgs(ctx, newVmYaml)).NotTo(HaveOccurred(), "failed to create virtualmachine from the published image", string(newVmYaml))
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
-			})
-
-			It("should have expected condition when the published target item already exists in the content library", func() {
-				// Attach the target CL as writable — this test is self-sufficient and
-				// does not rely on the smoke test having run first.
-				if !tarLocationCLIsAttached {
-					Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(input.WCPNamespaceName, wcp.ContentLibrarySpec{
-						ContentLibrary: targetLocationCLID,
-						Writable:       true,
-					})).To(Succeed(), "failed to attach content library '%s' to namespace '%s'", targetLocationCLID, input.WCPNamespaceName)
-					tarLocationCLIsAttached = true
-				}
-
-				// Reset this before any error occurs below to ensure the CL will be deleted in AfterEach().
-				keepTargetLocationCLAttached = false
-
-				targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, input.WCPNamespaceName, targetLocationCLID)
-				Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
-
-				// Publish the VM once so that the target item exists in the CL.
-				firstPubReqName := fmt.Sprintf("%s-first", vmPublishRequestName)
-				firstPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, firstPubReqName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, firstPubReqBuilder)
-				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, firstPubReqName, metav1.Condition{
-					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
-					Status: metav1.ConditionTrue,
-				})
-				DeferCleanup(func() {
-					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, firstPubReqName)
-					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, firstPubReqName)
-				})
-
-				// Now publish again with the same target item name — expect duplicate error.
-				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
-
-				vmPubCondition := metav1.Condition{
-					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
-					Status: metav1.ConditionFalse,
-					Reason: vmopv1.TargetItemAlreadyExistsReason,
-				}
-				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 			})
 
 			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional", "experimental"), func() {
@@ -382,11 +366,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				inventoryFolder *object.Folder
 				inventoryCL     *imgregv1a2.ContentLibrary
 
-				// dupPublishRequestName holds the name of any secondary publish request
-				// created during a test. AfterEach deletes it so that cleanup is
-				// complete even when the It body itself did not delete it.
-				dupPublishRequestName string
-
 				user           *vcenter.User
 				nonAdminClient ctrlclient.Client
 			)
@@ -421,7 +400,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					inventoryFolderName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "folder", capiutil.RandomString(4))
 
 					By("Creating library folder")
-
 					finder := find.NewFinder(vimClient, false)
 					_, inventoryFolder = createLibraryFolder(ctx, finder, inventoryFolderName)
 				}
@@ -448,12 +426,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
-
-				if dupPublishRequestName != "" {
-					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
-					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
-					dupPublishRequestName = ""
-				}
 			})
 
 			It("should publish the VM to an inventory library, deploy from the published image, and reject a duplicate publish", Label("smoke"), func() {
@@ -486,9 +458,13 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				// Publishing again to the same target item name must fail with TargetItemAlreadyExists.
 				// Store the name in a context-level variable so AfterEach can clean it up.
-				dupPublishRequestName = fmt.Sprintf("%s-%s", vmPubSpecName, capiutil.RandomString(4))
+				dupPublishRequestName := fmt.Sprintf("%s-%s", vmPubSpecName, capiutil.RandomString(4))
 				dupPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, dupPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, dupPubReqBuilder)
+				DeferCleanup(func() {
+					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
+					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
+				})
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName, metav1.Condition{
 					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 					Status: metav1.ConditionFalse,

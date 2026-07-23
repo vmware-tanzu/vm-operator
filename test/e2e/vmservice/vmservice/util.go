@@ -1004,14 +1004,11 @@ func DeleteVMResource(
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client) string {
-	By("Get VM before powering off")
-
-	var (
-		err error
-	)
-
-	// Wait for backup to complete before powering off and deleting the VM
+	// Wait for backup to complete before powering off and deleting the VM.
+	// Capture the MoID now while the VM CR still exists; it is returned to
+	// the caller so RegisterVM can re-register the vSphere VM after deletion.
 	vm := WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config)
+	vmMoID := vm.Status.UniqueID
 
 	// When AllDisksArePVCs is enabled, the CSI driver takes a VM snapshot
 	// while registering the boot VMDK as an FCD. If that snapshot is still
@@ -1049,25 +1046,21 @@ func DeleteVMResource(
 	// The finalizer should be removed after the VM is being deleted to avoid
 	// its being added again during the normal reconciliation by the controller.
 	By("Remove the VMOP finalizer to ensure deletion of K8s VM")
-	Eventually(func() bool {
+	Eventually(func(g Gomega) {
+		var err error
 		vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-		if err != nil {
-			// If VM is already deleted, nothing to do.
-			return apierrors.IsNotFound(err)
+		if apierrors.IsNotFound(err) {
+			return
 		}
-
-		if vm.DeletionTimestamp.IsZero() {
-			err = fmt.Errorf("VM %s/%s does not have deletion timestamp set", vmNamespace, vmName)
-			return false
-		}
-
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(vm.DeletionTimestamp.IsZero()).To(BeFalse(),
+			"VM %s/%s does not have deletion timestamp set", vmNamespace, vmName)
 		controllerutil.RemoveFinalizer(vm, VMFinalizerName)
 		// Also remove the deprecated finalizer if it exists to ensure backward compatibility.
 		controllerutil.RemoveFinalizer(vm, VMFinalizerNameDeprecated)
-		err = svClusterClient.Update(ctx, vm)
-
-		return err == nil
-	}, 30*time.Second, 3*time.Second).Should(BeTrue(), "failed to remove finalizer from VM '%s/%s', most recent error: %v", vmNamespace, vmName, err)
+		g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+	}, 30*time.Second, 3*time.Second).Should(Succeed(),
+		"failed to remove finalizer from VM '%s/%s'", vmNamespace, vmName)
 
 	vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
 
@@ -1076,7 +1069,7 @@ func DeleteVMResource(
 		Expect(clusterProxy.DeleteWithArgs(ctx, bootstrapResourceYAML)).To(Succeed(), "failed to delete VM bootstrap resource")
 	}
 
-	return vm.Status.UniqueID
+	return vmMoID
 }
 
 // InvokeRegisterVM invokes the RegisterVM API.

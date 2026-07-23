@@ -4,21 +4,22 @@
 package kubectl
 
 import (
+	"bytes"
+	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
-
-	expect "github.com/google/goexpect"
 )
 
 const (
 	kubectlCommand = "kubectl"
 	pluginCommand  = "kubectl-vsphere"
+
+	// loginTimeout bounds how long the kubectl-vsphere login subprocess may run.
+	loginTimeout = 2 * time.Minute
 )
 
 // Libraries to run the kubectl plugin against a WCP testbed.
@@ -78,21 +79,10 @@ func (k *KubectlPlugin) WithTanzuKubernetesClusterNamespace(namespace string) *K
 	return k
 }
 
-var passwordPromptRE = regexp.MustCompile("Password:")
-
-// noopWriteCloser is a WriteCloser that does nothing when Close is called, so that goexpect doesn't cause a panic.
-type noopWriteCloser struct {
-	io.Writer
-}
-
-func (*noopWriteCloser) Close() error {
-	return nil
-}
-
 // Login runs the kubectl-vsphere plugin to login to the supervisor cluster that the plugin
 // is configured with.
 func (k *KubectlPlugin) Login() error {
-	kubectlPath, err := checkPluginExistsInPath()
+	kubectlPath, pluginPath, err := checkPluginExistsInPath()
 	if err != nil {
 		return fmt.Errorf("failed to find kubectl or kubectl-vsphere in PATH: %w", err)
 	}
@@ -115,42 +105,37 @@ func (k *KubectlPlugin) Login() error {
 		args = append(args, "--tanzu-kubernetes-cluster-namespace", k.tanzuKubernetesClusterNamespace)
 	}
 
-	// Build the child environment explicitly. goexpect.Spawn with SetEnv
-	// replaces the entire environment, so every variable the plugin needs must
-	// be listed here. NO_PROXY / no_proxy must be forwarded alongside the
-	// proxy vars so that kubectl-vsphere bypasses the proxy for the supervisor
-	// cluster IP, which is a direct internal address (not routed via squid).
+	// Build the child environment explicitly so every variable the plugin
+	// needs is listed here. NO_PROXY / no_proxy must be forwarded alongside
+	// the proxy vars so that kubectl-vsphere bypasses the proxy for the
+	// supervisor cluster IP, which is a direct internal address (not routed
+	// via squid). KUBECTL_VSPHERE_PASSWORD lets the plugin read the password
+	// non-interactively instead of prompting on a TTY.
 	noProxy := os.Getenv("NO_PROXY")
 	if noProxy == "" {
 		noProxy = os.Getenv("no_proxy")
 	}
-	kcmd, errch, err := expect.Spawn("kubectl-vsphere "+strings.Join(args, " "), 2*time.Minute, //nolint:mnd
-		expect.Tee(&noopWriteCloser{os.Stdout}),
-		expect.SetEnv([]string{
-			"KUBECONFIG=" + k.kubeconfigPath,
-			"HTTP_PROXY=" + os.Getenv("HTTP_PROXY"),
-			"HTTPS_PROXY=" + os.Getenv("HTTPS_PROXY"),
-			"NO_PROXY=" + noProxy,
-			"no_proxy=" + noProxy,
-			"PATH=" + filepath.Dir(kubectlPath),
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to spawn kubectl-vsphere: %w", err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, pluginPath, args...)
+	cmd.Env = []string{
+		"KUBECONFIG=" + k.kubeconfigPath,
+		"HTTP_PROXY=" + os.Getenv("HTTP_PROXY"),
+		"HTTPS_PROXY=" + os.Getenv("HTTPS_PROXY"),
+		"NO_PROXY=" + noProxy,
+		"no_proxy=" + noProxy,
+		"PATH=" + filepath.Dir(kubectlPath),
+		"KUBECTL_VSPHERE_PASSWORD=" + k.password,
 	}
 
-	defer func() { _ = kcmd.Close() }()
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
 
-	if out, _, err := kcmd.Expect(passwordPromptRE, -1); err != nil {
-		return fmt.Errorf("failed to get password prompt: %w, output: %s", err, out)
-	}
-
-	if err := kcmd.Send(k.password + "\n"); err != nil {
-		return fmt.Errorf("failed to send password: %+w", err)
-	}
-
-	if err := <-errch; err != nil {
-		return fmt.Errorf("failed to login: %+w", err)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to login: %w, output: %s", err, out.String())
 	}
 
 	return nil
@@ -158,29 +143,29 @@ func (k *KubectlPlugin) Login() error {
 
 // Helper method that looks for the kubectl and kubectl-vsphere binaries in the user's
 // PATH, and returns the paths to each, or an error if one of them is not found.
-func checkPluginExistsInPath() (string, error) {
+func checkPluginExistsInPath() (string, string, error) {
 	kubectlPath, err := exec.LookPath(kubectlCommand)
 	if err != nil {
-		return "", fmt.Errorf("failed to find '%s' in PATH: %+w", kubectlCommand, err)
+		return "", "", fmt.Errorf("failed to find '%s' in PATH: %+w", kubectlCommand, err)
 	}
 
-	_, err = exec.LookPath(pluginCommand)
+	pluginPath, err := exec.LookPath(pluginCommand)
 	if err != nil {
-		return "", fmt.Errorf("failed to find '%s' in PATH: %+w", pluginCommand, err)
+		return "", "", fmt.Errorf("failed to find '%s' in PATH: %+w", pluginCommand, err)
 	}
 
-	return kubectlPath, nil
+	return kubectlPath, pluginPath, nil
 }
 
 // Logout removes the WCP enabled clusters and associated credentials from the plugin's kubeconfig file.
 func (k *KubectlPlugin) Logout() error {
-	_, err := checkPluginExistsInPath()
+	_, pluginPath, err := checkPluginExistsInPath()
 	if err != nil {
 		return fmt.Errorf("failed to find kubectl or kubectl-vsphere in PATH: %+w", err)
 	}
 
 	args := []string{"logout"}
-	cmd := exec.Command("kubectl-vsphere", args...)
+	cmd := exec.Command(pluginPath, args...)
 
 	return cmd.Run()
 }

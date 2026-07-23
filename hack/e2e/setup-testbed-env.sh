@@ -419,7 +419,7 @@ _setup_kubectl_vsphere() {
     _log "Installing kubectl-vsphere from supervisor ${wcp_ip}..."
     local plugin_os
     case "$(uname -s)-$(uname -m)" in
-        Darwin-arm64)  plugin_os="darwin-arm64" ;;
+        Darwin-arm64)  plugin_os="darwin-amd64" ;; # No arm64 binaries so use translation
         Darwin-x86_64) plugin_os="darwin-amd64" ;;
         *)             plugin_os="linux-amd64"  ;;
     esac

@@ -284,7 +284,7 @@ func vmExtraConfigTests() {
 			Expect(getECVal(o.Config.ExtraConfig, p+"ctxPerDev")).To(Equal("1"))
 			Expect(getECVal(o.Config.ExtraConfig, p+"rssoffload")).To(Equal("TRUE"))
 			Expect(getECVal(o.Config.ExtraConfig, p+"udpRSS")).To(Equal("1"))
-			Expect(getECVal(o.Config.ExtraConfig, p+"pnicfeatures")).To(Equal("4"))
+			Expect(getECVal(o.Config.ExtraConfig, p+"pnicFeatures")).To(Equal("4"))
 			Expect(getECVal(o.Config.ExtraConfig, p+"coalescingScheme")).To(Equal("disabled"))
 			Expect(getECVal(o.Config.ExtraConfig, p+"coalescingParams")).To(Equal("4000"))
 

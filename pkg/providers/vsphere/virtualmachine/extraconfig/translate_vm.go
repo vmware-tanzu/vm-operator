@@ -18,19 +18,26 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
-// translateFields iterates keyMap and emits an OptionValue per field in rv.
-// The output key for each map entry is produced by keyFunc(mapKey).
-// Fields with unsupported kinds are skipped with a V(4) log.
+// translateFields iterates sortedKeys (the sorted keys of keyMap) and emits
+// an OptionValue per field in rv. The output key for each map entry is
+// produced by keyFunc(mapKey). Fields with unsupported kinds are skipped
+// with a V(4) log.
+//
+// sortedKeys must be pre-sorted: this determines the order OptionValues are
+// appended to the returned slice, and callers (e.g. status reconciliation)
+// diff/patch that order downstream, so an unsorted (map-iteration) order
+// here would cause spurious patches on every reconcile.
 func translateFields(
 	ctx context.Context,
 	rv reflect.Value,
+	sortedKeys []string,
 	keyMap map[string]int,
 	keyFunc func(string) string,
 ) pkgutil.OptionValues {
 	log := pkglog.FromContextOrDefault(ctx)
-	out := make(pkgutil.OptionValues, 0, len(keyMap))
-	for mapKey, fieldIdx := range keyMap {
-		fv := rv.Field(fieldIdx)
+	out := make(pkgutil.OptionValues, 0, len(sortedKeys))
+	for _, mapKey := range sortedKeys {
+		fv := rv.Field(keyMap[mapKey])
 		outKey := keyFunc(mapKey)
 		val, ok := TranslateFieldValue(fv)
 		if !ok {
@@ -58,7 +65,8 @@ func TranslateVMXNet3NICFirstClass(
 	}
 	idx := int(deviceKey - vmopv1util.EthernetDeviceKeyBase)
 	return translateFields(ctx, reflect.ValueOf(vmxnet3).Elem(),
-		vmopv1util.VMXNet3NICKeyMap(), func(k string) string { return fmt.Sprintf(k, idx) })
+		vmopv1util.SortedVMXNet3NICKeys(), vmopv1util.VMXNet3NICKeyMap(),
+		func(k string) string { return fmt.Sprintf(k, idx) })
 }
 
 // TranslateFirstClass returns VMX OptionValues for every first-class field of
@@ -76,7 +84,8 @@ func TranslateFirstClass(ctx context.Context, advanced *vmopv1.VirtualMachineAdv
 		return nil
 	}
 	return translateFields(ctx, reflect.ValueOf(advanced).Elem(),
-		vmopv1util.AdvancedVMXKeyMap(), func(k string) string { return k })
+		vmopv1util.SortedAdvancedVMXKeys(), vmopv1util.AdvancedVMXKeyMap(),
+		func(k string) string { return k })
 }
 
 // TranslateFieldValue converts a struct field value to its canonical VMX string

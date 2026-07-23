@@ -807,25 +807,46 @@ Each `spec.network.interfaces[]` entry may include an optional `type` of `VMXNet
 | Field | Description |
 |-------|-------------|
 | `type` | Virtual device model: `VMXNet3`, `SRIOV`, or legacy types `E1000`, `E1000e`, `VMXNet2`, or `PCNet32`. Omitted values are backfilled from the running VM's hardware during schema upgrade, by interface order as described above. |
-| `vnumaNodeID` | Pins the adapter to a virtual NUMA node; must match the VM's CPU topology and required minimum hardware version. |
+| `vnumaNodeID` | Pins the adapter to a virtual NUMA node. Requires EFI firmware (`spec.bootOptions.firmware: efi`), a non-zero `spec.cpuAdvanced.topology.vnumaNodeCount`, and a minimum hardware version. Unlike the `vmxnet3` PowerCycle-mode fields below, this field is never hot-pluggable — changing it always requires the VM to be powered off. |
 | `vmxnet3` | VMXNet3-only performance and offload settings. **Requires `type: VMXNet3`.** See [VMXNet3 interface tuning](#vmxnet3-interface-tuning). |
-| `advancedProperties` | Additional per-adapter VMX settings as key/value pairs. Keys must not duplicate a first-class field (for example a key that duplicates a `vmxnet3` subfield is rejected). |
+| `advancedProperties` | Additional per-adapter VMX settings as key/value pairs. Keys must not duplicate a first-class field (for example a key that duplicates a `vmxnet3` subfield is rejected). Like `spec.advanced.extraConfig`, bag key changes are always written immediately regardless of power state and never produce `PowerCyclePending`. |
 
 #### VMXNet3 interface tuning
 
 Use `spec.network.interfaces[].vmxnet3` only when `type` is `VMXNet3`. The API rejects this block for other adapter types.
 
-| Field | Description |
-|-------|-------------|
-| `uptv2Enabled` | Enables UPT v2 (uniform passthrough) for this adapter. Requires a sufficiently high VM hardware version, UPT-capable hardware, full memory reservation, and a current VMXNet3 guest driver. |
-| `ctxPerDev` | Transmit context threading: `PerVM` (default), `PerDevice`, or `PerQueue` (often used with RSS for high throughput). |
-| `rssOffloadEnabled` | Receive Side Scaling offload so the physical NIC can spread receive traffic across queues. |
-| `udpRssEnabled` | Extends RSS-style distribution to UDP as well as TCP. |
-| `pnicFeatures` | Set of physical NIC queue features (for example `ReceiveSideScaling`, `LargeReceiveOffload`). |
-| `coalescingScheme` | Interrupt coalescing mode: `Disabled`, `Adapt`, `Static`, or `RateBasedCoalescing`. |
-| `coalescingParams` | Parameter string for `Static` or `RateBasedCoalescing` (packet queue limit or interrupts per second, depending on scheme). Ignored for `Disabled` or `Adapt`. |
+| Field | Description | Change applies on |
+|-------|-------------|:----:|
+| `uptv2Enabled` | Enables UPT v2 (uniform passthrough) for this adapter. VM Operator only validates a sufficiently high VM hardware version and full memory reservation before applying; UPT-capable physical hardware and a current VMXNet3 guest driver are additional vSphere-level requirements that are *not* validated by VM Operator. | Live* |
+| `ctxPerDev` | Transmit context threading: `PerVM` (default), `PerDevice`, or `PerQueue` (often used with RSS for high throughput). | PowerCycle |
+| `rssOffloadEnabled` | Receive Side Scaling offload so the physical NIC can spread receive traffic across queues. | PowerCycle |
+| `udpRssEnabled` | Extends RSS-style distribution to UDP as well as TCP. | PowerCycle |
+| `pnicFeatures` | Set of physical NIC queue features (for example `ReceiveSideScaling`, `LargeReceiveOffload`). | PowerCycle |
+| `coalescingScheme` | Interrupt coalescing mode: `Disabled`, `Adapt`, `Static`, or `RateBasedCoalescing`. | Live |
+| `coalescingParams` | Parameter string for `Static` or `RateBasedCoalescing` (packet queue limit or interrupts per second, depending on scheme). Ignored for `Disabled` or `Adapt`. | Live |
+
+The `Change applies on` column reflects how a change to that field is applied when the VM is already powered on: **Live** fields apply and report synced immediately; **PowerCycle** fields are written to the VM immediately but are not considered fully synced — and the VM reports `NetworkConfigSynced=False/PowerCyclePending` — until the VM is next power-cycled (powered off, then on). See [NetworkConfigSynced condition](#networkconfigsynced-condition) below for the full set of reasons this condition can report.
+
+`*` `uptv2Enabled` is hot-pluggable and, once its prerequisite is met, applies immediately like a `Live` field — it does not use the ExtraConfig PowerCycle mechanism and never produces `PowerCyclePending`. If the prerequisite is not met, it instead produces `PrerequisiteNotMet`.
 
 VM-level advanced options are documented in [Advanced VM settings](#advanced-vm-settings).
+
+#### NetworkConfigSynced condition
+
+`status.extraConfig` includes the effective per-interface VMX keys the operator is managing, merged from `spec.network.interfaces[].vmxnet3` and `advancedProperties`.
+
+The `VirtualMachineNetworkConfigSynced` condition reports whether these per-interface settings have been applied. When `status: False`, the `reason` field explains why:
+
+| Reason | Description |
+|--------|-------------|
+| `PrerequisiteNotMet` | A field's prerequisite (hardware version, EFI firmware, or vNUMA topology) is not met. Only `vnumaNodeID` and `uptv2Enabled` can trigger this reason. |
+| `PowerOffRequired` | A field that is never hot-pluggable (`vnumaNodeID`) changed while the VM was powered on. The change is deferred until the VM is powered off. |
+| `PowerCyclePending` | A `PowerCycle`-mode `vmxnet3` field (`ctxPerDev`, `rssOffloadEnabled`, `udpRssEnabled`, or `pnicFeatures`) changed while the VM was powered on. The value is written immediately, but a power-cycle is required to fully converge. |
+| `NetworkConfigError` | The reconciler failed to apply the desired configuration. |
+
+When multiple conditions apply in the same update, `PrerequisiteNotMet` takes priority over `PowerOffRequired`, which in turn takes priority over `PowerCyclePending`.
+
+`advancedProperties` bag key changes are always written immediately, regardless of power state, and never produce any of the above reasons — the condition reports `True` for those keys right away.
 
 #### Per-interface guest network configuration
 

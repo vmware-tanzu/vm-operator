@@ -6,6 +6,7 @@ package extraconfig_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -102,7 +103,7 @@ var _ = Describe("TranslateFirstClass", func() {
 		Expect(ok).To(BeFalse(), "plain int (reflect.Int) is not a supported VMX field kind")
 	})
 
-	It("encodes all six first-class fields when set", func() {
+	It("encodes all six first-class fields when set, in sorted key order", func() {
 		adv := &vmopv1.VirtualMachineAdvancedSpec{
 			PreferHTEnabled:                    ptr.To(true),
 			HugePages1GEnabled:                 ptr.To(true),
@@ -113,6 +114,15 @@ var _ = Describe("TranslateFirstClass", func() {
 		}
 		ov := extraconfig.TranslateFirstClass(ctx, adv)
 		Expect(ov).To(HaveLen(numFirstClassKeys))
+
+		// Asserts sorted order, not just membership: translateFields must not
+		// range the key map directly, or this order would vary randomly
+		// across calls and cause spurious status patches every reconcile.
+		gotKeys := make([]string, len(ov))
+		for i, bov := range ov {
+			gotKeys[i] = bov.GetOptionValue().Key
+		}
+		Expect(gotKeys).To(Equal(vmopv1util.SortedAdvancedVMXKeys()))
 	})
 })
 
@@ -168,5 +178,31 @@ var _ = Describe("TranslateVMXNet3NICFirstClass", func() {
 			kv := bov.GetOptionValue()
 			Expect(kv.Key).To(HavePrefix(prefix1))
 		}
+	})
+
+	It("encodes all vmx-tagged NIC fields when set, in sorted key order", func() {
+		spec := &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+			CtxPerDev:         ptr.To(vmopv1.TxContextThreadingModePerQueue),
+			RSSOffloadEnabled: ptr.To(true),
+			UDPRSSEnabled:     ptr.To(vmopv1.UDPRSSModeEnabled),
+			PNICFeatures:      []vmopv1.PNICQueueFeature{vmopv1.PNICQueueFeatureReceiveSideScaling},
+		}
+		ov := extraconfig.TranslateVMXNet3NICFirstClass(ctx, devKey0, spec)
+		keyCount := len(vmopv1util.VMXNet3NICKeyMap())
+		Expect(ov).To(HaveLen(keyCount))
+
+		// Asserts sorted order, not just membership: translateFields must not
+		// range the key map directly, or this order would vary randomly
+		// across calls and cause spurious status patches every reconcile.
+		gotKeys := make([]string, len(ov))
+		for i, bov := range ov {
+			gotKeys[i] = bov.GetOptionValue().Key
+		}
+
+		wantKeys := make([]string, len(vmopv1util.SortedVMXNet3NICKeys()))
+		for i, tmplKey := range vmopv1util.SortedVMXNet3NICKeys() {
+			wantKeys[i] = fmt.Sprintf(tmplKey, 0)
+		}
+		Expect(gotKeys).To(Equal(wantKeys))
 	})
 })

@@ -189,7 +189,7 @@ type VirtualMachineNetworkInterfaceVMXNet3Spec struct {
 	// extra pNIC queue features beyond defaults.
 	// Accepts known enum values (LargeReceiveOffload, ReceiveSideScaling) or integer strings
 	// representing powers of 2 (1,2,4,8,...) for direct VMX bitmask values.
-	PNICFeatures []PNICQueueFeature `json:"pnicFeatures,omitempty" vmx:"ethernet%d.pnicfeatures" vmxmode:"powercycle"`
+	PNICFeatures []PNICQueueFeature `json:"pnicFeatures,omitempty" vmx:"ethernet%d.pnicFeatures" vmxmode:"powercycle"`
 
 	// +optional
 

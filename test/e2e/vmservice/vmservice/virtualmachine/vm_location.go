@@ -141,28 +141,42 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	})
 
 	// getNsRPAndFolder returns the namespace RP MoID and folder MoID for the
-	// WCP namespace.  It mirrors the lookup order in topology.GetNamespaceFolderAndRPMoID:
-	// Zone.Spec.ManagedVMs first, then AvailabilityZone.Spec.Namespaces as fallback.
-	getNsRPAndFolder := func(namespace string) (rpMoID, folderMoID string) {
+	// WCP namespace in the given zone. It mirrors topology.GetNamespaceFolderAndRPMoID,
+	// which the controller uses to compute the VM's expected location:
+	// Zone.Spec.ManagedVMs for the VM's own zone first, then the matching
+	// AvailabilityZone.Spec.Namespaces as fallback.
+	//
+	// On a multi-zone Supervisor the namespace RP is per-zone (each zone has its
+	// own resource pool), so the Zone selected MUST match the VM's status.zone.
+	// Returning an arbitrary zone's RP relocates the VM into a different zone's
+	// pool, which the controller correctly reports as a ResourcePoolMismatch and
+	// never reconciles back to LocationValid=True. The folder, in contrast, is
+	// shared across zones for a namespace, but it is resolved from the same
+	// zone-scoped entry here for consistency with the controller.
+	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
 		zoneList := &topologyv1.ZoneList{}
 		Expect(svClusterClient.List(ctx, zoneList, ctrlclient.InNamespace(namespace))).
 			To(Succeed(), "failed to list Zones for namespace %s", namespace)
 
 		for _, z := range zoneList.Items {
-			if len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
+			if z.Name == zone && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
 				e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
 					z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
 				return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
 			}
 		}
 
-		// Fallback: AvailabilityZone.Spec.Namespaces (older cluster configurations).
+		// Fallback: AvailabilityZone.Spec.Namespaces (older, non-zonal configurations).
+		// There the VM's status.zone is the AvailabilityZone name.
 		azList := &topologyv1.AvailabilityZoneList{}
 		Expect(svClusterClient.List(ctx, azList)).
 			To(Succeed(), "failed to list AvailabilityZones")
 		Expect(azList.Items).ToNot(BeEmpty(), "expected at least one AvailabilityZone")
 
 		for _, az := range azList.Items {
+			if az.Name != zone {
+				continue
+			}
 			if nsInfo, ok := az.Spec.Namespaces[namespace]; ok && nsInfo.PoolMoId != "" {
 				e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
 					az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
@@ -170,7 +184,9 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			}
 		}
 
-		Fail("could not determine namespace RP and folder MoIDs for namespace " + namespace)
+		Fail(fmt.Sprintf(
+			"could not determine namespace RP and folder MoIDs for namespace %s in zone %s",
+			namespace, zone))
 		return "", ""
 	}
 
@@ -244,7 +260,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	When("VM is created in the correct namespace RP and folder", Label("core-functional","experimental"), func() {
+	When("VM is created in the correct namespace RP and folder", Label("core-functional", "experimental"), func() {
 		It("sets VirtualMachineLocationValid condition to True", func() {
 			createVM()
 
@@ -256,7 +272,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace RP hierarchy", Label("core-functional","experimental"), func() {
+	When("VM is moved outside the namespace RP hierarchy", Label("core-functional", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -271,8 +287,9 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(vmMoID).ToNot(BeEmpty(), "VM must have a UniqueID before relocation")
 
-			By("Retrieving the correct namespace RP and folder MoIDs")
-			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName)
+			By("Retrieving the correct namespace RP and folder MoIDs for the VM's zone")
+			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
 
 			By("Retrieving the cluster root RP to use as an invalid location")
 			// 1. Resolve the specific Cluster MoID for the active Supervisor context
@@ -315,7 +332,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace Folder hierarchy", Label("core-functional","experimental"), func() {
+	When("VM is moved outside the namespace Folder hierarchy", Label("core-functional", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -330,8 +347,9 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(vmMoID).ToNot(BeEmpty(), "VM must have a UniqueID before relocation")
 
-			By("Retrieving the correct namespace folder MoID")
-			_, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName)
+			By("Retrieving the correct namespace folder MoID for the VM's zone")
+			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			_, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
 
 			By("Retrieving another Supervisor Namespace's folder as the invalid folder location")
 			// A different namespace's folder always lies outside the 2-level hierarchy

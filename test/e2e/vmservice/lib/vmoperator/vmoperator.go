@@ -422,6 +422,17 @@ func GetVirtualMachineMOID(ctx context.Context, client ctrlclient.Client, ns, vm
 	return vm.Status.UniqueID
 }
 
+// GetVirtualMachineZone returns the zone the VirtualMachine was placed in.
+// It fails the spec if the VM has no zone set on its status, since the
+// namespace resource pool is per-zone and cannot be resolved without it.
+func GetVirtualMachineZone(ctx context.Context, client ctrlclient.Client, ns, vmName string) string {
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+	Expect(err).ShouldNot(HaveOccurred())
+	Expect(vm.Status.Zone).ShouldNot(BeEmpty(), "VM %s/%s has no status.zone", ns, vmName)
+
+	return vm.Status.Zone
+}
+
 func GetVirtualMachineIP(ctx context.Context, client ctrlclient.Client, ns, vmName string) string {
 	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 	Expect(err).ShouldNot(HaveOccurred())

@@ -140,19 +140,11 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		vcenter.LogoutVimClient(vCenterAdminClient)
 	})
 
-	// getNsRPAndFolder returns the namespace RP MoID and folder MoID for the
-	// WCP namespace in the given zone. It mirrors topology.GetNamespaceFolderAndRPMoID,
-	// which the controller uses to compute the VM's expected location:
-	// Zone.Spec.ManagedVMs for the VM's own zone first, then the matching
-	// AvailabilityZone.Spec.Namespaces as fallback.
-	//
-	// On a multi-zone Supervisor the namespace RP is per-zone (each zone has its
-	// own resource pool), so the Zone selected MUST match the VM's status.zone.
-	// Returning an arbitrary zone's RP relocates the VM into a different zone's
-	// pool, which the controller correctly reports as a ResourcePoolMismatch and
-	// never reconciles back to LocationValid=True. The folder, in contrast, is
-	// shared across zones for a namespace, but it is resolved from the same
-	// zone-scoped entry here for consistency with the controller.
+	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given
+	// zone, mirroring the controller's topology.GetNamespaceFolderAndRPMoID:
+	// the namespaced Zone first, then the AvailabilityZone as fallback. The RP
+	// is per-zone, so zone must match the VM's status.zone or the resolved RP
+	// belongs to a different zone.
 	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
 		zoneList := &topologyv1.ZoneList{}
 		Expect(svClusterClient.List(ctx, zoneList, ctrlclient.InNamespace(namespace))).
@@ -166,8 +158,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			}
 		}
 
-		// Fallback: AvailabilityZone.Spec.Namespaces (older, non-zonal configurations).
-		// There the VM's status.zone is the AvailabilityZone name.
+		// Fallback for older, non-zonal configs, where status.zone is the AZ name.
 		azList := &topologyv1.AvailabilityZoneList{}
 		Expect(svClusterClient.List(ctx, azList)).
 			To(Succeed(), "failed to list AvailabilityZones")

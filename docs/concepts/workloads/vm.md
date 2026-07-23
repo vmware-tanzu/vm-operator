@@ -1456,22 +1456,21 @@ For volumes that were automatically created from VM images:
 
 2. **Removing Additional Image Disks**: Additional disks from the image can be removed from `spec.volumes`, but:
     - The automatically created PVC has an owner reference to the VM
-    - When the VM is deleted, all owned PVCs are automatically deleted
     - If you remove the volume from `spec.volumes` but keep the VM, the PVC remains but is no longer attached
+    - When the VM is later deleted, VM Operator removes its owner reference from any PVC that is no longer attached, immediately before the VM's finalizer is removed. A detached PVC therefore **survives** VM deletion instead of being cascade-deleted, matching how a traditional vSphere VM behaves — only disks still attached at delete time are destroyed with the VM. See [Preventing Owner Reference Removal](#preventing-owner-reference-removal) to opt a specific PVC out of this behavior.
 
-3. **Reclaiming Storage**: To properly clean up a removed image-based volume:
+3. **Reclaiming Storage**: To properly clean up a removed image-based volume that survived VM deletion:
    ```bash
-   # First, remove from spec.volumes (as shown above)
-   # Then delete the PVC
    kubectl delete pvc disk-<uuid> -n <namespace>
    ```
 
 !!! note "PVC Ownership"
     PVCs created automatically for image disks have `ownerReferences` pointing to the VM. This means:
 
-    - Deleting the VM will cascade delete all owned PVCs
-    - Removing the volume from `spec.volumes` does NOT delete the PVC automatically
-    - To prevent accidental data loss, you must explicitly delete the PVC
+    - Deleting the VM cascade-deletes only the PVCs that are **still attached** (listed in `spec.volumes`) at the time of deletion
+    - A PVC that was detached from `spec.volumes` before the VM was deleted has its owner reference removed and survives the VM's deletion, unless it carries the `vmoperator.vmware.com/keep-owner-ref` annotation
+    - Removing the volume from `spec.volumes` does NOT delete the PVC automatically, whether or not the VM is later deleted
+    - To prevent accidental data loss, an attached PVC — or a detached PVC that has survived VM deletion and is no longer needed — must be deleted explicitly
 
 ##### Detach vs. Delete
 
@@ -1487,6 +1486,9 @@ To detach a volume temporarily (keeping the data for potential reattachment):
 1. Remove the volume from `spec.volumes`
 2. Keep the PVC in the namespace
 3. Later, add the volume back to `spec.volumes` with the same PVC claim name
+
+!!! note "Detaching Before VM Deletion"
+    If a volume is detached and the VM is later deleted, VM Operator automatically removes the VM's owner reference from the detached PVC immediately before the VM's finalizer is removed. The PVC is therefore **not** cascade-deleted along with the VM. To restore the old cascade-delete behavior for a specific PVC, annotate it with `vmoperator.vmware.com/keep-owner-ref` — see [Preventing Owner Reference Removal](#preventing-owner-reference-removal).
 
 ##### Volume Removal Prerequisites
 
@@ -1621,9 +1623,25 @@ When the system automatically creates PVCs for disks that come from VM images, t
 
 ##### Ownership and Lifecycle
 
-- **Owner References**: Automatically created PVCs have an owner reference pointing to the `VirtualMachine`. When the VM is deleted, the PVCs are automatically deleted as well.
+- **Owner References**: Automatically created PVCs have an owner reference pointing to the `VirtualMachine`. When the VM is deleted, PVCs that are still attached (listed in `spec.volumes`) are automatically deleted along with it. A PVC that was detached before the VM was deleted has its owner reference removed immediately before the VM's finalizer is removed, so it survives instead of being cascade-deleted — see [Preventing Owner Reference Removal](#preventing-owner-reference-removal) to opt a specific PVC out of this behavior.
 - **Naming Convention**: PVCs are created with generated names following the pattern `disk-<uuid>`. This ensures uniqueness across the namespace.
-- **DataSource Reference**: Each PVC includes a `dataSourceRef` field pointing back to the VM, indicating the PVC was created through the automatic registration process.
+- **DataSource Reference**: Each PVC includes a `dataSourceRef` field pointing back to the VM, indicating the PVC was created through the automatic registration process. Unlike the owner reference, `dataSourceRef` is immutable once set and is never removed, even after the disk is detached or the VM is deleted.
+
+##### Preventing Owner Reference Removal
+
+By default, once a PVC is no longer attached to a VM — its entry has been removed from `spec.volumes` — VM Operator removes the VM's owner reference from that PVC the next time the VM is deleted, immediately before the VM's finalizer is removed. This lets a detached PVC survive VM deletion instead of being cascade-deleted, matching how a traditional vSphere VM behaves: only disks still attached at delete time are destroyed with the VM.
+
+To opt a specific PVC out of this behavior — for example, if you intend to reattach it later and still want it cleaned up automatically should you never get around to it — annotate the PVC with:
+
+```yaml
+metadata:
+  annotations:
+    vmoperator.vmware.com/keep-owner-ref: ""
+```
+
+- Only the presence of the annotation key is checked; its value is never inspected, so any value (including an empty string) opts the PVC out.
+- The annotation is evaluated only at the moment the VM is deleted, against whichever PVCs are detached at that time. It has no effect on a PVC that is still attached, since an attached PVC's owner reference is never removed in the first place.
+- The annotation lives on the PVC, not the VM, and only affects that specific PVC.
 
 ##### Storage Class and Policies
 

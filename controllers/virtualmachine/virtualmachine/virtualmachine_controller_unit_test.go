@@ -13,9 +13,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
@@ -30,6 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -82,6 +85,21 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
+
+		// ReconcileDelete looks up PVCs by VM OwnerRef via a field index that
+		// is normally registered by AddToManager. The fake client used here
+		// does not go through AddToManager, so register the same index
+		// directly.
+		ctx.Client = fake.NewClientBuilder().
+			WithScheme(ctx.Client.Scheme()).
+			WithObjects(initObjects...).
+			WithStatusSubresource(builder.KnownObjectTypes()...).
+			WithIndex(
+				&corev1.PersistentVolumeClaim{},
+				kubeutil.PVCOwnerRefVMUIDIndexKey,
+				kubeutil.PVCOwnerRefVMUIDIndexerFunc).
+			Build()
+
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.MaxDeployThreadsOnProvider = 16
 		})
@@ -466,6 +484,91 @@ func unitTestsReconcile() {
 
 			Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
 			Expect(fakeProbeManager.IsRemoveFromProberManagerCalled).Should(BeTrue())
+		})
+
+		When("the VM owns PVCs", func() {
+			var (
+				attachedPVC     *corev1.PersistentVolumeClaim
+				detachedPVC     *corev1.PersistentVolumeClaim
+				detachedKeptPVC *corev1.PersistentVolumeClaim
+			)
+
+			ownerRefFor := func(vm *vmopv1.VirtualMachine) metav1.OwnerReference {
+				return metav1.OwnerReference{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       "VirtualMachine",
+					Name:       vm.Name,
+					UID:        vm.UID,
+				}
+			}
+
+			BeforeEach(func() {
+				vm.UID = "dummy-vm-uid"
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					builder.DummyPVCVolume("disk-1", "attached-pvc"),
+				}
+
+				attachedPVC = &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "attached-pvc",
+						Namespace: vm.Namespace,
+					},
+				}
+				detachedPVC = &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "detached-pvc",
+						Namespace: vm.Namespace,
+					},
+				}
+				detachedKeptPVC = &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "detached-kept-pvc",
+						Namespace: vm.Namespace,
+						Annotations: map[string]string{
+							pkgconst.KeepOwnerRefAnnotationKey: "",
+						},
+					},
+				}
+			})
+
+			JustBeforeEach(func() {
+				attachedPVC.OwnerReferences = []metav1.OwnerReference{ownerRefFor(vm)}
+				detachedPVC.OwnerReferences = []metav1.OwnerReference{ownerRefFor(vm)}
+				detachedKeptPVC.OwnerReferences = []metav1.OwnerReference{ownerRefFor(vm)}
+				Expect(ctx.Client.Create(ctx, attachedPVC)).To(Succeed())
+				Expect(ctx.Client.Create(ctx, detachedPVC)).To(Succeed())
+				Expect(ctx.Client.Create(ctx, detachedKeptPVC)).To(Succeed())
+			})
+
+			It("removes the VM's OwnerRef only from the detached PVC without the keep-owner-ref annotation", func() {
+				Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+
+				gotAttached := &corev1.PersistentVolumeClaim{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(attachedPVC), gotAttached)).To(Succeed())
+				Expect(gotAttached.OwnerReferences).To(ConsistOf(ownerRefFor(vm)))
+
+				gotDetached := &corev1.PersistentVolumeClaim{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(detachedPVC), gotDetached)).To(Succeed())
+				Expect(gotDetached.OwnerReferences).To(BeEmpty())
+
+				gotDetachedKept := &corev1.PersistentVolumeClaim{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(detachedKeptPVC), gotDetachedKept)).To(Succeed())
+				Expect(gotDetachedKept.OwnerReferences).To(ConsistOf(ownerRefFor(vm)))
+			})
+
+			When("the VM is being unregistered rather than deleted", func() {
+				JustBeforeEach(func() {
+					vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = ""
+				})
+
+				It("still removes the OwnerRef from the detached PVC", func() {
+					Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+
+					gotDetached := &corev1.PersistentVolumeClaim{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(detachedPVC), gotDetached)).To(Succeed())
+					Expect(gotDetached.OwnerReferences).To(BeEmpty())
+				})
+			})
 		})
 
 		When("VM has skip-platform-delete annotation", func() {

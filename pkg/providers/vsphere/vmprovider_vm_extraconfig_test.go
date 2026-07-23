@@ -231,9 +231,8 @@ func vmExtraConfigTests() {
 	When("all NIC properties are set at once", func() {
 		BeforeEach(func() {
 			nicBeforeEach(vmopv1.VirtualMachineNetworkInterfaceSpec{
-				Name:        "eth0",
-				Network:     &vmopv1common.PartialObjectRef{Name: "VM Network"},
-				VNUMANodeID: ptr.To(int32(2)),
+				Name:    "eth0",
+				Network: &vmopv1common.PartialObjectRef{Name: "VM Network"},
 				VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
 					UPTv2Enabled:      ptr.To(true),
 					CtxPerDev:         ptr.To(vmopv1.TxContextThreadingModePerDevice),
@@ -247,17 +246,17 @@ func vmExtraConfigTests() {
 					{Key: "nic.bag.key", Value: "nic-bag-val"},
 				},
 			})
-			// VNUMANodeID requires VMX20 hardware, EFI firmware, and vNUMA topology.
-			// UPTv2Enabled additionally requires full memory reservation.
+			// Note: VNUMANodeID/spec.cpuAdvanced.topology.vnumaNodeCount are
+			// intentionally not exercised here. vcsim never populates
+			// config.numaInfo on Reconfigure, so the vnumaNodeCount compute
+			// field's differs() check can never observe convergence and the
+			// provider keeps reconfiguring forever, blowing past
+			// createOrUpdateVMMaxAllowedCallCount. See
+			// pkg/util/vmopv1/compute_overwrite_test.go for vnumaNodeCount
+			// coverage that doesn't depend on vcsim's live NumaInfo reads.
+			// UPTv2Enabled requires VMX20 hardware and full memory reservation.
+			// Covered in E2E tests.
 			vm.Spec.MinHardwareVersion = 20
-			vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
-				Firmware: vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
-			}
-			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
-				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
-					VNUMANodeCount: ptr.To(int32(2)),
-				},
-			}
 			vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
 				ReservationLockedToMax: ptr.To(true),
 			}
@@ -267,11 +266,10 @@ func vmExtraConfigTests() {
 			// Pass 1+2: provision NIC and apply all properties.
 			o := createAndUpdate()
 
-			// DeviceChange: NumaNode and Uptv2Enabled on the hardware device.
+			// DeviceChange: Uptv2Enabled on the hardware device.
 			devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 			nics := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
 			Expect(nics).ToNot(BeEmpty())
-			Expect(nics[0].GetVirtualDevice().NumaNode).To(Equal(ptr.To(int32(2))))
 			vmxnet3, ok := nics[0].(*vimtypes.VirtualVmxnet3)
 			Expect(ok).To(BeTrue(), "NIC should be VirtualVmxnet3")
 			Expect(vmxnet3.Uptv2Enabled).ToNot(BeNil())
@@ -300,7 +298,6 @@ func vmExtraConfigTests() {
 
 			Expect(vm.Status.Network.Interfaces).ToNot(BeEmpty())
 			ifaceStatus := vm.Status.Network.Interfaces[0]
-			Expect(ifaceStatus.VNUMANodeID).To(Equal(ptr.To(int32(2))))
 			Expect(ifaceStatus.VMXNet3).ToNot(BeNil())
 			Expect(ifaceStatus.VMXNet3.UPTv2Enabled).ToNot(BeNil())
 			Expect(*ifaceStatus.VMXNet3.UPTv2Enabled).To(BeTrue())

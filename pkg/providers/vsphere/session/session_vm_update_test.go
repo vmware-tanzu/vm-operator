@@ -37,7 +37,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -1931,6 +1934,194 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(`notAttached="regular-pvc"`))
+				})
+			})
+		})
+	})
+
+	When("class-based resize is requested with TelcoVMServiceAPI enabled", func() {
+
+		var wantNumCPUs int32
+
+		JustBeforeEach(func() {
+			// Ensure the vcsim VM is powered off so the reconfigure is accepted.
+			switch vmCtx.MoVM.Summary.Runtime.PowerState {
+			case vimtypes.VirtualMachinePowerStatePoweredOn,
+				vimtypes.VirtualMachinePowerStateSuspended:
+				t, err := vcVM.PowerOff(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(t.Wait(ctx)).To(Succeed())
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			}
+			Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(
+				Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+
+			// Spec.PowerState must be Off so that isOffToOn=false and
+			// useResizeArgs=true, routing through resizeVMWhenPoweredStateOff.
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMResize = true
+				config.Features.TelcoVMServiceAPI = true
+			})
+
+			// Mirror the controller's per-reconcile context setup: register the
+			// vmconfig reconcilers that UpdateVirtualMachine depends on when
+			// TelcoVMServiceAPI is enabled.
+			vmCtx.Context = vmconfig.WithContext(vmCtx.Context)
+			vmCtx.Context = vmconfig.Register(vmCtx.Context, vmconfextraconfig.New())
+
+			// Request 2 more CPUs than the live VM currently has.
+			wantNumCPUs = vmCtx.MoVM.Config.Hardware.NumCPU + 2
+
+			// Trigger ResizeNeeded by setting a different class name from the annotation.
+			Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, "old-class")).To(Succeed())
+			vm.Spec.ClassName = "new-class"
+
+			resizeArgs = &session.VMResizeArgs{
+				VMClass: &vmopv1.VirtualMachineClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "new-class"},
+				},
+				// Simulate class-derived desired spec: only CPU count changes.
+				ConfigSpec: vimtypes.VirtualMachineConfigSpec{
+					NumCPUs: wantNumCPUs,
+				},
+			}
+		})
+
+		Context("when spec.resources.size.cpu is nil (no backfill)", func() {
+
+			BeforeEach(func() {
+				vm.Spec.Resources = nil
+			})
+
+			It("applies the class CPU count", func() {
+				err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				Expect(err == nil || errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+
+				By("verifying the live VM has the new CPU count", func() {
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Config.Hardware.NumCPU).To(Equal(wantNumCPUs))
+				})
+			})
+		})
+
+		Context("when spec.resources.size.cpu is backfilled to the current live value", func() {
+
+			BeforeEach(func() {
+				// Simulate backfill: spec matches the current live CPU count.
+				// After fix, the class's wantNumCPUs should win over this.
+				vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+					Size: &vmopv1.VirtualMachineResourceQuantity{
+						CPU: resource.NewQuantity(
+							int64(vmCtx.MoVM.Config.Hardware.NumCPU),
+							resource.DecimalSI),
+					},
+				}
+			})
+
+			It("class CPU count wins over the backfilled spec value", func() {
+				err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				Expect(err == nil || errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+
+				By("verifying the live VM has the class CPU count (not the backfilled value)", func() {
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Config.Hardware.NumCPU).To(Equal(wantNumCPUs))
+				})
+			})
+		})
+	})
+
+	When("CPU/memory resize via VMResizeCPUMemory with TelcoVMServiceAPI enabled", func() {
+
+		var wantNumCPUs int32
+
+		JustBeforeEach(func() {
+			// Ensure the vcsim VM is powered off so the reconfigure is accepted.
+			switch vmCtx.MoVM.Summary.Runtime.PowerState {
+			case vimtypes.VirtualMachinePowerStatePoweredOn,
+				vimtypes.VirtualMachinePowerStateSuspended:
+				t, err := vcVM.PowerOff(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(t.Wait(ctx)).To(Succeed())
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			}
+			Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(
+				Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+
+			// Spec.PowerState must be Off so that isOffToOn=false and
+			// useResizeArgs=true, routing through resizeVMWhenPoweredStateOff.
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMResizeCPUMemory = true
+				config.Features.TelcoVMServiceAPI = true
+			})
+
+			// Mirror the controller's per-reconcile context setup: register the
+			// vmconfig reconcilers that UpdateVirtualMachine depends on when
+			// TelcoVMServiceAPI is enabled.
+			vmCtx.Context = vmconfig.WithContext(vmCtx.Context)
+			vmCtx.Context = vmconfig.Register(vmCtx.Context, vmconfextraconfig.New())
+
+			// Request 2 more CPUs than the live VM currently has.
+			wantNumCPUs = vmCtx.MoVM.Config.Hardware.NumCPU + 2
+
+			// Trigger ResizeNeeded by setting a different class name from the annotation.
+			Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, "old-class")).To(Succeed())
+			vm.Spec.ClassName = "new-class"
+
+			resizeArgs = &session.VMResizeArgs{
+				VMClass: &vmopv1.VirtualMachineClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "new-class"},
+				},
+				// Simulate class-derived desired spec: only CPU count changes.
+				ConfigSpec: vimtypes.VirtualMachineConfigSpec{
+					NumCPUs: wantNumCPUs,
+				},
+			}
+		})
+
+		Context("when spec.resources.size.cpu is nil (no backfill)", func() {
+
+			BeforeEach(func() {
+				vm.Spec.Resources = nil
+			})
+
+			It("applies the class CPU count", func() {
+				err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				Expect(err == nil || errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+
+				By("verifying the live VM has the new CPU count", func() {
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Config.Hardware.NumCPU).To(Equal(wantNumCPUs))
+				})
+			})
+		})
+
+		Context("when spec.resources.size.cpu is backfilled to the current live value", func() {
+
+			BeforeEach(func() {
+				// Simulate backfill: spec.resources.size.cpu matches the live CPU count.
+				// SyncClassSizeAndAllocationToSpec (called from resizeVMWhenPoweredStateOff
+				// else-branch) overwrites this with the class CPU count so that
+				// OverwriteSpecComputeConfig applies the class intent.
+				vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+					Size: &vmopv1.VirtualMachineResourceQuantity{
+						CPU: resource.NewQuantity(
+							int64(vmCtx.MoVM.Config.Hardware.NumCPU),
+							resource.DecimalSI),
+					},
+				}
+			})
+
+			It("class CPU count wins over the backfilled spec value", func() {
+				err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				Expect(err == nil || errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+
+				By("verifying the live VM has the class CPU count (not the backfilled value)", func() {
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Config.Hardware.NumCPU).To(Equal(wantNumCPUs))
 				})
 			})
 		})

@@ -435,21 +435,19 @@ If the condition is ever false, please refer first to the condition's `reason` f
 
 ### Compute Reconfiguration
 
-!!! note "Requires `TelcoVMServiceAPI` capability"
+Three optional fields are available for workloads that require fine-grained, direct control over compute resources: `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced`. These fields allow compute allocation and advanced CPU/memory settings to be specified directly on the VM, independent of the `VirtualMachineClass`.
 
-    The fields described in this section — `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` — are only available when the `TelcoVMServiceAPI` supervisor capability is enabled on the cluster. Attempting to set them without the capability has no effect.
-
-Three additional optional fields are available for workloads that require fine-grained, direct control over compute resources: `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced`. These fields allow compute allocation and advanced CPU/memory settings to be specified directly on the VM, independent of the `VirtualMachineClass`.
+When a VM is [resized](#resizing) onto a new `VirtualMachineClass`, the new class's compute values are written into these same fields, taking precedence over whatever was previously set. This keeps the class authoritative for a resize operation.
 
 #### spec.resources
 
-`spec.resources` controls the guest-visible size and host-level resource allocation (reservations and limits) of the VM. It has three sub-fields:
+`spec.resources` controls the guest-visible size and reservations and limits of the VM. It has three sub-fields:
 
 | Sub-field | Description |
 |-----------|-------------|
 | `spec.resources.size` | Guest-visible compute allocation. `cpu` is the vCPU count; `memory` is the guest RAM (e.g. `"8Gi"`). Maps to `ConfigSpec.NumCPUs` and `ConfigSpec.MemoryMB`. Overrides the corresponding `VirtualMachineClass` hardware values when set. |
-| `spec.resources.requests` | Host-level resource reservation (the host guarantee). `cpu` is in MHz (e.g. `"2000"` for 2 GHz); `memory` is in bytes (e.g. `"4Gi"`). Maps to `CpuAllocation.Reservation` and `MemoryAllocation.Reservation`. Can be reconfigured while the VM is powered on. |
-| `spec.resources.limits` | Host-level resource ceiling. `cpu` is in MHz (`nil` = unlimited); `memory` is in bytes (`nil` = unlimited). Maps to `CpuAllocation.Limit` and `MemoryAllocation.Limit`. Can be reconfigured while the VM is powered on. |
+| `spec.resources.requests` | VM resource reservation (guaranteed). `cpu` is in MHz (e.g. `"2000"` for 2 GHz); `memory` is in bytes (e.g. `"4Gi"`). Maps to `CpuAllocation.Reservation` and `MemoryAllocation.Reservation`. Can be reconfigured while the VM is powered on. |
+| `spec.resources.limits` | VM resource limits. `cpu` is in MHz (`nil` or `-1` = unlimited); `memory` is in bytes (`nil` or `-1` = unlimited). Maps to `CpuAllocation.Limit` and `MemoryAllocation.Limit`. Can be reconfigured while the VM is powered on. |
 
 !!! note "CPU units differ between `size` and `requests`/`limits`"
 
@@ -479,28 +477,38 @@ spec:
 
 | Sub-field | Description | Hot-reconfigurable |
 |-----------|-------------|--------------------|
-| `latencySensitivity` | vSphere CPU scheduler latency sensitivity. One of `Normal`, `High`, or `HighWithHyperthreading`. `High` and `HighWithHyperthreading` require full CPU and memory reservation (`requests` = `size`). `HighWithHyperthreading` also sets `ConfigSpec.SimultaneousThreads=2`. | No — requires power-off |
-| `topology.coresPerSocket` | Number of cores per virtual socket. Maps to `ConfigSpec.NumCoresPerSocket`. | No — requires power-off |
-| `topology.numaFixedAutoAffinityEnabled` | Enables fixed affinity between the VM's vCPUs and physical NUMA nodes. Mutually exclusive with `topology.vnumaNodeCount`. Requires hardware version vmx-23 or later. | No — requires power-off |
-| `topology.vnumaNodeCount` | Sets the number of virtual NUMA nodes. Must be set together with `topology.coresPerSocket`. The vCPU count should be evenly divisible by this value. Requires hardware version vmx-20 or later. | No — requires power-off |
-| `topology.exposeVnumaOnCpuHotadd` | Controls vNUMA exposure during CPU hot-add. Only relevant when `hotAddEnabled` is true. Requires hardware version vmx-20 or later. | No — requires power-off |
-| `hotAddEnabled` | Enables CPU hot-add (adding vCPUs while the VM is powered on). Maps to `ConfigSpec.CpuHotAddEnabled`. Requires hardware version vmx-20 or later. | No — requires power-off |
-| `iommuEnabled` | Enables Intel VT-d / IOMMU. Required for SR-IOV and PCI passthrough workloads. Requires EFI firmware (`spec.bootOptions.firmware = "efi"`). | No — requires power-off |
-| `nestedHardwareVirtualizationEnabled` | Exposes hardware-assisted virtualization to the guest OS, enabling nested hypervisors. | No — requires power-off |
-| `performanceCountersEnabled` | Enables virtualized CPU performance counters (vPMC) for guest profiling tools. | No — requires power-off |
-| `reservationLockedToMax` | Pins the host CPU reservation to guarantee full CPU capacity. Overrides `spec.resources.requests.cpu` when set. Requires hardware version vmx-23 or later. | No — requires power-off |
+| `latencySensitivity` | vSphere CPU scheduler latency sensitivity. One of `Normal`, `High`, or `HighWithHyperthreading`. `High` and `HighWithHyperthreading` require full CPU reservation (`spec.resources.requests.cpu` set to 100% of the VM's vCPU capacity in MHz) and full memory reservation (`spec.resources.requests.memory == spec.resources.size.memory`, or `spec.memoryAdvanced.reservationLockedToMax: true`). `HighWithHyperthreading` also sets `ConfigSpec.SimultaneousThreads=2`. | Yes |
+| `topology.coresPerSocket` | Number of cores per virtual socket. Maps to `ConfigSpec.NumCoresPerSocket`. `0` is a sentinel for "auto" (equivalent to leaving the field unset). | No — requires power-off |
+| `topology.vnumaNodeCount` | Sets the number of virtual NUMA nodes. When set to a value > 0, `topology.coresPerSocket` must also be set to a non-zero value. The vCPU count should be evenly divisible by this value. `0` is a sentinel for "auto" (equivalent to leaving the field unset). Requires hardware version 20 or later. | No — requires power-off |
+| `hotAddEnabled` | Enables CPU hot-add (adding vCPUs while the VM is powered on). Maps to `ConfigSpec.CpuHotAddEnabled`. Requires hardware version 11 or later. | No — requires power-off |
+| `iommuEnabled` | Enables Intel VT-d / IOMMU. Required for SR-IOV and PCI passthrough workloads. Requires hardware version 14 or later (Intel) / 18 or later (AMD). | No — requires power-off |
+| `nestedHardwareVirtualizationEnabled` | Exposes hardware-assisted virtualization to the guest OS, enabling nested hypervisors. Requires hardware version 9 or later. | No — requires power-off |
+| `performanceCountersEnabled` | Enables virtualized CPU performance counters (vPMC) for guest profiling tools. Requires hardware version 9 or later. | No — requires power-off |
 
 ```yaml
 spec:
   cpuAdvanced:
-    latencySensitivity: High
     topology:
       coresPerSocket: 4
       vnumaNodeCount: 2
     hotAddEnabled: true
     iommuEnabled: false
-    reservationLockedToMax: true
 ```
+
+!!! note "High latency sensitivity requires full reservation"
+
+    ```yaml
+    spec:
+      resources:
+        size:
+          cpu: "8"
+          memory: 16Gi
+        requests:
+          cpu: "16000"     # 100% of an 8-vCPU class at 2GHz/core, illustrative
+          memory: 16Gi     # equals size.memory
+      cpuAdvanced:
+        latencySensitivity: HighWithHyperthreading
+    ```
 
 #### spec.memoryAdvanced
 
@@ -508,8 +516,8 @@ spec:
 
 | Sub-field | Description | Hot-reconfigurable |
 |-----------|-------------|--------------------|
-| `hotAddEnabled` | Enables memory hot-add (adding RAM while the VM is powered on). Maps to `ConfigSpec.MemoryHotAddEnabled`. Requires hardware version vmx-20 or later. | No — requires power-off |
-| `reservationLockedToMax` | Pins the host memory reservation to the full guest-visible memory size. Required for SR-IOV workloads. Maps to `ConfigSpec.MemoryReservationLockedToMax`. | No — requires power-off |
+| `hotAddEnabled` | Enables memory hot-add (adding RAM while the VM is powered on). Maps to `ConfigSpec.MemoryHotAddEnabled`. Requires hardware version 7 or later. | No — requires power-off |
+| `reservationLockedToMax` | Pins the host memory reservation to the full guest-visible memory size. Required for SR-IOV workloads. Maps to `ConfigSpec.MemoryReservationLockedToMax`. | Yes |
 
 ```yaml
 spec:
@@ -517,6 +525,27 @@ spec:
     hotAddEnabled: true
     reservationLockedToMax: true
 ```
+
+#### ComputeConfigSynced Condition
+
+The condition `VirtualMachineComputeConfigSynced` reports whether `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` are fully applied to the VM's live vSphere configuration. When every field is converged, the condition is:
+
+```yaml
+status:
+  conditions:
+  - type: VirtualMachineComputeConfigSynced
+    status: "True"
+```
+
+When `status` is `"False"`, `reason` is one of the following, in order of precedence — if fields fall into more than one category, only the highest-precedence reason is reported:
+
+| Reason | Description |
+|--------|-------------|
+| `PrerequisiteNotMet` | One or more fields cannot be applied because a prerequisite is unmet — a minimum hardware version (e.g. `cpuAdvanced.hotAddEnabled` needs 11) or a runtime condition such as a configured vNUMA topology. `message` lists every blocked field and why, e.g. `"Prerequisites not met: cpuAdvanced.hotAddEnabled (requires hwVer >= 11)"`. |
+| `PowerOffRequired` | No prerequisite failures, but one or more fields are not currently hot-pluggable while the VM is powered on. `message` lists the deferred fields; they apply automatically the next time the VM is powered off. |
+| `ComputeConfigMismatch` | No blocked fields, but at least one field still needs to be written to converge spec and the live configuration. This is normally transient and clears on the next reconcile. |
+
+If the condition is ever `False`, refer first to `reason` and then `message` for which fields are affected.
 
 ## Encryption
 
@@ -950,45 +979,6 @@ The `VirtualMachineExtraConfigSynced` condition (and the analogous `VirtualMachi
 If a `PowerOff`-mode field and a `PowerCycle`-mode field both change in the same update, `PowerOffRequired` takes priority and is reported instead of `PowerCyclePending`.
 
 These reasons are only ever produced by first-class fields. A `spec.advanced.extraConfig` bag key change is applied immediately and the condition reports `True` right away, even if that particular key actually requires a power cycle to take effect — VM Operator does not track this for arbitrary keys.
-
-## Compute Reconfiguration
-
-`spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` enable field-level override of compute settings for Telco VNF workloads requiring deterministic scheduling or hardware-pinned resources.
-
-### spec.resources
-
-Overrides the guest-visible compute allocation and host-level resource policies independently of the `VirtualMachineClass`.
-
-| Field | Description |
-|-------|-------------|
-| `size.cpu` | Guest-visible vCPU count (whole number, e.g. `"4"`). Maps to `ConfigSpec.NumCPUs`. |
-| `size.memory` | Guest-visible RAM (e.g. `"8Gi"`). Maps to `ConfigSpec.MemoryMB`. |
-| `requests.cpu` | Host CPU reservation in **MHz** (e.g. `"2000"` for 2 GHz). Maps to `CpuAllocation.Reservation`. |
-| `requests.memory` | Host memory reservation (e.g. `"8Gi"`). Maps to `MemoryAllocation.Reservation`. |
-| `limits.cpu` | Host CPU limit in **MHz**; omit for unlimited. Maps to `CpuAllocation.Limit`. |
-| `limits.memory` | Host memory limit; omit for unlimited. Maps to `MemoryAllocation.Limit`. |
-
-> `requests` and `limits` CPU values are in **MHz**, not Kubernetes millicores. Using the `m` suffix (e.g. `"2000m"`) is rejected by admission.
-
-### spec.cpuAdvanced
-
-| Field | Description |
-|-------|-------------|
-| `latencySensitivity` | CPU scheduler latency class: `Low`, `Normal`, `High`, `HighWithHyperthreading`. `High`/`HighWithHyperthreading` require `requests = size`. Requires power-off. |
-| `topology.coresPerSocket` | Cores per virtual socket (≥ 1). Maps to `ConfigSpec.NumCoresPerSocket`. Requires power-off. |
-| `topology.coresPerNumaNode` | Cores per virtual NUMA node (≥ 1). Sets the number of vNUMA nodes = total vCPUs / value. Requires power-off. |
-| `topology.exposeVnumaOnCpuHotadd` | Expose vNUMA topology when vCPUs are hot-added. Only relevant when `hotAddEnabled` is true and vNUMA is configured. Requires power-off. |
-| `hotAddEnabled` | Allow vCPU hot-add while the VM is powered on. Incompatible with `latencySensitivity` High/HighWithHyperthreading. Requires power-off to enable. |
-| `iommuEnabled` | Enable IOMMU (VT-d / Intel VT-d). Required for SR-IOV and PCI passthrough. Requires EFI firmware. Requires power-off. |
-| `nestedHardwareVirtualizationEnabled` | Expose hardware virtualisation to the guest OS (nested hypervisor / VMX). Requires power-off. |
-| `performanceCountersEnabled` | Enable vPMC so profiling tools inside the guest can access hardware performance counters. Requires power-off. |
-
-### spec.memoryAdvanced
-
-| Field | Description |
-|-------|-------------|
-| `hotAddEnabled` | Allow memory hot-add while the VM is powered on. Requires power-off to enable. |
-| `reservationLockedToMax` | Pin host memory reservation to the full guest RAM size. Required for SR-IOV workloads. Requires power-off. |
 
 ## Storage
 

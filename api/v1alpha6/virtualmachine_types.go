@@ -181,8 +181,8 @@ const (
 
 	// VirtualMachinePrerequisiteNotMetReason is used on synced conditions when one or more
 	// spec fields cannot be applied because a prerequisite is not satisfied — for example, a
-	// minimum hardware version requirement or a runtime condition such as EFI firmware or a
-	// configured vNUMA topology. The condition message lists every blocked field and why.
+	// minimum hardware version requirement or a runtime condition such as a configured vNUMA
+	// topology. The condition message lists every blocked field and why.
 	VirtualMachinePrerequisiteNotMetReason = "PrerequisiteNotMet"
 
 	// VirtualMachinePowerOffRequiredReason is used on synced conditions when the VM is
@@ -208,6 +208,11 @@ const (
 	// VirtualMachinePowerCyclePendingReason). This is expected to resolve to
 	// True once a later reconcile observes the applied change.
 	VirtualMachineExtraConfigMismatchReason = "ExtraConfigMismatch"
+
+	// VirtualMachineComputeConfigMismatchReason is used on VirtualMachineConditionComputeConfigSynced
+	// when the VM's spec compute fields differ from the live vSphere configuration.
+	// The controller will apply the change on the current or next reconcile loop.
+	VirtualMachineComputeConfigMismatchReason = "ComputeConfigMismatch"
 )
 
 const (
@@ -1213,23 +1218,17 @@ type VirtualMachineSpec struct {
 	// Resources describes the desired compute resource allocation for this VM.
 	// When set, these values override the corresponding fields from the
 	// VirtualMachineClass via field-level merge.
-	//
-	// Requires the TelcoVMServiceAPI supervisor capability.
 	Resources *VirtualMachineResourcesSpec `json:"resources,omitempty"`
 
 	// +optional
 
 	// CPUAdvanced describes advanced CPU scheduling and topology configuration
 	// for this VM.
-	//
-	// Requires the TelcoVMServiceAPI supervisor capability.
 	CPUAdvanced *VirtualMachineCPUAdvancedSpec `json:"cpuAdvanced,omitempty"`
 
 	// +optional
 
 	// MemoryAdvanced describes advanced memory configuration for this VM.
-	//
-	// Requires the TelcoVMServiceAPI supervisor capability.
 	MemoryAdvanced *VirtualMachineMemoryAdvancedSpec `json:"memoryAdvanced,omitempty"`
 }
 

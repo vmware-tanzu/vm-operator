@@ -168,6 +168,61 @@ func HasVirtualPCIPassthroughDeviceChange(
 	return HasDeviceChangeDeviceByType[*vimtypes.VirtualPCIPassthrough](devices)
 }
 
+// isMemReservationLockRequiredDevice returns true for device types that
+// require the VM's full memory reservation to be locked: PCI passthrough and
+// SR-IOV.
+func isMemReservationLockRequiredDevice(dev vimtypes.BaseVirtualDevice) bool {
+	switch dev.(type) {
+	case *vimtypes.VirtualPCIPassthrough, *vimtypes.VirtualSriovEthernetCard:
+		return true
+	default:
+		return false
+	}
+}
+
+// RequiresMemoryReservationLock returns true if, after applying
+// deviceChanges to existingDevices, the VM would still have — or newly
+// gain — a PCI passthrough or SR-IOV device, either of which requires the
+// VM's full memory reservation to be locked to the guest-visible memory size
+// (ConfigSpec.MemoryReservationLockedToMax) in order to function. A device
+// being removed in deviceChanges is excluded, whether it comes from
+// existingDevices or is itself the device being removed; a device being
+// added or edited to this type is included.
+// Shared by the compute-config reconcile engine and the compute validating
+// webhook so the two enforce the same rule.
+func RequiresMemoryReservationLock(
+	existingDevices []vimtypes.BaseVirtualDevice,
+	deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec,
+) bool {
+	removedKeys := sets.New[int32]()
+	for i := range deviceChanges {
+		spec := deviceChanges[i].GetVirtualDeviceConfigSpec()
+		if spec == nil || spec.Device == nil || !isMemReservationLockRequiredDevice(spec.Device) {
+			continue
+		}
+		if spec.Operation != vimtypes.VirtualDeviceConfigSpecOperationRemove {
+			// Being added or edited to this type: will exist post-reconfigure.
+			return true
+		}
+		if d := spec.Device.GetVirtualDevice(); d != nil {
+			removedKeys.Insert(d.Key)
+		}
+	}
+
+	for i := range existingDevices {
+		dev := existingDevices[i]
+		if !isMemReservationLockRequiredDevice(dev) {
+			continue
+		}
+		if d := dev.GetVirtualDevice(); d != nil && removedKeys.Has(d.Key) {
+			continue
+		}
+		return true
+	}
+
+	return false
+}
+
 // SelectNvidiaVgpu return a slice of Nvidia vGPU devices.
 func SelectNvidiaVgpu(
 	devices []vimtypes.BaseVirtualDevice,

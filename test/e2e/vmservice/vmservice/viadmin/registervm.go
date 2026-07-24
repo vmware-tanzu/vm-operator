@@ -26,18 +26,16 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -310,11 +308,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
-			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Wait for backup to complete before reading the backup data
-			vmservice.WaitForBackupToComplete(ctx, existingVM, clusterProxy, config)
+			// Wait for backup to complete before reading the backup data.
+			// Use the returned VM to avoid a redundant Get call.
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config)
 
 			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
 			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
@@ -449,19 +445,17 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// is processed; if removable is missing the disk may be misclassified
 			// during a restore pass.
 			By("Set all PVC volumes as removable=true before backup is captured")
-			vmA5, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vmPatch, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
-			baseRemovable := vmA5.DeepCopy()
-			for i := range vmA5.Spec.Volumes {
-				vmA5.Spec.Volumes[i].Removable = ptr.To(true)
+			baseRemovable := vmPatch.DeepCopy()
+			for i := range vmPatch.Spec.Volumes {
+				vmPatch.Spec.Volumes[i].Removable = ptr.To(true)
 			}
-			Expect(svClusterClient.Patch(ctx, vmA5, ctrlclient.MergeFrom(baseRemovable))).To(Succeed())
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(baseRemovable))).To(Succeed())
 
-			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Wait for backup to complete before reading the backup data
-			vmservice.WaitForBackupToComplete(ctx, existingVM, clusterProxy, config)
+			// Wait for backup to complete before reading the backup data.
+			// Use the returned VM to avoid a redundant Get call.
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config)
 
 			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
 			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
@@ -494,12 +488,11 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			testutils.AssertCreatePVC(svClusterClientSet, pvcNameB, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameB)
 
-			// Use v1alpha3 here to make sure this doesn't blow up in product branches older than v1a5.
 			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", vmParameters.PVCNames))
 
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
-			baseA3 := vm.DeepCopy()
+			base := vm.DeepCopy()
 			vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 				Name: pvcNameB,
 				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -510,7 +503,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 					},
 				},
 			})
-			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(baseA3))).To(Succeed())
+			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
 			vmoperator.WaitForPVCAttachment(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, pvcNameB)
 			// Both PVC A and B are now attached to VM.
@@ -521,20 +514,17 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			By("Add the pause annotation and set all volumes as removable")
 
-			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-
 			// RegisterVM restores from the backup yaml (pvcA only), requiring pvcB
 			// removal; the validating webhook blocks that unless Removable=true on
 			// every volume.
-			vmA5, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
-			basePause := vmA5.DeepCopy()
-			metav1.SetMetaDataAnnotation(&vmA5.ObjectMeta, vmopv1.PauseAnnotation, trueString)
-			for i := range vmA5.Spec.Volumes {
-				vmA5.Spec.Volumes[i].Removable = ptr.To(true)
+			basePause := vm.DeepCopy()
+			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
+			for i := range vm.Spec.Volumes {
+				vm.Spec.Volumes[i].Removable = ptr.To(true)
 			}
-			Expect(svClusterClient.Patch(ctx, vmA5, ctrlclient.MergeFrom(basePause))).To(Succeed())
+			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(basePause))).To(Succeed())
 
 			// Collect all PVC names from the VM spec
 			var pvcNames []string
@@ -671,11 +661,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
 
-			// Wait for backup to complete before reading the backup data
-			vmservice.WaitForBackupToComplete(ctx, existingVM, clusterProxy, config)
+			// Wait for backup to complete before reading the backup data.
+			// Use the returned VM to avoid a redundant Get call.
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config)
 
 			// Delete the VM Service VM CR, keeping the vCenter VM in inventory.
 			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
@@ -910,11 +899,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForPVCAttachment(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, pvcNameA)
 
-			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Wait for backup to complete before powering off the VM
-			vmservice.WaitForBackupToComplete(ctx, existingVM, clusterProxy, config)
+			// Wait for backup to complete before powering off the VM.
+			// Use the returned VM to avoid a redundant Get call.
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config)
 
 			vmMoID := existingVM.Status.UniqueID
 
@@ -1113,6 +1100,69 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// We can't use len(existingVM.Spec.Volumes) here because we are only restoring one disk.
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, 1, clusterProxy, config, svClusterClient, wcpClient)
+		})
+	})
+
+	Context("RegisterVM - Restore to new", func() {
+		It("Should register VM when no pre-existing VM CR exists", Label("experimental"), func() {
+			if !vmServiceBackupRestoreEnabled {
+				Skip("WCP_VMService_BackupRestore FSS is not enabled")
+			}
+
+			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+			secretName := vmName + "-cloud-config-data"
+			secret := manifestbuilders.Secret{
+				Namespace: input.WCPNamespaceName,
+				Name:      secretName,
+			}
+			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
+			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data")
+
+			resources := config.InfraConfig.ManagementClusterConfig.Resources
+			vmParameters := manifestbuilders.VirtualMachineYaml{
+				Namespace:        input.WCPNamespaceName,
+				Name:             vmName,
+				VMClassName:      resources.VMClassName,
+				StorageClassName: resources.StorageClassName,
+				ResourcePolicy:   resources.VMResourcePolicyName,
+				ImageName:        linuxVMIName,
+				Bootstrap: manifestbuilders.Bootstrap{
+					CloudInit: &manifestbuilders.CloudInit{
+						RawCloudConfig: &manifestbuilders.KeySelector{
+							Key:  "user-data",
+							Name: secretName,
+						},
+					},
+				},
+				PowerState: "PoweredOn",
+			}
+			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName,
+				metav1.Condition{
+					Type:   consts.VMUnmanagedVolumesBackfilledCondition,
+					Status: metav1.ConditionTrue,
+				})
+
+			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(existingVM).ToNot(BeNil())
+
+			expectedVolCount := len(existingVM.Spec.Volumes)
+			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
+			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, input.WCPNamespaceName, clusterProxy, wcpClient)
+
+			By("Verify task state is success")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(taskInfo).ToNot(BeNil())
+			Expect(taskInfo.Error).To(BeNil())
+			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
+
+			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, expectedVolCount, clusterProxy, config, svClusterClient, wcpClient)
+			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})
 }

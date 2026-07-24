@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -193,7 +194,15 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 	detachAndDeleteWritableLocalCL := func() {
 		Expect(vmGroupPubInput.WCPClient.DisassociateImageRegistryContentLibrariesFromNamespace(vmSvcNamespace, targetCLID)).To(
 			Succeed(), "failed to detach content library '%s' from namespace '%s'", targetCLID, vmSvcNamespace)
-		Expect(vmGroupPubInput.WCPClient.DeleteLocalContentLibrary(targetCLID)).To(
+
+		// vCenter's Content Library Service can briefly hold the library in a
+		// "NotAllowedInCurrentState"/"in use" state right after the last publish
+		// into it completes, even though the publish request itself already
+		// reported success. Retry until that transient lock clears instead of
+		// failing outright.
+		Eventually(func(g Gomega) {
+			g.Expect(vmGroupPubInput.WCPClient.DeleteLocalContentLibrary(targetCLID)).To(Succeed())
+		}).WithTimeout(2*time.Minute).Should(
 			Succeed(), "failed to delete the publish content library, CL ID: %s", targetCLID)
 	}
 

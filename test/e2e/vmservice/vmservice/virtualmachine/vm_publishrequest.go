@@ -817,9 +817,14 @@ func setupNonAdminUserForTests(ctx context.Context, vimClient *vim25.Client, ssh
 
 	By("Checking if non-admin user kubeconfig is able to do basic operations")
 
-	pods := &corev1.PodList{}
-	err = nonAdminClient.List(ctx, pods)
-	Expect(err).NotTo(HaveOccurred())
+	// SupervisorProviderAdministrators group membership propagates into a
+	// Kubernetes RBAC binding on the Supervisor cluster asynchronously, so
+	// retry until that propagation completes instead of failing on the
+	// first attempt.
+	Eventually(func(g Gomega) {
+		pods := &corev1.PodList{}
+		g.Expect(nonAdminClient.List(ctx, pods)).To(Succeed())
+	}).WithTimeout(5 * time.Minute).Should(Succeed())
 
 	return user, nonAdminClient
 }

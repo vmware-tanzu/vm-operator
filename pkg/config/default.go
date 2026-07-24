@@ -64,5 +64,6 @@ func Default() Config {
 		WebhookSecretNamespace:       defaultPrefix + "system",
 		WebhookSecretVolumeMountPath: "/etc/vmware/wcp/webhook-certs",
 		CRDCleanupEnabled:            false,
+		AsyncCreateGetArgsTimeout:    2 * time.Minute,
 	}
 }

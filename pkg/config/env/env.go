@@ -51,6 +51,7 @@ const (
 	WebhookSecretName
 	WebhookSecretNamespace
 	CRDCleanupEnabled
+	AsyncCreateGetArgsTimeout
 	FSSInstanceStorage
 	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
@@ -169,6 +170,8 @@ func (n VarName) String() string {
 		return "WEBHOOK_SECRET_NAMESPACE"
 	case CRDCleanupEnabled:
 		return "CRD_CLEANUP_ENABLED"
+	case AsyncCreateGetArgsTimeout:
+		return "ASYNC_CREATE_GET_ARGS_TIMEOUT"
 
 	//
 	// Features/Capabilities

@@ -34,6 +34,7 @@ func FromEnv() Config {
 	setString(env.FastDeployMode, &config.FastDeployMode)
 	setString(env.VCCredsSecretName, &config.VCCredsSecretName)
 	setBool(env.CRDCleanupEnabled, &config.CRDCleanupEnabled)
+	setDuration(env.AsyncCreateGetArgsTimeout, &config.AsyncCreateGetArgsTimeout)
 
 	setDuration(env.InstanceStoragePVPlacementFailedTTL, &config.InstanceStorage.PVPlacementFailedTTL)
 	setFloat64(env.InstanceStorageJitterMaxFactor, &config.InstanceStorage.JitterMaxFactor)

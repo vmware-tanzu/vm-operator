@@ -7,6 +7,7 @@ package vsphere_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -285,6 +287,78 @@ func vmCreateTests() {
 					g.Expect(c.Reason).To(Equal("Error"))
 					g.Expect(c.Message).To(Equal("deploy error: ServerFaultCode: InvalidRequest"))
 				}).Should(Succeed())
+			})
+		})
+
+		// Regression coverage for the currentlyReconciling lock leaking
+		// forever when the synchronous, prerequisite-gathering phase of a
+		// non-blocking create (getCreateArgs) hangs, e.g. because a
+		// Kubernetes API call it depends on stalls.
+		When("gathering the create pre-reqs hangs past the configured timeout", func() {
+			var unblock chan struct{}
+
+			BeforeEach(func() {
+				unblock = make(chan struct{})
+
+				pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+					config.AsyncCreateGetArgsTimeout = 200 * time.Millisecond
+				})
+			})
+
+			JustBeforeEach(func() {
+				// Simulate a stalled Kubernetes API server by blocking the
+				// Get call for the VM Class -- one of the first k8s calls
+				// made from getCreateArgs -- until either the context's
+				// deadline fires or the test unblocks it.
+				interceptedClient := interceptor.NewClient(
+					ctx.Client.(client.WithWatch),
+					interceptor.Funcs{
+						Get: func(
+							getCtx context.Context,
+							c client.WithWatch,
+							key client.ObjectKey,
+							obj client.Object,
+							opts ...client.GetOption) error {
+							if _, ok := obj.(*vmopv1.VirtualMachineClass); ok {
+								select {
+								case <-getCtx.Done():
+									return getCtx.Err()
+								case <-unblock:
+								}
+							}
+
+							return c.Get(getCtx, key, obj, opts...)
+						},
+					})
+
+				vmProvider = vsphere.NewVSphereVMProviderFromClient(
+					ctx, interceptedClient, ctx.Recorder)
+			})
+
+			AfterEach(func() {
+				close(unblock)
+			})
+
+			It("returns within the configured timeout and releases the create lock", func() {
+				timeout := pkgcfg.FromContext(ctx).AsyncCreateGetArgsTimeout
+
+				start := time.Now()
+				_, err := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+				elapsed := time.Since(start)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("timed out gathering create args"))
+
+				// The call must return promptly -- bounded by the configured
+				// timeout -- rather than hanging indefinitely.
+				Expect(elapsed).To(BeNumerically("<", timeout+30*time.Second))
+
+				// The critical assertion: currentlyReconciling must have been
+				// released. If the lock leaked, this second call for the
+				// same VM would be rejected with ErrReconcileInProgress
+				// forever instead of retrying the timed-out work.
+				_, err2 := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+				Expect(err2).ToNot(MatchError(providers.ErrReconcileInProgress))
 			})
 		})
 	})

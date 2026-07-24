@@ -174,6 +174,20 @@ type Config struct {
 	// Please note, this field has no effect if a CRD is being installed for the
 	// first time.
 	CRDCleanupEnabled bool
+
+	// AsyncCreateGetArgsTimeout bounds how long the synchronous,
+	// prerequisite-gathering phase of a non-blocking VM create (the call to
+	// getCreateArgs, which is made before the actual create is handed off to
+	// a background goroutine) is allowed to run.
+	//
+	// This phase can make both vCenter and Kubernetes API calls. Without a
+	// deadline, a stalled dependency (e.g. an overloaded API server) blocks
+	// the reconcile goroutine forever, which in turn permanently leaks the
+	// in-memory currentlyReconciling lock for that VM, wedging it in progress
+	// indefinitely.
+	//
+	// Defaults to 2 minutes.
+	AsyncCreateGetArgsTimeout time.Duration
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0

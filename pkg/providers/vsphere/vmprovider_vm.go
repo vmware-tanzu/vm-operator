@@ -291,14 +291,39 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		}
 	}()
 
-	createArgs, err := vs.getCreateArgs(vmCtx, client)
+	// Bound the synchronous, prerequisite-gathering phase of the non-blocking
+	// create with a deadline. getCreateArgs makes both vCenter and
+	// Kubernetes API calls; without a deadline, a stalled dependency (e.g. an
+	// overloaded API server) blocks this reconcile goroutine forever, which
+	// permanently leaks the currentlyReconciling lock for this VM.
+	//
+	// A separate VirtualMachineContext value is used here -- rather than
+	// mutating vmCtx.Context in place -- so the timeout does not leak into
+	// copyOfCtx/the goroutine spawned below. Since defer cancel() fires the
+	// instant this function returns (right after the "go" statement), if the
+	// goroutine's context inherited this deadline it would be canceled
+	// microseconds after the async create started.
+	getArgsCtx, cancel := context.WithTimeout(
+		ctx, pkgcfg.FromContext(vmCtx).AsyncCreateGetArgsTimeout)
+	defer cancel()
+
+	getArgsVMCtx := vmCtx
+	getArgsVMCtx.Context = getArgsCtx
+
+	createArgs, err := vs.getCreateArgs(getArgsVMCtx, client)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timed out gathering create args: %w", err)
+		}
 		return nil, err
 	}
 
 	// Create a copy of the context and replace its VM with a copy to
 	// ensure modifications in the goroutine below are not impacted or
 	// impact the operations above us in the call stack.
+	//
+	// copyOfCtx is derived from vmCtx (not getArgsVMCtx), so it retains the
+	// original, un-timed-out context for the async create goroutine.
 	copyOfCtx := vmCtx
 	copyOfCtx.VM = vmCtx.VM.DeepCopy()
 

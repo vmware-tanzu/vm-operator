@@ -1123,28 +1123,22 @@ func VerifyPostRegisterVM(
 	vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmNamespace, vmName)
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
+	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+	Expect(err).ToNot(HaveOccurred())
+
 	By("Restored VM must have expected number of restored volumes")
 
-	// RegisterVM returning success does not mean spec.volumes has already
-	// converged to its final restored set - the volume merge lands via a
-	// later reconcile, so a single immediate read can observe a transient
-	// count. Poll until it settles instead of asserting on the first read.
-	var actualRestoredPVCCount int
-	Eventually(func() int {
-		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-		Expect(err).ToNot(HaveOccurred())
+	actualRestoredPVCCount := 0
 
-		actualRestoredPVCCount = 0
-		for _, vol := range vm.Spec.Volumes {
-			// Volume and PVC both contain "restored-" prefix, so validate that.
-			if vol.PersistentVolumeClaim != nil &&
-				strings.HasPrefix(vol.PersistentVolumeClaim.ClaimName, "restored-") {
-				actualRestoredPVCCount++
-			}
+	for _, vol := range vm.Spec.Volumes {
+		// Volume and PVC both contain "restored-" prefix, so validate that.
+		if vol.PersistentVolumeClaim != nil &&
+			strings.HasPrefix(vol.PersistentVolumeClaim.ClaimName, "restored-") {
+			actualRestoredPVCCount++
 		}
-		return actualRestoredPVCCount
-	}, config.GetIntervals("default", "wait-virtual-machine-volumes-update")...).Should(Equal(expectedRestoredPVCCount),
-		"Restored VM must have expected number of restored volumes, expected %d, got %d",
+	}
+
+	Expect(actualRestoredPVCCount).To(Equal(expectedRestoredPVCCount), "Restored VM must have expected number of restored volumes, expected %d, got %d",
 		expectedRestoredPVCCount, actualRestoredPVCCount)
 
 	By("Power on the VM")

@@ -40,7 +40,6 @@ intervals:
   default/wait-virtual-machine-creation: ["5m", "10s"]
   default/wait-virtual-machine-deletion: ["5m", "10s"]
   default/wait-virtual-machine-condition-update: ["5m", "10s"]
-  default/wait-virtual-machine-volumes-update: ["5m", "10s"]
   default/wait-virtual-machine-powerstate: ["5m", "10s"]
   default/wait-virtual-machine-resize: ["5m", "10s"]
   default/wait-virtual-machine-moid: ["5m", "10s"]

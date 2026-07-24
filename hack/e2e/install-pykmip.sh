@@ -8,34 +8,60 @@ set -x
 # Install https://github.com/OpenKMIP/PyKMIP
 # Used as KMS for encrypting VMs
 
-# VDS/photon:
-#  server == /usr/bin/pykmip-server
-#  pip3 not installed
-# NSX/ubuntu:
-#  server == /usr/local/bin/pykmip-server
-#  pip3 already installed
-if ! type -p pykmip-server >/dev/null ; then
-  if ! type -p pip3 >/dev/null ; then
-    python3 -m ensurepip
-    pip3 install --upgrade \
+# flock serializes this entire block across parallel SSH sessions.
+# The first runner to acquire the lock installs PyKMIP and generates the TLS
+# cert; every subsequent runner finds both already present and exits early.
+# This prevents two races at once:
+#   1. pip uninstall race — parallel runners both try to uninstall/upgrade
+#      typing_extensions from system site-packages, leaving a half-removed
+#      package that causes an OSError on the slower runner.
+#   2. cert race — parallel runners generate different certs; the one whose
+#      govc kms.trust runs last wins, but PyKMIP may be serving the other cert.
+echo "pykmip-install: waiting for lock (PID $$)..."
+flock -x /root/pykmip.lock bash -s -- "${PIP_INDEX_URL:-}" <<'LOCKED'
+  PIP_INDEX_URL="$1"
+
+  # --- pip install (serialized) ---
+  # VDS/photon:  server == /usr/bin/pykmip-server,  pip3 not installed
+  # NSX/ubuntu:  server == /usr/local/bin/pykmip-server, pip3 already installed
+  if type -p pykmip-server >/dev/null 2>&1; then
+    echo "pykmip-install: pykmip-server already installed, skipping pip install"
+  else
+    echo "pykmip-install: installing PyKMIP via pip..."
+    if ! type -p pip3 >/dev/null 2>&1; then
+      # On VDS/Photon OS, ensurepip installs pip as a Python module but does
+      # not create a pip3 binary in PATH.
+      python3 -m ensurepip --upgrade
+    fi
+    # PIP_INDEX_URL can be set by the caller to redirect pip to an internal
+    # package mirror (e.g. a corporate Artifactory instance).
+    python3 -m pip install \
       ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
-      pip
+      pykmip
+    # currently by default there are no shared ciphers between
+    # vCenter/qClient + pykmip, patch the default TLS1.2 suite for now.
+    # See: https://bugzilla-vcf.lvn.broadcom.net/show_bug.cgi?id=3428705
+    site=$(python3 -c 'import site; print(site.getsitepackages()[0])')
+    sed -i -e "s/'ECDHE-RSA-AES128-SHA256',/'ECDHE-RSA-AES128-SHA',/g" \
+        "$site"/kmip/services/auth.py
+    echo "pykmip-install: pip install complete"
   fi
 
-  # PIP_INDEX_URL can be set by the caller to redirect pip to an internal
-  # package mirror (e.g. a corporate Artifactory instance). If unset, pip
-  # uses its default index (public PyPI).
-  pip3 install \
-    ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
-    pykmip
-
-  # currently by default there are no shared ciphers between
-  # vCenter/qClient + pykmip, patch the default TLS1.2 suite for now.
-  # See: https://bugzilla-vcf.lvn.broadcom.net/show_bug.cgi?id=3428705
-  site=$(python3 -c 'import site; print(site.getsitepackages()[0])')
-  sed -i -e "s/'ECDHE-RSA-AES128-SHA256',/'ECDHE-RSA-AES128-SHA',/g" \
-      "$site"/kmip/services/auth.py
-fi
+  # --- TLS cert generation (serialized) ---
+  # Cert lives on the gateway so all parallel runners fetch and register the
+  # same cert via govc kms.trust, preventing a trust mismatch between vCenter
+  # and the PyKMIP server.
+  if [ -e /root/pykmip-crt.pem ]; then
+    echo "pykmip-install: TLS cert already exists, skipping cert generation"
+  else
+    echo "pykmip-install: generating TLS cert..."
+    openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+            -subj "/C=US/ST=CA/L=PA/O=Broadcom/OU=VCF/CN=pykmip" \
+            -keyout /root/pykmip-key.pem -out /root/pykmip-crt.pem
+    echo "pykmip-install: TLS cert generated"
+  fi
+LOCKED
+echo "pykmip-install: lock released (PID $$)"
 
 mkdir -p /etc/pykmip
 

@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -146,16 +147,22 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	// is per-zone, so zone must match the VM's status.zone or the resolved RP
 	// belongs to a different zone.
 	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
+		// A found Zone is authoritative: assert it carries a pool rather than
+		// falling through to the AvailabilityZone path, which would otherwise
+		// surface a misleading "AvailabilityZone not found" error.
 		z := &topologyv1.Zone{}
 		err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: zone}, z)
-		if err == nil && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
+		if err == nil {
+			Expect(z.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty(),
+				"Zone %s/%s has no ManagedVMs.PoolMoIDs", namespace, zone)
 			e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
 				z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
 			return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
 		}
-		Expect(ctrlclient.IgnoreNotFound(err)).To(Succeed(), "failed to get Zone %s/%s", namespace, zone)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "failed to get Zone %s/%s", namespace, zone)
 
-		// Fallback for older, non-zonal configs, where status.zone is the AZ name.
+		// Fallback for older, non-zonal configs (no Zone object), where the VM's
+		// status.zone is the cluster-scoped AvailabilityZone name.
 		az := &topologyv1.AvailabilityZone{}
 		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: zone}, az)).
 			To(Succeed(), "failed to get AvailabilityZone %s", zone)

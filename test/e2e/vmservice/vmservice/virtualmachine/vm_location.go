@@ -146,33 +146,24 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	// is per-zone, so zone must match the VM's status.zone or the resolved RP
 	// belongs to a different zone.
 	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
-		zoneList := &topologyv1.ZoneList{}
-		Expect(svClusterClient.List(ctx, zoneList, ctrlclient.InNamespace(namespace))).
-			To(Succeed(), "failed to list Zones for namespace %s", namespace)
-
-		for _, z := range zoneList.Items {
-			if z.Name == zone && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
-				e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
-					z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
-				return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
-			}
+		z := &topologyv1.Zone{}
+		err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: zone}, z)
+		if err == nil && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
+			e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
+				z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
+			return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
 		}
+		Expect(ctrlclient.IgnoreNotFound(err)).To(Succeed(), "failed to get Zone %s/%s", namespace, zone)
 
 		// Fallback for older, non-zonal configs, where status.zone is the AZ name.
-		azList := &topologyv1.AvailabilityZoneList{}
-		Expect(svClusterClient.List(ctx, azList)).
-			To(Succeed(), "failed to list AvailabilityZones")
-		Expect(azList.Items).ToNot(BeEmpty(), "expected at least one AvailabilityZone")
+		az := &topologyv1.AvailabilityZone{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: zone}, az)).
+			To(Succeed(), "failed to get AvailabilityZone %s", zone)
 
-		for _, az := range azList.Items {
-			if az.Name != zone {
-				continue
-			}
-			if nsInfo, ok := az.Spec.Namespaces[namespace]; ok && nsInfo.PoolMoId != "" {
-				e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
-					az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
-				return nsInfo.PoolMoId, nsInfo.FolderMoId
-			}
+		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok && nsInfo.PoolMoId != "" {
+			e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
+				az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
+			return nsInfo.PoolMoId, nsInfo.FolderMoId
 		}
 
 		Fail(fmt.Sprintf(

@@ -386,7 +386,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 	})
 
-	Context("when suspending a VM", Label("core-functional", "experimental"), func() {
+	Context("when suspending a VM", Label("core-functional"), func() {
 		BeforeEach(func() {
 			By("Creating a powered on VirtualMachine to suspend")
 			vmParameters := manifestbuilders.VirtualMachineYaml{

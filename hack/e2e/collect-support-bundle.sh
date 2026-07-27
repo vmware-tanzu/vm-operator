@@ -133,8 +133,8 @@ if [[ "${_vc_session_http}" != "20"* || -z "${VC_SESSION}" || "${VC_SESSION}" ==
     exit 0
 fi
 
-BUNDLE_URL=""
-BUNDLE_TOKEN=""
+SUPERVISOR_ID=""
+CLUSTER_ID=""
 
 # ---------------------------------------------------------------------------
 # v2 API: supervisors endpoint (vSphere 8.0+)
@@ -143,47 +143,91 @@ SUPERVISOR_ID=$(curl -sk --max-time 30 -H "vmware-api-session-id: ${VC_SESSION}"
     "https://${VC_IP}/api/vcenter/namespace-management/supervisors" \
     | jq -r 'if type == "array" then .[0].supervisor // empty else empty end')
 
-if [[ -n "${SUPERVISOR_ID}" ]]; then
-    _log "Getting WCP bundle for supervisor ${SUPERVISOR_ID} (v2 API)..."
-    BUNDLE_INFO=$(curl -sk --max-time 30 -X POST \
-        -H "vmware-api-session-id: ${VC_SESSION}" \
-        "https://${VC_IP}/api/vcenter/namespace-management/supervisors/${SUPERVISOR_ID}/support-bundles")
-    BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
-    BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.support_bundle_token.token // empty')
-else
+if [[ -z "${SUPERVISOR_ID}" ]]; then
     # ---------------------------------------------------------------------------
     # v1 fallback: clusters endpoint (pre-8.0)
     # ---------------------------------------------------------------------------
     CLUSTER_ID=$(curl -sk --max-time 30 -H "vmware-api-session-id: ${VC_SESSION}" \
         "https://${VC_IP}/api/vcenter/namespace-management/clusters" \
         | jq -r 'if type == "array" then .[0].cluster // empty else empty end')
-    if [[ -n "${CLUSTER_ID}" ]]; then
-        _log "Getting WCP bundle for cluster ${CLUSTER_ID} (v1 API)..."
-        BUNDLE_INFO=$(curl -sk --max-time 30 -X POST \
-            -H "vmware-api-session-id: ${VC_SESSION}" \
-            "https://${VC_IP}/api/vcenter/namespace-management/clusters/${CLUSTER_ID}/support-bundle" \
-            || echo '{}')
-        BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
-        BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.wcp_support_bundle_token.token // empty')
-    else
-        _warn "No supervisor or cluster found on VC ${VC_IP}; skipping WCP bundle"
-    fi
+fi
+
+if [[ -z "${SUPERVISOR_ID}" && -z "${CLUSTER_ID}" ]]; then
+    _warn "No supervisor or cluster found on VC ${VC_IP}; skipping WCP bundle"
 fi
 
 # ---------------------------------------------------------------------------
-# Download the bundle
+# Request and download the bundle, with retries.
+#
+# The support-bundle token is single-use (VC discards it once a download is
+# attempted), so a retry must re-request a fresh bundle/token — it cannot
+# just re-download the previous URL. Each attempt is validated for both a
+# successful HTTP status and a structurally-intact tar before being accepted;
+# a truncated download (e.g. VC's own bundle-generation timing out mid-stream)
+# is otherwise silently treated as success because curl only reports failure
+# on transport-level errors, not on a short/incomplete 2xx response body.
 # ---------------------------------------------------------------------------
-if [[ -n "${BUNDLE_URL}" && -n "${BUNDLE_TOKEN}" ]]; then
-    _log "Downloading WCP support bundle from ${BUNDLE_URL}..."
-    WCP_BUNDLE_PAYLOAD="{\"wcp-support-bundle-token\": \"${BUNDLE_TOKEN}\"}"
-    curl -sk --max-time 600 -X POST \
-        -H 'Content-Type: application/json' \
-        -d "${WCP_BUNDLE_PAYLOAD}" \
-        "${BUNDLE_URL}" \
-        -o "${OUTPUT_DIR}/wcp-support-bundle.tar" \
-        || _warn "WCP support bundle download failed"
-else
-    _warn "Could not obtain WCP support bundle URL or token"
+BUNDLE_OUT="${OUTPUT_DIR}/wcp-support-bundle.tar"
+MAX_ATTEMPTS=3
+DOWNLOAD_OK=false
+
+if [[ -n "${SUPERVISOR_ID}" || -n "${CLUSTER_ID}" ]]; then
+    for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+        BUNDLE_URL=""
+        BUNDLE_TOKEN=""
+
+        if [[ -n "${SUPERVISOR_ID}" ]]; then
+            _log "Getting WCP bundle for supervisor ${SUPERVISOR_ID} (v2 API), attempt ${attempt}/${MAX_ATTEMPTS}..."
+            BUNDLE_INFO=$(curl -sk --max-time 30 -X POST \
+                -H "vmware-api-session-id: ${VC_SESSION}" \
+                "https://${VC_IP}/api/vcenter/namespace-management/supervisors/${SUPERVISOR_ID}/support-bundles")
+            BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
+            BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.support_bundle_token.token // empty')
+        else
+            _log "Getting WCP bundle for cluster ${CLUSTER_ID} (v1 API), attempt ${attempt}/${MAX_ATTEMPTS}..."
+            BUNDLE_INFO=$(curl -sk --max-time 30 -X POST \
+                -H "vmware-api-session-id: ${VC_SESSION}" \
+                "https://${VC_IP}/api/vcenter/namespace-management/clusters/${CLUSTER_ID}/support-bundle" \
+                || echo '{}')
+            BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
+            BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.wcp_support_bundle_token.token // empty')
+        fi
+
+        if [[ -z "${BUNDLE_URL}" || -z "${BUNDLE_TOKEN}" ]]; then
+            _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: could not obtain WCP support bundle URL or token"
+            sleep 5
+            continue
+        fi
+
+        _log "Downloading WCP support bundle from ${BUNDLE_URL}..."
+        WCP_BUNDLE_PAYLOAD="{\"wcp-support-bundle-token\": \"${BUNDLE_TOKEN}\"}"
+        _bundle_http=$(curl -sk --max-time 600 -X POST \
+            -H 'Content-Type: application/json' \
+            -d "${WCP_BUNDLE_PAYLOAD}" \
+            "${BUNDLE_URL}" \
+            -o "${BUNDLE_OUT}" \
+            -w '%{http_code}')
+        _curl_rc=$?
+
+        if [[ ${_curl_rc} -ne 0 ]]; then
+            _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: WCP support bundle download failed (curl exit ${_curl_rc})"
+        elif [[ "${_bundle_http}" != "20"* ]]; then
+            _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: WCP support bundle download failed (HTTP ${_bundle_http})"
+        elif ! tar -tf "${BUNDLE_OUT}" >/dev/null 2>&1; then
+            _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: downloaded WCP support bundle is truncated or not a valid tar"
+        else
+            _log "WCP support bundle downloaded and verified on attempt ${attempt}/${MAX_ATTEMPTS}"
+            DOWNLOAD_OK=true
+            break
+        fi
+
+        rm -f "${BUNDLE_OUT}"
+        [[ ${attempt} -lt ${MAX_ATTEMPTS} ]] && sleep 15
+    done
+
+    if [[ "${DOWNLOAD_OK}" != true ]]; then
+        _warn "WCP support bundle download did not succeed after ${MAX_ATTEMPTS} attempts; leaving ${OUTPUT_DIR} without a bundle"
+    fi
 fi
 
 curl -sk -X DELETE \

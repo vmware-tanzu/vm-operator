@@ -124,6 +124,20 @@ const (
 	// CNSSelectedNodeIsZoneAnnotationKey is used to indicate to CNS that the selected-node annotation
 	// is the name of the VM's Zone instead of a Node in the zone.
 	CNSSelectedNodeIsZoneAnnotationKey = "cns.vmware.com/selected-node-is-zone"
+	// HostLocalPolicyStorageClassAnnotationKey is the annotation CNS places on a
+	// StorageClass to mark it as backed by a host-local (VMFS-L/VMFS
+	// direct-attached, single-host) storage policy.
+	HostLocalPolicyStorageClassAnnotationKey = "cns.vmware.com/hostLocalPolicy"
+	// HostLocalSelectedNodeMOIDAnnotationKey value corresponds to the MOID of the
+	// ESXi host a VM with host-local storage volumes is pinned to. This
+	// annotation is computed by VM Operator only; it is never user-settable.
+	HostLocalSelectedNodeMOIDAnnotationKey = "vmoperator.vmware.com/hostlocal-selected-node-moid"
+	// HostLocalSelectedNodeAnnotationKey value corresponds to the Supervisor
+	// node name (== ESXi host FQDN) a VM with host-local storage volumes is
+	// pinned to. A caller may set this directly to request a specific host;
+	// VM Operator also writes it itself once a host is resolved by any other
+	// means (a Bound PVC's topology, or DRS-based auto-placement).
+	HostLocalSelectedNodeAnnotationKey = "vmoperator.vmware.com/hostlocal-selected-node"
 	// InstanceStoragePVPlacementErrorPrefix indicates prefix of error value.
 	InstanceStoragePVPlacementErrorPrefix = "FAILED_"
 	// InstanceStorageNotEnoughResErr is an error constant to indicate not enough resources.

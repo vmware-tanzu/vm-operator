@@ -41,11 +41,19 @@ type Constraints struct {
 	// will further be filtered by.
 	Zones sets.Set[string]
 
+	// NeedHostLocalPlacement is true when the VM has a Pending host-local
+	// StorageClass PVC with no host resolved anywhere yet, so placement must
+	// force a DRS host recommendation compliant with that PVC's storage
+	// policy (see the placement-only phantom disk added by
+	// virtualmachine.CreateConfigSpecForPlacement).
+	NeedHostLocalPlacement bool
+
 	// TODO: ClusterModules?
 }
 
 type Result struct {
 	InstanceStoragePlacement bool
+	HostLocalPlacement       bool
 	ZoneName                 string
 	HostMoRef                *vimtypes.ManagedObjectReference
 	PoolMoRef                vimtypes.ManagedObjectReference
@@ -53,6 +61,7 @@ type Result struct {
 
 	needInstanceStoragePlacement bool
 	needDatastorePlacement       bool
+	needHostLocalPlacement       bool
 }
 
 type DatastoreResult struct {
@@ -73,7 +82,7 @@ var (
 	ErrNoPlacementRecommendations = errors.New("no placement recommendations")
 )
 
-func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
+func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext, constraints Constraints) (res Result) {
 	if zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]; zoneName != "" {
 		// Zone has already been selected.
 		res.ZoneName = zoneName
@@ -84,8 +93,12 @@ func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
 
 	if f.InstanceStorage {
 		if vmopv1util.IsInstanceStoragePresent(vmCtx.VM) {
-			// Note instance storage is not compatible with fast deploy, so the fast
-			// deploy feature is disabled within the context of this VM.
+			// Note the VirtualMachine controller has already disabled the fast
+			// deploy feature in this call-stack's config, since it is not
+			// compatible with instance storage, so needDatastorePlacement above
+			// is expected to be false here. That matters because a VM pinned to
+			// a specific host must be able to take the early return in
+			// Placement, which requires needDatastorePlacement to be false.
 			res.InstanceStoragePlacement = true
 
 			if hostMoID := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]; hostMoID != "" {
@@ -98,7 +111,27 @@ func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
 		}
 	}
 
-	return
+	if f.HostLocalStorage {
+		if hostMoID := vmCtx.VM.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey]; hostMoID != "" && res.HostMoRef == nil {
+			// Host has already been resolved (explicit override, a Bound
+			// host-local PVC, or a prior DRS auto-placement round).
+			//
+			// Unlike instance storage above, fast deploy is NOT disabled for
+			// host-local VMs, since it is the only create path that places the
+			// VM's files on an explicit datastore. When it is enabled,
+			// needDatastorePlacement is true and Placement cannot take the
+			// early return, so getPlacementRecommendation instead constrains
+			// the request to this host to obtain a datastore reachable from it.
+			res.HostMoRef = &vimtypes.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
+		} else if constraints.NeedHostLocalPlacement {
+			// VM has a Pending host-local StorageClass PVC with no host
+			// resolved anywhere yet, so we need to force a DRS host
+			// recommendation for it.
+			res.needHostLocalPlacement = true
+		}
+	}
+
+	return res
 }
 
 // lookupChildRPs lookups the child ResourcePool under each parent ResourcePool. A VM with a ResourcePolicy
@@ -255,7 +288,8 @@ func getPlaceVMRecommendation(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
 	candidates map[string][]string,
-	configSpec vimtypes.VirtualMachineConfigSpec) (Recommendation, error) {
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	hostMoRef *vimtypes.ManagedObjectReference) (Recommendation, error) {
 
 	var recommendations []Recommendation
 	var errs []error
@@ -274,7 +308,7 @@ func getPlaceVMRecommendation(
 				continue
 			}
 
-			rec, err := PlaceVMForCreate(vmCtx, cluster, configSpec)
+			rec, err := PlaceVMForCreate(vmCtx, cluster, configSpec, hostMoRef)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("PlaceVM failed for zone %s CCR %s: %w",
 					zoneName, cluster.Reference().Value, err))
@@ -318,7 +352,7 @@ func getPlacementRecommendation(
 	finder *find.Finder,
 	candidates map[string][]string,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	needsInstanceStoragePlacement, needDatastorePlacement bool) (Recommendation, error) {
+	curResult Result) (Recommendation, error) {
 
 	candidateRPMoRefs := make([]vimtypes.ManagedObjectReference, 0, len(candidates))
 	for _, rpMoIDs := range candidates {
@@ -334,25 +368,50 @@ func getPlacementRecommendation(
 	var recommendation Recommendation
 
 	switch {
-	case needsInstanceStoragePlacement:
-		// PlaceVmsXCluster does not support the magic instance storage disk ID, so
-		// fallback to PlaceVm. Note PlaceVm will always return a host recommendation
-		// which is required for instance storage.
-		rec, err := getPlaceVMRecommendation(vmCtx, vcClient, candidates, configSpec)
+	case curResult.needInstanceStoragePlacement ||
+		(curResult.HostMoRef != nil && curResult.needDatastorePlacement):
+		//
+		// Use PlaceVm rather than PlaceVmsXCluster, for two reasons:
+		//
+		//   1. PlaceVmsXCluster does not support the magic instance storage
+		//      disk ID. PlaceVm always returns a host recommendation, which
+		//      instance storage requires.
+		//
+		//   2. PlaceVmsXCluster cannot be constrained to a single host for a
+		//      create, but PlaceVm can via PlacementSpec.Hosts. When the VM is
+		//      already pinned to a host and still needs a datastore
+		//      recommendation, that recommendation has to come from the pinned
+		//      host, otherwise the VM's files can be placed on a datastore the
+		//      host cannot access.
+		//
+		// Note curResult.HostMoRef is nil unless the VM is pinned, so this is
+		// unchanged for plain instance storage placement.
+		//
+		rec, err := getPlaceVMRecommendation(
+			vmCtx, vcClient, candidates, configSpec, curResult.HostMoRef)
 		if err != nil {
 			return Recommendation{}, fmt.Errorf("PlaceVM failed: %w", err)
 		}
 		recommendation = rec
 
-	case len(candidates) > 1 || needDatastorePlacement:
+	case len(candidates) > 1 ||
+		curResult.needDatastorePlacement ||
+		curResult.needHostLocalPlacement:
+		// Host-local placement must request datastore recommendations even when
+		// the fast deploy feature is disabled. The placement ConfigSpec carries
+		// a phantom disk tagged with the host-local storage policy purely so
+		// that the recommended host is one with a compliant datastore, and DRS
+		// only evaluates that policy when it is asked to recommend a datastore.
+		// Without this, a host with no compliant host-local datastore can be
+		// recommended and the VM then fails to create on it.
 		recs, err := getClusterPlacementRecommendations(
 			vmCtx,
 			vcClient,
 			finder,
 			candidateRPMoRefs,
 			[]vimtypes.VirtualMachineConfigSpec{configSpec},
-			false,
-			needDatastorePlacement)
+			curResult.needHostLocalPlacement,
+			curResult.needDatastorePlacement || curResult.needHostLocalPlacement)
 		if err != nil {
 			return Recommendation{}, fmt.Errorf("PlaceVmsXCluster failed: %w", err)
 		}
@@ -384,10 +443,11 @@ func Placement(
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	constraints Constraints) (*Result, error) {
 
-	curResult := doesVMNeedPlacement(vmCtx)
+	curResult := doesVMNeedPlacement(vmCtx, constraints)
 	if curResult.ZoneName != "" &&
 		!curResult.needDatastorePlacement &&
-		!curResult.needInstanceStoragePlacement {
+		!curResult.needInstanceStoragePlacement &&
+		!curResult.needHostLocalPlacement {
 		// VM does not require any type of placement, so we can return early.
 		return &curResult, nil
 	}
@@ -440,10 +500,26 @@ func Placement(
 		finder,
 		candidates,
 		configSpec,
-		curResult.needInstanceStoragePlacement,
-		curResult.needDatastorePlacement)
+		curResult)
 	if err != nil {
 		return nil, err
+	}
+
+	// A host that was resolved before placement ran - instance storage, or
+	// host-local storage - is authoritative: the VM's disks may only be
+	// reachable from that host, so a different host would leave the VM unable
+	// to attach them. Fail loudly rather than silently placing it elsewhere.
+	//
+	// Note a nil recommendation host is not a conflict: it just means nothing
+	// asked DRS for a host (e.g. implied placement, or PlaceVmsXCluster
+	// without HostRecommRequired). The pinned host is preserved below.
+	if curResult.HostMoRef != nil &&
+		recommendation.HostMoRef != nil &&
+		*recommendation.HostMoRef != *curResult.HostMoRef {
+
+		return nil, fmt.Errorf(
+			"placement recommended host %s but this VM is pinned to host %s",
+			recommendation.HostMoRef.Value, curResult.HostMoRef.Value)
 	}
 
 	var zoneName string
@@ -471,11 +547,19 @@ func Placement(
 		}
 	}
 
+	hostMoRef := recommendation.HostMoRef
+	if curResult.HostMoRef != nil {
+		// The pre-resolved host is authoritative, so never let a placement
+		// recommendation replace it.
+		hostMoRef = curResult.HostMoRef
+	}
+
 	result := Result{
 		InstanceStoragePlacement: curResult.InstanceStoragePlacement,
+		HostLocalPlacement:       curResult.needHostLocalPlacement,
 		ZoneName:                 zoneName,
 		PoolMoRef:                recommendation.PoolMoRef,
-		HostMoRef:                recommendation.HostMoRef,
+		HostMoRef:                hostMoRef,
 		Datastores:               recommendation.Datastores,
 	}
 

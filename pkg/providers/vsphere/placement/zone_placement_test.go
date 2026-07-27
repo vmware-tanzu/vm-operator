@@ -11,6 +11,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/methods"
+	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +29,66 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
+
+// placementSpy records what was actually asked of DRS, and can rewrite the
+// host in a PlaceVm response. Neither is otherwise observable from the
+// placement Result.
+type placementSpy struct {
+	soap.RoundTripper
+
+	// Recorded from the PlaceVmsXCluster request.
+	hostRecommRequired      *bool
+	datastoreRecommRequired *bool
+
+	// Recorded from the PlaceVm request.
+	placeVMHosts []vimtypes.ManagedObjectReference
+
+	// When set, rewrites the host of a PlaceVm response so it contradicts any
+	// pinned host. vcsim otherwise echoes back the host it was constrained to.
+	forceHost *vimtypes.ManagedObjectReference
+}
+
+func (s *placementSpy) RoundTrip(
+	ctx context.Context, req, res soap.HasFault) error {
+
+	if b, ok := req.(*methods.PlaceVmsXClusterBody); ok && b.Req != nil {
+		s.hostRecommRequired = b.Req.PlacementSpec.HostRecommRequired
+		s.datastoreRecommRequired = b.Req.PlacementSpec.DatastoreRecommRequired
+	}
+	if b, ok := req.(*methods.PlaceVmBody); ok && b.Req != nil {
+		s.placeVMHosts = b.Req.PlacementSpec.Hosts
+	}
+
+	if err := s.RoundTripper.RoundTrip(ctx, req, res); err != nil {
+		return err
+	}
+
+	if s.forceHost != nil {
+		if b, ok := res.(*methods.PlaceVmBody); ok && b.Res != nil {
+			for i := range b.Res.Returnval.Recommendations {
+				for _, a := range b.Res.Returnval.Recommendations[i].Action {
+					if pa, ok := a.(*vimtypes.PlacementAction); ok {
+						pa.TargetHost = s.forceHost
+						if pa.RelocateSpec != nil {
+							pa.RelocateSpec.Host = s.forceHost
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// withSpy returns a shallow copy of the vcsim client whose RoundTripper is the
+// given spy, so the shared client is left untouched.
+func withSpy(c *vim25.Client, spy *placementSpy) *vim25.Client {
+	spy.RoundTripper = c.RoundTripper
+	copied := *c
+	copied.RoundTripper = spy
+	return &copied
+}
 
 func vcSimPlacement() {
 
@@ -334,6 +397,163 @@ func vcSimPlacement() {
 					Expect(result).To(BeNil())
 				})
 			})
+
+			Context("Host Local Placement", func() {
+
+				BeforeEach(func() {
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.Features.HostLocalStorage = true
+					})
+				})
+
+				When("host already assigned via annotation", func() {
+					const hostMoID = "hostlocal-selected-host-42"
+
+					BeforeEach(func() {
+						vm.Labels[corev1.LabelTopologyZone] = "my-hostlocal-zone"
+						vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = hostMoID
+					})
+
+					It("returns success with same host and does not force DRS placement", func() {
+						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(result.HostLocalPlacement).To(BeFalse())
+						Expect(result.HostMoRef).ToNot(BeNil())
+						Expect(result.HostMoRef.Value).To(Equal(hostMoID))
+
+						// This is the early-return path: nothing asked DRS for a
+						// recommendation, so there is no pool or datastore.
+						Expect(result.PoolMoRef.Value).To(BeEmpty())
+						Expect(result.Datastores).To(BeEmpty())
+					})
+
+					When("fast deploy is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+								config.Features.FastDeploy = true
+							})
+						})
+
+						// vcsim indexes PlacementSpec.Hosts with a bound taken
+						// from the cluster's host list, so constraining it to a
+						// single host panics unless the cluster has just one.
+						BeforeEach(func() {
+							testConfig.NumClusterHosts = 1
+							testConfig.NumFaultDomains = 1
+						})
+
+						var realHostMoRef vimtypes.ManagedObjectReference
+
+						JustBeforeEach(func() {
+							// This reaches candidate lookup, so unlike the
+							// early-return case above the zone must really exist,
+							// and the host must be one PlaceVM can return.
+							hosts, err := ctx.GetFirstClusterFromFirstZone().Hosts(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(hosts).To(HaveLen(1))
+							realHostMoRef = hosts[0].Reference()
+
+							vm.Labels[corev1.LabelTopologyZone] = ctx.GetFirstZoneName()
+							vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] =
+								realHostMoRef.Value
+						})
+
+						// Fast deploy needs a datastore recommendation, so the
+						// pinned VM cannot take the early return. The
+						// recommendation must instead be constrained to the pinned
+						// host, so that the datastore it returns is one that host
+						// can actually access.
+						It("constrains the recommendation to the pinned host and returns its datastore", func() {
+							spy := &placementSpy{}
+							vimClient := withSpy(ctx.VCClient.Client, spy)
+
+							result, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
+							Expect(err).ToNot(HaveOccurred())
+
+							By("constraining PlaceVM to the pinned host", func() {
+								Expect(spy.placeVMHosts).To(ConsistOf(realHostMoRef))
+							})
+
+							Expect(result.HostMoRef).ToNot(BeNil())
+							Expect(result.HostMoRef.Value).To(Equal(realHostMoRef.Value))
+
+							By("returning a datastore for fast deploy to use", func() {
+								Expect(result.Datastores).ToNot(BeEmpty())
+								Expect(result.Datastores[0].MoRef).ToNot(BeZero())
+								Expect(result.Datastores[0].Name).ToNot(BeEmpty())
+							})
+						})
+
+						When("the recommendation contradicts the pin anyway", func() {
+							It("returns an error instead of silently overriding it", func() {
+								otherHost := vimtypes.ManagedObjectReference{
+									Type:  "HostSystem",
+									Value: "host-does-not-match",
+								}
+								spy := &placementSpy{forceHost: &otherHost}
+								vimClient := withSpy(ctx.VCClient.Client, spy)
+
+								result, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
+								Expect(err).To(HaveOccurred())
+								Expect(err.Error()).To(ContainSubstring(
+									"is pinned to host " + realHostMoRef.Value))
+								Expect(result).To(BeNil())
+							})
+						})
+					})
+
+					When("the HostLocalStorage feature is disabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+								config.Features.HostLocalStorage = false
+							})
+						})
+
+						It("ignores the annotation and does normal zone placement", func() {
+							result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(result.HostMoRef).To(BeNil())
+						})
+					})
+				})
+
+				When("a Pending host-local PVC needs auto-placement", func() {
+					BeforeEach(func() {
+						constraints.NeedHostLocalPlacement = true
+					})
+
+					It("forces a DRS host recommendation", func() {
+						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(result.HostLocalPlacement).To(BeTrue())
+						Expect(result.HostMoRef).ToNot(BeNil())
+						Expect(result.HostMoRef.Value).ToNot(BeEmpty())
+					})
+
+					// The placement ConfigSpec carries a phantom disk tagged with
+					// the host-local storage policy so that the recommended host
+					// is one with a compliant datastore, but DRS only evaluates
+					// that policy when asked to recommend a datastore. Requesting
+					// it must therefore not depend on the fast deploy feature,
+					// which is disabled for host-local VMs.
+					It("asks DRS to recommend a datastore even with fast deploy disabled", func() {
+						Expect(pkgcfg.FromContext(vmCtx).Features.FastDeploy).To(BeFalse())
+
+						spy := &placementSpy{}
+						vimClient := withSpy(ctx.VCClient.Client, spy)
+
+						_, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(spy.hostRecommRequired).ToNot(BeNil())
+						Expect(*spy.hostRecommRequired).To(BeTrue())
+						Expect(spy.datastoreRecommRequired).ToNot(BeNil())
+						Expect(*spy.datastoreRecommRequired).To(BeTrue())
+					})
+				})
+			})
 		})
 	})
 
@@ -517,6 +737,28 @@ func vcSimPlacement() {
 					Expect(childRP).ToNot(BeNil())
 					Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
 				})
+			})
+		})
+
+		Context("Host Local Placement", func() {
+			const hostMoID = "hostlocal-selected-host-42"
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+					config.Features.HostLocalStorage = true
+				})
+
+				vm.Labels[corev1.LabelTopologyZone] = "my-hostlocal-zone"
+				vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = hostMoID
+			})
+
+			It("returns success with same host and does not force DRS placement", func() {
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(result.HostLocalPlacement).To(BeFalse())
+				Expect(result.HostMoRef).ToNot(BeNil())
+				Expect(result.HostMoRef.Value).To(Equal(hostMoID))
 			})
 		})
 	})

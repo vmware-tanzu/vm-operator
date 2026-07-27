@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -973,20 +974,31 @@ func (r *Reconciler) handlePVCWithWFFC(
 		return errors.New("PVC with WFFC storage class support is not enabled")
 	}
 
-	zoneName := ctx.VM.Status.Zone
-	if zoneName == "" {
-		// Fallback to the label value if Status hasn't been updated yet.
-		zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
-		if zoneName == "" {
-			return errors.New("VM does not have Zone set")
-		}
-	}
-
 	if pvc.Annotations == nil {
 		pvc.Annotations = map[string]string{}
 	}
-	pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "true"
-	pvc.Annotations[storagehelpers.AnnSelectedNode] = zoneName
+
+	if pkgcfg.FromContext(ctx).Features.HostLocalStorage && kubeutil.IsHostLocalStorageClass(*sc) {
+		nodeName := ctx.VM.Annotations[constants.HostLocalSelectedNodeAnnotationKey]
+		if nodeName == "" {
+			return errors.New("VM does not have a selected host for host-local PVC yet")
+		}
+
+		pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "false"
+		pvc.Annotations[storagehelpers.AnnSelectedNode] = nodeName
+	} else {
+		zoneName := ctx.VM.Status.Zone
+		if zoneName == "" {
+			// Fallback to the label value if Status hasn't been updated yet.
+			zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
+			if zoneName == "" {
+				return errors.New("VM does not have Zone set")
+			}
+		}
+
+		pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "true"
+		pvc.Annotations[storagehelpers.AnnSelectedNode] = zoneName
+	}
 
 	if err := r.Client.Update(ctx, &pvc); err != nil {
 		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)

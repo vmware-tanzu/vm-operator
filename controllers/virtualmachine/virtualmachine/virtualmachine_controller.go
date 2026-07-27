@@ -316,6 +316,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="events.k8s.io",resources=events,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=encryption.vmware.com,resources=encryptionclasses,verbs=get;list;watch
 
 // Reconcile the object.
@@ -381,6 +382,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 				reason = "instance storage present"
 			}
 		}
+
+		// Note host-local storage deliberately does NOT disable fast deploy,
+		// unlike instance storage above. Fast deploy is the only create path
+		// that places the VM's files on an explicit datastore, which is
+		// required to keep the VM's disks on the host-local datastore of the
+		// host it is pinned to. The content library path cannot pin a
+		// datastore when a storage profile is set, so VC may choose one that
+		// is not accessible from the pinned host.
 
 		switch strings.ToLower(mode) {
 		case pkgconst.FastDeployModeDirect, pkgconst.FastDeployModeLinked:

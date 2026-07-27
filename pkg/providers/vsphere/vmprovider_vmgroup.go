@@ -242,10 +242,15 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 			}
 		}
 
+		// Host-local storage placement (all forms) is not supported for VM
+		// Group placement, which computes a batch, multi-VM, cross-cluster
+		// DRS recommendation independently of the per-VM single-VM
+		// placement flow in vmCreateDoPlacement/resolveHostLocalPlacement.
 		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			createArgs.ConfigSpec,
-			createArgs.Storage.StorageClassToPolicyID)
+			createArgs.Storage.StorageClassToPolicyID,
+			nil)
 		if err != nil {
 			return nil, err
 		}

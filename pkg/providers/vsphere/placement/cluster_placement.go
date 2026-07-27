@@ -181,14 +181,26 @@ func CloneVMRelocateSpec(
 }
 
 // PlaceVMForCreate determines the suitable placement candidate in the cluster.
+//
+// When hostMoRef is non-nil the recommendation is constrained to that host, so
+// any datastore it recommends is one that host can actually access. This is
+// what allows a VM that is pinned to a specific host - host-local storage - to
+// still obtain the datastore recommendation that the fast deploy feature
+// requires. Note PlaceVmsXCluster cannot express this constraint for a create,
+// which is why the pinned case uses this API instead.
 func PlaceVMForCreate(
 	vmCtx pkgctx.VirtualMachineContext,
 	cluster *object.ClusterComputeResource,
-	configSpec vimtypes.VirtualMachineConfigSpec) (*Recommendation, error) {
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	hostMoRef *vimtypes.ManagedObjectReference) (*Recommendation, error) {
 
 	placementSpec := vimtypes.PlacementSpec{
 		PlacementType: string(vimtypes.PlacementSpecPlacementTypeCreate),
 		ConfigSpec:    &configSpec,
+	}
+
+	if hostMoRef != nil {
+		placementSpec.Hosts = []vimtypes.ManagedObjectReference{*hostMoRef}
 	}
 
 	vmCtx.Logger.V(4).Info("PlaceVM request", "placementSpec", vimtypes.ToString(placementSpec))

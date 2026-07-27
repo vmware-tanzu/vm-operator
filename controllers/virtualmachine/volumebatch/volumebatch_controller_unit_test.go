@@ -1364,6 +1364,66 @@ func unitTestsReconcile() {
 				})
 			})
 
+			Context("PVC StorageClass is host-local", func() {
+				const hostName = "esx-host-1.example.com"
+
+				BeforeEach(func() {
+					storageClass.Annotations = map[string]string{
+						"cns.vmware.com/hostLocalPolicy": "true",
+					}
+				})
+
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.HostLocalStorage = true
+					})
+				})
+
+				When("VM has a resolved host-local host annotation", func() {
+					BeforeEach(func() {
+						vm.Annotations = map[string]string{
+							constants.HostLocalSelectedNodeAnnotationKey: hostName,
+						}
+					})
+
+					It("returns success and sets selected-node to the host, not the zone", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						pvc := &corev1.PersistentVolumeClaim{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+						Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "false"))
+						Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, hostName))
+					})
+				})
+
+				When("VM does not have a resolved host-local host annotation yet", func() {
+					It("returns error", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("VM does not have a selected host for host-local PVC yet"))
+					})
+				})
+
+				When("the HostLocalStorage feature is disabled", func() {
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.HostLocalStorage = false
+						})
+					})
+
+					It("falls back to zone-based selected-node", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						pvc := &corev1.PersistentVolumeClaim{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+						Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "true"))
+						Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, zoneName))
+					})
+				})
+			})
+
 			When("There an existing CnsNodeVMBatchAttachment has the volume with that PVC in spec", func() {
 				BeforeEach(func() {
 					batchAtt := cnsBatchAttachmentForVMVolume(vm, nil)

@@ -133,6 +133,14 @@ const (
 	// cluster-scoped WorkloadNetworkConfiguration singleton, which declares
 	// the network providers available on the cluster.
 	CapabilityKeyWorkloadNetworkConfiguration = "supports_workload_network_configuration"
+
+	// CapabilityKeyHostLocalStorage is the name of the capability key defined
+	// in the Supervisor capabilities CRD for host-local storage support: VM
+	// placement pinned to the specific ESXi host that owns a host-local
+	// (VMFS-L/VMFS direct-attached, single-host) datastore. This capability
+	// is activated on vCenter's side by the FSS HostLocalStorageSupport; VM
+	// Operator only ever observes the resulting Supervisor capability state.
+	CapabilityKeyHostLocalStorage = "supports_host_local_storage"
 )
 
 var (
@@ -309,6 +317,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VirtualMachineConfigPolicy = capStatus.Activated
 		case CapabilityKeyWorkloadNetworkConfiguration:
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
+		case CapabilityKeyHostLocalStorage:
+			fs.HostLocalStorage = capStatus.Activated
 		}
 
 	}

@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/uuid"
@@ -756,15 +757,17 @@ var _ = Describe("CreateConfigSpec", func() {
 var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	var (
-		vmCtx               pkgctx.VirtualMachineContext
-		storageClassesToIDs map[string]string
-		baseConfigSpec      vimtypes.VirtualMachineConfigSpec
-		configSpec          vimtypes.VirtualMachineConfigSpec
+		vmCtx                pkgctx.VirtualMachineContext
+		storageClassesToIDs  map[string]string
+		baseConfigSpec       vimtypes.VirtualMachineConfigSpec
+		configSpec           vimtypes.VirtualMachineConfigSpec
+		hostLocalPendingPVCs []corev1.PersistentVolumeClaim
 	)
 
 	BeforeEach(func() {
 		baseConfigSpec = vimtypes.VirtualMachineConfigSpec{}
 		storageClassesToIDs = map[string]string{}
+		hostLocalPendingPVCs = nil
 
 		vm := builder.DummyVirtualMachine()
 		vmCtx = pkgctx.VirtualMachineContext{
@@ -779,7 +782,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		configSpec, err = virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			baseConfigSpec,
-			storageClassesToIDs)
+			storageClassesToIDs,
+			hostLocalPendingPVCs)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(configSpec).ToNot(BeNil())
 	})
@@ -960,6 +964,67 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			Expect(configSpec.DeviceChange).To(HaveLen(5))
 			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 1, 256, storagePolicyID)
 			assertInstanceStorageDeviceChange(configSpec.DeviceChange[2], 2, 512, storagePolicyID)
+		})
+	})
+
+	Context("When HostLocalStorage is configured", func() {
+		const storagePolicyID = "hostlocal-storage-id-42"
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.HostLocalStorage = true
+			})
+
+			storageClassesToIDs[builder.DummyStorageClassName] = storagePolicyID
+
+			quantity := resource.MustParse("2Gi")
+			hostLocalPendingPVCs = []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "hostlocal-pvc"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To(builder.DummyStorageClassName),
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: quantity,
+							},
+						},
+					},
+					Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+				},
+			}
+		})
+
+		It("ConfigSpec contains a phantom disk carrying the PVC's storage policy", func() {
+			disks := findVirtualDiskDeviceChanges(configSpec)
+			// The dummy 1MB disk (no other disk present) plus our phantom disk.
+			Expect(disks).To(HaveLen(2))
+
+			dc := findVirtualDiskDeviceChangeByCapacity(configSpec, 2*1024*1024*1024)
+			Expect(dc).ToNot(BeNil())
+			Expect(dc.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
+			Expect(dc.FileOperation).To(Equal(vimtypes.VirtualDeviceConfigSpecFileOperationCreate))
+
+			dev, ok := dc.Device.(*vimtypes.VirtualDisk)
+			Expect(ok).To(BeTrue())
+			Expect(dev.VDiskId).To(BeNil())
+
+			Expect(dc.Profile).To(HaveLen(1))
+			profile, ok := dc.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
+			Expect(ok).To(BeTrue())
+			Expect(profile.ProfileId).To(Equal(storagePolicyID))
+		})
+
+		When("the feature is disabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.HostLocalStorage = false
+				})
+			})
+
+			It("does not add a phantom disk", func() {
+				// Only the dummy 1MB disk remains.
+				Expect(findVirtualDiskDeviceChanges(configSpec)).To(HaveLen(1))
+			})
 		})
 	})
 
@@ -2522,6 +2587,29 @@ func assertInstanceStorageDeviceChange(
 	profile, ok := dc.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
 	Expect(ok).To(BeTrue())
 	Expect(profile.ProfileId).To(Equal(expectedStoragePolicyID))
+}
+
+func findVirtualDiskDeviceChanges(configSpec vimtypes.VirtualMachineConfigSpec) []*vimtypes.VirtualDeviceConfigSpec {
+	var out []*vimtypes.VirtualDeviceConfigSpec
+	for _, devChange := range configSpec.DeviceChange {
+		dc := devChange.GetVirtualDeviceConfigSpec()
+		if _, ok := dc.Device.(*vimtypes.VirtualDisk); ok {
+			out = append(out, dc)
+		}
+	}
+	return out
+}
+
+func findVirtualDiskDeviceChangeByCapacity(
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	capacityInBytes int64) *vimtypes.VirtualDeviceConfigSpec {
+
+	for _, dc := range findVirtualDiskDeviceChanges(configSpec) {
+		if dc.Device.(*vimtypes.VirtualDisk).CapacityInBytes == capacityInBytes {
+			return dc
+		}
+	}
+	return nil
 }
 
 func assertVMTags(

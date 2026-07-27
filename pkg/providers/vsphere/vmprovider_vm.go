@@ -1783,10 +1783,16 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		}
 	}
 
+	hostLocalPendingPVCs, err := resolveHostLocalPlacement(vmCtx, vs.k8sClient, createArgs.Storage)
+	if err != nil {
+		return err
+	}
+
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		createArgs.ConfigSpec,
-		createArgs.Storage.StorageClassToPolicyID)
+		createArgs.Storage.StorageClassToPolicyID,
+		hostLocalPendingPVCs)
 	if err != nil {
 		return err
 	}
@@ -1799,8 +1805,9 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	}
 
 	constraints := placement.Constraints{
-		ChildRPName: createArgs.ChildResourcePoolName,
-		Zones:       pvcZones,
+		ChildRPName:            createArgs.ChildResourcePoolName,
+		Zones:                  pvcZones,
+		NeedHostLocalPlacement: len(hostLocalPendingPVCs) > 0,
 	}
 
 	result, err := placement.Placement(
@@ -2004,6 +2011,24 @@ func processPlacementResult(
 		}
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = hostFQDN
+	}
+
+	if result.HostLocalPlacement {
+		hostMoID := createArgs.HostMoID
+		if hostMoID == "" {
+			return fmt.Errorf("placement result missing host required for host-local storage")
+		}
+
+		hostFQDN, err := vcenter.GetESXHostFQDN(vmCtx, vcClient.VimClient(), hostMoID)
+		if err != nil {
+			return err
+		}
+
+		if vmCtx.VM.Annotations == nil {
+			vmCtx.VM.Annotations = map[string]string{}
+		}
+		vmCtx.VM.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = hostMoID
+		vmCtx.VM.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = hostFQDN
 	}
 
 	return nil

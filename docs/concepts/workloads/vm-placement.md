@@ -176,6 +176,61 @@ spec:
       - size: 100Gi
 ```
 
+### Host-Local Storage
+
+When the `supports_host_local_storage` Supervisor capability is enabled, a VM
+backed by a `PersistentVolumeClaim` on a host-local (VMFS-L/VMFS
+direct-attached, single-host) `StorageClass` is pinned to the exact ESXi host
+that owns the volume's datastore, instead of only being placed onto a zone.
+VM Operator resolves the target host from one of, in priority order:
+
+1. An already-resolved host (cached from a previous reconcile).
+2. An explicit override — set `vmoperator.vmware.com/hostlocal-selected-node`
+   directly on the VM, naming the target Supervisor node:
+
+   ```yaml
+   apiVersion: vmoperator.vmware.com/v1alpha6
+   kind: VirtualMachine
+   metadata:
+     name: my-vm
+     annotations:
+       vmoperator.vmware.com/hostlocal-selected-node: esx-host-1.example.com
+   spec:
+     # VM specification
+   ```
+
+3. A `Bound` PVC's own `csi.vsphere.volume-accessible-topology` annotation,
+   naming the host its volume already lives on.
+4. Otherwise, for a `Pending` PVC on a `WaitForFirstConsumer` StorageClass
+   with no hint anywhere yet, VM Operator forces a DRS host recommendation
+   compliant with that StorageClass's storage policy, then stamps the PVC's
+   `volume.kubernetes.io/selected-node` with the chosen host so CSI
+   provisions the volume there.
+
+Which of sources 3 and 4 applies is decided by the `StorageClass`'s binding
+mode. Under `WaitForFirstConsumer`, source 4 applies: VM Operator picks the
+host, and the volume follows the VM. Under `Immediate`, CSI provisions the
+volume without waiting for a consumer and so picks the host itself; VM Operator
+waits for the PVC to bind and then adopts that host via source 3.
+
+A host-local PVC's `csi.vsphere.volume-requested-topology` annotation must
+therefore either be **omitted** — letting CSI choose the host — or name a
+`kubernetes.io/hostname`. Naming only a zone cannot be satisfied for host-local
+storage and leaves the volume unprovisioned. Note also that several host-local
+volumes on one VM are only guaranteed to land on the same host under
+`WaitForFirstConsumer`, or when each PVC names the same hostname.
+
+Once resolved, VM Operator also writes
+`vmoperator.vmware.com/hostlocal-selected-node-moid` (the ESXi host's MoID) —
+this second annotation is system-computed only and cannot be set directly.
+Like the zone label, both annotations are immutable once set.
+
+A resolved host is authoritative: placement will never substitute a different
+host for it, since the VM's disks may only be reachable from that one host.
+When a datastore recommendation is also needed, the recommendation is
+constrained to the resolved host so that the datastore it returns is one that
+host can actually access.
+
 ## Status and Conditions
 
 Placement results are reflected in the VM's status:

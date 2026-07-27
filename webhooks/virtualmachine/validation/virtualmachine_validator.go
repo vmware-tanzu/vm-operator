@@ -46,6 +46,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
@@ -214,6 +215,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	var errs []error
 
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validateHostLocalSelectedNode(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateImageOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateClassOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateStorageFields(ctx, vm)...)
@@ -336,6 +338,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	// of whether the update is allowed or not.
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateHostLocalSelectedNode(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrapProviderImmutable(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 
@@ -2618,6 +2621,65 @@ func (v validator) validateAvailabilityZone(
 			if _, err := topology.GetAvailabilityZone(ctx.Context, v.client, zoneName); err != nil {
 				return append(allErrs, field.Invalid(zoneLabelPath, zoneName, err.Error()))
 			}
+		}
+	}
+
+	return allErrs
+}
+
+// validateHostLocalSelectedNode validates the two annotations that pin a VM
+// to a specific ESXi host for host-local storage, mirroring
+// validateAvailabilityZone's rules for topology.kubernetes.io/zone: the
+// caller-supplied node name must exist and be resolvable, it is immutable
+// once set (except for privileged accounts, e.g. restore/fail-over), and
+// the derived MoID annotation is system-computed only and may never be set
+// directly by a non-privileged caller.
+func (v validator) validateHostLocalSelectedNode(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if !pkgcfg.FromContext(ctx).Features.HostLocalStorage {
+		return nil
+	}
+
+	var allErrs field.ErrorList
+
+	annotationPath := field.NewPath("metadata", "annotations")
+	nodeAnnoPath := annotationPath.Key(constants.HostLocalSelectedNodeAnnotationKey)
+	moidAnnoPath := annotationPath.Key(constants.HostLocalSelectedNodeMOIDAnnotationKey)
+
+	var oldMOID string
+	if oldVM != nil {
+		oldMOID = oldVM.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey]
+	}
+	if !ctx.IsPrivilegedAccount &&
+		vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] != oldMOID {
+		allErrs = append(allErrs, field.Forbidden(moidAnnoPath, modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if oldVM != nil {
+		// Once the node has been set then make sure the field is immutable.
+		if oldVal := oldVM.Annotations[constants.HostLocalSelectedNodeAnnotationKey]; oldVal != "" {
+			newVal := vm.Annotations[constants.HostLocalSelectedNodeAnnotationKey]
+
+			// Privileged accounts are allowed to update the host-local
+			// selected-node annotation on the VM. This is used during
+			// restore, or a fail-over where the restored environment may
+			// not have access to the original host.
+			//
+			// All other modifications are rejected.
+			if ctx.IsPrivilegedAccount {
+				return allErrs
+			}
+
+			return append(allErrs, validation.ValidateImmutableField(newVal, oldVal, nodeAnnoPath)...)
+		}
+	}
+
+	// Validate the name of the provided node.
+	if nodeName := vm.Annotations[constants.HostLocalSelectedNodeAnnotationKey]; nodeName != "" {
+		if _, _, err := kubeutil.GetESXHostInfoForNode(ctx.Context, v.client, nodeName); err != nil {
+			allErrs = append(allErrs, field.Invalid(nodeAnnoPath, nodeName, err.Error()))
 		}
 	}
 

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -26,6 +27,7 @@ import (
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
 
@@ -60,6 +62,47 @@ func getPVCRequestedZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
 
 func getPVCAccessibleZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
 	return getPVCZones(pvc, csiAccessibleTopologyAnnotation)
+}
+
+// getPVCHostname returns the "kubernetes.io/hostname" topology entry, if
+// any, from the given PVC topology annotation.
+func getPVCHostname(pvc corev1.PersistentVolumeClaim, key string) string {
+	v, ok := pvc.Annotations[key]
+	if !ok {
+		return ""
+	}
+
+	var topology []map[string]string
+	if json.Unmarshal([]byte(v), &topology) == nil {
+		for i := range topology {
+			if h := topology[i]["kubernetes.io/hostname"]; h != "" {
+				return h
+			}
+		}
+	}
+
+	return ""
+}
+
+// IsHostLocalStorageClass returns true if the given StorageClass is backed
+// by a host-local (VMFS-L/VMFS direct-attached, single-host) storage
+// policy.
+func IsHostLocalStorageClass(sc storagev1.StorageClass) bool {
+	v, _ := strconv.ParseBool(sc.Annotations[constants.HostLocalPolicyStorageClassAnnotationKey])
+	return v
+}
+
+// GetPVCHostLocalHostname returns the Supervisor node name that a host-local
+// PVC's volume lives on (if Bound) or has been requested for (if Pending),
+// or "" if neither topology annotation carries a hostname yet.
+func GetPVCHostLocalHostname(pvc corev1.PersistentVolumeClaim) string {
+	if pvc.Status.Phase == corev1.ClaimBound {
+		if h := getPVCHostname(pvc, csiAccessibleTopologyAnnotation); h != "" {
+			return h
+		}
+	}
+
+	return getPVCHostname(pvc, csiRequestedTopologyAnnotation)
 }
 
 func GetPVCZoneConstraints(

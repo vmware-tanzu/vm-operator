@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -30,6 +31,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -2230,6 +2232,263 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 							"Expected PVC %s to be bound", volName)
 					}
 				}
+			})
+
+			It("Detaching an unmanaged disk before VM deletion preserves its PVC", Label("experimental"), func() {
+				if !allDisksArePVCapabilityEnabled {
+					Skip("AllDisksArePVCs capability is not enabled")
+				}
+
+				const (
+					removedDiskCapacity = 5 * 1024 * 1024 // 5MB, OwnerRef expected to be removed
+					keptDiskCapacity    = 6 * 1024 * 1024 // 6MB, OwnerRef expected to be kept via annotation
+				)
+
+				addUnmanagedDisk := func(
+					ctx context.Context,
+					brownfieldVM *object.VirtualMachine,
+					scsiControllerKey int32,
+					datastoreRef vimtypes.ManagedObjectReference,
+					unitNumber int32,
+					capacity int64,
+				) error {
+					disk := &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								DiskMode:        string(vimtypes.VirtualDiskModePersistent),
+								ThinProvisioned: new(true),
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									Datastore: &datastoreRef,
+								},
+							},
+							ControllerKey: scsiControllerKey,
+							UnitNumber:    vimtypes.NewInt32(unitNumber),
+						},
+						CapacityInBytes: capacity,
+					}
+
+					reconfigTask, err := brownfieldVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+							&vimtypes.VirtualDeviceConfigSpec{
+								Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+								FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+								Device:        disk,
+							},
+						},
+					})
+					if err != nil {
+						return fmt.Errorf("failed to reconfigure VM with new disk: %w", err)
+					}
+					if err := reconfigTask.Wait(ctx); err != nil {
+						return fmt.Errorf("failed to wait for VM reconfiguration: %w", err)
+					}
+					return nil
+				}
+
+				By("Creating a brownfield VM by deploying from content library template using govmomi")
+
+				result := ImportBrownfieldVM(ImportBrownfieldVMInput{
+					Ctx:                ctx,
+					Config:             config,
+					VCenterAdminClient: vCenterAdminClient,
+					SVClusterClient:    svClusterClient,
+					Namespace:          vmSvcNamespace,
+					ClusterMoID:        clusterMoID,
+					BrownfieldVMName:   brownfieldVMName,
+					StorageClassName:   clusterResources.StorageClassName,
+					VMClassName:        clusterResources.VMClassName,
+					ImportOpName:       fmt.Sprintf("import-%s", vmName),
+					BeforePowerOn: func(ctx context.Context, brownfieldVM *object.VirtualMachine) error {
+						By("Adding two extra unmanaged disks to the brownfield VM before power-on and import")
+
+						var moVM mo.VirtualMachine
+						if err := brownfieldVM.Properties(ctx, brownfieldVM.Reference(),
+							[]string{"config.hardware.device", "datastore"}, &moVM); err != nil {
+							return fmt.Errorf("failed to get VM properties: %w", err)
+						}
+
+						if len(moVM.Datastore) == 0 {
+							return fmt.Errorf("VM has no datastores")
+						}
+						datastoreRef := moVM.Datastore[0]
+
+						var scsiControllerKey int32
+						for _, dev := range moVM.Config.Hardware.Device {
+							if scsi, ok := dev.(vimtypes.BaseVirtualSCSIController); ok {
+								scsiControllerKey = scsi.GetVirtualSCSIController().Key
+								break
+							}
+						}
+						if scsiControllerKey == 0 {
+							return fmt.Errorf("VM has no SCSI controller")
+						}
+
+						if err := addUnmanagedDisk(ctx, brownfieldVM, scsiControllerKey, datastoreRef, 1, removedDiskCapacity); err != nil {
+							return err
+						}
+						if err := addUnmanagedDisk(ctx, brownfieldVM, scsiControllerKey, datastoreRef, 2, keptDiskCapacity); err != nil {
+							return err
+						}
+						e2eframework.Logf("Successfully added two unmanaged disks to brownfield VM")
+						return nil
+					},
+				})
+				brownfieldVMMoID = result.BrownfieldVMMoID
+				importedVMName := result.ImportedVMName
+
+				importOperation = &mopv1a2.ImportOperation{}
+				_ = svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vmSvcNamespace,
+					Name:      fmt.Sprintf("import-%s", vmName),
+				}, importOperation)
+
+				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+					Namespace: vmSvcNamespace,
+					Name:      importedVMName,
+				})
+				vmYamls = append(vmYamls, vmYaml)
+
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+
+				By("Waiting for the unmanaged disks to be backfilled and registered as PVCs")
+
+				conditions := []metav1.Condition{
+					{Type: "VirtualMachineUnmanagedVolumesBackfilled", Status: metav1.ConditionTrue},
+					{Type: "VirtualMachineUnmanagedVolumesRegistered", Status: metav1.ConditionTrue},
+				}
+				for _, condition := range conditions {
+					vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, condition)
+				}
+
+				By("Finding the PVCs that back the two added disks")
+
+				var (
+					removedPVCName string
+					keptPVCName    string
+					vmUID          types.UID
+				)
+
+				findVolumeByCapacity := func(vm *vmopv1a5.VirtualMachine, capacity int64) string {
+					for _, vol := range vm.Status.Volumes {
+						if vol.Limit == nil {
+							continue
+						}
+						if limit, ok := vol.Limit.AsInt64(); ok && limit == capacity {
+							return vol.Name
+						}
+					}
+					return ""
+				}
+
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					g.Expect(err).ToNot(HaveOccurred())
+					vmUID = vm.UID
+
+					removedPVCName = findVolumeByCapacity(vm, removedDiskCapacity)
+					keptPVCName = findVolumeByCapacity(vm, keptDiskCapacity)
+					g.Expect(removedPVCName).ToNot(BeEmpty(), "Expected to find the 5MB disk among registered volumes")
+					g.Expect(keptPVCName).ToNot(BeEmpty(), "Expected to find the 6MB disk among registered volumes")
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed(), "Timed out waiting for the added disks to be registered as PVCs")
+
+				getPVC := func(name string) *corev1.PersistentVolumeClaim {
+					pvc := &corev1.PersistentVolumeClaim{}
+					Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vmSvcNamespace,
+						Name:      name,
+					}, pvc)).To(Succeed(), "Failed to get registered PVC %s", name)
+					return pvc
+				}
+
+				hasVMOwnerRef := func(pvc *corev1.PersistentVolumeClaim) bool {
+					for _, ref := range pvc.OwnerReferences {
+						if ref.Kind == "VirtualMachine" && ref.UID == vmUID {
+							return true
+						}
+					}
+					return false
+				}
+
+				removedPVC := getPVC(removedPVCName)
+				Expect(hasVMOwnerRef(removedPVC)).To(BeTrue(), "Expected PVC %s to have an OwnerRef to VM %s", removedPVCName, importedVMName)
+
+				keptPVC := getPVC(keptPVCName)
+				Expect(hasVMOwnerRef(keptPVC)).To(BeTrue(), "Expected PVC %s to have an OwnerRef to VM %s", keptPVCName, importedVMName)
+
+				By("Annotating one of the PVCs with vmoperator.vmware.com/keep-owner-ref")
+
+				keptPVCPatch := keptPVC.DeepCopy()
+				if keptPVCPatch.Annotations == nil {
+					keptPVCPatch.Annotations = map[string]string{}
+				}
+				keptPVCPatch.Annotations[pkgconst.KeepOwnerRefAnnotationKey] = ""
+				Expect(svClusterClient.Patch(ctx, keptPVCPatch, ctrlclient.MergeFrom(keptPVC))).
+					To(Succeed(), "Failed to annotate PVC %s", keptPVCName)
+
+				By("Detaching both disks via the VirtualMachine spec, keeping the underlying files (simulating a user detach)")
+
+				vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
+
+				vmPatch := vm.DeepCopy()
+				vmPatch.Spec.Volumes = nil
+				for _, vol := range vm.Spec.Volumes {
+					if vol.Name != removedPVCName && vol.Name != keptPVCName {
+						vmPatch.Spec.Volumes = append(vmPatch.Spec.Volumes, vol)
+					}
+				}
+
+				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
+					To(Succeed(), "failed to patch virtualmachine to detach the two disks")
+
+				By("Waiting for the VirtualMachine to no longer report the detached disks as attached")
+
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					g.Expect(err).ToNot(HaveOccurred())
+
+					for _, vol := range vm.Status.Volumes {
+						g.Expect(vol.Name).ToNot(Equal(removedPVCName),
+							"Expected disk %s to no longer be attached to the VM", removedPVCName)
+						g.Expect(vol.Name).ToNot(Equal(keptPVCName),
+							"Expected disk %s to no longer be attached to the VM", keptPVCName)
+					}
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed(), "Timed out waiting for the VM to drop the detached disks from status.volumes")
+
+				By("Deleting the VirtualMachine")
+				Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+
+				Eventually(func(g Gomega) {
+					_, err := utils.GetVirtualMachineA5(ctx, svClusterClient, vmSvcNamespace, importedVMName)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).
+					Should(Succeed(), "Timed out waiting for the VirtualMachine to be deleted")
+
+				By("Verifying the non-annotated detached PVC survives with its OwnerRef removed")
+
+				Eventually(func(g Gomega) {
+					got := getPVC(removedPVCName)
+					g.Expect(hasVMOwnerRef(got)).To(BeFalse(), "Expected VM OwnerRef to be removed from PVC %s", removedPVCName)
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed())
+
+				By("Verifying the annotated detached PVC keeps its OwnerRef and is garbage collected")
+
+				Eventually(func(g Gomega) {
+					got := &corev1.PersistentVolumeClaim{}
+					err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vmSvcNamespace,
+						Name:      keptPVCName,
+					}, got)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+						"Expected annotated PVC %s to be garbage collected once its owning VM was deleted", keptPVCName)
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed())
+
+				By("Cleaning up the orphaned PVC")
+				_ = svClusterClient.Delete(ctx, removedPVC)
 			})
 
 			It("Import brownfield VM with shared SCSI controller and shared disk should succeed", Label("experimental"), func() {

@@ -123,6 +123,24 @@ func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetwor
 	return autoConvert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetworkSpec(in, out, s)
 }
 
+// Convert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec drops fields
+// that do not exist in v1alpha3; they are preserved via MarshalData on
+// ConvertFrom.
+func Convert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(
+	in *vmopv1.VMAffinitySpec, out *VMAffinitySpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(in, out, s)
+}
+
+// Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec drops
+// fields that do not exist in v1alpha3; they are preserved via MarshalData on
+// ConvertFrom.
+func Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(
+	in *vmopv1.VMAntiAffinitySpec, out *VMAntiAffinitySpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(in, out, s)
+}
+
 // Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvancedSpec drops
 // fields that do not exist in v1alpha3; they are preserved via MarshalData on ConvertFrom.
 func Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvancedSpec(

@@ -425,6 +425,16 @@ func TestVirtualMachineConversion(t *testing.T) {
 								TopologyKey: "topology.kubernetes.io/xyz",
 							},
 						},
+						RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "hard-affinity",
+									},
+								},
+								TopologyKey: "topology.kubernetes.io/jkl",
+							},
+						},
 					},
 					VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
 						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
@@ -445,6 +455,16 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 								},
 								TopologyKey: "topology.kubernetes.io/ghi",
+							},
+						},
+						RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "hard-anti-affinity",
+									},
+								},
+								TopologyKey: "topology.kubernetes.io/mno",
 							},
 						},
 					},

@@ -201,7 +201,7 @@ if [[ -n "${SUPERVISOR_ID}" || -n "${CLUSTER_ID}" ]]; then
 
         _log "Downloading WCP support bundle from ${BUNDLE_URL}..."
         WCP_BUNDLE_PAYLOAD="{\"wcp-support-bundle-token\": \"${BUNDLE_TOKEN}\"}"
-        _bundle_http=$(curl -sk --max-time 600 -X POST \
+        _bundle_http=$(curl -sk --max-time 900 -X POST \
             -H 'Content-Type: application/json' \
             -d "${WCP_BUNDLE_PAYLOAD}" \
             "${BUNDLE_URL}" \
@@ -209,16 +209,28 @@ if [[ -n "${SUPERVISOR_ID}" || -n "${CLUSTER_ID}" ]]; then
             -w '%{http_code}')
         _curl_rc=$?
 
-        if [[ ${_curl_rc} -ne 0 ]]; then
+        # A structurally-valid tar is the authoritative success signal: bundle
+        # generation on VC can take long enough that curl's own --max-time
+        # elapses while tearing down the connection just after the body was
+        # fully written, yielding a nonzero curl exit (e.g. 28, "Operation
+        # timeout") and a printed HTTP code even though the file on disk is
+        # complete. Checking tar integrity first (rather than gating on curl's
+        # exit code) avoids discarding and needlessly re-generating a bundle
+        # that actually downloaded fine.
+        if tar -tf "${BUNDLE_OUT}" >/dev/null 2>&1; then
+            if [[ ${_curl_rc} -ne 0 ]]; then
+                _log "WCP support bundle downloaded and verified on attempt ${attempt}/${MAX_ATTEMPTS} (curl reported exit ${_curl_rc} but content is a valid tar)"
+            else
+                _log "WCP support bundle downloaded and verified on attempt ${attempt}/${MAX_ATTEMPTS}"
+            fi
+            DOWNLOAD_OK=true
+            break
+        elif [[ ${_curl_rc} -ne 0 ]]; then
             _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: WCP support bundle download failed (curl exit ${_curl_rc})"
         elif [[ "${_bundle_http}" != "20"* ]]; then
             _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: WCP support bundle download failed (HTTP ${_bundle_http})"
-        elif ! tar -tf "${BUNDLE_OUT}" >/dev/null 2>&1; then
-            _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: downloaded WCP support bundle is truncated or not a valid tar"
         else
-            _log "WCP support bundle downloaded and verified on attempt ${attempt}/${MAX_ATTEMPTS}"
-            DOWNLOAD_OK=true
-            break
+            _warn "Attempt ${attempt}/${MAX_ATTEMPTS}: downloaded WCP support bundle is truncated or not a valid tar"
         fi
 
         rm -f "${BUNDLE_OUT}"

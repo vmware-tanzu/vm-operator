@@ -1601,6 +1601,12 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 			return nil
 		}
 
+		if pkgcfg.FromContext(vmCtx).Features.VirtualMachineConfigPolicy {
+			if err := vs.verifyConfigPolicy(vmCtx, vmCtx.VM, vmCtx.MoVM); err != nil {
+				return err
+			}
+		}
+
 		powerOpMode = hard
 
 		for k, v := range vmCtx.VM.Annotations {

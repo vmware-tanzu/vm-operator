@@ -125,7 +125,11 @@ COVERAGE_FILE ?= cover.out
 # However, given this is not a cheap operation, only gather these packages if
 # the test-nocover target is one of the currently active goals.
 ifeq (,$(filter-out test-nocover,$(MAKECMDGOALS)))
-COVERED_PKGS ?= $(shell find . -name '*_test.go' -not -path './api/*' -print | awk -F'/' '{print "./"$$2}' | sort -u)
+COVERED_PKGS ?= $(shell find . -name '*_test.go' -print | awk -F'/' '{print "./"$$2}' | sort -u)
+
+# Testing the APIs, VM Op's and external, is handled separately.
+COVERED_PKGS := $(filter-out ./api,$(COVERED_PKGS))
+COVERED_PKGS := $(filter-out ./external,$(COVERED_PKGS))
 endif
 
 # CRI_BIN is the path to the container runtime binary.
@@ -229,7 +233,7 @@ help: ## Display this help
 .PHONY: test-api
 test-api: | $(GINKGO)
 test-api: ## Run API tests
-	COVERAGE_FILE="" hack/test.sh ./api/test
+	COVERAGE_FILE="" hack/test.sh ./api/test ./external
 
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)

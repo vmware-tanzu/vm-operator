@@ -67,43 +67,44 @@ const (
 	cvmiKind    = "ClusterVirtualMachineImage"
 	vmclassKind = "VirtualMachineClass"
 
-	readinessProbeOnlyOneAction                = "only one action can be specified"
-	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
-	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
-	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
-	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
-	removingBackfilledVolumeNotAllowed         = "removing volume backfilled from classic disk is not allowed"
-	storagePolicyNotAssociatedOnNSFmt          = "Storage policy is not associated with the namespace %s by object %s"
-	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
-	addingModifyingInstanceVolumesNotAllowed   = "adding or modifying instance storage volume claim(s) is not allowed"
-	featureNotEnabled                          = "the %s feature is not enabled"
-	invalidPowerStateOnCreateFmt               = "cannot set a new VM's power state to %s"
-	invalidPowerStateOnUpdateFmt               = "cannot %s a VM that is %s"
-	invalidPowerStateOnUpdateEmptyString       = "cannot set power state to empty string"
-	invalidNextRestartTimeOnCreate             = "cannot restart VM on create"
-	invalidRFC3339NanoTimeFormat               = "must be formatted as RFC3339Nano"
-	invalidNextRestartTimeOnUpdateNow          = "mutation webhooks are required to restart VM"
-	modifyAnnotationNotAllowedForNonAdmin      = "modifying this annotation is not allowed for non-admin users"
-	modifyLabelNotAllowedForNonAdmin           = "modifying this label is not allowed for non-admin users"
-	invalidMinHardwareVersionNotSupported      = "should be less than or equal to %d"
-	invalidMinHardwareVersionDowngrade         = "cannot downgrade hardware version"
-	invalidMinHardwareVersionPowerState        = "cannot upgrade hardware version unless powered off"
-	invalidImageKind                           = "supported: " + vmiKind + "; " + cvmiKind
-	invalidZone                                = "cannot use zone that is being deleted"
-	restrictedToPrivUsers                      = "restricted to privileged users"
-	controllerBusNumberRangeFmt                = "%s controllerBusNumber must be in the range of 0 to %d"
-	unitNumberRangeFmt                         = "%s unitNumber must be in the range of 0 to %d"
-	addRestrictedAnnotation                    = "adding this annotation is restricted to privileged users"
-	delRestrictedAnnotation                    = "removing this annotation is restricted to privileged users"
-	modRestrictedAnnotation                    = "modifying this annotation is restricted to privileged users"
-	notUpgraded                                = "modifying this VM is not allowed until it is upgraded"
-	invalidClassInstanceReference              = "must specify a valid reference to a VirtualMachineClassInstance object"
-	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
-	invalidClassInstanceReferenceOwnerMismatch = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
-	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
-	guestCustomizationVCDParityNotEnabled      = "VC guest customization VCD parity capability is not enabled"
-	bootstrapProviderTypeCannotBeChanged       = "bootstrap provider type cannot be changed"
-	forbiddenRemovableVolume                   = "cannot remove volume with removable=false"
+	readinessProbeOnlyOneAction                                 = "only one action can be specified"
+	tcpReadinessProbeNotAllowedVPC                              = "VPC networking doesn't allow TCP readiness probe to be specified"
+	updatesNotAllowedWhenPowerOn                                = "updates to this field is not allowed when VM power is on"
+	addingNewCdromNotAllowedWhenPowerOn                         = "adding new CD-ROMs is not allowed when VM is powered on"
+	removingCdromNotAllowedWhenPowerOn                          = "removing CD-ROMs is not allowed when VM is powered on"
+	removingBackfilledVolumeNotAllowed                          = "removing volume backfilled from classic disk is not allowed"
+	storagePolicyNotAssociatedOnNSFmt                           = "Storage policy is not associated with the namespace %s by object %s"
+	vSphereVolumeSizeNotMBMultiple                              = "value must be a multiple of MB"
+	addingModifyingInstanceVolumesNotAllowed                    = "adding or modifying instance storage volume claim(s) is not allowed"
+	featureNotEnabled                                           = "the %s feature is not enabled"
+	invalidPowerStateOnCreateFmt                                = "cannot set a new VM's power state to %s"
+	invalidPowerStateOnUpdateFmt                                = "cannot %s a VM that is %s"
+	invalidPowerStateOnUpdateEmptyString                        = "cannot set power state to empty string"
+	invalidNextRestartTimeOnCreate                              = "cannot restart VM on create"
+	invalidRFC3339NanoTimeFormat                                = "must be formatted as RFC3339Nano"
+	invalidNextRestartTimeOnUpdateNow                           = "mutation webhooks are required to restart VM"
+	modifyAnnotationNotAllowedForNonAdmin                       = "modifying this annotation is not allowed for non-admin users"
+	modifyLabelNotAllowedForNonAdmin                            = "modifying this label is not allowed for non-admin users"
+	invalidMinHardwareVersionNotSupported                       = "should be less than or equal to %d"
+	invalidMinHardwareVersionDowngrade                          = "cannot downgrade hardware version"
+	invalidMinHardwareVersionPowerState                         = "cannot upgrade hardware version unless powered off"
+	invalidImageKind                                            = "supported: " + vmiKind + "; " + cvmiKind
+	invalidZone                                                 = "cannot use zone that is being deleted"
+	restrictedToPrivUsers                                       = "restricted to privileged users"
+	controllerBusNumberRangeFmt                                 = "%s controllerBusNumber must be in the range of 0 to %d"
+	unitNumberRangeFmt                                          = "%s unitNumber must be in the range of 0 to %d"
+	addRestrictedAnnotation                                     = "adding this annotation is restricted to privileged users"
+	delRestrictedAnnotation                                     = "removing this annotation is restricted to privileged users"
+	modRestrictedAnnotation                                     = "modifying this annotation is restricted to privileged users"
+	notUpgraded                                                 = "modifying this VM is not allowed until it is upgraded"
+	invalidClassInstanceReference                               = "must specify a valid reference to a VirtualMachineClassInstance object"
+	invalidClassInstanceReferenceNotActive                      = "must specify a reference to a VirtualMachineClassInstance object that is active"
+	invalidClassInstanceReferenceOwnerMismatch                  = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
+	labelSelectorCanNotContainVMOperatorLabels                  = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
+	guestCustomizationVCDParityNotEnabled                       = "VC guest customization VCD parity capability is not enabled"
+	bootstrapProviderTypeCannotBeChanged                        = "bootstrap provider type cannot be changed"
+	forbiddenRemovableVolume                                    = "cannot remove volume with removable=false"
+	requiredDuringSchedulingRequiredDuringExecutionNotSupported = "requiredDuringSchedulingRequiredDuringExecution is not supported"
 
 	// ExtraConfig validation error messages.
 	extraConfigUseFirstClassFieldFmt       = "%s: use the corresponding first-class field in %s instead"
@@ -153,7 +154,6 @@ var (
 		"vnet":                        true,
 		"wakeonpcktrcv":               true,
 	}
-
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -3280,6 +3280,12 @@ func (v validator) validateVMAffinity(
 	if a := affinity.VMAffinity; a != nil {
 		p := path.Child("vmAffinity")
 
+		if len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+			allErrs = append(allErrs, field.Forbidden(
+				p.Child("requiredDuringSchedulingRequiredDuringExecution"),
+				requiredDuringSchedulingRequiredDuringExecutionNotSupported))
+		}
+
 		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
 			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
 
@@ -3373,6 +3379,12 @@ func (v validator) validateVMAffinity(
 
 	if a := affinity.VMAntiAffinity; a != nil {
 		p := path.Child("vmAntiAffinity")
+
+		if len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+			allErrs = append(allErrs, field.Forbidden(
+				p.Child("requiredDuringSchedulingRequiredDuringExecution"),
+				requiredDuringSchedulingRequiredDuringExecutionNotSupported))
+		}
 
 		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
 			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
@@ -3652,7 +3664,6 @@ func isFirstClassVMAdvancedProperty(key string) bool {
 	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
 	return ok
 }
-
 
 func isSystemReservedNetworkDeviceProperty(key string) bool {
 	return systemReservedNetworkDeviceProperties[key]

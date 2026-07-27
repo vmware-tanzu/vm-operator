@@ -13,9 +13,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
+	"github.com/vmware-tanzu/vm-operator/api/test/utilconversion"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
@@ -456,6 +458,79 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
+				name: "spec.affinity",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Affinity: &vmopv1.AffinitySpec{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"foo": "bar",
+											},
+										},
+										TopologyKey: "topology.kubernetes.io/abc",
+									},
+								},
+								PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "trivia",
+											},
+										},
+										TopologyKey: "topology.kubernetes.io/xyz",
+									},
+								},
+								RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "hard-affinity",
+											},
+										},
+										TopologyKey: "topology.kubernetes.io/jkl",
+									},
+								},
+							},
+							VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "chess",
+											},
+										},
+										TopologyKey: "topology.kubernetes.io/def",
+									},
+								},
+								PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "football",
+											},
+										},
+										TopologyKey: "topology.kubernetes.io/ghi",
+									},
+								},
+								RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"app": "hard-anti-affinity",
+											},
+										},
+										TopologyKey: "topology.kubernetes.io/mno",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
 				name: "status.network.interfaces[].vnumaNodeID and vmxnet3",
 				hub: &vmopv1.VirtualMachine{
 					Status: vmopv1.VirtualMachineStatus{
@@ -561,5 +636,54 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(spoke.Status.Network).NotTo(BeNil())
 		g.Expect(spoke.Status.Network.Interfaces).To(HaveLen(1))
 		g.Expect(spoke.Status.Network.Interfaces[0].Name).To(Equal("eth0"))
+	})
+
+	t.Run("spec.affinity RequiredDuringSchedulingRequiredDuringExecution dropped on spoke", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Affinity: &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+							{TopologyKey: "topology.kubernetes.io/abc"},
+						},
+						RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+							{TopologyKey: "topology.kubernetes.io/jkl"},
+						},
+					},
+					VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+							{TopologyKey: "topology.kubernetes.io/mno"},
+						},
+					},
+				},
+			},
+		}
+
+		spoke := &vmopv1a5.VirtualMachine{}
+		g.Expect(spoke.ConvertFrom(hub)).To(Succeed())
+
+		// The v1alpha5 VMAffinitySpec/VMAntiAffinitySpec types have no field
+		// for RequiredDuringSchedulingRequiredDuringExecution, so the
+		// basic conversion still carries the sibling field that DOES
+		// exist on both versions.
+		g.Expect(spoke.Spec.Affinity.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution).To(HaveLen(1))
+
+		// The hard-affinity data must be stashed in the conversion
+		// annotation rather than silently discarded.
+		annotation, ok := spoke.Annotations[utilconversion.AnnotationKey]
+		g.Expect(ok).To(BeTrue(), "conversion annotation must be set")
+		g.Expect(annotation).To(ContainSubstring("topology.kubernetes.io/jkl"))
+		g.Expect(annotation).To(ContainSubstring("topology.kubernetes.io/mno"))
+
+		// Converting back up must restore it from the annotation.
+		after := &vmopv1.VirtualMachine{}
+		g.Expect(spoke.ConvertTo(after)).To(Succeed())
+		g.Expect(after.Spec.Affinity.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution).To(HaveLen(1))
+		g.Expect(after.Spec.Affinity.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution[0].TopologyKey).
+			To(Equal("topology.kubernetes.io/jkl"))
+		g.Expect(after.Spec.Affinity.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution).To(HaveLen(1))
+		g.Expect(after.Spec.Affinity.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution[0].TopologyKey).
+			To(Equal("topology.kubernetes.io/mno"))
 	})
 }

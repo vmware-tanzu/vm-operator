@@ -318,6 +318,21 @@ func WaitOnVirtualMachineCondition(
 	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for Condition: %+v on VirtualMachine: %s", expectedCondition, vmName)
 }
 
+// findBootDiskVolume returns the volume at ControllerBusNumber 0, UnitNumber 0
+// (the boot disk), or nil if spec.volumes has no such entry.
+// Note: This assumes there is only a single boot disk. Reconsider if/when
+// multiple boot disks are supported.
+func findBootDiskVolume(volumes []vmopv1.VirtualMachineVolume) *vmopv1.VirtualMachineVolume {
+	for i := range volumes {
+		vol := &volumes[i]
+		if vol.ControllerBusNumber != nil && *vol.ControllerBusNumber == 0 &&
+			vol.UnitNumber != nil && *vol.UnitNumber == 0 {
+			return vol
+		}
+	}
+	return nil
+}
+
 // WaitForBootDiskPVC waits for the VirtualMachineUnmanagedVolumesBackfilled and
 // VirtualMachineUnmanagedVolumesRegistered conditions to become true, then polls
 // spec.volumes until the boot disk (ControllerBusNumber 0, UnitNumber 0) has a
@@ -330,10 +345,18 @@ func WaitForBootDiskPVC(
 	ns, vmName string,
 ) (string, *vmopv1.VirtualMachine) {
 	By("Waiting on virtual machine conditions to become true")
-	for _, condition := range []metav1.Condition{
-		{Type: consts.VMUnmanagedVolumesBackfilledCondition, Status: metav1.ConditionTrue},
-		{Type: consts.VMUnmanagedVolumesRegisteredCondition, Status: metav1.ConditionTrue},
-	} {
+
+	conditions := []metav1.Condition{
+		{
+			Type:   consts.VMUnmanagedVolumesBackfilledCondition,
+			Status: metav1.ConditionTrue,
+		},
+		{
+			Type:   consts.VMUnmanagedVolumesRegisteredCondition,
+			Status: metav1.ConditionTrue,
+		},
+	}
+	for _, condition := range conditions {
 		WaitOnVirtualMachineCondition(ctx, config, client, ns, vmName, condition)
 	}
 
@@ -342,28 +365,20 @@ func WaitForBootDiskPVC(
 		bootDiskVolName string
 		vm              *vmopv1.VirtualMachine
 	)
-
-	Eventually(func(g Gomega) bool {
+	Eventually(func(g Gomega) {
 		var err error
 		vm, err = utils.GetVirtualMachine(ctx, client, ns, vmName)
-		if err != nil {
-			e2eframework.Logf("retry due to: %v", err)
-			return false
-		}
-		for _, vol := range vm.Spec.Volumes {
-			if vol.ControllerBusNumber != nil && *vol.ControllerBusNumber == 0 &&
-				vol.UnitNumber != nil && *vol.UnitNumber == 0 {
-				g.Expect(vol.PersistentVolumeClaim).ToNot(BeNil(),
-					"Expected boot disk to have a PersistentVolumeClaim")
-				g.Expect(vol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty(),
-					"Expected boot disk PVC to have a claim name")
-				bootDiskVolName = vol.Name
-				return true
-			}
-		}
-		return false
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get VirtualMachine %s/%s", ns, vmName)
+
+		bootDiskVol := findBootDiskVolume(vm.Spec.Volumes)
+		g.Expect(bootDiskVol).ToNot(BeNil(), "boot disk volume not found in spec.volumes")
+		g.Expect(bootDiskVol.PersistentVolumeClaim).ToNot(BeNil(),
+			"Expected boot disk to have a PersistentVolumeClaim")
+		g.Expect(bootDiskVol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty(),
+			"Expected boot disk PVC to have a claim name")
+		bootDiskVolName = bootDiskVol.Name
 	}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
-		Should(BeTrue(), "Timed out waiting for boot disk to be found in spec.volumes")
+		Should(Succeed(), "Timed out waiting for boot disk to be found in spec.volumes")
 
 	return bootDiskVolName, vm
 }

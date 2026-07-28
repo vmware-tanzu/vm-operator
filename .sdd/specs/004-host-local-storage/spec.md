@@ -217,16 +217,21 @@ that `hostlocal-selected-node-moid` gets populated.
     placement is meanwhile waiting for the bind that will never happen. Such
     a PVC must either omit the annotation, letting CNS choose, or name a
     hostname.
-  - Co-location of *several* host-local volumes on one VM is only guaranteed
-    under `WaitForFirstConsumer`, or when every host-local PVC names the same
-    hostname. Under `Immediate` with no requested topology, each is
-    provisioned independently and may land on a different host — which the
-    conflict check above then rejects. This is **not new to host-local
-    storage**: it is the existing behavior of `Immediate`-bound zonal volumes
-    applied at host granularity, where `GetPVCZoneConstraints` already rejects
-    PVCs whose zone sets do not intersect. Host-local storage only makes the
-    case more likely to be reached, since a cluster has many hosts whereas
-    most namespaces have a single zone.
+  - **More than one host-local volume on a VM requires a
+    `WaitForFirstConsumer` StorageClass**, which is also satisfied when every
+    host-local PVC names the same hostname. Under `Immediate` with no
+    requested topology, each volume is provisioned independently and may land
+    on a different host — which the conflict check above then rejects, and the
+    bound volumes cannot afterwards be moved. Verified on a Supervisor with
+    four candidate hosts: a VKS cluster requesting three additional node disks
+    on an `Immediate` host-local class had one machine's volumes co-locate and
+    the other machine's land on three different hosts, from the same spec.
+    This is **not new to host-local storage**: it is the existing behavior of
+    `Immediate`-bound zonal volumes applied at host granularity, where
+    `GetPVCZoneConstraints` already rejects PVCs whose zone sets do not
+    intersect. Host-local storage only makes the case more likely to be
+    reached, since a cluster has many hosts whereas most namespaces have a
+    single zone.
 - **A resolved host is authoritative.** Once a host has been resolved, no
   placement recommendation may replace it — the VM's disks may only be
   reachable from that host, so a different host leaves the VM unable to

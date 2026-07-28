@@ -36,7 +36,7 @@
 - [x] T019 [US2] Extend `handlePVCWithWFFC` in `controllers/virtualmachine/volume/volume_controller.go` for the host-local branch
 - [x] T020 [US2] Extend `handlePVCWithWFFC` in `controllers/virtualmachine/volumebatch/volumebatch_controller.go` for the host-local branch
 - [x] T021 [P] [US2] Add unit tests for both controllers' new branch (annotation present / absent / feature off)
-- [ ] T022 [P] [US2] Add vcsim end-to-end test (pending WFFC PVC, no hint → DRS-chosen host, annotations written) in `vmprovider_vm_hostlocal_test.go` — not yet done; the forced-DRS-recommendation mechanism is covered at the `zone_placement_test.go` (T018) and `configspec_test.go` (T015) unit level, but no full create-flow vcsim test exercises the two together end-to-end
+- [ ] T022 [P] [US2] Add vcsim end-to-end test (pending WFFC PVC, no hint → DRS-chosen host, annotations written) in `vmprovider_vm_hostlocal_test.go` — still not done. The forced-DRS-recommendation mechanism is covered at the `zone_placement_test.go` (T018) and `configspec_test.go` (T015) unit level, and the path is now verified on a real cluster (T048), but no automated create-flow test exercises the two together end-to-end
 
 ## Phase 5 — User Story 3 (explicit host-override annotation)
 
@@ -81,11 +81,28 @@ fresh host recommendation silently replaced the pin.
       deploy is no longer disabled for host-local VMs
 - [x] T039 ~~Real-cluster verification of this phase~~ — superseded by T047,
       since Phase 8 replaced this phase's approach
-- [ ] T048 Still outstanding from this phase: verify a **VKS/CAPI cluster**
-      with a host-local volume. T047 validated a standalone VM; the
-      originally-reported failure was a VKS cluster VM, whose PVC is
-      Immediate-bound before the VM exists (the bound-PVC resolution path
-      rather than the WFFC auto-placement path)
+- [x] T048 Real-cluster verification of a **VKS/CAPI cluster** with host-local
+      node volumes, covering both resolution paths:
+      - **Immediate class, bound-PVC path.** A cluster with three additional
+        node disks on `host-local-vmfs` exposed the multi-volume limitation:
+        the control plane's three volumes happened to co-locate and its VM
+        came up, while the worker's three landed on three different hosts of
+        the four in the zone and its VM was correctly rejected with `VM has
+        host-local PVCs bound to conflicting hosts`. Both machines had
+        identical inputs, so the successful one does not demonstrate a
+        guarantee. Recorded in `architecture.md` §11 item 5
+      - **WFFC class, operator-selected path.** The same cluster shape on
+        `host-local-vmfs-latebinding` succeeded on both machines. Each VM
+        independently selected its own host (control plane `host-31`, worker
+        `host-25`), VM Operator stamped `selected-node` plus
+        `selected-node-is-zone=false` on every host-local PVC, and CNS
+        provisioned each volume on exactly the stamped host. That the two
+        machines chose *different* hosts and each still co-located its own
+        volumes is what distinguishes this from coincidence
+      - The VM's self-referential disk PVC (`dataSourceRef` → the
+        `VirtualMachine`) is registered where the disk already lives rather
+        than placed, so it always matches the VM's host — consistent with
+        §11 item 3
 
 ## Phase 8 — Fix: keep fast deploy, constrain placement to the pinned host
 

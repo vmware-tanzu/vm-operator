@@ -311,7 +311,7 @@ Which of the two modes in §4 a VM takes is decided by the binding mode of the h
 | **Who selects the host** | **CNS**, autonomously | **VM Operator** (operator-selected, §4) |
 | **How VM Operator learns it** | Reads the bound PVC's accessible-topology — host-derived mode | It made the decision, and publishes it via the volume handoff (§6) |
 | **VM creation meanwhile** | **Waits for the bind.** A `Pending` PVC yields a "not bound" error from zone-constraint derivation, so placement retries until CNS binds the volume | Proceeds; the volume follows the VM |
-| **Several host-local PVCs on one VM** | **Co-location is not guaranteed.** Each volume is provisioned independently and may land on a different host, which the VM then rejects as unsatisfiable (§9). This mirrors existing zonal behavior at host granularity rather than being new — see §11 item 5 | **Co-location is guaranteed.** One host is chosen for the VM and stamped on every host-local PVC |
+| **Several host-local PVCs on one VM** | **Not supported.** Each volume is provisioned independently and may land on a different host, which the VM then rejects as unsatisfiable (§9) — observed on a real cluster. A VM needing several co-located host-local volumes requires the WFFC column; see §11 item 5 | **Co-location is guaranteed.** One host is chosen for the VM and stamped on every host-local PVC |
 
 #### 5.4.1 The requested-topology contract
 
@@ -323,11 +323,11 @@ Which of the two modes in §4 a VM takes is decided by the binding mode of the h
 
 #### 5.4.2 Options for a client that needs several co-located volumes
 
-A client that attaches more than one host-local volume to a VM needs all of them on one host. This is the same choice a client already faces with zonal volumes, where several `Immediate`-bound PVCs must end up in a common zone (§11 item 5); host-local storage narrows the domain from a zone to a host but does not change the options. Three arrangements achieve co-location, with different division of responsibility:
+A client that attaches more than one host-local volume to a VM needs all of them on one host. This is the same choice a client already faces with zonal volumes, where several `Immediate`-bound PVCs must end up in a common zone (§11 item 5); host-local storage narrows the domain from a zone to a host but does not change the options.
 
-1. **A `WaitForFirstConsumer` class.** VM Operator selects one host for the VM subject to storage-policy compliance, and stamps it on every host-local PVC. The client needs no host knowledge, and co-location holds by construction.
+1. **A `WaitForFirstConsumer` class — required for more than one host-local volume.** VM Operator selects one host for the VM subject to storage-policy compliance, and stamps it on every host-local PVC. The client needs no host knowledge, and co-location holds by construction. This is the only arrangement in which VM Operator itself guarantees the outcome.
 2. **An `Immediate` class with an explicit hostname on every host-local PVC of the VM.** Co-location holds by construction, but the client must choose the host itself, without DRS's view of capacity or policy compliance. Where the intent is specifically to pin a chosen host, the VM's own node annotation (§3.2) expresses that same intent to VM Operator and is validated at admission.
-3. **An `Immediate` class with the annotation omitted.** CNS selects. Sufficient for a single volume; with several volumes, nothing correlates the independent provisioning decisions.
+3. **An `Immediate` class with the annotation omitted.** CNS selects, and the outcome cannot be relied on: sufficient for a single volume, but with several volumes nothing correlates the independent provisioning decisions.
 
 #### 5.4.3 Ordering under Immediate binding
 
@@ -516,30 +516,52 @@ binding modes:
 4. **Post-creation movement.** Nothing prevents an administrator from
    relocating a host-local VM in vCenter; detecting and reporting that drift is
    out of scope.
-5. **Several `Immediate`-bound volumes on one VM may be provisioned into
-   different topology domains.** This is a pre-existing property of `Immediate`
-   binding at *any* granularity, not something host-local storage introduces.
-   Each PVC is provisioned before a consumer exists, so nothing correlates the
-   decisions; if they diverge, the VM is rejected as unsatisfiable rather than
-   created somewhere its disks are unreachable.
+5. **More than one host-local volume on a VM requires a
+   `WaitForFirstConsumer` StorageClass.** Under `Immediate` binding each PVC is
+   provisioned before a consumer exists, so nothing correlates the decisions.
+   If they diverge, the VM is rejected as unsatisfiable rather than created
+   somewhere its disks are unreachable, and the volumes cannot afterwards be
+   moved — so the VM never becomes creatable.
 
-   The zonal form of this predates the feature and is asserted by existing
-   tests: `GetPVCZoneConstraints` intersects each PVC's zone set and errors
-   when the intersection is empty (`no allowed zones remaining after applying
-   PVC zone constraints`), covered for both `Bound` and `Pending` PVCs. The
-   host-local form is the same rule one domain level down — disagreeing
-   hostnames are rejected per §9.
+   This was confirmed on a Supervisor with four candidate hosts in one zone. A
+   VKS cluster requested three additional node disks on an `Immediate`
+   host-local class; its two machines, built from the same spec, diverged:
 
-   What host-local storage changes is how often the case is reached, not
-   whether it exists. Most namespaces are assigned a single zone, leaving
-   zonal volumes no domain to diverge across, whereas every cluster has many
-   hosts — so divergence becomes the default outcome rather than an edge case.
+   | Machine | Hosts chosen | Result |
+   |---|---|---|
+   | Control plane | all three volumes on one host | created, co-located |
+   | Worker | three volumes across three hosts | rejected, never created |
+
+   The successful machine is not evidence of a guarantee. Both machines
+   presented identical inputs — same StorageClass, policy, volume size and
+   zone, and no requested-topology annotation on any PVC — and differed only
+   in outcome. Why CNS selected as it did is not observable from the
+   Supervisor; the CSI controller log, PV volume attributes, and CNS volume
+   info records do not carry the chosen datastore or the reasoning.
+
+   Re-running the same cluster shape on a `WaitForFirstConsumer` host-local
+   class succeeded on both machines. Each VM independently selected its own
+   host, VM Operator stamped that host on every host-local PVC, and CNS
+   provisioned each volume on exactly the stamped host. That the two machines
+   selected *different* hosts and each still co-located its own volumes is what
+   distinguishes the guarantee from the coincidence above.
+
+   The underlying behavior is a pre-existing property of `Immediate` binding at
+   *any* granularity, not something host-local storage introduces. The zonal
+   form is asserted by existing tests: `GetPVCZoneConstraints` intersects each
+   PVC's zone set and errors when the intersection is empty (`no allowed zones
+   remaining after applying PVC zone constraints`), covered for both `Bound`
+   and `Pending` PVCs. The host-local form is the same rule one domain level
+   down — disagreeing hostnames are rejected per §9. What host-local storage
+   changes is how often the case is reached: most namespaces are assigned a
+   single zone, leaving zonal volumes no domain to diverge across, whereas
+   every cluster has many hosts.
 
    Correlating independent provisioning decisions is not something VM Operator
-   can reach; it would have to happen at provisioning time. The mitigation is
-   the one upstream Kubernetes prescribes for topology-constrained volumes:
-   `WaitForFirstConsumer`, under which one host is chosen for the VM and
-   stamped on every host-local PVC. See §5.4.2 for the client-side options.
+   can reach; it would have to happen at provisioning time. `WaitForFirstConsumer`
+   moves host selection into VM Operator, which stamps one host on every
+   host-local PVC before provisioning — the resolution upstream Kubernetes
+   prescribes for topology-constrained volumes. See §5.4.2.
 6. **The owning cluster is discovered rather than looked up.** In a
    multi-cluster zone the host-constrained request is issued per candidate
    cluster, and the clusters that do not own the host decline. By invariant 1

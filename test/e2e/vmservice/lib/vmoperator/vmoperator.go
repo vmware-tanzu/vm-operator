@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"k8s.io/apimachinery/pkg/api/meta"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -200,6 +201,45 @@ func WaitForVirtualMachineIP(ctx context.Context, config *config.E2EConfig, svCl
 			vm.Status.Network.PrimaryIP4 != "" &&
 			net.ParseIP(vm.Status.Network.PrimaryIP4).To4() != nil
 	}, config.GetIntervals("default", "wait-virtual-machine-vmip")...).Should(BeTrue())
+}
+
+// GetVirtualMachineServiceEndpointsTargetRefNames returns the set of VM names
+// referenced via TargetRef by the named VirtualMachineService's Endpoints,
+// across both ready and not-ready addresses.
+func GetVirtualMachineServiceEndpointsTargetRefNames(ctx context.Context, client ctrlclient.Client, ns, name string) (sets.Set[string], error) {
+	endpoints := &corev1.Endpoints{}
+	if err := client.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, endpoints); err != nil {
+		return nil, err
+	}
+
+	names := sets.New[string]()
+	for _, subset := range endpoints.Subsets {
+		for _, addr := range subset.Addresses {
+			if addr.TargetRef != nil {
+				names.Insert(addr.TargetRef.Name)
+			}
+		}
+		for _, addr := range subset.NotReadyAddresses {
+			if addr.TargetRef != nil {
+				names.Insert(addr.TargetRef.Name)
+			}
+		}
+	}
+
+	return names, nil
+}
+
+// WaitForVirtualMachineServiceEndpointsVMs waits until the named
+// VirtualMachineService's Endpoints reference exactly the given set of VMs
+// via TargetRef, no more and no less.
+func WaitForVirtualMachineServiceEndpointsVMs(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, name string, expectedVMNames []string) {
+	By(fmt.Sprintf("Verify VirtualMachineService '%s/%s' Endpoints reference exactly VMs %v", ns, name, expectedVMNames))
+	Eventually(func(g Gomega) {
+		names, err := GetVirtualMachineServiceEndpointsTargetRefNames(ctx, client, ns, name)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(names.UnsortedList()).To(ConsistOf(expectedVMNames))
+	}, config.GetIntervals("default", "wait-virtual-machine-service-endpoints")...).Should(Succeed(),
+		"Timed out waiting for VirtualMachineService %s/%s Endpoints to reference exactly VMs %v", ns, name, expectedVMNames)
 }
 
 // Utility function to check Virtual Machine Status MoID.

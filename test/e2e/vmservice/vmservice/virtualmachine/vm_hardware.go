@@ -13,7 +13,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -30,6 +29,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -132,11 +132,11 @@ func getBackfilledVolumes(
 	// Wait for both conditions
 	conditions := []metav1.Condition{
 		{
-			Type:   "VirtualMachineUnmanagedVolumesBackfilled",
+			Type:   consts.VMUnmanagedVolumesBackfilledCondition,
 			Status: metav1.ConditionTrue,
 		},
 		{
-			Type:   "VirtualMachineUnmanagedVolumesRegistered",
+			Type:   consts.VMUnmanagedVolumesRegisteredCondition,
 			Status: metav1.ConditionTrue,
 		},
 	}
@@ -1820,52 +1820,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, vmName, []string{})
 
-				By("Waiting on virtual machine conditions to become true")
-
-				conditions := []metav1.Condition{
-					{
-						Type:   "VirtualMachineUnmanagedVolumesBackfilled",
-						Status: metav1.ConditionTrue,
-					},
-					{
-						Type:   "VirtualMachineUnmanagedVolumesRegistered",
-						Status: metav1.ConditionTrue,
-					},
+				bootDiskVolName, currentVM := vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+				volumeNames := make([]string, 0, len(currentVM.Spec.Volumes))
+				for _, vol := range currentVM.Spec.Volumes {
+					volumeNames = append(volumeNames, vol.Name)
 				}
-				for _, condition := range conditions {
-					vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName, condition)
-				}
-
-				volumeNames := make([]string, 0)
-
-				By("Waiting for the boot disk to be promoted to a PVC")
-
-				var bootDiskVolName string
-
-				Eventually(func(g Gomega) bool {
-					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
-					if err != nil {
-						e2eframework.Logf("retry due to: %v", err)
-						return false
-					}
-
-					for _, vol := range vm.Spec.Volumes {
-						volumeNames = append(volumeNames, vol.Name)
-						if vol.ControllerBusNumber != nil && *vol.ControllerBusNumber == 0 &&
-							vol.UnitNumber != nil && *vol.UnitNumber == 0 {
-							g.Expect(vol.PersistentVolumeClaim).ToNot(BeNil(),
-								"Expected boot disk to have a PersistentVolumeClaim")
-							g.Expect(vol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty(),
-								"Expected boot disk PVC to have a claim name")
-							bootDiskVolName = vol.Name
-
-							return true
-						}
-					}
-
-					return false
-				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
-					Should(BeTrue(), "Timed out waiting for boot disk to be found in spec.volumes")
 
 				By("Verify volumes in batch attachment CRD")
 				csi.WaitForBatchAttachVolumesToBeAttached(ctx, config, svClusterClient, vmSvcNamespace, vmName, volumeNames)
@@ -2165,11 +2124,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				conditions := []metav1.Condition{
 					{
-						Type:   "VirtualMachineUnmanagedVolumesBackfilled",
+						Type:   consts.VMUnmanagedVolumesBackfilledCondition,
 						Status: metav1.ConditionTrue,
 					},
 					{
-						Type:   "VirtualMachineUnmanagedVolumesRegistered",
+						Type:   consts.VMUnmanagedVolumesRegisteredCondition,
 						Status: metav1.ConditionTrue,
 					},
 				}
@@ -2311,11 +2270,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				conditions := []metav1.Condition{
 					{
-						Type:   "VirtualMachineUnmanagedVolumesBackfilled",
+						Type:   consts.VMUnmanagedVolumesBackfilledCondition,
 						Status: metav1.ConditionTrue,
 					},
 					{
-						Type:   "VirtualMachineUnmanagedVolumesRegistered",
+						Type:   consts.VMUnmanagedVolumesRegisteredCondition,
 						Status: metav1.ConditionTrue,
 					},
 				}

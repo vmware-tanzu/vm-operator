@@ -815,26 +815,18 @@ func decodeGzipBase64(encoded string) (string, error) {
 
 // WaitForBackupToComplete waits for the VM backup process to complete by verifying
 // that all PVCs in the VM spec have corresponding entries in the backup data stored
-// in the VM's ExtraConfig. This is exported for use in tests that perform in-place restores.
+// in the VM's ExtraConfig.
 func WaitForBackupToComplete(
 	ctx context.Context,
-	vm *vmopv1.VirtualMachine,
+	vmName string,
+	vmNamespace string,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
-) {
-	waitForBackupToComplete(ctx, vm, clusterProxy, config)
-}
-
-// waitForBackupToComplete waits for the VM backup process to complete by verifying
-// that all PVCs in the VM spec have corresponding entries in the backup data stored
-// in the VM's ExtraConfig.
-func waitForBackupToComplete(
-	ctx context.Context,
-	vm *vmopv1.VirtualMachine,
-	clusterProxy *common.VMServiceClusterProxy,
-	config *config.E2EConfig,
-) {
+) *vmopv1.VirtualMachine {
 	By("Waiting for backup to complete for all PVCs")
+
+	var vm *vmopv1.VirtualMachine
+	_, vm = vmoperator.WaitForBootDiskPVC(ctx, config, clusterProxy.GetClient(), vmNamespace, vmName)
 
 	// Get list of PVC names from VM spec
 	expectedPVCNames := make(map[string]struct{})
@@ -848,7 +840,7 @@ func waitForBackupToComplete(
 	// If there are no PVCs, no need to wait
 	if len(expectedPVCNames) == 0 {
 		framework.Logf("No PVCs found in VM spec, skipping backup wait")
-		return
+		return vm
 	}
 
 	framework.Logf("Expected PVCs to be backed up: %v", strings.Join(slices.Collect(maps.Keys(expectedPVCNames)), ", "))
@@ -919,6 +911,8 @@ func waitForBackupToComplete(
 
 		return true
 	}, config.GetIntervals("default", "wait-backup-to-complete")...).Should(BeTrue(), "backup did not complete for all PVCs")
+
+	return vm
 }
 
 // UnregisterPVCVolumes unregisters all PVCs in the provided list using CnsUnregisterVolume.
@@ -1011,13 +1005,11 @@ func DeleteVMResource(
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client) string {
-	By("Get VM before powering off")
-
-	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Wait for backup to complete before powering off and deleting the VM
-	waitForBackupToComplete(ctx, vm, clusterProxy, config)
+	// Wait for backup to complete before powering off and deleting the VM.
+	// Capture the MoID now while the VM CR still exists; it is returned to
+	// the caller so RegisterVM can re-register the vSphere VM after deletion.
+	vm := WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config)
+	vmMoID := vm.Status.UniqueID
 
 	// When AllDisksArePVCs is enabled, the CSI driver takes a VM snapshot
 	// while registering the boot VMDK as an FCD. If that snapshot is still
@@ -1032,8 +1024,7 @@ func DeleteVMResource(
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
 	By("Add the pause annotation to VM")
-	vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-	Expect(err).ToNot(HaveOccurred())
+
 	base := vm.DeepCopy()
 	metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
 	Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
@@ -1056,25 +1047,21 @@ func DeleteVMResource(
 	// The finalizer should be removed after the VM is being deleted to avoid
 	// its being added again during the normal reconciliation by the controller.
 	By("Remove the VMOP finalizer to ensure deletion of K8s VM")
-	Eventually(func() bool {
+	Eventually(func(g Gomega) {
+		var err error
 		vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-		if err != nil {
-			// If VM is already deleted, nothing to do.
-			return apierrors.IsNotFound(err)
+		if apierrors.IsNotFound(err) {
+			return
 		}
-
-		if vm.DeletionTimestamp.IsZero() {
-			err = fmt.Errorf("VM %s/%s does not have deletion timestamp set", vmNamespace, vmName)
-			return false
-		}
-
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(vm.DeletionTimestamp.IsZero()).To(BeFalse(),
+			"VM %s/%s does not have deletion timestamp set", vmNamespace, vmName)
 		controllerutil.RemoveFinalizer(vm, VMFinalizerName)
 		// Also remove the deprecated finalizer if it exists to ensure backward compatibility.
 		controllerutil.RemoveFinalizer(vm, VMFinalizerNameDeprecated)
-		err = svClusterClient.Update(ctx, vm)
-
-		return err == nil
-	}, 30*time.Second, 3*time.Second).Should(BeTrue(), "failed to remove finalizer from VM '%s/%s', most recent error: %v", vmNamespace, vmName, err)
+		g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+	}, 30*time.Second, 3*time.Second).Should(Succeed(),
+		"failed to remove finalizer from VM '%s/%s'", vmNamespace, vmName)
 
 	vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
 
@@ -1083,7 +1070,7 @@ func DeleteVMResource(
 		Expect(clusterProxy.DeleteWithArgs(ctx, bootstrapResourceYAML)).To(Succeed(), "failed to delete VM bootstrap resource")
 	}
 
-	return vm.Status.UniqueID
+	return vmMoID
 }
 
 // InvokeRegisterVM invokes the RegisterVM API.

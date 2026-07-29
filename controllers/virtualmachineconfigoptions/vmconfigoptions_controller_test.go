@@ -329,6 +329,39 @@ func unitTestsReconcile() {
 				})
 			})
 
+			When("QueryConfigOptionEx transitions from reporting a guest OS to reporting no config option at all", func() {
+				It("garbage-collects the corresponding VirtualMachineGuestOptions", func() {
+					fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+						return &vimtypes.VirtualMachineConfigOption{
+							GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+								{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+							},
+						}, nil
+					}
+
+					// First reconcile adds finalizer; second fans out the guest OS.
+					_, err := doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+					_, err = doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+
+					guestOptions := &vimv1.VirtualMachineGuestOptions{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+					// vSphere now reports no config option at all for this
+					// hardware version -- a nil, error-free result, not a
+					// transient failure.
+					fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+						return nil, nil
+					}
+					_, err = doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+
+					err = ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				})
+			})
+
 		})
 
 		When("a ConfigTarget owner reference names a ConfigTarget that no longer exists", func() {

@@ -92,6 +92,8 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 - [ ] T091 [S7.a] Unit tests + RBAC + manifest registration
 - [ ] T092 [S7.b] [P] Integration tests with vcsim — `test/intg/virtualmachineguestoptions/`: two VirtualMachineConfigOptions (vmx-21, vmx-22) yield single VirtualMachineGuestOptions with two hardwareVersions listMap entries
 - [ ] T093 [S7.c] E2E test — at least one VirtualMachineGuestOptions materialised after install + zone creation
+- [x] T093a [S7.d] [vmop-3932] Author `garbageCollectGuestOptions` / `removeHardwareVersionAndDeleteIfOrphaned` in `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` — prunes a `VirtualMachineGuestOptions.status.hardwareVersions` entry once its hardware version's `VirtualMachineConfigOptions` reconcile no longer reports that guest OS, deleting the object once no hardware-version entries remain. Closes the gap noted in `research.md` Finding 3 and the former spec.md edge case/out-of-scope entries.
+- [x] T093b [S7.d] [vmop-3932] Unit tests — `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go`: a guest OS dropped from a hardware version's descriptor list deletes the sole-owning `VirtualMachineGuestOptions`; a guest OS still reported by a second hardware version keeps the object and only removes the dropped version's status entry
 
 ### Story S8 — VirtualMachineConfigPolicy controller (vmop-3745)
 

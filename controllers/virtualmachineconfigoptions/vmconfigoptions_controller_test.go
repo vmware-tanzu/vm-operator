@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -430,6 +431,110 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("a guest OS is dropped from the descriptor list", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, configTarget, configOptions)
+			})
+
+			It("garbage-collects the corresponding VirtualMachineGuestOptions", func() {
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+
+				// First reconcile adds finalizer; second fans out the guest OS.
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+				// Drop the guest OS from the descriptor list and reconcile again.
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{}, nil
+				}
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				err = ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
+		})
+
+		When("a guest OS reported by two hardware versions is dropped from only one", func() {
+			const otherHardwareVersion = "vmx-21"
+
+			var otherConfigOptions *vimv1.VirtualMachineConfigOptions
+
+			BeforeEach(func() {
+				otherConfigOptions = &vimv1.VirtualMachineConfigOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "vmx-21-config",
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: vimv1.GroupVersion.String(),
+								Kind:       vmconfigoptions.ConfigTargetKind,
+								Name:       configTarget.Name,
+								UID:        configTarget.UID,
+							},
+						},
+					},
+					Spec: vimv1.VirtualMachineConfigOptionsSpec{
+						HardwareVersion: otherHardwareVersion,
+					},
+				}
+				initObjects = append(initObjects, configTarget, configOptions, otherConfigOptions)
+			})
+
+			It("removes only the dropped hardware version's status entry and keeps the object", func() {
+				otherObjKey := types.NamespacedName{Name: otherConfigOptions.Name}
+				doReconcileOther := func() (reconcile.Result, error) {
+					return reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: otherObjKey})
+				}
+
+				bothReport := func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+				fakeVMProvider.QueryConfigOptionExFn = bothReport
+
+				// First reconcile of each adds its finalizer; second performs
+				// the full reconciliation and fan-out.
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcileOther()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcileOther()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+				Expect(guestOptions.Status.HardwareVersions).To(HaveLen(2))
+
+				// Drop the guest OS from hardwareVersion only; otherHardwareVersion
+				// keeps reporting it.
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{}, nil
+				}
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+				Expect(guestOptions.Status.HardwareVersions).To(HaveLen(1))
+				Expect(guestOptions.Status.HardwareVersions[0].HardwareVersion).To(Equal(otherHardwareVersion))
+			})
+		})
+
 		When("a guest OS identifier is not DNS-subdomain-safe", func() {
 			const longGuestID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-tobetrimmed"
 
@@ -682,6 +787,52 @@ func vcsimTestsReconcile() {
 				Expect(hwEntry).ToNot(BeNil(), "expected a %q hardwareVersions entry for guest ID %q",
 					configOptions.Spec.HardwareVersion, guestID)
 			}
+		})
+	})
+
+	// This exercises the exact patch mechanics garbageCollectGuestOptions
+	// relies on -- a JSON merge patch carrying the full desired
+	// hardwareVersions slice, sent with an optimistic-lock precondition --
+	// against the real (envtest) API server and its generated CRD schema,
+	// rather than controller-runtime's fake client used by unitTestsReconcile
+	// above. VirtualMachineGuestOptionsStatus.HardwareVersions is declared
+	// listType=map/listMapKey=hardwareVersion; unlike a strategic merge
+	// patch or server-side apply, a JSON merge patch has no notion of that
+	// annotation and simply replaces the array wholesale with the patch's
+	// value, so sending the shorter slice removes exactly the dropped entry.
+	When("a hardwareVersions entry is removed via a merge patch against the real API server", func() {
+		It("removes exactly the targeted entry, leaving sibling entries intact", func() {
+			obj := &vimv1.VirtualMachineGuestOptions{
+				ObjectMeta: metav1.ObjectMeta{Name: "merge-patch-probe"},
+				Spec:       vimv1.VirtualMachineGuestOptionsSpec{ID: "otherGuest"},
+			}
+			Expect(vcsimCtx.Client.Create(vcsimCtx, obj)).To(Succeed())
+
+			obj.Status.FullName = "Other"
+			obj.Status.HardwareVersions = []vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
+				{HardwareVersion: "vmx-19"},
+				{HardwareVersion: "vmx-20"},
+				{HardwareVersion: "vmx-21"},
+			}
+			Expect(vcsimCtx.Client.Status().Update(vcsimCtx, obj)).To(Succeed())
+
+			base := obj.DeepCopy()
+			obj.Status.HardwareVersions = []vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
+				{HardwareVersion: "vmx-19"},
+				{HardwareVersion: "vmx-21"},
+			}
+			Expect(vcsimCtx.Client.Status().Patch(vcsimCtx, obj,
+				client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))).To(Succeed())
+
+			var current vimv1.VirtualMachineGuestOptions
+			Expect(vcsimCtx.Client.Get(vcsimCtx, client.ObjectKeyFromObject(obj), &current)).To(Succeed())
+			Expect(current.Status.HardwareVersions).To(HaveLen(2))
+
+			var versions []string
+			for _, hv := range current.Status.HardwareVersions {
+				versions = append(versions, hv.HardwareVersion)
+			}
+			Expect(versions).To(Equal([]string{"vmx-19", "vmx-21"}))
 		})
 	})
 }

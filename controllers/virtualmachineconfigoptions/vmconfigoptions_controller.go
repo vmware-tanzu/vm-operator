@@ -198,8 +198,19 @@ func (r *Reconciler) ReconcileNormal(
 	}
 
 	if configOption == nil {
+		// A nil, error-free result from QueryConfigOptionEx is vSphere's
+		// positive answer that this hardware version has no config option in
+		// this environment -- not a transient/unknown signal, which would
+		// have come back as a non-nil error above. Treat it the same as a
+		// successful query that reports zero guest OS descriptors: any
+		// VirtualMachineGuestOptions previously fanned out for this hardware
+		// version are stale and must be pruned, same as the non-nil-but-empty
+		// case fanOutGuestOptions already handles.
 		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, NotFoundReason,
 			"config option not found for hardware version %s", obj.Spec.HardwareVersion)
+		if err := r.fanOutGuestOptions(ctx, obj.Spec.HardwareVersion, nil); err != nil {
+			return ctrl.Result{}, err
+		}
 		obj.Status.ObservedGeneration = obj.Generation
 		return ctrl.Result{}, nil
 	}

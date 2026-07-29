@@ -182,6 +182,22 @@ func unitTestsValidateUpdate() {
 			validateUpdate(updateArgs{newID: "dos"}, false, "field is immutable")
 		})
 	})
+
+	When("the object predates this webhook and was already invalid", func() {
+		It("should deny an update that leaves an empty spec.id unchanged", func() {
+			legacy := builder.DummyVirtualMachineGuestOptions("legacy-empty-id", "")
+			legacyObj, err := builder.ToUnstructured(legacy)
+			Expect(err).ToNot(HaveOccurred())
+
+			ctx = &unitValidatingWebhookContext{
+				UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(legacyObj, legacyObj),
+			}
+
+			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeFalse())
+			Expect(string(response.Result.Reason)).To(ContainSubstring("id must be provided"))
+		})
+	})
 }
 
 func unitTestsValidateDelete() {

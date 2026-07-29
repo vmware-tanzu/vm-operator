@@ -84,7 +84,8 @@ func (v validator) ValidateDelete(_ *pkgctx.WebhookRequestContext) admission.Res
 }
 
 // ValidateUpdate validates updates to a VirtualMachineGuestOptions, enforcing
-// that spec.id is immutable.
+// that spec.id is immutable and re-running the base validations so an object
+// that predates this webhook is still caught if it is otherwise invalid.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	obj, err := v.vmGuestOptionsFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -98,6 +99,8 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	idPath := field.NewPath("spec", "id")
 	fieldErrs := validation.ValidateImmutableField(obj.Spec.ID, oldObj.Spec.ID, idPath)
+	fieldErrs = append(fieldErrs, v.validateID(string(obj.Spec.ID))...)
+	fieldErrs = append(fieldErrs, v.validateNameMatchesID(obj.Name, string(obj.Spec.ID))...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {

@@ -95,9 +95,23 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S8 — VirtualMachineConfigPolicy controller (vmop-3745)
 
-- [ ] T100 [S8.a] Author `webhooks/virtualmachineconfigpolicy/defaulting_webhook.go` — default syncMode=ConfigTarget, createMode/updateMode/powerOnMode=Allow, vmClassMode=AsPolicy
-- [ ] T101 [S8.a] Author `webhooks/virtualmachineconfigpolicy/validation_webhook.go` — spec.zone references existing Zone; extraConfig allowed/denied entries have non-empty key and valid type enum
-- [ ] T102 [S8.a] Unit tests — `webhooks/virtualmachineconfigpolicy/`
+- [x] T100 [S8.a] [vmop-3745] Skipped as dead code — see implementation note below.
+- [x] T101 [S8.a] [vmop-3745] Author `webhooks/virtualmachineconfigpolicy/validation/virtualmachineconfigpolicy_validator.go` — spec.zone references existing Zone (via `pkg/topology.GetZone`); extraConfig allowed/denied entries have non-empty key (Type enum already CRD-enforced)
+- [x] T102 [S8.a] [vmop-3745] Unit + envtest tests — `webhooks/virtualmachineconfigpolicy/validation/virtualmachineconfigpolicy_validator_test.go`
+
+  > Implementation note: T100's defaulting webhook was not built. All five
+  > fields it would default (`syncMode`, `createMode`, `updateMode`,
+  > `powerOnMode`, `vmClassMode`) already carry `+kubebuilder:default=`
+  > markers and are present in the generated CRD
+  > (`config/crd/external-crds/vim.vmware.com_virtualmachineconfigpolicies.yaml`),
+  > so API-server structural defaulting already covers this — a mutating
+  > webhook setting the same values would be dead code. Both sibling
+  > `vim.vmware.com` webhooks (`configtarget`, `virtualmachineconfigoptions`)
+  > are validate-only for the same reason. File layout also follows the
+  > `configtarget`/`virtualmachineconfigoptions` package convention
+  > (`webhooks/<crd>/webhooks.go` + `webhooks/<crd>/validation/*.go`) rather
+  > than the flat `defaulting_webhook.go`/`validation_webhook.go` paths
+  > originally listed here.
 - [ ] T103 [S8.b] Author `controllers/virtualmachineconfigpolicy/vmconfigpolicy_controller.go` — syncMode=ConfigTarget: copy ConfigTarget.status → policy spec; syncMode=Disabled: set Ready=True, skip sync; never overwrite extraConfig/latencySensitivityLevels/txRxThreadModels
 - [ ] T104 [S8.b] Author `pkg/vmconfig/policy/policy_reconciler.go` — ConfigTarget→policy sync field mapping logic (separate from controller for unit testability)
 - [ ] T105 [S8.b] Unit tests — `pkg/vmconfig/policy/policy_reconciler_test.go`

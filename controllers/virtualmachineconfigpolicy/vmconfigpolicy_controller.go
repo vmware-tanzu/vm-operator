@@ -17,8 +17,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -28,6 +31,20 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/configpolicysync"
+)
+
+const (
+	// zoneByClusterMoIDIndex is the field index key used to look up Zones by
+	// one of the cluster MoIDs in spec.managedVMs.clusterMoIDs, so a
+	// ConfigTarget watch event can find every Zone whose sync result depends
+	// on that ConfigTarget.
+	zoneByClusterMoIDIndex = "spec.managedVMs.clusterMoIDs"
+
+	// policyByZoneIndex is the field index key used to look up
+	// VirtualMachineConfigPolicy objects by spec.zone, so a Zone (directly)
+	// or ConfigTarget (via zoneByClusterMoIDIndex) watch event can find
+	// every policy that references it.
+	policyByZoneIndex = "spec.zone"
 )
 
 const (
@@ -70,14 +87,116 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorder(controllerNameShort)))
 
+	err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&vimv1.VirtualMachineConfigPolicy{},
+		policyByZoneIndex,
+		func(rawObj client.Object) []string {
+			policy := rawObj.(*vimv1.VirtualMachineConfigPolicy) //nolint:forcetypeassert
+			if policy.Spec.Zone == "" {
+				return nil
+			}
+
+			return []string{policy.Spec.Zone}
+		})
+	if err != nil {
+		return fmt.Errorf("failed to index VirtualMachineConfigPolicy by spec.zone: %w", err)
+	}
+
+	err = mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&topologyv1.Zone{},
+		zoneByClusterMoIDIndex,
+		func(rawObj client.Object) []string {
+			zone := rawObj.(*topologyv1.Zone) //nolint:forcetypeassert
+			return zone.Spec.ManagedVMs.ClusterMoIDs
+		})
+	if err != nil {
+		return fmt.Errorf("failed to index Zone by spec.managedVMs.clusterMoIDs: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
+		Watches(
+			&topologyv1.Zone{},
+			handler.EnqueueRequestsFromMapFunc(zoneToPolicyMapper(r.Client))).
+		Watches(
+			&vimv1.ConfigTarget{},
+			handler.EnqueueRequestsFromMapFunc(configTargetToPolicyMapper(r.Client))).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, 0),
 			SkipNameValidation:      SkipNameValidation,
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
+}
+
+// zoneToPolicyMapper returns reconcile requests for every
+// VirtualMachineConfigPolicy in the Zone's namespace whose spec.zone
+// references it, so a Zone change (e.g. its cluster MoIDs) is reflected on
+// the next reconcile.
+func zoneToPolicyMapper(c client.Client) handler.MapFunc {
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		zone, ok := o.(*topologyv1.Zone)
+		if !ok {
+			return nil
+		}
+
+		return policiesReferencingZone(ctx, c, zone.Namespace, zone.Name)
+	}
+}
+
+// configTargetToPolicyMapper returns reconcile requests for every
+// VirtualMachineConfigPolicy whose zone lists the ConfigTarget's cluster
+// MoID (the ConfigTarget's name) among spec.managedVMs.clusterMoIDs, so a
+// ConfigTarget status change is reflected within one reconcile, per the
+// spec's requirement that config policy stays in sync with the ConfigTarget.
+func configTargetToPolicyMapper(c client.Client) handler.MapFunc {
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		ct, ok := o.(*vimv1.ConfigTarget)
+		if !ok {
+			return nil
+		}
+
+		var zones topologyv1.ZoneList
+
+		err := c.List(ctx, &zones, client.MatchingFields{zoneByClusterMoIDIndex: ct.Name})
+		if err != nil {
+			return nil
+		}
+
+		var requests []reconcile.Request
+
+		for i := range zones.Items {
+			zone := &zones.Items[i]
+			requests = append(requests, policiesReferencingZone(ctx, c, zone.Namespace, zone.Name)...)
+		}
+
+		return requests
+	}
+}
+
+// policiesReferencingZone lists every VirtualMachineConfigPolicy in
+// namespace whose spec.zone equals zoneName.
+func policiesReferencingZone(
+	ctx context.Context,
+	c client.Client,
+	namespace, zoneName string) []reconcile.Request {
+	var policies vimv1.VirtualMachineConfigPolicyList
+
+	err := c.List(ctx, &policies,
+		client.InNamespace(namespace),
+		client.MatchingFields{policyByZoneIndex: zoneName})
+	if err != nil {
+		return nil
+	}
+
+	requests := make([]reconcile.Request, len(policies.Items))
+	for i := range policies.Items {
+		requests[i] = reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&policies.Items[i])}
+	}
+
+	return requests
 }
 
 func NewReconciler(

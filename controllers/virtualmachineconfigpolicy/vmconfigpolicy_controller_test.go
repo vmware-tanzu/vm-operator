@@ -364,6 +364,23 @@ func vcsimTests() {
 			Expect(got.Spec.NumCPUCores).ToNot(BeNil())
 			Expect(got.Spec.NumCPUCores.Max).To(BeNumerically(">", 0))
 		})
+
+		It("does not bump resourceVersion on a second reconcile against a real, unchanged ConfigTarget", func() {
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: policy.Namespace, Name: policy.Name}}
+
+			_, err := reconciler.Reconcile(vcsimCtx, req)
+			Expect(err).ToNot(HaveOccurred())
+
+			var got vimv1.VirtualMachineConfigPolicy
+			Expect(vcsimCtx.Client.Get(vcsimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
+			rv1 := got.ResourceVersion
+
+			_, err = reconciler.Reconcile(vcsimCtx, req)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(vcsimCtx.Client.Get(vcsimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
+			Expect(got.ResourceVersion).To(Equal(rv1))
+		})
 	})
 
 	When("no ConfigTarget exists yet for the zone's cluster", func() {

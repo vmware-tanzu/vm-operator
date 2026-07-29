@@ -453,7 +453,14 @@ func (r *Reconciler) removeHardwareVersionAndDeleteIfOrphaned(
 	}
 
 	if len(obj.Status.HardwareVersions) == 1 {
-		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		// obj was fetched by the caller's List, so another hardware
+		// version's reconcile could concurrently upsert a new entry into
+		// this shared object between then and now. Gate the delete on
+		// obj's ResourceVersion so a racing writer's addition causes a
+		// conflict here instead of being silently deleted along with the
+		// object; the next reconcile retries with fresh data.
+		precondition := client.Preconditions{ResourceVersion: &obj.ResourceVersion}
+		if err := r.Delete(ctx, obj, precondition); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete orphaned VirtualMachineGuestOptions %q: %w", obj.Name, err)
 		}
 		return nil

@@ -19,6 +19,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -281,23 +282,37 @@ func applyStatus(
 }
 
 // fanOutGuestOptions creates or updates a VirtualMachineGuestOptions object
-// for each guest OS descriptor. Every descriptor is attempted even if an
-// earlier one fails -- each is an independent, idempotent upsert, so a
-// failure on one must not block progress on the others. Errors from all
-// descriptors are joined and returned together; any descriptor left
-// unconverged this pass is retried, along with the rest, on the next
-// reconcile triggered by that error.
+// for each guest OS descriptor, then garbage-collects hardwareVersion's entry
+// from any VirtualMachineGuestOptions no longer reported. Every descriptor is
+// attempted even if an earlier one fails -- each is an independent,
+// idempotent upsert, so a failure on one must not block progress on the
+// others. Errors from all descriptors are joined and returned together; any
+// descriptor left unconverged this pass is retried, along with the rest, on
+// the next reconcile triggered by that error.
 func (r *Reconciler) fanOutGuestOptions(
 	ctx context.Context,
 	hardwareVersion string,
 	descriptors []vimtypes.GuestOsDescriptor) error {
 
+	// Keyed by the sanitized object name (not the raw guest OS ID) since
+	// that is the actual VirtualMachineGuestOptions identity: distinct IDs
+	// can collide onto the same truncated, DNS-safe name, and comparing
+	// garbage collection against the wrong key could delete an object still
+	// live under its colliding sibling ID.
+	liveNames := sets.New[string]()
+
 	var errs []error
 	for i := range descriptors {
+		liveNames.Insert(pkgutil.VimGuestOptionsName(descriptors[i].Id))
 		if err := r.reconcileGuestOptions(ctx, hardwareVersion, descriptors[i]); err != nil {
 			errs = append(errs, err)
 		}
 	}
+
+	if err := r.garbageCollectGuestOptions(ctx, hardwareVersion, liveNames); err != nil {
+		errs = append(errs, err)
+	}
+
 	return errors.Join(errs...)
 }
 
@@ -366,6 +381,77 @@ func (r *Reconciler) reconcileGuestOptions(
 		if err := r.Status().Patch(ctx, obj, client.MergeFromWithOptions(statusBase, client.MergeFromWithOptimisticLock{})); err != nil {
 			return fmt.Errorf("failed to patch status for VirtualMachineGuestOptions %s: %w", name, err)
 		}
+	}
+
+	return nil
+}
+
+// garbageCollectGuestOptions removes hardwareVersion's entry from
+// Status.HardwareVersions on every VirtualMachineGuestOptions whose name is
+// not in liveNames. A VirtualMachineGuestOptions is deleted outright once
+// that removal leaves it with no remaining hardware-version entries, so a
+// guest OS still reported by another hardware version is left untouched.
+// Every candidate is attempted even if an earlier one fails, and the joined
+// errors are retried, along with the rest, on the next reconcile.
+func (r *Reconciler) garbageCollectGuestOptions(
+	ctx context.Context,
+	hardwareVersion string,
+	liveNames sets.Set[string]) error {
+
+	var list vimv1.VirtualMachineGuestOptionsList
+	if err := r.List(ctx, &list); err != nil {
+		return fmt.Errorf("failed to list VirtualMachineGuestOptions: %w", err)
+	}
+
+	var errs []error
+	for i := range list.Items {
+		obj := &list.Items[i]
+
+		if liveNames.Has(obj.Name) {
+			continue
+		}
+
+		if err := r.removeHardwareVersionAndDeleteIfOrphaned(ctx, obj, hardwareVersion); err != nil {
+			errs = append(errs, fmt.Errorf(
+				"failed to garbage collect VirtualMachineGuestOptions %q: %w", obj.Name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// removeHardwareVersionAndDeleteIfOrphaned removes hardwareVersion's entry
+// from obj.Status.HardwareVersions and, if that leaves obj with no remaining
+// hardware-version entries, deletes obj. If obj has no entry for
+// hardwareVersion, this is a no-op -- it was never reported by that hardware
+// version, so there is nothing to reconcile away.
+func (r *Reconciler) removeHardwareVersionAndDeleteIfOrphaned(
+	ctx context.Context,
+	obj *vimv1.VirtualMachineGuestOptions,
+	hardwareVersion string) error {
+
+	idx := -1
+	for i := range obj.Status.HardwareVersions {
+		if obj.Status.HardwareVersions[i].HardwareVersion == hardwareVersion {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return nil
+	}
+
+	if len(obj.Status.HardwareVersions) == 1 {
+		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete orphaned VirtualMachineGuestOptions %q: %w", obj.Name, err)
+		}
+		return nil
+	}
+
+	base := obj.DeepCopy()
+	obj.Status.HardwareVersions = append(obj.Status.HardwareVersions[:idx:idx], obj.Status.HardwareVersions[idx+1:]...)
+	if err := r.Status().Patch(ctx, obj, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to patch status for VirtualMachineGuestOptions %q: %w", obj.Name, err)
 	}
 
 	return nil

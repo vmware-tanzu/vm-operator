@@ -106,8 +106,9 @@ func GCVirtualMachineConfigOptions(ctx context.Context, c client.Client,
 
 ### What GC does NOT cover
 
-- `VirtualMachineGuestOptions.status.hardwareVersions` listMap entries for garbage-collected hardware versions. These become orphaned (the entry is no longer updated) but not actively wrong. Clean-up is deferred to a follow-up.
 - `VirtualMachineConfigPolicy` objects when their owning `Zone` is deleted. This involves namespace-scoped objects and Zone finaliser semantics; deferred.
+
+`VirtualMachineGuestOptions.status.hardwareVersions` listMap entries for a hardware version no longer reported by that version's `VirtualMachineConfigOptions` reconcile *are* pruned (vmop-3932): the `VirtualMachineConfigOptions` controller tracks the guest OS IDs live in its own `QueryConfigOptionEx` result and removes its hardware version's stale entry from every `VirtualMachineGuestOptions` not in that set, deleting the object outright once no hardware-version entries remain. See `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` (`garbageCollectGuestOptions`).
 
 ---
 

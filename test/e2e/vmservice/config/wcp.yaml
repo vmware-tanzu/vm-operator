@@ -72,14 +72,14 @@ variables:
 intervals:
   # Please keep the wait-virtual-machine values in sync between the different
   # configuration files.
-  default/wait-virtual-machine-creation: ["5m", "10s"]
-  default/wait-virtual-machine-deletion: ["5m", "10s"]
-  default/wait-virtual-machine-condition-update: ["5m", "10s"]
-  default/wait-virtual-machine-powerstate: ["5m", "10s"]
-  default/wait-virtual-machine-resize: ["5m", "10s"]
-  default/wait-virtual-machine-moid: ["5m", "10s"]
-  default/wait-virtual-machine-restart-mode-update: ["2m", "10s"]
-  default/wait-virtual-machine-vmip: ["5m", "10s"]
+  default/wait-virtual-machine-creation: ["5m", "3s"]
+  default/wait-virtual-machine-deletion: ["5m", "3s"]
+  default/wait-virtual-machine-condition-update: ["5m", "3s"]
+  default/wait-virtual-machine-powerstate: ["5m", "3s"]
+  default/wait-virtual-machine-resize: ["5m", "3s"]
+  default/wait-virtual-machine-moid: ["5m", "3s"]
+  default/wait-virtual-machine-restart-mode-update: ["2m", "3s"]
+  default/wait-virtual-machine-vmip: ["5m", "3s"]
   default/wait-virtual-machine-service-endpoints: ["2m", "5s"]
   default/wait-virtual-machine-image-creation: ["10m", "5s"]
   default/consistent-virtual-machine-condition: ["30s", "5s"]

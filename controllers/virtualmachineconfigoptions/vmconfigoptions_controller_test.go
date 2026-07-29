@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -682,6 +683,147 @@ func vcsimTestsReconcile() {
 				Expect(hwEntry).ToNot(BeNil(), "expected a %q hardwareVersions entry for guest ID %q",
 					configOptions.Spec.HardwareVersion, guestID)
 			}
+		})
+	})
+
+	When("VirtualMachineConfigOptions for two different hardware versions report the same guest OS", func() {
+		const (
+			vmx21Name = "vmx-21"
+			vmx22Name = "vmx-22"
+		)
+
+		var (
+			vmx21 *vimv1.VirtualMachineConfigOptions
+			vmx22 *vimv1.VirtualMachineConfigOptions
+		)
+
+		newConfigOptions := func(name, hardwareVersion string) *vimv1.VirtualMachineConfigOptions {
+			obj := &vimv1.VirtualMachineConfigOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: vimv1.GroupVersion.String(),
+							Kind:       vmconfigoptions.ConfigTargetKind,
+							Name:       configTarget.Name,
+							UID:        configTarget.UID,
+						},
+					},
+				},
+				Spec: vimv1.VirtualMachineConfigOptionsSpec{
+					HardwareVersion: hardwareVersion,
+				},
+			}
+			Expect(vcsimCtx.Client.Create(vcsimCtx, obj)).To(Succeed())
+			return obj
+		}
+
+		// reconcileTwice mirrors the pattern used above: the first
+		// reconcile only adds the finalizer, the second actually queries
+		// vcsim's EnvironmentBrowser.
+		reconcileTwice := func(name string) {
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: name}}
+			_, err := reconciler.Reconcile(vcsimCtx, req)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = reconciler.Reconcile(vcsimCtx, req)
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		guestOptionsFor := func(guestID vimv1.VirtualMachineGuestOSIdentifier) *vimv1.VirtualMachineGuestOptions {
+			var list vimv1.VirtualMachineGuestOptionsList
+			Expect(vcsimCtx.Client.List(vcsimCtx, &list)).To(Succeed())
+
+			for i := range list.Items {
+				if list.Items[i].Spec.ID == guestID {
+					return &list.Items[i]
+				}
+			}
+			return nil
+		}
+
+		hwVersionEntry := func(
+			vgo *vimv1.VirtualMachineGuestOptions,
+			hardwareVersion string) *vimv1.VirtualMachineGuestOptionsHardwareVersionStatus {
+
+			for i := range vgo.Status.HardwareVersions {
+				if vgo.Status.HardwareVersions[i].HardwareVersion == hardwareVersion {
+					return &vgo.Status.HardwareVersions[i]
+				}
+			}
+			return nil
+		}
+
+		// sharedGuestID returns a guest OS identifier reported by both
+		// vmx21 and vmx22 after each has been reconciled, so the
+		// remaining assertions exercise the actual fan-in onto a single
+		// VirtualMachineGuestOptions object.
+		sharedGuestID := func() vimv1.VirtualMachineGuestOSIdentifier {
+			var current vimv1.VirtualMachineConfigOptions
+			Expect(vcsimCtx.Client.Get(vcsimCtx, client.ObjectKeyFromObject(vmx21), &current)).To(Succeed())
+			Expect(current.Status.GuestOSIdentifiers).ToNot(BeEmpty())
+			return current.Status.GuestOSIdentifiers[0]
+		}
+
+		BeforeEach(func() {
+			vmx21 = newConfigOptions(vmx21Name, vmx21Name)
+			vmx22 = newConfigOptions(vmx22Name, vmx22Name)
+		})
+
+		It("fans in to a single VirtualMachineGuestOptions with two hardwareVersions "+
+			"entries, regardless of reconcile order", func() {
+			reconcileTwice(vmx22.Name)
+			reconcileTwice(vmx21.Name)
+
+			guestID := sharedGuestID()
+			vgo := guestOptionsFor(guestID)
+			Expect(vgo).ToNot(BeNil(), "expected a VirtualMachineGuestOptions for guest ID %q", guestID)
+			Expect(vgo.Status.HardwareVersions).To(HaveLen(2))
+			Expect(hwVersionEntry(vgo, vmx21Name)).ToNot(BeNil())
+			Expect(hwVersionEntry(vgo, vmx22Name)).ToNot(BeNil())
+		})
+
+		It("updates exactly one hardwareVersions entry when a hardware version is re-reconciled", func() {
+			reconcileTwice(vmx21.Name)
+			reconcileTwice(vmx22.Name)
+
+			guestID := sharedGuestID()
+			Expect(guestOptionsFor(guestID).Status.HardwareVersions).To(HaveLen(2))
+
+			// Re-reconciling an already-converged hardware version must
+			// update its existing entry in place, not append a duplicate.
+			reconcileTwice(vmx21.Name)
+
+			vgo := guestOptionsFor(guestID)
+			Expect(vgo.Status.HardwareVersions).To(HaveLen(2))
+			Expect(hwVersionEntry(vgo, vmx21Name)).ToNot(BeNil())
+			Expect(hwVersionEntry(vgo, vmx22Name)).ToNot(BeNil())
+		})
+
+		It("does not prune the hardwareVersions entry when its VirtualMachineConfigOptions is deleted", func() {
+			reconcileTwice(vmx21.Name)
+			reconcileTwice(vmx22.Name)
+
+			guestID := sharedGuestID()
+			Expect(guestOptionsFor(guestID).Status.HardwareVersions).To(HaveLen(2))
+
+			// Deletion semantics for stale hardware versions are
+			// deferred: deleting the VirtualMachineConfigOptions that
+			// contributed an entry must not remove it from the shared
+			// VirtualMachineGuestOptions.
+			Expect(vcsimCtx.Client.Delete(vcsimCtx, vmx21)).To(Succeed())
+			_, err := reconciler.Reconcile(vcsimCtx,
+				ctrl.Request{NamespacedName: types.NamespacedName{Name: vmx21.Name}})
+			Expect(err).ToNot(HaveOccurred())
+
+			var deleted vimv1.VirtualMachineConfigOptions
+			err = vcsimCtx.Client.Get(vcsimCtx, client.ObjectKeyFromObject(vmx21), &deleted)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+			vgo := guestOptionsFor(guestID)
+			Expect(vgo.Status.HardwareVersions).To(HaveLen(2),
+				"the vmx-21 entry should remain even though its VirtualMachineConfigOptions was deleted")
+			Expect(hwVersionEntry(vgo, vmx21Name)).ToNot(BeNil())
+			Expect(hwVersionEntry(vgo, vmx22Name)).ToNot(BeNil())
 		})
 	})
 }

@@ -1,0 +1,242 @@
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
+package virtualmachineconfigpolicy
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/go-logr/logr"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/configpolicysync"
+)
+
+const (
+	// SyncDisabledReason is the Ready condition reason used when
+	// spec.syncMode=Disabled, so reconciliation intentionally does not
+	// touch spec.
+	SyncDisabledReason = "SyncDisabled"
+
+	// ZoneNotFoundReason is the Ready condition reason used when
+	// spec.zone does not resolve to an existing Zone. This is the
+	// controller-side complement to the admission webhook's spec.zone
+	// check: the webhook rejects a policy created or updated with a bad
+	// reference; this handles a Zone deleted after the policy already
+	// exists.
+	ZoneNotFoundReason = "ZoneNotFound"
+
+	// ConfigTargetNotFoundReason is the Ready condition reason used when
+	// none of the zone's cluster MoIDs resolve to an existing ConfigTarget.
+	ConfigTargetNotFoundReason = "ConfigTargetNotFound"
+)
+
+// SkipNameValidation is used for testing to allow multiple controllers with the
+// same name since Controller-Runtime has a global singleton registry to
+// prevent controllers with the same name, even if attached to different
+// managers.
+var SkipNameValidation *bool
+
+// AddToManager adds this package's controller to the provided manager.
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
+	var (
+		controlledType     = &vimv1.VirtualMachineConfigPolicy{}
+		controlledTypeName = reflect.TypeFor[vimv1.VirtualMachineConfigPolicy]().Name()
+
+		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
+	)
+
+	r := NewReconciler(
+		ctx,
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
+		record.New(mgr.GetEventRecorder(controllerNameShort)))
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(controlledType).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, 0),
+			SkipNameValidation:      SkipNameValidation,
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		}).
+		Complete(r)
+}
+
+func NewReconciler(
+	ctx context.Context,
+	client client.Client,
+	logger logr.Logger,
+	recorder record.Recorder) *Reconciler {
+	return &Reconciler{
+		Context:  ctx,
+		Client:   client,
+		Logger:   logger,
+		Recorder: recorder,
+	}
+}
+
+// Reconciler reconciles a VirtualMachineConfigPolicy's spec with the
+// capabilities reported by the ConfigTarget(s) behind its zone.
+type Reconciler struct {
+	client.Client
+
+	Context  context.Context
+	Logger   logr.Logger
+	Recorder record.Recorder
+}
+
+// +kubebuilder:rbac:groups=vim.vmware.com,resources=virtualmachineconfigpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=vim.vmware.com,resources=virtualmachineconfigpolicies/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=vim.vmware.com,resources=configtargets,verbs=get;list;watch
+
+func (r *Reconciler) Reconcile(
+	ctx context.Context,
+	req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
+
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger = logger.WithName(req.String())
+	ctx = logr.NewContext(ctx, logger)
+
+	var obj vimv1.VirtualMachineConfigPolicy
+
+	err := r.Get(ctx, req.NamespacedName, &obj)
+	if err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	base := obj.DeepCopy()
+
+	patchHelper, err := patch.NewHelper(&obj, r.Client)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", req, err)
+	}
+
+	defer func() {
+		err := patchHelper.Patch(ctx, &obj)
+		if err != nil {
+			if reterr == nil {
+				reterr = err
+			}
+
+			logger.Error(err, "patch failed")
+		}
+	}()
+
+	if !obj.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	return ctrl.Result{}, r.ReconcileNormal(ctx, base, &obj)
+}
+
+// ReconcileNormal reconciles obj's spec against the ConfigTarget(s) behind
+// its zone when spec.syncMode=ConfigTarget, and otherwise leaves spec
+// untouched. base is obj's state as read, before this reconcile's changes;
+// it is used to detect a no-op spec write so an unchanged sync does not
+// bump resourceVersion and re-trigger this controller's own watch.
+func (r *Reconciler) ReconcileNormal(
+	ctx context.Context,
+	base *vimv1.VirtualMachineConfigPolicy,
+	obj *vimv1.VirtualMachineConfigPolicy) error {
+	logger := pkglog.FromContextOrDefault(ctx)
+
+	if obj.Spec.SyncMode == vimv1.VirtualMachineConfigPolicySyncModeDisabled {
+		pkgcond.Set(obj, &metav1.Condition{
+			Type:   vimv1.ReadyConditionType,
+			Status: metav1.ConditionTrue,
+			Reason: SyncDisabledReason,
+		})
+		obj.Status.ObservedGeneration = obj.Generation
+
+		return nil
+	}
+
+	zone, err := topology.GetZone(ctx, r.Client, obj.Spec.Zone, obj.Namespace)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, ZoneNotFoundReason,
+				"zone %q not found", obj.Spec.Zone)
+
+			return nil
+		}
+
+		pkgcond.MarkError(obj, vimv1.ReadyConditionType, ZoneNotFoundReason, err)
+
+		return fmt.Errorf("failed to get zone %q: %w", obj.Spec.Zone, err)
+	}
+
+	targets, err := r.getConfigTargets(ctx, zone.Spec.ManagedVMs.ClusterMoIDs)
+	if err != nil {
+		pkgcond.MarkError(obj, vimv1.ReadyConditionType, ConfigTargetNotFoundReason, err)
+		return fmt.Errorf("failed to get config targets for zone %q: %w", zone.Name, err)
+	}
+
+	if len(targets) == 0 {
+		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, ConfigTargetNotFoundReason,
+			"no ConfigTarget found for zone %q", zone.Name)
+
+		return nil
+	}
+
+	mergedSpec := configpolicysync.Merge(obj.Spec, targets...)
+
+	if !apiequality.Semantic.DeepEqual(base.Spec, mergedSpec) {
+		obj.Spec = mergedSpec
+	}
+
+	obj.Status.ObservedGeneration = obj.Generation
+	pkgcond.MarkTrue(obj, vimv1.ReadyConditionType)
+
+	logger.V(4).Info("Reconciled VirtualMachineConfigPolicy", "zone", zone.Name, "clusters", len(targets))
+
+	return nil
+}
+
+// getConfigTargets returns the ConfigTarget status of every clusterMoID that
+// resolves to an existing ConfigTarget. A clusterMoID with no matching
+// ConfigTarget is skipped rather than treated as an error: today a zone
+// maps to a single vSphere cluster in practice, and per
+// external/vim/doc/controller-workflows.md the remaining entries exist for
+// infrastructure mobility / cluster decommissioning, so a stale MoID should
+// not block a sync that the live cluster(s) can otherwise satisfy.
+func (r *Reconciler) getConfigTargets(
+	ctx context.Context,
+	clusterMoIDs []string) ([]vimv1.ConfigTargetStatus, error) {
+	targets := make([]vimv1.ConfigTargetStatus, 0, len(clusterMoIDs))
+
+	for _, clusterMoID := range clusterMoIDs {
+		var ct vimv1.ConfigTarget
+
+		err := r.Get(ctx, client.ObjectKey{Name: clusterMoID}, &ct)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+
+			return nil, fmt.Errorf("failed to get ConfigTarget %q: %w", clusterMoID, err)
+		}
+
+		targets = append(targets, ct.Status)
+	}
+
+	return targets, nil
+}

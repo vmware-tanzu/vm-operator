@@ -39,11 +39,12 @@ type SpecInput struct {
 }
 
 // Spec verifies the VirtualMachineConfigPolicy feature end-to-end.
-// Currently covers zone controller fan-out (S3) and the ConfigTarget
+// Currently covers zone controller fan-out (S3), the ConfigTarget
 // controller's cluster-scope capability discovery, including
-// status.maxHardwareVersion and non-SR-IOV device categories (S5.b/S5.c).
-// SR-IOV per-host enrichment, option enumeration (S6/S7), and policy
-// enforcement (S8/S9) will be added here.
+// status.maxHardwareVersion and non-SR-IOV device categories (S5.b/S5.c),
+// and the VirtualMachineConfigPolicy controller's sync from ConfigTarget
+// (S8). SR-IOV per-host enrichment, option enumeration (S6/S7), and VM
+// admission webhook policy enforcement (S9) will be added here.
 func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	const specName = "vm-config-policy"
 
@@ -368,6 +369,94 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
 						"stale VirtualMachineConfigOptions %q should have been garbage-collected", stale.Name)
 				}, input.Config.GetIntervals("default", "wait-vm-config-options-deletion")...).Should(Succeed())
+			})
+	})
+
+	Context("When the VirtualMachineConfigPolicy controller syncs from ConfigTarget", func() {
+		It("Should populate policy spec from the zone's ConfigTarget capabilities",
+			Label("core-functional", "experimental"),
+			func() {
+				zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(zoneList.Items).ToNot(BeEmpty(),
+					"expected at least one Zone in namespace %q", input.WCPNamespaceName)
+
+				for i := range zoneList.Items {
+					z := &zoneList.Items[i]
+					Expect(z.Spec.ManagedVMs.ClusterMoIDs).ToNot(BeEmpty(),
+						"Zone %q has no cluster MoIDs in spec.managedVMs.clusterMoIDs", z.Name)
+
+					var ct vimv1.ConfigTarget
+					Expect(svClusterClient.Get(ctx,
+						ctrlclient.ObjectKey{Name: z.Spec.ManagedVMs.ClusterMoIDs[0]}, &ct)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						policy := &vimv1.VirtualMachineConfigPolicy{}
+						g.Expect(svClusterClient.Get(ctx,
+							ctrlclient.ObjectKey{Name: z.Name, Namespace: input.WCPNamespaceName},
+							policy)).To(Succeed())
+
+						cond := apimeta.FindStatusCondition(policy.Status.Conditions, vimv1.ReadyConditionType)
+						g.Expect(cond).ToNot(BeNil(),
+							"VirtualMachineConfigPolicy %q should have a Ready condition", policy.Name)
+						g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
+							"VirtualMachineConfigPolicy %q should be Ready", policy.Name)
+
+						g.Expect(policy.Spec.NumCPUCores).ToNot(BeNil(),
+							"VirtualMachineConfigPolicy %q spec.numCPUCores should be populated from ConfigTarget.status",
+							policy.Name)
+						g.Expect(policy.Spec.NumCPUCores.Max).To(Equal(ct.Status.NumCPUCores),
+							"VirtualMachineConfigPolicy %q spec.numCPUCores.max should equal ConfigTarget %q status.numCPUCores",
+							policy.Name, ct.Name)
+
+						g.Expect(policy.Spec.Memory).ToNot(BeNil(),
+							"VirtualMachineConfigPolicy %q spec.memory should be populated from ConfigTarget.status",
+							policy.Name)
+					}, input.Config.GetIntervals("default", "wait-config-policy-condition-update")...).Should(Succeed())
+				}
+			})
+
+		It("Should stop syncing once spec.syncMode is set to Disabled",
+			Label("extended-functional", "experimental"),
+			func() {
+				zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(zoneList.Items).ToNot(BeEmpty(),
+					"expected at least one Zone in namespace %q", input.WCPNamespaceName)
+				zoneName := zoneList.Items[0].Name
+
+				policy := &vimv1.VirtualMachineConfigPolicy{}
+				Expect(svClusterClient.Get(ctx,
+					ctrlclient.ObjectKey{Name: zoneName, Namespace: input.WCPNamespaceName},
+					policy)).To(Succeed())
+
+				DeferCleanup(func() {
+					Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(policy), policy)).To(Succeed())
+					policy.Spec.SyncMode = vimv1.VirtualMachineConfigPolicySyncModeConfigTarget
+					Expect(svClusterClient.Update(ctx, policy)).To(Succeed())
+				})
+
+				policy.Spec.SyncMode = vimv1.VirtualMachineConfigPolicySyncModeDisabled
+				Expect(svClusterClient.Update(ctx, policy)).To(Succeed())
+
+				Eventually(func(g Gomega) {
+					got := &vimv1.VirtualMachineConfigPolicy{}
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(policy), got)).To(Succeed())
+
+					cond := apimeta.FindStatusCondition(got.Status.Conditions, vimv1.ReadyConditionType)
+					g.Expect(cond).ToNot(BeNil())
+					g.Expect(cond.Reason).To(Equal("SyncDisabled"))
+				}, input.Config.GetIntervals("default", "wait-config-policy-condition-update")...).Should(Succeed())
+
+				before := &vimv1.VirtualMachineConfigPolicy{}
+				Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(policy), before)).To(Succeed())
+
+				Consistently(func(g Gomega) {
+					got := &vimv1.VirtualMachineConfigPolicy{}
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(policy), got)).To(Succeed())
+					g.Expect(got.Spec).To(Equal(before.Spec),
+						"VirtualMachineConfigPolicy %q spec must not change while syncMode=Disabled", got.Name)
+				}, input.Config.GetIntervals("default", "consistent-config-policy-spec")...).Should(Succeed())
 			})
 	})
 }

@@ -98,11 +98,21 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 - [ ] T100 [S8.a] Author `webhooks/virtualmachineconfigpolicy/defaulting_webhook.go` — default syncMode=ConfigTarget, createMode/updateMode/powerOnMode=Allow, vmClassMode=AsPolicy
 - [ ] T101 [S8.a] Author `webhooks/virtualmachineconfigpolicy/validation_webhook.go` — spec.zone references existing Zone; extraConfig allowed/denied entries have non-empty key and valid type enum
 - [ ] T102 [S8.a] Unit tests — `webhooks/virtualmachineconfigpolicy/`
-- [ ] T103 [S8.b] Author `controllers/virtualmachineconfigpolicy/vmconfigpolicy_controller.go` — syncMode=ConfigTarget: copy ConfigTarget.status → policy spec; syncMode=Disabled: set Ready=True, skip sync; never overwrite extraConfig/latencySensitivityLevels/txRxThreadModels
-- [ ] T104 [S8.b] Author `pkg/vmconfig/policy/policy_reconciler.go` — ConfigTarget→policy sync field mapping logic (separate from controller for unit testability)
-- [ ] T105 [S8.b] Unit tests — `pkg/vmconfig/policy/policy_reconciler_test.go`
-- [ ] T106 [S8.c] [P] Integration tests with vcsim — `test/intg/virtualmachineconfigpolicy/`: syncMode=ConfigTarget happy path; syncMode=Disabled skip; missing ConfigTarget → condition; multi-cluster zone selects correct ConfigTarget
-- [ ] T107 [S8.d] E2E test — policy spec filled from real cluster capabilities after Zone creation
+- [x] T103 [S8.b] [vmop-3745] Author `controllers/virtualmachineconfigpolicy/vmconfigpolicy_controller.go` — syncMode=ConfigTarget: copy ConfigTarget.status → policy spec; syncMode=Disabled: set Ready=True (reason SyncDisabled), skip sync; never overwrite extraConfig/latencySensitivityLevels/txRxThreadModels. spec.zone not resolving to a live Zone surfaces Ready=False/ZoneNotFound rather than blocking other policies, per spec.md's edge-case note — the complement to the validation webhook's create/update-time check.
+- [x] T104 [S8.b] [vmop-3745] Author `pkg/util/configpolicysync/configpolicysync.go` — ConfigTarget→policy sync field mapping logic (separate from controller for unit testability). Multi-cluster zones merge by intersection (min of numeric maxima, AND of boolean flags, common ConfigTargetDevices entries), per vmop-3746's acceptance criteria.
+- [x] T105 [S8.b] [vmop-3745] Unit tests — `pkg/util/configpolicysync/configpolicysync_test.go`; `controllers/virtualmachineconfigpolicy/vmconfigpolicy_controller_test.go` covers the controller's Disabled/ZoneNotFound/ConfigTargetNotFound/toggle/hot-loop-regression paths with a fake client.
+- [x] T106 [S8.c] [vmop-3745] Integration tests — co-located in `controllers/virtualmachineconfigpolicy/vmconfigpolicy_controller_test.go` as a second `Describe` (Label `EnvTest`+`VCSim`, per `testing-standards.md`'s single-file-per-package convention, not a `test/intg/` tree): syncMode=ConfigTarget happy path against a real vcsim-derived ConfigTarget; missing ConfigTarget → condition.
+- [x] T107 [S8.d] [vmop-3745] E2E test — extended `test/e2e/vmservice/vmservice/configpolicy/configpolicy.go`'s existing `Spec()`: policy spec (numCPUCores, memory) filled from the zone's real ConfigTarget after Zone creation; toggling syncMode=Disabled stops spec changes. Labeled `experimental` pending validation on real hardware, per `e2e-testing.md`.
+
+  > Implementation note: T104's path was changed from `pkg/vmconfig/policy/`
+  > to `pkg/util/configpolicysync/` — `pkg/vmconfig/policy/` already exists
+  > and implements unrelated per-VM tag/PolicyEvaluation reconciliation
+  > (`Reconcile(ctx, k8sClient, vimClient, vm)`), and `pkg/util/configpolicy`
+  > is reserved for the enforcement-side matching logic PR #1738 introduces
+  > for Story S9. T106's vcsim coverage is folded into the controller's own
+  > test file rather than a `test/intg/` directory, matching
+  > `testing-standards.md` and the `configtarget` controller's precedent
+  > (`controllers/configtarget/configtarget_controller_test.go`).
 
 ### Story S9 — VM admission webhook enforcement (vmop-3746)
 

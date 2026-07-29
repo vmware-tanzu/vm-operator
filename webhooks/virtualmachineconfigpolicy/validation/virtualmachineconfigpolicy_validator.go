@@ -118,9 +118,19 @@ func (v validator) validateSpec(
 
 // validateZone returns an error if spec.zone does not reference an existing
 // Zone in the policy's namespace.
+//
+// This is skipped for the VM Operator service account: the Zone controller
+// itself creates/patches a policy in the same reconcile that just created
+// its Zone, using the same cache-backed client this webhook does, so a
+// cache lag would otherwise cause a spurious rejection of VM Operator's own
+// write. A user-driven create/update still goes through this check.
 func (v validator) validateZone(
 	ctx *pkgctx.WebhookRequestContext,
 	policy *vimv1.VirtualMachineConfigPolicy) field.ErrorList {
+	if ctx.IsVMOperatorAccount {
+		return nil
+	}
+
 	f := field.NewPath("spec", "zone")
 
 	_, err := topology.GetZone(ctx, v.client, policy.Spec.Zone, policy.Namespace)

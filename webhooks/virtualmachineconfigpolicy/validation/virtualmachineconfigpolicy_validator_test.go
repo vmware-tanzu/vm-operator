@@ -112,13 +112,15 @@ func newUnitTestContextForValidatingWebhook(isUpdate, seedZone bool) *unitValida
 
 func unitTestsValidateCreate() {
 	type createArgs struct {
-		seedZone  bool
-		emptyKey  bool
-		useDenied bool
+		seedZone       bool
+		emptyKey       bool
+		useDenied      bool
+		vmOperatorUser bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
 		ctx := newUnitTestContextForValidatingWebhook(false, args.seedZone)
+		ctx.IsVMOperatorAccount = args.vmOperatorUser
 
 		if args.emptyKey {
 			key := vimv1.VirtualMachineConfigPolicyExtraConfigKey{Type: vimv1.MatchTypeFixed, Key: ""}
@@ -157,6 +159,8 @@ func unitTestsValidateCreate() {
 			createArgs{seedZone: true, emptyKey: true}, false, field.Required(allowedKeyPath, "").Error()),
 		Entry("should deny an empty key in extraConfig.denied",
 			createArgs{seedZone: true, emptyKey: true, useDenied: true}, false, field.Required(deniedKeyPath, "").Error()),
+		Entry("should allow the VM Operator service account even when spec.zone references a non-existent Zone",
+			createArgs{vmOperatorUser: true}, true, ""),
 	)
 }
 

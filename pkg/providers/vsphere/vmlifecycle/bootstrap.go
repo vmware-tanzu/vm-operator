@@ -62,7 +62,8 @@ type BootstrapArgs struct {
 	BootstrapData
 
 	TemplateRenderFn TemplateRenderFunc
-	NetworkResults   network.NetworkInterfaceResults
+	Bootstraps       []network.Bootstrap
+	UpdatedEthCards  bool
 	DomainName       string
 	HostName         string
 	DNSServers       []string
@@ -246,7 +247,8 @@ func DoBootstrap( //nolint:gocyclo
 func GetBootstrapArgs(
 	ctx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
-	networkResults network.NetworkInterfaceResults,
+	bootstraps []network.Bootstrap,
+	updatedEthCards bool,
 	bootstrapData BootstrapData) (BootstrapArgs, error) {
 
 	var bootstrap vmopv1.VirtualMachineBootstrapSpec
@@ -258,9 +260,10 @@ func GetBootstrapArgs(
 	isGOSC := bootstrap.LinuxPrep != nil || bootstrap.Sysprep != nil
 
 	bsa := BootstrapArgs{
-		BootstrapData:  bootstrapData,
-		NetworkResults: networkResults,
-		HostName:       ctx.VM.Name,
+		BootstrapData:   bootstrapData,
+		Bootstraps:      bootstraps,
+		UpdatedEthCards: updatedEthCards,
+		HostName:        ctx.VM.Name,
 	}
 
 	if networkSpec := ctx.VM.Spec.Network; networkSpec != nil {
@@ -284,7 +287,7 @@ func GetBootstrapArgs(
 	// probably not correct for every situation.
 	isTKG := kubeutil.HasCAPILabels(ctx.VM.Labels)
 	getDNSInformationFromConfigMap := false
-	for _, r := range networkResults.Results {
+	for _, r := range bootstraps {
 		if r.DHCP4 || r.DHCP6 {
 			continue
 		}
@@ -323,8 +326,8 @@ func GetBootstrapArgs(
 		if isCloudInit {
 			// Previously we would apply the global DNS config to every
 			// interface so do that here too.
-			for i := range networkResults.Results {
-				r := &networkResults.Results[i]
+			for i := range bootstraps {
+				r := &bootstraps[i]
 
 				if r.DHCP4 || r.DHCP6 {
 					continue

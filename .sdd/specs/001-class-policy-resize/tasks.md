@@ -104,15 +104,7 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 - [x] T106 [S8.c] [vmop-3745] Integration tests — co-located in `controllers/virtualmachineconfigpolicy/vmconfigpolicy_controller_test.go` as a second `Describe` (Label `EnvTest`+`VCSim`, per `testing-standards.md`'s single-file-per-package convention, not a `test/intg/` tree): syncMode=ConfigTarget happy path against a real vcsim-derived ConfigTarget; missing ConfigTarget → condition.
 - [x] T107 [S8.d] [vmop-3745] E2E test — extended `test/e2e/vmservice/vmservice/configpolicy/configpolicy.go`'s existing `Spec()`: policy spec (numCPUCores, memory) filled from the zone's real ConfigTarget after Zone creation; toggling syncMode=Disabled stops spec changes. Labeled `experimental` pending validation on real hardware, per `e2e-testing.md`.
 
-  > Implementation note: T104's path was changed from `pkg/vmconfig/policy/`
-  > to `pkg/util/configpolicysync/` — `pkg/vmconfig/policy/` already exists
-  > and implements unrelated per-VM tag/PolicyEvaluation reconciliation
-  > (`Reconcile(ctx, k8sClient, vimClient, vm)`), and `pkg/util/configpolicy`
-  > is reserved for the enforcement-side matching logic PR #1738 introduces
-  > for Story S9. T106's vcsim coverage is folded into the controller's own
-  > test file rather than a `test/intg/` directory, matching
-  > `testing-standards.md` and the `configtarget` controller's precedent
-  > (`controllers/configtarget/configtarget_controller_test.go`).
+  > Implementation note: T104's path was changed from `pkg/vmconfig/policy/` to `pkg/util/configpolicysync/` — `pkg/vmconfig/policy/` already exists and implements unrelated per-VM tag/PolicyEvaluation reconciliation (`Reconcile(ctx, k8sClient, vimClient, vm)`), and `pkg/util/configpolicy` is reserved for the enforcement-side matching logic PR #1738 introduces for Story S9. T106's vcsim coverage is folded into the controller's own test file rather than a `test/intg/` directory, matching `testing-standards.md` and the `configtarget` controller's precedent (`controllers/configtarget/configtarget_controller_test.go`).
 
 ### Story S9 — VM admission webhook enforcement (vmop-3746)
 

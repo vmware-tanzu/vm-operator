@@ -208,6 +208,7 @@ func policiesReferencingZone(
 	return requests
 }
 
+// NewReconciler returns a new Reconciler for VirtualMachineConfigPolicy.
 func NewReconciler(
 	ctx context.Context,
 	client client.Client,

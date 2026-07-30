@@ -87,6 +87,80 @@ type testParams struct {
 	skipSetControllerForPVC bool
 }
 
+// createVMClass creates a VirtualMachineClass named newVMClass in
+// ctx.vm.Namespace and ensures it is readable from the fake client before
+// returning.
+func createVMClass(ctx *unitValidatingWebhookContext) {
+	class := &vmopv1.VirtualMachineClass{
+		ObjectMeta: metav1.ObjectMeta{Name: newVMClass, Namespace: ctx.vm.Namespace},
+	}
+	Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+}
+
+// createInactiveClassInstance creates a VirtualMachineClassInstance with no
+// active label and no owner reference — used to simulate an instance that has
+// not yet been marked active.
+func createInactiveClassInstance(ctx *unitValidatingWebhookContext, instanceName string) {
+	instance := &vmopv1.VirtualMachineClassInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: instanceName, Namespace: ctx.vm.Namespace},
+	}
+	Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+}
+
+// createActiveClassInstance creates an active VirtualMachineClassInstance whose
+// owner reference points to className.
+func createActiveClassInstance(ctx *unitValidatingWebhookContext, instanceName, className string) {
+	instance := &vmopv1.VirtualMachineClassInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instanceName,
+			Namespace: ctx.vm.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "vmoperator.vmware.com/v1alpha6",
+					Kind:       "VirtualMachineClass",
+					Name:       className,
+				},
+			},
+			Labels: map[string]string{vmopv1.VMClassInstanceActiveLabelKey: ""},
+		},
+	}
+	Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+}
+
+// createActiveClassInstanceWithWrongOwner creates an active
+// VirtualMachineClassInstance whose owner reference points to wrongOwner
+// rather than the class named in spec.className.
+func createActiveClassInstanceWithWrongOwner(
+	ctx *unitValidatingWebhookContext, instanceName, wrongOwner string) {
+
+	instance := &vmopv1.VirtualMachineClassInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            instanceName,
+			Namespace:       ctx.vm.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{Name: wrongOwner}},
+			Labels:          map[string]string{vmopv1.VMClassInstanceActiveLabelKey: ""},
+		},
+	}
+	Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+}
+
+// setAdminAnnotations sets the admin-only annotations on a VM with values
+// optionally suffixed by suffix. These are the annotations that are
+// restricted to privileged users on both create and update.
+func setAdminAnnotations(vm *vmopv1.VirtualMachine, suffix string) {
+	if vm.Annotations == nil {
+		vm.Annotations = make(map[string]string)
+	}
+	vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + suffix
+	vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + suffix
+	vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + suffix
+	vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + suffix
+	vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + suffix
+	vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + suffix
+	vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + suffix
+}
+
 func bypassUpgradeCheck(ctx *context.Context, objects ...metav1.Object) {
 	pkgcfg.SetContext(*ctx, func(config *pkgcfg.Config) {
 		config.BuildVersion = fake
@@ -114,9 +188,15 @@ func doValidateWithMsg(msgs ...string) func(admission.Response) {
 }
 
 // doTestWithContext runs a table-style validating webhook test using the provided ctx.
-// It calls ValidateUpdate when ctx.oldVM is set, otherwise ValidateCreate. Use when a nested Context owns a
-// dedicated ctx and the outer commonCreateAndUpdateValidations doTest closure would bind the wrong ctx.
+// It calls ValidateUpdate when ctx.oldVM is set, otherwise ValidateCreate.
+//
+// Use this function when a nested Context owns a dedicated ctx variable.  The outer
+// doTest closures in unitTestsValidateCreate and unitTestsValidateUpdate capture
+// their own ctx by closure and cannot be replaced by this helper without changing
+// upgrade-annotation semantics.
 func doTestWithContext(ctx *unitValidatingWebhookContext, args testParams) {
+	GinkgoHelper()
+
 	args.setup(ctx)
 
 	var err error
@@ -416,6 +496,8 @@ func unitTestsValidateCreate() {
 	)
 
 	doTest := func(args testParams) {
+		GinkgoHelper()
+
 		args.setup(ctx)
 
 		var err error
@@ -742,30 +824,9 @@ func unitTestsValidateCreate() {
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createInactiveClassInstance(ctx, "new-class-instance")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -780,39 +841,9 @@ func unitTestsValidateCreate() {
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance without an OwnerRef that points to some other VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									Name: "random-vm-class",
-								},
-							},
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstanceWithWrongOwner(ctx, "new-class-instance", "random-vm-class")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -827,41 +858,9 @@ func unitTestsValidateCreate() {
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									APIVersion: "vmoperator.vmware.com/v1alpha6",
-									Name:       newVMClass,
-									Kind:       "VirtualMachineClass",
-								},
-							},
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstance(ctx, "new-class-instance", newVMClass)
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -1377,13 +1376,7 @@ func unitTestsValidateCreate() {
 			Entry("should disallow creating VM with admin-only annotations set by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
+						setAdminAnnotations(ctx.vm, "")
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -1400,14 +1393,7 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
-
-						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
+						setAdminAnnotations(ctx.vm, "")
 					},
 					expectAllowed: true,
 				},
@@ -1423,13 +1409,7 @@ func unitTestsValidateCreate() {
 						ctx.UserInfo.Username = fakeWCPUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
-						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
+						setAdminAnnotations(ctx.vm, "")
 					},
 					expectAllowed: true,
 				},
@@ -1486,7 +1466,7 @@ func unitTestsValidateCreate() {
 	Context("Readiness Probe", func() {
 
 		DescribeTable("create", doTest,
-			Entry("should fail when Readiness probe has multiple actions #2",
+			Entry("should fail when Readiness probe has multiple actions #1",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						cm := &corev1.ConfigMap{
@@ -3252,6 +3232,54 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+
+			Entry("allow same VLAN ID on different parent links",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0"},
+								{Name: "eth1"},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								{Name: "vlan100-on-eth0", ID: 100, Link: "eth0"},
+								{Name: "vlan100-on-eth1", ID: 100, Link: "eth1"},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow valid VLAN name that shares a prefix with an interface name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMVlanSubinterface = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0"},
+							},
+							VLANs: []vmopv1.VirtualMachineNetworkVLANSpec{
+								// "eth0.100" shares the "eth0" prefix but is not the
+								// same name as the parent interface.
+								{Name: "eth0.100", ID: 100, Link: "eth0"},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
 		)
 
 		DescribeTableSubtree("network create - validate network provider API group and kind",
@@ -3412,63 +3440,63 @@ func unitTestsValidateCreate() {
 				primaryProviderType pkgcfg.NetworkProviderType,
 				legacyProviderType pkgcfg.NetworkProviderType,
 			) {
-			var (
-				primaryCapProvider netopv1alpha1.NetworkProvider
-				legacyCapProvider  netopv1alpha1.NetworkProvider
+				var (
+					primaryCapProvider netopv1alpha1.NetworkProvider
+					legacyCapProvider  netopv1alpha1.NetworkProvider
 
-				primaryAPIVersion string
-				primaryKind       string
+					primaryAPIVersion string
+					primaryKind       string
 
-				legacyAPIVersion string
-				legacyKind       string
+					legacyAPIVersion string
+					legacyKind       string
 
-				unrelatedAPIVersion    string
-				unrelatedKind          string
-				unrelatedAPIVersionMsg string
-				crossGroupKindMsg      string
-			)
+					unrelatedAPIVersion    string
+					unrelatedKind          string
+					unrelatedAPIVersionMsg string
+					crossGroupKindMsg      string
+				)
 
-			//nolint:goconst
-			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.PerNamespaceNetworkProvider = true
-				})
+				//nolint:goconst
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.PerNamespaceNetworkProvider = true
+					})
 
-				switch primaryProviderType {
-				case pkgcfg.NetworkProviderTypeVPC:
-					primaryCapProvider = netopv1alpha1.NetworkProviderVPC
-					primaryAPIVersion = "crd.nsx.vmware.com/v1alpha1"
-					primaryKind = "SubnetSet"
-				default:
-					Fail(fmt.Sprintf("unsupported primaryProviderType: %v", primaryProviderType))
-				}
+					switch primaryProviderType {
+					case pkgcfg.NetworkProviderTypeVPC:
+						primaryCapProvider = netopv1alpha1.NetworkProviderVPC
+						primaryAPIVersion = "crd.nsx.vmware.com/v1alpha1"
+						primaryKind = "SubnetSet"
+					default:
+						Fail(fmt.Sprintf("unsupported primaryProviderType: %v", primaryProviderType))
+					}
 
-				switch legacyProviderType {
-				case pkgcfg.NetworkProviderTypeVDS:
-					legacyCapProvider = netopv1alpha1.NetworkProviderVSphereDistributed
-					legacyAPIVersion = "netoperator.vmware.com/v1alpha1"
-					legacyKind = "Network"
-					unrelatedAPIVersion = "vmware.com/v1alpha1"
-					unrelatedKind = "VirtualNetwork"
-				case pkgcfg.NetworkProviderTypeNSXT:
-					legacyCapProvider = netopv1alpha1.NetworkProviderNSXTier1
-					legacyAPIVersion = "vmware.com/v1alpha1"
-					legacyKind = "VirtualNetwork"
-					unrelatedAPIVersion = "netoperator.vmware.com/v1alpha1"
-					unrelatedKind = "Network"
-				default:
-					Fail(fmt.Sprintf("unsupported legacyProviderType: %v", legacyProviderType))
-				}
+					switch legacyProviderType {
+					case pkgcfg.NetworkProviderTypeVDS:
+						legacyCapProvider = netopv1alpha1.NetworkProviderVSphereDistributed
+						legacyAPIVersion = "netoperator.vmware.com/v1alpha1"
+						legacyKind = "Network"
+						unrelatedAPIVersion = "vmware.com/v1alpha1"
+						unrelatedKind = "VirtualNetwork"
+					case pkgcfg.NetworkProviderTypeNSXT:
+						legacyCapProvider = netopv1alpha1.NetworkProviderNSXTier1
+						legacyAPIVersion = "vmware.com/v1alpha1"
+						legacyKind = "VirtualNetwork"
+						unrelatedAPIVersion = "netoperator.vmware.com/v1alpha1"
+						unrelatedKind = "Network"
+					default:
+						Fail(fmt.Sprintf("unsupported legacyProviderType: %v", legacyProviderType))
+					}
 
-				// Both switches must run before computing derived messages.
-				unrelatedAPIVersionMsg = fmt.Sprintf(
-					`spec.network.interfaces[0].network.apiVersion: Unsupported value: %q: supported values: %q, %q`,
-					unrelatedAPIVersion, primaryAPIVersion, legacyAPIVersion)
-				crossGroupKindMsg = fmt.Sprintf(
-					`spec.network.interfaces[0].network.kind: Unsupported value: %q: supported values: %q`,
-					primaryKind, legacyKind)
+					// Both switches must run before computing derived messages.
+					unrelatedAPIVersionMsg = fmt.Sprintf(
+						`spec.network.interfaces[0].network.apiVersion: Unsupported value: %q: supported values: %q, %q`,
+						unrelatedAPIVersion, primaryAPIVersion, legacyAPIVersion)
+					crossGroupKindMsg = fmt.Sprintf(
+						`spec.network.interfaces[0].network.kind: Unsupported value: %q: supported values: %q`,
+						primaryKind, legacyKind)
 
-				Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
+					Expect(ctx.Client.Create(ctx, &netopv1alpha1.NetworkSettings{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "default",
 							Namespace: ctx.vm.Namespace,
@@ -3538,10 +3566,10 @@ func unitTestsValidateCreate() {
 					var err error
 					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 					Expect(err).ToNot(HaveOccurred())
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				doValidateWithMsg(unrelatedAPIVersionMsg)(response)
-			})
+					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+					Expect(response.Allowed).To(BeFalse())
+					doValidateWithMsg(unrelatedAPIVersionMsg)(response)
+				})
 
 				It("denies an interface whose group matches the legacy provider but whose kind belongs to the primary provider", func() {
 					// legacyAPIVersion group is valid, but primaryKind belongs to a
@@ -3564,9 +3592,9 @@ func unitTestsValidateCreate() {
 					var err error
 					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 					Expect(err).ToNot(HaveOccurred())
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				doValidateWithMsg(crossGroupKindMsg)(response)
+					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+					Expect(response.Allowed).To(BeFalse())
+					doValidateWithMsg(crossGroupKindMsg)(response)
 				})
 			},
 
@@ -5448,30 +5476,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createInactiveClassInstance(ctx, "new-class-instance")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -5488,39 +5495,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance without an OwnerRef that points to some other VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									Name: "random-vm-class",
-								},
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstanceWithWrongOwner(ctx, "new-class-instance", "random-vm-class")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -5536,41 +5513,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
-					ctx.vm.Spec.Class = &common.LocalObjectRef{
-						Name: "new-class-instance",
-					}
-
-					// Create the class
-					class := &vmopv1.VirtualMachineClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      newVMClass,
-							Namespace: ctx.vm.Namespace,
-						},
-					}
-					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
-					// Fetch the class so we can set an ownerref.
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
-
-					// Create the instance with the correct OwnerRef that points to the correct VM class
-					classInstance := &vmopv1.VirtualMachineClassInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "new-class-instance",
-							Namespace: ctx.vm.Namespace,
-							OwnerReferences: []metav1.OwnerReference{
-								{
-									APIVersion: "vmoperator.vmware.com/v1alpha6",
-									Name:       newVMClass,
-									Kind:       "VirtualMachineClass",
-								},
-							},
-							// Set the label to mark the instance as active
-							Labels: map[string]string{
-								vmopv1.VMClassInstanceActiveLabelKey: "",
-							},
-						},
-					}
-					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
-
+					ctx.vm.Spec.Class = &common.LocalObjectRef{Name: "new-class-instance"}
+					createVMClass(ctx)
+					createActiveClassInstance(ctx, "new-class-instance", newVMClass)
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMResize = true
 						config.Features.ImmutableClasses = true
@@ -5590,26 +5535,13 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					setup: func(ctx *unitValidatingWebhookContext) {
 						bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
 
-						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						setAdminAnnotations(ctx.oldVM, "")
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
-						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
+						setAdminAnnotations(ctx.vm, updateSuffix)
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
-
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -5627,15 +5559,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			Entry("should disallow removing admin-only annotations by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						setAdminAnnotations(ctx.oldVM, "")
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -5655,25 +5581,13 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
-						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						setAdminAnnotations(ctx.oldVM, "")
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
-						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
+						setAdminAnnotations(ctx.vm, updateSuffix)
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -5683,16 +5597,10 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 
-						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						setAdminAnnotations(ctx.oldVM, "")
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					expectAllowed: true,
 				},
@@ -5710,25 +5618,13 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.UserInfo.Username = privilegedUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
-						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						setAdminAnnotations(ctx.oldVM, "")
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
-						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
+						setAdminAnnotations(ctx.vm, updateSuffix)
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
-						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -5746,15 +5642,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.UserInfo.Username = privilegedUser
 						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 
-						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						setAdminAnnotations(ctx.oldVM, "")
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
-						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
-						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
-						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					expectAllowed: true,
 				},
@@ -5937,6 +5827,65 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("spec.powerState", func() {
+		DescribeTable("no-op and allowed transitions", doTest,
+			Entry("should allow On→On with no field changes",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow Off→Off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow Suspended→Suspended",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow On→Off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow On→Suspended",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow Off→On",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					expectAllowed: true,
 				},
@@ -9596,14 +9545,88 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 
 	unitTestsValidateVolumeUnitNumber(doTest)
 
+	Context("spec.crypto", func() {
+		const profileID = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+
+		DescribeTable("update", doTest,
+			Entry("should disallow spec.crypto when FSS_WCP_VMSERVICE_BYOK is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = false
+						})
+					},
+					validate: func(response admission.Response) {
+						Expect(string(response.Result.Reason)).To(Equal(field.Invalid(
+							field.NewPath("spec", "crypto"),
+							&vmopv1.VirtualMachineCryptoSpec{},
+							"the Bring Your Own Key (Provider) feature is not enabled").Error()))
+					},
+				},
+			),
+
+			Entry("should allow spec.crypto when BYOK is enabled and storage class is encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClassWithID(profileID)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *sc, true)).To(Succeed())
+
+						rlName := sc.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+						Expect(ctx.Client.Create(ctx, builder.DummyResourceQuota(ctx.vm.Namespace, rlName))).To(Succeed())
+
+						ctx.oldVM.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: fake,
+						}
+						ctx.vm.Spec.Volumes = nil
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = true
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should disallow spec.crypto when BYOK is enabled but storage class is not encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClassWithID(profileID)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *sc, false)).To(Succeed())
+
+						rlName := sc.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+						Expect(ctx.Client.Create(ctx, builder.DummyResourceQuota(ctx.vm.Namespace, rlName))).To(Succeed())
+
+						ctx.oldVM.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.StorageClass = sc.Name
+						ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: fake,
+						}
+						ctx.vm.Spec.Volumes = nil
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = true
+						})
+					},
+					validate: doValidateWithMsg(
+						`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.storageClass specify an encryption storage class`),
+				},
+			),
+		)
+	})
+
 	commonCreateAndUpdateValidations(doTest)
 }
 
 func unitTestsValidateDelete() {
-	var (
-		ctx      *unitValidatingWebhookContext
-		response admission.Response
-	)
+	// ValidateDelete currently always allows deletion.  This suite provides a
+	// structured scaffold so that future validation logic (e.g. preventing
+	// deletion of a running VM, privileged-only deletion, etc.) can be wired in
+	// without restructuring the tests.
+
+	var ctx *unitValidatingWebhookContext
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
@@ -9613,16 +9636,45 @@ func unitTestsValidateDelete() {
 		ctx = nil
 	})
 
-	When("the delete is performed", func() {
-		JustBeforeEach(func() {
-			response = ctx.ValidateDelete(&ctx.WebhookRequestContext)
-		})
+	doTest := func(response admission.Response, expectAllowed bool) {
+		GinkgoHelper()
+		Expect(response.Allowed).To(Equal(expectAllowed))
+		Expect(response.Result).ToNot(BeNil())
+	}
 
-		It("should allow the request", func() {
-			Expect(response.Allowed).To(BeTrue())
-			Expect(response.Result).ToNot(BeNil())
-		})
-	})
+	DescribeTable("should allow all deletes",
+		func(setup func()) {
+			if setup != nil {
+				setup()
+			}
+			response := ctx.ValidateDelete(&ctx.WebhookRequestContext)
+			doTest(response, true)
+		},
+
+		Entry("should allow delete by SSO user",
+			func() {
+				ctx.IsPrivilegedAccount = false
+			},
+		),
+
+		Entry("should allow delete by privileged service account",
+			func() {
+				ctx.IsPrivilegedAccount = true
+			},
+		),
+
+		Entry("should allow delete of a powered-on VM",
+			func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			},
+		),
+
+		Entry("should allow delete of a powered-off VM",
+			func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			},
+		),
+	)
 }
 
 func unitTestsValidateVolumeUnitNumber(
@@ -9837,33 +9889,6 @@ func commonCreateAndUpdateValidations(
 ) {
 	Context("Application type validation", func() {
 
-		var (
-			ctx *unitValidatingWebhookContext
-		)
-
-		BeforeEach(func() {
-			ctx = newUnitTestContextForValidatingWebhook(true)
-
-			// Create a PVC for the tests
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "pvc-1",
-					Namespace: ctx.vm.Namespace,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("10Gi"),
-						},
-					},
-				},
-			}
-			Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
-
-			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
-		})
-
 		DescribeTable("validate Microsoft WSFC controller requirements",
 			doTest,
 
@@ -9955,6 +9980,45 @@ func commonCreateAndUpdateValidations(
 				},
 			),
 
+			Entry("should deny MicrosoftWSFC volume with wrong DiskMode",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+							},
+						}
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "wsfc-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								DiskMode:            vmopv1.VolumeDiskModePersistent,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(0)),
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[0].diskMode: Invalid value: "Persistent": DiskMode must be IndependentPersistent for MicrosoftWSFC volumes`,
+					),
+				},
+			),
+
 			Entry("should allow MicrosoftWSFC volume with Physical controller",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -9985,6 +10049,108 @@ func commonCreateAndUpdateValidations(
 										},
 									},
 								},
+								DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(0)),
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+
+		DescribeTable("validate OracleRAC application type requirements",
+			doTest,
+
+			Entry("should deny OracleRAC volume with wrong SharingMode",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "oracle-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+								DiskMode:    vmopv1.VolumeDiskModeIndependentPersistent,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[0].sharingMode: Invalid value: "None": SharingMode must be MultiWriter for OracleRAC volumes`,
+					),
+				},
+			),
+
+			Entry("should deny OracleRAC volume with wrong DiskMode",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "oracle-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+								DiskMode:    vmopv1.VolumeDiskModePersistent,
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[0].diskMode: Invalid value: "Persistent": DiskMode must be IndependentPersistent for OracleRAC volumes`,
+					),
+				},
+			),
+
+			Entry("should allow valid OracleRAC volume",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.SCSIControllers = []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						}
+
+						if ctx.oldVM != nil {
+							ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
+							ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+						}
+
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name:            "oracle-volume",
+								ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "pvc-1",
+										},
+									},
+								},
+								SharingMode:         vmopv1.VolumeSharingModeMultiWriter,
 								DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
 								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 								ControllerBusNumber: ptr.To(int32(0)),
@@ -10939,9 +11105,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: numa.vcpu.preferHT: use the corresponding first-class field " +
-							"in spec.advanced instead"),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
 					},
 				),
 				Entry("should reject vmservice.* prefix",
@@ -10954,8 +11118,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: vmservice.test.key: this key is reserved for the system"),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject guestinfo.* prefix",
@@ -10968,8 +11131,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: guestinfo.custom.data: this key is reserved for the system"),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.custom.data: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject vmx.reboot.powerCycle exact key",
@@ -10982,8 +11144,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: vmx.reboot.powerCycle: this key is reserved for the system"),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmx.reboot.powerCycle: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject GOSC reserved keys",
@@ -10996,8 +11157,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: tools.deployPkg.fileName: this key is reserved for the system"),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: tools.deployPkg.fileName: this key is reserved for the system`),
 					},
 				),
 				Entry("should reject ethernet device-scoped keys",
@@ -11010,8 +11170,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.advanced.extraConfig[0].key: " +
-							"Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead"),
+						validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: ethernet0.ctxPerDev: use spec.network.interfaces[].vmxnet3 or advancedProperties instead`),
 					},
 				),
 			)
@@ -11054,8 +11213,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
-							"Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+						validate:      doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
 					},
 				),
 				Entry("should reject first-class NIC properties (device-prefixed)",
@@ -11074,8 +11232,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
-							"Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead"),
+						validate:      doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet0.ctxPerDev: use the corresponding first-class field in spec.network.interfaces[].vmxnet3 instead`),
 					},
 				),
 				Entry("should reject generic ethernet device-scoped keys",
@@ -11094,8 +11251,7 @@ func commonCreateAndUpdateValidations(
 							}
 						},
 						expectAllowed: false,
-						validate: doValidateWithMsg("spec.network.interfaces[0].advancedProperties[0].key: " +
-							"Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix"),
+						validate:      doValidateWithMsg(`spec.network.interfaces[0].advancedProperties[0].key: Forbidden: ethernet1.customSetting: use the bare key name without the network device prefix`),
 					},
 				),
 				Entry("should reject system reserved network device properties",
@@ -11243,5 +11399,81 @@ func commonCreateAndUpdateValidations(
 			)
 		})
 
+	})
+
+	// The TelcoVMServiceAPI extraConfig validation context above always uses an
+	// update context (oldVM != nil) even when called from unitTestsValidateCreate.
+	// This Context exercises the same validation on the create path (oldVM == nil).
+	Context("TelcoVMServiceAPI extraConfig validation - create path", func() {
+		var ctx *unitValidatingWebhookContext
+
+		doTest := func(args testParams) {
+			doTestWithContext(ctx, args)
+		}
+
+		BeforeEach(func() {
+			ctx = newUnitTestContextForValidatingWebhook(false) // create context: oldVM is nil
+
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TelcoVMServiceAPI = true
+			})
+
+			bypassUpgradeCheck(&ctx.Context, ctx.vm)
+		})
+
+		DescribeTable("should validate VM advanced extraConfig on create", doTest,
+			Entry("should allow non-reserved extraConfig keys",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "user.custom.setting", Value: "value1"},
+								{Key: "custom.app.config", Value: "value2"},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should reject first-class VMX keys on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "numa.vcpu.preferHT", Value: "TRUE"},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: numa.vcpu.preferHT: use the corresponding first-class field in spec.advanced instead`),
+				},
+			),
+			Entry("should reject vmservice.* prefix on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "vmservice.test.key", Value: "value"},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: vmservice.test.key: this key is reserved for the system`),
+				},
+			),
+			Entry("should reject guestinfo. prefix on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							ExtraConfig: []common.KeyValuePair{
+								{Key: "guestinfo.myKey", Value: "value"},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate:      doValidateWithMsg(`spec.advanced.extraConfig[0].key: Forbidden: guestinfo.myKey: this key is reserved for the system`),
+				},
+			),
+		)
 	})
 }

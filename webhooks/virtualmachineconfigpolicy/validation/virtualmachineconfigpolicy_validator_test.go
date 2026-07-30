@@ -305,7 +305,7 @@ func intgTestsValidateUpdate() {
 		Expect(ctx.Client.Create(ctx, ctx.configPolicy)).To(Succeed())
 	})
 	JustBeforeEach(func() {
-		err = ctx.Client.Update(suite, ctx.configPolicy)
+		err = ctx.Client.Update(ctx, ctx.configPolicy)
 	})
 	AfterEach(func() {
 		Expect(ctrlclient.IgnoreNotFound(ctx.Client.Delete(ctx, ctx.configPolicy))).To(Succeed())
@@ -344,7 +344,7 @@ func intgTestsValidateDelete() {
 		Expect(ctx.Client.Create(ctx, ctx.configPolicy)).To(Succeed())
 	})
 	JustBeforeEach(func() {
-		err = ctx.Client.Delete(suite, ctx.configPolicy)
+		err = ctx.Client.Delete(ctx, ctx.configPolicy)
 	})
 	AfterEach(func() {
 		Expect(ctrlclient.IgnoreNotFound(ctx.Client.Delete(ctx, ctx.zone))).To(Succeed())

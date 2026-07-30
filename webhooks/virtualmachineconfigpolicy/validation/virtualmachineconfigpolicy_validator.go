@@ -64,34 +64,26 @@ func (v validator) For() schema.GroupVersionKind {
 }
 
 func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
-	policy, err := v.configPolicyFromUnstructured(ctx.Obj)
-	if err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
-	}
-
-	fieldErrs := v.validateSpec(ctx, policy)
-
-	validationErrs := make([]string, 0, len(fieldErrs))
-	for _, fieldErr := range fieldErrs {
-		validationErrs = append(validationErrs, fieldErr.Error())
-	}
-
-	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+	return v.validate(ctx)
 }
 
 func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
 }
 
+// ValidateUpdate re-runs the same rules validated on create: spec.zone is
+// not immutable (a policy may be repointed at a different zone), so an
+// update must validate the new zone reference exists just as create does.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
+	return v.validate(ctx)
+}
+
+func (v validator) validate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	policy, err := v.configPolicyFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	// Re-run the same rules validated on create: spec.zone is not immutable
-	// (a policy may be repointed at a different zone), so an update must
-	// validate the new zone reference exists just as create does.
 	fieldErrs := v.validateSpec(ctx, policy)
 
 	validationErrs := make([]string, 0, len(fieldErrs))

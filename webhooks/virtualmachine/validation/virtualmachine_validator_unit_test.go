@@ -41,7 +41,6 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
@@ -1457,78 +1456,6 @@ func unitTestsValidateCreate() {
 			),
 		)
 
-	})
-
-	Context("Host Local Selected Node", func() {
-		annotationPath := field.NewPath("metadata", "annotations")
-		const dummyNodeName = "esx-host-1.example.com"
-		const dummyHostMoID = "host-42"
-
-		DescribeTable("create", doTest,
-			Entry("should disallow creating VM with the MOID annotation set by SSO user",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.HostLocalStorage = true
-						})
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = dummyHostMoID
-					},
-					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Key(constants.HostLocalSelectedNodeMOIDAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-					),
-				},
-			),
-			Entry("should allow creating VM with the MOID annotation set by service user",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.HostLocalStorage = true
-						})
-						ctx.IsPrivilegedAccount = true
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = dummyHostMoID
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("should disallow creating VM with a node name that does not exist",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.HostLocalStorage = true
-						})
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = "bogus-node"
-					},
-					validate: doValidateWithMsg(
-						field.Invalid(annotationPath.Key(constants.HostLocalSelectedNodeAnnotationKey), "bogus-node", "").Error(),
-					),
-				},
-			),
-			Entry("should allow creating VM with a node name that exists",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.HostLocalStorage = true
-						})
-						Expect(ctx.Client.Create(ctx, &corev1.Node{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:        dummyNodeName,
-								Annotations: map[string]string{"vmware-system-esxi-node-moid": dummyHostMoID},
-							},
-						})).To(Succeed())
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = dummyNodeName
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("should allow creating VM with the feature disabled, even with an invalid node name",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = "bogus-node"
-					},
-					expectAllowed: true,
-				},
-			),
-		)
 	})
 
 	Context("Label", func() {
@@ -5846,54 +5773,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			),
 		)
 
-	})
-
-	Context("Host Local Selected Node", func() {
-		annotationPath := field.NewPath("metadata", "annotations")
-
-		DescribeTable("update", doTest,
-			Entry("should disallow changing the selected-node annotation by SSO user",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.HostLocalStorage = true
-						})
-						ctx.oldVM.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = "esx-host-1.example.com"
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = "esx-host-2.example.com"
-					},
-					validate: doValidateWithMsg(
-						field.Invalid(annotationPath.Key(constants.HostLocalSelectedNodeAnnotationKey), "esx-host-2.example.com", "field is immutable").Error(),
-					),
-				},
-			),
-			Entry("should allow changing the selected-node annotation by privileged user",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.HostLocalStorage = true
-						})
-						ctx.IsPrivilegedAccount = true
-						ctx.oldVM.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = "esx-host-1.example.com"
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeAnnotationKey] = "esx-host-2.example.com"
-					},
-					expectAllowed: true,
-				},
-			),
-			Entry("should disallow changing the MOID annotation by SSO user",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.HostLocalStorage = true
-						})
-						ctx.oldVM.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = "host-42"
-						ctx.vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = "host-43"
-					},
-					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Key(constants.HostLocalSelectedNodeMOIDAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-					),
-				},
-			),
-		)
 	})
 
 	Context("Bootstrap", func() {

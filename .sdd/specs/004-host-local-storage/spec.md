@@ -23,9 +23,9 @@ all to the datastore the PVC lives on.
 
 This feature adds host-level placement, keyed off the PVC's own CSI/CNS
 topology annotations. [`architecture.md`](architecture.md) groups the cases
-below into two modes: **host-derived** (cases 1 and 3, where the host is
-already known and the VM follows it) and **operator-selected** (case 2, where
-no host exists yet and the volume follows the VM).
+below into two modes: **host-derived** (case 1, where the host is already known
+and the VM follows it) and **operator-selected** (case 2, where no host exists
+yet and the volume follows the VM).
 
 1. A PVC whose PV is already `Bound` — the PV's location is fixed, so the VM
    must be pinned to the exact host it lives on.
@@ -34,10 +34,6 @@ no host exists yet and the volume follows the VM).
    (and, implicitly, a compliant local datastore) the same way it already
    picks a zone, then hand that host to CNS by stamping
    `volume.kubernetes.io/selected-node` on the PVC.
-3. An explicit, caller-supplied host override, independent of any PVC state
-   — the same escape-hatch shape the existing `topology.kubernetes.io/zone`
-   label already provides for zone placement.
-
 Because a host belongs to exactly one vSphere cluster and one zone, resolving
 the host also determines the cluster and zone; no cluster is treated as
 "active" or preferred. See `architecture.md` §2.1 and §5.3.
@@ -53,29 +49,29 @@ wired outside this repository) is activated for the Supervisor.
 ```
 VirtualMachine + PersistentVolumeClaim(s) on a host-local StorageClass
   │
-  └─vmCreateDoPlacement─▶ resolveHostLocalPlacement
+  └─vmCreateDoPlacement─▶ resolveHostLocalStorage  (capability checked by caller)
         │
-        ├─ VM already has hostlocal-selected-node-moid ────────▶ doesVMNeedPlacement pins HostMoRef, DRS bypassed
-        ├─ VM has hostlocal-selected-node (explicit override) ──▶ resolve Node → MoID + zone, pin, DRS bypassed
+        ├─ A PVC already has selected-node ────────────────────▶ resolve Node → MoID + zone, pin, DRS bypassed
         ├─ A Bound PVC's accessible-topology names a host ──────▶ resolve Node → MoID + zone, pin, DRS bypassed
-        └─ A Pending/WFFC PVC has no host hint anywhere ────────▶ Constraints.NeedHostLocalPlacement = true
+        └─ A Pending/WFFC PVC has no host anywhere ────────────▶ Constraints.NeedHostLocalPlacement = true
                                                                       │
                                                                       ▼
-                                          CreateConfigSpecForPlacement adds a policy-tagged
-                                          phantom disk per pending host-local PVC
+                                          AddPVCPlacementDisks adds a policy-tagged
+                                          placement-only disk per PVC (excluding the
+                                          VM's own disks, i.e. dataSourceRef → VM)
                                                                       │
                                                                       ▼
                                           placement.Placement forces PlaceVmsXCluster
                                           (HostRecommRequired=true) → Result.HostMoRef
                                                                       │
                                                                       ▼
-                                          processPlacementResult resolves the host's FQDN,
-                                          writes both hostlocal-selected-node[-moid] annotations
+                                          the VM is created on that host; nothing is
+                                          recorded about the host on the VM
                                                                       │
                                                                       ▼
-                              (separate reconcile) volume/volumebatch controller's
-                              handlePVCWithWFFC reads hostlocal-selected-node, stamps
-                              PVC.selected-node = hostname, selected-node-is-zone = "false"
+                              (next reconcile) reconcileHostLocalStorage maps the host the
+                              VM actually runs on back to its Supervisor node and stamps
+                              PVC.selected-node = node, selected-node-is-zone = "false"
 ```
 
 ---
@@ -102,8 +98,8 @@ PVC's `csi.vsphere.volume-accessible-topology` annotation.
 1. **Given** `supports_host_local_storage` is enabled and a VM references a
    `Bound` PVC on a host-local `StorageClass` whose `volume-accessible-
    topology` annotation names host `H`, **when** the VM is created, **then**
-   VM Operator pins VM creation to `H` without invoking DRS, and stamps
-   `vmoperator.vmware.com/hostlocal-selected-node[-moid]` on the VM.
+   VM Operator constrains VM creation to `H`, and records nothing about the
+   host on the VM — it is re-derived from the PVC on every reconcile.
 2. **Given** two host-local PVCs on the same VM whose accessible-topology
    annotations name two different hosts, **when** the VM is created,
    **then** VM Operator fails with a clear, actionable error rather than
@@ -141,49 +137,16 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
    placement-only phantom disk carrying the `StorageClass`'s SPBM policy ID,
    forces a `PlaceVmsXCluster` host recommendation, and pins the VM to the
    recommended host.
-2. **Given** the VM has been created and its `hostlocal-selected-node`
-   annotation is set, **when** the volume/volumebatch controller next
-   reconciles the VM's PVC, **then** it sets `selected-node` to that
-   hostname and `selected-node-is-zone` to `"false"` — never `"true"`.
-3. **Given** the VM's host-local placement has not yet resolved (annotation
-   absent), **when** the volume/volumebatch controller reconciles the same
-   PVC, **then** it returns a retryable error rather than falling back to
-   zone-based `selected-node`, and requeues until the annotation appears.
-
----
-
-### US3 — DevOps user / automation: explicitly pin a VM to a host via annotation (Priority: P1)
-
-A caller sets `vmoperator.vmware.com/hostlocal-selected-node` on a
-`VirtualMachine` directly, naming a Supervisor node, before or at creation
-time. VM Operator resolves that node to its ESXi host and pins VM creation
-there, bypassing both PVC-derived resolution and DRS.
-
-**Why P1**: Mirrors the existing, documented `topology.kubernetes.io/zone`
-label escape hatch for zone placement — some callers need to specify the
-target host directly rather than rely on the PVC-driven cases above.
-
-**Independent test**: Create a VM with `hostlocal-selected-node` set to a
-known Supervisor node name; assert the VM lands on that node's ESXi host and
-that `hostlocal-selected-node-moid` gets populated.
-
-**Acceptance scenarios**:
-
-1. **Given** the annotation names a real Supervisor node, **when** the VM is
-   created, **then** VM Operator resolves it to a MoID + zone and pins VM
-   creation there, with no DRS call.
-2. **Given** the annotation names a node that does not exist or lacks the
-   `vmware-system-esxi-node-moid` annotation, **when** the VM is created via
-   the admission webhook, **then** the request is rejected with a clear
-   `field.Invalid` error — mirroring `validateAvailabilityZone`'s existing
-   zone-existence check.
-3. **Given** the annotation is already set on an existing VM, **when** a
-   non-privileged caller attempts to change it, **then** the admission
-   webhook rejects the update — mirroring the zone label's immutability
-   rule, with the same privileged-account carve-out for restore/fail-over.
-4. **Given** `hostlocal-selected-node-moid` is set directly by a
-   non-privileged caller (rather than computed by VM Operator), **when** the
-   VM is admitted, **then** the request is rejected.
+2. **Given** the VM has been created on a host, **when** the provider next
+   reconciles it, **then** it maps that host back to its Supervisor node and
+   sets the PVC's `selected-node` to that node with `selected-node-is-zone`
+   `"false"` — never `"true"`.
+3. **Given** the VM does not yet exist on a host, **when** the same reconcile
+   runs, **then** nothing is published to the PVC: the host is not committed
+   to anywhere until the VM is actually created on it.
+4. **Given** the PVC is on an `Immediate` class, or its data source is the VM
+   itself, **when** the provider reconciles, **then** it is left alone — CNS
+   needs no node for the former, and the latter is one of the VM's own disks.
 
 ---
 
@@ -191,8 +154,7 @@ that `hostlocal-selected-node-moid` gets populated.
 
 | Annotation | Absent | Set by caller | Set by VM Operator |
 |------------|--------|----------------|----------------------|
-| `vmoperator.vmware.com/hostlocal-selected-node` (FQDN/node name) | No override, no cached resolution yet | Explicit host request (US3); validated to exist, immutable once set | Cached resolution from a Bound PVC or DRS auto-placement (US1/US2); also immutable once set |
-| `vmoperator.vmware.com/hostlocal-selected-node-moid` (ESXi HostSystem MoID) | Not yet resolved | Rejected outright — system-computed only | Derived from the FQDN annotation via a Node lookup; read by `doesVMNeedPlacement` to bypass DRS |
+| `volume.kubernetes.io/selected-node` (on the PVC) | No host published yet | An explicit host for that volume | The host the VM was created on, published once the VM exists; also how a later reconcile recovers the decision |
 | `cns.vmware.com/selected-node-is-zone` (on the PVC) | n/a (existing annotation) | n/a — VM Operator only | `"false"` for host-local StorageClasses (vs. the pre-existing `"true"` for zone-based WFFC) |
 
 ---
@@ -280,9 +242,8 @@ that `hostlocal-selected-node-moid` gets populated.
 - [ ] Each scenario is independently testable.
 - [ ] `supports_host_local_storage` opt-in behavior is specified for every
       user story.
-- [ ] The explicit-override annotation's validation/immutability rules are
-      specified (existence on Create, immutability on Update, system-only
-      MoID annotation).
+- [ ] The explicit-request annotation's validation/immutability rules are
+      specified (existence on Create, immutability on Update).
 - [ ] Conflicting host-local requirements across volumes on one VM are
       specified as a hard error.
 - [ ] Out-of-scope items (FastDeploy interaction) are listed.

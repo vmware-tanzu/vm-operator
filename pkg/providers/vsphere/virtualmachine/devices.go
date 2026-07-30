@@ -6,7 +6,6 @@ package virtualmachine
 
 import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -17,7 +16,6 @@ const (
 	// A negative device range is traditionally used.
 	pciDevicesStartDeviceKey      = int32(-200)
 	instanceStorageStartDeviceKey = int32(-300)
-	hostLocalStartDeviceKey       = int32(-1000)
 )
 
 func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimtypes.BaseVirtualDeviceBackingInfo) vimtypes.BaseVirtualDevice {
@@ -93,34 +91,6 @@ func CreateInstanceStorageDiskDevices(isVolumes []vmopv1.VirtualMachineVolume) [
 			},
 			VDiskId: &vimtypes.ID{
 				Id: constants.InstanceStorageVDiskID,
-			},
-		}
-		devices = append(devices, device)
-		deviceKey--
-	}
-
-	return devices
-}
-
-// CreateHostLocalPlacementDiskDevices returns placement-only phantom disks,
-// one per given PVC, sized to the PVC's requested storage capacity. These
-// disks are never actually created — they exist only so DRS/SPBM's
-// placement math, driven by the disk's Profile, is forced to consider each
-// PVC's host-local storage policy when scoring candidate hosts. Unlike
-// instance storage disks, no magic VDiskId marker is needed.
-func CreateHostLocalPlacementDiskDevices(pvcs []corev1.PersistentVolumeClaim) []vimtypes.BaseVirtualDevice {
-	devices := make([]vimtypes.BaseVirtualDevice, 0, len(pvcs))
-	deviceKey := hostLocalStartDeviceKey
-
-	for _, pvc := range pvcs {
-		capacity := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-		device := &vimtypes.VirtualDisk{
-			CapacityInBytes: capacity.Value(),
-			VirtualDevice: vimtypes.VirtualDevice{
-				Key: deviceKey,
-				Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-					ThinProvisioned: ptr.To(false),
-				},
 			},
 		}
 		devices = append(devices, device)

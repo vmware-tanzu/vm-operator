@@ -10,16 +10,21 @@
 ## Summary
 
 Add host-level VM placement, gated by the `supports_host_local_storage`
-Supervisor capability, for VMs backed by host-local `StorageClass` PVCs.
-Three resolution sources — a caller-supplied annotation, a `Bound` PVC's own
-CSI topology annotation, or (failing both) a DRS host recommendation forced
-via a storage-policy-tagged placement-only phantom disk — all converge on
-two VM annotations that `doesVMNeedPlacement` consumes to bypass or drive
-placement, and that the existing WFFC PVC-annotation controllers consume to
-stamp `selected-node` on the PVC. This closely parallels the existing
-Instance Storage feature (dual annotation hand-off, placement-only phantom
-disk to hint DRS/SPBM), reusing its code shape wherever the two features'
-requirements coincide.
+Supervisor capability, for VMs backed by host-local `StorageClass` PVCs. The
+host is derived from the VM's PVCs — a PVC already carrying a selected node, or
+a `Bound` PVC's CSI topology annotation — and otherwise chosen by a DRS host
+recommendation forced via a storage-policy-tagged placement-only disk. The
+derived host is passed to placement in memory, and after the VM is created on
+it the host is published back to the PVCs as `selected-node` so CNS provisions
+there.
+
+> **This plan records the original intent and has been overtaken in places.**
+> The implementation diverged where reality disagreed: the fast-deploy
+> interaction (tasks.md Phase 7–8), the ordering of the PVC handoff (Phase 9),
+> and the removal of the caller-supplied annotation together with a measured
+> disproof of the DRS-infers-the-host premise (Phase 10, with method and data
+> in [`research.md`](research.md)). Where this file and those disagree, they
+> are correct.
 
 ---
 
@@ -87,8 +92,6 @@ pkg/providers/vsphere/constants/constants.go    MODIFY — HostLocalPolicyStorag
                                                             HostLocalSelectedNodeMOIDAnnotationKey,
                                                             HostLocalSelectedNodeAnnotationKey
 
-pkg/util/kube/node.go                           NEW    — GetESXHostInfoForNode
-pkg/util/kube/node_test.go                      NEW
 pkg/util/kube/storage.go                        MODIFY — IsHostLocalStorageClass, GetPVCHostLocalHostname
 pkg/util/kube/storage_test.go                   MODIFY
 
@@ -101,7 +104,9 @@ pkg/providers/vsphere/virtualmachine/configspec.go      MODIFY — phantom disk 
                                                                    CreateConfigSpecForPlacement
 pkg/providers/vsphere/virtualmachine/configspec_test.go MODIFY
 
-pkg/providers/vsphere/vmprovider_vm_hostlocal.go        NEW    — resolveHostLocalPlacement
+pkg/providers/vsphere/vmprovider_vm_hostlocal_storage.go NEW   — resolveHostLocalStorage,
+                                                                 AddPVCPlacementDisks,
+                                                                 reconcileHostLocalStorage
 pkg/providers/vsphere/vmprovider_vm_hostlocal_test.go   NEW    — vcsim end-to-end coverage
 pkg/providers/vsphere/vmprovider_vm.go                  MODIFY — call site in vmCreateDoPlacement,
                                                                    new branch in processPlacementResult
@@ -114,9 +119,6 @@ controllers/virtualmachine/volumebatch/volumebatch_controller_unit_test.go  MODI
 
 controllers/virtualmachine/virtualmachine/virtualmachine_controller.go  MODIFY — +kubebuilder:rbac nodes marker
 config/rbac/role.yaml                                                    REGEN (no diff expected)
-
-webhooks/virtualmachine/validation/virtualmachine_validator.go       MODIFY — validateHostLocalSelectedNode
-webhooks/virtualmachine/validation/virtualmachine_validator_unit_test.go  MODIFY
 
 test/e2e/vmservice/vmservice/virtualmachine/vm_hostlocal_storage.go  NEW
 ```
@@ -133,11 +135,11 @@ test/e2e/vmservice/vmservice/virtualmachine/vm_hostlocal_storage.go  NEW
    HostLocalStorage bool` (`pkg/config/config.go`).
 2. Add the three new constants to `pkg/providers/vsphere/constants/
    constants.go`.
-3. Add `pkg/util/kube/node.go` (`GetESXHostInfoForNode`) and extend
+3. Add the node helpers (later folded into the provider, tasks.md T063) and extend
    `pkg/util/kube/storage.go` (`IsHostLocalStorageClass`,
    `GetPVCHostLocalHostname`).
 
-### Phase 2 — Placement bypass (US1, US3)
+### Phase 2 — Placement bypass (US1)
 
 1. Extend `placement.Constraints`/`Result` and `doesVMNeedPlacement`
    (`pkg/providers/vsphere/placement/zone_placement.go`) to honor
@@ -145,7 +147,7 @@ test/e2e/vmservice/vmservice/virtualmachine/vm_hostlocal_storage.go  NEW
    existing `InstanceStorageSelectedNodeMOIDAnnotationKey` check, and to
    thread a new `NeedHostLocalPlacement` flag into `getPlacementRecommendation`.
 2. Add `resolveHostLocalPlacement` (`pkg/providers/vsphere/
-   vmprovider_vm_hostlocal.go`) implementing the four-way priority order
+   vmprovider_vm_hostlocal_storage.go`) implementing the priority order
    from `plan`'s design doc (already-resolved → explicit override → bound
    PVC → needs auto-placement), called from `vmCreateDoPlacement` before
    `CreateConfigSpecForPlacement`/`placement.Placement`.
@@ -174,10 +176,10 @@ test/e2e/vmservice/vmservice/virtualmachine/vm_hostlocal_storage.go  NEW
 ### Phase 5 — Webhook validation (US3)
 
 1. Add `validateHostLocalSelectedNode` to `webhooks/virtualmachine/
-   validation/virtualmachine_validator.go`: existence-on-Create for the FQDN
-   annotation (mirrors `validateAvailabilityZone`'s zone-existence check),
-   immutability-on-Update with the same privileged-account carve-out, and
-   outright rejection of a caller-supplied MoID annotation.
+   validation/virtualmachine_validator.go`: existence-on-Create for the node
+   annotation (mirrors `validateAvailabilityZone`'s zone-existence check) and
+   immutability-on-Update with the same privileged-account carve-out. The
+   annotation is a caller input only; VM Operator never writes it.
 
 ### Phase 6 — RBAC & manifests
 
@@ -220,7 +222,7 @@ required; Phase 6 above only adds a documentation marker.
 | vCenter picks a datastore the pinned host cannot reach | Only possible on the content-library path, which cannot pin a datastore alongside a storage profile. Host-local VMs therefore stay on fast deploy, which places files on an explicit datastore |
 | A resolved host is silently replaced by a DRS recommendation | `Placement` returns an error when a recommendation contradicts the pin, and the final `Result` always prefers the pin |
 | Conflicting host-local PVC hostnames on one VM | Hard error at placement time, not a silent pick-one |
-| Reserved MoID annotation set directly by a user | Rejected by the admission webhook (Phase 5) |
+| A tentative DRS host choice becoming permanently stuck on the VM | Nothing about the host is recorded on the VM; it is derived afresh each reconcile and only published to the PVC once the VM exists |
 
 **Disable path**: set `supports_host_local_storage` to `false` on the
 Supervisor. All new code paths become no-ops; VMs revert to zone-only

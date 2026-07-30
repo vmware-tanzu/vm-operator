@@ -228,19 +228,23 @@ The `updateVirtualMachine` method in the vSphere provider follows a strict, inte
 
 ```
  1. Fetch properties        — get the VM's current state from vCenter
- 2. Fetch recent tasks      — check for in-flight vSphere tasks
- 3. Fetch attached tags      — get tags for policy evaluation
- 4. Fetch volume info        — get disk/volume metadata
- 5. Reconcile status         — sync k8s status from vCenter state (MUST be before schema upgrade)
- 6. Reconcile schema upgrade — backfill/upgrade spec fields using status data from step 5
- 7. Reconcile backup state   — backup ExtraConfig/annotations
- 8. Reconcile snapshot revert — revert BEFORE config changes (restores VM to snapshot state first)
- 9. Reconcile config         — apply desired config (hardware, crypto, boot options, etc.)
-10. Reconcile power state    — power on/off after config is applied
-11. Reconcile snapshot create — snapshot AFTER power state (captures final desired state)
+ 2. Reconcile host-local storage — publish the VM's host to its unprovisioned
+                              host-local PVCs (MUST be before config)
+ 3. Fetch recent tasks      — check for in-flight vSphere tasks
+ 4. Fetch attached tags      — get tags for policy evaluation
+ 5. Fetch volume info        — get disk/volume metadata
+ 6. Reconcile status         — sync k8s status from vCenter state (MUST be before schema upgrade)
+ 7. Reconcile location       — verify the VM is in its expected RP/folder hierarchy
+ 8. Reconcile schema upgrade — backfill/upgrade spec fields using status data from step 6
+ 9. Reconcile backup state   — backup ExtraConfig/annotations
+10. Reconcile snapshot revert — revert BEFORE config changes (restores VM to snapshot state first)
+11. Reconcile config         — apply desired config (hardware, crypto, boot options, etc.)
+12. Reconcile power state    — power on/off after config is applied
+13. Reconcile snapshot create — snapshot AFTER power state (captures final desired state)
 ```
 
 Key ordering rationale:
+- **Host-local storage before config**: Reconciling config fails while any of the VM's PVCs is still pending. A pending host-local volume is waiting to be told which host to provision on, so publishing that host has to happen before the step that pending volumes block — otherwise the volume waits for a host the VM never gets far enough to publish, and the two deadlock. It only needs the runtime host from step 1.
 - **Status before schema upgrade**: Schema upgrade pushes observed data from status back into spec (e.g., backfilling new fields). Status must be fresh.
 - **Snapshot revert before config**: Revert restores the VM to a prior snapshot, then config changes are applied on top. Reversing this would overwrite config changes.
 - **Config before power state**: Hardware changes often require the VM to be powered off. Config applies reconfigure; power state then brings it up.

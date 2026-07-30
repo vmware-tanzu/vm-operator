@@ -182,36 +182,30 @@ When the `supports_host_local_storage` Supervisor capability is enabled, a VM
 backed by a `PersistentVolumeClaim` on a host-local (VMFS-L/VMFS
 direct-attached, single-host) `StorageClass` is pinned to the exact ESXi host
 that owns the volume's datastore, instead of only being placed onto a zone.
-VM Operator resolves the target host from one of, in priority order:
+The host is determined entirely from the VM's PVCs — nothing about it is
+recorded on the `VirtualMachine` — in this order:
 
-1. An already-resolved host (cached from a previous reconcile).
-2. An explicit override — set `vmoperator.vmware.com/hostlocal-selected-node`
-   directly on the VM, naming the target Supervisor node:
-
-   ```yaml
-   apiVersion: vmoperator.vmware.com/v1alpha6
-   kind: VirtualMachine
-   metadata:
-     name: my-vm
-     annotations:
-       vmoperator.vmware.com/hostlocal-selected-node: esx-host-1.example.com
-   spec:
-     # VM specification
-   ```
-
-3. A `Bound` PVC's own `csi.vsphere.volume-accessible-topology` annotation,
+1. A PVC already carrying `volume.kubernetes.io/selected-node`, which is how a
+   host chosen by an earlier placement is remembered.
+2. A `Bound` PVC's own `csi.vsphere.volume-accessible-topology` annotation,
    naming the host its volume already lives on.
-4. Otherwise, for a `Pending` PVC on a `WaitForFirstConsumer` StorageClass
-   with no hint anywhere yet, VM Operator forces a DRS host recommendation
-   compliant with that StorageClass's storage policy, then stamps the PVC's
-   `volume.kubernetes.io/selected-node` with the chosen host so CSI
-   provisions the volume there.
+3. Otherwise, for a `Pending` PVC on a `WaitForFirstConsumer` StorageClass
+   with no host named anywhere yet, VM Operator forces a DRS host
+   recommendation compliant with that StorageClass's storage policy. Once the
+   VM has been created on that host, VM Operator stamps the PVC's
+   `volume.kubernetes.io/selected-node` with it so CSI provisions the volume
+   there.
 
-Which of sources 3 and 4 applies is decided by the `StorageClass`'s binding
-mode. Under `WaitForFirstConsumer`, source 4 applies: VM Operator picks the
+Which of sources 2 and 3 applies is decided by the `StorageClass`'s binding
+mode. Under `WaitForFirstConsumer`, source 3 applies: VM Operator picks the
 host, and the volume follows the VM. Under `Immediate`, CSI provisions the
 volume without waiting for a consumer and so picks the host itself; VM Operator
-waits for the PVC to bind and then adopts that host via source 3.
+waits for the PVC to bind and then adopts that host via source 2.
+
+The host is worked out again on every reconcile rather than being recorded on
+the VM, so a VM whose creation fails is free to be placed elsewhere on the next
+attempt. The decision becomes durable only once the VM exists, at which point
+the PVC's `selected-node` carries it.
 
 A host-local PVC's `csi.vsphere.volume-requested-topology` annotation must
 therefore either be **omitted** — letting CSI choose the host — or name a
@@ -254,16 +248,11 @@ variable, including any worker-pool `overrides`:
 The top-level `storageClass` variable selects where the VM's own files go and is
 resolved by placement rather than by a PVC, so its binding mode is irrelevant.
 
-Once resolved, VM Operator also writes
-`vmoperator.vmware.com/hostlocal-selected-node-moid` (the ESXi host's MoID) —
-this second annotation is system-computed only and cannot be set directly.
-Like the zone label, both annotations are immutable once set.
-
-A resolved host is authoritative: placement will never substitute a different
-host for it, since the VM's disks may only be reachable from that one host.
-When a datastore recommendation is also needed, the recommendation is
-constrained to the resolved host so that the datastore it returns is one that
-host can actually access.
+A known host is authoritative: placement will never substitute a different host
+for it, since the VM's disks may only be reachable from that one host. When a
+datastore recommendation is also needed, the recommendation is constrained to
+that host so that the datastore it returns is one that host can actually
+access.
 
 ## Status and Conditions
 

@@ -617,27 +617,25 @@ func (r *Reconciler) handlePVCWithWFFC(
 		pvc.Annotations = map[string]string{}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.HostLocalStorage && kubeutil.IsHostLocalStorageClass(*sc) {
-		nodeName := ctx.VM.Annotations[constants.HostLocalSelectedNodeAnnotationKey]
-		if nodeName == "" {
-			return errors.New("VM does not have a selected host for host-local PVC yet")
-		}
-
-		pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "false"
-		pvc.Annotations[storagehelpers.AnnSelectedNode] = nodeName
-	} else {
-		zoneName := ctx.VM.Status.Zone
-		if zoneName == "" {
-			// Fallback to the label value if Status hasn't been updated yet.
-			zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
-			if zoneName == "" {
-				return errors.New("VM does not have Zone set")
-			}
-		}
-
-		pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "true"
-		pvc.Annotations[storagehelpers.AnnSelectedNode] = zoneName
+	if pkgcfg.FromContext(ctx).Features.HostLocalStorage &&
+		kubeutil.IsHostLocalStorageClass(*sc) {
+		// A host-local PVC's selected node is a host rather than a zone, and
+		// it is published by the vSphere provider once the VM has actually
+		// been created on that host. Leave it alone here.
+		return nil
 	}
+
+	zoneName := ctx.VM.Status.Zone
+	if zoneName == "" {
+		// Fallback to the label value if Status hasn't been updated yet.
+		zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
+		if zoneName == "" {
+			return errors.New("VM does not have Zone set")
+		}
+	}
+
+	pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "true"
+	pvc.Annotations[storagehelpers.AnnSelectedNode] = zoneName
 
 	if err := r.Client.Update(ctx, &pvc); err != nil {
 		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)

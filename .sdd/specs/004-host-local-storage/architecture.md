@@ -23,11 +23,11 @@ host. A disk placed there is reachable from that host and no other. Storage
 locality is therefore a *host* property, while the placement contract is
 *zone*-scoped.
 
-This specification defines how VM Service reconciles the two: the ESXi host
-becomes an explicit, persisted placement decision recorded on the
-`VirtualMachine`, and that decision is then propagated in two directions — to
-vSphere placement, so the VM is created on that host with its files on that
-host's datastore, and to CNS/CSI, so volumes are provisioned there.
+This specification defines how VM Service reconciles the two: the ESXi host is
+derived from the VM's volumes on every reconcile, and that decision is
+propagated in two directions — to vSphere placement, so the VM is created on
+that host with its files on that host's datastore, and to CNS/CSI, so volumes
+are provisioned there.
 
 ### 1.1 Goals
 
@@ -38,7 +38,6 @@ host's datastore, and to CNS/CSI, so volumes are provisioned there.
 - Derive the zone and vSphere cluster from storage locality, rather than
   requiring the caller to know either — including when the namespace is
   assigned multiple zones.
-- Allow a caller to nominate the target host explicitly.
 - Guarantee that once a host is chosen it is never silently substituted.
 - Remain completely inert when the capability is disabled.
 
@@ -60,7 +59,7 @@ host's datastore, and to CNS/CSI, so volumes are provisioned there.
 | Host-local `StorageClass` | A `StorageClass` annotated `cns.vmware.com/hostLocalPolicy: "true"`, whose SPBM policy is satisfied only by host-local datastores. |
 | Supervisor node | A Kubernetes `Node` representing an ESXi host. Carries `vmware-system-esxi-node-moid` and `topology.kubernetes.io/zone`. |
 | Topology annotations | CNS/CSI annotations on a PVC: `csi.vsphere.volume-accessible-topology` once bound, `csi.vsphere.volume-requested-topology` when pending. They carry a `kubernetes.io/hostname` only for host-local storage. |
-| Resolved host | The ESXi host a VM has been bound to, recorded on the VM as annotations. |
+| Known host | The ESXi host a VM's volumes require, derived from those volumes rather than stored. |
 
 ### 2.1 Topology invariants
 
@@ -83,10 +82,10 @@ preference to express.
 
 ## 3. Architecture
 
-Host selection is a decision made once, recorded on the `VirtualMachine`
-object, and consumed by two independent reconcilers. The VM's annotations are
-the contract between them; the handoff is asynchronous and level-triggered,
-consistent with the rest of VM Service.
+Host selection is derived from the VM's PVCs and consumed by two independent
+paths: placement, and the handoff that publishes the host back to those PVCs.
+The PVC is the contract between them; the handoff is asynchronous and
+level-triggered, consistent with the rest of VM Service.
 
 ```mermaid
 flowchart LR
@@ -94,14 +93,12 @@ flowchart LR
         SC[Host-local StorageClass<br/>cns.vmware.com/hostLocalPolicy]
         PVC[PersistentVolumeClaim<br/>CSI topology annotations]
         NODE[Supervisor Node<br/>esxi-node-moid + zone label]
-        OVR[Optional caller override<br/>hostlocal-selected-node]
     end
 
     subgraph VMOP["VM Operator"]
         RES[Host resolution]
         PLACE[Placement]
         VOL[Volume reconcilers]
-        WH[Admission validation]
     end
 
     subgraph Consumers
@@ -111,11 +108,9 @@ flowchart LR
 
     SC --> RES
     PVC --> RES
-    OVR --> WH
-    WH --> RES
     NODE --> RES
-    RES -->|"resolved host<br/>annotations on the VM"| PLACE
-    RES -->|"resolved host<br/>annotations on the VM"| VOL
+    RES -->|"known host<br/>in memory"| PLACE
+    RES -->|"host the VM runs on"| VOL
     PLACE -->|"host + datastore"| VC
     VOL -->|"selected-node on the PVC"| CNS
 ```
@@ -125,66 +120,65 @@ flowchart LR
 | Component | Responsibility |
 |---|---|
 | `pkg/config/capabilities` | Maps the `supports_host_local_storage` capability to `pkgcfg.Features.HostLocalStorage`. |
-| `pkg/util/kube` | `IsHostLocalStorageClass`, `GetPVCHostLocalHostname`, `GetESXHostInfoForNode`. |
-| `pkg/providers/vsphere/vmprovider_vm_hostlocal.go` | Resolves the target host and records it on the VM. |
+| `pkg/util/kube` | `IsHostLocalStorageClass`, `GetPVCHostLocalHostname`, `HasVirtualMachineDataSourceRef`. |
+| `pkg/providers/vsphere/vmprovider_vm_hostlocal_storage.go` | Derives the target host, adds the per-PVC placement disks, and publishes the host to the PVCs after create. |
 | `pkg/providers/vsphere/placement` | Applies the resolved host to placement, or selects one when none exists. |
 | `pkg/providers/vsphere/virtualmachine` | Expresses storage-policy requirements to DRS via a placement-only disk. |
 | `controllers/virtualmachine/volume`, `.../volumebatch` | Publishes the resolved host to CNS/CSI on the PVC. |
-| `webhooks/virtualmachine/validation` | Validates and protects the host annotations. |
 
 ### 3.2 API surface
 
-Two annotations on the `VirtualMachine` form the recorded decision:
+**No annotation on the `VirtualMachine` takes part in this feature at all** —
+VM Operator neither reads nor writes one. The host is derived afresh on every
+reconcile from the VM's PVCs, so a VM whose creation fails is free to be placed
+elsewhere on the next attempt. See §5.4.
 
-| Annotation | Value | Set by | Mutability |
-|---|---|---|---|
-| `vmoperator.vmware.com/hostlocal-selected-node` | Supervisor node name, i.e. the ESXi host FQDN | Caller, as an explicit request; otherwise VM Operator | Immutable once set; privileged accounts may change it for restore and fail-over |
-| `vmoperator.vmware.com/hostlocal-selected-node-moid` | ESXi `HostSystem` MoID | VM Operator only | Rejected from non-privileged callers |
+The decision is instead published on the PVC, which is also the contract with
+CNS:
 
-This mirrors the existing `topology.kubernetes.io/zone` label, which is both a
-caller-supplied placement request and the system's record of the decision. One
-annotation on the PVC completes the contract with CNS: the existing
-`cns.vmware.com/selected-node-is-zone` is written `"false"`, indicating that
-`volume.kubernetes.io/selected-node` names a host rather than a zone.
+| PVC annotation | Value |
+|---|---|
+| `volume.kubernetes.io/selected-node` | The Supervisor node whose host the volume must be provisioned on |
+| `cns.vmware.com/selected-node-is-zone` | `"false"`, indicating the above names a host rather than a zone |
+
+Putting the decision on the PVC rather than on the VM means the object that the
+decision is *about* carries it, and a later reconcile recovers the decision by
+reading it back.
 
 ---
 
 ## 4. Host resolution
 
-Resolution runs during VM creation, before placement, and is a no-op unless the
-capability is enabled and the VM references at least one host-local
-`StorageClass` PVC. Four sources are consulted in priority order.
+Resolution runs during VM creation, before placement. The caller checks the
+capability and only resolves when it is enabled; resolution itself is a no-op
+unless the VM references at least one host-local `StorageClass` PVC. Every
+source is a **PVC**, and each is a fact established outside of placement, so
+deriving them again on a later reconcile is stable.
 
 | Priority | Source | Behavior |
 |---|---|---|
-| 1 | MoID annotation already present | Already resolved; reuse it. |
-| 2 | Caller override annotation | Resolve the named node to its MoID and zone. |
-| 3 | A **Bound** host-local PVC's topology hostname | The volume already exists on a host; the VM must follow it. |
-| 4 | **Pending** host-local PVCs with no hostname | No host exists yet; VM Operator selects one and the volume follows the VM. |
+| 1 | A host-local PVC already carrying a **selected node** | How a host chosen by an earlier placement is remembered. |
+| 2 | A **Bound** host-local PVC's topology hostname | The volume already exists on a host; the VM must follow it. |
+| — | **Pending** host-local PVCs with no host | No host exists yet; VM Operator selects one and the volume follows the VM. |
 
-Priorities 1-3 yield a **host-derived** decision. Priority 4 yields an
+The first two yield a **host-derived** decision. The last yields an
 **operator-selected** decision, the only case in which VM Operator asks DRS to
 choose.
 
 ```mermaid
 flowchart TD
-    A[VM create: resolve host-local placement] --> B{Capability enabled AND<br/>VM references a host-local SC PVC?}
+    A[VM create: resolve host-local storage] --> B{VM references a<br/>host-local SC PVC?}
     B -- no --> Z[No host-local placement<br/>zone-only behavior]
-    B -- yes --> C{MoID annotation set?}
-    C -- yes --> PIN[Resolved host]
-    C -- no --> D{Caller override annotation set?}
-    D -- yes --> R1[Resolve Node to MoID and zone<br/>record annotations and zone label]
-    R1 --> PIN
-    D -- no --> E{Bound host-local PVC<br/>names a host?}
-    E -- yes --> F{All bound PVCs<br/>name the same host?}
-    F -- no --> ERR[Reject: conflicting hosts]
-    F -- yes --> R2[Resolve Node to MoID and zone<br/>record annotations and zone label]
-    R2 --> PIN
+    B -- yes --> E{A host-local PVC names a host<br/>via selected-node or its topology?}
     E -- no --> G[Operator-selected mode<br/>collect pending host-local PVCs]
+    E -- yes --> F{Do all such PVCs<br/>name the same host?}
+    F -- no --> ERR[Reject: conflicting hosts]
+    F -- yes --> R[Resolve Node to MoID and zone<br/>return them to the caller in memory]
+    R --> PIN[Known host]
 ```
 
-A VM whose volumes are bound to two different hosts is unsatisfiable and is
-rejected rather than partially placed.
+A VM whose volumes are on two different hosts is unsatisfiable and is rejected
+rather than partially placed.
 
 ---
 
@@ -217,12 +211,23 @@ flowchart TD
 ### 5.1 Expressing storage locality to DRS
 
 In operator-selected mode the volume does not yet exist, so DRS has nothing to
-tell it which hosts are viable. VM Operator therefore adds a **placement-only
-disk** to the ConfigSpec sent to DRS: one synthetic `VirtualDisk` per pending
-host-local PVC, sized to the request and tagged with that PVC's SPBM policy ID.
-The disk exists solely to make SPBM compliance part of the host-selection
-calculation; it is never created, and never appears in the ConfigSpec used to
-create the VM.
+tell it which hosts are viable. VM Operator therefore adds **placement-only
+disks** to the ConfigSpec sent to DRS: one synthetic `VirtualDisk` per PVC
+attached to the VM, sized to the volume's capacity and tagged with that PVC's
+SPBM policy ID. These disks exist solely to make SPBM compliance part of the
+host- and datastore-selection calculation; they are never created, and never
+appear in the ConfigSpec used to create the VM.
+
+This is not specific to host-local storage. Every PVC a VM references
+contributes a placement-only disk, so that the recommendation accounts for all
+of the VM's storage rather than only the VM's own files — host-local storage is
+simply the case where the resulting host constraint is load-bearing.
+
+One exclusion matters: a PVC whose data source is the VM **itself** is skipped.
+Those volumes are the VM's own disks, which already appear in the ConfigSpec
+with their policy and size applied, so adding a synthetic disk for them would
+count the same storage twice. This is the same exclusion that zone-constraint
+derivation makes, and both now share one predicate.
 
 Two properties of the vSphere placement APIs shape this design:
 
@@ -326,7 +331,7 @@ Which of the two modes in §4 a VM takes is decided by the binding mode of the h
 A client that attaches more than one host-local volume to a VM needs all of them on one host. This is the same choice a client already faces with zonal volumes, where several `Immediate`-bound PVCs must end up in a common zone (§11 item 5); host-local storage narrows the domain from a zone to a host but does not change the options.
 
 1. **A `WaitForFirstConsumer` class — required for more than one host-local volume.** VM Operator selects one host for the VM subject to storage-policy compliance, and stamps it on every host-local PVC. The client needs no host knowledge, and co-location holds by construction. This is the only arrangement in which VM Operator itself guarantees the outcome.
-2. **An `Immediate` class with an explicit hostname on every host-local PVC of the VM.** Co-location holds by construction, but the client must choose the host itself, without DRS's view of capacity or policy compliance. Where the intent is specifically to pin a chosen host, the VM's own node annotation (§3.2) expresses that same intent to VM Operator and is validated at admission.
+2. **An `Immediate` class with an explicit hostname on every host-local PVC of the VM.** Co-location holds by construction, but the client must choose the host itself, without DRS's view of capacity or policy compliance.
 3. **An `Immediate` class with the annotation omitted.** CNS selects, and the outcome cannot be relied on: sufficient for a single volume, but with several volumes nothing correlates the independent provisioning decisions.
 
 #### 5.4.3 Ordering under Immediate binding
@@ -354,41 +359,46 @@ sequenceDiagram
 
 ### 5.5 Invariants
 
-1. **A resolved host is authoritative.** If placement returns a *different*
-   host than the resolved one, the operation fails rather than proceeding. A
+1. **A known host is authoritative.** If placement returns a *different*
+   host than the known one, the operation fails rather than proceeding. A
    recommendation that returns *no* host is not a conflict — it means no host
-   was requested — and the resolved host is preserved.
-2. **The decision precedes creation.** The host is resolved and recorded before
+   was requested — and the known host is preserved.
+2. **The decision precedes creation.** The host is resolved before
    the VM is created on vCenter, so a retried create reuses the same host.
-3. **The decision is immutable.** Enforced at admission for the node
-   annotation, with a privileged carve-out for restore and fail-over.
-4. **A resolved host implies a zone.** The zone label is derived from the
-   Supervisor node's zone, keeping host and zone decisions consistent.
+3. **A known host implies a zone.** The zone is derived from the Supervisor
+   node's zone and narrows the placement candidates, keeping host and zone
+   decisions consistent.
+4. **Nothing is committed before the VM exists.** The host is never recorded
+   until the VM has actually been created on it, so re-entering placement is
+   always free to reach a different answer.
 
 ---
 
 ## 6. Volume handoff
 
-For a pending volume, the host decision must reach CNS before provisioning. The
-volume reconcilers watch the `VirtualMachine`, read the resolved host from its
-annotations, and stamp the PVC. Because they observe the VM rather than
-participate in its creation, the handoff tolerates arbitrary ordering: until
-the annotation appears the reconciler returns a retryable error and waits.
+For a pending volume, the host decision must reach CNS before provisioning.
+Because a host-local volume cannot be moved once provisioned, the decision is
+published only **after** the VM has actually been created — the provider reads
+the host the VM really runs on, maps it back to its Supervisor node, and stamps
+that node on the VM's unprovisioned host-local PVCs.
+
+Running this on every reconcile makes it self-correcting: a failed attempt is
+simply retried, and once the volume is provisioned there is nothing left to do.
 
 ```mermaid
 flowchart TD
-    A[VM or PVC change] --> B{PVC already bound, or<br/>selected-node already set?}
-    B -- yes --> Z[Nothing to do]
-    B -- no --> C{StorageClass binding mode<br/>is WaitForFirstConsumer?}
+    A[Reconcile of an existing VM] --> B{VM assigned to a host?}
+    B -- no --> Z[Nothing to do]
+    B -- yes --> C{Any host-local PVC<br/>still unprovisioned<br/>and carrying no host?}
     C -- no --> Z
-    C -- yes --> D{WFFC PVC support enabled?}
-    D -- no --> E[Reject]
-    D -- yes --> F{Host-local StorageClass<br/>and capability enabled?}
-    F -- no --> G["Zone handoff:<br/>selected-node = zone<br/>selected-node-is-zone = true"]
-    F -- yes --> H{VM has a resolved host?}
-    H -- no --> I[Requeue: awaiting<br/>the placement decision]
-    H -- yes --> J["Host handoff:<br/>selected-node = host<br/>selected-node-is-zone = false"]
+    C -- yes --> D[Map the VM's host MoID<br/>back to its Supervisor node]
+    D --> E["Stamp each PVC:<br/>selected-node = node<br/>selected-node-is-zone = false"]
+    E --> F[CNS provisions the volume<br/>on that host]
 ```
+
+The zone handoff for non-host-local WFFC PVCs is unchanged and remains in the
+volume reconcilers; they deliberately leave host-local PVCs alone so that there
+is exactly one writer of a host-local PVC's selected node.
 
 ---
 
@@ -412,11 +422,10 @@ sequenceDiagram
     CSI->>CSI: Provision on host H's host-local datastore
     CSI-->>Client: Bound, accessible-topology names H
     VMC->>Prov: Reconcile create
-    Prov->>Prov: Resolve host from the bound PVC's topology
-    Prov->>Prov: Record host annotations and zone label on the VM
-    Prov->>VC: Placement constrained to host H
+    Prov->>Prov: Derive host H from the bound PVC's topology
+    Prov->>VC: Placement constrained to host H, in H's zone
     VC-->>Prov: Host H and a datastore reachable from H
-    Prov->>Prov: Verify the recommendation matches the resolved host
+    Prov->>Prov: Verify the recommendation matches the derived host
     Prov->>VC: Create the VM on H with its files on that datastore
     VC-->>Prov: VM created
     Prov->>VC: Attach the volume
@@ -428,28 +437,33 @@ sequenceDiagram
 This is the path taken for a `WaitForFirstConsumer` host-local
 `StorageClass`, where no host exists until a consumer appears.
 
+Note that the chosen host is **not** recorded anywhere until the VM has been
+created on it. Up to that point a re-entered placement is free to choose
+differently; afterwards, the PVC's selected node is what a later reconcile reads
+the decision back from.
+
 ```mermaid
 sequenceDiagram
     participant Client
     participant VMC as VirtualMachine controller
     participant Prov as vSphere provider
     participant VC as vCenter / DRS
-    participant VolC as Volume reconciler
     participant CSI as CNS / CSI
 
     Client->>VMC: Create VirtualMachine and a pending PVC
     VMC->>Prov: Reconcile create
-    Prov->>Prov: No host resolvable; enter operator-selected mode
+    Prov->>Prov: No host derivable; enter operator-selected mode
     Prov->>Prov: Add a placement-only disk carrying the PVC's storage policy
     Prov->>VC: Request a host and datastore recommendation
     VC-->>Prov: Host H whose datastore satisfies the policy
-    Prov->>Prov: Record host annotations and zone label on the VM
     Prov->>VC: Create the VM on H with its files on that datastore
-    VMC->>VMC: Persist the VM, including the host annotations
-    VolC->>VolC: Observe the VM's resolved host
-    VolC->>CSI: Set selected-node to H, selected-node-is-zone false
+    Note over Prov: Nothing recorded yet; H is only a candidate until now
+    VMC->>Prov: Next reconcile
+    Prov->>VC: Read the host the VM actually runs on
+    VC-->>Prov: Host H
+    Prov->>CSI: Stamp the PVC: selected-node = H, selected-node-is-zone false
     CSI->>CSI: Provision the volume on H's host-local datastore
-    CSI-->>VolC: Bound
+    CSI-->>Prov: Bound
     Note over Prov,CSI: The volume follows the VM to H
 ```
 
@@ -471,12 +485,11 @@ sequenceDiagram
 
 | Condition | Behavior |
 |---|---|
-| Volumes bound to different hosts | Reject; the request is unsatisfiable. |
-| Placement returns a host other than the resolved one | Fail the operation; never substitute silently. |
-| Caller names a node that does not exist or lacks a host MoID | Reject at admission. |
-| Caller sets the MoID annotation | Reject at admission for non-privileged accounts. |
-| Caller changes a resolved node annotation | Reject at admission for non-privileged accounts. |
-| Resolved host not yet available to the volume reconciler | Retry until it is; no fallback to zone placement. |
+| Volumes on different hosts | Reject; the request is unsatisfiable. |
+| Placement returns a host other than the known one | Fail the operation; never substitute silently. |
+| A PVC names a Supervisor node that does not exist or lacks a host MoID | Fail placement; the VM is not created. |
+| The VM's host cannot be mapped back to a Supervisor node | Fail that reconcile step and retry; the PVC is left unstamped rather than stamped with a name CNS cannot match. |
+| Known host's zone is outside the zones the VM's PVCs allow | Reject; the request is unsatisfiable. |
 | No host has a policy-compliant datastore | Surfaces as a placement failure with no candidates. |
 | Pending host-local PVC on an `Immediate` class | Placement waits for the bind, then adopts the host CNS chose (§5.4). |
 | Requested topology names a zone but no host, on a host-local class | CNS cannot provision, so the wait above does not terminate until the annotation is corrected (§5.4.1). |
@@ -489,9 +502,9 @@ cannot be satisfied does not get created somewhere it will not work.
 ## 10. Validation
 
 Unit and integration coverage spans the capability mapping, the helper
-functions, host resolution, placement routing, the placement-only disk, the
-volume handoff in both reconcilers, and admission validation, alongside the
-existing provider suite.
+functions, host resolution, placement routing, the placement-only disks, the
+volume handoff, alongside the existing provider
+suite.
 
 Validated on a vSphere Supervisor with a host-local VMFS `StorageClass` in both
 binding modes:
@@ -583,11 +596,14 @@ Files carrying the implementation, for reviewer orientation:
 
 - `pkg/config/capabilities/capabilities.go`, `pkg/config/config.go`
 - `pkg/providers/vsphere/constants/constants.go`
-- `pkg/util/kube/node.go`, `pkg/util/kube/storage.go`
-- `pkg/providers/vsphere/vmprovider_vm_hostlocal.go`
+- `pkg/util/kube/storage.go`
+- `pkg/providers/vsphere/vmprovider_vm_hostlocal_storage.go` — host resolution
+  and the post-create handoff to the PVC
 - `pkg/providers/vsphere/placement/zone_placement.go`, `cluster_placement.go`
-- `pkg/providers/vsphere/virtualmachine/configspec.go`, `devices.go`
+- `pkg/providers/vsphere/virtualmachine/configspec.go`, `devices.go` — the
+  per-PVC placement-only disks, which are not host-local specific
 - `controllers/virtualmachine/volume/volume_controller.go`,
-  `controllers/virtualmachine/volumebatch/volumebatch_controller.go`
+  `controllers/virtualmachine/volumebatch/volumebatch_controller.go` — the zone
+  handoff, which deliberately leaves host-local PVCs to the provider
 - `webhooks/virtualmachine/validation/virtualmachine_validator.go`
 - `docs/concepts/workloads/vm-placement.md`

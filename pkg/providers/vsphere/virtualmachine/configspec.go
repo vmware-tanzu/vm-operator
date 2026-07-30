@@ -6,7 +6,6 @@ package virtualmachine
 
 import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -167,8 +166,7 @@ func CreateConfigSpec(
 func CreateConfigSpecForPlacement(
 	vmCtx pkgctx.VirtualMachineContext,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	storageClassesToIDs map[string]string,
-	hostLocalPendingPVCs []corev1.PersistentVolumeClaim) (vimtypes.VirtualMachineConfigSpec, error) {
+	storageClassesToIDs map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	pciDevKey := pciDevicesStartDeviceKey - 28000
 
@@ -304,27 +302,6 @@ func CreateConfigSpecForPlacement(
 						ProfileData: &vimtypes.VirtualMachineProfileRawData{
 							ExtensionKey: "com.vmware.vim.sps",
 						},
-					},
-				},
-			})
-		}
-	}
-
-	if pkgcfg.FromContext(vmCtx).Features.HostLocalStorage {
-		for idx, dev := range CreateHostLocalPlacementDiskDevices(hostLocalPendingPVCs) {
-			pvc := hostLocalPendingPVCs[idx]
-			var policyID string
-			if pvc.Spec.StorageClassName != nil {
-				policyID = storageClassesToIDs[*pvc.Spec.StorageClassName]
-			}
-
-			configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
-				Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
-				FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
-				Device:        dev,
-				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-					&vimtypes.VirtualMachineDefinedProfileSpec{
-						ProfileId: policyID,
 					},
 				},
 			})

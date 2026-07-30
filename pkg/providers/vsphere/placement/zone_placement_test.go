@@ -406,12 +406,12 @@ func vcSimPlacement() {
 					})
 				})
 
-				When("host already assigned via annotation", func() {
+				When("host already resolved by the caller", func() {
 					const hostMoID = "hostlocal-selected-host-42"
 
 					BeforeEach(func() {
 						vm.Labels[corev1.LabelTopologyZone] = "my-hostlocal-zone"
-						vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = hostMoID
+						constraints.HostLocalHostMoID = hostMoID
 					})
 
 					It("returns success with same host and does not force DRS placement", func() {
@@ -455,8 +455,7 @@ func vcSimPlacement() {
 							realHostMoRef = hosts[0].Reference()
 
 							vm.Labels[corev1.LabelTopologyZone] = ctx.GetFirstZoneName()
-							vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] =
-								realHostMoRef.Value
+							constraints.HostLocalHostMoID = realHostMoRef.Value
 						})
 
 						// Fast deploy needs a datastore recommendation, so the
@@ -503,19 +502,10 @@ func vcSimPlacement() {
 						})
 					})
 
-					When("the HostLocalStorage feature is disabled", func() {
-						BeforeEach(func() {
-							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-								config.Features.HostLocalStorage = false
-							})
-						})
-
-						It("ignores the annotation and does normal zone placement", func() {
-							result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
-							Expect(err).ToNot(HaveOccurred())
-							Expect(result.HostMoRef).To(BeNil())
-						})
-					})
+					// Note the HostLocalStorage capability is checked by the
+					// caller, which only populates HostLocalHostMoID when it is
+					// enabled, so Placement honors the constraint whenever it
+					// is set.
 				})
 
 				When("a Pending host-local PVC needs auto-placement", func() {
@@ -749,7 +739,7 @@ func vcSimPlacement() {
 				})
 
 				vm.Labels[corev1.LabelTopologyZone] = "my-hostlocal-zone"
-				vm.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey] = hostMoID
+				constraints.HostLocalHostMoID = hostMoID
 			})
 
 			It("returns success with same host and does not force DRS placement", func() {

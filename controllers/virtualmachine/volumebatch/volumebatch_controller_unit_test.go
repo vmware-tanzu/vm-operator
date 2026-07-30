@@ -1365,8 +1365,6 @@ func unitTestsReconcile() {
 			})
 
 			Context("PVC StorageClass is host-local", func() {
-				const hostName = "esx-host-1.example.com"
-
 				BeforeEach(func() {
 					storageClass.Annotations = map[string]string{
 						"cns.vmware.com/hostLocalPolicy": "true",
@@ -1379,30 +1377,18 @@ func unitTestsReconcile() {
 					})
 				})
 
-				When("VM has a resolved host-local host annotation", func() {
-					BeforeEach(func() {
-						vm.Annotations = map[string]string{
-							constants.HostLocalSelectedNodeAnnotationKey: hostName,
-						}
-					})
+				// A host-local PVC's selected node is a host rather than a
+				// zone, and it is published by the vSphere provider once the
+				// VM has actually been created on that host, so this
+				// controller must not stamp a zone onto it.
+				It("leaves the selected node to the provider", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
 
-					It("returns success and sets selected-node to the host, not the zone", func() {
-						err := reconciler.ReconcileNormal(volCtx)
-						Expect(err).ToNot(HaveOccurred())
-
-						pvc := &corev1.PersistentVolumeClaim{}
-						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
-						Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "false"))
-						Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, hostName))
-					})
-				})
-
-				When("VM does not have a resolved host-local host annotation yet", func() {
-					It("returns error", func() {
-						err := reconciler.ReconcileNormal(volCtx)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("VM does not have a selected host for host-local PVC yet"))
-					})
+					pvc := &corev1.PersistentVolumeClaim{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+					Expect(pvc.Annotations).ToNot(HaveKey(storagehelpers.AnnSelectedNode))
+					Expect(pvc.Annotations).ToNot(HaveKey(constants.CNSSelectedNodeIsZoneAnnotationKey))
 				})
 
 				When("the HostLocalStorage feature is disabled", func() {

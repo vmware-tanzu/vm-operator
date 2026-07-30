@@ -41,8 +41,15 @@ type Constraints struct {
 	// will further be filtered by.
 	Zones sets.Set[string]
 
+	// HostLocalHostMoID when non-empty is the ESXi host that the VM's
+	// host-local storage already determines, so placement must honor it rather
+	// than recommending a host of its own. The caller derives this from the
+	// VM's host-local PVCs or host override annotation on every reconcile;
+	// placement does not persist it.
+	HostLocalHostMoID string
+
 	// NeedHostLocalPlacement is true when the VM has a Pending host-local
-	// StorageClass PVC with no host resolved anywhere yet, so placement must
+	// StorageClass PVC with no host determined anywhere yet, so placement must
 	// force a DRS host recommendation compliant with that PVC's storage
 	// policy (see the placement-only phantom disk added by
 	// virtualmachine.CreateConfigSpecForPlacement).
@@ -111,24 +118,24 @@ func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext, constraints Constra
 		}
 	}
 
-	if f.HostLocalStorage {
-		if hostMoID := vmCtx.VM.Annotations[constants.HostLocalSelectedNodeMOIDAnnotationKey]; hostMoID != "" && res.HostMoRef == nil {
-			// Host has already been resolved (explicit override, a Bound
-			// host-local PVC, or a prior DRS auto-placement round).
-			//
-			// Unlike instance storage above, fast deploy is NOT disabled for
-			// host-local VMs, since it is the only create path that places the
-			// VM's files on an explicit datastore. When it is enabled,
-			// needDatastorePlacement is true and Placement cannot take the
-			// early return, so getPlacementRecommendation instead constrains
-			// the request to this host to obtain a datastore reachable from it.
-			res.HostMoRef = &vimtypes.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
-		} else if constraints.NeedHostLocalPlacement {
-			// VM has a Pending host-local StorageClass PVC with no host
-			// resolved anywhere yet, so we need to force a DRS host
-			// recommendation for it.
-			res.needHostLocalPlacement = true
+	if constraints.HostLocalHostMoID != "" && res.HostMoRef == nil {
+		// The VM's host-local storage already determines its host, which the
+		// caller derived from the VM's PVCs or host override annotation.
+		//
+		// Unlike instance storage above, fast deploy is NOT disabled for
+		// host-local VMs, since it is the only create path that places the
+		// VM's files on an explicit datastore. When it is enabled,
+		// needDatastorePlacement is true and Placement cannot take the early
+		// return, so getPlacementRecommendation instead constrains the request
+		// to this host to obtain a datastore reachable from it.
+		res.HostMoRef = &vimtypes.ManagedObjectReference{
+			Type:  "HostSystem",
+			Value: constraints.HostLocalHostMoID,
 		}
+	} else if constraints.NeedHostLocalPlacement {
+		// The VM has a Pending host-local StorageClass PVC with no host
+		// determined anywhere yet, so force a DRS host recommendation for it.
+		res.needHostLocalPlacement = true
 	}
 
 	return res
@@ -397,11 +404,22 @@ func getPlacementRecommendation(
 	case len(candidates) > 1 ||
 		curResult.needDatastorePlacement ||
 		curResult.needHostLocalPlacement:
+		// TODO: requesting a host recommendation only when a specific feature
+		// needs one has been called out as a false optimization, and this
+		// should always ask for one. Doing so is not a self-contained change:
+		// processPlacementResult copies any recommended host into
+		// createArgs.HostMoID unconditionally, and a non-empty HostMoID pins
+		// the create to that host for both the fast-deploy and
+		// content-library paths. Making the request unconditional therefore
+		// also has to separate "a host was recommended" from "the VM must be
+		// created on that host", which affects every VM rather than only those
+		// with host-local or instance storage.
+		//
 		// Host-local placement must request datastore recommendations even when
 		// the fast deploy feature is disabled. The placement ConfigSpec carries
-		// a phantom disk tagged with the host-local storage policy purely so
-		// that the recommended host is one with a compliant datastore, and DRS
-		// only evaluates that policy when it is asked to recommend a datastore.
+		// a disk tagged with the host-local storage policy purely so that the
+		// recommended host is one with a compliant datastore, and DRS only
+		// evaluates that policy when it is asked to recommend a datastore.
 		// Without this, a host with no compliant host-local datastore can be
 		// recommended and the VM then fails to create on it.
 		recs, err := getClusterPlacementRecommendations(

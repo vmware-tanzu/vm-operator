@@ -122,9 +122,15 @@ func unitTestsValidateCreate() {
 		})
 	})
 
+	// spec.id non-emptiness is enforced by the CRD's CEL rule, not this
+	// webhook, so it cannot be exercised via a direct ValidateCreate call.
+	// See the intg suite for coverage of the CEL rejection through a real
+	// API server. An empty id short-circuits the name-match check below
+	// (there is no meaningful DNS-safe transform of ""), so the webhook
+	// itself allows this request and defers entirely to CEL.
 	When("spec.id is empty", func() {
-		It("should deny creation", func() {
-			validateCreate(createArgs{name: "", id: ""}, false, "id must be provided")
+		It("should allow creation, deferring to the CRD's CEL rule", func() {
+			validateCreate(createArgs{name: "", id: ""}, true, "")
 		})
 	})
 
@@ -187,22 +193,6 @@ func unitTestsValidateUpdate() {
 	When("spec.id is changed", func() {
 		It("should deny the update", func() {
 			validateUpdate(updateArgs{newID: "dos"}, false, "metadata.name must equal the DNS-safe transform of spec.id")
-		})
-	})
-
-	When("the object predates this webhook and was already invalid", func() {
-		It("should deny an update that leaves an empty spec.id unchanged", func() {
-			legacy := builder.DummyVirtualMachineGuestOptions("legacy-empty-id", "")
-			legacyObj, err := builder.ToUnstructured(legacy)
-			Expect(err).ToNot(HaveOccurred())
-
-			ctx = &unitValidatingWebhookContext{
-				UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(legacyObj, legacyObj),
-			}
-
-			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-			Expect(response.Allowed).To(BeFalse())
-			Expect(string(response.Result.Reason)).To(ContainSubstring("id must be provided"))
 		})
 	})
 }

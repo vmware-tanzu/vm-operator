@@ -383,6 +383,7 @@ type VirtualMachineGuestOptionsHardwareVersionStatus struct {
 type VirtualMachineGuestOptionsSpec struct {
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="id is immutable"
+	// +kubebuilder:validation:XValidation:rule="size(self) > 0",message="id must be provided"
 
 	// ID is the desired guest ID for which to get the guest options,
 	// ex.: OtherLinux64.

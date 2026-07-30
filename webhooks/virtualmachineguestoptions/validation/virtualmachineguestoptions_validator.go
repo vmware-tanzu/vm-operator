@@ -66,8 +66,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	fieldErrs := v.validateID(string(obj.Spec.ID))
-	fieldErrs = append(fieldErrs, v.validateNameMatchesID(obj.Name, string(obj.Spec.ID))...)
+	fieldErrs := v.validateNameMatchesID(obj.Name, string(obj.Spec.ID))
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -82,17 +81,17 @@ func (v validator) ValidateDelete(_ *pkgctx.WebhookRequestContext) admission.Res
 	return admission.Allowed("")
 }
 
-// ValidateUpdate re-runs the base validations so a VirtualMachineGuestOptions
+// ValidateUpdate re-runs the base validation so a VirtualMachineGuestOptions
 // that predates this webhook is still caught if it is otherwise invalid.
-// spec.id immutability is enforced by the CRD's CEL transition rule.
+// spec.id immutability and non-emptiness are enforced by the CRD's CEL
+// rules.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	obj, err := v.vmGuestOptionsFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	fieldErrs := v.validateID(string(obj.Spec.ID))
-	fieldErrs = append(fieldErrs, v.validateNameMatchesID(obj.Name, string(obj.Spec.ID))...)
+	fieldErrs := v.validateNameMatchesID(obj.Name, string(obj.Spec.ID))
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -100,15 +99,6 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
-}
-
-// validateID returns an error if spec.id is empty.
-func (v validator) validateID(id string) field.ErrorList {
-	if id == "" {
-		return field.ErrorList{field.Required(field.NewPath("spec", "id"), "id must be provided")}
-	}
-
-	return nil
 }
 
 // validateNameMatchesID returns an error if metadata.name does not equal the

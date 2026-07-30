@@ -13,6 +13,7 @@ import (
 type VirtualMachineConfigOptionsSpec struct {
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="hardwareVersion is immutable"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^vmx-[0-9]+$')",message="hardwareVersion must match ^vmx-\\d+$"
 
 	// HardwareVersion is the desired hardware version for which to get the
 	// config options, ex.: vmx-19.
@@ -613,6 +614,7 @@ type VirtualMachineStorageClassVolumeOption struct {
 // +kubebuilder:resource:scope=Cluster,shortName=vmconfigoptions
 // +kubebuilder:storageversion:true
 // +kubebuilder:subresource:status
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == self.spec.hardwareVersion",message="metadata.name must equal spec.hardwareVersion"
 
 // VirtualMachineConfigOptions is the schema for the
 // VirtualMachineConfigOptions API and

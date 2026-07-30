@@ -57,6 +57,8 @@ spec:
                 x-kubernetes-validations:
                 - message: id is immutable
                   rule: self == oldSelf
+                - message: id must be provided
+                  rule: size(self.id) > 0
             required:
             - id
             type: object
@@ -5407,6 +5409,10 @@ spec:
                 type: array
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be a valid vSphere cluster managed object ID,
+            e.g. domain-c21
+          rule: self.metadata.name.matches('^domain-c[0-9]+$')
     served: true
     storage: true
     subresources:

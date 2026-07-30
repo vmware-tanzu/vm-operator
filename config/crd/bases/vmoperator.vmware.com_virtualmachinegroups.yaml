@@ -375,7 +375,7 @@ spec:
                           description: Pool describes the recommended resource pool
                             for this VM.
                           type: string
-                        zoneID:
+                        zone:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
@@ -768,7 +768,7 @@ spec:
                           description: Pool describes the recommended resource pool
                             for this VM.
                           type: string
-                        zoneID:
+                        zone:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
@@ -1161,7 +1161,7 @@ spec:
                           description: Pool describes the recommended resource pool
                             for this VM.
                           type: string
-                        zoneID:
+                        zone:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
@@ -1554,7 +1554,7 @@ spec:
                           description: Pool describes the recommended resource pool
                             for this VM.
                           type: string
-                        zoneID:
+                        zone:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string

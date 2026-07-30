@@ -19,9 +19,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 )
 
 var _ = Describe("SysPrep Bootstrap", func() {
@@ -64,7 +64,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 			bsArgs.Data["unattend"] = unattendXML
 			bsArgs.SearchSuffixes = []string{"suffix1", "suffix2"}
-			bsArgs.Bootstraps = []network.Bootstrap{
+			bsArgs.NetBootstraps = []network.Bootstrap{
 				{
 					MacAddress: macAddr,
 					IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -334,7 +334,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				sysPrepText := custSpec.Identity.(*vimtypes.CustomizationSysprepText)
 				Expect(sysPrepText.Value).To(Equal(unattendXML))
 
-				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.Bootstraps)))
+				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetBootstraps)))
 				Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
 			})
 

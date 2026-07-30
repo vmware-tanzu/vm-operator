@@ -177,18 +177,18 @@ func GetTemplateRenderFunc(
 }
 
 func toTemplateNetworkStatusV1A1(bsArgs *BootstrapArgs) []vmopv1a1.NetworkDeviceStatus {
-	networkDevicesStatus := make([]vmopv1a1.NetworkDeviceStatus, 0, len(bsArgs.Bootstraps))
+	networkDevicesStatus := make([]vmopv1a1.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))
 
-	for _, result := range bsArgs.Bootstraps {
+	for _, b := range bsArgs.NetBootstraps {
 		// When using Sysprep, the MAC address must be in the format of "-".
 		// CloudInit normalizes it again to ":" when adding it to the netplan.
-		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
+		macAddr := strings.ReplaceAll(b.MacAddress, ":", "-")
 
 		status := vmopv1a1.NetworkDeviceStatus{
 			MacAddress: macAddr,
 		}
 
-		for _, ipConfig := range result.IPConfigs {
+		for _, ipConfig := range b.IPConfigs {
 			// We mostly only did IPv4 before so keep that going.
 			if ipConfig.IsIPv4 {
 				if status.Gateway4 == "" {
@@ -355,18 +355,18 @@ func v1a1TemplateFunctions(
 }
 
 func toTemplateNetworkStatusV1A2(bsArgs *BootstrapArgs) []vmopv1a2.NetworkDeviceStatus {
-	networkDevicesStatus := make([]vmopv1a2.NetworkDeviceStatus, 0, len(bsArgs.Bootstraps))
+	networkDevicesStatus := make([]vmopv1a2.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))
 
-	for _, result := range bsArgs.Bootstraps {
+	for _, b := range bsArgs.NetBootstraps {
 		// When using Sysprep, the MAC address must be in the format of "-".
 		// CloudInit normalizes it again to ":" when adding it to the netplan.
-		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
+		macAddr := strings.ReplaceAll(b.MacAddress, ":", "-")
 
 		status := vmopv1a2.NetworkDeviceStatus{
 			MacAddress: macAddr,
 		}
 
-		for _, ipConfig := range result.IPConfigs {
+		for _, ipConfig := range b.IPConfigs {
 			// We mostly only did IPv4 before so keep that going.
 			if ipConfig.IsIPv4 {
 				if status.Gateway4 == "" {
@@ -534,18 +534,18 @@ func v1a2TemplateFunctions(
 }
 
 func toTemplateNetworkStatusV1A3(bsArgs *BootstrapArgs) []vmopv1a3.NetworkDeviceStatus {
-	networkDevicesStatus := make([]vmopv1a3.NetworkDeviceStatus, 0, len(bsArgs.Bootstraps))
+	networkDevicesStatus := make([]vmopv1a3.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))
 
-	for _, result := range bsArgs.Bootstraps {
+	for _, b := range bsArgs.NetBootstraps {
 		// When using Sysprep, the MAC address must be in the format of "-".
 		// CloudInit normalizes it again to ":" when adding it to the netplan.
-		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
+		macAddr := strings.ReplaceAll(b.MacAddress, ":", "-")
 
 		status := vmopv1a3.NetworkDeviceStatus{
 			MacAddress: macAddr,
 		}
 
-		for _, ipConfig := range result.IPConfigs {
+		for _, ipConfig := range b.IPConfigs {
 			// We mostly only did IPv4 before so keep that going.
 			if ipConfig.IsIPv4 {
 				if status.Gateway4 == "" {
@@ -563,18 +563,18 @@ func toTemplateNetworkStatusV1A3(bsArgs *BootstrapArgs) []vmopv1a3.NetworkDevice
 }
 
 func toTemplateNetworkStatusV1A4(bsArgs *BootstrapArgs) []vmopv1a4.NetworkDeviceStatus {
-	networkDevicesStatus := make([]vmopv1a4.NetworkDeviceStatus, 0, len(bsArgs.Bootstraps))
+	networkDevicesStatus := make([]vmopv1a4.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))
 
-	for _, result := range bsArgs.Bootstraps {
+	for _, b := range bsArgs.NetBootstraps {
 		// When using Sysprep, the MAC address must be in the format of "-".
 		// CloudInit normalizes it again to ":" when adding it to the netplan.
-		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
+		macAddr := strings.ReplaceAll(b.MacAddress, ":", "-")
 
 		status := vmopv1a4.NetworkDeviceStatus{
 			MacAddress: macAddr,
 		}
 
-		for _, ipConfig := range result.IPConfigs {
+		for _, ipConfig := range b.IPConfigs {
 			// We mostly only did IPv4 before so keep that going.
 			if ipConfig.IsIPv4 {
 				if status.Gateway4 == "" {
@@ -592,18 +592,18 @@ func toTemplateNetworkStatusV1A4(bsArgs *BootstrapArgs) []vmopv1a4.NetworkDevice
 }
 
 func toTemplateNetworkStatusV1A5(bsArgs *BootstrapArgs) []vmopv1a5.NetworkDeviceStatus {
-	networkDevicesStatus := make([]vmopv1a5.NetworkDeviceStatus, 0, len(bsArgs.Bootstraps))
+	networkDevicesStatus := make([]vmopv1a5.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))
 
-	for _, result := range bsArgs.Bootstraps {
+	for _, b := range bsArgs.NetBootstraps {
 		// When using Sysprep, the MAC address must be in the format of "-".
 		// CloudInit normalizes it again to ":" when adding it to the netplan.
-		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
+		macAddr := strings.ReplaceAll(b.MacAddress, ":", "-")
 
 		status := vmopv1a5.NetworkDeviceStatus{
 			MacAddress: macAddr,
 		}
 
-		for _, ipConfig := range result.IPConfigs {
+		for _, ipConfig := range b.IPConfigs {
 			// We mostly only did IPv4 before so keep that going.
 			if ipConfig.IsIPv4 {
 				if status.Gateway4 == "" {

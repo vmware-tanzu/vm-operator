@@ -13,35 +13,38 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-func NetPlanCustomization(bootstraps []Bootstrap, vlans []vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
+func NetPlanCustomization(
+	bootstraps []Bootstrap,
+	vlans []vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
+
 	netPlan := &netplan.Network{
 		Version:   constants.NetPlanVersion,
 		Ethernets: make(map[string]netplan.Ethernet),
 	}
 
-	for _, r := range bootstraps {
+	for _, b := range bootstraps {
 		npEth := netplan.Ethernet{
 			Match: &netplan.Match{
-				Macaddress: ptr.To(NormalizeNetplanMac(r.MacAddress)),
+				Macaddress: ptr.To(NormalizeNetplanMac(b.MacAddress)),
 			},
-			SetName: &r.GuestDeviceName,
+			SetName: &b.GuestDeviceName,
 			Nameservers: &netplan.Nameserver{
-				Addresses: r.Nameservers,
-				Search:    r.SearchDomains,
+				Addresses: b.Nameservers,
+				Search:    b.SearchDomains,
 			},
 		}
 
-		if r.MTU > 0 {
-			npEth.MTU = &r.MTU
+		if b.MTU > 0 {
+			npEth.MTU = &b.MTU
 		}
 
-		npEth.Dhcp4 = &r.DHCP4
-		npEth.Dhcp6 = &r.DHCP6
-		npEth.AcceptRa = &r.AcceptRA
+		npEth.Dhcp4 = &b.DHCP4
+		npEth.Dhcp6 = &b.DHCP6
+		npEth.AcceptRa = &b.AcceptRA
 
 		if !*npEth.Dhcp4 {
-			for i := range r.IPConfigs {
-				ipConfig := r.IPConfigs[i]
+			for i := range b.IPConfigs {
+				ipConfig := b.IPConfigs[i]
 				if ipConfig.IsIPv4 {
 					if ipConfig.Gateway != "" {
 						if npEth.Gateway4 == nil || *npEth.Gateway4 == "" {
@@ -58,8 +61,8 @@ func NetPlanCustomization(bootstraps []Bootstrap, vlans []vmopv1.VirtualMachineN
 			}
 		}
 		if !*npEth.Dhcp6 {
-			for i := range r.IPConfigs {
-				ipConfig := r.IPConfigs[i]
+			for i := range b.IPConfigs {
+				ipConfig := b.IPConfigs[i]
 				if !ipConfig.IsIPv4 {
 					if ipConfig.Gateway != "" {
 						if npEth.Gateway6 == nil || *npEth.Gateway6 == "" {
@@ -76,8 +79,8 @@ func NetPlanCustomization(bootstraps []Bootstrap, vlans []vmopv1.VirtualMachineN
 			}
 		}
 
-		for i := range r.Routes {
-			route := r.Routes[i]
+		for i := range b.Routes {
+			route := b.Routes[i]
 
 			var metric *int64
 			if route.Metric != 0 {
@@ -94,7 +97,7 @@ func NetPlanCustomization(bootstraps []Bootstrap, vlans []vmopv1.VirtualMachineN
 			)
 		}
 
-		netPlan.Ethernets[r.Name] = npEth
+		netPlan.Ethernets[b.Name] = npEth
 	}
 
 	if len(vlans) > 0 {

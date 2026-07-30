@@ -24,16 +24,16 @@ import (
 )
 
 func toTemplateNetworkStatusV1A6(bsArgs *BootstrapArgs) []vmopv1.NetworkDeviceStatus {
-	networkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.Bootstraps))
+	networkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))
 
-	for _, result := range bsArgs.Bootstraps {
-		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
+	for _, b := range bsArgs.NetBootstraps {
+		macAddr := strings.ReplaceAll(b.MacAddress, ":", "-")
 
 		status := vmopv1.NetworkDeviceStatus{
 			MacAddress: macAddr,
 		}
 
-		for _, ipConfig := range result.IPConfigs {
+		for _, ipConfig := range b.IPConfigs {
 			if ipConfig.IsIPv4 {
 				if status.Gateway4 == "" {
 					status.Gateway4 = ipConfig.Gateway

@@ -1087,18 +1087,18 @@ func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 	}
 
 	// Iterate over each network result.
-	for i := range args.Bootstraps {
+	for i := range args.NetBootstraps {
 
 		// Declare the interface's config status.
 		var ifc vmopv1.VirtualMachineNetworkConfigInterfaceStatus
 
 		// Define a short alias for the indexed result.
-		r := args.Bootstraps[i]
+		r := args.NetBootstraps[i]
 
 		// Grab a temp copy of the result's IP configuration list to make it
 		// more obvious that the purpose of the next three lines of code is not
 		// to update the r.IPConfigs directly.
-		ipConfigs := args.Bootstraps[i].IPConfigs
+		ipConfigs := args.NetBootstraps[i].IPConfigs
 
 		// The intended DHCP configuration is presented per interface, so if
 		// there are no resulting IP configs, but DHCP4 or DHCP6 is configured,

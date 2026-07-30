@@ -221,6 +221,144 @@ func vmNetworkTests() {
 		})
 	})
 
+	When("multiple NICs mix an explicit Type with class-provided cards", func() {
+		BeforeEach(func() {
+			testConfig.NumNetworks = 0
+			testConfig.WithNetworkEnv = builder.NetworkEnvNamed
+
+			// The VM Class provides two Ethernet devices, positionally zipped
+			// with the two VM Spec interfaces below. eth0 has an explicit
+			// Type, so it must not reuse its class device at position 0 (that
+			// device is simply dropped, not handed to eth1). eth1 has no
+			// Type, so it is zipped with its own class device at position 1.
+			// The class device types (PCNet32, E1000e) are intentionally
+			// different from the VMXNet3 default CreateVirtualEthernetCard
+			// creates, so the resulting devices can be told apart.
+			configSpec := vimtypes.VirtualMachineConfigSpec{
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimtypes.VirtualPCNet32{},
+					},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimtypes.VirtualE1000e{},
+					},
+				},
+			}
+			jsonConfigSpec, err := util.MarshalConfigSpecToJSON(configSpec)
+			Expect(err).ToNot(HaveOccurred())
+			vmClass.Spec.ConfigSpec = jsonConfigSpec
+
+			vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				{
+					Name:    "eth0",
+					Type:    vmopv1.VirtualMachineNetworkInterfaceTypeE1000, // TODO: Will be vmxnet3 until honor Type
+					Network: &vmopv1common.PartialObjectRef{Name: "VM Network"},
+				},
+				{
+					Name:    "eth1",
+					Network: &vmopv1common.PartialObjectRef{Name: dvpgName},
+				},
+			}
+		})
+
+		It("preserves interface order and pairs each interface with its own positional class device", func() {
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
+
+			var o mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+			devList := object.VirtualDeviceList(o.Config.Hardware.Device)
+			l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+
+			// Only 2 devices: eth0's newly created card, and eth1's own
+			// positional class device. The class device at position 0
+			// (PCNet32) is dropped, not reassigned to eth1.
+			Expect(l).To(HaveLen(2))
+
+			By("eth0 gets a newly created card, not its own class device", func() {
+				_, ok := l[0].(*vimtypes.VirtualVmxnet3)
+				Expect(ok).To(BeTrue())
+				backing, ok := l[0].GetVirtualDevice().Backing.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
+				Expect(ok).To(BeTrue())
+				Expect(backing.DeviceName).To(Equal("VM Network"))
+			})
+
+			By("eth1 reuses its own positional class device", func() {
+				_, ok := l[1].(*vimtypes.VirtualE1000e)
+				Expect(ok).To(BeTrue())
+				backing, ok := l[1].GetVirtualDevice().Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+				Expect(ok).To(BeTrue())
+				_, dvpg := getDVPG(ctx, dvpgName)
+				Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
+			})
+		})
+	})
+
+	When("the VM Class ConfigSpec has more Ethernet cards than the VM has network interfaces", func() {
+		BeforeEach(func() {
+			testConfig.NumNetworks = 0
+			testConfig.WithNetworkEnv = builder.NetworkEnvNamed
+
+			// The VM Class provides three Ethernet devices, but the VM Spec
+			// only has one interface. The first class device is positionally
+			// zipped with that interface; the other two have no corresponding
+			// VM Spec interface and are dropped from the ConfigSpec.
+			configSpec := vimtypes.VirtualMachineConfigSpec{
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimtypes.VirtualE1000e{},
+					},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimtypes.VirtualPCNet32{},
+					},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimtypes.VirtualVmxnet2{},
+					},
+				},
+			}
+			jsonConfigSpec, err := util.MarshalConfigSpecToJSON(configSpec)
+			Expect(err).ToNot(HaveOccurred())
+			vmClass.Spec.ConfigSpec = jsonConfigSpec
+
+			vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				{
+					Name:    "eth0",
+					Network: &vmopv1common.PartialObjectRef{Name: "VM Network"},
+				},
+			}
+		})
+
+		It("drops the unmatched class devices and keeps the matched one", func() {
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
+
+			var o mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+			devList := object.VirtualDeviceList(o.Config.Hardware.Device)
+			l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+
+			// Only 1 device: eth0's own positional class device. The other
+			// two class devices (PCNet32, Vmxnet2) have no corresponding VM
+			// Spec interface and are dropped.
+			Expect(l).To(HaveLen(1))
+
+			_, ok := l[0].(*vimtypes.VirtualE1000e)
+			Expect(ok).To(BeTrue())
+			backing, ok := l[0].GetVirtualDevice().Backing.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
+			Expect(ok).To(BeTrue())
+			Expect(backing.DeviceName).To(Equal("VM Network"))
+		})
+	})
+
 	Context("simulate", func() {
 		var (
 			cloudInitSecret *corev1.Secret

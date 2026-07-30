@@ -5135,7 +5135,7 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 			DomainName:     "local.domain",
 			DNSServers:     []string{"1.2.3.4", "5.6.7.8"},
 			SearchSuffixes: []string{"fu.bar", "hello.world"},
-			Bootstraps: []network.Bootstrap{
+			NetBootstraps: []network.Bootstrap{
 				{
 					Name: "eth0",
 					IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -5224,7 +5224,7 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 
 			When("there are no network interface results", func() {
 				BeforeEach(func() {
-					args.Bootstraps = nil
+					args.NetBootstraps = nil
 				})
 				Specify("status.network.config.interfaces should be nil", func() {
 					Expect(config.Interfaces).To(BeNil())
@@ -5278,8 +5278,8 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 
 				When("there is DNS information in the interface", func() {
 					BeforeEach(func() {
-						args.Bootstraps[0].Nameservers = []string{"1.1.1.1"}
-						args.Bootstraps[0].SearchDomains = []string{"per.vm"}
+						args.NetBootstraps[0].Nameservers = []string{"1.1.1.1"}
+						args.NetBootstraps[0].SearchDomains = []string{"per.vm"}
 					})
 					Specify("status.network.config.interfaces should have one interface", func() {
 						assertExpectedNetworkInterfaces(config, 1)
@@ -5295,8 +5295,8 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 
 			When("there are two network interface results", func() {
 				BeforeEach(func() {
-					args.Bootstraps = append(
-						args.Bootstraps,
+					args.NetBootstraps = append(
+						args.NetBootstraps,
 						network.Bootstrap{
 							Name: "eth1",
 							IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -6311,7 +6311,7 @@ var _ = Describe("ExtraConfig status", func() {
 				&vimtypes.OptionValue{Key: "foo", Value: "bar"},
 				&vimtypes.OptionValue{Key: constants.ExtraConfigManagedKeysKey, Value: "foo"},
 				&vimtypes.OptionValue{Key: "tools.guest.desktop.autolock", Value: "FALSE"}, // class-derived, not managed
-				&vimtypes.OptionValue{Key: "disk.enableUUID", Value: "TRUE"},                // internal, not managed
+				&vimtypes.OptionValue{Key: "disk.enableUUID", Value: "TRUE"},               // internal, not managed
 			}
 		})
 

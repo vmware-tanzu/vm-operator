@@ -89,8 +89,8 @@ type Bootstrap struct {
 // state. The initial Bootstrap carries values populated from the network provider
 // CR status (DHCP4, DHCP6, NoIPAM, IPConfigs, MacAddress).
 //
-// Use NetOPInterfaceBootstrap, NCPInterfaceBootstrap, or VPCInterfaceBootstrap
-// when starting from a concrete network interface CR.
+// Use BuildBootstraps to compute Bootstrap values from concrete network
+// interface CRs (or the named-network case) for a VM's Devices.
 //
 //nolint:gocyclo
 func InterfaceBootstrap(
@@ -224,9 +224,9 @@ func InterfaceBootstrap(
 	return bootstrap
 }
 
-// NetOPInterfaceBootstrap computes the Bootstrap for a VDS NetOP NetworkInterface CR by
+// netOPInterfaceBootstrap computes the Bootstrap for a VDS NetOP NetworkInterface CR by
 // extracting the initial state from CR status and applying the interfaceSpec overrides.
-func NetOPInterfaceBootstrap(
+func netOPInterfaceBootstrap(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	netIf *netopv1alpha1.NetworkInterface,
@@ -284,9 +284,9 @@ func bootstrapFromNetOP(netIf *netopv1alpha1.NetworkInterface) Bootstrap {
 	return initial
 }
 
-// NCPInterfaceBootstrap computes the Bootstrap for an NSX-T NCP VirtualNetworkInterface CR
+// ncpInterfaceBootstrap computes the Bootstrap for an NSX-T NCP VirtualNetworkInterface CR
 // by extracting the initial state from CR status and applying the interfaceSpec overrides.
-func NCPInterfaceBootstrap(
+func ncpInterfaceBootstrap(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	vnetIf *ncpv1alpha1.VirtualNetworkInterface,
@@ -326,9 +326,9 @@ func bootstrapFromNCP(vnetIf *ncpv1alpha1.VirtualNetworkInterface) Bootstrap {
 	return initial
 }
 
-// VPCInterfaceBootstrap computes the Bootstrap for a VPC SubnetPort CR by extracting
+// vpcInterfaceBootstrap computes the Bootstrap for a VPC SubnetPort CR by extracting
 // the initial state from CR status and applying the interfaceSpec overrides.
-func VPCInterfaceBootstrap(
+func vpcInterfaceBootstrap(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	subnetPort *vpcv1alpha1.SubnetPort,
@@ -474,11 +474,11 @@ func BuildBootstraps(
 
 		switch ifaceCR := dev.InterfaceObj.(type) {
 		case *netopv1alpha1.NetworkInterface:
-			bootstrap = NetOPInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
+			bootstrap = netOPInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
 		case *ncpv1alpha1.VirtualNetworkInterface:
-			bootstrap = NCPInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
+			bootstrap = ncpInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
 		case *vpcv1alpha1.SubnetPort:
-			bootstrap = VPCInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
+			bootstrap = vpcInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
 		default:
 			return nil, fmt.Errorf("unsupported network interface CR type: %T", dev.InterfaceObj)
 		}

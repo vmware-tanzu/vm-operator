@@ -11,9 +11,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -113,27 +113,12 @@ func newUnitTestContextForValidatingWebhook(isUpdate, seedZone bool) *unitValida
 func unitTestsValidateCreate() {
 	type createArgs struct {
 		seedZone       bool
-		emptyKey       bool
-		useDenied      bool
 		vmOperatorUser bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
 		ctx := newUnitTestContextForValidatingWebhook(false, args.seedZone)
 		ctx.IsVMOperatorAccount = args.vmOperatorUser
-
-		if args.emptyKey {
-			key := vimv1.VirtualMachineConfigPolicyExtraConfigKey{Type: vimv1.MatchTypeFixed, Key: ""}
-
-			extraConfig := &vimv1.VirtualMachineConfigPolicyExtraConfigSpec{}
-			if args.useDenied {
-				extraConfig.Denied = []vimv1.VirtualMachineConfigPolicyExtraConfigKey{key}
-			} else {
-				extraConfig.Allowed = []vimv1.VirtualMachineConfigPolicyExtraConfigKey{key}
-			}
-
-			ctx.configPolicy.Spec.ExtraConfig = extraConfig
-		}
 
 		var err error
 
@@ -148,17 +133,11 @@ func unitTestsValidateCreate() {
 		}
 	}
 
-	allowedKeyPath := field.NewPath("spec", "extraConfig", "allowed").Index(0).Child("key")
-	deniedKeyPath := field.NewPath("spec", "extraConfig", "denied").Index(0).Child("key")
 	DescribeTable("create table", validateCreate,
 		Entry("should allow when spec.zone references an existing Zone",
 			createArgs{seedZone: true}, true, ""),
 		Entry("should deny when spec.zone references a non-existent Zone",
 			createArgs{}, false, "Not found"),
-		Entry("should deny an empty key in extraConfig.allowed",
-			createArgs{seedZone: true, emptyKey: true}, false, field.Required(allowedKeyPath, "").Error()),
-		Entry("should deny an empty key in extraConfig.denied",
-			createArgs{seedZone: true, emptyKey: true, useDenied: true}, false, field.Required(deniedKeyPath, "").Error()),
 		Entry("should allow the VM Operator service account even when spec.zone references a non-existent Zone",
 			createArgs{vmOperatorUser: true}, true, ""),
 	)
@@ -300,9 +279,16 @@ func intgTestsValidateCreate() {
 			}
 		})
 
-		It("should deny the request", func() {
+		// This is rejected by the CRD's OpenAPI schema
+		// (+kubebuilder:validation:MinLength=1 on
+		// VirtualMachineConfigPolicyExtraConfigKey.Key) before the request
+		// ever reaches the webhook, so this is a real envtest apiserver
+		// admission rejection, not a webhook response.
+		It("should deny the request with a schema validation error", func() {
 			err := ctx.Client.Create(ctx, ctx.configPolicy)
 			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsInvalid(err)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("spec.extraConfig.allowed[0].key"))
 		})
 	})
 }

@@ -31,6 +31,7 @@ type VirtualMachineConfigPolicyExtraConfigKey struct {
 	Type MatchType `json:"type"`
 
 	// +required
+	// +kubebuilder:validation:MinLength=1
 
 	// Key is the extra config key to match.
 	Key string `json:"key"`

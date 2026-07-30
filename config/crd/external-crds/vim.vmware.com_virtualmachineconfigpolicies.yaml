@@ -491,6 +491,7 @@ spec:
                       properties:
                         key:
                           description: Key is the extra config key to match.
+                          minLength: 1
                           type: string
                         type:
                           default: Glob
@@ -521,6 +522,7 @@ spec:
                       properties:
                         key:
                           description: Key is the extra config key to match.
+                          minLength: 1
                           type: string
                         type:
                           default: Glob

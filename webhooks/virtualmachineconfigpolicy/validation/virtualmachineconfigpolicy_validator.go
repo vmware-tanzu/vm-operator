@@ -103,17 +103,16 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 }
 
 // validateSpec returns an error if spec.zone does not reference an existing
-// Zone in the policy's namespace, or if any extraConfig allowed/denied entry
-// has an empty key.
+// Zone in the policy's namespace. A non-empty extraConfig allowed/denied key
+// is a simple structural rule enforced by the CRD's OpenAPI schema
+// (+kubebuilder:validation:MinLength=1 on
+// VirtualMachineConfigPolicyExtraConfigKey.Key) rather than here, per the
+// constitution's preference for CEL/OpenAPI validation over Go code for
+// rules that do not need cross-object or vSphere data.
 func (v validator) validateSpec(
 	ctx *pkgctx.WebhookRequestContext,
 	policy *vimv1.VirtualMachineConfigPolicy) field.ErrorList {
-	allErrs := make(field.ErrorList, 0, 2)
-
-	allErrs = append(allErrs, v.validateZone(ctx, policy)...)
-	allErrs = append(allErrs, v.validateExtraConfig(policy)...)
-
-	return allErrs
+	return v.validateZone(ctx, policy)
 }
 
 // validateZone returns an error if spec.zone does not reference an existing
@@ -147,39 +146,6 @@ func (v validator) validateZone(
 	}
 
 	return nil
-}
-
-// validateExtraConfig returns an error for any extraConfig allowed/denied
-// entry whose key is empty. The Type enum is already enforced by the CRD's
-// OpenAPI schema, so the only remaining rule to enforce here is a non-empty
-// key.
-func (v validator) validateExtraConfig(policy *vimv1.VirtualMachineConfigPolicy) field.ErrorList {
-	extraConfig := policy.Spec.ExtraConfig
-	if extraConfig == nil {
-		return nil
-	}
-
-	allErrs := make(field.ErrorList, 0, 2)
-
-	f := field.NewPath("spec", "extraConfig")
-	allErrs = append(allErrs, validateExtraConfigKeys(f.Child("allowed"), extraConfig.Allowed)...)
-	allErrs = append(allErrs, validateExtraConfigKeys(f.Child("denied"), extraConfig.Denied)...)
-
-	return allErrs
-}
-
-func validateExtraConfigKeys(
-	f *field.Path,
-	keys []vimv1.VirtualMachineConfigPolicyExtraConfigKey) field.ErrorList {
-	var allErrs field.ErrorList
-
-	for i, k := range keys {
-		if k.Key == "" {
-			allErrs = append(allErrs, field.Required(f.Index(i).Child("key"), ""))
-		}
-	}
-
-	return allErrs
 }
 
 // configPolicyFromUnstructured returns the VirtualMachineConfigPolicy from

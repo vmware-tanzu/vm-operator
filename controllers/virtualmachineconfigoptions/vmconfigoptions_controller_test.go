@@ -18,6 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmconfigoptions "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigoptions"
@@ -705,6 +707,87 @@ func unitTestsReconcile() {
 				} else {
 					Expect(getErr).To(MatchError(ContainSubstring("not found")))
 				}
+			})
+
+			It("prunes the corresponding VirtualMachineGuestOptions", func() {
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+
+				// Reconcile once (finalizer already present via BeforeEach)
+				// to fan out the guest OS before deleting the object.
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+				Expect(ctx.Client.Delete(cource.WithContext(ctx), configOptions)).To(Succeed())
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				err = ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("keeps the finalizer when garbage collection fails, so cleanup is retried", func() {
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+				Expect(ctx.Client.Delete(cource.WithContext(ctx), configOptions)).To(Succeed())
+
+				// The fake client's Delete() records the DeletionTimestamp in
+				// its internal store, not on the local configOptions pointer,
+				// so re-fetch it before seeding the new fake client below.
+				deletingConfigOptions := &vimv1.VirtualMachineConfigOptions{}
+				Expect(ctx.Client.Get(ctx, objKey, deletingConfigOptions)).To(Succeed())
+				Expect(deletingConfigOptions.DeletionTimestamp).ToNot(BeNil())
+
+				// Swap in a client that fails the List garbageCollectGuestOptions
+				// issues, simulating a transient API server error during GC.
+				failingClient := fake.NewClientBuilder().
+					WithScheme(ctx.Client.Scheme()).
+					WithStatusSubresource(builder.KnownObjectTypes()...).
+					WithInterceptorFuncs(interceptor.Funcs{
+						List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+							if _, ok := list.(*vimv1.VirtualMachineGuestOptionsList); ok {
+								return errors.New("simulated transient list failure")
+							}
+							return c.List(ctx, list, opts...)
+						},
+					}).
+					WithObjects(deletingConfigOptions, guestOptions).
+					Build()
+
+				failingReconciler := vmconfigoptions.NewReconciler(
+					ctx, failingClient, ctx.Logger, ctx.Recorder, ctx.VMProvider)
+
+				_, err = failingReconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: objKey})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("simulated transient list failure"))
+
+				current := &vimv1.VirtualMachineConfigOptions{}
+				Expect(failingClient.Get(ctx, objKey, current)).To(Succeed())
+				Expect(current.Finalizers).To(ContainElement(vmconfigoptions.Finalizer),
+					"finalizer must be retained so the failed GC is retried on the next reconcile")
+
+				Expect(failingClient.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed(),
+					"VirtualMachineGuestOptions must survive a failed GC attempt")
 			})
 		})
 	})

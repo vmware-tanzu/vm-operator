@@ -159,9 +159,20 @@ func (r *Reconciler) Reconcile(
 }
 
 // ReconcileDelete handles deletion of a VirtualMachineConfigOptions object.
+// Deleting this object -- whether because ConfigTarget's GC dropped it or
+// because it was removed directly -- means obj's hardware version no longer
+// has any config option, so any VirtualMachineGuestOptions it previously fanned
+// out are stale and must be pruned the same as a live reconcile that observes
+// an empty descriptor list. The finalizer is removed only after that GC
+// succeeds: it exists to hold obj until cleanup completes, so removing it
+// first would let obj vanish on a GC error, and the leak would never retry.
 func (r *Reconciler) ReconcileDelete(
 	ctx context.Context,
 	obj *vimv1.VirtualMachineConfigOptions) (ctrl.Result, error) {
+
+	if err := r.garbageCollectGuestOptions(ctx, obj.Spec.HardwareVersion, sets.New[string]()); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	controllerutil.RemoveFinalizer(obj, Finalizer)
 	return ctrl.Result{}, nil

@@ -148,9 +148,9 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 
 			When("Add", func() {
 				BeforeEach(func() {
-					results.Results = append(results.Results, network.NetworkInterfaceResult{
-						Name:   interfaceName0,
-						Device: ethCard.(vimtypes.BaseVirtualDevice),
+					results.Devices = append(results.Devices, network.Device{
+						InterfaceName: interfaceName0,
+						EthCard:       ethCard.(vimtypes.BaseVirtualDevice),
 					})
 
 				})
@@ -175,9 +175,9 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 						},
 					}
 
-					results.Results = append(results.Results, network.NetworkInterfaceResult{
-						Name:   interfaceName0,
-						Device: ethCard.(vimtypes.BaseVirtualDevice),
+					results.Devices = append(results.Devices, network.Device{
+						InterfaceName: interfaceName0,
+						EthCard:       ethCard.(vimtypes.BaseVirtualDevice),
 					})
 
 					results.OrphanedNetworkInterfaces = append(results.OrphanedNetworkInterfaces, obj)

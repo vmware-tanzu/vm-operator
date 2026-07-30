@@ -41,42 +41,13 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 type NetworkInterfaceResults struct { //nolint:revive
-	Results                   []NetworkInterfaceResult
+	Devices                   []Device
 	UpdatedEthCards           bool
 	OrphanedNetworkInterfaces []ctrlclient.Object
-}
-
-type NetworkInterfaceResult struct { //nolint:revive
-	// ObjectName is the name of the network interface CR backing this result.
-	// Empty for named (testing-only) networks which have no CR.
-	ObjectName string
-	// ObjectProviderType is the network provider type of the CR. Combined with
-	// ObjectName it uniquely identifies the CR across all network providers.
-	ObjectProviderType pkgcfg.NetworkProviderType
-
-	IPConfigs  []NetworkInterfaceIPConfig
-	MacAddress string
-	ExternalID string
-	NetworkID  string
-	Backing    object.NetworkReference
-
-	Device    vimtypes.BaseVirtualDevice
-	DeviceKey int32
-
-	// Fields from the InterfaceSpec used later during customization.
-	Name            string
-	GuestDeviceName string
-	NoIPAM          bool
-	DHCP4           bool
-	DHCP6           bool
-	AcceptRA        bool
-	MTU             int64
-	Nameservers     []string
-	SearchDomains   []string
-	Routes          []NetworkInterfaceRoute
 }
 
 type NetworkInterfaceIPConfig struct { //nolint:revive
@@ -97,10 +68,29 @@ type Device struct {
 	ProviderType pkgcfg.NetworkProviderType
 	InterfaceObj ctrlclient.Object
 
+	// InterfaceName is the interface name from the InterfaceSpec.
+	InterfaceName string
+
 	Backing    object.NetworkReference
 	NetworkID  string
 	MacAddress string
 	ExternalID string
+
+	// EthCard is the actual virtual ethernet card device for this interface,
+	// set once it is created (update path) or matched to one of the VM's
+	// existing devices (reconcile).
+	EthCard vimtypes.BaseVirtualDevice
+	// EthCardKey is EthCard's device key once it exists on the VM.
+	EthCardKey int32
+}
+
+// ObjectName returns the name of the network interface CR backing this
+// Device, or "" for named networks which have no CR.
+func (d Device) ObjectName() string {
+	if pkgnil.IsNil(d.InterfaceObj) {
+		return ""
+	}
+	return d.InterfaceObj.GetName()
 }
 
 const (
@@ -214,9 +204,9 @@ func CreateNetworkDevices(
 		case *netopv1alpha1.NetworkInterface:
 			dev, err = getNetOPNetworkInterfaceDevice(ctx, vimClient, ifaceCR, nil, interfaceSpec)
 		case *ncpv1alpha1.VirtualNetworkInterface:
-			dev, err = getNCPNetworkInterfaceDevice(ctx, vimClient, nil, ifaceCR)
+			dev, err = getNCPNetworkInterfaceDevice(ctx, vimClient, nil, ifaceCR, interfaceSpec)
 		case *vpcv1alpha1.SubnetPort:
-			dev, err = getVPCSubnetPortDevice(ctx, vimClient, nil, ifaceCR)
+			dev, err = getVPCSubnetPortDevice(ctx, vimClient, nil, ifaceCR, interfaceSpec)
 		default:
 			err = fmt.Errorf("unsupported network interface CR type: %T", obj)
 		}
@@ -302,12 +292,13 @@ func getNetOPNetworkInterfaceDevice(
 	}
 
 	return Device{
-		ProviderType: pkgcfg.NetworkProviderTypeVDS,
-		InterfaceObj: netIf,
-		Backing:      backing,
-		NetworkID:    networkID,
-		MacAddress:   macAddress,
-		ExternalID:   netIf.Status.ExternalID,
+		ProviderType:  pkgcfg.NetworkProviderTypeVDS,
+		InterfaceObj:  netIf,
+		InterfaceName: interfaceSpec.Name,
+		Backing:       backing,
+		NetworkID:     networkID,
+		MacAddress:    macAddress,
+		ExternalID:    netIf.Status.ExternalID,
 	}, nil
 }
 
@@ -315,7 +306,8 @@ func getNCPNetworkInterfaceDevice(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
-	vnetIf *ncpv1alpha1.VirtualNetworkInterface) (Device, error) {
+	vnetIf *ncpv1alpha1.VirtualNetworkInterface,
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (Device, error) {
 
 	var dev Device
 
@@ -353,12 +345,13 @@ func getNCPNetworkInterfaceDevice(
 	}
 
 	return Device{
-		ProviderType: pkgcfg.NetworkProviderTypeNSXT,
-		InterfaceObj: vnetIf,
-		Backing:      backing,
-		NetworkID:    networkID,
-		MacAddress:   vnetIf.Status.MacAddress, // MAC from InterfaceSpec not supported
-		ExternalID:   vnetIf.Status.InterfaceID,
+		ProviderType:  pkgcfg.NetworkProviderTypeNSXT,
+		InterfaceObj:  vnetIf,
+		InterfaceName: interfaceSpec.Name,
+		Backing:       backing,
+		NetworkID:     networkID,
+		MacAddress:    vnetIf.Status.MacAddress, // MAC from InterfaceSpec not supported
+		ExternalID:    vnetIf.Status.InterfaceID,
 	}, nil
 }
 
@@ -366,7 +359,8 @@ func getVPCSubnetPortDevice(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
-	subnetPort *vpcv1alpha1.SubnetPort) (Device, error) {
+	subnetPort *vpcv1alpha1.SubnetPort,
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (Device, error) {
 
 	var dev Device
 
@@ -406,12 +400,13 @@ func getVPCSubnetPortDevice(
 	}
 
 	return Device{
-		ProviderType: pkgcfg.NetworkProviderTypeVPC,
-		InterfaceObj: subnetPort,
-		Backing:      backing,
-		NetworkID:    networkID,
-		MacAddress:   macAddress,
-		ExternalID:   subnetPort.Status.Attachment.ID,
+		ProviderType:  pkgcfg.NetworkProviderTypeVPC,
+		InterfaceObj:  subnetPort,
+		InterfaceName: interfaceSpec.Name,
+		Backing:       backing,
+		NetworkID:     networkID,
+		MacAddress:    macAddress,
+		ExternalID:    subnetPort.Status.Attachment.ID,
 	}, nil
 }
 
@@ -497,7 +492,7 @@ func CreateAndWaitForNetworkInterfaces(
 	vimClient *vim25.Client,
 	finder *find.Finder,
 	clusterMoRef *vimtypes.ManagedObjectReference,
-	networkSpec *vmopv1.VirtualMachineNetworkSpec) (NetworkInterfaceResults, error) {
+	networkSpec *vmopv1.VirtualMachineNetworkSpec) ([]Device, error) {
 
 	if !pkgcfg.FromContext(vmCtx).Features.PerNamespaceNetworkProvider {
 		switch pkgcfg.FromContext(vmCtx).NetworkProviderType {
@@ -506,11 +501,11 @@ func CreateAndWaitForNetworkInterfaces(
 			// handle it separately.
 			return createAndWaitNamedNetworkInterfaces(vmCtx, vmCtx.VM, finder)
 		case "":
-			return NetworkInterfaceResults{}, fmt.Errorf("no network provider set")
+			return nil, fmt.Errorf("no network provider set")
 		}
 	}
 
-	results := make([]NetworkInterfaceResult, 0, len(networkSpec.Interfaces))
+	devices := make([]Device, 0, len(networkSpec.Interfaces))
 	var errs []error
 
 	for _, interfaceSpec := range networkSpec.Interfaces {
@@ -522,15 +517,14 @@ func CreateAndWaitForNetworkInterfaces(
 		}
 
 		var dev Device
-		var bs Bootstrap
 
 		switch group {
 		case netopv1alpha1.SchemeGroupVersion.Group:
-			dev, bs, err = createAndWaitNetOPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
+			dev, err = createAndWaitNetOPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		case ncpv1alpha1.SchemeGroupVersion.Group:
-			dev, bs, err = createAndWaitNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
+			dev, err = createAndWaitNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		case vpcv1alpha1.SchemeGroupVersion.Group:
-			dev, bs, err = createAndWaitVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
+			dev, err = createAndWaitVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		default:
 			err = fmt.Errorf("unsupported network API Group: %q", group)
 		}
@@ -541,16 +535,19 @@ func CreateAndWaitForNetworkInterfaces(
 			continue
 		}
 
-		results = append(results, devAndBootstrapToNetworkInterfaceResult(dev, bs))
+		// The old NetworkInterfaceResult always carried a lowercased MAC
+		// (InterfaceBootstrap lowercases it), and CreateDefaultEthCard used
+		// that value. Preserve that behavior here on the update path.
+		dev.MacAddress = strings.ToLower(dev.MacAddress)
+
+		devices = append(devices, dev)
 	}
 
 	if len(errs) != 0 {
-		return NetworkInterfaceResults{}, errors.Join(errs...)
+		return nil, errors.Join(errs...)
 	}
 
-	return NetworkInterfaceResults{
-		Results: results,
-	}, nil
+	return devices, nil
 }
 
 func createNetworkDevicesForNamedNetwork(
@@ -560,7 +557,7 @@ func createNetworkDevicesForNamedNetwork(
 
 	devices := make([]Device, 0, len(vm.Spec.Network.Interfaces))
 	for _, interfaceSpec := range vm.Spec.Network.Interfaces {
-		dev, _, err := createAndWaitNamedNetworkInterface(ctx, vm, finder, interfaceSpec)
+		dev, err := createAndWaitNamedNetworkInterface(ctx, finder, interfaceSpec)
 		if err != nil {
 			return nil, err
 		}
@@ -574,27 +571,29 @@ func createNetworkDevicesForNamedNetwork(
 func createAndWaitNamedNetworkInterfaces(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	finder *find.Finder) (NetworkInterfaceResults, error) {
+	finder *find.Finder) ([]Device, error) {
 
-	results := NetworkInterfaceResults{}
+	devices := make([]Device, 0, len(vm.Spec.Network.Interfaces))
 
 	for _, interfaceSpec := range vm.Spec.Network.Interfaces {
-		dev, bs, err := createAndWaitNamedNetworkInterface(ctx, vm, finder, interfaceSpec)
+		dev, err := createAndWaitNamedNetworkInterface(ctx, finder, interfaceSpec)
 		if err != nil {
-			return NetworkInterfaceResults{},
-				fmt.Errorf("named network interface %q error: %w", interfaceSpec.Name, err)
+			return nil, fmt.Errorf("named network interface %q error: %w", interfaceSpec.Name, err)
 		}
-		results.Results = append(results.Results, devAndBootstrapToNetworkInterfaceResult(dev, bs))
+
+		// See the comment in CreateAndWaitForNetworkInterfaces about lowercasing.
+		dev.MacAddress = strings.ToLower(dev.MacAddress)
+
+		devices = append(devices, dev)
 	}
 
-	return results, nil
+	return devices, nil
 }
 
 func createAndWaitNamedNetworkInterface(
 	ctx context.Context,
-	vm *vmopv1.VirtualMachine,
 	finder *find.Finder,
-	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (Device, Bootstrap, error) {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (Device, error) {
 
 	var (
 		networkRefName string
@@ -607,33 +606,28 @@ func createAndWaitNamedNetworkInterface(
 	}
 
 	if networkRefType.Kind != "" || networkRefType.APIVersion != "" {
-		return Device{}, Bootstrap{}, fmt.Errorf("network TypeMeta not supported for name network: %v", networkRefType)
+		return Device{}, fmt.Errorf("network TypeMeta not supported for name network: %v", networkRefType)
 	}
 
 	if networkRefName == "" {
-		return Device{}, Bootstrap{}, fmt.Errorf("network name is required")
+		return Device{}, fmt.Errorf("network name is required")
 	}
 
 	backing, err := finder.Network(ctx, networkRefName)
 	if err != nil {
-		return Device{}, Bootstrap{}, fmt.Errorf("unable to find named network %q: %w", networkRefName, err)
+		return Device{}, fmt.Errorf("unable to find named network %q: %w", networkRefName, err)
 	}
 
 	dev := Device{
-		InterfaceObj: nil,
-		Backing:      backing,
-		NetworkID:    networkRefName,
-		MacAddress:   interfaceSpec.MACAddr,
-		ExternalID:   "",
+		InterfaceObj:  nil,
+		InterfaceName: interfaceSpec.Name,
+		Backing:       backing,
+		NetworkID:     networkRefName,
+		MacAddress:    interfaceSpec.MACAddr,
+		ExternalID:    "",
 	}
 
-	bootstrap := InterfaceBootstrap(
-		ctx,
-		vm,
-		Bootstrap{MacAddress: dev.MacAddress},
-		interfaceSpec)
-
-	return dev, bootstrap, nil
+	return dev, nil
 }
 
 // NetOPCRName returns the name to be used for the NetOP NetworkInterface CR.
@@ -729,11 +723,11 @@ func createAndWaitNetOPNetworkInterface(
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
-) (Device, Bootstrap, error) {
+) (Device, error) {
 
 	netIf, err := createNetOPNetworkInterface(vmCtx, vmCtx.VM, client, interfaceSpec)
 	if err != nil {
-		return Device{}, Bootstrap{}, err
+		return Device{}, err
 	}
 
 	dev, err := getNetOPNetworkInterfaceDevice(vmCtx, vimClient, netIf, clusterMoRef, interfaceSpec)
@@ -742,23 +736,16 @@ func createAndWaitNetOPNetworkInterface(
 			netIf, err = waitForReadyNetworkInterface(vmCtx, client, netIf.Name)
 		}
 		if err != nil {
-			return Device{}, Bootstrap{}, err
+			return Device{}, err
 		}
 
 		dev, err = getNetOPNetworkInterfaceDevice(vmCtx, vimClient, netIf, clusterMoRef, interfaceSpec)
 		if err != nil {
-			return Device{}, Bootstrap{}, err
+			return Device{}, err
 		}
 	}
 
-	bootstrap := NetOPInterfaceBootstrap(
-		vmCtx,
-		vmCtx.VM,
-		netIf,
-		interfaceSpec,
-		dev.MacAddress)
-
-	return dev, bootstrap, nil
+	return dev, nil
 }
 
 // EffectiveNetOPIPv4AssignmentMode returns how IPv4 is assigned according to NetworkInterface status.
@@ -987,36 +974,29 @@ func createAndWaitNCPNetworkInterface(
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
-) (Device, Bootstrap, error) {
+) (Device, error) {
 
 	vnetIf, err := createNCPNetworkInterface(vmCtx, vmCtx.VM, client, interfaceSpec)
 	if err != nil {
-		return Device{}, Bootstrap{}, err
+		return Device{}, err
 	}
 
-	dev, err := getNCPNetworkInterfaceDevice(vmCtx, vimClient, clusterMoRef, vnetIf)
+	dev, err := getNCPNetworkInterfaceDevice(vmCtx, vimClient, clusterMoRef, vnetIf, interfaceSpec)
 	if err != nil {
 		if errors.Is(err, ErrNetworkInterfaceNotReady) {
 			vnetIf, err = waitForReadyNCPNetworkInterface(vmCtx, client, vnetIf.Name)
 		}
 		if err != nil {
-			return Device{}, Bootstrap{}, err
+			return Device{}, err
 		}
 
-		dev, err = getNCPNetworkInterfaceDevice(vmCtx, vimClient, clusterMoRef, vnetIf)
+		dev, err = getNCPNetworkInterfaceDevice(vmCtx, vimClient, clusterMoRef, vnetIf, interfaceSpec)
 		if err != nil {
-			return Device{}, Bootstrap{}, err
+			return Device{}, err
 		}
 	}
 
-	bootstrap := NCPInterfaceBootstrap(
-		vmCtx,
-		vmCtx.VM,
-		vnetIf,
-		interfaceSpec,
-		dev.MacAddress)
-
-	return dev, bootstrap, nil
+	return dev, nil
 }
 
 // VPCCRName returns the name to be used for the VPC SubnetPort CR.
@@ -1146,36 +1126,29 @@ func createAndWaitVPCNetworkInterface(
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
-) (Device, Bootstrap, error) {
+) (Device, error) {
 
 	subnetPort, err := createVPCNetworkInterface(vmCtx, vmCtx.VM, client, interfaceSpec)
 	if err != nil {
-		return Device{}, Bootstrap{}, err
+		return Device{}, err
 	}
 
-	dev, err := getVPCSubnetPortDevice(vmCtx, vimClient, clusterMoRef, subnetPort)
+	dev, err := getVPCSubnetPortDevice(vmCtx, vimClient, clusterMoRef, subnetPort, interfaceSpec)
 	if err != nil {
 		if errors.Is(err, ErrNetworkInterfaceNotReady) {
 			subnetPort, err = waitForReadyVPCSubnetPort(vmCtx, client, subnetPort.Name)
 		}
 		if err != nil {
-			return Device{}, Bootstrap{}, err
+			return Device{}, err
 		}
 
-		dev, err = getVPCSubnetPortDevice(vmCtx, vimClient, clusterMoRef, subnetPort)
+		dev, err = getVPCSubnetPortDevice(vmCtx, vimClient, clusterMoRef, subnetPort, interfaceSpec)
 		if err != nil {
-			return Device{}, Bootstrap{}, err
+			return Device{}, err
 		}
 	}
 
-	bootstrap := VPCInterfaceBootstrap(
-		vmCtx,
-		vmCtx.VM,
-		subnetPort,
-		interfaceSpec,
-		dev.MacAddress)
-
-	return dev, bootstrap, nil
+	return dev, nil
 }
 
 func waitForReadyVPCSubnetPort(
@@ -1303,16 +1276,6 @@ func ipCIDRNotation(ip string, mask string, isIPv4 bool) string {
 	return ipNet.String()
 }
 
-// CreateDefaultEthCard creates a default Ethernet card attached to the backing. This is used
-// when the VM Class ConfigSpec does not have a device entry for a VM Spec network interface,
-// so we need a new device.
-func CreateDefaultEthCard(
-	ctx context.Context,
-	result *NetworkInterfaceResult) (vimtypes.BaseVirtualDevice, error) {
-
-	return createDefaultEthCardFromDevice(ctx, result.Backing, result.MacAddress, result.ExternalID)
-}
-
 // CreateDefaultEthCardFromNetworkDevice creates a default Ethernet card from a Device.
 // This is used during VM create when the VM Class ConfigSpec does not have a device entry for
 // a VM Spec network interface.
@@ -1349,16 +1312,6 @@ func createDefaultEthCardFromDevice(
 	}
 
 	return dev, nil
-}
-
-// ApplyInterfaceResultToVirtualEthCard applies the interface result from the NetOP/NCP
-// provider to an existing Ethernet device from the class ConfigSpec.
-func ApplyInterfaceResultToVirtualEthCard(
-	ctx context.Context,
-	ethCard *vimtypes.VirtualEthernetCard,
-	result *NetworkInterfaceResult) error {
-
-	return applyNetworkDeviceToEthCard(ctx, ethCard, result.Backing, result.NetworkID, result.MacAddress, result.ExternalID)
 }
 
 // ApplyNetworkDeviceToVirtualEthCard applies a Device to an existing Ethernet device

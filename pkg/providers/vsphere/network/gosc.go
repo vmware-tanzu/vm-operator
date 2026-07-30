@@ -10,10 +10,10 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
-func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.CustomizationAdapterMapping, error) {
-	mappings := make([]vimtypes.CustomizationAdapterMapping, 0, len(results.Results))
+func GuestOSCustomization(bootstraps []Bootstrap) ([]vimtypes.CustomizationAdapterMapping, error) {
+	mappings := make([]vimtypes.CustomizationAdapterMapping, 0, len(bootstraps))
 
-	for _, r := range results.Results {
+	for _, r := range bootstraps {
 		adapter := vimtypes.CustomizationIPSettings{
 			// Per-adapter is only supported on Windows. Linux only supports the global and ignores this field.
 			DnsServerList: r.Nameservers,

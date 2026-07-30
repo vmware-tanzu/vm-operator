@@ -39,14 +39,14 @@ var _ = Describe("Netplan",
 	Context("NetPlanCustomization", func() {
 
 		var (
-			results network.NetworkInterfaceResults
+			results []network.Bootstrap
 			vlans   []vmopv1.VirtualMachineNetworkVLANSpec
 			config  *netplan.Network
 			err     error
 		)
 
 		BeforeEach(func() {
-			results = network.NetworkInterfaceResults{}
+			results = nil
 			vlans = nil
 			config = nil
 		})
@@ -57,7 +57,7 @@ var _ = Describe("Netplan",
 
 		Context("IPv4/6 Static adapter", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						IPConfigs: []network.NetworkInterfaceIPConfig{
 							{
@@ -146,8 +146,8 @@ var _ = Describe("Netplan",
 
 			Context("Gateway4/6 are disabled", func() {
 				BeforeEach(func() {
-					results.Results[0].IPConfigs[0].Gateway = ""
-					results.Results[0].IPConfigs[1].Gateway = ""
+					results[0].IPConfigs[0].Gateway = ""
+					results[0].IPConfigs[1].Gateway = ""
 				})
 
 				It("gateways are nil", func() {
@@ -166,7 +166,7 @@ var _ = Describe("Netplan",
 
 			Context("MTU is zero", func() {
 				BeforeEach(func() {
-					results.Results[0].MTU = 0
+					results[0].MTU = 0
 				})
 
 				It("MTU is nil", func() {
@@ -185,7 +185,7 @@ var _ = Describe("Netplan",
 
 		Context("IPv4/6 DHCP", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						MacAddress:      macAddr1,
 						Name:            ifName,
@@ -224,7 +224,7 @@ var _ = Describe("Netplan",
 
 		Context("DHCP6 without AcceptRA (DHCPv6-only)", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						MacAddress:      macAddr1,
 						Name:            ifName,
@@ -247,7 +247,7 @@ var _ = Describe("Netplan",
 
 		Context("NoIPAM", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						MacAddress:      macAddr1,
 						Name:            ifName,
@@ -278,7 +278,7 @@ var _ = Describe("Netplan",
 
 		Context("IPv4-Only Static", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						IPConfigs: []network.NetworkInterfaceIPConfig{
 							{
@@ -314,7 +314,7 @@ var _ = Describe("Netplan",
 
 		Context("IPv6-Only Static", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						IPConfigs: []network.NetworkInterfaceIPConfig{
 							{
@@ -350,7 +350,7 @@ var _ = Describe("Netplan",
 
 		Context("Multiple IPv6 Addresses", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						IPConfigs: []network.NetworkInterfaceIPConfig{
 							{
@@ -393,7 +393,7 @@ var _ = Describe("Netplan",
 
 		Context("Multiple IPv4 Addresses", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						IPConfigs: []network.NetworkInterfaceIPConfig{
 							{
@@ -443,7 +443,7 @@ var _ = Describe("Netplan",
 			)
 
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						MacAddress:      macAddr1,
 						Name:            ifName,

@@ -34,23 +34,17 @@ func ListNetworkInterfaces(
 func ListOrphanedNetworkInterfaces(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
-	results *NetworkInterfaceResults,
-) error {
+	devices []Device,
+) ([]ctrlclient.Object, error) {
 	// Key on "providerType/name" so that CRs with the same name from different
 	// network providers are treated as distinct items.
 	expectedInterfaces := sets.Set[string]{}
-	for idx := range results.Results {
-		r := &results.Results[idx]
-		expectedInterfaces.Insert(qualifiedInterfaceKey(r.ObjectProviderType, r.ObjectName))
+	for idx := range devices {
+		d := &devices[idx]
+		expectedInterfaces.Insert(qualifiedInterfaceKey(d.ProviderType, d.ObjectName()))
 	}
 
-	interfaces, err := listInterfacesWithIgnore(vmCtx, client, expectedInterfaces)
-	if err != nil {
-		return err
-	}
-
-	results.OrphanedNetworkInterfaces = interfaces
-	return nil
+	return listInterfacesWithIgnore(vmCtx, client, expectedInterfaces)
 }
 
 // qualifiedInterfaceKey returns a unique key for a network interface CR by

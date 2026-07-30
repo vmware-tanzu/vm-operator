@@ -52,6 +52,9 @@ spec:
                   HardwareVersion is the desired hardware version for which to get the
                   config options, ex.: vmx-19.
                 type: string
+                x-kubernetes-validations:
+                - message: hardwareVersion is immutable
+                  rule: self == oldSelf
             required:
             - hardwareVersion
             type: object

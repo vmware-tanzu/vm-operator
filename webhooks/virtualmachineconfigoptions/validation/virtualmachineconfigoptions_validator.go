@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"regexp"
 
-	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -90,21 +89,18 @@ func (v validator) ValidateDelete(_ *pkgctx.WebhookRequestContext) admission.Res
 	return admission.Allowed("")
 }
 
-// ValidateUpdate validates updates to a VirtualMachineConfigOptions, enforcing
-// that spec.hardwareVersion is immutable.
+// ValidateUpdate re-runs the base validations so a VirtualMachineConfigOptions
+// that predates this webhook is still caught if it is otherwise invalid.
+// spec.hardwareVersion immutability is enforced by the CRD's CEL transition
+// rule.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	obj, err := v.vmConfigOptionsFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	oldObj, err := v.vmConfigOptionsFromUnstructured(ctx.OldObj)
-	if err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
-	}
-
-	hwVersionPath := field.NewPath("spec", "hardwareVersion")
-	fieldErrs := validation.ValidateImmutableField(obj.Spec.HardwareVersion, oldObj.Spec.HardwareVersion, hwVersionPath)
+	fieldErrs := v.validateHardwareVersionFormat(obj.Spec.HardwareVersion)
+	fieldErrs = append(fieldErrs, v.validateNameMatchesHardwareVersion(obj.Name, obj.Spec.HardwareVersion)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {

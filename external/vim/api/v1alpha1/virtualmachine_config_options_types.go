@@ -12,6 +12,7 @@ import (
 // VirtualMachineConfigOptions.
 type VirtualMachineConfigOptionsSpec struct {
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="hardwareVersion is immutable"
 
 	// HardwareVersion is the desired hardware version for which to get the
 	// config options, ex.: vmx-19.

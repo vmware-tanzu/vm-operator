@@ -151,9 +151,12 @@ func intgTestsValidateUpdate() {
 		})
 
 		It("should deny the update", func() {
+			// spec.hardwareVersion immutability is enforced by the CRD's
+			// CEL transition rule, so this rejection comes from the API
+			// server, not the webhook.
 			err := ctx.Client.Update(ctx, ctx.vmco)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+			Expect(err.Error()).To(ContainSubstring("hardwareVersion is immutable"))
 		})
 	})
 }

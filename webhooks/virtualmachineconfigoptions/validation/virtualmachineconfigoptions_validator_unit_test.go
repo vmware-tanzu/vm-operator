@@ -167,11 +167,12 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		newHardwareVersion string
+		name            string
+		hardwareVersion string
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
-		vmco := builder.DummyVirtualMachineConfigOptions("test-vmco", args.newHardwareVersion)
+		vmco := builder.DummyVirtualMachineConfigOptions(args.name, args.hardwareVersion)
 		obj, err := builder.ToUnstructured(vmco)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -193,15 +194,28 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
-	When("the hardwareVersion is unchanged", func() {
+	// spec.hardwareVersion immutability is enforced by the CRD's CEL
+	// transition rule, not this webhook, so it cannot be exercised via a
+	// direct ValidateUpdate call. See the intg suite for coverage of the CEL
+	// rejection through a real API server. What remains testable here is the
+	// base re-validation this webhook still performs on update, which
+	// catches an object that predates this webhook and is otherwise invalid.
+	When("the object is valid", func() {
 		It("should allow the update", func() {
-			validateUpdate(updateArgs{newHardwareVersion: "vmx-21"}, true, "")
+			validateUpdate(updateArgs{name: "vmx-21", hardwareVersion: "vmx-21"}, true, "")
 		})
 	})
 
-	When("the hardwareVersion is changed", func() {
+	When("metadata.name does not equal spec.hardwareVersion", func() {
 		It("should deny the update", func() {
-			validateUpdate(updateArgs{newHardwareVersion: "vmx-22"}, false, "field is immutable")
+			validateUpdate(updateArgs{name: "vmx-21", hardwareVersion: "vmx-99"}, false,
+				"metadata.name must equal spec.hardwareVersion")
+		})
+	})
+
+	When("spec.hardwareVersion does not match the required pattern", func() {
+		It("should deny the update", func() {
+			validateUpdate(updateArgs{name: "vmx-abc", hardwareVersion: "vmx-abc"}, false, "hardwareVersion")
 		})
 	})
 }

@@ -20,15 +20,20 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
+	configtargetctrl "github.com/vmware-tanzu/vm-operator/controllers/configtarget"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigpolicy"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/configtarget"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -105,7 +110,7 @@ func unitTests() {
 	}
 
 	configTarget := func(clusterMoID string, numCPUCores int32, maxMem string) *vimv1.ConfigTarget {
-		return &vimv1.ConfigTarget{
+		ct := &vimv1.ConfigTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: clusterMoID},
 			Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: clusterMoID}},
 			Status: vimv1.ConfigTargetStatus{
@@ -113,6 +118,21 @@ func unitTests() {
 				SupportedMaxMem: resourceQuantityPtr(maxMem),
 				SEVSupported:    true,
 			},
+		}
+		pkgcond.MarkTrue(ct, vimv1.ReadyConditionType)
+
+		return ct
+	}
+
+	// notReadyConfigTarget returns a ConfigTarget that exists but has not
+	// finished populating its status (Ready!=True) -- e.g. the configtarget
+	// controller has not reconciled it yet. Its numeric fields are left at
+	// their Go zero value, which the sync must not treat as "the cluster
+	// supports nothing."
+	notReadyConfigTarget := func(clusterMoID string) *vimv1.ConfigTarget {
+		return &vimv1.ConfigTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: clusterMoID},
+			Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: clusterMoID}},
 		}
 	}
 
@@ -162,7 +182,11 @@ func unitTests() {
 		})
 	})
 
-	When("the zone's cluster has no matching ConfigTarget", func() {
+	When("the zone has no cluster to sync from", func() {
+		BeforeEach(func() {
+			zone.Spec.ManagedVMs.ClusterMoIDs = nil
+		})
+
 		It("sets Ready=False with reason ConfigTargetNotFound", func() {
 			_, err := reconciler.Reconcile(ctx, objReq)
 			Expect(err).ToNot(HaveOccurred())
@@ -170,6 +194,58 @@ func unitTests() {
 			got := getPolicy()
 			Expect(pkgcond.IsFalse(got, vimv1.ReadyConditionType)).To(BeTrue())
 			Expect(pkgcond.GetReason(got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.ConfigTargetNotFoundReason))
+			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
+		})
+	})
+
+	When("the zone's cluster has no matching ConfigTarget", func() {
+		It("sets Ready=False with reason ConfigTargetNotReady and does not touch spec", func() {
+			_, err := reconciler.Reconcile(ctx, objReq)
+			Expect(err).ToNot(HaveOccurred())
+
+			got := getPolicy()
+			Expect(pkgcond.IsFalse(got, vimv1.ReadyConditionType)).To(BeTrue())
+			Expect(pkgcond.GetReason(got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.ConfigTargetNotReadyReason))
+			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
+		})
+	})
+
+	When("the zone's ConfigTarget exists but has not finished populating its status", func() {
+		BeforeEach(func() {
+			withObjs = []ctrlclient.Object{zone, obj, notReadyConfigTarget(testClusterMoID)}
+		})
+
+		It("sets Ready=False with reason ConfigTargetNotReady and does not merge its zero-valued fields", func() {
+			_, err := reconciler.Reconcile(ctx, objReq)
+			Expect(err).ToNot(HaveOccurred())
+
+			got := getPolicy()
+			Expect(pkgcond.IsFalse(got, vimv1.ReadyConditionType)).To(BeTrue())
+			Expect(pkgcond.GetReason(got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.ConfigTargetNotReadyReason))
+			Expect(got.Spec.NumCPUCores).To(BeNil(), "a not-yet-Ready ConfigTarget's zero fields must not be published as capability denials")
+		})
+	})
+
+	When("a multi-cluster zone has one Ready ConfigTarget and one not yet Ready", func() {
+		const secondClusterMoID = "domain-c10"
+
+		BeforeEach(func() {
+			zone.Spec.ManagedVMs.ClusterMoIDs = []string{testClusterMoID, secondClusterMoID}
+			withObjs = []ctrlclient.Object{
+				zone, obj,
+				configTarget(testClusterMoID, 8, "64Gi"),
+				notReadyConfigTarget(secondClusterMoID),
+			}
+		})
+
+		It("does not sync from the single Ready target -- that would be wider than the true intersection", func() {
+			_, err := reconciler.Reconcile(ctx, objReq)
+			Expect(err).ToNot(HaveOccurred())
+
+			got := getPolicy()
+			Expect(pkgcond.IsFalse(got, vimv1.ReadyConditionType)).To(BeTrue())
+			Expect(pkgcond.GetReason(got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.ConfigTargetNotReadyReason))
+			Expect(got.Spec.NumCPUCores).To(BeNil())
 		})
 	})
 
@@ -337,6 +413,7 @@ func vcsimTests() {
 
 		Expect(vcsimCtx.Client.Get(vcsimCtx, ctrlclient.ObjectKeyFromObject(ct), ct)).To(Succeed())
 		configtarget.PopulateStatus(ct, configTargetResult, descriptors)
+		pkgcond.MarkTrue(ct, vimv1.ReadyConditionType)
 		Expect(vcsimCtx.Client.Status().Update(vcsimCtx, ct)).To(Succeed())
 	}
 
@@ -394,7 +471,7 @@ func vcsimTests() {
 			Expect(vcsimCtx.Client.Create(vcsimCtx, policy)).To(Succeed())
 		})
 
-		It("sets Ready=False with reason ConfigTargetNotFound", func() {
+		It("sets Ready=False with reason ConfigTargetNotReady", func() {
 			req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: policy.Namespace, Name: policy.Name}}
 			_, err := reconciler.Reconcile(vcsimCtx, req)
 			Expect(err).ToNot(HaveOccurred())
@@ -402,7 +479,100 @@ func vcsimTests() {
 			var got vimv1.VirtualMachineConfigPolicy
 			Expect(vcsimCtx.Client.Get(vcsimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
 			Expect(pkgcond.IsFalse(&got, vimv1.ReadyConditionType)).To(BeTrue())
-			Expect(pkgcond.GetReason(&got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.ConfigTargetNotFoundReason))
+			Expect(pkgcond.GetReason(&got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.ConfigTargetNotReadyReason))
 		})
 	})
 }
+
+// The Describe below runs against a real controller-runtime manager (via
+// builder.NewIntegrationTestContextForVCSim), unlike the two above which
+// call reconciler.Reconcile() directly. It exists specifically to exercise
+// AddToManager's ConfigTarget/Zone watches and field-indexed mappers end to
+// end: a direct-Reconcile test cannot tell an intentional watch from a
+// missing one, since it never goes through the manager's watch wiring at
+// all.
+var _ = Describe("VirtualMachineConfigPolicy Controller watches, against a real manager",
+	Label(testlabels.Controller, testlabels.API, testlabels.EnvTest, testlabels.VCSim),
+	func() {
+		var (
+			ctx         context.Context
+			vcSimCtx    *builder.IntegrationTestContextForVCSim
+			zoneName    string
+			clusterMoID string
+		)
+
+		BeforeEach(func() {
+			ctx = pkgcfg.NewContextWithDefaultConfig()
+			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VirtualMachineConfigPolicy = true
+			})
+			ctx = ctxop.WithContext(ctx)
+			ctx = ovfcache.WithContext(ctx)
+
+			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
+				ctx,
+				builder.VCSimTestConfig{},
+				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+					err := configtargetctrl.AddToManager(ctx, mgr)
+					if err != nil {
+						return err
+					}
+
+					return virtualmachineconfigpolicy.AddToManager(ctx, mgr)
+				},
+				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+					ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), ctx.Recorder)
+					return nil
+				},
+				nil)
+			Expect(vcSimCtx).ToNot(BeNil())
+
+			vcSimCtx.BeforeEach()
+
+			zoneName = vcSimCtx.GetFirstZoneName()
+
+			ccr := vcSimCtx.GetFirstClusterFromFirstZone()
+			Expect(ccr).ToNot(BeNil())
+			clusterMoID = ccr.Reference().Value
+		})
+
+		AfterEach(func() {
+			vcSimCtx.AfterEach()
+		})
+
+		When("a policy is created before its ConfigTarget becomes Ready", func() {
+			var policy *vimv1.VirtualMachineConfigPolicy
+
+			BeforeEach(func() {
+				ct := &vimv1.ConfigTarget{
+					ObjectMeta: metav1.ObjectMeta{Name: clusterMoID},
+					Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: clusterMoID}},
+				}
+				Expect(vcSimCtx.Client.Create(vcSimCtx, ct)).To(Succeed())
+
+				policy = &vimv1.VirtualMachineConfigPolicy{
+					ObjectMeta: metav1.ObjectMeta{Name: zoneName, Namespace: vcSimCtx.NSInfo.Namespace},
+					Spec:       vimv1.VirtualMachineConfigPolicySpec{Zone: zoneName},
+				}
+				Expect(vcSimCtx.Client.Create(vcSimCtx, policy)).To(Succeed())
+			})
+
+			It("converges once the real configtarget controller marks the ConfigTarget Ready, with no manual reconcile", func() {
+				Eventually(func(g Gomega) {
+					var got vimv1.VirtualMachineConfigPolicy
+					g.Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
+					g.Expect(pkgcond.IsFalse(&got, vimv1.ReadyConditionType)).To(BeTrue())
+					g.Expect(pkgcond.GetReason(&got, vimv1.ReadyConditionType)).
+						To(Equal(virtualmachineconfigpolicy.ConfigTargetNotReadyReason))
+				}).Should(Succeed(), "policy must observe the not-yet-Ready ConfigTarget before it converges")
+
+				Eventually(func(g Gomega) {
+					var got vimv1.VirtualMachineConfigPolicy
+					g.Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
+					g.Expect(pkgcond.IsTrue(&got, vimv1.ReadyConditionType)).To(BeTrue())
+					g.Expect(got.Spec.NumCPUCores).ToNot(BeNil())
+					g.Expect(got.Spec.NumCPUCores.Max).To(BeNumerically(">", 0))
+				}).Should(Succeed(), "the ConfigTarget watch must enqueue the policy once the real configtarget controller marks it Ready")
+			})
+		})
+	})

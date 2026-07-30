@@ -141,15 +141,20 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 			Expect(merged.ConfigTargetDevices.CDROM).To(ConsistOf(shared))
 		})
 
-		It("treats a zero value on one target as no data, not as a restriction to zero", func() {
+		It("intersects a zero value on one target literally, as real reported data", func() {
+			// Merge's contract is that every target passed in has already
+			// been established as Ready by the caller (see the
+			// Reconciler's getConfigTargets) -- so a zero here is a real
+			// "this cluster does not support it," not "not populated yet,"
+			// and must narrow the intersection like any other value.
 			spec := vimv1.VirtualMachineConfigPolicySpec{}
 
 			merged := configpolicysync.Merge(spec,
 				vimv1.ConfigTargetStatus{NumCPUCores: 8},
-				vimv1.ConfigTargetStatus{}, // status not yet populated
+				vimv1.ConfigTargetStatus{NumCPUCores: 0},
 			)
 
-			Expect(merged.NumCPUCores.Max).To(Equal(int32(8)))
+			Expect(merged.NumCPUCores.Max).To(Equal(int32(0)))
 		})
 	})
 

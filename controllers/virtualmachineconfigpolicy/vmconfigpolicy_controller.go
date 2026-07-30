@@ -62,8 +62,17 @@ const (
 	ZoneNotFoundReason = "ZoneNotFound"
 
 	// ConfigTargetNotFoundReason is the Ready condition reason used when
-	// none of the zone's cluster MoIDs resolve to an existing ConfigTarget.
+	// the zone has no cluster MoIDs to sync from.
 	ConfigTargetNotFoundReason = "ConfigTargetNotFound"
+
+	// ConfigTargetNotReadyReason is the Ready condition reason used when
+	// one or more of the zone's cluster MoIDs do not resolve to a Ready
+	// ConfigTarget. spec is left untouched in this case: a ConfigTarget
+	// with Ready!=True has not finished populating its status, and merging
+	// its zero-valued fields would publish a false capability denial rather
+	// than "unknown," since a zero maximum on a numeric field means "not
+	// supported" per VirtualMachineConfigPolicySpec's doc comments.
+	ConfigTargetNotReadyReason = "ConfigTargetNotReady"
 )
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
@@ -294,6 +303,7 @@ func (r *Reconciler) ReconcileNormal(
 		if apierrors.IsNotFound(err) {
 			pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, ZoneNotFoundReason,
 				"zone %q not found", obj.Spec.Zone)
+			obj.Status.ObservedGeneration = obj.Generation
 
 			return nil
 		}
@@ -303,15 +313,30 @@ func (r *Reconciler) ReconcileNormal(
 		return fmt.Errorf("failed to get zone %q: %w", obj.Spec.Zone, err)
 	}
 
-	targets, err := r.getConfigTargets(ctx, zone.Spec.ManagedVMs.ClusterMoIDs)
+	if len(zone.Spec.ManagedVMs.ClusterMoIDs) == 0 {
+		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, ConfigTargetNotFoundReason,
+			"zone %q has no cluster to sync from", zone.Name)
+		obj.Status.ObservedGeneration = obj.Generation
+
+		return nil
+	}
+
+	targets, notReady, err := r.getConfigTargets(ctx, zone.Spec.ManagedVMs.ClusterMoIDs)
 	if err != nil {
-		pkgcond.MarkError(obj, vimv1.ReadyConditionType, ConfigTargetNotFoundReason, err)
+		pkgcond.MarkError(obj, vimv1.ReadyConditionType, ConfigTargetNotReadyReason, err)
 		return fmt.Errorf("failed to get config targets for zone %q: %w", zone.Name, err)
 	}
 
-	if len(targets) == 0 {
-		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, ConfigTargetNotFoundReason,
-			"no ConfigTarget found for zone %q", zone.Name)
+	if len(notReady) > 0 {
+		// Require every cluster behind the zone to have a Ready
+		// ConfigTarget before syncing: merging a subset would compute an
+		// intersection over fewer clusters than the zone actually spans,
+		// which is a strictly wider (more permissive) result than the true
+		// intersection -- the opposite of the safe direction for data that
+		// feeds capability enforcement.
+		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, ConfigTargetNotReadyReason,
+			"ConfigTarget(s) not ready for cluster(s) %v", notReady)
+		obj.Status.ObservedGeneration = obj.Generation
 
 		return nil
 	}
@@ -331,31 +356,41 @@ func (r *Reconciler) ReconcileNormal(
 }
 
 // getConfigTargets returns the ConfigTarget status of every clusterMoID that
-// resolves to an existing ConfigTarget. A clusterMoID with no matching
-// ConfigTarget is skipped rather than treated as an error: today a zone
-// maps to a single vSphere cluster in practice, and per
-// external/vim/doc/controller-workflows.md the remaining entries exist for
-// infrastructure mobility / cluster decommissioning, so a stale MoID should
-// not block a sync that the live cluster(s) can otherwise satisfy.
+// resolves to a Ready ConfigTarget, and the subset of clusterMoIDs that do
+// not (missing, or present but Ready!=True). Every clusterMoID behind the
+// zone must be Ready before the caller may sync: a ConfigTarget that has not
+// finished populating its status still reports zero-valued numeric fields,
+// and a zero maximum is a real capability denial per
+// VirtualMachineConfigPolicySpec's field docs, not "no data yet." Merging a
+// not-yet-Ready target's status, or silently dropping a missing one from a
+// multi-cluster zone's intersection, would therefore compute a result no
+// narrower than -- and possibly wider (more permissive) than -- the true
+// intersection across every cluster the zone spans.
 func (r *Reconciler) getConfigTargets(
 	ctx context.Context,
-	clusterMoIDs []string) ([]vimv1.ConfigTargetStatus, error) {
-	targets := make([]vimv1.ConfigTargetStatus, 0, len(clusterMoIDs))
+	clusterMoIDs []string) (targets []vimv1.ConfigTargetStatus, notReady []string, err error) {
+	targets = make([]vimv1.ConfigTargetStatus, 0, len(clusterMoIDs))
 
 	for _, clusterMoID := range clusterMoIDs {
 		var ct vimv1.ConfigTarget
 
-		err := r.Get(ctx, client.ObjectKey{Name: clusterMoID}, &ct)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
+		getErr := r.Get(ctx, client.ObjectKey{Name: clusterMoID}, &ct)
+		if getErr != nil {
+			if apierrors.IsNotFound(getErr) {
+				notReady = append(notReady, clusterMoID)
 				continue
 			}
 
-			return nil, fmt.Errorf("failed to get ConfigTarget %q: %w", clusterMoID, err)
+			return nil, nil, fmt.Errorf("failed to get ConfigTarget %q: %w", clusterMoID, getErr)
+		}
+
+		if !pkgcond.IsTrue(&ct, vimv1.ReadyConditionType) {
+			notReady = append(notReady, clusterMoID)
+			continue
 		}
 
 		targets = append(targets, ct.Status)
 	}
 
-	return targets, nil
+	return targets, notReady, nil
 }

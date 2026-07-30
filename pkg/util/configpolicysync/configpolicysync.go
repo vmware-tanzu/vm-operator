@@ -100,31 +100,28 @@ func (agg aggregate) intersect(t vimv1.ConfigTargetStatus) aggregate {
 	return agg
 }
 
-// minInt32 returns the smaller of a and b. A zero value is treated as "no
-// data reported" and does not restrict the result, since ConfigTargetStatus
-// fields are all +optional and a target that has not finished populating
-// its status should not silently zero out an otherwise-healthy merge.
+// minInt32 returns the smaller of a and b. Callers are expected to only pass
+// status from a Ready ConfigTarget (see the Reconciler's getConfigTargets),
+// so a zero value here is real reported data, not "not populated yet" --
+// e.g. a zero MaxSimultaneousThreads means the cluster does not support
+// HT/SMT, per VirtualMachineConfigPolicySpec's field docs.
 func minInt32(a, b int32) int32 {
-	switch {
-	case a == 0:
-		return b
-	case b == 0:
+	if a < b {
 		return a
-	case a < b:
-		return a
-	default:
-		return b
 	}
+
+	return b
 }
 
-// minQuantity returns the smaller of a and b. A nil/zero b is treated as
-// "no data reported" and does not restrict the result; see minInt32.
+// minQuantity returns the smaller of a and b. A nil b is treated as "not
+// reported by this ConfigTarget field" (e.g. SupportedMaxMem is +optional)
+// and does not restrict the result; a zero b is real data, see minInt32.
 func minQuantity(a resource.Quantity, b *resource.Quantity) resource.Quantity {
-	if b == nil || b.IsZero() {
+	if b == nil {
 		return a
 	}
 
-	if a.IsZero() || b.Cmp(a) < 0 {
+	if b.Cmp(a) < 0 {
 		return b.DeepCopy()
 	}
 

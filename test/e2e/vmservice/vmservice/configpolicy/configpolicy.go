@@ -385,12 +385,22 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					z := &zoneList.Items[i]
 					Expect(z.Spec.ManagedVMs.ClusterMoIDs).ToNot(BeEmpty(),
 						"Zone %q has no cluster MoIDs in spec.managedVMs.clusterMoIDs", z.Name)
-
-					var ct vimv1.ConfigTarget
-					Expect(svClusterClient.Get(ctx,
-						ctrlclient.ObjectKey{Name: z.Spec.ManagedVMs.ClusterMoIDs[0]}, &ct)).To(Succeed())
+					clusterMoID := z.Spec.ManagedVMs.ClusterMoIDs[0]
 
 					Eventually(func(g Gomega) {
+						// Re-fetch the ConfigTarget on every poll, inside the
+						// Eventually, rather than once beforehand: fetching
+						// it outside would let this spec pass vacuously
+						// (comparing 0 == 0) if the ConfigTarget's own
+						// status hasn't finished populating yet.
+						var ct vimv1.ConfigTarget
+						g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID}, &ct)).To(Succeed())
+
+						ctCond := apimeta.FindStatusCondition(ct.Status.Conditions, vimv1.ReadyConditionType)
+						g.Expect(ctCond).ToNot(BeNil(), "ConfigTarget %q should have a Ready condition", ct.Name)
+						g.Expect(ctCond.Status).To(Equal(metav1.ConditionTrue),
+							"ConfigTarget %q should be Ready before its policy can converge", ct.Name)
+
 						policy := &vimv1.VirtualMachineConfigPolicy{}
 						g.Expect(svClusterClient.Get(ctx,
 							ctrlclient.ObjectKey{Name: z.Name, Namespace: input.WCPNamespaceName},
@@ -409,9 +419,41 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 							"VirtualMachineConfigPolicy %q spec.numCPUCores.max should equal ConfigTarget %q status.numCPUCores",
 							policy.Name, ct.Name)
 
+						g.Expect(policy.Spec.NumNUMANodes).ToNot(BeNil(),
+							"VirtualMachineConfigPolicy %q spec.numNUMANodes should be populated from ConfigTarget.status",
+							policy.Name)
+						g.Expect(policy.Spec.NumNUMANodes.Max).To(Equal(ct.Status.NumNumaNodes),
+							"VirtualMachineConfigPolicy %q spec.numNUMANodes.max should equal ConfigTarget %q status.numNumaNodes",
+							policy.Name, ct.Name)
+
+						g.Expect(policy.Spec.NumSimultaneousThreads).ToNot(BeNil(),
+							"VirtualMachineConfigPolicy %q spec.numSimultaneousThreads should be populated from ConfigTarget.status",
+							policy.Name)
+						g.Expect(policy.Spec.NumSimultaneousThreads.Max).To(Equal(ct.Status.MaxSimultaneousThreads),
+							"VirtualMachineConfigPolicy %q spec.numSimultaneousThreads.max should equal ConfigTarget %q status.maxSimultaneousThreads",
+							policy.Name, ct.Name)
+
 						g.Expect(policy.Spec.Memory).ToNot(BeNil(),
 							"VirtualMachineConfigPolicy %q spec.memory should be populated from ConfigTarget.status",
 							policy.Name)
+						if ct.Status.SupportedMaxMem != nil {
+							g.Expect(policy.Spec.Memory.Max.Equal(*ct.Status.SupportedMaxMem)).To(BeTrue(),
+								"VirtualMachineConfigPolicy %q spec.memory.max (%s) should equal ConfigTarget %q status.supportedMaxMem (%s)",
+								policy.Name, policy.Spec.Memory.Max.String(), ct.Name, ct.Status.SupportedMaxMem.String())
+						}
+
+						g.Expect(policy.Spec.SMCPresent).To(Equal(ct.Status.SMCPresent),
+							"VirtualMachineConfigPolicy %q spec.smcPresent should equal ConfigTarget %q status.smcPresent",
+							policy.Name, ct.Name)
+						g.Expect(policy.Spec.SEVSupported).To(Equal(ct.Status.SEVSupported),
+							"VirtualMachineConfigPolicy %q spec.sevSupported should equal ConfigTarget %q status.sevSupported",
+							policy.Name, ct.Name)
+						g.Expect(policy.Spec.SEVSNPSupported).To(Equal(ct.Status.SEVSNPSupported),
+							"VirtualMachineConfigPolicy %q spec.sevSNPSupported should equal ConfigTarget %q status.sevSNPSupported",
+							policy.Name, ct.Name)
+						g.Expect(policy.Spec.TDXSupported).To(Equal(ct.Status.TDXSupported),
+							"VirtualMachineConfigPolicy %q spec.tdxSupported should equal ConfigTarget %q status.tdxSupported",
+							policy.Name, ct.Name)
 					}, input.Config.GetIntervals("default", "wait-config-policy-condition-update")...).Should(Succeed())
 				}
 			})

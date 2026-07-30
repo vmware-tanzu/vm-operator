@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"reflect"
 
-	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -83,23 +82,16 @@ func (v validator) ValidateDelete(_ *pkgctx.WebhookRequestContext) admission.Res
 	return admission.Allowed("")
 }
 
-// ValidateUpdate validates updates to a VirtualMachineGuestOptions, enforcing
-// that spec.id is immutable and re-running the base validations so an object
+// ValidateUpdate re-runs the base validations so a VirtualMachineGuestOptions
 // that predates this webhook is still caught if it is otherwise invalid.
+// spec.id immutability is enforced by the CRD's CEL transition rule.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	obj, err := v.vmGuestOptionsFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	oldObj, err := v.vmGuestOptionsFromUnstructured(ctx.OldObj)
-	if err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
-	}
-
-	idPath := field.NewPath("spec", "id")
-	fieldErrs := validation.ValidateImmutableField(obj.Spec.ID, oldObj.Spec.ID, idPath)
-	fieldErrs = append(fieldErrs, v.validateID(string(obj.Spec.ID))...)
+	fieldErrs := v.validateID(string(obj.Spec.ID))
 	fieldErrs = append(fieldErrs, v.validateNameMatchesID(obj.Name, string(obj.Spec.ID))...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))

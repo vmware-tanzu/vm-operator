@@ -177,9 +177,16 @@ func unitTestsValidateUpdate() {
 		})
 	})
 
+	// spec.id immutability is enforced by the CRD's CEL transition rule, not
+	// this webhook, so it cannot be exercised via a direct ValidateUpdate
+	// call. See the intg suite for coverage of the CEL rejection through a
+	// real API server. What remains testable here is the base
+	// re-validation this webhook still performs on update: a changed id
+	// whose DNS-safe transform no longer matches metadata.name is denied on
+	// that basis.
 	When("spec.id is changed", func() {
 		It("should deny the update", func() {
-			validateUpdate(updateArgs{newID: "dos"}, false, "field is immutable")
+			validateUpdate(updateArgs{newID: "dos"}, false, "metadata.name must equal the DNS-safe transform of spec.id")
 		})
 	})
 

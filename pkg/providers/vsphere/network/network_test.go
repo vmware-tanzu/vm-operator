@@ -65,7 +65,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		vm          *vmopv1.VirtualMachine
 		networkSpec *vmopv1.VirtualMachineNetworkSpec
 
-		results     network.NetworkInterfaceResults
+		devices     []network.Device
 		err         error
 		initObjects []client.Object
 	)
@@ -97,7 +97,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			VM:      vm,
 		}
 
-		results, err = network.CreateAndWaitForNetworkInterfaces(
+		devices, err = network.CreateAndWaitForNetworkInterfaces(
 			vmCtx,
 			ctx.Client,
 			ctx.VCClient.Client,
@@ -134,12 +134,12 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			It("returns success", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(results.Results).To(HaveLen(1))
+				Expect(devices).To(HaveLen(1))
 
-				result := results.Results[0]
+				dev := devices[0]
 				By("has expected backing", func() {
-					Expect(result.Backing).ToNot(BeNil())
-					backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+					Expect(dev.Backing).ToNot(BeNil())
+					backing, err := dev.Backing.EthernetCardBackingInfo(ctx)
 					Expect(err).ToNot(HaveOccurred())
 					backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).To(BeTrue())
@@ -148,9 +148,12 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(backingInfo.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
 				})
 
-				Expect(result.DHCP4).To(BeFalse())
-				Expect(result.NoIPAM).To(BeFalse())
-				Expect(result.DHCP6).To(BeTrue()) // Only enabled if explicitly requested (which it is above).
+				bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+				Expect(err).ToNot(HaveOccurred())
+				bs := bootstraps[0]
+				Expect(bs.DHCP4).To(BeFalse())
+				Expect(bs.NoIPAM).To(BeFalse())
+				Expect(bs.DHCP6).To(BeTrue()) // Only enabled if explicitly requested (which it is above).
 			})
 		})
 
@@ -167,7 +170,34 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			It("returns error", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unable to find named network"))
-				Expect(results.Results).To(BeEmpty())
+				Expect(devices).To(BeEmpty())
+			})
+		})
+
+		Context("interfaceSpec provides an uppercase MAC address", func() {
+			const upperMacAddress = "50:8A:80:9D:28:22"
+
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name:    "eth0",
+						Network: &common.PartialObjectRef{Name: networkName},
+						MACAddr: upperMacAddress,
+					},
+				}
+			})
+
+			It("lowercases the MAC address on the update path", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(devices).To(HaveLen(1))
+
+				dev := devices[0]
+				Expect(dev.MacAddress).To(Equal(strings.ToLower(upperMacAddress)))
+
+				ethCard, err := network.CreateDefaultEthCardFromNetworkDevice(ctx, &dev)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ethCard.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress).
+					To(Equal(strings.ToLower(upperMacAddress)))
 			})
 		})
 	})
@@ -201,7 +231,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-				Expect(results.Results).To(BeEmpty())
+				Expect(devices).To(BeEmpty())
 
 				var externalID string
 				By("simulate successful NetOP reconcile", func() {
@@ -249,7 +279,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 				})
 
-				results, err = network.CreateAndWaitForNetworkInterfaces(
+				devices, err = network.CreateAndWaitForNetworkInterfaces(
 					vmCtx,
 					ctx.Client,
 					ctx.VCClient.Client,
@@ -258,23 +288,27 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(results.Results).To(HaveLen(1))
-				result := results.Results[0]
-				Expect(result.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
-				Expect(result.MacAddress).To(BeEmpty())
-				Expect(result.ExternalID).To(Equal(externalID))
-				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
-				Expect(result.Backing).ToNot(BeNil())
-				Expect(result.Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
-				Expect(result.Name).To(Equal(interfaceName))
-				Expect(result.GuestDeviceName).To(Equal(interfaceName))
+				Expect(devices).To(HaveLen(1))
+				dev := devices[0]
+				Expect(dev.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
+				Expect(dev.MacAddress).To(BeEmpty())
+				Expect(dev.ExternalID).To(Equal(externalID))
+				Expect(dev.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+				Expect(dev.Backing).ToNot(BeNil())
+				Expect(dev.Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
+				Expect(dev.InterfaceName).To(Equal(interfaceName))
 
-				Expect(result.IPConfigs).To(HaveLen(2))
-				ipConfig := result.IPConfigs[0]
+				bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+				Expect(err).ToNot(HaveOccurred())
+				bs := bootstraps[0]
+				Expect(bs.GuestDeviceName).To(Equal(interfaceName))
+
+				Expect(bs.IPConfigs).To(HaveLen(2))
+				ipConfig := bs.IPConfigs[0]
 				Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
 				Expect(ipConfig.IsIPv4).To(BeTrue())
 				Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-				ipConfig = result.IPConfigs[1]
+				ipConfig = bs.IPConfigs[1]
 				Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
 				Expect(ipConfig.IsIPv4).To(BeFalse())
 				Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
@@ -288,7 +322,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				It("returns success with expected mac address", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NetOP reconcile", func() {
 						netInterface := &netopv1alpha1.NetworkInterface{
@@ -309,7 +343,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -318,9 +352,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.MacAddress).To(Equal(macAddress))
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.MacAddress).To(Equal(macAddress))
 				})
 			})
 
@@ -346,7 +380,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NetOP reconcile", func() {
 						netInterface := &netopv1alpha1.NetworkInterface{
@@ -388,7 +422,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -397,22 +431,26 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.MacAddress).To(BeEmpty())
-					Expect(result.ExternalID).To(BeEmpty())
-					Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
-					Expect(result.Backing).ToNot(BeNil())
-					Expect(result.Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
-					Expect(result.Name).To(Equal(interfaceName))
-					Expect(result.GuestDeviceName).To(Equal(interfaceName))
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.MacAddress).To(BeEmpty())
+					Expect(dev.ExternalID).To(BeEmpty())
+					Expect(dev.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+					Expect(dev.Backing).ToNot(BeNil())
+					Expect(dev.Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
+					Expect(dev.InterfaceName).To(Equal(interfaceName))
 
-					Expect(result.IPConfigs).To(HaveLen(2))
-					ipConfig := result.IPConfigs[0]
+					bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+					Expect(err).ToNot(HaveOccurred())
+					bs := bootstraps[0]
+					Expect(bs.GuestDeviceName).To(Equal(interfaceName))
+
+					Expect(bs.IPConfigs).To(HaveLen(2))
+					ipConfig := bs.IPConfigs[0]
 					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[1]
+					ipConfig = bs.IPConfigs[1]
 					Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
 					Expect(ipConfig.IsIPv4).To(BeFalse())
 					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
@@ -466,11 +504,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				It("resolves to a standard Network backing", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NetOP reconcile", simulateReady)
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -479,12 +517,12 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
-					Expect(result.Backing).ToNot(BeNil())
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+					Expect(dev.Backing).ToNot(BeNil())
 
-					backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+					backing, err := dev.Backing.EthernetCardBackingInfo(ctx)
 					Expect(err).ToNot(HaveOccurred())
 					backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
 					Expect(ok).To(BeTrue())
@@ -507,11 +545,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				It("returns an error", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NetOP reconcile", simulateReady)
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -520,7 +558,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceBackingNotSupported))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 				})
 			})
 		})
@@ -762,7 +800,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						}
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -770,7 +808,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						nil,
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.Results).To(HaveLen(3))
+					Expect(devices).To(HaveLen(3))
 
 					for ifName, expectedPolicy := range expectedPolicies {
 						netInterface := &netopv1alpha1.NetworkInterface{
@@ -817,7 +855,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-				Expect(results.Results).To(BeEmpty())
+				Expect(devices).To(BeEmpty())
 
 				By("simulate successful NCP reconcile", func() {
 					netInterface := &ncpv1alpha1.VirtualNetworkInterface{
@@ -858,7 +896,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 				})
 
-				results, err = network.CreateAndWaitForNetworkInterfaces(
+				devices, err = network.CreateAndWaitForNetworkInterfaces(
 					vmCtx,
 					ctx.Client,
 					ctx.VCClient.Client,
@@ -867,34 +905,37 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(results.Results).To(HaveLen(1))
-				result := results.Results[0]
-				Expect(result.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeNSXT))
-				Expect(result.MacAddress).To(Equal(macAddress))
-				Expect(result.ExternalID).To(Equal(interfaceID))
-				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
-				Expect(result.Name).To(Equal(interfaceName))
+				Expect(devices).To(HaveLen(1))
+				dev := devices[0]
+				Expect(dev.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeNSXT))
+				Expect(dev.MacAddress).To(Equal(macAddress))
+				Expect(dev.ExternalID).To(Equal(interfaceID))
+				Expect(dev.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
+				Expect(dev.InterfaceName).To(Equal(interfaceName))
 
-				Expect(result.Backing).ToNot(BeNil())
-				backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+				Expect(dev.Backing).ToNot(BeNil())
+				backing, err := dev.Backing.EthernetCardBackingInfo(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 				Expect(ok).To(BeTrue())
 				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 
-				Expect(result.IPConfigs).To(HaveLen(2))
-				ipConfig := result.IPConfigs[0]
+				bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+				Expect(err).ToNot(HaveOccurred())
+				bs := bootstraps[0]
+				Expect(bs.IPConfigs).To(HaveLen(2))
+				ipConfig := bs.IPConfigs[0]
 				Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
 				Expect(ipConfig.IsIPv4).To(BeTrue())
 				Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-				ipConfig = result.IPConfigs[1]
+				ipConfig = bs.IPConfigs[1]
 				Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
 				Expect(ipConfig.IsIPv4).To(BeFalse())
 				Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 
 				By("Returns DVPG backing when CCR is provided", func() {
 					clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -903,9 +944,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					Expect(results.Results[0].Backing).ToNot(BeNil())
-					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
+					Expect(devices).To(HaveLen(1))
+					Expect(devices[0].Backing).ToNot(BeNil())
+					Expect(devices[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 				})
 			})
 
@@ -930,7 +971,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NCP reconcile", func() {
 						netInterface := &ncpv1alpha1.VirtualNetworkInterface{
@@ -969,7 +1010,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -978,33 +1019,36 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.MacAddress).To(Equal(macAddress))
-					Expect(result.ExternalID).To(Equal(interfaceID))
-					Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
-					Expect(result.Name).To(Equal(interfaceName))
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.MacAddress).To(Equal(macAddress))
+					Expect(dev.ExternalID).To(Equal(interfaceID))
+					Expect(dev.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
+					Expect(dev.InterfaceName).To(Equal(interfaceName))
 
-					Expect(result.Backing).ToNot(BeNil())
-					backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+					Expect(dev.Backing).ToNot(BeNil())
+					backing, err := dev.Backing.EthernetCardBackingInfo(ctx)
 					Expect(err).ToNot(HaveOccurred())
 					opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 					Expect(ok).To(BeTrue())
 					Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 
-					Expect(result.IPConfigs).To(HaveLen(2))
-					ipConfig := result.IPConfigs[0]
+					bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+					Expect(err).ToNot(HaveOccurred())
+					bs := bootstraps[0]
+					Expect(bs.IPConfigs).To(HaveLen(2))
+					ipConfig := bs.IPConfigs[0]
 					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[1]
+					ipConfig = bs.IPConfigs[1]
 					Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
 					Expect(ipConfig.IsIPv4).To(BeFalse())
 					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 
 					By("Returns DVPG backing when CCR is provided", func() {
 						clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
-						results, err = network.CreateAndWaitForNetworkInterfaces(
+						devices, err = network.CreateAndWaitForNetworkInterfaces(
 							vmCtx,
 							ctx.Client,
 							ctx.VCClient.Client,
@@ -1013,9 +1057,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							networkSpec)
 						Expect(err).ToNot(HaveOccurred())
 
-						Expect(results.Results).To(HaveLen(1))
-						Expect(results.Results[0].Backing).ToNot(BeNil())
-						Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
+						Expect(devices).To(HaveLen(1))
+						Expect(devices[0].Backing).ToNot(BeNil())
+						Expect(devices[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 					})
 				})
 			})
@@ -1053,7 +1097,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-				Expect(results.Results).To(BeEmpty())
+				Expect(devices).To(BeEmpty())
 
 				By("simulate successful NSX Operator reconcile", func() {
 					subnetPort := &vpcv1alpha1.SubnetPort{
@@ -1093,7 +1137,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 				})
 
-				results, err = network.CreateAndWaitForNetworkInterfaces(
+				devices, err = network.CreateAndWaitForNetworkInterfaces(
 					vmCtx,
 					ctx.Client,
 					ctx.VCClient.Client,
@@ -1102,34 +1146,37 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(results.Results).To(HaveLen(1))
-				result := results.Results[0]
-				Expect(result.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
-				Expect(result.MacAddress).To(Equal(macAddress))
-				Expect(result.ExternalID).To(Equal(interfaceID))
-				Expect(result.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
-				Expect(result.Name).To(Equal(interfaceName))
+				Expect(devices).To(HaveLen(1))
+				dev := devices[0]
+				Expect(dev.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
+				Expect(dev.MacAddress).To(Equal(macAddress))
+				Expect(dev.ExternalID).To(Equal(interfaceID))
+				Expect(dev.NetworkID).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
+				Expect(dev.InterfaceName).To(Equal(interfaceName))
 
-				Expect(result.Backing).ToNot(BeNil())
-				backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+				Expect(dev.Backing).ToNot(BeNil())
+				backing, err := dev.Backing.EthernetCardBackingInfo(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 				Expect(ok).To(BeTrue())
 				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(ctx.GetNetwork(0).LogicalSwitchUUID))
 
-				Expect(result.IPConfigs).To(HaveLen(2))
-				ipConfig := result.IPConfigs[0]
+				bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+				Expect(err).ToNot(HaveOccurred())
+				bs := bootstraps[0]
+				Expect(bs.IPConfigs).To(HaveLen(2))
+				ipConfig := bs.IPConfigs[0]
 				Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
 				Expect(ipConfig.IsIPv4).To(BeTrue())
 				Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-				ipConfig = result.IPConfigs[1]
+				ipConfig = bs.IPConfigs[1]
 				Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
 				Expect(ipConfig.IsIPv4).To(BeFalse())
 				Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 
 				By("Returns DVPG backing when CCR is provided", func() {
 					clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -1138,9 +1185,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					Expect(results.Results[0].Backing).ToNot(BeNil())
-					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
+					Expect(devices).To(HaveLen(1))
+					Expect(devices[0].Backing).ToNot(BeNil())
+					Expect(devices[0].Backing.Reference()).To(Equal(ctx.GetNetwork(0).Backing.Reference()))
 				})
 			})
 
@@ -1156,7 +1203,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				It("returns success with expected MAC address", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NSX Operator reconcile", func() {
 						subnetPort := &vpcv1alpha1.SubnetPort{
@@ -1189,7 +1236,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -1198,11 +1245,15 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.MacAddress).To(Equal(macAddress))
-					Expect(result.IPConfigs).To(HaveLen(1))
-					ipConfig := result.IPConfigs[0]
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.MacAddress).To(Equal(macAddress))
+
+					bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+					Expect(err).ToNot(HaveOccurred())
+					bs := bootstraps[0]
+					Expect(bs.IPConfigs).To(HaveLen(1))
+					ipConfig := bs.IPConfigs[0]
 					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
@@ -1227,7 +1278,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				It("returns success with multiple IP addresses", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NSX Operator reconcile", func() {
 						subnetPort := &vpcv1alpha1.SubnetPort{
@@ -1275,7 +1326,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -1284,19 +1335,23 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.MacAddress).To(Equal(macAddress))
-					Expect(result.IPConfigs).To(HaveLen(3))
-					ipConfig := result.IPConfigs[0]
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.MacAddress).To(Equal(macAddress))
+
+					bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+					Expect(err).ToNot(HaveOccurred())
+					bs := bootstraps[0]
+					Expect(bs.IPConfigs).To(HaveLen(3))
+					ipConfig := bs.IPConfigs[0]
 					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR1))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[1]
+					ipConfig = bs.IPConfigs[1]
 					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR2))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[2]
+					ipConfig = bs.IPConfigs[2]
 					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR3))
 					Expect(ipConfig.IsIPv4).To(BeFalse())
 					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
@@ -1320,7 +1375,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				It("creates SubnetPort with only MAC address when all IPs are invalid", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NSX Operator reconcile", func() {
 						subnetPort := &vpcv1alpha1.SubnetPort{
@@ -1351,7 +1406,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -1360,26 +1415,30 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.MacAddress).To(Equal(macAddress))
-					Expect(result.IPConfigs).To(HaveLen(4))
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.MacAddress).To(Equal(macAddress))
+
+					bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+					Expect(err).ToNot(HaveOccurred())
+					bs := bootstraps[0]
+					Expect(bs.IPConfigs).To(HaveLen(4))
 
 					// NOTE: Since SubnetPort does not have an IP, we will ignore the
 					// Gateway. We need to do that for NoIPAM.
-					ipConfig := result.IPConfigs[0]
+					ipConfig := bs.IPConfigs[0]
 					Expect(ipConfig.IPCIDR).To(Equal("0.0.0.0/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.200.1"))
-					ipConfig = result.IPConfigs[1]
+					ipConfig = bs.IPConfigs[1]
 					Expect(ipConfig.IPCIDR).To(Equal("127.0.0.1/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.200.1"))
-					ipConfig = result.IPConfigs[2]
+					ipConfig = bs.IPConfigs[2]
 					Expect(ipConfig.IPCIDR).To(Equal("169.254.1.1/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.200.1"))
-					ipConfig = result.IPConfigs[3]
+					ipConfig = bs.IPConfigs[3]
 					Expect(ipConfig.IPCIDR).To(Equal("224.0.0.1/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.200.1"))
@@ -1405,7 +1464,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				It("processes valid IPs and logs skipped invalid ones", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-					Expect(results.Results).To(BeEmpty())
+					Expect(devices).To(BeEmpty())
 
 					By("simulate successful NSX Operator reconcile", func() {
 						subnetPort := &vpcv1alpha1.SubnetPort{
@@ -1457,7 +1516,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 					})
 
-					results, err = network.CreateAndWaitForNetworkInterfaces(
+					devices, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,
 						ctx.VCClient.Client,
@@ -1466,35 +1525,39 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(results.Results).To(HaveLen(1))
-					result := results.Results[0]
-					Expect(result.MacAddress).To(Equal(macAddress))
-					Expect(result.IPConfigs).To(HaveLen(7))
-					ipConfig := result.IPConfigs[0]
+					Expect(devices).To(HaveLen(1))
+					dev := devices[0]
+					Expect(dev.MacAddress).To(Equal(macAddress))
+
+					bootstraps, err := network.BuildBootstraps(vmCtx, vm, devices)
+					Expect(err).ToNot(HaveOccurred())
+					bs := bootstraps[0]
+					Expect(bs.IPConfigs).To(HaveLen(7))
+					ipConfig := bs.IPConfigs[0]
 					Expect(ipConfig.IPCIDR).To(Equal("0.0.0.0/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[1]
+					ipConfig = bs.IPConfigs[1]
 					Expect(ipConfig.IPCIDR).To(Equal("127.0.0.1/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[2]
+					ipConfig = bs.IPConfigs[2]
 					Expect(ipConfig.IPCIDR).To(Equal("169.254.1.1/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[3]
+					ipConfig = bs.IPConfigs[3]
 					Expect(ipConfig.IPCIDR).To(Equal("224.0.0.1/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[4]
+					ipConfig = bs.IPConfigs[4]
 					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.100/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[5]
+					ipConfig = bs.IPConfigs[5]
 					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.200/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
-					ipConfig = result.IPConfigs[6]
+					ipConfig = bs.IPConfigs[6]
 					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.250/24"))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
@@ -1693,7 +1756,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			It("returns results with correct ObjectProviderType for each interface", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-				Expect(results.Results).To(BeEmpty())
+				Expect(devices).To(BeEmpty())
 
 				netopKey := client.ObjectKey{
 					Name:      network.NetOPCRName(vm.Name, netName0, ifaceName0, false),
@@ -1754,7 +1817,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 				})
 
-				results, err = network.CreateAndWaitForNetworkInterfaces(
+				devices, err = network.CreateAndWaitForNetworkInterfaces(
 					vmCtx,
 					ctx.Client,
 					ctx.VCClient.Client,
@@ -1762,35 +1825,35 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					nil,
 					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(results.Results).To(HaveLen(2))
+				Expect(devices).To(HaveLen(2))
 
-				result0 := results.Results[0]
-				Expect(result0.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
-				Expect(result0.Name).To(Equal(ifaceName0))
-				Expect(result0.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
-				Expect(result0.MacAddress).To(Equal(macAddr0))
-				Expect(result0.ExternalID).To(Equal(ifaceID0))
-				Expect(result0.Backing).ToNot(BeNil())
+				dev0 := devices[0]
+				Expect(dev0.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
+				Expect(dev0.InterfaceName).To(Equal(ifaceName0))
+				Expect(dev0.NetworkID).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+				Expect(dev0.MacAddress).To(Equal(macAddr0))
+				Expect(dev0.ExternalID).To(Equal(ifaceID0))
+				Expect(dev0.Backing).ToNot(BeNil())
 
-				backing0, err := result0.Backing.EthernetCardBackingInfo(ctx)
+				backing0, err := dev0.Backing.EthernetCardBackingInfo(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				dvpBacking0, ok := backing0.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				Expect(ok).To(BeTrue())
 				Expect(dvpBacking0.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
 
-				result1 := results.Results[1]
-				Expect(result1.ObjectProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
-				Expect(result1.Name).To(Equal(ifaceName1))
-				Expect(result1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
-				Expect(result1.MacAddress).To(Equal(macAddr1))
-				Expect(result1.ExternalID).To(Equal(ifaceID1))
-				Expect(result1.Backing).ToNot(BeNil())
+				dev1 := devices[1]
+				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
+				Expect(dev1.InterfaceName).To(Equal(ifaceName1))
+				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
+				Expect(dev1.MacAddress).To(Equal(macAddr1))
+				Expect(dev1.ExternalID).To(Equal(ifaceID1))
+				Expect(dev1.Backing).ToNot(BeNil())
 
-				backing1, err := result1.Backing.EthernetCardBackingInfo(ctx)
+				backing1, err := dev1.Backing.EthernetCardBackingInfo(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				opaqueBacking, ok := backing1.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 				Expect(ok).To(BeTrue(), "VPC device should have opaque network backing")
-				Expect(opaqueBacking.OpaqueNetworkId).To(Equal(result1.NetworkID))
+				Expect(opaqueBacking.OpaqueNetworkId).To(Equal(dev1.NetworkID))
 			})
 		})
 	})

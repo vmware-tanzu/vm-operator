@@ -6,6 +6,7 @@ package network
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"slices"
 	"strings"
@@ -428,36 +429,62 @@ func bootstrapFromVPC(
 	return initial
 }
 
-// devAndBootstrapToNetworkInterfaceResult combines a fully-computed Device and
-// Bootstrap to produce the old style NetworkInterfaceResult. This is used by
-// the CreateAndWait workflow to keep that API unchanged.
-func devAndBootstrapToNetworkInterfaceResult(
-	d Device,
-	b Bootstrap,
-) NetworkInterfaceResult {
-	var objName string
-	if !pkgnil.IsNil(d.InterfaceObj) {
-		// Named network won't have an object.
-		objName = d.InterfaceObj.GetName()
+// BuildBootstraps computes the Bootstrap for each of the VM's network
+// interface Devices, zipping devices[i] with vm.Spec.Network.Interfaces[i].
+// This is safe because CreateAndWaitForNetworkInterfaces builds devices in
+// that exact order and length, and nothing reorders or filters it afterward.
+//
+// Callers must invoke this only after every MAC-address backfill (e.g. from
+// fixupMacAddresses/fixupMacAddressMutableNetworks) has finished updating
+// devices, since Bootstrap.MacAddress is derived from Device.MacAddress here.
+func BuildBootstraps(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	devices []Device,
+) ([]Bootstrap, error) {
+	if len(devices) == 0 {
+		// Also covers vm.Spec.Network == nil/disabled without touching Interfaces.
+		return nil, nil
 	}
 
-	return NetworkInterfaceResult{
-		ObjectName:         objName,
-		ObjectProviderType: d.ProviderType,
-		ExternalID:         d.ExternalID,
-		NetworkID:          d.NetworkID,
-		Backing:            d.Backing,
-		Name:               b.Name,
-		GuestDeviceName:    b.GuestDeviceName,
-		MacAddress:         b.MacAddress,
-		NoIPAM:             b.NoIPAM,
-		DHCP4:              b.DHCP4,
-		DHCP6:              b.DHCP6,
-		AcceptRA:           b.AcceptRA,
-		MTU:                b.MTU,
-		Nameservers:        b.Nameservers,
-		SearchDomains:      b.SearchDomains,
-		Routes:             b.Routes,
-		IPConfigs:          b.IPConfigs,
+	interfaces := vm.Spec.Network.Interfaces
+	if len(devices) != len(interfaces) {
+		return nil, fmt.Errorf(
+			"number of devices (%d) does not match number of network interfaces (%d)",
+			len(devices), len(interfaces))
 	}
+
+	bootstraps := make([]Bootstrap, 0, len(devices))
+
+	for i := range devices {
+		dev := &devices[i]
+		interfaceSpec := interfaces[i]
+
+		if pkgnil.IsNil(dev.InterfaceObj) {
+			// Named network (testing-only) has no CR to derive from.
+			bootstraps = append(bootstraps, InterfaceBootstrap(
+				ctx,
+				vm,
+				Bootstrap{MacAddress: dev.MacAddress},
+				interfaceSpec))
+			continue
+		}
+
+		var bootstrap Bootstrap
+
+		switch ifaceCR := dev.InterfaceObj.(type) {
+		case *netopv1alpha1.NetworkInterface:
+			bootstrap = NetOPInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
+		case *ncpv1alpha1.VirtualNetworkInterface:
+			bootstrap = NCPInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
+		case *vpcv1alpha1.SubnetPort:
+			bootstrap = VPCInterfaceBootstrap(ctx, vm, ifaceCR, interfaceSpec, dev.MacAddress)
+		default:
+			return nil, fmt.Errorf("unsupported network interface CR type: %T", dev.InterfaceObj)
+		}
+
+		bootstraps = append(bootstraps, bootstrap)
+	}
+
+	return bootstraps, nil
 }

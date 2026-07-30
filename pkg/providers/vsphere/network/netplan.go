@@ -13,13 +13,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-func NetPlanCustomization(result NetworkInterfaceResults, vlans []vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
+func NetPlanCustomization(bootstraps []Bootstrap, vlans []vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
 	netPlan := &netplan.Network{
 		Version:   constants.NetPlanVersion,
 		Ethernets: make(map[string]netplan.Ethernet),
 	}
 
-	for _, r := range result.Results {
+	for _, r := range bootstraps {
 		npEth := netplan.Ethernet{
 			Match: &netplan.Match{
 				Macaddress: ptr.To(NormalizeNetplanMac(r.MacAddress)),

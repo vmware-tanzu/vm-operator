@@ -153,8 +153,11 @@ func intgTestsValidateUpdate() {
 			ctx.configTarget.Spec.ID = vimv1.ManagedObjectID{ID: "domain-c22"}
 		})
 		It("should deny the request", func() {
+			// spec.id immutability is enforced by the CRD's CEL transition
+			// rule, so this rejection comes from the API server, not the
+			// webhook.
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+			Expect(err.Error()).To(ContainSubstring("id is immutable"))
 		})
 	})
 }

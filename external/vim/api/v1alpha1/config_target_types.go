@@ -12,6 +12,7 @@ import (
 // ConfigTargetSpec defines the desired state of a ConfigTarget.
 type ConfigTargetSpec struct {
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="id is immutable"
 
 	// ID is the managed object ID of the vSphere cluster.
 	ID ManagedObjectID `json:"id"`

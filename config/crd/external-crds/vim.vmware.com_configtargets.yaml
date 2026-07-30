@@ -54,6 +54,9 @@ spec:
                 required:
                 - id
                 type: object
+                x-kubernetes-validations:
+                - message: id is immutable
+                  rule: self == oldSelf
             required:
             - id
             type: object

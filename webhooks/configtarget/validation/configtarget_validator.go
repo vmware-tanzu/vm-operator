@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"regexp"
 
-	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -90,18 +89,16 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 	return admission.Allowed("")
 }
 
+// ValidateUpdate re-runs the base validations so a ConfigTarget that
+// predates this webhook is still caught if it is otherwise invalid.
+// spec.id immutability is enforced by the CRD's CEL transition rule.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	configTarget, err := v.configTargetFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	oldConfigTarget, err := v.configTargetFromUnstructured(ctx.OldObj)
-	if err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
-	}
-
-	fieldErrs := append(v.validateSpec(configTarget), v.validateAllowedChanges(configTarget, oldConfigTarget)...)
+	fieldErrs := v.validateSpec(configTarget)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -137,13 +134,6 @@ func (v validator) validateSpec(configTarget *vimv1.ConfigTarget) field.ErrorLis
 	return field.ErrorList{
 		field.Required(field.NewPath("spec", "id", "id"), ""),
 	}
-}
-
-// validateAllowedChanges returns an error if any immutable fields have been
-// modified.
-func (v validator) validateAllowedChanges(configTarget, oldConfigTarget *vimv1.ConfigTarget) field.ErrorList {
-	return validation.ValidateImmutableField(
-		configTarget.Spec.ID, oldConfigTarget.Spec.ID, field.NewPath("spec", "id"))
 }
 
 // configTargetFromUnstructured returns the ConfigTarget from the unstructured object.

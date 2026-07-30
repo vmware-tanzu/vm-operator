@@ -182,7 +182,6 @@ func unitTestsValidateUpdate() {
 		}
 	}
 
-	immutableFieldMsg := "field is immutable"
 	requiredIDMsg := field.Required(field.NewPath("spec", "id", "id"), "").Error()
 
 	BeforeEach(func() {
@@ -192,12 +191,14 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
+	// spec.id immutability is enforced by the CRD's CEL transition rule, not
+	// this webhook, so it cannot be exercised via a direct ValidateUpdate
+	// call. See the intg suite for coverage of the CEL rejection through a
+	// real API server.
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow when spec.id is unchanged", updateArgs{}, true),
-		Entry("should deny when spec.id changes to domain-c22",
-			updateArgs{id: &vimv1.ManagedObjectID{ID: "domain-c22"}}, false, immutableFieldMsg),
-		Entry("should deny with both errors when spec.id is cleared",
-			updateArgs{id: &vimv1.ManagedObjectID{}}, false, immutableFieldMsg, requiredIDMsg),
+		Entry("should deny when spec.id is cleared",
+			updateArgs{id: &vimv1.ManagedObjectID{}}, false, requiredIDMsg),
 	)
 
 	When("the update is performed while object deletion", func() {

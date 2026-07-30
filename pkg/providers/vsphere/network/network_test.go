@@ -173,33 +173,6 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(devices).To(BeEmpty())
 			})
 		})
-
-		Context("interfaceSpec provides an uppercase MAC address", func() {
-			const upperMacAddress = "50:8A:80:9D:28:22"
-
-			BeforeEach(func() {
-				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
-					{
-						Name:    "eth0",
-						Network: &common.PartialObjectRef{Name: networkName},
-						MACAddr: upperMacAddress,
-					},
-				}
-			})
-
-			It("lowercases the MAC address on the update path", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(devices).To(HaveLen(1))
-
-				dev := devices[0]
-				Expect(dev.MacAddress).To(Equal(strings.ToLower(upperMacAddress)))
-
-				ethCard, err := network.CreateDefaultEthCardFromNetworkDevice(ctx, &dev)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ethCard.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress).
-					To(Equal(strings.ToLower(upperMacAddress)))
-			})
-		})
 	})
 
 	Context("VDS", func() {
@@ -2205,7 +2178,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVDS))
 				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).Backing.Reference().Value))
 				Expect(dev1.Backing).ToNot(BeNil())
-				Expect(dev1.MacAddress).To(Equal(macAddress1))
+				Expect(dev1.MacAddress).To(Equal(strings.ToLower(macAddress1)))
 				Expect(dev1.ExternalID).To(Equal(externalID1))
 
 				backing1, err := dev1.Backing.EthernetCardBackingInfo(ctx)
@@ -2387,8 +2360,8 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeNSXT))
 				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
 				Expect(dev1.Backing).ToNot(BeNil())
+				Expect(dev1.MacAddress).To(Equal(strings.ToLower(macAddress1)))
 				Expect(dev1.ExternalID).To(Equal(externalID1))
-				Expect(dev1.MacAddress).To(Equal(macAddress1))
 
 				backing1, err := dev1.Backing.EthernetCardBackingInfo(ctx)
 				Expect(err).ToNot(HaveOccurred())
@@ -2647,7 +2620,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
 				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
 				Expect(dev1.Backing).ToNot(BeNil())
-				Expect(dev1.MacAddress).To(Equal(macAddress1))
+				Expect(dev1.MacAddress).To(Equal(strings.ToLower(macAddress1)))
 				Expect(dev1.ExternalID).To(Equal(externalID1))
 
 				backing1, err := dev1.Backing.EthernetCardBackingInfo(ctx)
@@ -2785,7 +2758,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(dev1.ProviderType).To(Equal(pkgcfg.NetworkProviderTypeVPC))
 				Expect(dev1.NetworkID).To(Equal(ctx.GetNetwork(1).LogicalSwitchUUID))
 				Expect(dev1.Backing).ToNot(BeNil())
-				Expect(dev1.MacAddress).To(Equal(macAddress1))
+				Expect(dev1.MacAddress).To(Equal(strings.ToLower(macAddress1)))
 				Expect(dev1.ExternalID).To(Equal(externalID1))
 
 				backing1, err := dev1.Backing.EthernetCardBackingInfo(ctx)

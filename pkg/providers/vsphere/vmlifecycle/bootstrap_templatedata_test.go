@@ -57,7 +57,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 		bsArgs = &vmlifecycle.BootstrapArgs{}
 		bsArgs.Data = make(map[string]string)
 		bsArgs.DNSServers = []string{nameserver1, nameserver2}
-		bsArgs.Bootstraps = []network.Bootstrap{
+		bsArgs.NetBootstraps = []network.Bootstrap{
 			{
 				MacAddress: macAddr1,
 				IPConfigs: []network.NetworkInterfaceIPConfig{

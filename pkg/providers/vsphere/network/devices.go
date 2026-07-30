@@ -5,6 +5,8 @@
 package network
 
 import (
+	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -25,6 +27,82 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
+
+// CreateVirtualEthernetCard creates a new VirtualEthernetCard based on the Device
+// and the InterfaceSpec.
+func CreateVirtualEthernetCard(
+	ctx context.Context,
+	dev Device,
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+) (vimtypes.BaseVirtualDevice, error) {
+
+	backing, err := dev.Backing.EthernetCardBackingInfo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get Ethernet card backing info for network ID %s (%s): %w",
+			dev.NetworkID, dev.Backing.Reference().Value, err)
+	}
+
+	var cardType string
+	// TODO: Honor interfaceSpec.Type if set.
+	switch interfaceSpec.Type { //nolint:gocritic
+	default:
+		cardType = "vmxnet3"
+	}
+
+	ethDev, err := object.EthernetCardTypes().CreateEthernetCard(cardType, backing)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create Ethernet card for backing %s: %w",
+			dev.Backing.Reference().Value, err)
+	}
+
+	ethCard := ethDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+	ethCard.ExternalId = dev.ExternalID
+	if dev.MacAddress != "" {
+		ethCard.MacAddress = dev.MacAddress
+		ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
+	} else {
+		ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
+	}
+
+	// TODO: interfaceSpec.VNUMANodeID, VMXNet3. We need to sort out how to deal
+	// with the NetworkExtraConfig reconciler. First, during VM create, it is being
+	// called before vmCreateGenConfigSpecZipNetworkInterfaces, so it won't see these
+	// devices, and second it look like it depends on the DeviceKey being set, which
+	// it won't be until after the device is added to the VM. For VM create, my pref
+	// is to create the VM as-is instead of fixup after create. Similarly, when a NIC
+	// is added to a VM, the all this should land in the same Reconfigure.
+
+	return ethDev, nil
+}
+
+// UpdateVMClassEthCardFromDevice applies a Device to an existing Ethernet device
+// from the class ConfigSpec. This is used during VM create.
+func UpdateVMClassEthCardFromDevice(
+	ctx context.Context,
+	dev Device,
+	ethCard *vimtypes.VirtualEthernetCard) error {
+
+	backing, err := dev.Backing.EthernetCardBackingInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to get Ethernet card backing info for network ID %s (%s): %w",
+			dev.NetworkID, dev.Backing.Reference().Value, err)
+	}
+
+	ethCard.Backing = backing
+	ethCard.ExternalId = dev.ExternalID
+
+	if dev.MacAddress != "" {
+		ethCard.MacAddress = dev.MacAddress
+		ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
+	} else { //nolint:staticcheck,revive
+		// BMV: IMO this must be Generated/TypeAssigned to avoid major foot gun, but we have tests assuming
+		// this is left as-is.
+		// ethCard.MacAddress = ""
+		// ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
+	}
+
+	return nil
+}
 
 // MapEthernetDevicesToSpecIdx maps the VM's ethernet devices to the corresponding
 // entry in the VM's Spec.

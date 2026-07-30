@@ -129,7 +129,7 @@ func findExistingEthCardForOrphanedCR(
 		}
 	}
 
-	for idx := range objIdxWithoutLabel {
+	for _, idx := range objIdxWithoutLabel {
 		obj := orphanedObjects[idx]
 
 		if matchingIdx := findMatchFn(obj); matchingIdx >= 0 {

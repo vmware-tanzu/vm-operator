@@ -22,10 +22,234 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
+
+var _ = Describe("CreateVirtualEthernetCard", Label(testlabels.VCSim), func() {
+
+	const (
+		macAddress = "01:02:03:04:05:06"
+		externalID = "my-external-id"
+	)
+
+	var (
+		ctx        *builder.TestContextForVCSim
+		testConfig builder.VCSimTestConfig
+
+		dev             network.Device
+		interfaceSpec   vmopv1.VirtualMachineNetworkInterfaceSpec
+		useBogusBacking bool
+
+		ethCardDev vimtypes.BaseVirtualDevice
+		err        error
+	)
+
+	BeforeEach(func() {
+		testConfig = builder.VCSimTestConfig{
+			NumNetworks:    1,
+			WithNetworkEnv: builder.NetworkEnvVDS,
+		}
+
+		dev = network.Device{
+			NetworkID:  "dummy-network-id",
+			MacAddress: macAddress,
+			ExternalID: externalID,
+		}
+		interfaceSpec = vmopv1.VirtualMachineNetworkInterfaceSpec{}
+		useBogusBacking = false
+	})
+
+	JustBeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(testConfig)
+
+		if useBogusBacking {
+			dev.Backing = object.NewNetwork(ctx.VCClient.Client, vimtypes.ManagedObjectReference{
+				Type:  "Network",
+				Value: "does-not-exist",
+			})
+		} else {
+			dev.Backing = ctx.GetNetwork(0).Backing
+		}
+
+		ethCardDev, err = network.CreateVirtualEthernetCard(ctx, dev, interfaceSpec)
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	ethCard := func() *vimtypes.VirtualEthernetCard {
+		return ethCardDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+	}
+
+	It("sets the backing from the Device", func() {
+		Expect(err).ToNot(HaveOccurred())
+
+		backingInfo, ok := ethCard().Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+		Expect(ok).To(BeTrue())
+		Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+	})
+
+	It("sets the ExternalId from the Device", func() {
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ethCard().ExternalId).To(Equal(externalID))
+	})
+
+	When("Device.MacAddress is set", func() {
+		It("sets a manual MacAddress", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ethCard().MacAddress).To(Equal(macAddress))
+			Expect(ethCard().AddressType).To(Equal(string(vimtypes.VirtualEthernetCardMacTypeManual)))
+		})
+	})
+
+	When("Device.MacAddress is empty", func() {
+		BeforeEach(func() {
+			dev.MacAddress = ""
+		})
+
+		It("leaves the MacAddress unset with a generated AddressType", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ethCard().MacAddress).To(BeEmpty())
+			Expect(ethCard().AddressType).To(Equal(string(vimtypes.VirtualEthernetCardMacTypeGenerated)))
+		})
+	})
+
+	Context("Device.Backing cannot provide EthernetCardBackingInfo", func() {
+		BeforeEach(func() {
+			useBogusBacking = true
+		})
+
+		It("returns an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to get Ethernet card backing info"))
+			Expect(ethCardDev).To(BeNil())
+		})
+	})
+})
+
+var _ = Describe("UpdateVMClassEthCardFromDevice", Label(testlabels.VCSim), func() {
+
+	const (
+		macAddress = "01:02:03:04:05:06"
+		externalID = "my-external-id"
+	)
+
+	var (
+		ctx        *builder.TestContextForVCSim
+		testConfig builder.VCSimTestConfig
+
+		dev             network.Device
+		ethCard         *vimtypes.VirtualEthernetCard
+		useBogusBacking bool
+
+		err error
+	)
+
+	BeforeEach(func() {
+		testConfig = builder.VCSimTestConfig{
+			NumNetworks:    1,
+			WithNetworkEnv: builder.NetworkEnvVDS,
+		}
+
+		dev = network.Device{
+			NetworkID:  "dummy-network-id",
+			MacAddress: macAddress,
+			ExternalID: externalID,
+		}
+		useBogusBacking = false
+
+		ethCard = &vimtypes.VirtualEthernetCard{}
+	})
+
+	JustBeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(testConfig)
+
+		if useBogusBacking {
+			dev.Backing = object.NewNetwork(ctx.VCClient.Client, vimtypes.ManagedObjectReference{
+				Type:  "Network",
+				Value: "does-not-exist",
+			})
+		} else {
+			dev.Backing = ctx.GetNetwork(0).Backing
+		}
+
+		err = network.UpdateVMClassEthCardFromDevice(ctx, dev, ethCard)
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	It("sets the backing from the Device", func() {
+		Expect(err).ToNot(HaveOccurred())
+
+		backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+		Expect(ok).To(BeTrue())
+		Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.GetNetwork(0).Backing.Reference().Value))
+	})
+
+	It("sets the ExternalId from the Device", func() {
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ethCard.ExternalId).To(Equal(externalID))
+	})
+
+	When("Device.MacAddress is set", func() {
+		It("sets a manual MacAddress", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ethCard.MacAddress).To(Equal(macAddress))
+			Expect(ethCard.AddressType).To(Equal(string(vimtypes.VirtualEthernetCardMacTypeManual)))
+		})
+	})
+
+	When("Device.MacAddress is empty", func() {
+		BeforeEach(func() {
+			dev.MacAddress = ""
+		})
+
+		Context("and the existing card has no MacAddress/AddressType set", func() {
+			It("leaves MacAddress and AddressType unset", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ethCard.MacAddress).To(BeEmpty())
+				Expect(ethCard.AddressType).To(BeEmpty())
+			})
+		})
+
+		Context("and the existing card already has a MacAddress/AddressType", func() {
+			BeforeEach(func() {
+				ethCard.MacAddress = "aa:bb:cc:dd:ee:ff"
+				ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeAssigned)
+			})
+
+			It("leaves the existing MacAddress and AddressType untouched", func() {
+				// Per the BMV comment on UpdateVMClassEthCardFromDevice, an
+				// empty Device.MacAddress intentionally does not clear or
+				// overwrite whatever the class-provided card already had.
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ethCard.MacAddress).To(Equal("aa:bb:cc:dd:ee:ff"))
+				Expect(ethCard.AddressType).To(Equal(string(vimtypes.VirtualEthernetCardMacTypeAssigned)))
+			})
+		})
+	})
+
+	Context("Device.Backing cannot provide EthernetCardBackingInfo", func() {
+		BeforeEach(func() {
+			useBogusBacking = true
+		})
+
+		It("returns an error and does not modify the ethCard", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to get Ethernet card backing info"))
+			Expect(ethCard.Backing).To(BeNil())
+			Expect(ethCard.ExternalId).To(BeEmpty())
+		})
+	})
+})
 
 var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 

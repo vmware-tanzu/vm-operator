@@ -50,32 +50,21 @@ type NetworkInterfaceResults struct { //nolint:revive
 	OrphanedNetworkInterfaces []ctrlclient.Object
 }
 
-type NetworkInterfaceIPConfig struct { //nolint:revive
-	IPCIDR  string // IP address in CIDR notation e.g. 192.168.10.42/24
-	IsIPv4  bool
-	Gateway string
-}
-
-type NetworkInterfaceRoute struct { //nolint:revive
-	To     string
-	Via    string
-	Metric int32
-}
-
 // Device contains the information from the network interface CR needed to create or
 // configure a virtual ethernet card device on a VM.
 type Device struct {
 	ProviderType pkgcfg.NetworkProviderType
 	InterfaceObj ctrlclient.Object
 
-	// InterfaceName is the interface name from the InterfaceSpec.
-	InterfaceName string
-
 	Backing    object.NetworkReference
 	NetworkID  string
 	MacAddress string
 	ExternalID string
 
+	// NOTE: The fields below here are just for the in progress transition
+	// away from the old result structs, and to start to use unit numbers.
+	// InterfaceName is the interface name from the InterfaceSpec.
+	InterfaceName string
 	// EthCard is the actual virtual ethernet card device for this interface,
 	// set once it is created (update path) or matched to one of the VM's
 	// existing devices (reconcile).
@@ -94,9 +83,8 @@ func (d Device) ObjectName() string {
 }
 
 const (
-	retryInterval           = 100 * time.Millisecond
-	defaultEthernetCardType = "vmxnet3"
-	gatewayIgnored          = "None"
+	retryInterval  = 100 * time.Millisecond
+	gatewayIgnored = "None"
 
 	// VMNameLabel is the label put on a network interface CR that identifies its VM by name.
 	VMNameLabel = pkg.VMOperatorKey + "/vm-name"
@@ -297,7 +285,7 @@ func getNetOPNetworkInterfaceDevice(
 		InterfaceName: interfaceSpec.Name,
 		Backing:       backing,
 		NetworkID:     networkID,
-		MacAddress:    macAddress,
+		MacAddress:    strings.ToLower(macAddress),
 		ExternalID:    netIf.Status.ExternalID,
 	}, nil
 }
@@ -350,7 +338,7 @@ func getNCPNetworkInterfaceDevice(
 		InterfaceName: interfaceSpec.Name,
 		Backing:       backing,
 		NetworkID:     networkID,
-		MacAddress:    vnetIf.Status.MacAddress, // MAC from InterfaceSpec not supported
+		MacAddress:    strings.ToLower(vnetIf.Status.MacAddress), // MAC from InterfaceSpec not supported
 		ExternalID:    vnetIf.Status.InterfaceID,
 	}, nil
 }
@@ -393,7 +381,7 @@ func getVPCSubnetPortDevice(
 
 	// A MAC address in the InterfaceSpec will have been set in the SubnetPort
 	// Spec, so if set we expect it to be reflected in the Status.
-	macAddress := subnetPort.Status.NetworkInterfaceConfig.MACAddress
+	macAddress := strings.ToLower(subnetPort.Status.NetworkInterfaceConfig.MACAddress)
 	if macAddress == vpcIgnoreMacAddr {
 		// Ignore an all zeros MAC if VPC goes kooky.
 		macAddress = ""
@@ -535,11 +523,6 @@ func CreateAndWaitForNetworkInterfaces(
 			continue
 		}
 
-		// The old NetworkInterfaceResult always carried a lowercased MAC
-		// (InterfaceBootstrap lowercases it), and CreateDefaultEthCard used
-		// that value. Preserve that behavior here on the update path.
-		dev.MacAddress = strings.ToLower(dev.MacAddress)
-
 		devices = append(devices, dev)
 	}
 
@@ -581,9 +564,6 @@ func createAndWaitNamedNetworkInterfaces(
 			return nil, fmt.Errorf("named network interface %q error: %w", interfaceSpec.Name, err)
 		}
 
-		// See the comment in CreateAndWaitForNetworkInterfaces about lowercasing.
-		dev.MacAddress = strings.ToLower(dev.MacAddress)
-
 		devices = append(devices, dev)
 	}
 
@@ -623,7 +603,7 @@ func createAndWaitNamedNetworkInterface(
 		InterfaceName: interfaceSpec.Name,
 		Backing:       backing,
 		NetworkID:     networkRefName,
-		MacAddress:    interfaceSpec.MACAddr,
+		MacAddress:    strings.ToLower(interfaceSpec.MACAddr),
 		ExternalID:    "",
 	}
 
@@ -1269,86 +1249,6 @@ func ipCIDRNotation(ip string, mask string, isIPv4 bool) string {
 	}
 
 	return ipNet.String()
-}
-
-// CreateDefaultEthCardFromNetworkDevice creates a default Ethernet card from a Device.
-// This is used during VM create when the VM Class ConfigSpec does not have a device entry for
-// a VM Spec network interface.
-func CreateDefaultEthCardFromNetworkDevice(
-	ctx context.Context,
-	dev *Device) (vimtypes.BaseVirtualDevice, error) {
-
-	return createDefaultEthCardFromDevice(ctx, dev.Backing, dev.MacAddress, dev.ExternalID)
-}
-
-func createDefaultEthCardFromDevice(
-	ctx context.Context,
-	backing object.NetworkReference,
-	macAddress string,
-	externalID string) (vimtypes.BaseVirtualDevice, error) {
-
-	cardBacking, err := backing.EthernetCardBackingInfo(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get ethernet card backing info for network %v: %w", backing.Reference(), err)
-	}
-
-	dev, err := object.EthernetCardTypes().CreateEthernetCard(defaultEthernetCardType, cardBacking)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create ethernet card network %v: %w", backing.Reference(), err)
-	}
-
-	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-	ethCard.ExternalId = externalID
-	if macAddress != "" {
-		ethCard.MacAddress = macAddress
-		ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
-	} else {
-		ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated) // TODO: Or TypeAssigned?
-	}
-
-	return dev, nil
-}
-
-// ApplyNetworkDeviceToVirtualEthCard applies a Device to an existing Ethernet device
-// from the class ConfigSpec. This is used during VM create.
-func ApplyNetworkDeviceToVirtualEthCard(
-	ctx context.Context,
-	ethCard *vimtypes.VirtualEthernetCard,
-	dev *Device) error {
-
-	return applyNetworkDeviceToEthCard(ctx, ethCard, dev.Backing, "", dev.MacAddress, dev.ExternalID)
-}
-
-func applyNetworkDeviceToEthCard(
-	ctx context.Context,
-	ethCard *vimtypes.VirtualEthernetCard,
-	backing object.NetworkReference,
-	networkID string,
-	macAddress string,
-	externalID string) error {
-
-	cardBacking, err := backing.EthernetCardBackingInfo(ctx)
-	if err != nil {
-		errRef := networkID
-		if errRef == "" {
-			errRef = backing.Reference().Value
-		}
-		return fmt.Errorf("unable to get ethernet card backing info for network %v: %w", errRef, err)
-	}
-	ethCard.Backing = cardBacking
-
-	ethCard.ExternalId = externalID
-	if macAddress != "" {
-		ethCard.MacAddress = macAddress
-		ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
-	} else { //nolint:staticcheck,revive
-		// BMV: IMO this must be Generated/TypeAssigned to avoid major foot gun, but we have tests assuming
-		// this is left as-is.
-		// ethCard.MacAddress = ""
-		// ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
-	}
-
-	return nil
 }
 
 func SetNetworkInterfaceOwnerRef(vm *vmopv1.VirtualMachine, object metav1.Object, scheme *runtime.Scheme) error {

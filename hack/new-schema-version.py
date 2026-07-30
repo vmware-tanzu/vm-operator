@@ -1877,8 +1877,8 @@ class SchemaMigration:
             1,
         )
         content = content.replace(
-            f"make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.NetworkResults.Results))",
-            f"make([]{old_alias}.NetworkDeviceStatus, 0, len(bsArgs.NetworkResults.Results))",
+            f"make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))",
+            f"make([]{old_alias}.NetworkDeviceStatus, 0, len(bsArgs.NetBootstraps))",
             1,
         )
         status_old = "status := vmopv1.NetworkDeviceStatus{\n\t\t\tMacAddress: macAddr,"
@@ -1902,13 +1902,13 @@ class SchemaMigration:
             f"func toTemplateNetworkStatusV1A{new_num}(bsArgs *BootstrapArgs) "
             f"[]vmopv1.NetworkDeviceStatus {{\n"
             f"\tnetworkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, "
-            "len(bsArgs.NetworkResults.Results))\n\n"
-            "\tfor _, result := range bsArgs.NetworkResults.Results {\n"
-            '\t\tmacAddr := strings.ReplaceAll(result.MacAddress, ":", "-")\n\n'
+            "len(bsArgs.NetBootstraps))\n\n"
+            "\tfor _, b := range bsArgs.NetBootstraps {\n"
+            '\t\tmacAddr := strings.ReplaceAll(b.MacAddress, ":", "-")\n\n'
             "\t\tstatus := vmopv1.NetworkDeviceStatus{\n"
             "\t\t\tMacAddress: macAddr,\n"
             "\t\t}\n\n"
-            "\t\tfor _, ipConfig := range result.IPConfigs {\n"
+            "\t\tfor _, ipConfig := range b.IPConfigs {\n"
             "\t\t\tif ipConfig.IsIPv4 {\n"
             '\t\t\t\tif status.Gateway4 == "" {\n'
             "\t\t\t\t\tstatus.Gateway4 = ipConfig.Gateway\n"

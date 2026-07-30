@@ -84,6 +84,18 @@ type Bootstrap struct {
 	IPConfigs []NetworkInterfaceIPConfig
 }
 
+type NetworkInterfaceIPConfig struct { //nolint:revive
+	IPCIDR  string // IP address in CIDR notation e.g. 192.168.10.42/24
+	IsIPv4  bool
+	Gateway string
+}
+
+type NetworkInterfaceRoute struct { //nolint:revive
+	To     string
+	Via    string
+	Metric int32
+}
+
 // InterfaceBootstrap computes the final Bootstrap for a network interface by
 // applying the interface spec overrides on top of the provider-derived initial
 // state. The initial Bootstrap carries values populated from the network provider

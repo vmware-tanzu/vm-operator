@@ -2527,11 +2527,6 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
-		pkgcond.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
-		return nil
-	}
-
 	devices, err := network.CreateNetworkDevices(
 		vmCtx,
 		vmCtx.VM,
@@ -2539,13 +2534,19 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 		vcClient.VimClient(),
 		vcClient.Finder())
 	if err != nil {
-		pkgcond.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady,
-			"NotReady", "%v", err)
+		pkgcond.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady,
+			"NotReady", err)
 		return err
 	}
 
-	createArgs.NetworkDevices = devices
-	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+	if len(devices) > 0 {
+		createArgs.NetworkDevices = devices
+		pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+	} else {
+		// Either no network interfaces or marked as disabled. Historically, we have
+		// removed the network ready condition to indicate there is no networking.
+		pkgcond.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+	}
 
 	return nil
 }
@@ -3160,58 +3161,64 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 		return nil
 	}
 
-	devIdx := 0
-	var unmatchedEthDevices []int
+	// Ethernet devices in the ConfigSpec come from the VM Class. Interfaces with
+	// no explicit Type are zipped with them in order; typed interfaces always
+	// get a purpose-built card instead of a class one. The class Ethernet
+	// devices are pulled out of the ConfigSpec here and the resulting Ethernet
+	// device changes (reused or newly created) are rebuilt from scratch below,
+	// in VM Spec.Network.Interfaces order, so that order is preserved in the
+	// final ConfigSpec regardless of which interfaces reused a class card.
+	var classEthCards []*vimtypes.VirtualDeviceConfigSpec
+	nonEthDeviceChange := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(createArgs.ConfigSpec.DeviceChange))
 
-	for idx := range createArgs.ConfigSpec.DeviceChange {
-		spec := createArgs.ConfigSpec.DeviceChange[idx].GetVirtualDeviceConfigSpec()
-		if spec == nil || !pkgutil.IsEthernetCard(spec.Device) {
+	for _, dc := range createArgs.ConfigSpec.DeviceChange {
+		spec := dc.GetVirtualDeviceConfigSpec()
+		if spec != nil && pkgutil.IsEthernetCard(spec.Device) {
+			classEthCards = append(classEthCards, spec)
+			continue
+		}
+		nonEthDeviceChange = append(nonEthDeviceChange, dc)
+	}
+
+	ethDeviceChange := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(createArgs.NetworkDevices))
+	for i, dev := range createArgs.NetworkDevices {
+		interfaceSpec := vmCtx.VM.Spec.Network.Interfaces[i]
+
+		// Zip the interface from the VM Spec with an EthernetCard from the class,
+		// but a type in the interface spec takes precedence.
+		if i < len(classEthCards) && interfaceSpec.Type == "" {
+			classDeviceChange := classEthCards[i]
+			ethCard := classDeviceChange.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+
+			// Update the device from the class with the configuration from the
+			// network provider, like the backing and MAC address.
+			if err := network.UpdateVMClassEthCardFromDevice(vmCtx, dev, ethCard); err != nil {
+				return err
+			}
+
+			ethDeviceChange = append(ethDeviceChange, classDeviceChange)
 			continue
 		}
 
-		device := spec.Device
-		ethCard := device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-
-		if devIdx < len(createArgs.NetworkDevices) {
-			err := network.ApplyNetworkDeviceToVirtualEthCard(vmCtx, ethCard, &createArgs.NetworkDevices[devIdx])
-			if err != nil {
-				return err
-			}
-			devIdx++
-
-		} else {
-			// This ConfigSpec Ethernet device does not have a corresponding entry in the VM Spec, so we
-			// don't have a working backing for it. Remove it from the ConfigSpec since that is the easiest
-			// thing to do, since extra NICs can cause later complications around GOSC and other customizations.
-			// The downside with this is that if a NIC is added to the VM Spec, it will always have the default
-			// device type.
-			// Revisit this later if we don't like that behavior: the VirtualEthernetCardNetworkBackingInfo
-			// can be used for a placeholder backing.
-			unmatchedEthDevices = append(unmatchedEthDevices, idx-len(unmatchedEthDevices))
-		}
-	}
-
-	if len(unmatchedEthDevices) > 0 {
-		deviceChange := createArgs.ConfigSpec.DeviceChange
-		for _, idx := range unmatchedEthDevices {
-			deviceChange = append(deviceChange[:idx], deviceChange[idx+1:]...)
-		}
-		createArgs.ConfigSpec.DeviceChange = deviceChange
-	}
-
-	// Any remaining VM Spec network interfaces were not matched with a device in the ConfigSpec, so
-	// create a default virtual ethernet card for them.
-	for i := devIdx; i < len(createArgs.NetworkDevices); i++ {
-		ethCardDev, err := network.CreateDefaultEthCardFromNetworkDevice(vmCtx, &createArgs.NetworkDevices[i])
+		// Create a new EthernetCard for this network interface.
+		ethCard, err := network.CreateVirtualEthernetCard(vmCtx, dev, interfaceSpec)
 		if err != nil {
 			return err
 		}
 
-		createArgs.ConfigSpec.DeviceChange = append(createArgs.ConfigSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+		ethDeviceChange = append(ethDeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-			Device:    ethCardDev,
+			Device:    ethCard,
 		})
 	}
+
+	// Any VM Class Ethernet devices not consumed above do not have a corresponding
+	// entry in the VM Spec, so we don't have a working backing for them. They are
+	// dropped here (by simply not including them in ethDeviceChange) since extra
+	// NICs can cause later complications around GOSC and other customizations.
+	// If we later really want to keep them, the VirtualEthernetCardNetworkBackingInfo
+	// can be used for a placeholder backing.
+	createArgs.ConfigSpec.DeviceChange = append(nonEthDeviceChange, ethDeviceChange...) //nolint:gocritic
 
 	return nil
 }

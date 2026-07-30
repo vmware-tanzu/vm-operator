@@ -66,7 +66,7 @@ type VMUpdateArgs struct {
 	ExtraConfig    map[string]string
 	BootstrapData  vmlifecycle.BootstrapData
 	ConfigSpec     vimtypes.VirtualMachineConfigSpec
-	NetworkResults network.NetworkInterfaceResults
+	NetworkResults *network.NetworkInterfaceResults
 }
 
 // VMResizeArgs contains the arguments needed to resize a VM on VC.
@@ -77,7 +77,7 @@ type VMResizeArgs struct {
 
 	BootstrapData  vmlifecycle.BootstrapData
 	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
-	NetworkResults network.NetworkInterfaceResults
+	NetworkResults *network.NetworkInterfaceResults
 }
 
 func (s *Session) UpdateVirtualMachine(
@@ -313,7 +313,7 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 
 		if useResizeArgs {
 
-			resizeArgs.NetworkResults = networkResults
+			resizeArgs.NetworkResults = &networkResults
 			if err := s.resizeVMWhenPoweredStateOff(
 				vmCtx,
 				vcVM,
@@ -325,7 +325,7 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 
 		} else {
 
-			updateArgs.NetworkResults = networkResults
+			updateArgs.NetworkResults = &networkResults
 			if err := s.poweredOffReconfigure(
 				vmCtx,
 				vcVM,
@@ -737,7 +737,7 @@ func (s *Session) getConfigSpecForPoweredOffVM(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
 
-	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, &updateArgs.NetworkResults, currentEthCards)
+	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, updateArgs.NetworkResults, currentEthCards)
 	if err != nil {
 		return nil, false, err
 	}
@@ -759,7 +759,6 @@ func (s *Session) reconcileNetworkInterfaces(
 
 	networkSpec := vmCtx.VM.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
-		// TODO: Remove all interfaces.
 		return network.NetworkInterfaceResults{}, nil
 	}
 
@@ -775,14 +774,16 @@ func (s *Session) reconcileNetworkInterfaces(
 			fmt.Errorf("failed to reconcile network interfaces: %w", err)
 	}
 
-	for idx := range devices {
-		dev, err := network.CreateDefaultEthCardFromNetworkDevice(vmCtx, &devices[idx])
+	for i, dev := range devices {
+		interfaceSpec := vmCtx.VM.Spec.Network.Interfaces[i]
+
+		ethCard, err := network.CreateVirtualEthernetCard(vmCtx, dev, interfaceSpec)
 		if err != nil {
 			return network.NetworkInterfaceResults{},
-				fmt.Errorf("failed to create default ethernet card: %w", err)
+				fmt.Errorf("failed to create Ethernet card: %w", err)
 		}
 
-		devices[idx].EthCard = dev
+		devices[i].EthCard = ethCard
 	}
 
 	results := network.NetworkInterfaceResults{Devices: devices}
@@ -1022,7 +1023,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
 		virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 		currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
-		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, &resizeArgs.NetworkResults, currentEthCards)
+		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, resizeArgs.NetworkResults, currentEthCards)
 		if err != nil {
 			return err
 		}

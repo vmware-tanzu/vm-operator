@@ -55,10 +55,11 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return false, err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, false)
 	if err != nil {
@@ -96,10 +97,11 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return 0, err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
@@ -134,10 +136,11 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(
 	)
 	ctx = vmCtx.Context
 
-	client, err := vs.getVcClient(ctx)
+	client, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {

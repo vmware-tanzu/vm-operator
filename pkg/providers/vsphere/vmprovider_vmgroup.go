@@ -54,10 +54,11 @@ func (vs *vSphereVMProvider) PlaceVirtualMachineGroup(
 
 	ctx = pkgctx.WithVCOpID(ctx, group, "groupPlacement")
 
-	vcClient, err := vs.getVcClient(ctx)
+	vcClient, release, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	placementArgs, err := vs.vmGroupGetVMPlacementArgs(ctx, vcClient, groupPlacements)
 	if err != nil {

@@ -98,7 +98,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 		Context("Pending network changes because VM is powered on", func() {
 			BeforeEach(func() {
-				bsArgs.NetworkResults.UpdatedEthCards = true
+				bsArgs.UpdatedEthCards = true
 				vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 			})
 

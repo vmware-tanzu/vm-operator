@@ -64,7 +64,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 			bsArgs.Data["unattend"] = unattendXML
 			bsArgs.SearchSuffixes = []string{"suffix1", "suffix2"}
-			bsArgs.NetworkResults.Results = []network.NetworkInterfaceResult{
+			bsArgs.Bootstraps = []network.Bootstrap{
 				{
 					MacAddress: macAddr,
 					IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -334,7 +334,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				sysPrepText := custSpec.Identity.(*vimtypes.CustomizationSysprepText)
 				Expect(sysPrepText.Value).To(Equal(unattendXML))
 
-				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
+				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.Bootstraps)))
 				Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
 			})
 

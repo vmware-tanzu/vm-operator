@@ -112,7 +112,7 @@ func BootStrapCloudInit(
 	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling Cloud-Init bootstrap state")
 
-	if bsArgs.NetworkResults.UpdatedEthCards {
+	if bsArgs.UpdatedEthCards {
 		// We're not yet doing hot-plug of ethernet devices for a powered on VM. Therefore, if this
 		// VM is on and there were network device related changes, don't apply a new cloud-config
 		// since the VM does not have the expected ethernet devices.
@@ -122,7 +122,7 @@ func BootStrapCloudInit(
 		}
 	}
 
-	netPlan, err := network.NetPlanCustomization(bsArgs.NetworkResults, bsArgs.VLANs)
+	netPlan, err := network.NetPlanCustomization(bsArgs.Bootstraps, bsArgs.VLANs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create NetPlan customization: %w", err)
 	}

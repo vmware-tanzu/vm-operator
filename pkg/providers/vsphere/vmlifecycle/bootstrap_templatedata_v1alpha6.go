@@ -24,9 +24,9 @@ import (
 )
 
 func toTemplateNetworkStatusV1A6(bsArgs *BootstrapArgs) []vmopv1.NetworkDeviceStatus {
-	networkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.NetworkResults.Results))
+	networkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.Bootstraps))
 
-	for _, result := range bsArgs.NetworkResults.Results {
+	for _, result := range bsArgs.Bootstraps {
 		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
 
 		status := vmopv1.NetworkDeviceStatus{

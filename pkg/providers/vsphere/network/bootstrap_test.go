@@ -666,7 +666,11 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 
 	JustBeforeEach(func() {
 		vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, interfaceSpec)
-		bootstrap = network.NetOPInterfaceBootstrap(ctx, vm, netIf, interfaceSpec, macAddress)
+		bootstraps, err := network.BuildBootstraps(ctx, vm, []network.Device{
+			{InterfaceObj: netIf, MacAddress: macAddress},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		bootstrap = bootstraps[0]
 	})
 
 	When("IPAssignmentMode=StaticPool, IPv6AssignmentMode=StaticPool, IPConfigs populated", func() {
@@ -1012,7 +1016,11 @@ var _ = Describe("NCPInterfaceBootstrap", func() {
 
 	JustBeforeEach(func() {
 		vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, interfaceSpec)
-		bootstrap = network.NCPInterfaceBootstrap(ctx, vm, vnetIf, interfaceSpec, macAddress)
+		bootstraps, err := network.BuildBootstraps(ctx, vm, []network.Device{
+			{InterfaceObj: vnetIf, MacAddress: macAddress},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		bootstrap = bootstraps[0]
 	})
 
 	When("status has IPAddresses set", func() {
@@ -1134,7 +1142,11 @@ var _ = Describe("VPCInterfaceBootstrap",
 
 	JustBeforeEach(func() {
 		vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, interfaceSpec)
-		bootstrap = network.VPCInterfaceBootstrap(ctx, vm, subnetPort, interfaceSpec, macAddress)
+		bootstraps, err := network.BuildBootstraps(ctx, vm, []network.Device{
+			{InterfaceObj: subnetPort, MacAddress: macAddress},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		bootstrap = bootstraps[0]
 	})
 
 	When("status has valid IPAddresses and a MAC address", func() {
@@ -1261,7 +1273,11 @@ var _ = Describe("VPCInterfaceBootstrap",
 				subnetPort.Status.NetworkInterfaceConfig.DHCPv6DeactivatedOnSubnet = sc.dhcp6Off
 				subnetPort.Status.NetworkInterfaceConfig.RADeactivated = sc.raOff
 				subnetPort.Status.NetworkInterfaceConfig.IPAddresses = sc.ips
-				b := network.VPCInterfaceBootstrap(ctx, vm, subnetPort, interfaceSpec, macAddress)
+				bs, err := network.BuildBootstraps(ctx, vm, []network.Device{
+					{InterfaceObj: subnetPort, MacAddress: macAddress},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				b := bs[0]
 				Expect(b.DHCP4).To(Equal(w.dhcp4), "DHCP4")
 				Expect(b.DHCP6).To(Equal(w.dhcp6), "DHCP6")
 				Expect(b.AcceptRA).To(Equal(w.acceptRA), "AcceptRA")

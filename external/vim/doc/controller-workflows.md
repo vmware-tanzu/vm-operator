@@ -13,8 +13,8 @@ There are two related pipelines:
 flowchart TB
   subgraph zone["Zone controller"]
     ZW["Watch Zone (namespace-scoped)"]
-    ZP["Read spec.namespace.poolMoIDs"]
-    ZC["Derive unique cluster MoIDs from pools"]
+    ZP["Read spec.managedVMs.clusterMoIDs"]
+    ZC["Take each unique cluster MoID"]
     ZCT["Create/patch ConfigTarget per cluster<br/>metadata.name = cluster MoID"]
     ZVMCP["Create/patch VirtualMachineConfigPolicy<br/>spec.zone = Zone metadata.name"]
     ZW --> ZP --> ZC --> ZCT
@@ -42,7 +42,7 @@ flowchart TB
   subgraph vmcp["VirtualMachineConfigPolicy controller"]
     VPW["Watch VirtualMachineConfigPolicy (namespace-scoped)"]
     VCHK{"spec.syncMode?"}
-    VSM["Read Zone + ConfigTarget<br/>(cluster MoID from pools)"]
+    VSM["Read Zone + ConfigTarget<br/>(cluster MoIDs from spec.managedVMs.clusterMoIDs)"]
     VPS["Patch policy spec from ConfigTarget status<br/>(limits, flags, ConfigTargetDevices)"]
     VDIS["Skip vSphere sync<br/>(admin/tenant-owned spec)"]
     VPW --> VCHK
@@ -57,7 +57,7 @@ flowchart TB
 
 Each `VirtualMachineGuestOptions` reconciliation updates `status.hardwareVersions` with one entry for the hardware version of the `VirtualMachineConfigOptions` being reconciled; reconciles of other hardware versions append their own entries (see the `VirtualMachineConfigOptions` controller section above).
 
-Dashed edges: (1) the `Zone` controller creates the namespaced policy object that the policy controller reconciles; (2) syncing policy spec requires a cluster `ConfigTarget` (created by the same reconcile chain) whose `metadata.name` is the cluster MoID derived from the zone’s `spec.namespace.poolMoIDs`, matching the `Zone` controller’s logic.
+Dashed edges: (1) the `Zone` controller creates the namespaced policy object that the policy controller reconciles; (2) syncing policy spec requires a cluster `ConfigTarget` (created by the same reconcile chain) whose `metadata.name` is a cluster MoID listed in the zone’s `spec.managedVMs.clusterMoIDs`, matching the `Zone` controller’s logic.
 
 ## vSphere API and Kubernetes writes
 
@@ -103,8 +103,8 @@ sequenceDiagram
 ### `Zone` controller
 
 1. `Zone` controller watches `Zone` resources in a namespace.
-2. When `Zone` object is reconciled, its `spec.namespace.poolMoIDs` list is inspected to get a list of the resource pool IDs belonging to the zone.
-3. A unique set of vSphere cluster managed object IDs is derived from the list of the zone's pool IDs.
+2. When `Zone` object is reconciled, its `spec.managedVMs.clusterMoIDs` list is inspected to get the vSphere cluster managed object IDs belonging to the zone.
+3. That list is the unique set of vSphere cluster managed object IDs for the zone.
 4. For each of the unique cluster managed object IDs, the `Zone` controller creates or patches a cluster-scoped `ConfigTarget` resource with the `metadata.name` of the resource being the managed object ID of the cluster.
 5. The `Zone` controller creates or patches a namespace-scoped `VirtualMachineConfigPolicy` object for the given `Zone`. The `VirtualMachineConfigPolicy` field `spec.zone` records the name of the `Zone` to which the policy applies. If the resource does not already exist, then the `VirtualMachineConfigPolicy` field `spec.syncMode` is set to `ConfigTarget`.
 
@@ -127,7 +127,7 @@ sequenceDiagram
 3. If the value of `spec.syncMode` is `Disabled`, the controller does not copy data from vSphere into the policy; reconciliation may still update status (for example conditions). The policy **spec** is treated as operator-managed.
 4. If the value of `spec.syncMode` is `ConfigTarget`, the controller continues to reconcile the resource against the cluster `ConfigTarget`.
 5. The `VirtualMachineConfigPolicy` controller looks up the `Zone` resource named in `spec.zone`.
-6. Using the same pool-to-cluster derivation as the `Zone` controller, the controller obtains the vSphere cluster managed object ID(s) from the zone's `spec.namespace.poolMoIDs`. For each relevant cluster, it reads the cluster-scoped `ConfigTarget` whose `metadata.name` is that cluster MoID. Please note, today a Zone applied to a namespace maps to a single vSphere cluster. The other clusters are there strictly for infrastructure mobility / cluster decommissioning.
+6. Using the same derivation as the `Zone` controller, the controller obtains the vSphere cluster managed object ID(s) from the zone's `spec.managedVMs.clusterMoIDs`. For each relevant cluster, it reads the cluster-scoped `ConfigTarget` whose `metadata.name` is that cluster MoID. Please note, today a Zone applied to a namespace maps to a single vSphere cluster. The other clusters are there strictly for infrastructure mobility / cluster decommissioning.
 7. The `VirtualMachineConfigPolicy` controller maps the `ConfigTarget`'s **status** (numeric limits, feature flags, and the embedded device capability lists) into the policy's **spec**, which shares the `ConfigTargetDevices` shape and related fields (`numCPUCores`, `memory`, and so on). That gives namespaced consumers a single object for "what this zone allows," aligned with `vim.vm.ConfigTarget` after `QueryConfigTarget`.
 
 Additional **spec** fields on `VirtualMachineConfigPolicy` are not filled by vSphere sync; they are part of the policy contract for workloads and admission: `createMode`, `updateMode`, and `powerOnMode` (`Allow` vs `Deny`), `vmClassMode` (`AsPolicy` vs `AsConfig`), and optional `extraConfig` allow/deny lists. Defaults match the CRD (`syncMode` defaults to `ConfigTarget`, modes default to `Allow`, `vmClassMode` defaults to `AsPolicy`).

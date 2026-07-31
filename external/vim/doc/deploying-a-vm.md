@@ -17,12 +17,12 @@ These APIs use predictable **`metadata.name`** values (and matching `spec` ident
 
 | Resource | Kind | `metadata.name` convention | Example names |
 |---|---|---|---|
-| **configtarget** | `ConfigTarget` | The vSphere cluster **managed object ID** (MoID) | `cluster-1`, `cluster-2`, `cluster-3` |
+| **configtarget** | `ConfigTarget` | The vSphere cluster **managed object ID** (MoID), which must match `^domain-c[0-9]+$` | `domain-c52`, `domain-c81` |
 | **vmconfigoption** | `VirtualMachineConfigOptions` | The **hardware version** string | `vmx-22`, `vmx-19` |
 | **vmguestoption** | `VirtualMachineGuestOptions` | **Lowercased** guest ID (DNS-safe label) | `otherlinux64`, `windows2022srv64` |
 | **vmconfigpolicy** | `VirtualMachineConfigPolicy` | The **zone** name for that policy | `us-east-1`, `us-west-2` |
 
-`kubectl` short names, where registered, are **`vmconfigoptions`**, **`vmguestoptions`**, and **`vmconfigpolicy`** (note the plural **s** on the first two). For `ConfigTarget`, the registered plural resource name is **`configtargets`** (for example `kubectl get configtargets cluster-1`); some clients also accept the singular form **`configtarget`**.
+The registered `kubectl` short names are **`vmconfigoptions`**, **`vmguestoptions`**, and **`vmconfigpolicy`** (note the plural **s** on the first two). `ConfigTarget` has no short name; use the plural resource name **`configtargets`** (for example `kubectl get configtargets domain-c52`), or the singular form **`configtarget`**.
 
 ## VirtualMachineConfigOptions
 
@@ -49,7 +49,7 @@ Clients typically combine **`VirtualMachineConfigOptions`** (hardware version + 
 
 ## ConfigTarget
 
-`ConfigTarget` is a **cluster-scoped** resource tied to a **single vSphere cluster**. The object is **named after that cluster’s MoID** (e.g., `cluster-1`). Its spec requires **`id`**, the same managed object ID. Status reflects **physical / pool-level** capacity from the vSphere `ConfigTarget` returned by `QueryConfigTarget`, for example:
+`ConfigTarget` is a **cluster-scoped** resource tied to a **single vSphere cluster**. The object is **named after that cluster’s MoID** (e.g., `domain-c52`). Its spec requires **`id`**, the same managed object ID. Status reflects **physical / pool-level** capacity from the vSphere `ConfigTarget` returned by `QueryConfigTarget`, for example:
 
 - Pool-wide CPU and core counts, NUMA node count, maximum SMT threads, and **`maxCPUsPerVM`** (cap on CPUs for one VM given cluster inventory).
 - Memory ceilings such as **`supportedMaxMem`** and **`maxMemOptimalPerf`**.
@@ -62,7 +62,9 @@ Clients typically combine **`VirtualMachineConfigOptions`** (hardware version + 
 
 `VirtualMachineConfigPolicy` is **namespace-scoped** (short name: `vmconfigpolicy`). It is **not** a projection of a single vSphere method; think of it as a **namespace-scoped companion to `ConfigTarget`** whose fields are interpreted **per virtual machine**.
 
-There is **one `VirtualMachineConfigPolicy` object per zone** in a namespace. Each object is **named after that zone** (for example `us-east-1`, `us-west-1`). If namespace `my-namespace-1` spans three zones—`us-west-1`, `us-east-1`, and `us-south-1`—then there are **three** policy objects in that namespace. Validators and placement-aware components **must consider every zone’s policy** when deciding whether a configuration is allowed: **all zone policies in the namespace are consulted**, and the outcome depends on whether **any** of them permits the requested VM configuration (for example, at least one zone allows the requested memory, CPU, devices, and ExtraConfig rules so the VM could legally run there). If **no** zone’s policy allows the request, admission or scheduling should reject it.
+There is **one `VirtualMachineConfigPolicy` object per zone** in a namespace. Each object is **named after that zone** (for example `us-east-1`, `us-west-1`). If namespace `my-namespace-1` spans three zones—`us-west-1`, `us-east-1`, and `us-south-1`—then there are **three** policy objects in that namespace.
+
+Enforcement resolves **exactly one** of them: the policy named after the VM's **assigned zone**, read from the VM's `topology.kubernetes.io/zone` label. A VM that has not yet been placed has no resolvable policy and is not enforced; enforcement resumes on the next update once placement sets the label. Placement-aware components that want to tell a user *which* zones could host a configuration must read every policy in the namespace and do that reasoning themselves — admission does not. See [`integration-guide.md`](./integration-guide.md) for the full enforcement contract.
 
 Where `ConfigTarget` status describes cluster inventory (for example, logical CPUs available to run workloads), policy fields such as **`memory`** (`ResourceQuantityRange`), **`numCPUCores`**, **`numNUMANodes`**, and **`numSimultaneousThreads`** (`IntRange`) express **what one VM is allowed to use under that zone’s policy**, not totals across hosts in the cluster.
 
@@ -103,9 +105,9 @@ The following scenario walks through how a user leverages these APIs when deploy
 
 6. The Kubernetes API server receives the `VirtualMachine` create request and routes it to the VM resource’s validation webhook.
 
-7. Namespace `my-namespace-1` has three zones, so there are three policies: **`VirtualMachineConfigPolicy`** objects **`us-west-1`**, **`us-east-1`**, and **`us-south-1`**. The webhook **lists or fetches every** `vmconfigpolicy` in the namespace and evaluates whether **any** zone’s policy permits the VM. Here, **`spec.memory.max`** is **8 Gi** **per VM** in **each** zone.
+7. The VM carries the label `topology.kubernetes.io/zone: us-west-1`, so the webhook fetches the single **`VirtualMachineConfigPolicy`** named **`us-west-1`** in `my-namespace-1`. That policy has **`spec.memory.max`** of **8 Gi** **per VM**, **`spec.createMode: Deny`**, and **`spec.vmClassMode: AsConfig`**.
 
-8. The request asks for **16 Gi**. **None** of the three zone policies allows that much memory for a single VM, so **no** zone would accept the configuration. The webhook rejects the request and the API server returns an error to `kubectl`.
+8. The request asks for **16 Gi**. Because `createMode` is `Deny`, the webhook evaluates compliance, finds the VM over the zone's ceiling, rejects the request, and the API server returns an error to `kubectl`. (Had `createMode` been left at its `Allow` default, the create would have been admitted regardless.)
 
 ```mermaid
 sequenceDiagram
@@ -115,7 +117,7 @@ sequenceDiagram
     participant wh as VM Validation Webhook
     participant vmco as VirtualMachineConfigOptions<br/>(vmx-22)
     participant vmgo as VirtualMachineGuestOptions<br/>(otherlinux64)
-    participant vcp as VirtualMachineConfigPolicy<br/>(per zone)
+    participant vcp as VirtualMachineConfigPolicy<br/>(us-west-1)
 
     User->>kc: kubectl get vmconfigoptions vmx-22 -oyaml
     kc->>api: GET .../virtualmachineconfigoptions/vmx-22
@@ -131,17 +133,17 @@ sequenceDiagram
     api-->>kc: YAML
     kc-->>User: supportedMinMem, recommendedMem, supportedNumDisks, ...
 
-    User->>kc: kubectl apply -f vm.yaml<br/>ns: my-namespace-1<br/>(guestID: OtherLinux64, hwVersion: vmx-22,<br/>memory: 16Gi, disks: 2)
+    User->>kc: kubectl apply -f vm.yaml<br/>ns: my-namespace-1<br/>zone label: us-west-1<br/>(guestID: OtherLinux64, hwVersion: vmx-22,<br/>memory: 16Gi, disks: 2)
     kc->>api: POST .../namespaces/my-namespace-1/virtualmachines
 
     api->>wh: AdmissionReview (CREATE VirtualMachine)
-    wh->>api: LIST .../namespaces/my-namespace-1/virtualmachineconfigpolicies
-    api->>vcp: read us-west-1, us-east-1, us-south-1
-    vcp-->>api: each spec.memory.max = 8Gi
+    wh->>api: GET .../namespaces/my-namespace-1/virtualmachineconfigpolicies/us-west-1
+    api->>vcp: read us-west-1
+    vcp-->>api: spec.createMode = Deny, spec.memory.max = 8Gi
 
-    Note over wh: All zone policies consulted<br/>no zone permits 16Gi per VM
+    Note over wh: createMode=Deny, so compliance is evaluated<br/>16Gi exceeds the zone's 8Gi per-VM ceiling
 
     wh-->>api: AdmissionResponse: denied
     api-->>kc: 422 Unprocessable Entity
-    kc-->>User: Error: memory not allowed by any zone policy in namespace
+    kc-->>User: Error: spec.resources.size.memory not allowed by the us-west-1 policy
 ```

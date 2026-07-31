@@ -6,6 +6,7 @@ package virtualmachineconfigpolicy_test
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,20 +21,16 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	configtargetctrl "github.com/vmware-tanzu/vm-operator/controllers/configtarget"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigpolicy"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/configtarget"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -491,6 +488,17 @@ func vcsimTests() {
 // end: a direct-Reconcile test cannot tell an intentional watch from a
 // missing one, since it never goes through the manager's watch wiring at
 // all.
+//
+// This suite deliberately does NOT run the real configtarget controller or
+// a real vSphere provider: that combination makes the ConfigTarget's Ready
+// transition depend on a live (albeit vcsim-backed) govmomi round trip whose
+// duration is not bounded under CI/local resource contention, which made an
+// earlier version of this test flaky (timing out anywhere from a few
+// seconds to several minutes). Driving the ConfigTarget's status by hand
+// keeps the test deterministic while still exercising exactly what this
+// Describe exists to prove: that a ConfigTarget status change reaches the
+// policy purely through AddToManager's watch wiring, with no manual
+// reconcile call.
 var _ = Describe("VirtualMachineConfigPolicy Controller watches, against a real manager",
 	Label(testlabels.Controller, testlabels.API, testlabels.EnvTest, testlabels.VCSim),
 	func() {
@@ -506,24 +514,12 @@ var _ = Describe("VirtualMachineConfigPolicy Controller watches, against a real 
 			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VirtualMachineConfigPolicy = true
 			})
-			ctx = ctxop.WithContext(ctx)
-			ctx = ovfcache.WithContext(ctx)
 
 			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
 				ctx,
 				builder.VCSimTestConfig{},
-				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-					err := configtargetctrl.AddToManager(ctx, mgr)
-					if err != nil {
-						return err
-					}
-
-					return virtualmachineconfigpolicy.AddToManager(ctx, mgr)
-				},
-				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-					ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), ctx.Recorder)
-					return nil
-				},
+				virtualmachineconfigpolicy.AddToManager,
+				manager.InitializeProvidersNoopFn,
 				nil)
 			Expect(vcSimCtx).ToNot(BeNil())
 
@@ -541,10 +537,13 @@ var _ = Describe("VirtualMachineConfigPolicy Controller watches, against a real 
 		})
 
 		When("a policy is created before its ConfigTarget becomes Ready", func() {
-			var policy *vimv1.VirtualMachineConfigPolicy
+			var (
+				policy *vimv1.VirtualMachineConfigPolicy
+				ct     *vimv1.ConfigTarget
+			)
 
 			BeforeEach(func() {
-				ct := &vimv1.ConfigTarget{
+				ct = &vimv1.ConfigTarget{
 					ObjectMeta: metav1.ObjectMeta{Name: clusterMoID},
 					Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: clusterMoID}},
 				}
@@ -557,22 +556,32 @@ var _ = Describe("VirtualMachineConfigPolicy Controller watches, against a real 
 				Expect(vcSimCtx.Client.Create(vcSimCtx, policy)).To(Succeed())
 			})
 
-			It("converges once the real configtarget controller marks the ConfigTarget Ready, with no manual reconcile", func() {
+			It("converges once the ConfigTarget is marked Ready, with no manual reconcile", func() {
+				// This suite does not go through TestSuite.Register, so the
+				// package-wide 10s/100ms Gomega defaults it would otherwise
+				// set are not in effect here -- use an explicit interval
+				// instead of Gomega's 1s/10ms fallback.
 				Eventually(func(g Gomega) {
 					var got vimv1.VirtualMachineConfigPolicy
 					g.Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
 					g.Expect(pkgcond.IsFalse(&got, vimv1.ReadyConditionType)).To(BeTrue())
 					g.Expect(pkgcond.GetReason(&got, vimv1.ReadyConditionType)).
 						To(Equal(virtualmachineconfigpolicy.ConfigTargetNotReadyReason))
-				}).Should(Succeed(), "policy must observe the not-yet-Ready ConfigTarget before it converges")
+				}, 10*time.Second, 100*time.Millisecond).
+					Should(Succeed(), "policy must observe the not-yet-Ready ConfigTarget before it converges")
+
+				ct.Status = vimv1.ConfigTargetStatus{NumCPUCores: 8}
+				pkgcond.MarkTrue(ct, vimv1.ReadyConditionType)
+				Expect(vcSimCtx.Client.Status().Update(vcSimCtx, ct)).To(Succeed())
 
 				Eventually(func(g Gomega) {
 					var got vimv1.VirtualMachineConfigPolicy
 					g.Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
 					g.Expect(pkgcond.IsTrue(&got, vimv1.ReadyConditionType)).To(BeTrue())
 					g.Expect(got.Spec.NumCPUCores).ToNot(BeNil())
-					g.Expect(got.Spec.NumCPUCores.Max).To(BeNumerically(">", 0))
-				}).Should(Succeed(), "the ConfigTarget watch must enqueue the policy once the real configtarget controller marks it Ready")
+					g.Expect(got.Spec.NumCPUCores.Max).To(Equal(int32(8)))
+				}, 10*time.Second, 100*time.Millisecond).
+					Should(Succeed(), "the ConfigTarget watch must enqueue the policy once the ConfigTarget is marked Ready")
 			})
 		})
 	})

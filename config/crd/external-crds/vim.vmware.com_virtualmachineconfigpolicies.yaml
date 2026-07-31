@@ -491,6 +491,7 @@ spec:
                       properties:
                         key:
                           description: Key is the extra config key to match.
+                          minLength: 1
                           type: string
                         type:
                           default: Glob
@@ -521,6 +522,7 @@ spec:
                       properties:
                         key:
                           description: Key is the extra config key to match.
+                          minLength: 1
                           type: string
                         type:
                           default: Glob
@@ -5525,6 +5527,7 @@ spec:
                 description: |-
                   Zone is the name of the zones.topology.tanzu.vmware.com resource to which
                   this policy applies.
+                minLength: 1
                 type: string
             required:
             - zone

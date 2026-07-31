@@ -31,6 +31,7 @@ type VirtualMachineConfigPolicyExtraConfigKey struct {
 	Type MatchType `json:"type"`
 
 	// +required
+	// +kubebuilder:validation:MinLength=1
 
 	// Key is the extra config key to match.
 	Key string `json:"key"`
@@ -115,6 +116,7 @@ const (
 // VirtualMachineConfigPolicy.
 type VirtualMachineConfigPolicySpec struct {
 	// +required
+	// +kubebuilder:validation:MinLength=1
 
 	// Zone is the name of the zones.topology.tanzu.vmware.com resource to which
 	// this policy applies.

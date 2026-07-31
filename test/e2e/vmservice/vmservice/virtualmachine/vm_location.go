@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -140,37 +141,41 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		vcenter.LogoutVimClient(vCenterAdminClient)
 	})
 
-	// getNsRPAndFolder returns the namespace RP MoID and folder MoID for the
-	// WCP namespace.  It mirrors the lookup order in topology.GetNamespaceFolderAndRPMoID:
-	// Zone.Spec.ManagedVMs first, then AvailabilityZone.Spec.Namespaces as fallback.
-	getNsRPAndFolder := func(namespace string) (rpMoID, folderMoID string) {
-		zoneList := &topologyv1.ZoneList{}
-		Expect(svClusterClient.List(ctx, zoneList, ctrlclient.InNamespace(namespace))).
-			To(Succeed(), "failed to list Zones for namespace %s", namespace)
+	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given
+	// zone, mirroring the controller's topology.GetNamespaceFolderAndRPMoID:
+	// the namespaced Zone first, then the AvailabilityZone as fallback. The RP
+	// is per-zone, so zone must match the VM's status.zone or the resolved RP
+	// belongs to a different zone.
+	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
+		// A found Zone is authoritative: assert it carries a pool rather than
+		// falling through to the AvailabilityZone path, which would otherwise
+		// surface a misleading "AvailabilityZone not found" error.
+		z := &topologyv1.Zone{}
+		err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: zone}, z)
+		if err == nil {
+			Expect(z.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty(),
+				"Zone %s/%s has no ManagedVMs.PoolMoIDs", namespace, zone)
+			e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
+				z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
+			return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
+		}
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "failed to get Zone %s/%s", namespace, zone)
 
-		for _, z := range zoneList.Items {
-			if len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
-				e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
-					z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
-				return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
-			}
+		// Fallback for older, non-zonal configs (no Zone object), where the VM's
+		// status.zone is the cluster-scoped AvailabilityZone name.
+		az := &topologyv1.AvailabilityZone{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: zone}, az)).
+			To(Succeed(), "failed to get AvailabilityZone %s", zone)
+
+		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok && nsInfo.PoolMoId != "" {
+			e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
+				az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
+			return nsInfo.PoolMoId, nsInfo.FolderMoId
 		}
 
-		// Fallback: AvailabilityZone.Spec.Namespaces (older cluster configurations).
-		azList := &topologyv1.AvailabilityZoneList{}
-		Expect(svClusterClient.List(ctx, azList)).
-			To(Succeed(), "failed to list AvailabilityZones")
-		Expect(azList.Items).ToNot(BeEmpty(), "expected at least one AvailabilityZone")
-
-		for _, az := range azList.Items {
-			if nsInfo, ok := az.Spec.Namespaces[namespace]; ok && nsInfo.PoolMoId != "" {
-				e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
-					az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
-				return nsInfo.PoolMoId, nsInfo.FolderMoId
-			}
-		}
-
-		Fail("could not determine namespace RP and folder MoIDs for namespace " + namespace)
+		Fail(fmt.Sprintf(
+			"could not determine namespace RP and folder MoIDs for namespace %s in zone %s",
+			namespace, zone))
 		return "", ""
 	}
 
@@ -244,7 +249,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	When("VM is created in the correct namespace RP and folder", Label("core-functional","experimental"), func() {
+	When("VM is created in the correct namespace RP and folder", Label("core-functional", "experimental"), func() {
 		It("sets VirtualMachineLocationValid condition to True", func() {
 			createVM()
 
@@ -256,7 +261,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace RP hierarchy", Label("core-functional","experimental"), func() {
+	When("VM is moved outside the namespace RP hierarchy", Label("core-functional", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -271,8 +276,9 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(vmMoID).ToNot(BeEmpty(), "VM must have a UniqueID before relocation")
 
-			By("Retrieving the correct namespace RP and folder MoIDs")
-			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName)
+			By("Retrieving the correct namespace RP and folder MoIDs for the VM's zone")
+			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
 
 			By("Retrieving the cluster root RP to use as an invalid location")
 			// 1. Resolve the specific Cluster MoID for the active Supervisor context
@@ -315,7 +321,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	When("VM is moved outside the namespace Folder hierarchy", Label("core-functional","experimental"), func() {
+	When("VM is moved outside the namespace Folder hierarchy", Label("core-functional", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -330,8 +336,9 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(vmMoID).ToNot(BeEmpty(), "VM must have a UniqueID before relocation")
 
-			By("Retrieving the correct namespace folder MoID")
-			_, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName)
+			By("Retrieving the correct namespace folder MoID for the VM's zone")
+			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			_, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
 
 			By("Retrieving another Supervisor Namespace's folder as the invalid folder location")
 			// A different namespace's folder always lies outside the 2-level hierarchy

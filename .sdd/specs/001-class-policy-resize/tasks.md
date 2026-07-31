@@ -37,10 +37,10 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S2 — Partner-facing integration doc (vmop-3739)
 
-- [ ] T020 [S2] Author `external/vim/doc/integration-guide.md` — pipeline diagram, role of each CRD, `ConfigTarget.status` capability surface (`maxHardwareVersion`, enriched `sriov`), per-host iteration inside the `ConfigTarget` controller, syncMode semantics, worked example of policy denial
-- [ ] T021 [S2] Link doc from public RTD site; review by PM and at least one downstream consumer team
+- [x] T020 [S2] Author `external/vim/doc/integration-guide.md` — pipeline diagram, role of each CRD, `ConfigTarget.status` capability surface, syncMode semantics, enforcement contract, worked example of policy denial. **Two bullets in this task's original scope were written against a design that was later retired and are documented as their opposite instead:** (1) "enriched `sriov`" — per T066c, `status.sriov` ships *empty*; SR-IOV enrichment is deferred to spec 003, and the guide tells consumers not to build on the field yet; (2) "per-host iteration inside the `ConfigTarget` controller (PropertyCollector RPC strategy, partial-failure handling)" — per the Story S4 retirement note below and T066b, there is no host enumeration and no `PropertyCollector` call; everything in `ConfigTarget.status` comes from the cluster's `EnvironmentBrowser`.
+- [~] T021 [S2] Link doc from public RTD site; review by PM and at least one downstream consumer team. **Not done, and not doable in the same change set.** `mkdocs.yml` sets `docs_dir: docs` with no include/monorepo plugin, so nothing under `external/vim/doc/` is reachable by the RTD build today — publishing requires either relocating the `external/vim/doc/` tree into `docs/`, adding an include plugin to `docs/requirements.txt`, or symlinking. That is a docs-site structural decision affecting all three `external/vim/doc/` pages, not just this one, and is tracked separately. The PM / downstream-consumer review half is a process step outside any PR.
 
-*Gate: T021 must be complete before Phase 2 code work begins.*
+*Gate: originally "T021 must be complete before Phase 2 code work begins." This gate was not honored — S3, S5, S6, S7, S8, and S9 all started and merged (or are in review) before S2 landed. Recorded as-happened rather than retro-justified.*
 
 ---
 

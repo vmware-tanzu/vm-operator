@@ -22,6 +22,9 @@
 package configpolicysync
 
 import (
+	"errors"
+	"fmt"
+
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -32,11 +35,19 @@ import (
 // replaced by the intersection of targets. Fields not derived from a
 // ConfigTarget are copied through from spec unmodified. If targets is
 // empty, spec is returned unmodified.
+//
+// A cluster's reported maximum can narrow as well as widen -- e.g. a
+// cluster loses hosts or is downgraded after an admin set a range field's
+// Min. If the resulting Max would drop below an existing, tenant-managed
+// Min, Merge returns spec unmodified and a non-nil error identifying the
+// inverted field(s) instead of silently producing a Min > Max range.
+// Callers must check the error and must not apply the returned spec when
+// it is non-nil.
 func Merge(
 	spec vimv1.VirtualMachineConfigPolicySpec,
-	targets ...vimv1.ConfigTargetStatus) vimv1.VirtualMachineConfigPolicySpec {
+	targets ...vimv1.ConfigTargetStatus) (vimv1.VirtualMachineConfigPolicySpec, error) {
 	if len(targets) == 0 {
-		return spec
+		return spec, nil
 	}
 
 	agg := aggregate{
@@ -66,7 +77,38 @@ func Merge(
 	out.TDXSupported = agg.tdxSupported
 	out.ConfigTargetDevices = agg.devices
 
-	return out
+	err := validateRanges(out)
+	if err != nil {
+		return spec, err
+	}
+
+	return out, nil
+}
+
+// validateRanges returns a non-nil error naming every range field on spec
+// whose Min exceeds its Max. This can only happen to a range field Merge
+// derives Max for: Min is tenant-managed and untouched by Merge, so a
+// cluster capability drop can push a synced Max below an existing Min.
+func validateRanges(spec vimv1.VirtualMachineConfigPolicySpec) error {
+	var errs []error
+
+	if r := spec.NumCPUCores; r != nil && r.Min > r.Max {
+		errs = append(errs, fmt.Errorf("numCPUCores: min (%d) exceeds max (%d)", r.Min, r.Max))
+	}
+
+	if r := spec.NumNUMANodes; r != nil && r.Min > r.Max {
+		errs = append(errs, fmt.Errorf("numNUMANodes: min (%d) exceeds max (%d)", r.Min, r.Max))
+	}
+
+	if r := spec.NumSimultaneousThreads; r != nil && r.Min > r.Max {
+		errs = append(errs, fmt.Errorf("numSimultaneousThreads: min (%d) exceeds max (%d)", r.Min, r.Max))
+	}
+
+	if r := spec.Memory; r != nil && r.Min.Cmp(r.Max) > 0 {
+		errs = append(errs, fmt.Errorf("memory: min (%s) exceeds max (%s)", r.Min.String(), r.Max.String()))
+	}
+
+	return errors.Join(errs...)
 }
 
 // aggregate accumulates the fold-over-targets state used by Merge.

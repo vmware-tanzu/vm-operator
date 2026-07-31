@@ -24,7 +24,9 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 				CreateMode: vimv1.VirtualMachineConfigPolicyModeDeny,
 			}
 
-			Expect(configpolicysync.Merge(spec)).To(Equal(spec))
+			merged, err := configpolicysync.Merge(spec)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(merged).To(Equal(spec))
 		})
 	})
 
@@ -49,7 +51,8 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 				SEVSupported:           true,
 			}
 
-			merged := configpolicysync.Merge(spec, target)
+			merged, err := configpolicysync.Merge(spec, target)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.Zone).To(Equal("zone-1"))
 			Expect(merged.CreateMode).To(Equal(vimv1.VirtualMachineConfigPolicyModeDeny))
@@ -71,10 +74,71 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 				NumCPUCores: &vimv1.IntRange{Min: 2, Max: 4},
 			}
 
-			merged := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{NumCPUCores: 8})
+			merged, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{NumCPUCores: 8})
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.NumCPUCores.Min).To(Equal(int32(2)))
 			Expect(merged.NumCPUCores.Max).To(Equal(int32(8)))
+		})
+
+		It("narrows Max when the cluster's reported capability has shrunk", func() {
+			spec := vimv1.VirtualMachineConfigPolicySpec{
+				NumCPUCores:            &vimv1.IntRange{Min: 2, Max: 64},
+				NumNUMANodes:           &vimv1.IntRange{Min: 1, Max: 8},
+				NumSimultaneousThreads: &vimv1.IntRange{Min: 1, Max: 32},
+				Memory:                 &vimv1.ResourceQuantityRange{Min: resource.MustParse("1Gi"), Max: resource.MustParse("256Gi")},
+			}
+
+			merged, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{
+				NumCPUCores:            32,
+				NumNumaNodes:           4,
+				MaxSimultaneousThreads: 16,
+				SupportedMaxMem:        quantityPtr("128Gi"),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(merged.NumCPUCores.Max).To(Equal(int32(32)), "must come down, not stay pinned to the old, wider Max")
+			Expect(merged.NumNUMANodes.Max).To(Equal(int32(4)))
+			Expect(merged.NumSimultaneousThreads.Max).To(Equal(int32(16)))
+			Expect(merged.Memory.Max.Equal(resource.MustParse("128Gi"))).To(BeTrue())
+
+			// Min is tenant intent and must survive a shrink untouched.
+			Expect(merged.NumCPUCores.Min).To(Equal(int32(2)))
+			Expect(merged.NumNUMANodes.Min).To(Equal(int32(1)))
+			Expect(merged.NumSimultaneousThreads.Min).To(Equal(int32(1)))
+			Expect(merged.Memory.Min.Equal(resource.MustParse("1Gi"))).To(BeTrue())
+		})
+
+		When("the cluster's reported capability has shrunk below an existing Min", func() {
+			It("rejects the sync instead of publishing an inverted range", func() {
+				spec := vimv1.VirtualMachineConfigPolicySpec{
+					NumCPUCores: &vimv1.IntRange{Min: 8, Max: 64},
+				}
+
+				_, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{NumCPUCores: 4})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("numCPUCores"))
+			})
+
+			It("leaves spec unmodified when rejecting", func() {
+				spec := vimv1.VirtualMachineConfigPolicySpec{
+					NumCPUCores: &vimv1.IntRange{Min: 8, Max: 64},
+				}
+
+				merged, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{NumCPUCores: 4})
+				Expect(err).To(HaveOccurred())
+				Expect(merged).To(Equal(spec))
+			})
+
+			It("rejects an inverted Memory range the same way", func() {
+				spec := vimv1.VirtualMachineConfigPolicySpec{
+					Memory: &vimv1.ResourceQuantityRange{Min: resource.MustParse("32Gi"), Max: resource.MustParse("256Gi")},
+				}
+
+				_, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{SupportedMaxMem: quantityPtr("16Gi")})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("memory"))
+			})
 		})
 	})
 
@@ -82,10 +146,11 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 		It("intersects numeric ranges to the minimum of the per-target maxima", func() {
 			spec := vimv1.VirtualMachineConfigPolicySpec{}
 
-			merged := configpolicysync.Merge(spec,
+			merged, err := configpolicysync.Merge(spec,
 				vimv1.ConfigTargetStatus{NumCPUCores: 8, NumNumaNodes: 2, MaxSimultaneousThreads: 16},
 				vimv1.ConfigTargetStatus{NumCPUCores: 4, NumNumaNodes: 4, MaxSimultaneousThreads: 32},
 			)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.NumCPUCores.Max).To(Equal(int32(4)))
 			Expect(merged.NumNUMANodes.Max).To(Equal(int32(2)))
@@ -95,10 +160,11 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 		It("intersects memory to the minimum of the per-target maxima", func() {
 			spec := vimv1.VirtualMachineConfigPolicySpec{}
 
-			merged := configpolicysync.Merge(spec,
+			merged, err := configpolicysync.Merge(spec,
 				vimv1.ConfigTargetStatus{SupportedMaxMem: quantityPtr("128Gi")},
 				vimv1.ConfigTargetStatus{SupportedMaxMem: quantityPtr("64Gi")},
 			)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.Memory.Max.Equal(resource.MustParse("64Gi"))).To(BeTrue())
 		})
@@ -106,10 +172,11 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 		It("ANDs boolean support flags", func() {
 			spec := vimv1.VirtualMachineConfigPolicySpec{}
 
-			merged := configpolicysync.Merge(spec,
+			merged, err := configpolicysync.Merge(spec,
 				vimv1.ConfigTargetStatus{SEVSupported: true, TDXSupported: true},
 				vimv1.ConfigTargetStatus{SEVSupported: true, TDXSupported: false},
 			)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.SEVSupported).To(BeTrue())
 			Expect(merged.TDXSupported).To(BeFalse())
@@ -125,7 +192,7 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 				VirtualMachineTargetInfo: vimv1.VirtualMachineTargetInfo{Name: "cdrom-only-first"},
 			}
 
-			merged := configpolicysync.Merge(spec,
+			merged, err := configpolicysync.Merge(spec,
 				vimv1.ConfigTargetStatus{
 					ConfigTargetDevices: vimv1.ConfigTargetDevices{
 						CDROM: []vimv1.VirtualMachineCdromInfo{shared, onlyFirst},
@@ -137,6 +204,7 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 					},
 				},
 			)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.ConfigTargetDevices.CDROM).To(ConsistOf(shared))
 		})
@@ -149,10 +217,11 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 			// and must narrow the intersection like any other value.
 			spec := vimv1.VirtualMachineConfigPolicySpec{}
 
-			merged := configpolicysync.Merge(spec,
+			merged, err := configpolicysync.Merge(spec,
 				vimv1.ConfigTargetStatus{NumCPUCores: 8},
 				vimv1.ConfigTargetStatus{NumCPUCores: 0},
 			)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.NumCPUCores.Max).To(Equal(int32(0)))
 		})
@@ -165,7 +234,8 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 				IOMMUSupported:           true,
 			}
 
-			merged := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{})
+			merged, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{})
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.LatencySensitivityLevels).To(Equal(spec.LatencySensitivityLevels))
 			Expect(merged.IOMMUSupported).To(BeTrue())

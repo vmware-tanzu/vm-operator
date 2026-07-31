@@ -281,6 +281,41 @@ func unitTests() {
 		})
 	})
 
+	When("a cluster's reported capability has shrunk since the last sync", func() {
+		BeforeEach(func() {
+			obj.Spec.NumCPUCores = &vimv1.IntRange{Min: 2, Max: 64}
+			withObjs = []ctrlclient.Object{zone, obj, configTarget(testClusterMoID, 32, "64Gi")}
+		})
+
+		It("narrows Max down instead of leaving it pinned to the old, wider value", func() {
+			_, err := reconciler.Reconcile(ctx, objReq)
+			Expect(err).ToNot(HaveOccurred())
+
+			got := getPolicy()
+			Expect(pkgcond.IsTrue(got, vimv1.ReadyConditionType)).To(BeTrue())
+			Expect(got.Spec.NumCPUCores.Max).To(Equal(int32(32)))
+			Expect(got.Spec.NumCPUCores.Min).To(Equal(int32(2)), "tenant-managed Min must survive a shrink")
+		})
+	})
+
+	When("a cluster's reported capability has shrunk below an existing tenant-managed Min", func() {
+		BeforeEach(func() {
+			obj.Spec.NumCPUCores = &vimv1.IntRange{Min: 8, Max: 64}
+			withObjs = []ctrlclient.Object{zone, obj, configTarget(testClusterMoID, 4, "64Gi")}
+		})
+
+		It("sets Ready=False with reason InvalidRange and does not modify spec", func() {
+			_, err := reconciler.Reconcile(ctx, objReq)
+			Expect(err).ToNot(HaveOccurred())
+
+			got := getPolicy()
+			Expect(pkgcond.IsFalse(got, vimv1.ReadyConditionType)).To(BeTrue())
+			Expect(pkgcond.GetReason(got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.InvalidRangeReason))
+			Expect(got.Spec.NumCPUCores.Min).To(Equal(int32(8)))
+			Expect(got.Spec.NumCPUCores.Max).To(Equal(int32(64)), "must not publish a Min > Max range")
+		})
+	})
+
 	When("two ConfigTargets exist for a multi-cluster zone", func() {
 		const secondClusterMoID = "domain-c10"
 

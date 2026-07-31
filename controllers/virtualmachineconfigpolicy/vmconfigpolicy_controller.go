@@ -73,6 +73,13 @@ const (
 	// than "unknown," since a zero maximum on a numeric field means "not
 	// supported" per VirtualMachineConfigPolicySpec's doc comments.
 	ConfigTargetNotReadyReason = "ConfigTargetNotReady"
+
+	// InvalidRangeReason is the Ready condition reason used when a
+	// cluster's reported capability has narrowed below an existing,
+	// tenant-managed Min on one of the policy's range fields. spec is
+	// left untouched: applying the sync would otherwise publish a
+	// Min > Max range, which is meaningless to whatever enforces it.
+	InvalidRangeReason = "InvalidRange"
 )
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
@@ -342,7 +349,13 @@ func (r *Reconciler) ReconcileNormal(
 		return nil
 	}
 
-	mergedSpec := configpolicysync.Merge(obj.Spec, targets...)
+	mergedSpec, err := configpolicysync.Merge(obj.Spec, targets...)
+	if err != nil {
+		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, InvalidRangeReason, "%v", err)
+		obj.Status.ObservedGeneration = obj.Generation
+
+		return nil
+	}
 
 	if !apiequality.Semantic.DeepEqual(base.Spec, mergedSpec) {
 		obj.Spec = mergedSpec

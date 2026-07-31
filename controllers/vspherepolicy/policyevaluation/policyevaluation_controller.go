@@ -51,7 +51,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		Watches(
 			&vmopv1.VirtualMachine{},
@@ -64,7 +64,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Watches(
 			&vspherepolv1.TagPolicy{},
 			handler.EnqueueRequestsFromMapFunc(
-				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
+				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client)))
+
+	if pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy {
+		bldr = bldr.Watches(
+			&vspherepolv1.ControlledRebalancingPolicy{},
+			handler.EnqueueRequestsFromMapFunc(
+				controlledRebalancingPolicyToPolicyEvaluationMapperFn(ctx, r.Client)))
+	}
+
+	return bldr.
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			LogConstructor: pkglog.ControllerLogConstructor(
@@ -106,6 +115,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=computepolicies/status,verbs=get
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=controlledrebalancingpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=controlledrebalancingpolicies/status,verbs=get
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
@@ -201,6 +212,13 @@ func (r *Reconciler) reconcileMandatoryPolicies(
 			"failed to reconcile mandatory compute policies: %w", err)
 	}
 
+	if pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy {
+		if err := r.reconcileMandatoryControlledRebalancingPolicies(ctx, obj); err != nil {
+			return fmt.Errorf(
+				"failed to reconcile mandatory controlled rebalancing policies: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -223,7 +241,7 @@ func (r *Reconciler) reconcileMandatoryComputePolicies(
 			continue
 		}
 
-		matches, err := matchesPolicy(obj, p)
+		matches, err := matchesPolicy(p.Spec.Match, obj)
 		if err != nil {
 			return err
 		}
@@ -238,15 +256,51 @@ func (r *Reconciler) reconcileMandatoryComputePolicies(
 	return nil
 }
 
-func matchesPolicy(
-	obj *vspherepolv1.PolicyEvaluation,
-	pol vspherepolv1.ComputePolicy) (bool, error) {
+func (r *Reconciler) reconcileMandatoryControlledRebalancingPolicies(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation) error {
 
-	if pol.Spec.Match == nil {
+	var list vspherepolv1.ControlledRebalancingPolicyList
+	if err := r.Client.List(
+		ctx,
+		&list,
+		ctrlclient.InNamespace(obj.Namespace)); err != nil {
+
+		return fmt.Errorf("failed to list controlled rebalancing policies: %w", err)
+	}
+
+	for _, p := range list.Items {
+		// Only mandatory policies should be automatically applied.
+		if p.Spec.EnforcementMode != vspherepolv1.PolicyEnforcementModeMandatory {
+			continue
+		}
+
+		matches, err := matchesPolicy(p.Spec.Match, obj)
+		if err != nil {
+			return err
+		}
+
+		if matches {
+			if err := r.addControlledRebalancingPolicy(ctx, obj, p); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// matchesPolicy reports whether obj matches the given match spec. A nil
+// match spec matches everything.
+func matchesPolicy(
+	match *vspherepolv1.MatchSpec,
+	obj *vspherepolv1.PolicyEvaluation) (bool, error) {
+
+	if match == nil {
 		return true, nil
 	}
 
-	return evaluateMatchSpec(obj, pol.Spec.Match)
+	return evaluateMatchSpec(obj, match)
 }
 
 func evaluateMatchSpec(
@@ -518,6 +572,8 @@ func matchesGuestFamily(
 
 const computePolicyKind = "ComputePolicy"
 
+const controlledRebalancingPolicyKind = "ControlledRebalancingPolicy"
+
 func (r *Reconciler) reconcileExplicitPolicies(
 	ctx context.Context,
 	obj *vspherepolv1.PolicyEvaluation) error {
@@ -528,6 +584,17 @@ func (r *Reconciler) reconcileExplicitPolicies(
 			if err := r.addComputePolicyRef(ctx, obj, ref); err != nil {
 				return fmt.Errorf(
 					"failed to add explicit compute policy %s: %w",
+					ref.Name, err)
+			}
+		case controlledRebalancingPolicyKind:
+			if !pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy {
+				r.Logger.Info("skipping controlled rebalancing policy ref, feature disabled",
+					"name", ref.Name)
+				continue
+			}
+			if err := r.addControlledRebalancingPolicyRef(ctx, obj, ref); err != nil {
+				return fmt.Errorf(
+					"failed to add explicit controlled rebalancing policy %s: %w",
 					ref.Name, err)
 			}
 		default:
@@ -558,7 +625,7 @@ func (r *Reconciler) addComputePolicyRef(
 		return fmt.Errorf("failed to get compute policy: %w", err)
 	}
 
-	matches, err := matchesPolicy(obj, pol)
+	matches, err := matchesPolicy(pol.Spec.Match, obj)
 	if err != nil {
 		return err
 	}
@@ -574,44 +641,110 @@ func (r *Reconciler) addComputePolicy(
 	obj *vspherepolv1.PolicyEvaluation,
 	pol vspherepolv1.ComputePolicy) error {
 
+	return r.addPolicyResult(
+		ctx, obj, computePolicyKind, pol.Name, pol.Generation, pol.Spec.Tags)
+}
+
+func (r *Reconciler) addControlledRebalancingPolicyRef(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	ref vspherepolv1.LocalObjectRef) error {
+
+	var (
+		pol vspherepolv1.ControlledRebalancingPolicy
+		key = ctrlclient.ObjectKey{
+			Namespace: obj.Namespace,
+			Name:      ref.Name,
+		}
+	)
+
+	if err := r.Client.Get(ctx, key, &pol); err != nil {
+		return fmt.Errorf("failed to get controlled rebalancing policy: %w", err)
+	}
+
+	matches, err := matchesPolicy(pol.Spec.Match, obj)
+	if err != nil {
+		return err
+	}
+	if !matches {
+		return fmt.Errorf("controlled rebalancing policy %q does not match", pol.Name)
+	}
+
+	return r.addControlledRebalancingPolicy(ctx, obj, pol)
+}
+
+func (r *Reconciler) addControlledRebalancingPolicy(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	pol vspherepolv1.ControlledRebalancingPolicy) error {
+
+	return r.addPolicyResult(
+		ctx, obj, controlledRebalancingPolicyKind, pol.Name, pol.Generation, pol.Spec.Tags)
+}
+
+// addPolicyResult resolves the tags referenced by tagPolicyNames and appends
+// a PolicyEvaluationResult for the named policy to obj.Status.Policies,
+// unless a result for that kind/name pair is already present.
+func (r *Reconciler) addPolicyResult(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	kind, name string,
+	generation int64,
+	tagPolicyNames []string) error {
+
 	// Check if this policy is already in the results to avoid duplicates.
 	if slices.ContainsFunc(
 		obj.Status.Policies,
 		func(p vspherepolv1.PolicyEvaluationResult) bool {
-			return p.Name == pol.Name && p.Kind == computePolicyKind
+			return p.Name == name && p.Kind == kind
 		}) {
 
 		// Policy already exists, skip adding it again.
 		return nil
 	}
 
-	var tags []string
-	for _, tpn := range pol.Spec.Tags {
-		var (
-			tp  vspherepolv1.TagPolicy
-			tpk = ctrlclient.ObjectKey{
-				Namespace: obj.Namespace,
-				Name:      tpn,
-			}
-		)
-		if err := r.Client.Get(ctx, tpk, &tp); err != nil {
-			return fmt.Errorf("failed to get tag policy %q: %w", tpn, err)
-		}
-		tags = append(tags, tp.Spec.Tags...)
+	tags, err := r.resolvePolicyTags(ctx, obj.Namespace, tagPolicyNames)
+	if err != nil {
+		return err
 	}
 
 	obj.Status.Policies = append(
 		obj.Status.Policies,
 		vspherepolv1.PolicyEvaluationResult{
 			APIVersion: vspherepolv1.GroupVersion.String(),
-			Kind:       computePolicyKind,
-			Name:       pol.Name,
-			Generation: pol.Generation,
+			Kind:       kind,
+			Name:       name,
+			Generation: generation,
 			Tags:       tags,
 		},
 	)
 
 	return nil
+}
+
+// resolvePolicyTags looks up each named TagPolicy in namespace and returns
+// the concatenation of their Spec.Tags.
+func (r *Reconciler) resolvePolicyTags(
+	ctx context.Context,
+	namespace string,
+	tagPolicyNames []string) ([]string, error) {
+
+	var tags []string
+	for _, tpn := range tagPolicyNames {
+		var (
+			tp  vspherepolv1.TagPolicy
+			tpk = ctrlclient.ObjectKey{
+				Namespace: namespace,
+				Name:      tpn,
+			}
+		)
+		if err := r.Client.Get(ctx, tpk, &tp); err != nil {
+			return nil, fmt.Errorf("failed to get tag policy %q: %w", tpn, err)
+		}
+		tags = append(tags, tp.Spec.Tags...)
+	}
+
+	return tags, nil
 }
 
 // virtualMachineToPolicyEvaluationMapperFn returns a mapper function that returns
@@ -680,6 +813,58 @@ func computePolicyToPolicyEvaluationMapperFn(
 		if len(requests) > 0 {
 			logger.V(4).Info(
 				"Reconciling PolicyEvaluations due to ComputePolicy watch",
+				"requests", requests)
+		}
+
+		return requests
+	}
+}
+
+// controlledRebalancingPolicyToPolicyEvaluationMapperFn returns a mapper function that returns
+// the PolicyEvaluations that need to be reconciled for a ControlledRebalancingPolicy event. For
+// now, we just return all the objects in the namespace to force a re-evaluation
+// but it should be smarter: we could see if it matches here (but at the cost of
+// double evaluation), or check the PolicyEval Status.Policies and skip ones that
+// already have this or newer observed Generation.
+func controlledRebalancingPolicyToPolicyEvaluationMapperFn(
+	_ context.Context,
+	client ctrlclient.Client) handler.MapFunc {
+
+	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
+		obj := o.(*vspherepolv1.ControlledRebalancingPolicy)
+
+		logger := pkglog.FromContextOrDefault(ctx).WithValues(
+			"controlledRebalancingPolicyName", obj.Name, "namespace", obj.Namespace)
+
+		policyEvalList := &vspherepolv1.PolicyEvaluationList{}
+		if err := client.List(
+			ctx,
+			policyEvalList,
+			ctrlclient.InNamespace(obj.Namespace),
+			//
+			// !!! WARNING !!!
+			//
+			// The use of the UnsafeDisableDeepCopy option improves
+			// performance by skipping a CPU-intensive operation, since
+			// there can be a PolicyEvaluation for each VM.
+			ctrlclient.UnsafeDisableDeepCopy); err != nil {
+			logger.Error(err, "Failed to list PolicyEvaluations during controlledRebalancing watch mapper")
+			return nil
+		}
+
+		requests := make([]reconcile.Request, 0, len(policyEvalList.Items))
+		for _, policyEval := range policyEvalList.Items {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: ctrlclient.ObjectKey{
+					Namespace: policyEval.Namespace,
+					Name:      policyEval.Name,
+				},
+			})
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling PolicyEvaluations due to ControlledRebalancingPolicy watch",
 				"requests", requests)
 		}
 

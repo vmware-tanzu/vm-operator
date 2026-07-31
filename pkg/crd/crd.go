@@ -133,6 +133,17 @@ func Install( //nolint:gocyclo
 
 				return err
 			}
+		case "ControlledRebalancingPolicy":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				features.VSpherePolicies && features.ControlledRebalancingPolicy,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
 		case "StoragePolicy":
 			if err := updateOrDeleteUnstructured(
 				ctx,

@@ -10,6 +10,7 @@ These CRDs are referenced by `config/default/kustomization.yaml` and are install
 
 * `encryption.vmware.com_encryptionclasses.yaml` — EncryptionClass API (bring-your-own-key support)
 * `vsphere.policy.vmware.com_computepolicies.yaml` — vSphere compute policy API
+* `vsphere.policy.vmware.com_controlledrebalancingpolicies.yaml` — vSphere controlled rebalancing policy API
 * `vsphere.policy.vmware.com_policyevaluations.yaml` — vSphere policy evaluation API
 * `vsphere.policy.vmware.com_tagpolicies.yaml` — vSphere tag policy API
 * `infra.vmware.com_storagepolicies.yaml` — Infrastructure storage policy API

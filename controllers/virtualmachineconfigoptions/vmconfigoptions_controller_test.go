@@ -266,6 +266,19 @@ func unitTestsReconcile() {
 					Expect(current.Status.SupportedOvfInstallTransports).To(Equal([]string{"iso"}))
 				})
 
+				It("should add an owner reference to the contributing VirtualMachineConfigOptions", func() {
+					_, err := doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+					_, err = doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+
+					guestOptions := &vimv1.VirtualMachineGuestOptions{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+					Expect(guestOptions.OwnerReferences).To(HaveLen(1))
+					Expect(guestOptions.OwnerReferences[0].Name).To(Equal(configOptions.Name))
+					Expect(guestOptions.OwnerReferences[0].Kind).To(Equal("VirtualMachineConfigOptions"))
+				})
+
 				It("should map SupportLevel and Family from their vSphere wire values", func() {
 					_, err := doReconcile()
 					Expect(err).ToNot(HaveOccurred())
@@ -463,6 +476,18 @@ func unitTestsReconcile() {
 					hardwareVersions = append(hardwareVersions, hv.HardwareVersion)
 				}
 				Expect(hardwareVersions).To(ContainElements(hardwareVersion, otherHardwareVersion))
+
+				// Each contributing VirtualMachineConfigOptions co-owns the
+				// shared object, mirroring configtarget's co-ownership of a
+				// shared VirtualMachineConfigOptions.
+				Expect(guestOptions.OwnerReferences).To(HaveLen(2))
+
+				ownerNames := make([]string, 0, len(guestOptions.OwnerReferences))
+				for _, ref := range guestOptions.OwnerReferences {
+					ownerNames = append(ownerNames, ref.Name)
+				}
+
+				Expect(ownerNames).To(ContainElements(configOptions.Name, otherConfigOptions.Name))
 			})
 		})
 
@@ -567,6 +592,12 @@ func unitTestsReconcile() {
 				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
 				Expect(guestOptions.Status.HardwareVersions).To(HaveLen(1))
 				Expect(guestOptions.Status.HardwareVersions[0].HardwareVersion).To(Equal(otherHardwareVersion))
+
+				// Only the dropped hardware version's owner reference is
+				// removed; the still-reporting otherConfigOptions remains an
+				// owner, so the object is left in place rather than deleted.
+				Expect(guestOptions.OwnerReferences).To(HaveLen(1))
+				Expect(guestOptions.OwnerReferences[0].Name).To(Equal(otherConfigOptions.Name))
 			})
 		})
 

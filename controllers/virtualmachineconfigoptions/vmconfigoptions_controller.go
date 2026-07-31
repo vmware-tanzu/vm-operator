@@ -176,7 +176,7 @@ func (r *Reconciler) ReconcileDelete(
 	ctx context.Context,
 	obj *vimv1.VirtualMachineConfigOptions) (ctrl.Result, error) {
 
-	if err := r.garbageCollectGuestOptions(ctx, obj.Spec.HardwareVersion, sets.New[string]()); err != nil {
+	if err := r.garbageCollectGuestOptions(ctx, obj, sets.New[string]()); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -225,7 +225,7 @@ func (r *Reconciler) ReconcileNormal(
 		// case fanOutGuestOptions already handles.
 		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, NotFoundReason,
 			"config option not found for hardware version %s", obj.Spec.HardwareVersion)
-		if err := r.fanOutGuestOptions(ctx, obj.Spec.HardwareVersion, nil); err != nil {
+		if err := r.fanOutGuestOptions(ctx, obj, nil); err != nil {
 			return ctrl.Result{}, err
 		}
 		obj.Status.ObservedGeneration = obj.Generation
@@ -234,7 +234,7 @@ func (r *Reconciler) ReconcileNormal(
 
 	applyStatus(obj, configOption)
 
-	if err := r.fanOutGuestOptions(ctx, obj.Spec.HardwareVersion, configOption.GuestOSDescriptor); err != nil {
+	if err := r.fanOutGuestOptions(ctx, obj, configOption.GuestOSDescriptor); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -310,16 +310,17 @@ func applyStatus(
 }
 
 // fanOutGuestOptions creates or updates a VirtualMachineGuestOptions object
-// for each guest OS descriptor, then garbage-collects hardwareVersion's entry
-// from any VirtualMachineGuestOptions no longer reported. Every descriptor is
-// attempted even if an earlier one fails -- each is an independent,
-// idempotent upsert, so a failure on one must not block progress on the
-// others. Errors from all descriptors are joined and returned together; any
-// descriptor left unconverged this pass is retried, along with the rest, on
-// the next reconcile triggered by that error.
+// for each guest OS descriptor, then garbage-collects vmco's contribution
+// (its status entry and owner reference) from any VirtualMachineGuestOptions
+// no longer reported. Every descriptor is attempted even if an earlier one
+// fails -- each is an independent, idempotent upsert, so a failure on one
+// must not block progress on the others. Errors from all descriptors are
+// joined and returned together; any descriptor left unconverged this pass is
+// retried, along with the rest, on the next reconcile triggered by that
+// error.
 func (r *Reconciler) fanOutGuestOptions(
 	ctx context.Context,
-	hardwareVersion string,
+	vmco *vimv1.VirtualMachineConfigOptions,
 	descriptors []vimtypes.GuestOsDescriptor) error {
 
 	// Keyed by the sanitized object name (not the raw guest OS ID) since
@@ -332,12 +333,12 @@ func (r *Reconciler) fanOutGuestOptions(
 	var errs []error
 	for i := range descriptors {
 		liveNames.Insert(toGuestOptionsName(descriptors[i].Id))
-		if err := r.reconcileGuestOptions(ctx, hardwareVersion, descriptors[i]); err != nil {
+		if err := r.reconcileGuestOptions(ctx, vmco, descriptors[i]); err != nil {
 			errs = append(errs, err)
 		}
 	}
 
-	if err := r.garbageCollectGuestOptions(ctx, hardwareVersion, liveNames); err != nil {
+	if err := r.garbageCollectGuestOptions(ctx, vmco, liveNames); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -349,21 +350,24 @@ func (r *Reconciler) fanOutGuestOptions(
 //
 // This object is shared: every VirtualMachineConfigOptions (one per hardware
 // version) that reports support for this guest OS upserts its own entry into
-// Status.HardwareVersions. That fan-in means more than one hardware version's
-// reconcile can race to update the same object. Writes therefore use
-// client.MergeFromWithOptimisticLock, so a concurrent writer's patch fails
-// with a conflict instead of silently dropping an entry; the error is simply
-// returned, and controller-runtime's own requeue re-fetches and re-applies on
-// the next attempt. Status is a subresource, so it is persisted separately via
-// Status().Patch. Each write is skipped when nothing changed, to avoid bumping
-// ResourceVersion and re-triggering watchers on an otherwise idle reconcile.
+// Status.HardwareVersions and adds its own (non-controller) owner reference,
+// mirroring how controllers/configtarget's reconcileConfigOptions co-owns a
+// shared VirtualMachineConfigOptions. That fan-in means more than one
+// hardware version's reconcile can race to update the same object. Writes
+// therefore use client.MergeFromWithOptimisticLock, so a concurrent writer's
+// patch fails with a conflict instead of silently dropping an entry; the
+// error is simply returned, and controller-runtime's own requeue re-fetches
+// and re-applies on the next attempt. Status is a subresource, so it is
+// persisted separately via Status().Patch. Each write is skipped when
+// nothing changed, to avoid bumping ResourceVersion and re-triggering
+// watchers on an otherwise idle reconcile.
 func (r *Reconciler) reconcileGuestOptions(
 	ctx context.Context,
-	hardwareVersion string,
+	vmco *vimv1.VirtualMachineConfigOptions,
 	desc vimtypes.GuestOsDescriptor) error {
 
 	name := toGuestOptionsName(desc.Id)
-	hwStatus := buildHardwareVersionStatus(hardwareVersion, desc)
+	hwStatus := buildHardwareVersionStatus(vmco.Spec.HardwareVersion, desc)
 
 	obj := &vimv1.VirtualMachineGuestOptions{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
@@ -374,6 +378,9 @@ func (r *Reconciler) reconcileGuestOptions(
 			return fmt.Errorf("failed to get VirtualMachineGuestOptions %s: %w", name, err)
 		}
 		obj.Spec.ID = vimv1.VirtualMachineGuestOSIdentifier(desc.Id)
+		if err := controllerutil.SetOwnerReference(vmco, obj, r.Scheme()); err != nil {
+			return fmt.Errorf("failed to set owner reference on VirtualMachineGuestOptions %s: %w", name, err)
+		}
 		if err := r.Create(ctx, obj); err != nil {
 			return fmt.Errorf("failed to create VirtualMachineGuestOptions %s: %w", name, err)
 		}
@@ -386,12 +393,17 @@ func (r *Reconciler) reconcileGuestOptions(
 		return nil
 	}
 
-	// Patch the spec toward desired, skipping the write when nothing changed
-	// so an idle reconcile does not bump ResourceVersion and re-trigger
-	// watchers.
+	// Patch the spec and owner references toward desired together, skipping
+	// the write when neither changed so an idle reconcile does not bump
+	// ResourceVersion and re-trigger watchers.
 	specBase := obj.DeepCopy()
 	obj.Spec.ID = vimv1.VirtualMachineGuestOSIdentifier(desc.Id)
-	if !apiequality.Semantic.DeepEqual(specBase.Spec, obj.Spec) {
+	if err := controllerutil.SetOwnerReference(vmco, obj, r.Scheme()); err != nil {
+		return fmt.Errorf("failed to set owner reference on VirtualMachineGuestOptions %s: %w", name, err)
+	}
+
+	if !apiequality.Semantic.DeepEqual(specBase.Spec, obj.Spec) ||
+		!apiequality.Semantic.DeepEqual(specBase.OwnerReferences, obj.OwnerReferences) {
 		if err := r.Patch(ctx, obj, client.MergeFromWithOptions(specBase, client.MergeFromWithOptimisticLock{})); err != nil {
 			return fmt.Errorf("failed to patch VirtualMachineGuestOptions %s: %w", name, err)
 		}
@@ -414,16 +426,17 @@ func (r *Reconciler) reconcileGuestOptions(
 	return nil
 }
 
-// garbageCollectGuestOptions removes hardwareVersion's entry from
-// Status.HardwareVersions on every VirtualMachineGuestOptions whose name is
-// not in liveNames. A VirtualMachineGuestOptions is deleted outright once
-// that removal leaves it with no remaining hardware-version entries, so a
-// guest OS still reported by another hardware version is left untouched.
-// Every candidate is attempted even if an earlier one fails, and the joined
-// errors are retried, along with the rest, on the next reconcile.
+// garbageCollectGuestOptions removes vmco's contribution -- its
+// Status.HardwareVersions entry and its owner reference -- from every
+// VirtualMachineGuestOptions whose name is not in liveNames. A
+// VirtualMachineGuestOptions is deleted outright once that removal leaves it
+// with no remaining owner references, so a guest OS still reported by
+// another hardware version is left untouched. Every candidate is attempted
+// even if an earlier one fails, and the joined errors are retried, along
+// with the rest, on the next reconcile.
 func (r *Reconciler) garbageCollectGuestOptions(
 	ctx context.Context,
-	hardwareVersion string,
+	vmco *vimv1.VirtualMachineConfigOptions,
 	liveNames sets.Set[string]) error {
 
 	var list vimv1.VirtualMachineGuestOptionsList
@@ -439,7 +452,7 @@ func (r *Reconciler) garbageCollectGuestOptions(
 			continue
 		}
 
-		if err := r.removeHardwareVersionAndDeleteIfOrphaned(ctx, obj, hardwareVersion); err != nil {
+		if err := r.removeHardwareVersionAndDeleteIfOrphaned(ctx, vmco, obj); err != nil {
 			errs = append(errs, fmt.Errorf(
 				"failed to garbage collect VirtualMachineGuestOptions %q: %w", obj.Name, err))
 		}
@@ -448,34 +461,46 @@ func (r *Reconciler) garbageCollectGuestOptions(
 	return errors.Join(errs...)
 }
 
-// removeHardwareVersionAndDeleteIfOrphaned removes hardwareVersion's entry
-// from obj.Status.HardwareVersions and, if that leaves obj with no remaining
-// hardware-version entries, deletes obj. If obj has no entry for
-// hardwareVersion, this is a no-op -- it was never reported by that hardware
-// version, so there is nothing to reconcile away.
+// removeHardwareVersionAndDeleteIfOrphaned removes vmco's entry from
+// obj.Status.HardwareVersions and vmco's owner reference from obj, deleting
+// obj once that leaves it with no remaining owner references. Deletion is
+// gated on the owner-reference count, not the status entry, so a reconcile
+// that crashes between the status patch and the owner-reference patch below
+// resumes correctly: the next pass finds no status entry (a no-op there) but
+// still finds the owner reference, and finishes removing it. If obj has
+// neither an entry for vmco's hardware version nor an owner reference to
+// vmco, this is a no-op -- it was never reported by that hardware version,
+// so there is nothing to reconcile away.
 func (r *Reconciler) removeHardwareVersionAndDeleteIfOrphaned(
 	ctx context.Context,
-	obj *vimv1.VirtualMachineGuestOptions,
-	hardwareVersion string) error {
+	vmco *vimv1.VirtualMachineConfigOptions,
+	obj *vimv1.VirtualMachineGuestOptions) error {
 
 	idx := -1
 	for i := range obj.Status.HardwareVersions {
-		if obj.Status.HardwareVersions[i].HardwareVersion == hardwareVersion {
+		if obj.Status.HardwareVersions[i].HardwareVersion == vmco.Spec.HardwareVersion {
 			idx = i
 			break
 		}
 	}
-	if idx == -1 {
+
+	hasOwnerRef, err := controllerutil.HasOwnerReference(obj.OwnerReferences, vmco, r.Scheme())
+	if err != nil {
+		return fmt.Errorf("failed to check owner reference on VirtualMachineGuestOptions %q: %w", obj.Name, err)
+	}
+
+	if idx == -1 && !hasOwnerRef {
 		return nil
 	}
 
-	if len(obj.Status.HardwareVersions) == 1 {
+	if hasOwnerRef && len(obj.OwnerReferences) == 1 {
 		// obj was fetched by the caller's List, so another hardware
-		// version's reconcile could concurrently upsert a new entry into
-		// this shared object between then and now. Gate the delete on
-		// obj's ResourceVersion so a racing writer's addition causes a
-		// conflict here instead of being silently deleted along with the
-		// object; the next reconcile retries with fresh data.
+		// version's reconcile could concurrently upsert a new owner
+		// reference into this shared object between then and now. Gate
+		// the delete on obj's ResourceVersion so a racing writer's
+		// addition causes a conflict here instead of being silently
+		// deleted along with the object; the next reconcile retries with
+		// fresh data.
 		precondition := client.Preconditions{ResourceVersion: &obj.ResourceVersion}
 		if err := r.Delete(ctx, obj, precondition); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete orphaned VirtualMachineGuestOptions %q: %w", obj.Name, err)
@@ -483,10 +508,23 @@ func (r *Reconciler) removeHardwareVersionAndDeleteIfOrphaned(
 		return nil
 	}
 
-	base := obj.DeepCopy()
-	obj.Status.HardwareVersions = append(obj.Status.HardwareVersions[:idx:idx], obj.Status.HardwareVersions[idx+1:]...)
-	if err := r.Status().Patch(ctx, obj, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to patch status for VirtualMachineGuestOptions %q: %w", obj.Name, err)
+	if idx != -1 {
+		base := obj.DeepCopy()
+
+		obj.Status.HardwareVersions = append(obj.Status.HardwareVersions[:idx:idx], obj.Status.HardwareVersions[idx+1:]...)
+		if err := r.Status().Patch(ctx, obj, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to patch status for VirtualMachineGuestOptions %q: %w", obj.Name, err)
+		}
+	}
+
+	if hasOwnerRef {
+		base := obj.DeepCopy()
+		if err := controllerutil.RemoveOwnerReference(vmco, obj, r.Scheme()); err != nil {
+			return fmt.Errorf("failed to remove owner reference from VirtualMachineGuestOptions %q: %w", obj.Name, err)
+		}
+		if err := r.Patch(ctx, obj, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to patch VirtualMachineGuestOptions %q after removing owner reference: %w", obj.Name, err)
+		}
 	}
 
 	return nil

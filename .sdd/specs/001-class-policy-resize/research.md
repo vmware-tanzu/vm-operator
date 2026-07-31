@@ -110,6 +110,23 @@ func GCVirtualMachineConfigOptions(ctx context.Context, c client.Client,
 
 `VirtualMachineGuestOptions.status.hardwareVersions` listMap entries for a hardware version no longer reported by that version's `VirtualMachineConfigOptions` reconcile *are* pruned (vmop-3932): the `VirtualMachineConfigOptions` controller tracks the guest OS IDs live in its own `QueryConfigOptionEx` result and removes its hardware version's stale entry from every `VirtualMachineGuestOptions` not in that set, deleting the object outright once no hardware-version entries remain. See `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` (`garbageCollectGuestOptions`).
 
+Each contributing `VirtualMachineConfigOptions` also adds a (non-controller)
+owner reference to every `VirtualMachineGuestOptions` it fans out to,
+mirroring `configtarget`'s co-ownership of a shared `VirtualMachineConfigOptions`
+(vmop-3932 follow-up). Deletion is gated on the owner-reference count rather
+than the `status.hardwareVersions` entry count, so native Kubernetes GC gives
+correct, tooling-visible behavior (`kubectl describe`, `kubectl get
+virtualmachineguestoptions -o yaml`) if a `VirtualMachineConfigOptions` is
+force-deleted or otherwise removed outside a normal reconcile -- the same
+reason `configtarget`'s `garbageCollectConfigOptions` uses owner references
+rather than a separate membership list. The status entry and the owner
+reference are both authoritative for "does this hardware version still
+report this guest OS" and are kept in lockstep by every write path
+(`reconcileGuestOptions`, `removeHardwareVersionAndDeleteIfOrphaned`); the
+deletion check uses whichever one is more conservative (owner-reference
+count) so a reconcile that fails between the two patches resumes correctly
+on retry instead of leaking a reference.
+
 ---
 
 ## Finding 4: `QueryConfigOptionDescriptor` vs `QueryConfigOptionEx` semantics

@@ -113,6 +113,7 @@ When a hardware version is dropped from a cluster's supported list, or when an E
 2. **Given** a transient `QueryConfigTarget` error, **when** the controller retries, **then** no objects are garbage-collected (GC only runs on fully successful cluster-scope queries).
 3. **Given** an ESX host has been evicted from the cluster, **when** the ConfigTarget controller completes its next reconcile, **then** the host's SR-IOV entries no longer appear in `ConfigTarget.status.sriov`, and any reduction in `max(perHostDefaultHardwareVersion)` is reflected in `ConfigTarget.status.maxHardwareVersion`.
 4. **Given** a `VirtualMachineGuestOptions` has a `status.hardwareVersions` entry for `vmx-19`, **when** the `vmx-19` `VirtualMachineConfigOptions`'s next successful reconcile no longer reports that guest OS in `QueryConfigOptionEx`'s result, **then** the `vmx-19` entry is removed from `status.hardwareVersions`, and the `VirtualMachineGuestOptions` itself is deleted once that removal leaves it with no remaining hardware-version entries.
+5. **Given** a `VirtualMachineGuestOptions` carries owner references to each `VirtualMachineConfigOptions` that currently reports it, **when** one of those `VirtualMachineConfigOptions` objects is deleted (e.g. force-deleted outside a normal reconcile), **then** its owner reference is removed on the next `VirtualMachineGuestOptions` reconcile, and the object is deleted once no owner references remain, consistent with native Kubernetes garbage-collection semantics.
 
 ---
 

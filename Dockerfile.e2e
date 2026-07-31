@@ -108,6 +108,8 @@ RUN tdnf install -y \
         jq \
         openssl \
         openssh-clients \
+        python3 \
+        python3-pip \
         readline \
         sshpass \
         make \
@@ -143,10 +145,17 @@ RUN mv /tmp/packer/packer /usr/local/bin/packer && \
     rm -rf /var/cache/tdnf
 
 # PIP_INDEX_URL overrides the pip package index used when install-pykmip.sh runs
-# on the testbed gateway VM. Defaults to empty (public PyPI). Build systems that
-# cannot reach public PyPI should set this to an internal mirror at image build time.
+# on the testbed gateway VM, and also for the pyVmomi install below.
+# Defaults to empty (public PyPI). Build systems that cannot reach public PyPI
+# should set this to an internal mirror at image build time.
 ARG PIP_INDEX_URL=""
 ENV PIP_INDEX_URL="${PIP_INDEX_URL}"
+
+# Install pyVmomi so clone-pykmip-vm.py can connect to vCenter directly
+# (avoids govc name-resolution issues in multi-datacenter environments).
+RUN pip3 install --no-cache-dir \
+        ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
+        pyVmomi
 
 # kubectl is always staged into the build context as ./kubectl before docker build runs.
 # This is to support passing the kubectl binary from the build system.

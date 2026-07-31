@@ -17,17 +17,23 @@ set -x
 if ! type -p pykmip-server >/dev/null ; then
   if ! type -p pip3 >/dev/null ; then
     python3 -m ensurepip
+    # Best-effort upgrade — may fail if the host has no direct internet access.
+    # The version installed by ensurepip is sufficient to install pykmip.
     pip3 install --upgrade \
       ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
-      pip
+      pip || true
   fi
 
   # PIP_INDEX_URL can be set by the caller to redirect pip to an internal
   # package mirror (e.g. a corporate Artifactory instance). If unset, pip
   # uses its default index (public PyPI).
+  #
+  # Pin SQLAlchemy to 1.x: pykmip 0.10.0 uses the 1.x Session/Query API
+  # which is incompatible with SQLAlchemy 2.0. Without this pin, key
+  # creation silently fails with "General Failure" returned to vCenter.
   pip3 install \
     ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
-    pykmip
+    "pykmip" "sqlalchemy>=1.4,<2.0"
 
   # currently by default there are no shared ciphers between
   # vCenter/qClient + pykmip, patch the default TLS1.2 suite for now.
@@ -53,6 +59,15 @@ logging_level=DEBUG
 database_path=/etc/pykmip/pykmip_server.db
 EOF
 
+pykmip_bin=$(command -v pykmip-server || true)
+if [[ -z "$pykmip_bin" ]]; then
+  # pip installs to /usr/bin on Photon, /usr/local/bin on Ubuntu
+  for p in /usr/bin/pykmip-server /usr/local/bin/pykmip-server; do
+    [[ -x "$p" ]] && pykmip_bin="$p" && break
+  done
+fi
+[[ -z "$pykmip_bin" ]] && { echo "pykmip-server not found after install"; exit 1; }
+
 cat > /lib/systemd/system/pykmip.service <<EOF
 [Unit]
 Description=PyKMIP
@@ -60,7 +75,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$(type -p pykmip-server | head -n1)
+ExecStart=${pykmip_bin}
 
 [Install]
 WantedBy=multi-user.target
@@ -75,6 +90,8 @@ popd >/dev/null
 systemctl restart pykmip
 systemctl status pykmip
 
-iptables -A INPUT -p tcp --dport 5696 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p tcp --sport 5696 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+iptables -C INPUT -p tcp --dport 5696 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT 2>/dev/null || \
+  iptables -A INPUT -p tcp --dport 5696 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -C OUTPUT -p tcp --sport 5696 -m conntrack --ctstate ESTABLISHED -j ACCEPT 2>/dev/null || \
+  iptables -A OUTPUT -p tcp --sport 5696 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 iptables --list

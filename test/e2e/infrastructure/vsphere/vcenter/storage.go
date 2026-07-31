@@ -16,6 +16,7 @@ import (
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
@@ -93,12 +94,7 @@ func GetOrCreateEncryptionStoragePolicy(ctx context.Context, client *vim25.Clien
 		}
 	}
 
-	profile, err := pbmClient.CreateProfile(ctx, *createSpec)
-	if err != nil {
-		return "", err
-	}
-
-	return profile.UniqueId, nil
+	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
 }
 
 // GetOrCreateEZTStoragePolicy Gets already created EZT (Eager Zeroed Thick)
@@ -161,12 +157,7 @@ func GetOrCreateEZTStoragePolicy(ctx context.Context, client *vim25.Client, prof
 		}
 	}
 
-	profile, err := pbmClient.CreateProfile(ctx, *createSpec)
-	if err != nil {
-		return "", err
-	}
-
-	return profile.UniqueId, nil
+	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
 }
 
 // GetOrCreateWorkerStoragePolicy returns an existing vSphere profile ID for profileName, or creates
@@ -217,12 +208,46 @@ func GetOrCreateWorkerStoragePolicy(ctx context.Context, client *vim25.Client, p
 		return "", errors.New("could not copy capability constraints from base WCP storage policy")
 	}
 
-	profile, err := pbmClient.CreateProfile(ctx, *createSpec)
+	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
+}
+
+// createPbmProfile creates a PBM profile from spec and returns
+// its ID. If a concurrent caller wins the create race (e.g. a sibling e2e
+// shard provisioning the same globally-named policy against the same shared
+// vCenter), the profile now exists, so its ID is resolved instead of failing.
+// All callers of this helper build their base capabilities from the same
+// e2e config resolved against the same shared testbed, so the winner's
+// profile is guaranteed to match what this caller would have created.
+func createPbmProfile(
+	ctx context.Context,
+	pbmClient *pbm.Client,
+	profileName string,
+	spec types.PbmCapabilityProfileCreateSpec) (string, error) {
+
+	profile, err := pbmClient.CreateProfile(ctx, spec)
 	if err != nil {
+		if isPbmDuplicateNameFault(err) {
+			return pbmClient.ProfileIDByName(ctx, profileName)
+		}
 		return "", err
 	}
 
 	return profile.UniqueId, nil
+}
+
+// isPbmDuplicateNameFault reports whether err is a PBM CreateProfile failure
+// because a profile with the requested name already exists.
+func isPbmDuplicateNameFault(err error) bool {
+	if !soap.IsSoapFault(err) {
+		return false
+	}
+
+	switch soap.ToSoapFault(err).VimFault().(type) {
+	case types.PbmDuplicateName, types.PbmDuplicateNameFault:
+		return true
+	default:
+		return false
+	}
 }
 
 // GetOrCreateVsanDirectStoragePolicyID Gets already created VSAN Direct Storage Policy ID or Creates one if not found.
@@ -260,12 +285,7 @@ func GetOrCreateVsanDirectStoragePolicyID(ctx context.Context, client *vim25.Cli
 		return "", err
 	}
 
-	profile, err := pbmClient.CreateProfile(ctx, *createSpec)
-	if err != nil {
-		return "", err
-	}
-
-	return profile.UniqueId, nil
+	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
 }
 
 // IsVSANDEnabledCluster checks if given wcp enabled cluster is enabled with vsand capability.

@@ -112,6 +112,8 @@ When a hardware version is dropped from a cluster's supported list, or when an E
 1. **Given** a `VirtualMachineConfigOptions` for `vmx-19` exists, **when** `QueryConfigOptionDescriptor` no longer returns `vmx-19` in its result, **then** the ConfigTarget controller deletes the `vmx-19` object on its next successful reconcile.
 2. **Given** a transient `QueryConfigTarget` error, **when** the controller retries, **then** no objects are garbage-collected (GC only runs on fully successful cluster-scope queries).
 3. **Given** an ESX host has been evicted from the cluster, **when** the ConfigTarget controller completes its next reconcile, **then** the host's SR-IOV entries no longer appear in `ConfigTarget.status.sriov`, and any reduction in `max(perHostDefaultHardwareVersion)` is reflected in `ConfigTarget.status.maxHardwareVersion`.
+4. **Given** a `VirtualMachineGuestOptions` has a `status.hardwareVersions` entry for `vmx-19`, **when** the `vmx-19` `VirtualMachineConfigOptions`'s next successful reconcile no longer reports that guest OS in `QueryConfigOptionEx`'s result, **then** the `vmx-19` entry is removed from `status.hardwareVersions`, and the `VirtualMachineGuestOptions` itself is deleted once that removal leaves it with no remaining hardware-version entries.
+5. **Given** a `VirtualMachineGuestOptions` carries owner references to each `VirtualMachineConfigOptions` that currently reports it, **when** one of those `VirtualMachineConfigOptions` objects is deleted (e.g. force-deleted outside a normal reconcile), **then** its owner reference is removed on the next `VirtualMachineGuestOptions` reconcile, and the object is deleted once no owner references remain, consistent with native Kubernetes garbage-collection semantics.
 
 ---
 
@@ -153,7 +155,6 @@ A Supervisor can be brought up or upgraded without enabling the policy pipeline;
 - `spec.id` on `ConfigTarget` is immutable after create; attempts to mutate it are rejected by the validation webhook.
 - A `Zone` that references a cluster MoID for which vSphere returns no EB result causes the `ConfigTarget` to enter `Ready=False` with reason `ClusterNotFound`; the Zone reconcile is requeued.
 - A `VirtualMachineConfigPolicy` whose `spec.zone` references a non-existent `Zone` surfaces a condition on the policy; it does not block other policies.
-- `VirtualMachineGuestOptions.status.hardwareVersions` listMap entries for garbage-collected HW versions are not pruned automatically (left as orphan; clean-up deferred to a follow-up).
 - A user enables a hardware-version-gated feature (e.g., auto-NUMA, auto-placed SR-IOV) on an existing VM whose `spec.minHardwareVersion` is unset and whose placement has not yet converged. Because `spec.minHardwareVersion` cannot be decreased once raised, accepting the edit on an unsupported zone produces a VM that cannot be powered on or reconciled. The exact rejection rule (and the carve-out for "edit-to-fix-stuck-placement") is the subject of Spike vmop-3794; this spec records the edge case and defers the rule to that Spike's output.
 - `PlaceVmsXCluster` is **not** assumed to honor auto-NUMA or auto-placed-SR-IOV compatibility at create time. The admission webhook must make those determinations from K8s objects alone (per Findings 1 and 6 in `research.md`) — specifically from `ConfigTarget.status.maxHardwareVersion` and `ConfigTarget.status.sriov`. See Spike vmop-3794.
 
@@ -165,7 +166,6 @@ A Supervisor can be brought up or upgraded without enabling the policy pipeline;
 - Sequence diagrams for the per-host iteration *(TDS A4)*.
 - `vmClassMode = AsPolicy` vs `AsConfig` webhook decision tree *(Design A3)*.
 - Auto-deletion of namespace-scoped `VirtualMachineConfigPolicy` when its `Zone` is deleted *(follow-up)*.
-- Pruning orphaned `VirtualMachineGuestOptions.status.hardwareVersions` entries *(follow-up)*.
 - Automatic resize of running VMs when tenant policy expands *(separate epic)*.
 - Telco-specific extra config fields (VMXNET3, latency sensitivity) *(vmop-3388)*.
 - The 9.2 auto-NUMA and auto-placed-SR-IOV admission rules themselves *(open Spike vmop-3794; resulting Stories will land under vmop-3331)*. This spec captures only the edge case and the design constraint that the answer must be derivable from K8s objects.

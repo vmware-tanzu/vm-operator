@@ -1323,6 +1323,101 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					volumeNames)
 			})
 
+			It("Detaching all non-boot volumes should leave only the boot disk(s) in status.volumes", Label("extended-functional", "experimental"), func() {
+				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
+					StorageClassName: clusterResources.StorageClassName,
+				}, 3)
+
+				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+					Namespace:        vmSvcNamespace,
+					Name:             vmName,
+					ImageName:        linuxVMIName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					PVCs:             pvcs,
+				})
+				vmYamls = append(vmYamls, vmYaml)
+
+				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+
+				// Names of the PVC-backed volumes we attach and later detach.
+				pvcVolumeNames := make(map[string]struct{}, len(pvcs))
+				for _, pvc := range pvcs {
+					pvcVolumeNames[pvc.VolumeName] = struct{}{}
+				}
+
+				By("Waiting for all disks to be synced via the VirtualMachineHardwareVolumesVerified condition")
+				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+				vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName,
+					metav1.Condition{Type: "VirtualMachineHardwareVolumesVerified", Status: metav1.ConditionTrue})
+
+				// Once the volumes are synced, snapshot the boot-disk entries the VM
+				// reports: every status.volumes entry that is not one of the PVCs we
+				// attached. This keeps the test agnostic to how many boot disks the
+				// image has and how they are identified (no reliance on the
+				// "removable" flag or a single-boot-disk assumption), and confirms
+				// all added PVCs actually attached so the detach below is meaningful.
+				var vm *vmopv1.VirtualMachine
+				var bootDiskNames []string
+
+				By("Confirming the added PVCs are present in status.volumes before detaching")
+				Eventually(func(g Gomega) {
+					var err error
+					vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+					g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
+
+					attachedPVCs := make(map[string]struct{}, len(pvcs))
+					bootDiskNames = nil
+					for _, vol := range vm.Status.Volumes {
+						if _, ok := pvcVolumeNames[vol.Name]; ok {
+							attachedPVCs[vol.Name] = struct{}{}
+						} else {
+							bootDiskNames = append(bootDiskNames, vol.Name)
+						}
+					}
+					g.Expect(attachedPVCs).To(HaveLen(len(pvcs)),
+						"expected all added PVCs to be present in status.volumes before detaching")
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed(), "Timed out waiting for the added PVCs to appear in status.volumes")
+
+				By("Detaching all non-boot volumes from the Virtual Machine")
+
+				vmPatch := vm.DeepCopy()
+				vmPatch.Spec.Volumes = nil
+				for _, vol := range vm.Spec.Volumes {
+					if _, ok := pvcVolumeNames[vol.Name]; !ok {
+						vmPatch.Spec.Volumes = append(vmPatch.Spec.Volumes, vol)
+					}
+				}
+
+				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
+					To(Succeed(), "failed to patch virtualmachine to detach all non-boot volumes")
+
+				By("Waiting on virtual machine conditions to become true after detach")
+				vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName,
+					metav1.Condition{Type: "VirtualMachineHardwareVolumesVerified", Status: metav1.ConditionTrue})
+
+				By("Verifying status.volumes settles to exactly the boot disk entries")
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+					g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
+
+					statusVolNames := make([]string, len(vm.Status.Volumes))
+					for i, vol := range vm.Status.Volumes {
+						statusVolNames[i] = vol.Name
+					}
+
+					// ConsistOf is an exact, order-independent set match against the
+					// boot disks captured before the detach. It simultaneously
+					// asserts that no stale entries remain for the detached PVCs,
+					// that there are no duplicate entries, and that every boot disk
+					// is still present.
+					g.Expect(statusVolNames).To(ConsistOf(bootDiskNames),
+						"expected status.volumes to contain exactly the boot disk entries after detaching all PVCs")
+				}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+					Should(Succeed(), "Timed out waiting for status.volumes to settle to only the boot disk entries")
+			})
+
 			It("PVC resize should succeed", func() {
 				pvcs := createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
 					StorageClassName: clusterResources.StorageClassName,

@@ -5527,6 +5527,7 @@ spec:
                 description: |-
                   Zone is the name of the zones.topology.tanzu.vmware.com resource to which
                   this policy applies.
+                minLength: 1
                 type: string
             required:
             - zone

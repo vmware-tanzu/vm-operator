@@ -269,6 +269,23 @@ func intgTestsValidateCreate() {
 		})
 	})
 
+	When("spec.zone is an empty string", func() {
+		BeforeEach(func() {
+			ctx.configPolicy.Spec.Zone = ""
+		})
+
+		// Rejected by the CRD's OpenAPI schema
+		// (+kubebuilder:validation:MinLength=1 on
+		// VirtualMachineConfigPolicySpec.Zone) before the request reaches
+		// the webhook's live Zone lookup at all.
+		It("should deny the request with a schema validation error", func() {
+			err := ctx.Client.Create(ctx, ctx.configPolicy)
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsInvalid(err)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("spec.zone"))
+		})
+	})
+
 	When("an extraConfig entry has an empty key", func() {
 		BeforeEach(func() {
 			Expect(ctx.Client.Create(ctx, ctx.zone)).To(Succeed())

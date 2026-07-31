@@ -90,13 +90,18 @@ Two things about this graph matter to consumers:
 `status` holds the cluster's aggregate capability. The fields most consumers want:
 
 - `maxHardwareVersion` — the highest hardware version creatable on at least one host in the cluster, computed as the maximum `key` among `QueryConfigOptionDescriptor` results with `createSupported == true`. This is the cheap answer to "is this VM's hardware version feasible here" without reading per-host anything.
-- `defaultHardwareVersion` — the cluster's default.
 - `numCPUs`, `numCPUCores`, `numNumaNodes`, `maxCPUsPerVM`, `maxSimultaneousThreads`.
-- `supportedMaxMem`, `maxMemOptimalPerf`, `availablePersistentMemoryReservation`.
+- `supportedMaxMem`, `maxMemOptimalPerf`, `availablePersistentMemoryReservation`. Each is omitted rather than zeroed when the cluster does not report it, so distinguish "absent" from "zero".
 - `smcPresent`, `sevSupported`, `sevSnpSupported`, `tdxSupported`.
 - The inlined `ConfigTargetDevices` device categories: CD-ROM, floppy, serial, parallel, sound, USB, PCI passthrough, dynamic passthrough, vGPU device and profile, shared GPU passthrough types, SGX, precision clock, vendor device groups, DVX classes, IDE and SCSI disks, SCSI passthrough, and vFlash module.
 
-**`status.sriov` is not populated today.** SR-IOV enrichment requires per-host iteration and is deferred; the field ships empty and any SR-IOV entries nested inside the PCI-passthrough union are excluded as well. Do not build an SR-IOV feature on this field yet — it will start returning data in a later release, which is a behavior change even though it is not an API change.
+Three fields exist on `ConfigTargetStatus` but **are never written today**, and always read as their zero value:
+
+- `sriov` — SR-IOV enrichment requires per-host iteration and is deferred to a later release; SR-IOV entries nested inside the PCI-passthrough union are excluded as well.
+- `defaultHardwareVersion` — use `maxHardwareVersion`, or read the per-version `VirtualMachineConfigOptions` objects.
+- `vMotionBandwidth`.
+
+Do not build on any of them yet. They will start returning data in a later release, which is a behavior change for a consumer that treats the zero value as meaningful, even though it is not an API change.
 
 `status.conditions` carries a `Ready` condition. When it is not `True` the reason is one of `ClusterNotFound`, `QueryConfigTargetFailed`, or `QueryConfigOptionDescriptorFailed`, and the status shown is the last successful query's data, not current data.
 
@@ -203,7 +208,7 @@ Range semantics: for `numCPUCores`, `memory`, and `hardwareVersions`, a zero `Mi
 
 ### What a denial looks like
 
-Admission denials come back as field errors on the specific offending path — `spec.advanced.extraConfig[2].key`, `spec.resources.size.memory`, `spec.minHardwareVersion`, and so on — with every violation reported at once rather than one per round trip.
+Admission denials come back as HTTP 422, with field errors on the specific offending path — `spec.advanced.extraConfig[2].key`, `spec.resources.size.memory`, `spec.minHardwareVersion`, and so on — every violation reported at once rather than one per round trip, joined into a single reason string with `, `.
 
 The power-on path is different. It always sets a `VirtualMachineConfigPolicyVerified` condition on the `VirtualMachine`, and consumers should read that rather than inferring compliance from anything else:
 
@@ -263,14 +268,17 @@ spec:
       value: "..."
 ```
 
-The webhook resolves `us-west-1` from the zone label, sees `createMode: Deny`, evaluates the spec, and rejects with both violations at once:
+The webhook resolves `us-west-1` from the zone label, sees `createMode: Deny`, evaluates the spec, and rejects with both violations at once. The denial is an HTTP 422 from `default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com`, whose reason is every field error joined with `, `:
 
 ```
-Error from server (Forbidden): error when creating "vm.yaml":
-admission webhook "default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com" denied the request:
-spec.resources.size.memory: Invalid value: "16Gi": memory 16Gi exceeds the maximum of 8Gi allowed by policy
-spec.advanced.extraConfig[0].key: Forbidden: extraConfig key "guestinfo.metadata" is denied by policy
+spec.resources.size.memory: Invalid value: "16Gi": memory 16Gi
+exceeds the maximum 8Gi supported by the namespace's
+VirtualMachineConfigPolicy, spec.advanced.extraConfig[0].key:
+Forbidden: guestinfo.metadata: denied by the namespace's
+VirtualMachineConfigPolicy
 ```
+
+(Line breaks added for readability — the real reason is one line.)
 
 Change either `createMode` to `Allow` or the VM to fit, and the create succeeds. Note that with `createMode: Allow` and `powerOnMode: Deny` the same VM would be admitted and then refused at power-on instead — the pre-flight answer for a UI is to read the policy, not to submit and see.
 
@@ -295,7 +303,7 @@ Rejections that come from admission webhooks:
 
 ## Compatibility notes
 
-- **Do not depend on `status.sriov`.** It is empty today and will become populated.
+- **Do not depend on `status.sriov`, `status.defaultHardwareVersion`, or `status.vMotionBandwidth`.** They are unwritten today and will become populated.
 - **Do not depend on absence of enforcement.** A namespace whose policies are all at the `Allow` default enforces nothing today; an administrator flipping one mode to `Deny` changes that with no API change and no notice to your component.
 - **Do not derive a cluster MoID from a policy.** Go through `Zone.spec.managedVMs.clusterMoIDs`. An earlier design derived it from `spec.namespace.poolMoIDs`; that is not what the controllers do.
 - **Do not treat `VirtualMachineGuestOptions.metadata.name` as the guest ID.** It is a lossy, truncated transform. Use `spec.id`.

@@ -144,6 +144,6 @@ sequenceDiagram
     Note over wh: createMode=Deny, so compliance is evaluated<br/>16Gi exceeds the zone's 8Gi per-VM ceiling
 
     wh-->>api: AdmissionResponse: denied
-    api-->>kc: 403 Forbidden
+    api-->>kc: 422 Unprocessable Entity
     kc-->>User: Error: spec.resources.size.memory not allowed by the us-west-1 policy
 ```

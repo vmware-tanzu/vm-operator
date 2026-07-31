@@ -197,7 +197,11 @@ func (r *Reconciler) ReconcileNormal(
 // reconcileConfigOptions creates or patches a VirtualMachineConfigOptions
 // object per hardware version key returned by QueryConfigOptionDescriptor,
 // adding obj's (non-controller) owner reference to each one, then
-// garbage-collects any obj owns that are no longer reported.
+// garbage-collects any obj owns that are no longer reported. Descriptors
+// with a malformed Key are skipped via the same
+// configtarget.IsValidHardwareVersionKey check computeMaxHardwareVersion
+// uses, since spec.hardwareVersion carries a CEL rule requiring that same
+// shape and would otherwise reject the Create outright.
 //
 // A plain (non-controller) owner reference is used, rather than
 // SetControllerReference, because the same hardware-version-keyed
@@ -216,7 +220,7 @@ func (r *Reconciler) reconcileConfigOptions(
 	liveKeys := sets.New[string]()
 
 	for _, d := range descriptors {
-		if d.Key == "" {
+		if !configtarget.IsValidHardwareVersionKey(d.Key) {
 			continue
 		}
 

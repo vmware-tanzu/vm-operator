@@ -608,6 +608,19 @@ func unitTests() {
 					var got vimv1.ConfigTarget
 					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &got)).To(Succeed())
 					Expect(got.Status.MaxHardwareVersion).To(Equal("vmx-18"))
+
+					// The malformed key must also be excluded from the
+					// VirtualMachineConfigOptions fan-out: spec.hardwareVersion
+					// carries a CEL format rule matching the same shape, so
+					// fanning it out as-is would make a real API server reject
+					// the Create outright.
+					var vmcoList vimv1.VirtualMachineConfigOptionsList
+					Expect(client.List(ctx, &vmcoList)).To(Succeed())
+					names := make([]string, len(vmcoList.Items))
+					for i, item := range vmcoList.Items {
+						names[i] = item.Name
+					}
+					Expect(names).To(ConsistOf("vmx-18"))
 				})
 			})
 		})

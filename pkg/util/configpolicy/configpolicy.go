@@ -173,8 +173,9 @@ func InputFromConfigInfo(cfg vimtypes.VirtualMachineConfigInfo) Input {
 
 // AppliesToVM reports whether spec, a VirtualMachineConfigPolicy's spec,
 // applies to a VM with the given desired class name. VMClassMode defaults
-// to AsPolicy, which preserves pre-9.1 behavior: VM Class-derived config
-// bypasses the policy entirely, so the policy does not apply.
+// to AsPolicy, which preserves pre-ConfigPolicy-enablement behavior: VM
+// Class-derived config bypasses the policy entirely, so the policy does not
+// apply.
 func AppliesToVM(
 	spec vimv1.VirtualMachineConfigPolicySpec, className string) bool {
 

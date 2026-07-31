@@ -241,6 +241,8 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 				return configpolicy.SpecInput{
 					ClusterProxy:     svClusterProxy,
 					Config:           config,
+					WCPClient:        wcpClient,
+					ArtifactFolder:   artifactFolder,
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})

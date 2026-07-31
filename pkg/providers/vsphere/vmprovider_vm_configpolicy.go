@@ -18,6 +18,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/configpolicy"
 )
 
@@ -65,9 +66,9 @@ func (vs *vSphereVMProvider) verifyConfigPolicy(
 	}
 
 	if !configpolicy.AppliesToVM(policy.Spec, vm.Spec.ClassName) {
-		// VMClassMode defaults to AsPolicy, which preserves pre-9.1 behavior:
-		// VM Class-derived config bypasses the policy entirely, so the VM is
-		// not subject to it.
+		// VMClassMode defaults to AsPolicy, which preserves pre-ConfigPolicy-
+		// enablement behavior: VM Class-derived config bypasses the policy
+		// entirely, so the VM is not subject to it.
 		conditions.Delete(vm, vmopv1.VirtualMachineConfigPolicyVerified)
 		return nil
 	}
@@ -75,6 +76,17 @@ func (vs *vSphereVMProvider) verifyConfigPolicy(
 	var violation error
 	if moVM.Config != nil {
 		in := configpolicy.InputFromConfigInfo(*moVM.Config)
+		if in.HardwareVersion == 0 && moVM.Config.Version != "" {
+			// InputFromConfigInfo silently leaves HardwareVersion unset when
+			// moVM.Config.Version fails to parse, so the hardware-version
+			// check below is skipped rather than failing closed. Surface
+			// that here for debugging, since the caller has no other way to
+			// notice a malformed live vSphere version string.
+			pkglog.FromContextOrDefault(ctx).V(4).Info(
+				"failed to parse hardware version from live VM config; "+
+					"skipping hardware-version compliance check",
+				"version", moVM.Config.Version)
+		}
 		violation = configpolicy.Validate(ctx, policy.Spec, in)
 	}
 
@@ -92,12 +104,6 @@ func (vs *vSphereVMProvider) verifyConfigPolicy(
 		// The policy allows powering on regardless of compliance.
 		return nil
 	}
-
-	return vs.configPolicyDeniesPowerOn(policy, violation)
-}
-
-func (vs *vSphereVMProvider) configPolicyDeniesPowerOn(
-	policy *vimv1.VirtualMachineConfigPolicy, violation error) error {
 
 	return pkgerr.NoRequeueError{
 		Message: fmt.Sprintf(

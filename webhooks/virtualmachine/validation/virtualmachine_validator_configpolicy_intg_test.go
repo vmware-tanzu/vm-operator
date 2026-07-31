@@ -137,8 +137,7 @@ var _ = Describe(
 					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 				})
 
-			It("rejects a create request whose minHardwareVersion exceeds "+
-				"hardwareVersions.max", func() {
+			It("rejects a create request whose minHardwareVersion exceeds hardwareVersions.max", func() {
 				setMaxHardwareVersion("vmx-19")
 				ctx.vm.Spec.MinHardwareVersion = 21
 

@@ -27,12 +27,14 @@ import (
 	vmopv1a6common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
@@ -40,6 +42,8 @@ import (
 type SpecInput struct {
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
 	Config           *e2eConfig.E2EConfig
+	WCPClient        wcp.WorkloadManagementAPI
+	ArtifactFolder   string
 	WCPNamespaceName string
 }
 
@@ -74,6 +78,10 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			"Invalid argument. input.ClusterProxy can't be nil when calling %s spec", specName)
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(),
 			"Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
+		Expect(input.WCPClient).ToNot(BeNil(),
+			"Invalid argument. input.WCPClient can't be nil when calling %s spec", specName)
+		Expect(input.ArtifactFolder).ToNot(BeEmpty(),
+			"Invalid argument. input.ArtifactFolder can't be empty when calling %s spec", specName)
 
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = input.ClusterProxy.GetClient()
@@ -384,30 +392,23 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			})
 	})
 
-	Context("When the VM admission webhook evaluates a namespace's VirtualMachineConfigPolicy", func() {
+	Context("When the VM admission webhook evaluates a namespace's VirtualMachineConfigPolicy", Ordered, func() {
 		var (
+			nsCtx            wcpframework.NamespaceContext
+			namespaceName    string
 			zoneName         string
-			policy           *vimv1.VirtualMachineConfigPolicy
 			vmClassName      string
 			storageClassName string
 			imageName        string
-			vmName           string
 		)
 
-		BeforeEach(func() {
+		var (
+			policy *vimv1.VirtualMachineConfigPolicy
+			vmName string
+		)
+
+		BeforeAll(func() {
 			resources := input.Config.InfraConfig.ManagementClusterConfig.Resources
-
-			zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(zoneList.Items).ToNot(BeEmpty(),
-				"expected at least one Zone in namespace %q", input.WCPNamespaceName)
-			zoneName = zoneList.Items[0].Name
-
-			policy = &vimv1.VirtualMachineConfigPolicy{}
-			Expect(svClusterClient.Get(ctx,
-				ctrlclient.ObjectKey{Name: zoneName, Namespace: input.WCPNamespaceName},
-				policy)).To(Succeed(),
-				"VirtualMachineConfigPolicy %q/%q should exist", input.WCPNamespaceName, zoneName)
 
 			vmClassName = resources.VMClassName
 			Expect(vmClassName).ToNot(BeEmpty(), "infraConfig.managementClusterConfig.resources.vmClassName must be set")
@@ -415,10 +416,54 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			storageClassName = resources.StorageClassName
 			Expect(storageClassName).ToNot(BeEmpty(), "infraConfig.managementClusterConfig.resources.storageClassName must be set")
 
-			imageName = vmoperator.WaitForVirtualMachineImageName(
-				ctx, &input.Config.Config, svClusterClient, input.WCPNamespaceName, resources.PhotonImageDisplayName)
+			// This Context mutates a real VirtualMachineConfigPolicy's
+			// CreateMode/UpdateMode/PowerOnMode/ExtraConfig/HardwareVersions
+			// across its specs. Running it against input.WCPNamespaceName --
+			// the namespace every other vmservice E2E spec shares -- would
+			// let a mid-run policy denial or HW-version cap block or reject
+			// VMs created by unrelated, concurrently-running specs. A
+			// dedicated namespace, created once for this whole Context
+			// (BeforeAll/AfterAll, not per-It) and torn down once at the
+			// end, isolates that blast radius without paying
+			// namespace-provisioning cost per spec.
+			clIDs := []string{vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, input.WCPClient)}
+			vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{vmClassName}, clIDs)
+
+			namespaceName = fmt.Sprintf("%s-policy-%s", specName, capiutil.RandomString(4))
+
+			var err error
+			nsCtx, err = svClusterProxy.CreateWCPNamespace(ctx, input.Config, vmsvcSpecs,
+				storageClassName, resources.WorkerStorageClassName, namespaceName, input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(),
-				"failed to resolve VirtualMachineImage for display name %q", resources.PhotonImageDisplayName)
+				"failed to create dedicated namespace %q for config-policy enforcement tests", namespaceName)
+			wcp.WaitForNamespaceReady(input.WCPClient, namespaceName)
+
+			zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, namespaceName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(zoneList.Items).ToNot(BeEmpty(),
+				"expected at least one Zone in namespace %q", namespaceName)
+			zoneName = zoneList.Items[0].Name
+
+			imageName = vmoperator.WaitForVirtualMachineImageName(
+				ctx, &input.Config.Config, svClusterClient, namespaceName, resources.PhotonImageDisplayName)
+		})
+
+		AfterAll(func() {
+			if nsCtx.GetNamespace() == nil {
+				// BeforeAll failed before the namespace was created.
+				return
+			}
+
+			svClusterProxy.DeleteWCPNamespace(nsCtx)
+			wcp.WaitForNamespaceDeleted(input.WCPClient, namespaceName)
+		})
+
+		BeforeEach(func() {
+			policy = &vimv1.VirtualMachineConfigPolicy{}
+			Expect(svClusterClient.Get(ctx,
+				ctrlclient.ObjectKey{Name: zoneName, Namespace: namespaceName},
+				policy)).To(Succeed(),
+				"VirtualMachineConfigPolicy %q/%q should exist", namespaceName, zoneName)
 
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		})
@@ -429,17 +474,23 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				return
 			}
 
-			// Restore the policy to a non-denying state so a failed spec
-			// does not leak enforcement into whatever runs next.
+			// Restore the policy to a non-denying, non-restricting state so
+			// a failed or preceding spec does not leak enforcement into the
+			// next spec sharing this Context's namespace. Every field this
+			// Context's specs mutate must be reset here, not just the mode
+			// fields -- HardwareVersions was previously missing from this
+			// list, which left a real policy-object field (a Max hardware
+			// version cap) mutated for the rest of the Context's run.
 			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(policy), policy)).To(Succeed())
 			policy.Spec.CreateMode = vimv1.VirtualMachineConfigPolicyModeAllow
 			policy.Spec.UpdateMode = vimv1.VirtualMachineConfigPolicyModeAllow
 			policy.Spec.PowerOnMode = vimv1.VirtualMachineConfigPolicyModeAllow
 			policy.Spec.ExtraConfig = nil
+			policy.Spec.HardwareVersions = nil
 			Expect(svClusterClient.Update(ctx, policy)).To(Succeed())
 
 			_ = svClusterClient.Delete(ctx, &vmopv1a6.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: input.WCPNamespaceName},
+				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: namespaceName},
 			})
 		})
 
@@ -447,7 +498,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			return &vmopv1a6.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      vmName,
-					Namespace: input.WCPNamespaceName,
+					Namespace: namespaceName,
 					Labels:    map[string]string{corev1.LabelTopologyZone: zoneName},
 				},
 				Spec: vmopv1a6.VirtualMachineSpec{
@@ -528,6 +579,68 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				Expect(err).To(HaveOccurred(),
 					"expected the webhook to reject a VM whose minHardwareVersion exceeds the policy's maximum")
 				Expect(err.Error()).To(ContainSubstring("exceeds the maximum hardware version"))
+			})
+
+		It("Should block power-on of a VM whose live vSphere config no longer complies once the policy tightens",
+			Label("core-functional", "experimental"),
+			func() {
+				const driftKey = "guestinfo.vmop-e2e-config-policy-drift"
+
+				// The admission webhook (the other specs in this Context)
+				// only ever evaluates a VM's desired spec at request time.
+				// It cannot catch a VM that was compliant when last
+				// reconfigured but whose namespace policy has since
+				// tightened -- that's the vSphere provider's power-on
+				// reconcile check (pkg/providers/vsphere/vmprovider_vm_configpolicy.go),
+				// which reads the VM's *actual*, live vSphere config
+				// instead of its spec. This is the only E2E coverage of
+				// that second enforcement point.
+
+				By("Create and power on a VM that is compliant with the current, permissive policy")
+				vm := newVM()
+				vm.Spec.PowerState = vmopv1a6.VirtualMachinePowerStateOn
+				vm.Spec.Advanced = &vmopv1a6.VirtualMachineAdvancedSpec{
+					ExtraConfig: []vmopv1a6common.KeyValuePair{
+						{Key: driftKey, Value: "present-before-policy-tightened"},
+					},
+				}
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed())
+				vmoperator.WaitForVirtualMachinePowerState(
+					ctx, input.Config, svClusterClient, namespaceName, vmName, "PoweredOn")
+
+				By("Power off the VM before tightening the policy")
+				vmoperator.UpdateVirtualMachinePowerState(
+					ctx, input.Config, svClusterClient, namespaceName, vmName, "PoweredOff")
+				vmoperator.WaitForVirtualMachinePowerState(
+					ctx, input.Config, svClusterClient, namespaceName, vmName, "PoweredOff")
+
+				By("Tighten the policy to deny the ExtraConfig key already present on the VM's live config")
+				policy.Spec.PowerOnMode = vimv1.VirtualMachineConfigPolicyModeDeny
+				policy.Spec.ExtraConfig = &vimv1.VirtualMachineConfigPolicyExtraConfigSpec{
+					Denied: []vimv1.VirtualMachineConfigPolicyExtraConfigKey{
+						{Type: vimv1.MatchTypeFixed, Key: driftKey},
+					},
+				}
+				Expect(svClusterClient.Update(ctx, policy)).To(Succeed())
+
+				By("Attempt to power the VM back on and confirm the reconciler blocks it")
+				vmoperator.UpdateVirtualMachinePowerState(
+					ctx, input.Config, svClusterClient, namespaceName, vmName, "PoweredOn")
+
+				vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, namespaceName, vmName,
+					metav1.Condition{
+						Type:   vmopv1a6.VirtualMachineConfigPolicyVerified,
+						Status: metav1.ConditionFalse,
+						Reason: vmopv1a6.VirtualMachineConfigPolicyNotVerifiedReason,
+					})
+
+				Consistently(func(g Gomega) {
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, namespaceName, vmName)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(vm.Status.PowerState).To(Equal(vmopv1a6.VirtualMachinePowerStateOff),
+						"the VM should remain powered off: the policy denies power-on while "+
+							"the live config still carries the now-denied ExtraConfig key")
+				}, input.Config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(Succeed())
 			})
 	})
 }

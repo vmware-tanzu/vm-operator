@@ -7,7 +7,9 @@ package virtualmachineconfigoptions_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,7 +31,101 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func intgTests() {}
+// VirtualMachineConfigOptions no longer has a validating webhook --
+// spec.hardwareVersion immutability, its format, and the
+// metadata.name == spec.hardwareVersion rule are all enforced by CEL rules
+// on the CRD itself. These specs exercise that CRD-level validation
+// directly against a real API server, independent of any controller or
+// webhook.
+func intgTests() {
+	Describe("CRD validation",
+		Label(testlabels.Validation, testlabels.EnvTest, testlabels.API),
+		crdValidationTests)
+}
+
+// crdValidationNameCounter ensures each VirtualMachineConfigOptions created
+// by crdValidationTests has a unique name, since this resource is
+// cluster-scoped and the integration tests share a single envtest API
+// server across parallel specs.
+var crdValidationNameCounter atomic.Int64
+
+func crdValidationTests() {
+	var (
+		intgCtx *builder.IntegrationTestContext
+		obj     *vimv1.VirtualMachineConfigOptions
+	)
+
+	BeforeEach(func() {
+		intgCtx = suite.NewIntegrationTestContext()
+
+		name := fmt.Sprintf("vmx-%d", 1000000+crdValidationNameCounter.Add(1))
+		obj = &vimv1.VirtualMachineConfigOptions{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       vimv1.VirtualMachineConfigOptionsSpec{HardwareVersion: name},
+		}
+	})
+
+	AfterEach(func() {
+		Expect(client.IgnoreNotFound(intgCtx.Client.Delete(intgCtx, obj))).To(Succeed())
+	})
+
+	Describe("Create", func() {
+		When("spec.hardwareVersion is valid and metadata.name matches it", func() {
+			It("should allow the request", func() {
+				Expect(intgCtx.Client.Create(intgCtx, obj)).To(Succeed())
+			})
+		})
+
+		When("spec.hardwareVersion does not match the required pattern", func() {
+			BeforeEach(func() {
+				obj.Name = "not-valid"
+				obj.Spec.HardwareVersion = "not-valid"
+			})
+
+			It("should deny the request", func() {
+				err := intgCtx.Client.Create(intgCtx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("hardwareVersion must match"))
+			})
+		})
+
+		When("metadata.name does not equal spec.hardwareVersion", func() {
+			BeforeEach(func() {
+				obj.Name = "vmx-22"
+			})
+
+			It("should deny the request", func() {
+				err := intgCtx.Client.Create(intgCtx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("metadata.name must equal spec.hardwareVersion"))
+			})
+		})
+	})
+
+	Describe("Update", func() {
+		BeforeEach(func() {
+			Expect(intgCtx.Client.Create(intgCtx, obj)).To(Succeed())
+		})
+
+		When("spec.hardwareVersion is unchanged", func() {
+			It("should allow the update", func() {
+				Expect(intgCtx.Client.Update(intgCtx, obj)).To(Succeed())
+			})
+		})
+
+		When("spec.hardwareVersion is changed", func() {
+			BeforeEach(func() {
+				obj.Spec.HardwareVersion = "vmx-22"
+			})
+
+			It("should deny the update", func() {
+				err := intgCtx.Client.Update(intgCtx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("hardwareVersion is immutable"))
+			})
+		})
+	})
+}
 
 func unitTests() {
 	Describe(

@@ -11,6 +11,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
@@ -73,6 +74,23 @@ func (vs *vSphereVMProvider) verifyConfigPolicy(
 		return nil
 	}
 
+	// The sync controller (Story S8, syncMode=ConfigTarget) leaves spec
+	// untouched -- rather than publishing a false, overly-permissive
+	// zero-value -- whenever the zone's ConfigTarget(s) aren't Ready, so a
+	// stale-but-not-Ready policy's spec reflects the last known-good sync,
+	// not current cluster capability. Enforcing against that stale spec is
+	// still strictly better than not enforcing at all, so this does not
+	// change the compliance decision below; it only makes the staleness
+	// observable, since silently enforcing a possibly-too-permissive ceiling
+	// with no signal would otherwise be indistinguishable from a fresh one.
+	stale := !apimeta.IsStatusConditionTrue(policy.Status.Conditions, vimv1.ReadyConditionType)
+	if stale {
+		pkglog.FromContextOrDefault(ctx).Info(
+			"VirtualMachineConfigPolicy is not Ready; enforcing against its "+
+				"last-synced (possibly stale) spec",
+			"policyNamespace", policy.Namespace, "policyName", policy.Name)
+	}
+
 	var violation error
 	if moVM.Config != nil {
 		in := configpolicy.InputFromConfigInfo(*moVM.Config)
@@ -95,10 +113,16 @@ func (vs *vSphereVMProvider) verifyConfigPolicy(
 		return nil
 	}
 
+	message := violation.Error()
+	if stale {
+		message = fmt.Sprintf(
+			"%s (namespace policy is not Ready; this assessment may be against a stale spec)",
+			message)
+	}
 	conditions.MarkFalse(vm,
 		vmopv1.VirtualMachineConfigPolicyVerified,
 		vmopv1.VirtualMachineConfigPolicyNotVerifiedReason,
-		"%s", violation)
+		"%s", message)
 
 	if policy.Spec.PowerOnMode != vimv1.VirtualMachineConfigPolicyModeDeny {
 		// The policy allows powering on regardless of compliance.

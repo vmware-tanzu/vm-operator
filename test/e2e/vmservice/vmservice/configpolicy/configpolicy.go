@@ -564,7 +564,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			})
 
 		It("Should reject a VM whose spec.minHardwareVersion exceeds policy.spec.hardwareVersions.max",
-			Label("extended-functional", "experimental"),
+			Label("core-functional", "experimental"),
 			func() {
 				policy.Spec.CreateMode = vimv1.VirtualMachineConfigPolicyModeDeny
 				policy.Spec.HardwareVersions = &vimv1.HardwareVersionRange{

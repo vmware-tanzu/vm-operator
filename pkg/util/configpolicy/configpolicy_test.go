@@ -574,6 +574,26 @@ var _ = Describe("Validate", func() {
 				Ω(violation.Above).Should(BeTrue())
 			})
 		})
+
+		When("the policy's maximum is a real, synced zero (NUMA alignment not supported)", func() {
+			It("returns an ErrNUMANodesViolation for any nonzero vNUMA node count", func() {
+				// A zero Max here is real data from the cluster capability
+				// sync, per VirtualMachineConfigPolicySpec.NumNUMANodes's
+				// doc comment ("a non-zero maximum value indicates NUMA
+				// alignment is supported") -- it must not be treated as
+				// "no maximum," unlike checkCPUCores/checkMemory's zero-Max
+				// convention.
+				spec := vimv1.VirtualMachineConfigPolicySpec{
+					NumNUMANodes: &vimv1.IntRange{Max: 0},
+				}
+				in := configpolicy.Input{NumNUMANodes: ptr.To(int32(1))}
+
+				err := configpolicy.Validate(ctx, spec, in)
+				var violation *configpolicy.ErrNUMANodesViolation
+				Ω(errors.As(err, &violation)).Should(BeTrue())
+				Ω(violation.Above).Should(BeTrue())
+			})
+		})
 	})
 
 	Describe("capability checks (iommu, memoryLockedToMax, hugePages)", func() {

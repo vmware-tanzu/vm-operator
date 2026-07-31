@@ -9,6 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -91,6 +92,22 @@ func (v validator) validateConfigPolicy(
 
 	if !shouldEnforce {
 		return nil
+	}
+
+	// The sync controller (Story S8) leaves spec untouched -- rather than
+	// publishing a false, overly-permissive zero-value -- whenever the
+	// zone's ConfigTarget(s) aren't Ready, so a stale-but-not-Ready policy's
+	// spec reflects the last known-good sync, not current cluster capacity.
+	// This does not change the decision below (enforcing against a stale
+	// ceiling is still better than not enforcing at all, and denying every
+	// request in the namespace over one flapping ConfigTarget would be a
+	// larger, unreviewed behavior change); it only makes the staleness
+	// observable.
+	if !apimeta.IsStatusConditionTrue(policy.Status.Conditions, vimv1.ReadyConditionType) {
+		ctx.Logger.Info(
+			"VirtualMachineConfigPolicy is not Ready; enforcing against its "+
+				"last-synced (possibly stale) spec",
+			"policyNamespace", policy.Namespace, "policyName", policy.Name)
 	}
 
 	in := configpolicy.InputFromVM(vm)

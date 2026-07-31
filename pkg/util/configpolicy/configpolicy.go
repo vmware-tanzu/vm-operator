@@ -331,9 +331,18 @@ func checkHardwareVersion(
 	return nil
 }
 
-// checkCPUCores reports whether got complies with r. A zero Min means
-// there is no minimum; a zero Max means there is no maximum. It returns
-// nil if r is nil or got is compliant with r.
+// checkCPUCores reports whether got complies with r. It returns nil if r
+// is nil or got is compliant with r.
+//
+// Unlike checkNUMANodes, this treats a zero r.Max as "no maximum" rather
+// than "capped at zero," on the assumption that ConfigTargetStatus.NumCPUCores
+// (the only producer of this field, via pkg/util/configpolicysync) is never
+// legitimately zero for a Ready ConfigTarget -- a real vSphere cluster always
+// reports at least one physical CPU core. If that assumption turns out to be
+// wrong (or once the sync producer can omit this field outright for a
+// not-yet-reported value, matching the nil-means-unbounded contract
+// VirtualMachineConfigPolicySpec.NumNUMANodes's producer already avoids),
+// this needs the same fix as checkNUMANodes below.
 func checkCPUCores(r *vimv1.IntRange, got int32) error {
 	if r == nil {
 		return nil
@@ -350,28 +359,43 @@ func checkCPUCores(r *vimv1.IntRange, got int32) error {
 	return nil
 }
 
-// checkNUMANodes reports whether got complies with r. A zero Min means
-// there is no minimum; a zero Max means there is no maximum. It returns
-// nil if r is nil or got is compliant with r.
+// checkNUMANodes reports whether got complies with r. It returns nil if r
+// is nil or got is compliant with r.
+//
+// Unlike checkCPUCores/checkMemory, this does NOT treat r.Max == 0 as "no
+// maximum": VirtualMachineConfigPolicySpec.NumNUMANodes's own doc comment
+// says "a non-zero maximum value indicates NUMA alignment is supported," so
+// a real, synced &IntRange{Max: 0} (a cluster that reports zero supported
+// NUMA nodes) is a genuine "not supported" restriction, not an unset
+// placeholder -- pkg/util/configpolicysync's mergeIntRangeMax deliberately
+// never collapses that to nil for exactly this reason. Once r is non-nil,
+// its Min/Max are the caller's exact, real bounds: compare directly.
 func checkNUMANodes(r *vimv1.IntRange, got int32) error {
 	if r == nil {
 		return nil
 	}
 
-	if r.Min != 0 && got < r.Min {
+	if got < r.Min {
 		return &ErrNUMANodesViolation{Got: got, Range: *r}
 	}
 
-	if r.Max != 0 && got > r.Max {
+	if got > r.Max {
 		return &ErrNUMANodesViolation{Got: got, Range: *r, Above: true}
 	}
 
 	return nil
 }
 
-// checkMemory reports whether got complies with r. A zero-value Min means
-// there is no minimum; a zero-value Max means there is no maximum. It
-// returns nil if r is nil or got is compliant with r.
+// checkMemory reports whether got complies with r. It returns nil if r is
+// nil or got is compliant with r.
+//
+// This has the same zero-Max ambiguity checkCPUCores documents:
+// ConfigTargetStatus.SupportedMaxMem is a `+optional *resource.Quantity`, so
+// a Ready ConfigTarget that simply didn't report it produces the same
+// zero-value Quantity as a (never-realistic) genuine zero-byte cap. Treating
+// zero as "no maximum" here is the safe reading of that ambiguity; fixing it
+// properly belongs in the sync producer (omit the field instead of
+// publishing a zero Quantity), not in this consumer.
 func checkMemory(r *vimv1.ResourceQuantityRange, got resource.Quantity) error {
 	if r == nil {
 		return nil

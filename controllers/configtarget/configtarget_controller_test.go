@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,6 +38,12 @@ import (
 )
 
 const clusterMoID = "domain-c9"
+
+// crdValidationNameCounter ensures each ConfigTarget created by
+// crdValidationTests has a unique name, since ConfigTarget is
+// cluster-scoped and the integration tests share a single envtest API
+// server across parallel specs.
+var crdValidationNameCounter atomic.Int64
 
 var _ = Describe("ConfigTarget Controller", Label(testlabels.Controller, testlabels.API), unitTests)
 
@@ -970,4 +977,91 @@ func highestOf(items []vimv1.VirtualMachineConfigOptions) vimtypes.HardwareVersi
 	}
 
 	return maxVer
+}
+
+// ConfigTarget no longer has a validating webhook -- spec.id immutability,
+// spec.id.id non-emptiness, and the metadata.name pattern are all enforced
+// by CEL rules on the CRD itself. These specs exercise that CRD-level
+// validation directly against a real API server, independent of any
+// controller or webhook.
+var _ = Describe("ConfigTarget CRD validation",
+	Label(testlabels.Validation, testlabels.EnvTest, testlabels.API),
+	crdValidationTests)
+
+func crdValidationTests() {
+	var (
+		intgCtx *builder.IntegrationTestContext
+		obj     *vimv1.ConfigTarget
+	)
+
+	BeforeEach(func() {
+		intgCtx = suite.NewIntegrationTestContext()
+
+		name := fmt.Sprintf("domain-c%d", crdValidationNameCounter.Add(1))
+		obj = &vimv1.ConfigTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: name}},
+		}
+	})
+
+	AfterEach(func() {
+		Expect(ctrlclient.IgnoreNotFound(intgCtx.Client.Delete(intgCtx, obj))).To(Succeed())
+	})
+
+	Describe("Create", func() {
+		When("spec.id is provided and metadata.name matches the required pattern", func() {
+			It("should allow the request", func() {
+				Expect(intgCtx.Client.Create(intgCtx, obj)).To(Succeed())
+			})
+		})
+
+		When("metadata.name is not a valid vSphere cluster managed object ID", func() {
+			BeforeEach(func() {
+				obj.Name = "not-a-cluster-moid"
+			})
+
+			It("should deny the request", func() {
+				err := intgCtx.Client.Create(intgCtx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(
+					"metadata.name must be a valid vSphere cluster managed object ID, e.g. domain-c21"))
+			})
+		})
+
+		When("spec.id.id is empty", func() {
+			BeforeEach(func() {
+				obj.Spec.ID.ID = ""
+			})
+
+			It("should deny the request", func() {
+				err := intgCtx.Client.Create(intgCtx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("id must be provided"))
+			})
+		})
+	})
+
+	Describe("Update", func() {
+		BeforeEach(func() {
+			Expect(intgCtx.Client.Create(intgCtx, obj)).To(Succeed())
+		})
+
+		When("spec.id is unchanged", func() {
+			It("should allow the update", func() {
+				Expect(intgCtx.Client.Update(intgCtx, obj)).To(Succeed())
+			})
+		})
+
+		When("spec.id is changed", func() {
+			BeforeEach(func() {
+				obj.Spec.ID = vimv1.ManagedObjectID{ID: obj.Spec.ID.ID + "-changed"}
+			})
+
+			It("should deny the update", func() {
+				err := intgCtx.Client.Update(intgCtx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("id is immutable"))
+			})
+		})
+	})
 }

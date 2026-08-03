@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -452,18 +453,21 @@ func (r *Reconciler) removeHardwareVersionAndDeleteIfOrphaned(
 	obj *vimv1.VirtualMachineGuestOptions,
 	hardwareVersion string) error {
 
-	idx := -1
-	for i := range obj.Status.HardwareVersions {
-		if obj.Status.HardwareVersions[i].HardwareVersion == hardwareVersion {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
+	// base is taken before DeleteFunc, which mutates obj.Status.HardwareVersions'
+	// backing array in place -- copying after would capture the already-pruned
+	// state and make the patch below compute an empty (no-op) diff.
+	base := obj.DeepCopy()
+
+	obj.Status.HardwareVersions = slices.DeleteFunc(obj.Status.HardwareVersions,
+		func(hv vimv1.VirtualMachineGuestOptionsHardwareVersionStatus) bool {
+			return hv.HardwareVersion == hardwareVersion
+		})
+
+	if len(obj.Status.HardwareVersions) == len(base.Status.HardwareVersions) {
 		return nil
 	}
 
-	if len(obj.Status.HardwareVersions) == 1 {
+	if len(obj.Status.HardwareVersions) == 0 {
 		// obj was fetched by the caller's List, so another hardware
 		// version's reconcile could concurrently upsert a new entry into
 		// this shared object between then and now. Gate the delete on
@@ -474,11 +478,10 @@ func (r *Reconciler) removeHardwareVersionAndDeleteIfOrphaned(
 		if err := r.Delete(ctx, obj, precondition); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete orphaned VirtualMachineGuestOptions %q: %w", obj.Name, err)
 		}
+
 		return nil
 	}
 
-	base := obj.DeepCopy()
-	obj.Status.HardwareVersions = append(obj.Status.HardwareVersions[:idx:idx], obj.Status.HardwareVersions[idx+1:]...)
 	if err := r.Status().Patch(ctx, obj, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to patch status for VirtualMachineGuestOptions %q: %w", obj.Name, err)
 	}

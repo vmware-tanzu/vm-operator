@@ -52,6 +52,11 @@ spec:
                   HardwareVersion is the desired hardware version for which to get the
                   config options, ex.: vmx-19.
                 type: string
+                x-kubernetes-validations:
+                - message: hardwareVersion is immutable
+                  rule: self == oldSelf
+                - message: hardwareVersion must match ^vmx-\d+$
+                  rule: self.matches('^vmx-[0-9]+$')
             required:
             - hardwareVersion
             type: object
@@ -28647,6 +28652,9 @@ spec:
                 type: array
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: metadata.name must equal spec.hardwareVersion
+          rule: self.metadata.name == self.spec.hardwareVersion
     served: true
     storage: true
     subresources:

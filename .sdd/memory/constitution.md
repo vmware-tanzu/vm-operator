@@ -1,7 +1,7 @@
 # Constitution: vm-operator Spec-Driven Development
 
 - **Repository**: [`github.com/vmware-tanzu/vm-operator`](https://github.com/vmware-tanzu/vm-operator)
-- **Last updated**: 2026-05-27
+- **Last updated**: 2026-07-30
 - **Applies to**: All feature specs under `.sdd/specs/`
 
 ---
@@ -171,7 +171,7 @@ The non-negotiables below are constitutional; for import aliases, import group o
 - Do not import packages forbidden by `.golangci.yml` `linters.settings.depguard` (`io/ioutil`, `github.com/pkg/errors`, `k8s.io/utils`, and `testing` / `github.com/onsi/ginkgo` / `github.com/onsi/gomega` outside `_test.go`).
 - `+optional` / `+required` markers on every struct field; `omitempty` JSON tags on optional fields.
 - Resource names must be DNS-subdomain safe (`^[a-z][a-z0-9-]{0,61}[a-z0-9]?$`).
-- Managed object IDs (`spec.id`) are immutable after create; enforce via webhook.
+- Managed object IDs (`spec.id`) are immutable after create. Enforce this per the CEL/Go split in the Webhooks section below: a plain `self == oldSelf` transition rule for the unconditional case, a webhook only when the immutability rule is conditional or cross-field.
 
 ## Roles referenced in specs
 

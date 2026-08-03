@@ -352,9 +352,16 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				// than a controller reference, matching reconcileConfigOptions)
 				// also triggers that reconcile via the controller's
 				// Owns(..., builder.MatchEveryOwner) watch.
+				//
+				// The name must still match the CRD's
+				// ^vmx-[0-9]+$ format/name-equality CEL rules, so it can't be
+				// a free-form string like the old "vmx-e2e-stale-vmop-3760" --
+				// vmx-9999 satisfies the format while staying far above any
+				// hardware version a real cluster reports (max is vmx-22
+				// as of this writing).
 				stale := &vimv1.VirtualMachineConfigOptions{
-					ObjectMeta: metav1.ObjectMeta{Name: "vmx-e2e-stale-vmop-3760"},
-					Spec:       vimv1.VirtualMachineConfigOptionsSpec{HardwareVersion: "vmx-e2e-stale-vmop-3760"},
+					ObjectMeta: metav1.ObjectMeta{Name: "vmx-9999"},
+					Spec:       vimv1.VirtualMachineConfigOptionsSpec{HardwareVersion: "vmx-9999"},
 				}
 				Expect(controllerutil.SetOwnerReference(owner, stale, svClusterClient.Scheme())).To(Succeed())
 				Expect(adminClient.Create(ctx, stale)).To(Succeed())

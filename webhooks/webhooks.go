@@ -11,13 +11,11 @@ import (
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/webhooks/configtarget"
 	"github.com/vmware-tanzu/vm-operator/webhooks/conversion"
 	"github.com/vmware-tanzu/vm-operator/webhooks/persistentvolumeclaim"
 	"github.com/vmware-tanzu/vm-operator/webhooks/unifiedstoragequota"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineconfigoptions"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinegrouppublishrequest"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinepublishrequest"
@@ -77,15 +75,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
 		if err := virtualmachinesnapshot.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineSnapshot webhooks: %w", err)
-		}
-	}
-
-	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
-		if err := virtualmachineconfigoptions.AddToManager(ctx, mgr); err != nil {
-			return fmt.Errorf("failed to initialize VirtualMachineConfigOptions webhooks: %w", err)
-		}
-		if err := configtarget.AddToManager(ctx, mgr); err != nil {
-			return fmt.Errorf("failed to initialize ConfigTarget webhooks: %w", err)
 		}
 	}
 

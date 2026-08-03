@@ -12,6 +12,8 @@ import (
 // ConfigTargetSpec defines the desired state of a ConfigTarget.
 type ConfigTargetSpec struct {
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="id is immutable"
+	// +kubebuilder:validation:XValidation:rule="size(self.id) > 0",message="id must be provided"
 
 	// ID is the managed object ID of the vSphere cluster.
 	ID ManagedObjectID `json:"id"`
@@ -122,6 +124,7 @@ type ConfigTargetStatus struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:storageversion:true
 // +kubebuilder:subresource:status
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^domain-c[0-9]+$')",message="metadata.name must be a valid vSphere cluster managed object ID, e.g. domain-c21"
 
 // ConfigTarget is the schema for the ConfigTarget API and represents the
 // desired state and observed status of a ConfigTarget resource.

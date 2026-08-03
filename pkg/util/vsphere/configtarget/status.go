@@ -91,19 +91,33 @@ func computeMaxHardwareVersion(descriptors []vimtypes.VirtualMachineConfigOption
 	var maxVer vimtypes.HardwareVersion
 
 	for _, d := range descriptors {
-		if d.Key == "" || !d.CreateSupported {
+		if !d.CreateSupported || !IsValidHardwareVersionKey(d.Key) {
 			continue
 		}
 
-		hv, err := vimtypes.ParseHardwareVersion(d.Key)
-		if err != nil || !hv.IsValid() {
-			continue
-		}
-
+		hv, _ := vimtypes.ParseHardwareVersion(d.Key)
 		if hv > maxVer {
 			maxVer = hv
 		}
 	}
 
 	return maxVer.String()
+}
+
+// IsValidHardwareVersionKey reports whether key is a well-formed hardware
+// version (e.g. "vmx-21"), the same criterion computeMaxHardwareVersion uses
+// to skip malformed descriptors. Callers that fan out a
+// VirtualMachineConfigOptions per descriptor Key -- whose spec.hardwareVersion
+// must match that same ^vmx-\d+$ shape or the API server rejects the Create
+// -- must apply this filter too. That constraint predates this function:
+// the now-removed VirtualMachineConfigOptions webhook enforced the identical
+// format on CREATE, so a malformed Key was already unusable before the
+// format check moved to CEL.
+func IsValidHardwareVersionKey(key string) bool {
+	if key == "" {
+		return false
+	}
+
+	hv, err := vimtypes.ParseHardwareVersion(key)
+	return err == nil && hv.IsValid()
 }

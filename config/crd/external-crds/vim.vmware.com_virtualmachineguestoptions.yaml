@@ -49,6 +49,11 @@ spec:
                   ID is the desired guest ID for which to get the guest options,
                   ex.: OtherLinux64.
                 type: string
+                x-kubernetes-validations:
+                - message: id is immutable
+                  rule: self == oldSelf
+                - message: id must be provided
+                  rule: size(self) > 0
             required:
             - id
             type: object

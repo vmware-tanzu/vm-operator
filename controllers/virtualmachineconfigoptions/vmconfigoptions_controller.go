@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -34,6 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -63,13 +63,7 @@ const (
 // same name since Controller-Runtime has a global singleton registry to
 // prevent controllers with the same name, even if attached to different
 // managers.
-var (
-	SkipNameValidation *bool
-
-	// nonAlnumHyphenRE matches any character that is not a lowercase letter,
-	// digit, or hyphen.
-	nonAlnumHyphenRE = regexp.MustCompile(`[^a-z0-9-]+`)
-)
+var SkipNameValidation *bool
 
 var _ = SkipNameValidation
 
@@ -325,7 +319,7 @@ func (r *Reconciler) reconcileGuestOptions(
 	hardwareVersion string,
 	desc vimtypes.GuestOsDescriptor) error {
 
-	name := toGuestOptionsName(desc.Id)
+	name := pkgutil.VimGuestOptionsName(desc.Id)
 	hwStatus := buildHardwareVersionStatus(hardwareVersion, desc)
 
 	obj := &vimv1.VirtualMachineGuestOptions{
@@ -432,18 +426,5 @@ func buildHardwareVersionStatus(
 		s.RecommendedMem = q
 	}
 
-	return s
-}
-
-// toGuestOptionsName converts a guest OS identifier into a DNS-subdomain-safe
-// name for the corresponding VirtualMachineGuestOptions object.
-func toGuestOptionsName(guestID string) string {
-	s := strings.ToLower(guestID)
-	s = nonAlnumHyphenRE.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if len(s) > 63 {
-		s = s[:63]
-		s = strings.TrimRight(s, "-")
-	}
 	return s
 }

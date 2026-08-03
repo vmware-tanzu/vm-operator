@@ -33,14 +33,14 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 - [x] T014 [S1.b] [PR #1667 / vmop-3748] Install the four `vim.vmware.com` CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`, `VirtualMachineConfigPolicy`) via `config/crd/external-crds/` in the Supervisor chart
 - [x] T015a [S1.b] [PR #1667 / vmop-3748] Extend `config/rbac/role.yaml` with get/list/watch on `zones`
 - [x] T015b [S1.b] [PR #1695 / vmop-3740] Extend `config/rbac/role.yaml` with create/get/list/patch/update/watch on `configtargets` and `virtualmachineconfigpolicies`
-- [ ] T015c [S1.b] Extend `config/rbac/role.yaml` with create/get/list/patch/update/watch on `virtualmachineconfigoptions` and `virtualmachineguestoptions` — deferred to S6/S7 controller stories per commit `1698824b`
+- [x] T015c [S1.b] [PR #1672] Extend `config/rbac/role.yaml` with create/get/list/patch/update/watch on `virtualmachineconfigoptions` and `virtualmachineguestoptions` — landed alongside the VirtualMachineConfigOptions controller (S6) rather than as its own change; this checkbox was stale (RBAC already present before S7 started)
 
 ### Story S2 — Partner-facing integration doc (vmop-3739)
 
 - [ ] T020 [S2] Author `external/vim/doc/integration-guide.md` — pipeline diagram, role of each CRD, `ConfigTarget.status` capability surface (`maxHardwareVersion`, enriched `sriov`), per-host iteration inside the `ConfigTarget` controller, syncMode semantics, worked example of policy denial
 - [ ] T021 [S2] Link doc from public RTD site; review by PM and at least one downstream consumer team
 
-*Gate: T021 must be complete before Phase 2 code work begins.*
+*Gate (superseded): this originally required T021 complete before any Phase 2 code work began. In practice, S3/S5/S6 (and now S7) started and merged while T021 was still open, matching the Phase 2 header's actual rule ("S3/S6/S7/S8/S9 may begin after S1 is merged"). T021 remains a real, outstanding task — just not a blocking gate for the rest of Phase 2.*
 
 ---
 
@@ -88,10 +88,10 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S7 — VirtualMachineGuestOptions plumbing (vmop-3744)
 
-- [ ] T090 [S7.a] Author `webhooks/virtualmachineguestoptions/validation_webhook.go` — immutable spec.id; DNS-safe name
-- [ ] T091 [S7.a] Unit tests + RBAC + manifest registration
-- [ ] T092 [S7.b] [P] Integration tests with vcsim — `test/intg/virtualmachineguestoptions/`: two VirtualMachineConfigOptions (vmx-21, vmx-22) yield single VirtualMachineGuestOptions with two hardwareVersions listMap entries
-- [ ] T093 [S7.c] E2E test — at least one VirtualMachineGuestOptions materialised after install + zone creation
+- [x] T090 [S7.a] [vmop-3766] Author `webhooks/virtualmachineguestoptions/validation/virtualmachineguestoptions_validator.go` — immutable spec.id; metadata.name must equal the DNS-safe transform of spec.id (shared helper extracted to `pkg/util.VimGuestOptionsName`, also used by the S6 controller's fan-out); reject empty spec.id
+- [x] T091 [S7.a] [vmop-3766] Unit tests + manifest registration (`config/webhook/manifests.yaml` regenerated via `make generate-manifests`); RBAC was already present (see T015c) so no role.yaml change was needed
+- [x] T092 [S7.b] Integration tests with envtest — `webhooks/virtualmachineguestoptions/validation/virtualmachineguestoptions_validator_intg_test.go` (no separate `test/intg/` tree exists in this repo, per `testing-standards.md`). The two-hardware-versions-fan-into-one-GuestOptions scenario this task originally described is controller behavior, not webhook validation, and was already covered by S6's `controllers/virtualmachineconfigoptions/vmconfigoptions_controller_test.go` ("two VirtualMachineConfigOptions for different hardware versions report the same guest OS") — this checkbox was stale.
+- [x] T093 [S7.c] E2E test — already satisfied by S6's T086 (`test/e2e/vmservice/vmservice/configpolicy/configpolicy.go`, "Should fan out a VirtualMachineGuestOptions object for each guest OS reported by the cluster"); this checkbox was stale. No dedicated E2E test was added for the webhook's rejection paths (immutable spec.id, name/id mismatch, empty spec.id), consistent with S6's ConfigOptions webhook precedent — those rules have unit + envtest integration coverage only.
 
 ### Story S8 — VirtualMachineConfigPolicy controller (vmop-3745)
 

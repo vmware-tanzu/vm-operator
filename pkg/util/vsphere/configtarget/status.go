@@ -108,8 +108,11 @@ func computeMaxHardwareVersion(descriptors []vimtypes.VirtualMachineConfigOption
 // version (e.g. "vmx-21"), the same criterion computeMaxHardwareVersion uses
 // to skip malformed descriptors. Callers that fan out a
 // VirtualMachineConfigOptions per descriptor Key -- whose spec.hardwareVersion
-// carries a CEL format rule matching this same shape -- must apply this
-// filter too, or a malformed Key produces a Create the API server rejects.
+// must match that same ^vmx-\d+$ shape or the API server rejects the Create
+// -- must apply this filter too. That constraint predates this function:
+// the now-removed VirtualMachineConfigOptions webhook enforced the identical
+// format on CREATE, so a malformed Key was already unusable before the
+// format check moved to CEL.
 func IsValidHardwareVersionKey(key string) bool {
 	if key == "" {
 		return false

@@ -200,8 +200,10 @@ func (r *Reconciler) ReconcileNormal(
 // garbage-collects any obj owns that are no longer reported. Descriptors
 // with a malformed Key are skipped via the same
 // configtarget.IsValidHardwareVersionKey check computeMaxHardwareVersion
-// uses, since spec.hardwareVersion carries a CEL rule requiring that same
-// shape and would otherwise reject the Create outright.
+// uses, since spec.hardwareVersion must match ^vmx-\d+$ or the Create is
+// rejected outright -- a pre-existing constraint (the now-removed
+// VirtualMachineConfigOptions webhook enforced the identical format on
+// CREATE), not one introduced by moving that check to CEL.
 //
 // A plain (non-controller) owner reference is used, rather than
 // SetControllerReference, because the same hardware-version-keyed

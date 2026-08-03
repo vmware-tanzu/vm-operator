@@ -12,7 +12,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/configtarget"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -22,15 +21,13 @@ import (
 // suite's integration test client needs it on to (de)serialize
 // ConfigTarget at all -- independent of the CRD itself, which envtest
 // installs from config/crd/external-crds regardless of this flag.
-var suite = builder.NewTestSuiteForControllerWithContext(
+var suite = builder.NewTestSuiteWithContext(
 	pkgcfg.UpdateContext(
 		pkgcfg.NewContextWithDefaultConfig(),
 		func(config *pkgcfg.Config) {
 			config.Features.VirtualMachineConfigPolicy = true
 		},
-	),
-	manager.AddToManagerNoopFn,
-	manager.InitializeProvidersNoopFn)
+	))
 
 func TestConfigTargetController(t *testing.T) {
 	RegisterFailHandler(Fail)

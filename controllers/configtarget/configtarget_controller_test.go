@@ -611,9 +611,9 @@ func unitTests() {
 
 					// The malformed key must also be excluded from the
 					// VirtualMachineConfigOptions fan-out: spec.hardwareVersion
-					// carries a CEL format rule matching the same shape, so
-					// fanning it out as-is would make a real API server reject
-					// the Create outright.
+					// must match ^vmx-\d+$ or a real API server rejects the
+					// Create outright -- true before this rule moved to CEL
+					// too, since the removed webhook enforced the same format.
 					var vmcoList vimv1.VirtualMachineConfigOptionsList
 					Expect(client.List(ctx, &vmcoList)).To(Succeed())
 					names := make([]string, len(vmcoList.Items))
@@ -1068,6 +1068,22 @@ func crdValidationTests() {
 		When("spec.id is changed", func() {
 			BeforeEach(func() {
 				obj.Spec.ID = vimv1.ManagedObjectID{ID: obj.Spec.ID.ID + "-changed"}
+			})
+
+			It("should deny the update", func() {
+				err := intgCtx.Client.Update(intgCtx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("id is immutable"))
+			})
+		})
+
+		When("spec.id.serverID is changed but spec.id.id is unchanged", func() {
+			BeforeEach(func() {
+				// self == oldSelf on the CEL rule compares the whole
+				// ManagedObjectID struct, not just .ID -- this pins that a
+				// change to the optional ServerID field alone still trips
+				// the immutability rule.
+				obj.Spec.ID.ServerID = "vc-changed"
 			})
 
 			It("should deny the update", func() {

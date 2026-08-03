@@ -394,27 +394,6 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-validate-vmoperator-vmware-com-v1alpha1-webconsolerequest
-  failurePolicy: Fail
-  name: default.validating.webconsolerequest.v1alpha1.vmoperator.vmware.com
-  rules:
-  - apiGroups:
-    - vmoperator.vmware.com
-    apiVersions:
-    - v1alpha1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - webconsolerequests
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: webhook-service
-      namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha6-virtualmachinewebconsolerequest
   failurePolicy: Fail
   name: default.validating.virtualmachinewebconsolerequest.v1alpha6.vmoperator.vmware.com
@@ -428,4 +407,25 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachinewebconsolerequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha1-webconsolerequest
+  failurePolicy: Fail
+  name: default.validating.webconsolerequest.v1alpha1.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - webconsolerequests
   sideEffects: None

@@ -460,7 +460,7 @@ func (r *Reconciler) removeHardwareVersionAndDeleteIfOrphaned(
 
 	obj.Status.HardwareVersions = slices.DeleteFunc(obj.Status.HardwareVersions,
 		func(hv vimv1.VirtualMachineGuestOptionsHardwareVersionStatus) bool {
-			return hv.HardwareVersion == hardwareVersion
+			return hv.Version == hardwareVersion
 		})
 
 	if len(obj.Status.HardwareVersions) == len(base.Status.HardwareVersions) {
@@ -497,7 +497,7 @@ func upsertHardwareVersionStatus(
 ) []vimv1.VirtualMachineGuestOptionsHardwareVersionStatus {
 
 	for i := range versions {
-		if versions[i].HardwareVersion == hwStatus.HardwareVersion {
+		if versions[i].Version == hwStatus.Version {
 			versions[i] = hwStatus
 			return versions
 		}
@@ -512,7 +512,7 @@ func buildHardwareVersionStatus(
 	desc vimtypes.GuestOsDescriptor) vimv1.VirtualMachineGuestOptionsHardwareVersionStatus {
 
 	s := vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
-		HardwareVersion:             hardwareVersion,
+		Version:                     hardwareVersion,
 		SupportedMaxCPUs:            desc.SupportedMaxCPUs,
 		NumSupportedPhysicalSockets: desc.NumSupportedPhysicalSockets,
 		NumSupportedCoresPerSocket:  desc.NumSupportedCoresPerSocket,

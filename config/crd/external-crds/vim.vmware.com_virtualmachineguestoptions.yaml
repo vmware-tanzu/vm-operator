@@ -127,11 +127,6 @@ spec:
                         DiskUuidEnabled indicates whether disk UUID should be enabled by
                         default for this guest.
                       type: boolean
-                    hardwareVersion:
-                      description: |-
-                        HardwareVersion is the hardware version to which these guest options
-                        apply, ex.: vmx-19.
-                      type: string
                     ich7mRecommended:
                       description: |-
                         Ich7mRecommended indicates whether an I/O Controller Hub is recommended
@@ -586,6 +581,11 @@ spec:
                             belonging to this option type.
                           type: boolean
                       type: object
+                    version:
+                      description: |-
+                        Version is the hardware version to which these guest options
+                        apply, ex.: vmx-19.
+                      type: string
                     vsgxRemoteAttestationSupported:
                       description: |-
                         VsgxRemoteAttestationSupported indicates support for Intel SGX remote
@@ -652,11 +652,11 @@ spec:
                         type: string
                       type: array
                   required:
-                  - hardwareVersion
+                  - version
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
-                - hardwareVersion
+                - version
                 x-kubernetes-list-type: map
             required:
             - fullName

@@ -242,7 +242,7 @@ New controller `controllers/virtualmachineconfigoptions/`:
 1. Call `EnvironmentBrowser.QueryConfigOptionEx` for `spec.hardwareVersion`.
 2. Map `vim.vm.ConfigOption` → `VirtualMachineConfigOptionsStatus`.
 3. For each guest OS descriptor: `CreateOrPatch` a `VirtualMachineGuestOptions` with `spec.id = guestOsID`, `metadata.name = dnsSafe(guestOsID)`.
-4. Update `VirtualMachineGuestOptions.status.hardwareVersions` listMap (keyed by `hardwareVersion`) with this HW version's guest OS data.
+4. Update `VirtualMachineGuestOptions.status.hardwareVersions` listMap (keyed by `version`) with this HW version's guest OS data.
 
 #### I5. VirtualMachineGuestOptions plumbing (Story S7 / vmop-3744)
 

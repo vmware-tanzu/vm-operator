@@ -460,7 +460,7 @@ func unitTestsReconcile() {
 
 				var hardwareVersions []string
 				for _, hv := range guestOptions.Status.HardwareVersions {
-					hardwareVersions = append(hardwareVersions, hv.HardwareVersion)
+					hardwareVersions = append(hardwareVersions, hv.Version)
 				}
 				Expect(hardwareVersions).To(ContainElements(hardwareVersion, otherHardwareVersion))
 			})
@@ -566,7 +566,7 @@ func unitTestsReconcile() {
 
 				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
 				Expect(guestOptions.Status.HardwareVersions).To(HaveLen(1))
-				Expect(guestOptions.Status.HardwareVersions[0].HardwareVersion).To(Equal(otherHardwareVersion))
+				Expect(guestOptions.Status.HardwareVersions[0].Version).To(Equal(otherHardwareVersion))
 			})
 		})
 
@@ -895,7 +895,7 @@ func vcsimTestsReconcile() {
 
 				var hwEntry *vimv1.VirtualMachineGuestOptionsHardwareVersionStatus
 				for i := range match.Status.HardwareVersions {
-					if match.Status.HardwareVersions[i].HardwareVersion == configOptions.Spec.HardwareVersion {
+					if match.Status.HardwareVersions[i].Version == configOptions.Spec.HardwareVersion {
 						hwEntry = &match.Status.HardwareVersions[i]
 						break
 					}
@@ -966,7 +966,7 @@ func vcsimTestsReconcile() {
 			hardwareVersion string) *vimv1.VirtualMachineGuestOptionsHardwareVersionStatus {
 
 			for i := range vgo.Status.HardwareVersions {
-				if vgo.Status.HardwareVersions[i].HardwareVersion == hardwareVersion {
+				if vgo.Status.HardwareVersions[i].Version == hardwareVersion {
 					return &vgo.Status.HardwareVersions[i]
 				}
 			}
@@ -1070,16 +1070,16 @@ func vcsimTestsReconcile() {
 
 			obj.Status.FullName = "Other"
 			obj.Status.HardwareVersions = []vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
-				{HardwareVersion: "vmx-19"},
-				{HardwareVersion: "vmx-20"},
-				{HardwareVersion: "vmx-21"},
+				{Version: "vmx-19"},
+				{Version: "vmx-20"},
+				{Version: "vmx-21"},
 			}
 			Expect(vcsimCtx.Client.Status().Update(vcsimCtx, obj)).To(Succeed())
 
 			base := obj.DeepCopy()
 			obj.Status.HardwareVersions = []vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
-				{HardwareVersion: "vmx-19"},
-				{HardwareVersion: "vmx-21"},
+				{Version: "vmx-19"},
+				{Version: "vmx-21"},
 			}
 			Expect(vcsimCtx.Client.Status().Patch(vcsimCtx, obj,
 				client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))).To(Succeed())
@@ -1090,7 +1090,7 @@ func vcsimTestsReconcile() {
 
 			var versions []string
 			for _, hv := range current.Status.HardwareVersions {
-				versions = append(versions, hv.HardwareVersion)
+				versions = append(versions, hv.Version)
 			}
 			Expect(versions).To(Equal([]string{"vmx-19", "vmx-21"}))
 		})

@@ -312,7 +312,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 							var hwEntry *vimv1.VirtualMachineGuestOptionsHardwareVersionStatus
 							for k := range match.Status.HardwareVersions {
-								if match.Status.HardwareVersions[k].HardwareVersion == vco.Spec.HardwareVersion {
+								if match.Status.HardwareVersions[k].Version == vco.Spec.HardwareVersion {
 									hwEntry = &match.Status.HardwareVersions[k]
 									break
 								}

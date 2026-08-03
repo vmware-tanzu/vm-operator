@@ -12,9 +12,9 @@ import (
 type VirtualMachineGuestOptionsHardwareVersionStatus struct {
 	// +required
 
-	// HardwareVersion is the hardware version to which these guest options
+	// Version is the hardware version to which these guest options
 	// apply, ex.: vmx-19.
-	HardwareVersion string `json:"hardwareVersion"`
+	Version string `json:"version"`
 
 	// +optional
 
@@ -405,7 +405,7 @@ type VirtualMachineGuestOptionsStatus struct {
 
 	// +optional
 	// +listType=map
-	// +listMapKey=hardwareVersion
+	// +listMapKey=version
 
 	// HardwareVersions contains the list of hardware versions for which this
 	// guest is valid and the guest's options for that version.

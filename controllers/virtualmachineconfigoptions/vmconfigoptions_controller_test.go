@@ -18,6 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmconfigoptions "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigoptions"
@@ -329,6 +331,39 @@ func unitTestsReconcile() {
 				})
 			})
 
+			When("QueryConfigOptionEx transitions from reporting a guest OS to reporting no config option at all", func() {
+				It("garbage-collects the corresponding VirtualMachineGuestOptions", func() {
+					fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+						return &vimtypes.VirtualMachineConfigOption{
+							GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+								{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+							},
+						}, nil
+					}
+
+					// First reconcile adds finalizer; second fans out the guest OS.
+					_, err := doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+					_, err = doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+
+					guestOptions := &vimv1.VirtualMachineGuestOptions{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+					// vSphere now reports no config option at all for this
+					// hardware version -- a nil, error-free result, not a
+					// transient failure.
+					fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+						return nil, nil
+					}
+					_, err = doReconcile()
+					Expect(err).ToNot(HaveOccurred())
+
+					err = ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				})
+			})
+
 		})
 
 		When("a ConfigTarget owner reference names a ConfigTarget that no longer exists", func() {
@@ -428,6 +463,110 @@ func unitTestsReconcile() {
 					hardwareVersions = append(hardwareVersions, hv.HardwareVersion)
 				}
 				Expect(hardwareVersions).To(ContainElements(hardwareVersion, otherHardwareVersion))
+			})
+		})
+
+		When("a guest OS is dropped from the descriptor list", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, configTarget, configOptions)
+			})
+
+			It("garbage-collects the corresponding VirtualMachineGuestOptions", func() {
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+
+				// First reconcile adds finalizer; second fans out the guest OS.
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+				// Drop the guest OS from the descriptor list and reconcile again.
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{}, nil
+				}
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				err = ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
+		})
+
+		When("a guest OS reported by two hardware versions is dropped from only one", func() {
+			const otherHardwareVersion = "vmx-21"
+
+			var otherConfigOptions *vimv1.VirtualMachineConfigOptions
+
+			BeforeEach(func() {
+				otherConfigOptions = &vimv1.VirtualMachineConfigOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "vmx-21-config",
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: vimv1.GroupVersion.String(),
+								Kind:       vmconfigoptions.ConfigTargetKind,
+								Name:       configTarget.Name,
+								UID:        configTarget.UID,
+							},
+						},
+					},
+					Spec: vimv1.VirtualMachineConfigOptionsSpec{
+						HardwareVersion: otherHardwareVersion,
+					},
+				}
+				initObjects = append(initObjects, configTarget, configOptions, otherConfigOptions)
+			})
+
+			It("removes only the dropped hardware version's status entry and keeps the object", func() {
+				otherObjKey := types.NamespacedName{Name: otherConfigOptions.Name}
+				doReconcileOther := func() (reconcile.Result, error) {
+					return reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: otherObjKey})
+				}
+
+				bothReport := func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+				fakeVMProvider.QueryConfigOptionExFn = bothReport
+
+				// First reconcile of each adds its finalizer; second performs
+				// the full reconciliation and fan-out.
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcileOther()
+				Expect(err).ToNot(HaveOccurred())
+				_, err = doReconcileOther()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+				Expect(guestOptions.Status.HardwareVersions).To(HaveLen(2))
+
+				// Drop the guest OS from hardwareVersion only; otherHardwareVersion
+				// keeps reporting it.
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{}, nil
+				}
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+				Expect(guestOptions.Status.HardwareVersions).To(HaveLen(1))
+				Expect(guestOptions.Status.HardwareVersions[0].HardwareVersion).To(Equal(otherHardwareVersion))
 			})
 		})
 
@@ -568,6 +707,87 @@ func unitTestsReconcile() {
 				} else {
 					Expect(getErr).To(MatchError(ContainSubstring("not found")))
 				}
+			})
+
+			It("prunes the corresponding VirtualMachineGuestOptions", func() {
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+
+				// Reconcile once (finalizer already present via BeforeEach)
+				// to fan out the guest OS before deleting the object.
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+				Expect(ctx.Client.Delete(cource.WithContext(ctx), configOptions)).To(Succeed())
+				_, err = doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				err = ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("keeps the finalizer when garbage collection fails, so cleanup is retried", func() {
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, _, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					return &vimtypes.VirtualMachineConfigOption{
+						GuestOSDescriptor: []vimtypes.GuestOsDescriptor{
+							{Id: "otherLinux64Guest", FullName: "Other Linux (64-bit)", Family: "linuxGuest"},
+						},
+					}, nil
+				}
+
+				_, err := doReconcile()
+				Expect(err).ToNot(HaveOccurred())
+
+				guestOptions := &vimv1.VirtualMachineGuestOptions{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
+
+				Expect(ctx.Client.Delete(cource.WithContext(ctx), configOptions)).To(Succeed())
+
+				// The fake client's Delete() records the DeletionTimestamp in
+				// its internal store, not on the local configOptions pointer,
+				// so re-fetch it before seeding the new fake client below.
+				deletingConfigOptions := &vimv1.VirtualMachineConfigOptions{}
+				Expect(ctx.Client.Get(ctx, objKey, deletingConfigOptions)).To(Succeed())
+				Expect(deletingConfigOptions.DeletionTimestamp).ToNot(BeNil())
+
+				// Swap in a client that fails the List garbageCollectGuestOptions
+				// issues, simulating a transient API server error during GC.
+				failingClient := fake.NewClientBuilder().
+					WithScheme(ctx.Client.Scheme()).
+					WithStatusSubresource(builder.KnownObjectTypes()...).
+					WithInterceptorFuncs(interceptor.Funcs{
+						List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+							if _, ok := list.(*vimv1.VirtualMachineGuestOptionsList); ok {
+								return errors.New("simulated transient list failure")
+							}
+							return c.List(ctx, list, opts...)
+						},
+					}).
+					WithObjects(deletingConfigOptions, guestOptions).
+					Build()
+
+				failingReconciler := vmconfigoptions.NewReconciler(
+					ctx, failingClient, ctx.Logger, ctx.Recorder, ctx.VMProvider)
+
+				_, err = failingReconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{NamespacedName: objKey})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("simulated transient list failure"))
+
+				current := &vimv1.VirtualMachineConfigOptions{}
+				Expect(failingClient.Get(ctx, objKey, current)).To(Succeed())
+				Expect(current.Finalizers).To(ContainElement(vmconfigoptions.Finalizer),
+					"finalizer must be retained so the failed GC is retried on the next reconcile")
+
+				Expect(failingClient.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed(),
+					"VirtualMachineGuestOptions must survive a failed GC attempt")
 			})
 		})
 	})
@@ -799,17 +1019,20 @@ func vcsimTestsReconcile() {
 			Expect(hwVersionEntry(vgo, vmx22Name)).ToNot(BeNil())
 		})
 
-		It("does not prune the hardwareVersions entry when its VirtualMachineConfigOptions is deleted", func() {
+		It("prunes the hardwareVersions entry when its VirtualMachineConfigOptions is deleted, "+
+			"leaving the other hardware version's entry intact", func() {
 			reconcileTwice(vmx21.Name)
 			reconcileTwice(vmx22.Name)
 
 			guestID := sharedGuestID()
 			Expect(guestOptionsFor(guestID).Status.HardwareVersions).To(HaveLen(2))
 
-			// Deletion semantics for stale hardware versions are
-			// deferred: deleting the VirtualMachineConfigOptions that
-			// contributed an entry must not remove it from the shared
-			// VirtualMachineGuestOptions.
+			// vmop-3932: ReconcileDelete now prunes the deleted
+			// VirtualMachineConfigOptions's entry from every
+			// VirtualMachineGuestOptions it contributed to, so the
+			// vmx-21 entry is removed here while vmx-22's remains --
+			// this supersedes the "does not prune" behavior this test
+			// previously locked in before that GC was implemented.
 			Expect(vcsimCtx.Client.Delete(vcsimCtx, vmx21)).To(Succeed())
 			_, err := reconciler.Reconcile(vcsimCtx,
 				ctrl.Request{NamespacedName: types.NamespacedName{Name: vmx21.Name}})
@@ -820,10 +1043,56 @@ func vcsimTestsReconcile() {
 			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
 			vgo := guestOptionsFor(guestID)
-			Expect(vgo.Status.HardwareVersions).To(HaveLen(2),
-				"the vmx-21 entry should remain even though its VirtualMachineConfigOptions was deleted")
-			Expect(hwVersionEntry(vgo, vmx21Name)).ToNot(BeNil())
+			Expect(vgo.Status.HardwareVersions).To(HaveLen(1),
+				"the vmx-21 entry should be pruned once its VirtualMachineConfigOptions is deleted")
+			Expect(hwVersionEntry(vgo, vmx21Name)).To(BeNil())
 			Expect(hwVersionEntry(vgo, vmx22Name)).ToNot(BeNil())
+		})
+	})
+
+	// This exercises the exact patch mechanics garbageCollectGuestOptions
+	// relies on -- a JSON merge patch carrying the full desired
+	// hardwareVersions slice, sent with an optimistic-lock precondition --
+	// against the real (envtest) API server and its generated CRD schema,
+	// rather than controller-runtime's fake client used by unitTestsReconcile
+	// above. VirtualMachineGuestOptionsStatus.HardwareVersions is declared
+	// listType=map/listMapKey=hardwareVersion; unlike a strategic merge
+	// patch or server-side apply, a JSON merge patch has no notion of that
+	// annotation and simply replaces the array wholesale with the patch's
+	// value, so sending the shorter slice removes exactly the dropped entry.
+	When("a hardwareVersions entry is removed via a merge patch against the real API server", func() {
+		It("removes exactly the targeted entry, leaving sibling entries intact", func() {
+			obj := &vimv1.VirtualMachineGuestOptions{
+				ObjectMeta: metav1.ObjectMeta{Name: "merge-patch-probe"},
+				Spec:       vimv1.VirtualMachineGuestOptionsSpec{ID: "otherGuest"},
+			}
+			Expect(vcsimCtx.Client.Create(vcsimCtx, obj)).To(Succeed())
+
+			obj.Status.FullName = "Other"
+			obj.Status.HardwareVersions = []vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
+				{HardwareVersion: "vmx-19"},
+				{HardwareVersion: "vmx-20"},
+				{HardwareVersion: "vmx-21"},
+			}
+			Expect(vcsimCtx.Client.Status().Update(vcsimCtx, obj)).To(Succeed())
+
+			base := obj.DeepCopy()
+			obj.Status.HardwareVersions = []vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
+				{HardwareVersion: "vmx-19"},
+				{HardwareVersion: "vmx-21"},
+			}
+			Expect(vcsimCtx.Client.Status().Patch(vcsimCtx, obj,
+				client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))).To(Succeed())
+
+			var current vimv1.VirtualMachineGuestOptions
+			Expect(vcsimCtx.Client.Get(vcsimCtx, client.ObjectKeyFromObject(obj), &current)).To(Succeed())
+			Expect(current.Status.HardwareVersions).To(HaveLen(2))
+
+			var versions []string
+			for _, hv := range current.Status.HardwareVersions {
+				versions = append(versions, hv.HardwareVersion)
+			}
+			Expect(versions).To(Equal([]string{"vmx-19", "vmx-21"}))
 		})
 	})
 }

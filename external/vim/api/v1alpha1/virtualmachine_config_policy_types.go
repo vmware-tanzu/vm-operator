@@ -287,7 +287,7 @@ type VirtualMachineConfigPolicySpec struct {
 	// TxRxThreadModels describes the supported transmit/receive models.
 	TxRxThreadModels []TxRxThreadModel `json:"txRxThreadModels,omitempty"`
 
-	// HardwareVersions describes the range of supported hardware vesions.
+	// HardwareVersions describes the range of supported hardware versions.
 	HardwareVersions *HardwareVersionRange `json:"hardwareVersions,omitempty"`
 
 	ConfigTargetDevices `json:",inline"`

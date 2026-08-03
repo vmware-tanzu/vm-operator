@@ -552,7 +552,7 @@ spec:
                 type: array
               hardwareVersions:
                 description: HardwareVersions describes the range of supported hardware
-                  vesions.
+                  versions.
                 properties:
                   max:
                     description: |-

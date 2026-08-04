@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	"github.com/vmware/govmomi/crypto"
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
 	"github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
@@ -238,16 +238,14 @@ func createPbmProfile(
 // isPbmDuplicateNameFault reports whether err is a PBM CreateProfile failure
 // because a profile with the requested name already exists.
 func isPbmDuplicateNameFault(err error) bool {
-	if !soap.IsSoapFault(err) {
-		return false
+	var dn *types.PbmDuplicateName
+	if _, ok := fault.As(err, &dn); ok {
+		return true
 	}
 
-	switch soap.ToSoapFault(err).VimFault().(type) {
-	case types.PbmDuplicateName, types.PbmDuplicateNameFault:
-		return true
-	default:
-		return false
-	}
+	var dnf *types.PbmDuplicateNameFault
+	_, ok := fault.As(err, &dnf)
+	return ok
 }
 
 // GetOrCreateVsanDirectStoragePolicyID Gets already created VSAN Direct Storage Policy ID or Creates one if not found.

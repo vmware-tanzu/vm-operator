@@ -409,11 +409,10 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				sshCommandRunner, _, _ := testutils.GetHelpersFromKubeconfig(ctx, kubeConfig)
 				user, nonAdminClient = setupNonAdminUserForTests(ctx, vimClient, sshCommandRunner, svClusterClient, clusterProxy)
-			})
-
-			AfterAll(func() {
-				By("Deleting non admin user")
-				vcenter.DeleteUserOrFail(user)
+				DeferCleanup(func() {
+					By("Deleting non admin user")
+					vcenter.DeleteUserOrFail(user)
+				})
 			})
 
 			BeforeEach(func() {

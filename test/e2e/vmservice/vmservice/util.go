@@ -44,7 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	cnsunregistervolumev1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/cnsunregistervolume/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -948,12 +948,12 @@ func UnregisterPVCVolumes(
 		unregisterName := fmt.Sprintf("%s-unreg-%s", vmName, capiutil.RandomString(6))
 
 		// Create the CnsUnregisterVolume object using the typed API
-		cnsUnregister := &cnsunregistervolumev1alpha1.CnsUnregisterVolume{
+		cnsUnregister := &cnsv1alpha1.CnsUnregisterVolume{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      unregisterName,
 				Namespace: namespace,
 			},
-			Spec: cnsunregistervolumev1alpha1.CnsUnregisterVolumeSpec{
+			Spec: cnsv1alpha1.CnsUnregisterVolumeSpec{
 				PVCName:         pvcName,
 				RetainFCD:       false,
 				ForceUnregister: true,
@@ -966,7 +966,7 @@ func UnregisterPVCVolumes(
 
 		// Wait for the CnsUnregisterVolume status to show unregistered: true
 		Eventually(func() bool {
-			cnsUnregisterStatus := &cnsunregistervolumev1alpha1.CnsUnregisterVolume{}
+			cnsUnregisterStatus := &cnsv1alpha1.CnsUnregisterVolume{}
 
 			err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{
 				Namespace: namespace,

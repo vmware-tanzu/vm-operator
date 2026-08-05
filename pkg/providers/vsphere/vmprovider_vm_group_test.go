@@ -520,16 +520,17 @@ func vmGroupTests() {
 						err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 						Expect(err).To(HaveOccurred())
 						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
-						Expect(err.Error()).To(ContainSubstring("does not match VM zone label"))
+						Expect(err.Error()).To(ContainSubstring("which differs from the VM zone label"))
 
 						By("VM is not created", func() {
 							Expect(vm.Status.UniqueID).To(BeEmpty())
 						})
-						By("PlacementReady is False with ZoneMismatch reason", func() {
+						By("PlacementReady is False", func() {
 							c := conditions.Get(vm, vmopv1.VirtualMachineConditionPlacementReady)
 							Expect(c).ToNot(BeNil())
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal("ZoneMismatch"))
+							Expect(c.Reason).To(Equal("NotReady"))
+							Expect(c.Message).To(ContainSubstring("which differs from the VM zone label"))
 						})
 					})
 				})

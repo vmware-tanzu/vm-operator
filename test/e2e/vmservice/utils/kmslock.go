@@ -24,24 +24,15 @@ import (
 const (
 	// defaultKMSProviderLockName and defaultKMSProviderLockNamespace back a
 	// Lease used to serialize mutation of vCenter's default KMS provider
-	// across concurrently-running E2E jobs that target the same vCenter
-	// appliance.
+	// (CryptoManagerKmip.SetDefaultKmsCluster/GetDefaultKmsCluster called
+	// with entity=nil) across concurrently-running E2E jobs that target the
+	// same vCenter appliance — that setting is VC-wide, not scoped per
+	// namespace, session, or test.
 	//
-	// vCenter's default KMS provider (CryptoManagerKmip.SetDefaultKmsCluster
-	// / GetDefaultKmsCluster called with entity=nil) is a single, VC-wide
-	// setting — it is not scoped per-namespace, per-session, or per-test.
-	// Encryption specs save/restore it around each spec as if it were
-	// exclusively theirs; when two E2E jobs run encryption specs
-	// concurrently against the same vCenter, one job's cleanup can clear or
-	// overwrite the value the other job just set and is relying on,
-	// producing a spurious VirtualMachineEncryptionSynced=NoDefaultKeyProvider
-	// failure.
-	//
-	// The lock is a Lease in the target supervisor cluster rather than
-	// something stored in vCenter itself, because only jobs pointed at the
-	// same supervisor cluster/vCenter share that cluster's API server —
-	// which is exactly the set of jobs capable of racing on that vCenter's
-	// global setting.
+	// The lock lives in the target supervisor cluster rather than in
+	// vCenter itself because only jobs pointed at the same supervisor
+	// cluster/vCenter share that cluster's API server — exactly the set of
+	// jobs capable of racing on that vCenter's global setting.
 	defaultKMSProviderLockName      = "vmservice-e2e-default-kms-provider-lock"
 	defaultKMSProviderLockNamespace = "vmware-system-vmop"
 
@@ -115,8 +106,7 @@ func releaseKMSLease(ctx context.Context, c ctrlclient.Client, holder string) {
 		return
 	}
 	if ptr.DerefWithDefault(lease.Spec.HolderIdentity, "") != holder {
-		// Our lease already expired and another job reclaimed it; nothing
-		// to release.
+		// Lease already expired and another job reclaimed it.
 		return
 	}
 	if err := c.Delete(ctx, lease); err != nil {

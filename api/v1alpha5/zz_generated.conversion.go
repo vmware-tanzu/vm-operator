@@ -2268,6 +2268,7 @@ func Convert_v1alpha6_VGPUDevice_To_v1alpha5_VGPUDevice(in *v1alpha6.VGPUDevice,
 func autoConvert_v1alpha5_VMAffinitySpec_To_v1alpha6_VMAffinitySpec(in *VMAffinitySpec, out *v1alpha6.VMAffinitySpec, s conversion.Scope) error {
 	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha6.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
 	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha6.VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	out.RequiredDuringSchedulingRequiredDuringExecution = *(*[]v1alpha6.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingRequiredDuringExecution))
 	return nil
 }
 
@@ -2279,6 +2280,7 @@ func Convert_v1alpha5_VMAffinitySpec_To_v1alpha6_VMAffinitySpec(in *VMAffinitySp
 func autoConvert_v1alpha6_VMAffinitySpec_To_v1alpha5_VMAffinitySpec(in *v1alpha6.VMAffinitySpec, out *VMAffinitySpec, s conversion.Scope) error {
 	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
 	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	out.RequiredDuringSchedulingRequiredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingRequiredDuringExecution))
 	return nil
 }
 
@@ -2312,6 +2314,7 @@ func Convert_v1alpha6_VMAffinityTerm_To_v1alpha5_VMAffinityTerm(in *v1alpha6.VMA
 func autoConvert_v1alpha5_VMAntiAffinitySpec_To_v1alpha6_VMAntiAffinitySpec(in *VMAntiAffinitySpec, out *v1alpha6.VMAntiAffinitySpec, s conversion.Scope) error {
 	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha6.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
 	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha6.VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	out.RequiredDuringSchedulingRequiredDuringExecution = *(*[]v1alpha6.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingRequiredDuringExecution))
 	return nil
 }
 
@@ -2323,6 +2326,7 @@ func Convert_v1alpha5_VMAntiAffinitySpec_To_v1alpha6_VMAntiAffinitySpec(in *VMAn
 func autoConvert_v1alpha6_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec(in *v1alpha6.VMAntiAffinitySpec, out *VMAntiAffinitySpec, s conversion.Scope) error {
 	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
 	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	out.RequiredDuringSchedulingRequiredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingRequiredDuringExecution))
 	return nil
 }
 

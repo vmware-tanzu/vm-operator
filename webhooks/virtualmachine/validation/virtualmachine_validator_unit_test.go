@@ -498,6 +498,43 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+			Entry("should allow MicrosoftWSFC volume with a ReadWriteMany PVC and no controller assignment",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// At Create time, the VM's controller topology is not
+						// yet known -- it is only discovered once backfill
+						// runs on Update. A MicrosoftWSFC volume cannot be
+						// denied here for lacking a shared controller, since
+						// nothing can assign one yet.
+						pvc := &corev1.PersistentVolumeClaim{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "wsfc-rwx-pvc",
+								Namespace: ctx.vm.Namespace,
+							},
+							Spec: corev1.PersistentVolumeClaimSpec{
+								AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+							},
+						}
+						Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+						ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "wsfc-vol",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+										PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "wsfc-rwx-pvc",
+										},
+									},
+								},
+								ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+								DiskMode:        vmopv1.VolumeDiskModeIndependentPersistent,
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
 		)
 	})
 
@@ -9169,6 +9206,45 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						// All fields are already set by setControllerForPVC
 					},
 					expectAllowed: true,
+				},
+			),
+			Entry("should deny MicrosoftWSFC volume with a ReadWriteMany PVC and no controller assignment",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Unlike Create, by Update time backfill has had a
+						// chance to run, so the post-backfill mutation
+						// webhook should have assigned a shared controller.
+						// If it hasn't, the volume must be denied.
+						pvc := &corev1.PersistentVolumeClaim{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "wsfc-rwx-pvc-update",
+								Namespace: ctx.vm.Namespace,
+							},
+							Spec: corev1.PersistentVolumeClaimSpec{
+								AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+							},
+						}
+						Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+						newVol := vmopv1.VirtualMachineVolume{
+							Name: newVolName,
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "wsfc-rwx-pvc-update",
+									},
+								},
+							},
+							ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+							DiskMode:        vmopv1.VolumeDiskModeIndependentPersistent,
+						}
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, newVol)
+					},
+					expectAllowed:           false,
+					skipSetControllerForPVC: true,
+					validate: doValidateWithMsg(
+						"ReadWriteMany PVC must have a shared volume or controller",
+					),
 				},
 			),
 		)

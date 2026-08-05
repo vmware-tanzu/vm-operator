@@ -140,6 +140,14 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			To(Succeed(), "failed to ensure encryption storage in namespace %s",
 				tmpNamespaceName)
 
+		// vCenter's default KMS provider is a single VC-wide setting, not
+		// scoped per-test. Serialize the read-mutate-restore critical
+		// section below (through AfterEach's restore) against any other
+		// E2E job pointed at the same vCenter, so a concurrent job's
+		// cleanup cannot clobber the default provider this spec depends on
+		// mid-flight. See VMSVC-4007.
+		DeferCleanup(vmserviceutils.AcquireDefaultKMSProviderLock(ctx, svClusterClient, 10*time.Minute))
+
 		defaultKeyProviderID, err = cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
 		Expect(err).NotTo(HaveOccurred(), "failed to get default Key Provider ID")
 	})

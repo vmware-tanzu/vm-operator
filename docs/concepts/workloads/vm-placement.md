@@ -176,6 +176,84 @@ spec:
       - size: 100Gi
 ```
 
+### Host-Local Storage
+
+When the `supports_host_local_storage` Supervisor capability is enabled, a VM
+backed by a `PersistentVolumeClaim` on a host-local (VMFS-L/VMFS
+direct-attached, single-host) `StorageClass` is pinned to the exact ESXi host
+that owns the volume's datastore, instead of only being placed onto a zone.
+The host is determined entirely from the VM's PVCs — nothing about it is
+recorded on the `VirtualMachine` — in this order:
+
+1. A PVC already carrying `volume.kubernetes.io/selected-node`, which is how a
+   host chosen by an earlier placement is remembered.
+2. A `Bound` PVC's own `csi.vsphere.volume-accessible-topology` annotation,
+   naming the host its volume already lives on.
+3. Otherwise, for a `Pending` PVC on a `WaitForFirstConsumer` StorageClass
+   with no host named anywhere yet, VM Operator forces a DRS host
+   recommendation compliant with that StorageClass's storage policy. Once the
+   VM has been created on that host, VM Operator stamps the PVC's
+   `volume.kubernetes.io/selected-node` with it so CSI provisions the volume
+   there.
+
+Which of sources 2 and 3 applies is decided by the `StorageClass`'s binding
+mode. Under `WaitForFirstConsumer`, source 3 applies: VM Operator picks the
+host, and the volume follows the VM. Under `Immediate`, CSI provisions the
+volume without waiting for a consumer and so picks the host itself; VM Operator
+waits for the PVC to bind and then adopts that host via source 2.
+
+The host is worked out again on every reconcile rather than being recorded on
+the VM, so a VM whose creation fails is free to be placed elsewhere on the next
+attempt. The decision becomes durable only once the VM exists, at which point
+the PVC's `selected-node` carries it.
+
+A host-local PVC's `csi.vsphere.volume-requested-topology` annotation must
+therefore either be **omitted** — letting CSI choose the host — or name a
+`kubernetes.io/hostname`. Naming only a zone cannot be satisfied for host-local
+storage and leaves the volume unprovisioned.
+
+#### Attaching more than one host-local volume
+
+A VM with more than one host-local volume **must** use a
+`WaitForFirstConsumer` host-local `StorageClass` — by convention the
+`-latebinding` variant of the `Immediate` one, sharing its storage policy. Only
+then does VM Operator select the host and stamp it on every host-local PVC, so
+all of the volumes land together.
+
+With an `Immediate` class each volume is provisioned independently, and CSI may
+place them on different hosts. No host can then reach all of the VM's disks, so
+the VM is rejected rather than mis-placed — and because a provisioned
+host-local volume cannot be moved, the VM never becomes creatable. A single
+host-local volume is unaffected, since one volume cannot disagree with itself.
+
+For a VKS cluster, name the late-binding class on each entry of the `volumes`
+variable, including any worker-pool `overrides`:
+
+```yaml
+    variables:
+      - name: storageClass
+        value: host-local-vmfs          # the VM's own files; not a PVC
+      - name: volumes
+        value:
+          - name: vol-1
+            mountPath: /var/lib/containerd-1
+            storageClass: host-local-vmfs-latebinding
+            capacity: 20Gi
+          - name: vol-2
+            mountPath: /var/lib/containerd-2
+            storageClass: host-local-vmfs-latebinding
+            capacity: 20Gi
+```
+
+The top-level `storageClass` variable selects where the VM's own files go and is
+resolved by placement rather than by a PVC, so its binding mode is irrelevant.
+
+A known host is authoritative: placement will never substitute a different host
+for it, since the VM's disks may only be reachable from that one host. When a
+datastore recommendation is also needed, the recommendation is constrained to
+that host so that the datastore it returns is one that host can actually
+access.
+
 ## Status and Conditions
 
 Placement results are reflected in the VM's status:

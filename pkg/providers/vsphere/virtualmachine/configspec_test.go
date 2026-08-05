@@ -2524,6 +2524,29 @@ func assertInstanceStorageDeviceChange(
 	Expect(profile.ProfileId).To(Equal(expectedStoragePolicyID))
 }
 
+func findVirtualDiskDeviceChanges(configSpec vimtypes.VirtualMachineConfigSpec) []*vimtypes.VirtualDeviceConfigSpec {
+	var out []*vimtypes.VirtualDeviceConfigSpec
+	for _, devChange := range configSpec.DeviceChange {
+		dc := devChange.GetVirtualDeviceConfigSpec()
+		if _, ok := dc.Device.(*vimtypes.VirtualDisk); ok {
+			out = append(out, dc)
+		}
+	}
+	return out
+}
+
+func findVirtualDiskDeviceChangeByCapacity(
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	capacityInBytes int64) *vimtypes.VirtualDeviceConfigSpec {
+
+	for _, dc := range findVirtualDiskDeviceChanges(configSpec) {
+		if dc.Device.(*vimtypes.VirtualDisk).CapacityInBytes == capacityInBytes {
+			return dc
+		}
+	}
+	return nil
+}
+
 func assertVMTags(
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	expectedTagNames []string,

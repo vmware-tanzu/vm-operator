@@ -250,6 +250,17 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 			return nil, err
 		}
 
+		// The VM's PVCs are included so that the recommendation accounts for
+		// their storage policies. Note that pinning a VM to a single host for
+		// host-local storage is still not supported for VM Group placement,
+		// which computes a batch, multi-VM, cross-cluster DRS recommendation
+		// independently of the per-VM flow in vmCreateDoPlacement.
+		if err := AddPVCPlacementDisks(
+			&placementConfigSpec, createArgs.Storage); err != nil {
+
+			return nil, err
+		}
+
 		return &placementConfigSpec, nil
 	}
 }

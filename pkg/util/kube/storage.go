@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -26,6 +27,7 @@ import (
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
 
@@ -62,6 +64,63 @@ func getPVCAccessibleZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
 	return getPVCZones(pvc, csiAccessibleTopologyAnnotation)
 }
 
+// getPVCHostname returns the "kubernetes.io/hostname" topology entry, if
+// any, from the given PVC topology annotation.
+func getPVCHostname(pvc corev1.PersistentVolumeClaim, key string) string {
+	v, ok := pvc.Annotations[key]
+	if !ok {
+		return ""
+	}
+
+	var topology []map[string]string
+	if json.Unmarshal([]byte(v), &topology) == nil {
+		for i := range topology {
+			if h := topology[i]["kubernetes.io/hostname"]; h != "" {
+				return h
+			}
+		}
+	}
+
+	return ""
+}
+
+// IsHostLocalStorageClass returns true if the given StorageClass is backed
+// by a host-local (VMFS-L/VMFS direct-attached, single-host) storage
+// policy.
+func IsHostLocalStorageClass(sc storagev1.StorageClass) bool {
+	v, _ := strconv.ParseBool(sc.Annotations[constants.HostLocalPolicyStorageClassAnnotationKey])
+	return v
+}
+
+// GetPVCHostLocalHostname returns the Supervisor node name that a host-local
+// PVC's volume lives on (if Bound) or has been requested for (if Pending),
+// or "" if neither topology annotation carries a hostname yet.
+func GetPVCHostLocalHostname(pvc corev1.PersistentVolumeClaim) string {
+	if pvc.Status.Phase == corev1.ClaimBound {
+		if h := getPVCHostname(pvc, csiAccessibleTopologyAnnotation); h != "" {
+			return h
+		}
+	}
+
+	return getPVCHostname(pvc, csiRequestedTopologyAnnotation)
+}
+
+// HasVirtualMachineDataSourceRef returns true if the given PVC's data source is
+// the VirtualMachine itself, meaning the volume is one of the VM's own disks.
+// Such disks are already present in the placement ConfigSpec, so they must not
+// be counted a second time when deriving placement constraints. Note that a
+// PVC's data source may instead point at another object type, such as a
+// VolumeSnapshot.
+func HasVirtualMachineDataSourceRef(pvc corev1.PersistentVolumeClaim) bool {
+	dsRef := pvc.Spec.DataSourceRef
+	if dsRef == nil || dsRef.APIGroup == nil {
+		return false
+	}
+
+	return *dsRef.APIGroup == vmopv1.GroupVersion.Group &&
+		dsRef.Kind == "VirtualMachine"
+}
+
 func GetPVCZoneConstraints(
 	storageClasses map[string]storagev1.StorageClass,
 	pvcs []corev1.PersistentVolumeClaim) (sets.Set[string], error) {
@@ -69,13 +128,8 @@ func GetPVCZoneConstraints(
 	var zones sets.Set[string]
 
 	for _, pvc := range pvcs {
-		if dsRef := pvc.Spec.DataSourceRef; dsRef != nil && dsRef.APIGroup != nil {
-			// Skip the zonal constraint check for PVCs with us as the DataSourceRef since
-			// those disks are in the placement ConfigSpec. Note that the reference may
-			// point to another object type such as VolumeSnapshot.
-			if *dsRef.APIGroup == vmopv1.GroupVersion.Group && dsRef.Kind == "VirtualMachine" {
-				continue
-			}
+		if HasVirtualMachineDataSourceRef(pvc) {
+			continue
 		}
 
 		var z sets.Set[string]

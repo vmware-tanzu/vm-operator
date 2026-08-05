@@ -1255,3 +1255,67 @@ var _ = Describe("MarkEncryptedStorageClass", func() {
 		})
 	})
 })
+
+var _ = DescribeTable("IsHostLocalStorageClass",
+	func(annotations map[string]string, expected bool) {
+		sc := storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "my-storage-class",
+				Annotations: annotations,
+			},
+		}
+		Expect(kubeutil.IsHostLocalStorageClass(sc)).To(Equal(expected))
+	},
+	Entry("annotation is true", map[string]string{"cns.vmware.com/hostLocalPolicy": "true"}, true),
+	Entry("annotation is false", map[string]string{"cns.vmware.com/hostLocalPolicy": "false"}, false),
+	Entry("annotation is absent", map[string]string(nil), false),
+	Entry("annotation is not a bool", map[string]string{"cns.vmware.com/hostLocalPolicy": "yes"}, false),
+)
+
+var _ = Describe("GetPVCHostLocalHostname", func() {
+
+	It("returns the hostname from accessible-topology when Bound", func() {
+		pvc := corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"csi.vsphere.volume-accessible-topology": `[{"kubernetes.io/hostname":"host-a","topology.kubernetes.io/zone":"zone1"}]`,
+				},
+			},
+			Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound},
+		}
+		Expect(kubeutil.GetPVCHostLocalHostname(pvc)).To(Equal("host-a"))
+	})
+
+	It("returns the hostname from requested-topology when Pending", func() {
+		pvc := corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"csi.vsphere.volume-requested-topology": `[{"kubernetes.io/hostname":"host-b","topology.kubernetes.io/zone":"zone1"}]`,
+				},
+			},
+			Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+		}
+		Expect(kubeutil.GetPVCHostLocalHostname(pvc)).To(Equal("host-b"))
+	})
+
+	It("returns empty when Pending with no requested-topology hint", func() {
+		pvc := corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{},
+			Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+		}
+		Expect(kubeutil.GetPVCHostLocalHostname(pvc)).To(BeEmpty())
+	})
+
+	It("falls back to requested-topology when Bound but accessible-topology has no hostname", func() {
+		pvc := corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"csi.vsphere.volume-accessible-topology": `[{"topology.kubernetes.io/zone":"zone1"}]`,
+					"csi.vsphere.volume-requested-topology":  `[{"kubernetes.io/hostname":"host-c","topology.kubernetes.io/zone":"zone1"}]`,
+				},
+			},
+			Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound},
+		}
+		Expect(kubeutil.GetPVCHostLocalHostname(pvc)).To(Equal("host-c"))
+	})
+})

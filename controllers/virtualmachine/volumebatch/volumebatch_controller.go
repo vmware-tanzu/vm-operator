@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -935,6 +936,18 @@ func (r *Reconciler) handlePVCWithWFFC(
 		return errors.New("PVC with WFFC storage class support is not enabled")
 	}
 
+	if pvc.Annotations == nil {
+		pvc.Annotations = map[string]string{}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.HostLocalStorage &&
+		kubeutil.IsHostLocalStorageClass(*sc) {
+		// A host-local PVC's selected node is a host rather than a zone, and
+		// it is published by the vSphere provider once the VM has actually
+		// been created on that host. Leave it alone here.
+		return nil
+	}
+
 	zoneName := ctx.VM.Status.Zone
 	if zoneName == "" {
 		// Fallback to the label value if Status hasn't been updated yet.
@@ -944,9 +957,6 @@ func (r *Reconciler) handlePVCWithWFFC(
 		}
 	}
 
-	if pvc.Annotations == nil {
-		pvc.Annotations = map[string]string{}
-	}
 	pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "true"
 	pvc.Annotations[storagehelpers.AnnSelectedNode] = zoneName
 

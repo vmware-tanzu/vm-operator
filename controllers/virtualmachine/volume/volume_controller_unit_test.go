@@ -782,6 +782,52 @@ func unitTestsReconcile() {
 				})
 			})
 
+			Context("PVC StorageClass is host-local", func() {
+				BeforeEach(func() {
+					storageClass.Annotations = map[string]string{
+						"cns.vmware.com/hostLocalPolicy": "true",
+					}
+				})
+
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.HostLocalStorage = true
+					})
+				})
+
+				// A host-local PVC's selected node is a host rather than a
+				// zone, and it is published by the vSphere provider once the
+				// VM has actually been created on that host, so this
+				// controller must not stamp a zone onto it.
+				It("leaves the selected node to the provider", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					pvc := &corev1.PersistentVolumeClaim{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+					Expect(pvc.Annotations).ToNot(HaveKey(storagehelpers.AnnSelectedNode))
+					Expect(pvc.Annotations).ToNot(HaveKey(constants.CNSSelectedNodeIsZoneAnnotationKey))
+				})
+
+				When("the HostLocalStorage feature is disabled", func() {
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.HostLocalStorage = false
+						})
+					})
+
+					It("falls back to zone-based selected-node", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						pvc := &corev1.PersistentVolumeClaim{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+						Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "true"))
+						Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, zoneName))
+					})
+				})
+			})
+
 			It("returns success", func() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())

@@ -53,6 +53,7 @@ type CnsUnregisterVolumeStatus struct {
 	Error string `json:"error,omitempty"`
 }
 
+// +kubebuilder:object:root=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // CnsUnregisterVolume is the Schema for the cnsunregistervolumes API
@@ -66,6 +67,7 @@ type CnsUnregisterVolume struct {
 	Status CnsUnregisterVolumeStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:object:root=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // CnsUnregisterVolumeList contains a list of CnsUnregisterVolume
@@ -75,3 +77,6 @@ type CnsUnregisterVolumeList struct {
 	Items           []CnsUnregisterVolume `json:"items"`
 }
 
+func init() {
+	objectTypes = append(objectTypes, &CnsUnregisterVolume{}, &CnsUnregisterVolumeList{})
+}

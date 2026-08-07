@@ -89,6 +89,13 @@ func createPvcsFromSpec(
 type testSpec struct {
 	pvcs     []manifestbuilders.PVC
 	hardware vmopv1.VirtualMachineHardwareSpec
+
+	// precreatePVCs, when true, creates the PVCs before the VirtualMachine
+	// instead of relying on the embedded PVC documents in the VM manifest.
+	// The VM manifest places the VirtualMachine document ahead of its PVCs,
+	// so admission would otherwise see the referenced PVC as not-yet-existing
+	// and skip PVC-dependent validation (e.g. ReadWriteMany sharing checks).
+	precreatePVCs bool
 }
 
 func waitForVMAndBatchAttach(
@@ -508,6 +515,16 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			func(specGetter func() testSpec) {
 				spec := specGetter()
 
+				if spec.precreatePVCs {
+					By("Pre-creating the PVCs so admission can resolve them when the VM is created")
+
+					for _, pvc := range spec.pvcs {
+						pvcYaml := manifestbuilders.GetPersistentVolumeClaimYaml(pvc)
+						pvcsYamls = append(pvcsYamls, pvcYaml)
+						Expect(clusterProxy.CreateWithArgs(ctx, pvcYaml)).To(Succeed(), "failed to create PVC %s", pvc.ClaimName)
+					}
+				}
+
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
@@ -519,7 +536,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				})
 				vmYamls = append(vmYamls, vmYaml)
 
-				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
+				if spec.precreatePVCs {
+					// The VM manifest embeds the same PVC documents again; the VM
+					// is a genuine create, but re-declaring the pre-created PVCs
+					// must be an idempotent apply rather than a failing create.
+					Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
+				} else {
+					Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
+				}
 
 				By("Waiting for the VirtualMachine to be created")
 
@@ -940,6 +964,34 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					pvcs: pvcs,
 				}
 			}),
+			Entry("create a virtual machine with a MicrosoftWSFC volume and no explicit controller",
+				func() testSpec {
+					// Create a volume with WSFC application mode and validate
+					// that a valid slot is assigned to the volume.
+					// Note that PVC must exist before we create the VM otherwise the
+					// validation webhook simply skips the validation.
+					vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+					defer vcenter.LogoutVimClient(vCenterClient)
+
+					isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+					Expect(err).ToNot(HaveOccurred())
+					isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+					Expect(err).ToNot(HaveOccurred())
+
+					if isVSANDEnabled || isVSANEnabled {
+						Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
+					}
+
+					return testSpec{
+						precreatePVCs: true,
+						pvcs: createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
+							StorageClassName: eztStorageProfileName,
+							AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+							VolumeMode:       ptr.To(corev1.PersistentVolumeBlock),
+							ApplicationType:  vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+						}, 1),
+					}
+				}),
 		)
 
 		Describe("Controller lifecycle", func() {

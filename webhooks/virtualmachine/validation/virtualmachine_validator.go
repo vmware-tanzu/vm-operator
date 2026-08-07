@@ -1779,6 +1779,7 @@ func (v validator) validateVolume(
 		allErrs = append(allErrs,
 			v.validateSharedVolumesOrControllers(
 				ctx,
+				oldVM,
 				*vm,
 				vol,
 				volPath, pvcPath,
@@ -1845,6 +1846,7 @@ func (v validator) validateVolumeImmutableFields(
 // - That a disk cannot be encrypted if it is shared or if the controller is shared.
 func (v validator) validateSharedVolumesOrControllers(
 	ctx *pkgctx.WebhookRequestContext,
+	oldVM *vmopv1.VirtualMachine,
 	vm vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath, pvcPath *field.Path) field.ErrorList {
@@ -1968,7 +1970,15 @@ func (v validator) validateSharedVolumesOrControllers(
 
 	// Rule 2 -- If the PVC is shared then the volume or controller must be
 	//           shared.
-	if pvcShared && !volShared && !controllerShared {
+	//
+	// This is only enforced on Update (oldVM != nil), not on Create. At
+	// Create time the VM's controller topology is not yet known -- it is
+	// only discovered once backfill runs and reconciles the VM's actual
+	// disks/controllers from the underlying image. Only the post-backfill
+	// Update mutation can pick a controller/slot for the volume, so
+	// enforcing this rule on Create would deny VMs before they ever get a
+	// chance to be backfilled.
+	if oldVM != nil && pvcShared && !volShared && !controllerShared {
 		allErrs = append(allErrs,
 			field.Invalid(
 				volPath.Child("sharingMode"),

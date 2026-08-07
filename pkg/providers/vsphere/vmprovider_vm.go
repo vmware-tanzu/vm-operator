@@ -2330,7 +2330,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	// is no point in continuing if the above checks aren't met since we are missing data
 	// required to create the VM.
 	if len(prereqErrs) > 0 {
-		return nil, apierrorsutil.NewAggregate(prereqErrs)
+		return nil, errors.Join(prereqErrs...)
 	}
 
 	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {

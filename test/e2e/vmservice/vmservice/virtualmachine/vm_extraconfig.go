@@ -13,8 +13,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
@@ -770,6 +773,216 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Message).To(ContainSubstring(vmxHugePages),
 				"condition message should name the deferred PowerOff key")
+		})
+
+	// ── It block 10 ──────────────────────────────────────────────────────────
+	// A composite "SAP HANA profile" VM combining every VCFA compute
+	// advanced-parameter ask that has first-class or bag-key support:
+	// numa.vcpu.preferHT (first-class), sched.node{0-3}.affinity and
+	// smbios.assetTag (generic spec.advanced.extraConfig bag, since neither
+	// has a first-class field), ethernet0.ctxPerDev/pnicFeatures (first-class
+	// vmxnet3 fields), a 4-way vNUMA topology so the four sched.nodeX.affinity
+	// keys each bind to a real vNUMA client, and full CPU/memory reservation
+	// plus a full memory limit (spec.resources / memoryAdvanced). Exercises
+	// all three ExtraConfig-family reconcilers (VM-level, NIC-level,
+	// compute-config) on one VM. disk.enableUUID is asserted rather than set:
+	// it is a system-reserved key vm-operator sets unconditionally on every
+	// VM, not a user-configurable field. SVGA video memory has no VM Operator
+	// API today (no ExtraConfig key, no first-class field, no VM Class device
+	// knob) and is intentionally not covered here.
+	It("creates SAP HANA-profile VM with 4-way NUMA node affinity, asset tag, NIC tuning, and full compute reservation",
+		Label("extended-functional", "experimental"), func() {
+
+			if vCenterClient == nil {
+				Skip("govmomi vCenterClient not available — skipping SAP HANA profile test")
+			}
+
+			vmName := fmt.Sprintf("%s-sap-%s", specName, capiutil.RandomString(4))
+			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
+			modePerQueue := vmopv1.TxContextThreadingModePerQueue
+			assetTag := "SAP-HANA-" + capiutil.RandomString(6)
+
+			By("Creating powered-off VM with PreferHT, NUMA scheduler affinity + asset tag bag keys, and NIC tuning")
+			vm := buildExtraConfigVM(buildExtraConfigVMOpts{
+				Name:         vmName,
+				Namespace:    input.WCPNamespaceName,
+				ClassName:    vmClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: storageClass,
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+					PreferHTEnabled: ptr.To(true),
+					ExtraConfig: []vmopv1common.KeyValuePair{
+						{Key: "sched.node0.affinity", Value: "0"},
+						{Key: "sched.node1.affinity", Value: "1"},
+						{Key: "sched.node2.affinity", Value: "2"},
+						{Key: "sched.node3.affinity", Value: "3"},
+						{Key: "smbios.assetTag", Value: assetTag},
+					},
+				},
+			})
+			// vnumaNodeCount/coresPerSocket and the full CPU/memory reservation
+			// below all require power-off to apply; starting powered off avoids
+			// an extra power cycle mid-test. vnumaNodeCount also requires
+			// vmx-20+, so request it directly rather than skipping the test
+			// when the class/image default lands below that.
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			vm.Spec.MinHardwareVersion = 20
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+						VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
+							CtxPerDev: &modePerQueue,
+							PNICFeatures: []vmopv1.PNICQueueFeature{
+								vmopv1.PNICQueueFeatureReceiveSideScaling,
+							},
+						},
+					},
+				},
+			}
+			vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+				ReservationLockedToMax: ptr.To(true),
+			}
+
+			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
+			DeferCleanup(func() {
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmKey.Namespace, vmKey.Name)
+				}
+			})
+
+			By("Waiting for VM to be created in vSphere (powered off)")
+			vmoperator.WaitForVirtualMachineConditionCreated(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+			By("Waiting for ExtraConfigSynced=True (preferHT + NUMA scheduler affinity + asset tag)")
+			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+
+			By("Waiting for NetworkConfigSynced=True (ctxPerDev + pnicFeatures)")
+			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+
+			By("Waiting for ComputeConfigSynced=True (memoryAdvanced.reservationLockedToMax)")
+			waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+
+			// 4 vCPUs, CoresPerSocket=1 → 4 sockets, VNUMANodeCount=4 → one
+			// vNUMA client per socket, giving each of sched.node0-3.affinity a
+			// distinct vNUMA client to bind to.
+			By("Patching size.cpu=4 and vnumaNodeCount=4/coresPerSocket=1 while powered off")
+			latest := getExtraConfigVM(ctx, svClusterClient, vmKey)
+			patch := ctrlclient.MergeFrom(latest.DeepCopy())
+			latest.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Size: &vmopv1.VirtualMachineResourceQuantity{
+					CPU: ptr.To(resource.MustParse("4")),
+				},
+			}
+			latest.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
+				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
+					CoresPerSocket: ptr.To(int32(1)),
+					VNUMANodeCount: ptr.To(int32(4)),
+				},
+			}
+			Expect(svClusterClient.Patch(ctx, latest, patch)).To(Succeed(),
+				"failed to patch VM %s size/topology", vmName)
+
+			By("Waiting for ComputeConfigSynced=True after size/topology patch")
+			waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			vmMoRef := vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID}
+
+			verifyCoresPerNumaNode := func(when string) {
+				By(fmt.Sprintf("Verifying coresPerNumaNode=1 via govmomi (%s)", when))
+				Eventually(func(g Gomega) {
+					var moVM mo.VirtualMachine
+					err := property.DefaultCollector(vCenterClient).RetrieveOne(
+						ctx, vmMoRef, []string{"config.numaInfo.coresPerNumaNode"}, &moVM,
+					)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(moVM.Config).NotTo(BeNil())
+					g.Expect(moVM.Config.NumaInfo).NotTo(BeNil(),
+						"expected NumaInfo to be populated after vnumaNodeCount patch (%s)", when)
+					g.Expect(moVM.Config.NumaInfo.CoresPerNumaNode).NotTo(BeNil(),
+						"expected CoresPerNumaNode pointer to be set (%s)", when)
+					// 4 vCPUs / vnumaNodeCount=4 = 1 core per NUMA node.
+					g.Expect(*moVM.Config.NumaInfo.CoresPerNumaNode).To(BeEquivalentTo(int32(1)),
+						"expected coresPerNumaNode=1 (4 vCPUs / vnumaNodeCount=4) (%s)", when)
+				}, config.GetIntervals("default", "wait-vm-compute-config-synced")...).Should(Succeed(),
+					"timed out waiting for 4-way vNUMA config to be applied in vSphere for %s (%s)", vmKey, when)
+			}
+			verifyCoresPerNumaNode("powered off")
+
+			By("Looking up host CpuMhz via govmomi for full CPU reservation")
+			govVM := findVSphereVMByMOID(vCenterClient, vm.Status.UniqueID)
+			Expect(govVM).NotTo(BeNil())
+			host, err := govVM.HostSystem(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			var moHost mo.HostSystem
+			Expect(property.DefaultCollector(vCenterClient).RetrieveOne(
+				ctx, host.Reference(), []string{"summary.hardware"}, &moHost,
+			)).To(Succeed())
+			Expect(moHost.Summary.Hardware).NotTo(BeNil(), "host hardware summary not populated")
+			hostMHz := int64(moHost.Summary.Hardware.CpuMhz)
+			Expect(hostMHz).To(BeNumerically(">", 0), "host MHz should be positive")
+
+			cpuStatus := statusCPU(vm)
+			Expect(cpuStatus).NotTo(BeNil())
+			Expect(cpuStatus.Total).To(BeEquivalentTo(4), "expected size.cpu=4 to be reflected in status")
+			fullCPURes := int64(cpuStatus.Total) * hostMHz
+
+			memStatus := statusMemory(vm)
+			Expect(memStatus).NotTo(BeNil())
+			Expect(memStatus.Total).NotTo(BeNil())
+
+			By("Patching full CPU reservation and full memory limit")
+			latest = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			patch = ctrlclient.MergeFrom(latest.DeepCopy())
+			latest.Spec.Resources.Requests = &vmopv1.VirtualMachineResourceQuantity{
+				CPU: ptr.To(resource.MustParse(fmt.Sprintf("%d", fullCPURes))),
+			}
+			latest.Spec.Resources.Limits = &vmopv1.VirtualMachineResourceQuantity{
+				Memory: memStatus.Total,
+			}
+			Expect(svClusterClient.Patch(ctx, latest, patch)).To(Succeed(),
+				"failed to patch VM %s full compute reservation", vmName)
+
+			By("Waiting for ComputeConfigSynced=True after full reservation/limit patch")
+			waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+
+			By("Powering on VM to confirm the vNUMA topology and reservations persist")
+			vmoperator.UpdateVirtualMachinePowerState(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.WaitForVirtualMachinePowerState(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+
+			verifyCoresPerNumaNode("powered on")
+
+			By("Asserting every SAP HANA setting converged")
+			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
+			Expect(statusExtraConfigValue(vm, vmxPreferHT)).To(Equal("TRUE"))
+			Expect(statusExtraConfigValue(vm, "sched.node0.affinity")).To(Equal("0"))
+			Expect(statusExtraConfigValue(vm, "sched.node1.affinity")).To(Equal("1"))
+			Expect(statusExtraConfigValue(vm, "sched.node2.affinity")).To(Equal("2"))
+			Expect(statusExtraConfigValue(vm, "sched.node3.affinity")).To(Equal("3"))
+			Expect(statusExtraConfigValue(vm, "smbios.assetTag")).To(Equal(assetTag))
+			Expect(statusExtraConfigValue(vm, "ethernet0.ctxPerDev")).To(Equal("3"))
+			Expect(statusExtraConfigValue(vm, "ethernet0.pnicFeatures")).To(Equal("4"))
+			Expect(statusExtraConfigValue(vm, "disk.enableUUID")).To(Equal("TRUE"),
+				"disk.enableUUID is set unconditionally by vm-operator for every VM")
+
+			cpu := statusCPU(vm)
+			Expect(cpu).NotTo(BeNil())
+			Expect(cpu.Total).To(BeEquivalentTo(4))
+			Expect(cpu.Reservation).To(BeEquivalentTo(fullCPURes),
+				"expected CPU reservation=%d MHz", fullCPURes)
+			mem := statusMemory(vm)
+			Expect(mem).NotTo(BeNil())
+			Expect(mem.ReservationLockedToMax).NotTo(BeNil())
+			Expect(*mem.ReservationLockedToMax).To(BeTrue())
+			Expect(mem.Limit).NotTo(BeNil())
+			Expect(mem.Limit.Equal(*memStatus.Total)).To(BeTrue(),
+				"expected memory limit=%s (full size), got %s", memStatus.Total.String(), mem.Limit.String())
 		})
 }
 

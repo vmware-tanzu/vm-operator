@@ -47,7 +47,18 @@ find_gateway_ip() {
 }
 
 install() {
-  # gce2e-standard requires pykmip running on the gateway VM.
+  # Prefer a dedicated PyKMIP server supplied via testbedInfo.json (see
+  # setup-testbed-env.sh's _parse_pykmip_server / PYKMIP_HOST_* env vars) over
+  # installing pykmip on the external gateway VM discovered via govc.
+  local target_user="$1" target_ip="$2" target_password="$3"
+  if [ -n "${PYKMIP_HOST_IP:-}" ]; then
+    target_user="${PYKMIP_HOST_USERNAME:-root}"
+    target_ip="${PYKMIP_HOST_IP}"
+    target_password="${PYKMIP_HOST_PASSWORD:-}"
+    echo "Using dedicated PyKMIP server from testbedInfo.json: ${target_ip}"
+  fi
+
+  # gce2e-standard requires pykmip running on the target host.
   # Skip if already green (idempotent for parallel runners).
   if kms_is_green "gce2e-standard"; then
     echo "KMS provider gce2e-standard already green, skipping pykmip install"
@@ -59,9 +70,9 @@ install() {
               -keyout "$crt_dir"/pykmip-key.pem -out "$crt_dir"/pykmip-crt.pem
     fi
 
-    if [ -n "$2" ]; then
-      target="$1@$2"
-      password=$3
+    if [ -n "$target_ip" ]; then
+      target="$target_user@$target_ip"
+      password="$target_password"
 
       sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
       sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
@@ -74,7 +85,7 @@ install() {
 
   # setup() configures vCenter key providers; kms_is_green checks inside
   # each block make it safe to call from multiple parallel runners.
-  setup "$2"
+  setup "$target_ip"
 }
 
 # kms_is_green returns 0 if the named provider already exists and has

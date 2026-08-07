@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
@@ -665,7 +666,11 @@ var _ = Describe("NetOPInterfaceBootstrap", func() {
 
 	JustBeforeEach(func() {
 		vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, interfaceSpec)
-		bootstrap = network.NetOPInterfaceBootstrap(ctx, vm, netIf, interfaceSpec, macAddress)
+		bootstraps, err := network.BuildBootstraps(ctx, vm, []network.Device{
+			{InterfaceObj: netIf, MacAddress: macAddress},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		bootstrap = bootstraps[0]
 	})
 
 	When("IPAssignmentMode=StaticPool, IPv6AssignmentMode=StaticPool, IPConfigs populated", func() {
@@ -1011,7 +1016,11 @@ var _ = Describe("NCPInterfaceBootstrap", func() {
 
 	JustBeforeEach(func() {
 		vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, interfaceSpec)
-		bootstrap = network.NCPInterfaceBootstrap(ctx, vm, vnetIf, interfaceSpec, macAddress)
+		bootstraps, err := network.BuildBootstraps(ctx, vm, []network.Device{
+			{InterfaceObj: vnetIf, MacAddress: macAddress},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		bootstrap = bootstraps[0]
 	})
 
 	When("status has IPAddresses set", func() {
@@ -1133,7 +1142,11 @@ var _ = Describe("VPCInterfaceBootstrap",
 
 	JustBeforeEach(func() {
 		vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, interfaceSpec)
-		bootstrap = network.VPCInterfaceBootstrap(ctx, vm, subnetPort, interfaceSpec, macAddress)
+		bootstraps, err := network.BuildBootstraps(ctx, vm, []network.Device{
+			{InterfaceObj: subnetPort, MacAddress: macAddress},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		bootstrap = bootstraps[0]
 	})
 
 	When("status has valid IPAddresses and a MAC address", func() {
@@ -1260,7 +1273,11 @@ var _ = Describe("VPCInterfaceBootstrap",
 				subnetPort.Status.NetworkInterfaceConfig.DHCPv6DeactivatedOnSubnet = sc.dhcp6Off
 				subnetPort.Status.NetworkInterfaceConfig.RADeactivated = sc.raOff
 				subnetPort.Status.NetworkInterfaceConfig.IPAddresses = sc.ips
-				b := network.VPCInterfaceBootstrap(ctx, vm, subnetPort, interfaceSpec, macAddress)
+				bs, err := network.BuildBootstraps(ctx, vm, []network.Device{
+					{InterfaceObj: subnetPort, MacAddress: macAddress},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				b := bs[0]
 				Expect(b.DHCP4).To(Equal(w.dhcp4), "DHCP4")
 				Expect(b.DHCP6).To(Equal(w.dhcp6), "DHCP6")
 				Expect(b.AcceptRA).To(Equal(w.acceptRA), "AcceptRA")
@@ -1307,5 +1324,151 @@ var _ = Describe("VPCInterfaceBootstrap",
 				},
 				want{dhcp6: true, acceptRA: true, ipConfigLen: 1}),
 		)
+	})
+})
+
+var _ = Describe("BuildBootstraps", func() {
+	var (
+		ctx        context.Context
+		vm         *vmopv1.VirtualMachine
+		devices    []network.Device
+		bootstraps []network.Bootstrap
+		err        error
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContextWithDefaultConfig()
+		vm = &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Network: &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0"},
+					},
+				},
+			},
+		}
+		devices = nil
+	})
+
+	JustBeforeEach(func() {
+		bootstraps, err = network.BuildBootstraps(ctx, vm, devices)
+	})
+
+	Context("no devices", func() {
+		It("returns nil, nil", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bootstraps).To(BeNil())
+		})
+
+		When("vm.Spec.Network is nil", func() {
+			BeforeEach(func() {
+				vm.Spec.Network = nil
+			})
+
+			It("still returns nil, nil", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(bootstraps).To(BeNil())
+			})
+		})
+	})
+
+	Context("named network (nil InterfaceObj)", func() {
+		BeforeEach(func() {
+			devices = []network.Device{
+				{MacAddress: "50:8a:80:9d:28:22"},
+			}
+		})
+
+		It("dispatches to InterfaceBootstrap directly", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bootstraps).To(HaveLen(1))
+			Expect(bootstraps[0].Name).To(Equal("eth0"))
+			Expect(bootstraps[0].MacAddress).To(Equal("50:8a:80:9d:28:22"))
+		})
+	})
+
+	Context("NetOP CR", func() {
+		BeforeEach(func() {
+			devices = []network.Device{
+				{
+					InterfaceObj: &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{Name: "eth0-netop"},
+					},
+					MacAddress: "aa:bb:cc:dd:ee:ff",
+				},
+			}
+		})
+
+		It("dispatches to NetOPInterfaceBootstrap", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bootstraps).To(HaveLen(1))
+			Expect(bootstraps[0].Name).To(Equal("eth0"))
+			Expect(bootstraps[0].MacAddress).To(Equal("aa:bb:cc:dd:ee:ff"))
+		})
+	})
+
+	Context("NCP CR", func() {
+		BeforeEach(func() {
+			devices = []network.Device{
+				{
+					InterfaceObj: &ncpv1alpha1.VirtualNetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{Name: "eth0-ncp"},
+					},
+					MacAddress: "aa:bb:cc:dd:ee:00",
+				},
+			}
+		})
+
+		It("dispatches to NCPInterfaceBootstrap", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bootstraps).To(HaveLen(1))
+			Expect(bootstraps[0].Name).To(Equal("eth0"))
+		})
+	})
+
+	Context("VPC CR", func() {
+		BeforeEach(func() {
+			devices = []network.Device{
+				{
+					InterfaceObj: &vpcv1alpha1.SubnetPort{
+						ObjectMeta: metav1.ObjectMeta{Name: "eth0-vpc"},
+					},
+					MacAddress: "aa:bb:cc:dd:ee:11",
+				},
+			}
+		})
+
+		It("dispatches to VPCInterfaceBootstrap", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bootstraps).To(HaveLen(1))
+			Expect(bootstraps[0].Name).To(Equal("eth0"))
+		})
+	})
+
+	Context("unsupported CR type", func() {
+		BeforeEach(func() {
+			devices = []network.Device{
+				{InterfaceObj: &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "not-a-netif"}}},
+			}
+		})
+
+		It("returns an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported network interface CR type"))
+		})
+	})
+
+	Context("device/interface length mismatch", func() {
+		BeforeEach(func() {
+			devices = []network.Device{
+				{MacAddress: "50:8a:80:9d:28:22"},
+				{MacAddress: "50:8a:80:9d:28:23"},
+			}
+		})
+
+		It("returns an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(bootstraps).To(BeNil())
+		})
 	})
 })

@@ -28,17 +28,17 @@ func ReconcileNetworkInterfaces(
 ) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
-	for idx, r := range results.Results {
-		matchingIdx := FindMatchingEthCard(currentEthCards, r.Device.(vimtypes.BaseVirtualEthernetCard))
+	for idx, dev := range results.Devices {
+		matchingIdx := FindMatchingEthCard(currentEthCards, dev.EthCard.(vimtypes.BaseVirtualEthernetCard))
 		if matchingIdx >= 0 {
 			// Exact match. Claim it by removing the device from the current ethernet cards.
 			matchDev := currentEthCards[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-			results.Results[idx].DeviceKey = matchDev.Key
-			results.Results[idx].MacAddress = matchDev.MacAddress
-			r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = matchDev.MacAddress
+			results.Devices[idx].EthCardKey = matchDev.Key
+			results.Devices[idx].MacAddress = matchDev.MacAddress
+			dev.EthCard.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = matchDev.MacAddress
 			currentEthCards = slices.Delete(currentEthCards, matchingIdx, matchingIdx+1)
 		} else {
-			existingIdx := findExistingEthCardForOrphanedCR(ctx, r.Name, results.OrphanedNetworkInterfaces, currentEthCards)
+			existingIdx := findExistingEthCardForOrphanedCR(ctx, dev.InterfaceName, results.OrphanedNetworkInterfaces, currentEthCards)
 			if existingIdx >= 0 {
 				// As best we can, we determined that one of the VM's current ethernet card corresponds to a now
 				// unreferenced (orphaned) network interface CR with the same interface name. To keep the device
@@ -46,10 +46,10 @@ func ReconcileNetworkInterfaces(
 				editDev := currentEthCards[existingIdx]
 
 				ethDev := editDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-				ethDev.Backing = r.Device.GetVirtualDevice().Backing
-				ethDev.AddressType = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType
-				ethDev.MacAddress = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress
-				ethDev.ExternalId = r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId
+				ethDev.Backing = dev.EthCard.GetVirtualDevice().Backing
+				ethDev.AddressType = dev.EthCard.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType
+				ethDev.MacAddress = dev.EthCard.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress
+				ethDev.ExternalId = dev.EthCard.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId
 
 				// Clear SubnetID when the backing changes to ensure we don't have a
 				// mismatch between the subnet ID and the port group specified in the
@@ -65,7 +65,7 @@ func ReconcileNetworkInterfaces(
 				currentEthCards = slices.Delete(currentEthCards, existingIdx, existingIdx+1)
 			} else {
 				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-					Device:    r.Device,
+					Device:    dev.EthCard,
 					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 				})
 			}
@@ -129,7 +129,7 @@ func findExistingEthCardForOrphanedCR(
 		}
 	}
 
-	for idx := range objIdxWithoutLabel {
+	for _, idx := range objIdxWithoutLabel {
 		obj := orphanedObjects[idx]
 
 		if matchingIdx := findMatchFn(obj); matchingIdx >= 0 {

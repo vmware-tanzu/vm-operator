@@ -32,13 +32,13 @@ var _ = Describe("GOSC", func() {
 	Context("GuestOSCustomization", func() {
 
 		var (
-			results         network.NetworkInterfaceResults
+			results         []network.Bootstrap
 			adapterMappings []vimtypes.CustomizationAdapterMapping
 			err             error
 		)
 
 		BeforeEach(func() {
-			results = network.NetworkInterfaceResults{}
+			results = nil
 		})
 
 		JustBeforeEach(func() {
@@ -47,7 +47,7 @@ var _ = Describe("GOSC", func() {
 
 		Context("IPv4/6 Static adapter", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						IPConfigs: []network.NetworkInterfaceIPConfig{
 							{
@@ -98,8 +98,8 @@ var _ = Describe("GOSC", func() {
 
 			Context("Gateway4/6 are disabled", func() {
 				BeforeEach(func() {
-					results.Results[0].IPConfigs[0].Gateway = ""
-					results.Results[0].IPConfigs[1].Gateway = ""
+					results[0].IPConfigs[0].Gateway = ""
+					results[0].IPConfigs[1].Gateway = ""
 				})
 
 				It("returns success", func() {
@@ -129,7 +129,7 @@ var _ = Describe("GOSC", func() {
 
 		Context("IPv4/6 DHCP", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						MacAddress:  macAddr1,
 						Name:        "eth0",
@@ -162,7 +162,7 @@ var _ = Describe("GOSC", func() {
 
 		Context("NoIPAM", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						MacAddress: macAddr1,
 						Name:       "eth0",
@@ -188,7 +188,7 @@ var _ = Describe("GOSC", func() {
 
 		Context("Unconfigured interface", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						MacAddress:  macAddr1,
 						Name:        "eth0",
@@ -221,7 +221,7 @@ var _ = Describe("GOSC", func() {
 
 		Context("IPv6-Only Static", func() {
 			BeforeEach(func() {
-				results.Results = []network.NetworkInterfaceResult{
+				results = []network.Bootstrap{
 					{
 						IPConfigs: []network.NetworkInterfaceIPConfig{
 							{

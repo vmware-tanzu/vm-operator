@@ -148,9 +148,9 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 
 			When("Add", func() {
 				BeforeEach(func() {
-					results.Results = append(results.Results, network.NetworkInterfaceResult{
-						Name:   interfaceName0,
-						Device: ethCard.(vimtypes.BaseVirtualDevice),
+					results.Devices = append(results.Devices, network.Device{
+						InterfaceName: interfaceName0,
+						EthCard:       ethCard.(vimtypes.BaseVirtualDevice),
 					})
 
 				})
@@ -175,9 +175,9 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 						},
 					}
 
-					results.Results = append(results.Results, network.NetworkInterfaceResult{
-						Name:   interfaceName0,
-						Device: ethCard.(vimtypes.BaseVirtualDevice),
+					results.Devices = append(results.Devices, network.Device{
+						InterfaceName: interfaceName0,
+						EthCard:       ethCard.(vimtypes.BaseVirtualDevice),
 					})
 
 					results.OrphanedNetworkInterfaces = append(results.OrphanedNetworkInterfaces, obj)
@@ -209,6 +209,41 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 						Expect(dc0.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
 						Expect(dc0.Device.GetVirtualDevice().Backing).To(Equal(ethCard.GetVirtualEthernetCard().Backing))
 						Expect(dc0.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().SubnetId).To(BeEmpty())
+					})
+
+					When("An earlier, non-matching orphaned CR without the label also exists", func() {
+						BeforeEach(func() {
+							// decoyObj also lacks the interface name label but is
+							// for a different interface, so it does not match any
+							// current ethernet card. It is placed ahead of obj so
+							// that finding obj requires looking past index 0 of
+							// the without-label candidates.
+							decoyObj := obj.DeepCopyObject().(ctrlclient.Object)
+							decoyObj.SetName("foo-some-other-interface")
+							delete(decoyObj.GetLabels(), network.VMInterfaceNameLabel)
+
+							switch d := decoyObj.(type) {
+							case *netopv1alpha1.NetworkInterface:
+								d.Status.NetworkID = "decoy-network-id"
+							case *ncpv1alpha1.VirtualNetworkInterface:
+								d.Status.InterfaceID = "decoy-ext-id"
+							case *vpcv1alpha1.SubnetPort:
+								d.Status.Attachment.ID = "decoy-ext-id"
+							}
+
+							results.OrphanedNetworkInterfaces = append(
+								[]ctrlclient.Object{decoyObj}, results.OrphanedNetworkInterfaces...)
+						})
+
+						It("still matches obj and returns Edit Operation", func() {
+							Expect(err).ToNot(HaveOccurred())
+
+							Expect(deviceChanges).To(HaveLen(1))
+							dc0 := deviceChanges[0].GetVirtualDeviceConfigSpec()
+							Expect(dc0.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+							Expect(dc0.Device.GetVirtualDevice().Backing).To(Equal(ethCard.GetVirtualEthernetCard().Backing))
+							Expect(dc0.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().SubnetId).To(BeEmpty())
+						})
 					})
 				})
 			})

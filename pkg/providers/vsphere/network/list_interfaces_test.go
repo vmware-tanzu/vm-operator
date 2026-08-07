@@ -38,13 +38,13 @@ var _ = Describe("ListOrphanedNetworkInterfaces", func() {
 		vmCtx pkgctx.VirtualMachineContext
 		vm    *vmopv1.VirtualMachine
 
-		results     network.NetworkInterfaceResults
+		devices     []network.Device
 		initObjects []ctrlclient.Object
 	)
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{}
-		results = network.NetworkInterfaceResults{}
+		devices = nil
 
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -122,10 +122,10 @@ var _ = Describe("ListOrphanedNetworkInterfaces", func() {
 				unownedNetIf := createInterfaceCr(vm.Name+"-unowned", vm, false)
 				Expect(ctx.Client.Create(ctx, unownedNetIf)).To(Succeed())
 
-				err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+				orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(results.OrphanedNetworkInterfaces).To(HaveLen(1))
-				Expect(results.OrphanedNetworkInterfaces[0].GetName()).To(Equal(ownedNetIf.GetName()))
+				Expect(orphaned).To(HaveLen(1))
+				Expect(orphaned[0].GetName()).To(Equal(ownedNetIf.GetName()))
 			})
 
 			Context("Multiple owned interfaces", func() {
@@ -138,17 +138,19 @@ var _ = Describe("ListOrphanedNetworkInterfaces", func() {
 					unownedNetIf := createInterfaceCr(vm.Name+"-unowned", vm, false)
 					Expect(ctx.Client.Create(ctx, unownedNetIf)).To(Succeed())
 
-					results.Results = []network.NetworkInterfaceResult{
+					devices = []network.Device{
 						{
-							ObjectProviderType: providerType,
-							ObjectName:         ownedNetIf2.GetName(),
+							ProviderType: providerType,
+							InterfaceObj: &netopv1alpha1.NetworkInterface{
+								ObjectMeta: metav1.ObjectMeta{Name: ownedNetIf2.GetName()},
+							},
 						},
 					}
 
-					err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+					orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.OrphanedNetworkInterfaces).To(HaveLen(1))
-					Expect(results.OrphanedNetworkInterfaces[0].GetName()).To(Equal(ownedNetIf1.GetName()))
+					Expect(orphaned).To(HaveLen(1))
+					Expect(orphaned[0].GetName()).To(Equal(ownedNetIf1.GetName()))
 				})
 			})
 		},
@@ -317,18 +319,18 @@ var _ = Describe("ListNetworkInterfaces", func() {
 
 					// Only the NetOP CR is in the active results.  The ignore key is
 					// "VSPHERE_NETWORK/foo", so "NSXT_VPC/foo" is still orphaned.
-					results := network.NetworkInterfaceResults{
-						Results: []network.NetworkInterfaceResult{
-							{
-								ObjectName:         netopIf.GetName(),
-								ObjectProviderType: pkgcfg.NetworkProviderTypeVDS,
+					devices := []network.Device{
+						{
+							ProviderType: pkgcfg.NetworkProviderTypeVDS,
+							InterfaceObj: &netopv1alpha1.NetworkInterface{
+								ObjectMeta: metav1.ObjectMeta{Name: netopIf.GetName()},
 							},
 						},
 					}
 
-					err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+					orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.OrphanedNetworkInterfaces).To(BeEmpty())
+					Expect(orphaned).To(BeEmpty())
 				})
 			})
 		})
@@ -392,18 +394,18 @@ var _ = Describe("ListNetworkInterfaces", func() {
 					ncpIf := makeNCPIf(vm.Name+"-eth0", true)
 					Expect(ctx.Client.Create(ctx, ncpIf)).To(Succeed())
 
-					results := network.NetworkInterfaceResults{
-						Results: []network.NetworkInterfaceResult{
-							{
-								ObjectName:         ncpIf.GetName(),
-								ObjectProviderType: pkgcfg.NetworkProviderTypeNSXT,
+					devices := []network.Device{
+						{
+							ProviderType: pkgcfg.NetworkProviderTypeNSXT,
+							InterfaceObj: &ncpv1alpha1.VirtualNetworkInterface{
+								ObjectMeta: metav1.ObjectMeta{Name: ncpIf.GetName()},
 							},
 						},
 					}
 
-					err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+					orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.OrphanedNetworkInterfaces).To(BeEmpty())
+					Expect(orphaned).To(BeEmpty())
 				})
 			})
 		})
@@ -467,18 +469,18 @@ var _ = Describe("ListNetworkInterfaces", func() {
 					vpcIf := makeVPCIf(vm.Name+"-eth0", true)
 					Expect(ctx.Client.Create(ctx, vpcIf)).To(Succeed())
 
-					results := network.NetworkInterfaceResults{
-						Results: []network.NetworkInterfaceResult{
-							{
-								ObjectName:         vpcIf.GetName(),
-								ObjectProviderType: pkgcfg.NetworkProviderTypeVPC,
+					devices := []network.Device{
+						{
+							ProviderType: pkgcfg.NetworkProviderTypeVPC,
+							InterfaceObj: &vpcv1alpha1.SubnetPort{
+								ObjectMeta: metav1.ObjectMeta{Name: vpcIf.GetName()},
 							},
 						},
 					}
 
-					err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+					orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.OrphanedNetworkInterfaces).To(BeEmpty())
+					Expect(orphaned).To(BeEmpty())
 				})
 			})
 		})
@@ -547,11 +549,11 @@ var _ = Describe("ListNetworkInterfaces", func() {
 					netopIf := makeNetOPIf(vm.Name+"-eth0-legacy", true)
 					Expect(ctx.Client.Create(ctx, netopIf)).To(Succeed())
 
-					results := network.NetworkInterfaceResults{
-						Results: []network.NetworkInterfaceResult{
-							{
-								ObjectName:         vpcIf.GetName(),
-								ObjectProviderType: pkgcfg.NetworkProviderTypeVPC,
+					devices := []network.Device{
+						{
+							ProviderType: pkgcfg.NetworkProviderTypeVPC,
+							InterfaceObj: &vpcv1alpha1.SubnetPort{
+								ObjectMeta: metav1.ObjectMeta{Name: vpcIf.GetName()},
 							},
 						},
 					}
@@ -559,10 +561,10 @@ var _ = Describe("ListNetworkInterfaces", func() {
 					// Both the current (VPC) and legacy (VDS) providers are
 					// now listed, so the leftover NetOP CR is visible and
 					// correctly reported as orphaned.
-					err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+					orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.OrphanedNetworkInterfaces).To(HaveLen(1))
-					Expect(results.OrphanedNetworkInterfaces[0].GetName()).To(Equal(netopIf.GetName()))
+					Expect(orphaned).To(HaveLen(1))
+					Expect(orphaned[0].GetName()).To(Equal(netopIf.GetName()))
 				})
 
 				It("does not orphan a legacy-provider CR that is still referenced in the results", func() {
@@ -571,22 +573,24 @@ var _ = Describe("ListNetworkInterfaces", func() {
 					netopIf := makeNetOPIf(vm.Name+"-eth1", true)
 					Expect(ctx.Client.Create(ctx, netopIf)).To(Succeed())
 
-					results := network.NetworkInterfaceResults{
-						Results: []network.NetworkInterfaceResult{
-							{
-								ObjectName:         vpcIf.GetName(),
-								ObjectProviderType: pkgcfg.NetworkProviderTypeVPC,
+					devices := []network.Device{
+						{
+							ProviderType: pkgcfg.NetworkProviderTypeVPC,
+							InterfaceObj: &vpcv1alpha1.SubnetPort{
+								ObjectMeta: metav1.ObjectMeta{Name: vpcIf.GetName()},
 							},
-							{
-								ObjectName:         netopIf.GetName(),
-								ObjectProviderType: pkgcfg.NetworkProviderTypeVDS,
+						},
+						{
+							ProviderType: pkgcfg.NetworkProviderTypeVDS,
+							InterfaceObj: &netopv1alpha1.NetworkInterface{
+								ObjectMeta: metav1.ObjectMeta{Name: netopIf.GetName()},
 							},
 						},
 					}
 
-					err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+					orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.OrphanedNetworkInterfaces).To(BeEmpty())
+					Expect(orphaned).To(BeEmpty())
 				})
 
 				It("does not list NCP CRs, which are neither the current nor the legacy provider", func() {
@@ -595,18 +599,18 @@ var _ = Describe("ListNetworkInterfaces", func() {
 					ncpIf := makeNCPIf(vm.Name+"-eth1", true)
 					Expect(ctx.Client.Create(ctx, ncpIf)).To(Succeed())
 
-					results := network.NetworkInterfaceResults{
-						Results: []network.NetworkInterfaceResult{
-							{
-								ObjectName:         vpcIf.GetName(),
-								ObjectProviderType: pkgcfg.NetworkProviderTypeVPC,
+					devices := []network.Device{
+						{
+							ProviderType: pkgcfg.NetworkProviderTypeVPC,
+							InterfaceObj: &vpcv1alpha1.SubnetPort{
+								ObjectMeta: metav1.ObjectMeta{Name: vpcIf.GetName()},
 							},
 						},
 					}
 
-					err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, &results)
+					orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(results.OrphanedNetworkInterfaces).To(BeEmpty())
+					Expect(orphaned).To(BeEmpty())
 				})
 			})
 		})

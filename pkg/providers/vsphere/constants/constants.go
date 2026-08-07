@@ -240,4 +240,16 @@ const (
 	V1alpha6SubnetMask = "V1alpha6_SubnetMask"
 	// V1alpha6FormatNameservers is an alias for versioned templating function V1alpha6_FormatNameservers.
 	V1alpha6FormatNameservers = "V1alpha6_FormatNameservers"
+	// V1alpha6FirstIPv4 is an alias for versioned templating function V1alpha6_FirstIPv4.
+	V1alpha6FirstIPv4 = "V1alpha6_FirstIPv4"
+	// V1alpha6FirstIPv6 is an alias for versioned templating function V1alpha6_FirstIPv6.
+	V1alpha6FirstIPv6 = "V1alpha6_FirstIPv6"
+	// V1alpha6FirstIPv4FromNIC is an alias for versioned templating function V1alpha6_FirstIPv4FromNIC.
+	V1alpha6FirstIPv4FromNIC = "V1alpha6_FirstIPv4FromNIC"
+	// V1alpha6FirstIPv6FromNIC is an alias for versioned templating function V1alpha6_FirstIPv6FromNIC.
+	V1alpha6FirstIPv6FromNIC = "V1alpha6_FirstIPv6FromNIC"
+	// V1alpha6IsUsableIP is an alias for versioned templating function V1alpha6_IsUsableIP.
+	V1alpha6IsUsableIP = "V1alpha6_IsUsableIP"
+	// V1alpha6PrefixLength is an alias for versioned templating function V1alpha6_PrefixLength.
+	V1alpha6PrefixLength = "V1alpha6_PrefixLength"
 )

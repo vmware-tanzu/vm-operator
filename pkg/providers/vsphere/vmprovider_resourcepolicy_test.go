@@ -6,6 +6,7 @@ package vsphere_test
 
 import (
 	"fmt"
+	"math/rand"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -13,6 +14,8 @@ import (
 	"github.com/vmware/govmomi/vapi/cluster"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
@@ -227,6 +230,93 @@ var _ = Describe("VirtualMachineSetResourcePolicy Tests", func() {
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 			Expect(resourcePolicy.Status.ClusterModules).To(Equal(moduleStatus.ClusterModules))
 			assertSetResourcePolicy(resourcePolicy, true)
+		})
+
+		It("prunes stale cluster module entry and leaves the still-valid ones untouched", func() {
+			assertSetResourcePolicy(resourcePolicy, true)
+
+			status := resourcePolicy.Status.DeepCopy()
+			Expect(status.ClusterModules).ToNot(BeEmpty())
+
+			resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
+				vmopv1.VSphereClusterModuleStatus{
+					GroupName:   "stale-group",
+					ModuleUuid:  "bogus-module-uuid",
+					ClusterMoID: "bogus-cluster-moid",
+				})
+			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+
+			// Only the stale entry should be gone.
+			Expect(resourcePolicy.Status.ClusterModules).To(HaveExactElements(status.ClusterModules))
+		})
+	})
+
+	// This is intentionally not under the "VirtualMachineSetResourcePolicy" Context above
+	// since its JustAfterEach() deletes the policy and then asserts that every zone's child
+	// ResourcePool lookup fails. Once we remove a zone below, that zone's ResourcePool MoID
+	// is no longer resolvable for this namespace, so DeleteVirtualMachineSetResourcePolicy()
+	// can't (and doesn't need to) touch it, breaking that unrelated assertion. We don't delete
+	// it since it will go away when the Namespace RP is deleted.
+	Context("VirtualMachineSetResourcePolicy when a zone is removed", func() {
+		It("entries for removed zone are not present in status", func() {
+			resourcePolicy := getVirtualMachineSetResourcePolicy("test-policy-zone-removed", nsInfo.Namespace)
+			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+			assertSetResourcePolicy(resourcePolicy, true)
+
+			Expect(ctx.ZoneNames).ToNot(BeEmpty())
+			removedZoneName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+			removedCCRs := ctx.GetAZClusterComputes(removedZoneName)
+			Expect(removedCCRs).ToNot(BeEmpty())
+			removedClusterMoID := removedCCRs[0].Reference().Value
+
+			var removedModuleUUIDs []string
+			var survivingBefore []vmopv1.VSphereClusterModuleStatus
+			for _, cm := range resourcePolicy.Status.ClusterModules {
+				if cm.ClusterMoID == removedClusterMoID {
+					removedModuleUUIDs = append(removedModuleUUIDs, cm.ModuleUuid)
+				} else {
+					survivingBefore = append(survivingBefore, cm)
+				}
+			}
+			Expect(removedModuleUUIDs).To(HaveLen(len(resourcePolicy.Spec.ClusterModuleGroups)))
+
+			var survivingResourcePoolsBefore []vmopv1.ResourcePoolStatus
+			for _, rp := range resourcePolicy.Status.ResourcePools {
+				if rp.ClusterMoID != removedClusterMoID {
+					survivingResourcePoolsBefore = append(survivingResourcePoolsBefore, rp)
+				}
+			}
+			Expect(survivingResourcePoolsBefore).To(HaveLen(len(resourcePolicy.Status.ResourcePools) - 1))
+
+			// Simulate the zone being decommissioned by removing the namespace's Zone CR
+			// for it, so it no longer contributes a  ResourcePool MoID for this namespace.
+			zone := &topologyv1.Zone{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      removedZoneName,
+					Namespace: nsInfo.Namespace,
+				},
+			}
+			Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+
+			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+
+			expectedRemainingCnt :=
+				len(resourcePolicy.Spec.ClusterModuleGroups) * (ctx.ZoneCount - 1) * ctx.ClustersPerZone
+			Expect(resourcePolicy.Status.ClusterModules).To(HaveLen(expectedRemainingCnt))
+			Expect(resourcePolicy.Status.ClusterModules).To(HaveExactElements(survivingBefore))
+
+			// The removed cluster's child ResourcePool is not actually deleted on VC -
+			// we just stop tracking it - so its Status.ResourcePools entry must also
+			// be gone, even though nothing changed on the VC side for it.
+			Expect(resourcePolicy.Status.ResourcePools).To(HaveLen(ctx.ClustersPerZone * (ctx.ZoneCount - 1)))
+			Expect(resourcePolicy.Status.ResourcePools).To(ConsistOf(survivingResourcePoolsBefore))
+
+			clusterModules, err := cluster.NewManager(ctx.RestClient).ListModules(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(clusterModules).To(HaveLen(expectedRemainingCnt))
+			for _, uuid := range removedModuleUUIDs {
+				Expect(clusterModules).ToNot(ContainElement(HaveField("Module", uuid)))
+			}
 		})
 	})
 })

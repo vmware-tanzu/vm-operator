@@ -14,14 +14,29 @@ type NetworkDeviceStatus struct {
 
 	// +optional
 
+	// Gateway6 is the gateway for the IPv6 address family for this device.
+	// This may be a link-local address, since IPv6 routers commonly
+	// advertise their gateway that way.
+	Gateway6 string
+
+	// +optional
+
 	// MacAddress is the MAC address of the network device.
 	MacAddress string
 
 	// +optional
 
-	// IpAddresses represents one or more IP addresses assigned to the network
-	// device in CIDR notation, ex. "192.0.2.1/16".
+	// IpAddresses represents one or more IPv4 addresses assigned to the
+	// network device in CIDR notation, ex. "192.0.2.1/16".
 	IPAddresses []string
+
+	// +optional
+
+	// IPv6Addresses represents one or more IPv6 addresses assigned to the
+	// network device in CIDR notation, ex. "2001:db8::1/64". This is not
+	// filtered for link-local, loopback, or unspecified addresses; use the
+	// IsUsableIP template function to filter those out explicitly.
+	IPv6Addresses []string
 }
 
 // NetworkStatus describes the observed state of the VM's network configuration.

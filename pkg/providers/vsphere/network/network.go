@@ -1125,8 +1125,13 @@ func createVPCNetworkInterface(
 		}
 
 		if pkgcfg.FromContext(ctx).Features.WorkloadIPv6 {
-			subnetPort.Spec.InterfaceIPType = IPAMModesToVPCInterfaceIPType(interfaceSpec.IPAMModes)
-			subnetPort.Spec.StaticIPAllocationType = DeriveStaticIPAllocationType(interfaceSpec)
+			// NSX Operator backfills these fields so don't clear if already set.
+			if ipType := IPAMModesToVPCInterfaceIPType(interfaceSpec.IPAMModes); ipType != "" {
+				subnetPort.Spec.InterfaceIPType = ipType
+			}
+			if ipAlloc := DeriveStaticIPAllocationType(interfaceSpec); ipAlloc != "" {
+				subnetPort.Spec.StaticIPAllocationType = ipAlloc
+			}
 		}
 
 		return nil

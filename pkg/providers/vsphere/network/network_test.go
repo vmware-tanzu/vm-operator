@@ -1650,6 +1650,77 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					})
 				})
 			})
+
+			Context("SubnetPort already has fields backfilled by NSX Operator", func() {
+				// NSX Operator backfills InterfaceIPType/StaticIPAllocationType on the
+				// SubnetPort in some cases. Our reconcile of the SubnetPort must not
+				// clear a previously backfilled value when the interfaceSpec does not
+				// itself derive a new, non-empty value for that field.
+				BeforeEach(func() {
+					initObjects = append(initObjects, &vpcv1alpha1.SubnetPort{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+							Namespace: vm.Namespace,
+						},
+						Spec: vpcv1alpha1.SubnetPortSpec{
+							SubnetSet:              networkName,
+							InterfaceIPType:        vpcv1alpha1.IPAddressTypeIPv4IPv6,
+							StaticIPAllocationType: vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6,
+						},
+					})
+				})
+
+				When("interfaceSpec has no IPAM modes or DHCP overrides", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    interfaceName,
+								Network: &common.PartialObjectRef{Name: networkName, TypeMeta: vpcNetworkTypeMeta},
+							},
+						}
+					})
+
+					It("does not clear the already-set InterfaceIPType and StaticIPAllocationType", func() {
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressTypeIPv4IPv6))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6))
+					})
+				})
+
+				When("interfaceSpec derives a new InterfaceIPType but no StaticIPAllocationType", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:      interfaceName,
+								Network:   &common.PartialObjectRef{Name: networkName, TypeMeta: vpcNetworkTypeMeta},
+								IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+							},
+						}
+					})
+
+					It("updates InterfaceIPType but preserves the already-set StaticIPAllocationType", func() {
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressTypeIPv4))
+						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6))
+					})
+				})
+			})
 		})
 	})
 

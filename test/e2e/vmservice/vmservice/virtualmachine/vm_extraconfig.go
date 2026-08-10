@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -545,7 +546,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+			condBaseline := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			By("Powering off VM cleanly via spec before destroy")
 			vmoperator.UpdateVirtualMachinePowerState(
@@ -593,8 +594,17 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
+			// reconcileStatusExtraConfig (update_status.go) skips updating
+			// ExtraConfigSynced whenever moVM.Config is nil — i.e. for the
+			// entire window the vSphere VM is destroyed — so the condition
+			// sits unchanged at condBaseline's True the whole time. UniqueID
+			// changing doesn't prove otherwise: it's set by a separate patch
+			// in createVirtualMachineAsync, not by this same reconcile pass.
+			// Require LastTransitionTime to advance past condBaseline so this
+			// wait can't pass on that stale, pre-destroy True.
 			By("Waiting for ExtraConfigSynced=True on the recreated VM")
-			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey,
+				metav1.ConditionTrue, "", condBaseline.LastTransitionTime)
 
 			By("Asserting extraConfig is fully re-applied from spec on the recreated VM")
 			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
@@ -864,7 +874,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			By("Waiting for ComputeConfigSynced=True (memoryAdvanced.reservationLockedToMax)")
-			waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+			condBaseline := waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			// 4 vCPUs, CoresPerSocket=1 → 4 sockets, VNUMANodeCount=4 → one
 			// vNUMA client per socket, giving each of sched.node0-3.affinity a
@@ -886,9 +896,23 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			Expect(svClusterClient.Patch(ctx, latest, patch)).To(Succeed(),
 				"failed to patch VM %s size/topology", vmName)
 
+			// condBaseline was already True (from the create-time
+			// reservationLockedToMax convergence) before this patch, so the
+			// condition status alone can't distinguish "still the old True"
+			// from "re-evaluated against the new spec and True again."
+			// Requiring LastTransitionTime to advance past condBaseline
+			// forces this wait to observe a reconcile that actually ran
+			// after the patch above.
 			By("Waiting for ComputeConfigSynced=True after size/topology patch")
-			waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+			condResize := waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey,
+				metav1.ConditionTrue, "", condBaseline.LastTransitionTime)
 
+			// The reconcile that advances ComputeConfigSynced's
+			// LastTransitionTime past condBaseline computes status.hardware
+			// and the condition from the same live-config snapshot in the
+			// same patch (see reconcileStatusHardware/reconcileComputeConfigSynced
+			// in update_status.go), so this fetch is already consistent —
+			// no separate poll needed for cpu.Total.
 			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
 			vmMoRef := vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID}
 
@@ -913,6 +937,11 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			}
 			verifyCoresPerNumaNode("powered off")
 
+			cpuStatusAfterResize := statusCPU(vm)
+			Expect(cpuStatusAfterResize).NotTo(BeNil())
+			Expect(cpuStatusAfterResize.Total).To(BeEquivalentTo(4),
+				"expected size.cpu=4 to be reflected in status")
+
 			By("Looking up host CpuMhz via govmomi for full CPU reservation")
 			govVM := findVSphereVMByMOID(vCenterClient, vm.Status.UniqueID)
 			Expect(govVM).NotTo(BeNil())
@@ -926,10 +955,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			hostMHz := int64(moHost.Summary.Hardware.CpuMhz)
 			Expect(hostMHz).To(BeNumerically(">", 0), "host MHz should be positive")
 
-			cpuStatus := statusCPU(vm)
-			Expect(cpuStatus).NotTo(BeNil())
-			Expect(cpuStatus.Total).To(BeEquivalentTo(4), "expected size.cpu=4 to be reflected in status")
-			fullCPURes := int64(cpuStatus.Total) * hostMHz
+			fullCPURes := int64(cpuStatusAfterResize.Total) * hostMHz
 
 			memStatus := statusMemory(vm)
 			Expect(memStatus).NotTo(BeNil())
@@ -947,8 +973,11 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			Expect(svClusterClient.Patch(ctx, latest, patch)).To(Succeed(),
 				"failed to patch VM %s full compute reservation", vmName)
 
+			// Same race as above: condResize was already True before this
+			// patch, so require the condition to re-transition past it.
 			By("Waiting for ComputeConfigSynced=True after full reservation/limit patch")
-			waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
+			waitForComputeConfigSynced(ctx, svClusterClient, config, vmKey,
+				metav1.ConditionTrue, "", condResize.LastTransitionTime)
 
 			By("Powering on VM to confirm the vNUMA topology and reservations persist")
 			vmoperator.UpdateVirtualMachinePowerState(
@@ -968,7 +997,29 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			Expect(statusExtraConfigValue(vm, "smbios.assetTag")).To(Equal(assetTag))
 			Expect(statusExtraConfigValue(vm, "ethernet0.ctxPerDev")).To(Equal("3"))
 			Expect(statusExtraConfigValue(vm, "ethernet0.pnicFeatures")).To(Equal("4"))
-			Expect(statusExtraConfigValue(vm, "disk.enableUUID")).To(Equal("TRUE"),
+
+			// disk.enableUUID is set unconditionally by vm-operator on every VM,
+			// but it is neither a first-class field nor a spec.advanced.extraConfig
+			// bag key (it's system-reserved — users can't set it there either),
+			// so reconcileStatusExtraConfig never surfaces it in status.extraConfig.
+			// Verify it directly against the live vSphere config instead.
+			By("Asserting disk.enableUUID=TRUE directly against the live vSphere config")
+			var moVMFinal mo.VirtualMachine
+			Expect(property.DefaultCollector(vCenterClient).RetrieveOne(
+				ctx, vmMoRef, []string{"config.extraConfig"}, &moVMFinal,
+			)).To(Succeed())
+			Expect(moVMFinal.Config).NotTo(BeNil())
+			var diskUUID string
+			var diskUUIDFound bool
+			for _, ov := range moVMFinal.Config.ExtraConfig {
+				if kv := ov.GetOptionValue(); kv != nil && kv.Key == "disk.enableUUID" {
+					diskUUID, _ = kv.Value.(string)
+					diskUUIDFound = true
+					break
+				}
+			}
+			Expect(diskUUIDFound).To(BeTrue(), "expected disk.enableUUID to be set on the live VM")
+			Expect(diskUUID).To(Equal("TRUE"),
 				"disk.enableUUID is set unconditionally by vm-operator for every VM")
 
 			cpu := statusCPU(vm)
@@ -1034,6 +1085,7 @@ func waitForExtraConfigSynced(
 	vmKey types.NamespacedName,
 	wantStatus metav1.ConditionStatus,
 	wantReason string,
+	afterTime ...metav1.Time,
 ) *metav1.Condition {
 	desc := string(wantStatus)
 	if wantReason != "" {
@@ -1054,6 +1106,11 @@ func waitForExtraConfigSynced(
 		}
 		g.Expect(cond).NotTo(BeNil(),
 			"%s condition not yet present on VM %s", vmopv1.VirtualMachineExtraConfigSynced, vmKey)
+
+		if len(afterTime) > 0 {
+			g.Expect(cond.LastTransitionTime.After(afterTime[0].Time)).To(BeTrue(),
+				"condition lastTransitionTime not yet advanced past sentinel on %s", vmKey)
+		}
 		g.Expect(cond.Status).To(Equal(wantStatus),
 			"%s: got status=%s reason=%s message=%s",
 			vmopv1.VirtualMachineExtraConfigSynced, cond.Status, cond.Reason, cond.Message)
@@ -1066,6 +1123,11 @@ func waitForExtraConfigSynced(
 	}, config.GetIntervals("default", "wait-vm-extraconfig-synced")...).Should(Succeed(),
 		"timed out waiting for %s=%s on VM %s",
 		vmopv1.VirtualMachineExtraConfigSynced, desc, vmKey)
+
+	// metav1.Time has second-level granularity. Sleep 1s so a caller that
+	// captures matched.LastTransitionTime as a sentinel for a subsequent
+	// wait doesn't race a fast reconcile landing in the same second.
+	time.Sleep(time.Second)
 
 	return matched
 }

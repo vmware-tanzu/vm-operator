@@ -33,3 +33,19 @@ var _ = Describe("CPUQuantityToMhz", func() {
 		})
 	})
 })
+
+var _ = Describe("MbToBytes", func() {
+
+	Context("Convert vSphere MB (binary mebibytes) to bytes", func() {
+		It("is the inverse of MemoryQuantityToMb", func() {
+			q, err := resource.ParseQuantity("4Gi")
+			Expect(err).NotTo(HaveOccurred())
+			mb := virtualmachine.MemoryQuantityToMb(q)
+			Expect(virtualmachine.MbToBytes(mb)).Should(BeNumerically("==", q.Value()))
+		})
+
+		It("returns the binary byte count, not decimal", func() {
+			Expect(virtualmachine.MbToBytes(4096)).Should(BeNumerically("==", int64(4096*1024*1024)))
+		})
+	})
+})

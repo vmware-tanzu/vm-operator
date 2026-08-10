@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"reflect"
+	"slices"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -1263,8 +1264,8 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 }
 
 // WaitForVMCnsRegisterVolumesRegistered waits until every CnsRegisterVolume
-// owned by the given VM (identified by label vmoperator.vmware.com/created-by)
-// has status.registered=true.
+// owned by the given VM (identified by its controller owner reference) has
+// status.registered=true.
 //
 // This must be called before creating a VirtualMachineSnapshot when the
 // AllDisksArePVCs feature is enabled. If a snapshot is taken while a
@@ -1290,19 +1291,23 @@ func WaitForVMCnsRegisterVolumesRegistered(
 
 	By(fmt.Sprintf("Waiting for all CnsRegisterVolumes to be registered for VM %s/%s", ns, vmName))
 	Eventually(func(g Gomega) bool {
+		vm := &vmopv1.VirtualMachine{}
+		if err := client.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: vmName}, vm); err != nil {
+			e2eframework.Logf("retry: failed to get VirtualMachine %s/%s: %v", ns, vmName, err)
+			return false
+		}
+
 		crvList := &unstructured.UnstructuredList{}
 		crvList.SetGroupVersionKind(crvGVK)
 
-		err := client.List(ctx, crvList,
-			ctrlclient.InNamespace(ns),
-			ctrlclient.MatchingLabels{
-				"vmoperator.vmware.com/created-by": vmName,
-			},
-		)
-		if err != nil {
+		if err := client.List(ctx, crvList, ctrlclient.InNamespace(ns)); err != nil {
 			e2eframework.Logf("retry: failed to list CnsRegisterVolumes for VM %s/%s: %v", ns, vmName, err)
 			return false
 		}
+
+		crvList.Items = slices.DeleteFunc(crvList.Items, func(crv unstructured.Unstructured) bool {
+			return !metav1.IsControlledBy(&crv, vm)
+		})
 
 		if len(crvList.Items) == 0 {
 			// No CRVs for this VM — either FCD-backed image or registration

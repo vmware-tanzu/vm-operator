@@ -11,15 +11,15 @@ Extend V1alpha6's Go-template function map (`bootstrap_templatedata.go`) with ex
 ## Technical context
 
 - **Go version**: per repo `go.mod` (root module).
-- **API version(s) touched**: `v1alpha6` only (`api/v1alpha6`).
-- **Modules touched**: root module only — `api/v1alpha6`, `pkg/providers/vsphere/constants`, `pkg/providers/vsphere/vmlifecycle`, `docs/`, `test/e2e/`.
+- **API version(s) touched**: new functions/fields only in `v1alpha6` (`api/v1alpha6`). `api/v1alpha1`–`api/v1alpha5` are touched only for the conversion-gen fix below (no behavior change).
+- **Modules touched**: root module only — `api/v1alpha1`–`api/v1alpha6`, `pkg/providers/vsphere/constants`, `pkg/providers/vsphere/vmlifecycle`, `docs/`, `test/e2e/`.
 - **New dependencies**: none (uses `net` stdlib only).
 
 ## Constitution check
 
 | Rule | Status | Notes |
 |------|--------|-------|
-| API compatibility | OK | `NetworkDeviceStatus`/`NetworkStatus`/`VirtualMachineTemplate` (api/v1alpha6/virtualmachinetempl_types.go) carry no `+kubebuilder` markers and are not part of the CRD schema — they're a Go-only template-rendering helper. Adding fields is a purely additive Go API change, not a CRD/etcd compatibility concern. |
+| API compatibility | OK | `NetworkDeviceStatus`/`NetworkStatus`/`VirtualMachineTemplate` (api/v1alpha6/virtualmachinetempl_types.go) carry no `+kubebuilder` markers and are not part of the CRD schema — they're a Go-only template-rendering helper. Adding fields is a purely additive Go API change, not a CRD/etcd compatibility concern. Adding those fields did break `make generate-go-conversions`/`make manager` (conversion-gen could no longer auto-generate a lossy hub→spoke conversion for the changed type) — fixed by opting all three types out of conversion-gen entirely (`+k8s:conversion-gen=false`) in all six version packages; see API / CRD strategy below. |
 | Thin controllers | OK | No controller changes. All logic lives in `pkg/providers/vsphere/vmlifecycle` (existing home for this code) and `pkg/providers/vsphere/constants`. |
 | Error wrapping | OK | New/changed functions preserve the existing `errors.New(...)` convention already used by sibling functions in this file. |
 | Testing standards | OK | Tests added to the existing `bootstrap_templatedata_test.go` (external `_test` package, Ginkgo `DescribeTable`, no new suite file needed). |
@@ -30,6 +30,8 @@ Extend V1alpha6's Go-template function map (`bootstrap_templatedata.go`) with ex
 
 ```
 api/v1alpha6/virtualmachinetempl_types.go          — new Gateway6/IPv6Addresses fields
+api/v1alpha1..v1alpha6/virtualmachinetempl_types.go — +k8s:conversion-gen=false on NetworkDeviceStatus/NetworkStatus/VirtualMachineTemplate
+api/v1alpha1..v1alpha5/zz_generated.conversion.go  — regenerated (make generate-go-conversions)
 pkg/providers/vsphere/constants/constants.go       — new V1alpha6* function-name constants
 pkg/providers/vsphere/vmlifecycle/bootstrap_templatedata.go       — toTemplateNetworkStatusV1A6, v1a6TemplateFunctions
 pkg/providers/vsphere/vmlifecycle/bootstrap_templatedata_test.go  — new/backfilled v1alpha6 test coverage
@@ -42,6 +44,8 @@ Genuine dual-stack NIC provisioning and multi-NIC coverage remain infra-gated fo
 ## API / CRD strategy
 
 Additive only; no version bump, no conversion webhook impact. The changed type (`NetworkDeviceStatus`) is not a CRD-serialized type (see Constitution check above), so the "additive changes are unsafe once shipped" rule for CRD types (constitution.md "API compatibility") does not apply here — this is a plain Go struct used only inside `GetTemplateRenderFunc`'s in-memory template data, never round-tripped through the API server.
+
+**Conversion-gen fix**: adding `Gateway6`/`IPv6Addresses` to `v1alpha6.NetworkDeviceStatus` broke `make generate-go-conversions` (and therefore `make manager`) with `undefined: Convert_v1alpha6_NetworkDeviceStatus_To_v1alphaN_NetworkDeviceStatus` for every spoke version — `conversion-gen` generates the partial `autoConvert_...` function with a `// WARNING: requires manual conversion` comment for fields with no peer, but withholds the public `Convert_...` wrapper it needs, and `NetworkStatus`'s own generated conversion (for its `Devices []NetworkDeviceStatus` field) still references that withheld wrapper by name. Investigated whether these three types (`NetworkDeviceStatus`, `NetworkStatus`, `VirtualMachineTemplate`) need conversion generation at all, and confirmed they don't: no call site anywhere in the codebase invokes their generated `Convert_...` functions (grepped the whole repo), and `VirtualMachineTemplate` has no `DeepCopyObject()` — it isn't a `runtime.Object`, so it can never be reached by the real CRD conversion-webhook machinery either. Fix: `// +k8s:conversion-gen=false` on all three types, in all six version packages, then `make generate-go-conversions`. Empirically verified three narrower alternatives do **not** work — marking only `NetworkDeviceStatus` (not `NetworkStatus`/`VirtualMachineTemplate`) reproduces the same undefined-symbol error, and marking all three but only in `v1alpha6` (leaving v1alpha1–v5 unmarked) also reproduces it, because each spoke package's own `doc.go` `+k8s:conversion-gen=` tag independently starts a generation task against its own local type declarations regardless of what's marked on the hub side. All three types, in all six packages, is the only configuration that leaves zero references to any of the three types in any generated `zz_generated.conversion.go` file.
 
 ## Controller / webhook impact
 

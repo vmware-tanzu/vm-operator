@@ -6,6 +6,8 @@ package v1alpha1
 
 // NetworkDeviceStatus defines the network interface IP configuration including
 // gateway, subnetmask and IP address as seen by OVF properties.
+//
+// +k8s:conversion-gen=false
 type NetworkDeviceStatus struct {
 	// Gateway4 is the gateway for the IPv4 address family for this device.
 	// +optional
@@ -22,6 +24,8 @@ type NetworkDeviceStatus struct {
 }
 
 // NetworkStatus describes the observed state of the VM's network configuration.
+//
+// +k8s:conversion-gen=false
 type NetworkStatus struct {
 	// Devices describe a list of current status information for each
 	// network interface that is desired to be attached to the
@@ -40,6 +44,8 @@ type NetworkStatus struct {
 // customization to populate OVF properties. Then by utilizing Golang-based
 // templating, Virtual Machine Template provides access to dynamic configuration
 // data.
+//
+// +k8s:conversion-gen=false
 type VirtualMachineTemplate struct {
 	// Net describes the observed state of the VM's network configuration.
 	// +optional

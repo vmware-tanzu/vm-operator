@@ -1024,8 +1024,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			findDisk(Default, pvcNameA, false)
 
 			// Create "new" disk
-			dst := path.Join(vmHome, path.Base(datastorePath.Path))
-			Expect(fileManager.Copy(ctx, datastorePath.Path, dst)).To(Succeed())
+			dstPath := object.DatastorePath{Datastore: vmPath.Datastore, Path: path.Join(vmHome, path.Base(datastorePath.Path))}
+			Expect(fileManager.Copy(ctx, datastorePath.Path, dstPath.String())).To(Succeed())
 			Expect(fileManager.Delete(ctx, datastorePath.Path)).To(Succeed())
 
 			// Expect to fail w/ orphaned FCD
@@ -1037,8 +1037,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			queryVolume()
 
 			// Attach new disk with storage profile (required for cns)
-			datastorePath.Path = dst
-			backing.FileName = datastorePath.String()
+			backing.FileName = dstPath.String()
 
 			profile := []types.BaseVirtualMachineProfileSpec{
 				&types.VirtualMachineDefinedProfileSpec{

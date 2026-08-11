@@ -54,10 +54,6 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	const (
 		specName = "vm-location"
 		vmKind   = "VirtualMachine"
-
-		// vmServiceVMMgmtRoleID is the hardcoded vCenter role ID for the VM-Service-VM-Management role.
-		vmServiceVMMgmtRoleID   = int32(1039)
-		vmServiceVMMgmtRoleName = "VM-Service-VM-Management"
 	)
 
 	var (
@@ -67,6 +63,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		svClusterClient    ctrlclient.Client
 		vCenterAdminClient *vim25.Client
 		clusterResources   *e2eConfig.Resources
+		adminRoleID        int32
 
 		vmName       string
 		linuxVMIName string
@@ -111,17 +108,14 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		// WCP grants the VM-Service-VM-Management role to the Administrators group directly on the
 		// namespace RP/folder, which overrides the inherited vCenter Administrator role for those
 		// objects. That role does not always include the privileges the specs below need to
-		// relocate a VM between resource pools and move it in/out of the namespace folder, so
-		// ensure they are present here.
-		Expect(vcenter.EnsureRolePrivileges(ctx, vCenterAdminClient, vmServiceVMMgmtRoleID,
-			[]string{
-				"Folder.Move",
-				"Resource.AssignVMToPool",
-				"Resource.ColdMigrate",
-				"Resource.HotMigrate",
-				"VirtualMachine.Inventory.Move",
-			})).To(Succeed(),
-			"failed to ensure %s role has the privileges required for VM relocation", vmServiceVMMgmtRoleName)
+		// relocate a VM between resource pools and move it in/out of the namespace folder. Rather
+		// than mutate that shared, WCP-owned role, resolve the built-in full-access Admin role
+		// here; the specs grant it to the admin account directly on the objects they manipulate
+		// (see grantAdminOnEntity) and remove the grant afterwards.
+		adminRole, err := vcenter.GetRoleByName(ctx, vCenterAdminClient, vcenter.AdminRoleName)
+		Expect(err).ToNot(HaveOccurred(), "failed to look up the %q role", vcenter.AdminRoleName)
+		Expect(adminRole).ToNot(BeNil(), "the %q role was not found on vCenter", vcenter.AdminRoleName)
+		adminRoleID = adminRole.RoleId
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
@@ -249,6 +243,25 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
+	// grantAdminOnEntity grants the admin account the full-access Admin role
+	// directly on a single inventory object, overriding the more limited
+	// VM-Service-VM-Management role WCP grants to the Administrators group on the
+	// namespace RP/folder. A direct user permission takes precedence over the
+	// group permission on the same object, which restores the privileges the
+	// admin client needs to relocate and move the VM below. The grant is removed
+	// when the spec completes so the testbed is left as it was found.
+	grantAdminOnEntity := func(moType, moID string) {
+		ref := vimtypes.ManagedObjectReference{Type: moType, Value: moID}
+		Expect(vcenter.SetEntityPermission(ctx, vCenterAdminClient, ref,
+			testbed.AdminUsername, adminRoleID, false, true)).To(Succeed(),
+			"failed to grant admin permission on %s %s", moType, moID)
+		DeferCleanup(func() {
+			Expect(vcenter.RemoveEntityPermission(ctx, vCenterAdminClient, ref,
+				testbed.AdminUsername, false)).To(Succeed(),
+				"failed to remove admin permission on %s %s", moType, moID)
+		})
+	}
+
 	When("VM is created in the correct namespace RP and folder", Label("core-functional", "experimental"), func() {
 		It("sets VirtualMachineLocationValid condition to True", func() {
 			createVM()
@@ -279,6 +292,13 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			By("Retrieving the correct namespace RP and folder MoIDs for the VM's zone")
 			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
+
+			By("Granting the admin account full privileges on the namespace RP and folder")
+			// The VM lives under the namespace RP/folder, where WCP's group-level
+			// role omits the relocation privileges. Grant the admin the Admin role
+			// directly (propagated) so the Relocate calls below are permitted.
+			grantAdminOnEntity("ResourcePool", nsRPMoID)
+			grantAdminOnEntity("Folder", nsFolderMoID)
 
 			By("Retrieving the cluster root RP to use as an invalid location")
 			// 1. Resolve the specific Cluster MoID for the active Supervisor context
@@ -354,6 +374,14 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			Expect(invalidFolderMoID).ToNot(Equal(nsFolderMoID),
 				"other namespace's folder unexpectedly equals the namespace folder itself")
 			e2eframework.Logf("invalid folder MoID (folder of namespace %s): %s", otherNamespace, invalidFolderMoID)
+
+			By("Granting the admin account full privileges on both namespace folders")
+			// The move touches the VM plus its source and destination folders, both
+			// of which carry WCP's group-level role. Grant the admin the Admin role
+			// directly (propagated) on each so MoveInto is permitted in both
+			// directions.
+			grantAdminOnEntity("Folder", nsFolderMoID)
+			grantAdminOnEntity("Folder", invalidFolderMoID)
 
 			By("Moving VM into the other namespace's folder via MoveIntoFolder (direct inventory move)")
 			// Use Folder.MoveInto rather than Relocate.Folder: in WCP, the

@@ -1091,6 +1091,11 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			dir = path.Dir(datastorePath.Path)
 			Expect(dir).To(Equal(vmHome))
 
+			// The restored disk now lives on the VM's home datastore rather than the
+			// original (e.g. vsan) datastore, so ds must be rebound before validating
+			// the FCD backing below.
+			ds = object.NewDatastore(vCenterClient, *backing.Datastore)
+
 			// Validate FCD backing is restored
 			_, err = fcdManager.Retrieve(ctx, ds, disk.VDiskId.Id)
 			Expect(err).ToNot(HaveOccurred())

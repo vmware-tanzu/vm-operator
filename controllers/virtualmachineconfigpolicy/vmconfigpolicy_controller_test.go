@@ -304,7 +304,7 @@ func unitTests() {
 			withObjs = []ctrlclient.Object{zone, obj, configTarget(testClusterMoID, 4, "64Gi")}
 		})
 
-		It("sets Ready=False with reason InvalidRange and does not modify spec", func() {
+		It("sets Ready=False with reason InvalidRange, leaves only the conflicting field unchanged", func() {
 			_, err := reconciler.Reconcile(ctx, objReq)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -313,6 +313,12 @@ func unitTests() {
 			Expect(pkgcond.GetReason(got, vimv1.ReadyConditionType)).To(Equal(virtualmachineconfigpolicy.InvalidRangeReason))
 			Expect(got.Spec.NumCPUCores.Min).To(Equal(int32(8)))
 			Expect(got.Spec.NumCPUCores.Max).To(Equal(int32(64)), "must not publish a Min > Max range")
+
+			// The rest of the policy must still converge -- one field's
+			// conflict must not freeze the whole sync.
+			Expect(got.Spec.Memory.Max.Equal(resource.MustParse("64Gi"))).To(BeTrue())
+			Expect(got.Spec.SEVSupported).To(BeTrue())
+			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
 		})
 	})
 
@@ -617,6 +623,54 @@ var _ = Describe("VirtualMachineConfigPolicy Controller watches, against a real 
 					g.Expect(got.Spec.NumCPUCores.Max).To(Equal(int32(8)))
 				}, 10*time.Second, 100*time.Millisecond).
 					Should(Succeed(), "the ConfigTarget watch must enqueue the policy once the ConfigTarget is marked Ready")
+			})
+		})
+
+		When("a Disabled policy's ConfigTarget becomes Ready", func() {
+			var (
+				policy *vimv1.VirtualMachineConfigPolicy
+				ct     *vimv1.ConfigTarget
+			)
+
+			BeforeEach(func() {
+				ct = &vimv1.ConfigTarget{
+					ObjectMeta: metav1.ObjectMeta{Name: clusterMoID},
+					Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: clusterMoID}},
+				}
+				Expect(vcSimCtx.Client.Create(vcSimCtx, ct)).To(Succeed())
+
+				policy = &vimv1.VirtualMachineConfigPolicy{
+					ObjectMeta: metav1.ObjectMeta{Name: zoneName, Namespace: vcSimCtx.NSInfo.Namespace},
+					Spec: vimv1.VirtualMachineConfigPolicySpec{
+						Zone:     zoneName,
+						SyncMode: vimv1.VirtualMachineConfigPolicySyncModeDisabled,
+					},
+				}
+				Expect(vcSimCtx.Client.Create(vcSimCtx, policy)).To(Succeed())
+			})
+
+			It("is never enqueued by the ConfigTarget watch", func() {
+				Eventually(func(g Gomega) {
+					var got vimv1.VirtualMachineConfigPolicy
+					g.Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
+					g.Expect(pkgcond.GetReason(&got, vimv1.ReadyConditionType)).
+						To(Equal(virtualmachineconfigpolicy.SyncDisabledReason))
+				}, 10*time.Second, 100*time.Millisecond).
+					Should(Succeed(), "the policy's own creation event must still reconcile it once")
+
+				var before vimv1.VirtualMachineConfigPolicy
+				Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(policy), &before)).To(Succeed())
+
+				ct.Status = vimv1.ConfigTargetStatus{NumCPUCores: 8}
+				pkgcond.MarkTrue(ct, vimv1.ReadyConditionType)
+				Expect(vcSimCtx.Client.Status().Update(vcSimCtx, ct)).To(Succeed())
+
+				Consistently(func(g Gomega) {
+					var got vimv1.VirtualMachineConfigPolicy
+					g.Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(policy), &got)).To(Succeed())
+					g.Expect(got.ResourceVersion).To(Equal(before.ResourceVersion),
+						"a Disabled policy must not be woken (and re-patched) by a ConfigTarget it never syncs from")
+				}, 3*time.Second, 250*time.Millisecond).Should(Succeed())
 			})
 		})
 	})

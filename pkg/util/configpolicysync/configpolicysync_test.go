@@ -110,7 +110,7 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 		})
 
 		When("the cluster's reported capability has shrunk below an existing Min", func() {
-			It("rejects the sync instead of publishing an inverted range", func() {
+			It("reports an error naming the field instead of publishing an inverted range", func() {
 				spec := vimv1.VirtualMachineConfigPolicySpec{
 					NumCPUCores: &vimv1.IntRange{Min: 8, Max: 64},
 				}
@@ -120,24 +120,56 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 				Expect(err.Error()).To(ContainSubstring("numCPUCores"))
 			})
 
-			It("leaves spec unmodified when rejecting", func() {
+			It("leaves only the conflicting field unchanged", func() {
 				spec := vimv1.VirtualMachineConfigPolicySpec{
 					NumCPUCores: &vimv1.IntRange{Min: 8, Max: 64},
 				}
 
 				merged, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{NumCPUCores: 4})
 				Expect(err).To(HaveOccurred())
-				Expect(merged).To(Equal(spec))
+				Expect(merged.NumCPUCores).To(Equal(spec.NumCPUCores), "the conflicting field must not change")
 			})
 
-			It("rejects an inverted Memory range the same way", func() {
+			It("still converges every other field in the same call", func() {
+				spec := vimv1.VirtualMachineConfigPolicySpec{
+					NumCPUCores: &vimv1.IntRange{Min: 8, Max: 64},
+				}
+
+				merged, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{
+					NumCPUCores:     4,
+					SupportedMaxMem: quantityPtr("64Gi"),
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(merged.NumCPUCores).To(Equal(spec.NumCPUCores), "conflicting field stays as-is")
+				Expect(merged.Memory.Max.Equal(resource.MustParse("64Gi"))).To(BeTrue(),
+					"an unrelated field must still converge despite the NumCPUCores conflict")
+			})
+
+			It("rejects an inverted Memory range the same way, leaving only Memory unchanged", func() {
 				spec := vimv1.VirtualMachineConfigPolicySpec{
 					Memory: &vimv1.ResourceQuantityRange{Min: resource.MustParse("32Gi"), Max: resource.MustParse("256Gi")},
 				}
 
-				_, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{SupportedMaxMem: quantityPtr("16Gi")})
+				merged, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{
+					NumCPUCores:     4,
+					SupportedMaxMem: quantityPtr("16Gi"),
+				})
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("memory"))
+				Expect(merged.Memory).To(Equal(spec.Memory))
+				Expect(merged.NumCPUCores.Max).To(Equal(int32(4)), "an unrelated field must still converge")
+			})
+
+			It("joins multiple field conflicts into a single error", func() {
+				spec := vimv1.VirtualMachineConfigPolicySpec{
+					NumCPUCores:  &vimv1.IntRange{Min: 8, Max: 64},
+					NumNUMANodes: &vimv1.IntRange{Min: 4, Max: 8},
+				}
+
+				_, err := configpolicysync.Merge(spec, vimv1.ConfigTargetStatus{NumCPUCores: 4, NumNumaNodes: 2})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("numCPUCores"))
+				Expect(err.Error()).To(ContainSubstring("numNUMANodes"))
 			})
 		})
 	})
@@ -207,6 +239,35 @@ var _ = Describe("Merge", Label(testlabels.API), func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(merged.ConfigTargetDevices.CDROM).To(ConsistOf(shared))
+		})
+
+		It("does not discard a later target's real memory value when an earlier target omits it", func() {
+			// SupportedMaxMem is +optional; a target that doesn't report it
+			// must not be treated as "this cluster supports zero bytes,"
+			// which would otherwise permanently floor the intersection at
+			// zero regardless of what any other target reports.
+			spec := vimv1.VirtualMachineConfigPolicySpec{}
+
+			merged, err := configpolicysync.Merge(spec,
+				vimv1.ConfigTargetStatus{SupportedMaxMem: nil},
+				vimv1.ConfigTargetStatus{SupportedMaxMem: quantityPtr("64Gi")},
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(merged.Memory).ToNot(BeNil())
+			Expect(merged.Memory.Max.Equal(resource.MustParse("64Gi"))).To(BeTrue())
+		})
+
+		It("leaves Memory untouched when no target reports SupportedMaxMem", func() {
+			spec := vimv1.VirtualMachineConfigPolicySpec{}
+
+			merged, err := configpolicysync.Merge(spec,
+				vimv1.ConfigTargetStatus{SupportedMaxMem: nil},
+				vimv1.ConfigTargetStatus{SupportedMaxMem: nil},
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(merged.Memory).To(BeNil())
 		})
 
 		It("intersects a zero value on one target literally, as real reported data", func() {

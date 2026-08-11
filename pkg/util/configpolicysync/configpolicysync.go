@@ -38,11 +38,12 @@ import (
 //
 // A cluster's reported maximum can narrow as well as widen -- e.g. a
 // cluster loses hosts or is downgraded after an admin set a range field's
-// Min. If the resulting Max would drop below an existing, tenant-managed
-// Min, Merge returns spec unmodified and a non-nil error identifying the
-// inverted field(s) instead of silently producing a Min > Max range.
-// Callers must check the error and must not apply the returned spec when
-// it is non-nil.
+// Min. If a range field's derived Max would drop below an existing,
+// tenant-managed Min, that field is left unchanged rather than publishing a
+// Min > Max range, and Merge returns a non-nil error naming it -- every
+// other field still converges normally, so one field in conflict does not
+// freeze the rest of the policy's sync. Callers should surface the error
+// (e.g. as a Ready=False condition) but must still apply the returned spec.
 func Merge(
 	spec vimv1.VirtualMachineConfigPolicySpec,
 	targets ...vimv1.ConfigTargetStatus) (vimv1.VirtualMachineConfigPolicySpec, error) {
@@ -54,7 +55,7 @@ func Merge(
 		numCPUCores:            targets[0].NumCPUCores,
 		numNUMANodes:           targets[0].NumNumaNodes,
 		numSimultaneousThreads: targets[0].MaxSimultaneousThreads,
-		memory:                 quantityOrZero(targets[0].SupportedMaxMem),
+		memory:                 quantityPtrCopy(targets[0].SupportedMaxMem),
 		smcPresent:             targets[0].SMCPresent,
 		sevSupported:           targets[0].SEVSupported,
 		sevSNPSupported:        targets[0].SEVSNPSupported,
@@ -67,48 +68,45 @@ func Merge(
 	}
 
 	out := spec
-	out.NumCPUCores = mergeIntRangeMax(out.NumCPUCores, agg.numCPUCores)
-	out.NumNUMANodes = mergeIntRangeMax(out.NumNUMANodes, agg.numNUMANodes)
-	out.NumSimultaneousThreads = mergeIntRangeMax(out.NumSimultaneousThreads, agg.numSimultaneousThreads)
-	out.Memory = mergeResourceQuantityRangeMax(out.Memory, agg.memory)
+
+	var errs []error
+
+	if r := mergeIntRangeMax(out.NumCPUCores, agg.numCPUCores); r.Min <= r.Max {
+		out.NumCPUCores = r
+	} else {
+		errs = append(errs, fmt.Errorf("numCPUCores: min (%d) exceeds cluster-reported max (%d); field left unchanged", r.Min, r.Max))
+	}
+
+	if r := mergeIntRangeMax(out.NumNUMANodes, agg.numNUMANodes); r.Min <= r.Max {
+		out.NumNUMANodes = r
+	} else {
+		errs = append(errs, fmt.Errorf("numNUMANodes: min (%d) exceeds cluster-reported max (%d); field left unchanged", r.Min, r.Max))
+	}
+
+	if r := mergeIntRangeMax(out.NumSimultaneousThreads, agg.numSimultaneousThreads); r.Min <= r.Max {
+		out.NumSimultaneousThreads = r
+	} else {
+		errs = append(errs, fmt.Errorf("numSimultaneousThreads: min (%d) exceeds cluster-reported max (%d); field left unchanged", r.Min, r.Max))
+	}
+
+	// A nil agg.memory means no target reported SupportedMaxMem -- leave
+	// Memory untouched rather than treating "no data" as a real zero.
+	if agg.memory != nil {
+		if r := mergeResourceQuantityRangeMax(out.Memory, *agg.memory); r.Min.Cmp(r.Max) <= 0 {
+			out.Memory = r
+		} else {
+			errs = append(errs, fmt.Errorf(
+				"memory: min (%s) exceeds cluster-reported max (%s); field left unchanged", r.Min.String(), r.Max.String()))
+		}
+	}
+
 	out.SMCPresent = agg.smcPresent
 	out.SEVSupported = agg.sevSupported
 	out.SEVSNPSupported = agg.sevSNPSupported
 	out.TDXSupported = agg.tdxSupported
 	out.ConfigTargetDevices = agg.devices
 
-	err := validateRanges(out)
-	if err != nil {
-		return spec, err
-	}
-
-	return out, nil
-}
-
-// validateRanges returns a non-nil error naming every range field on spec
-// whose Min exceeds its Max. This can only happen to a range field Merge
-// derives Max for: Min is tenant-managed and untouched by Merge, so a
-// cluster capability drop can push a synced Max below an existing Min.
-func validateRanges(spec vimv1.VirtualMachineConfigPolicySpec) error {
-	var errs []error
-
-	if r := spec.NumCPUCores; r != nil && r.Min > r.Max {
-		errs = append(errs, fmt.Errorf("numCPUCores: min (%d) exceeds max (%d)", r.Min, r.Max))
-	}
-
-	if r := spec.NumNUMANodes; r != nil && r.Min > r.Max {
-		errs = append(errs, fmt.Errorf("numNUMANodes: min (%d) exceeds max (%d)", r.Min, r.Max))
-	}
-
-	if r := spec.NumSimultaneousThreads; r != nil && r.Min > r.Max {
-		errs = append(errs, fmt.Errorf("numSimultaneousThreads: min (%d) exceeds max (%d)", r.Min, r.Max))
-	}
-
-	if r := spec.Memory; r != nil && r.Min.Cmp(r.Max) > 0 {
-		errs = append(errs, fmt.Errorf("memory: min (%s) exceeds max (%s)", r.Min.String(), r.Max.String()))
-	}
-
-	return errors.Join(errs...)
+	return out, errors.Join(errs...)
 }
 
 // aggregate accumulates the fold-over-targets state used by Merge.
@@ -116,7 +114,10 @@ type aggregate struct {
 	numCPUCores            int32
 	numNUMANodes           int32
 	numSimultaneousThreads int32
-	memory                 resource.Quantity
+
+	// memory is nil until some target reports SupportedMaxMem -- see
+	// minQuantityPtr.
+	memory *resource.Quantity
 
 	smcPresent      bool
 	sevSupported    bool
@@ -132,7 +133,7 @@ func (agg aggregate) intersect(t vimv1.ConfigTargetStatus) aggregate {
 	agg.numCPUCores = minInt32(agg.numCPUCores, t.NumCPUCores)
 	agg.numNUMANodes = minInt32(agg.numNUMANodes, t.NumNumaNodes)
 	agg.numSimultaneousThreads = minInt32(agg.numSimultaneousThreads, t.MaxSimultaneousThreads)
-	agg.memory = minQuantity(agg.memory, t.SupportedMaxMem)
+	agg.memory = minQuantityPtr(agg.memory, t.SupportedMaxMem)
 	agg.smcPresent = agg.smcPresent && t.SMCPresent
 	agg.sevSupported = agg.sevSupported && t.SEVSupported
 	agg.sevSNPSupported = agg.sevSNPSupported && t.SEVSNPSupported
@@ -155,28 +156,37 @@ func minInt32(a, b int32) int32 {
 	return b
 }
 
-// minQuantity returns the smaller of a and b. A nil b is treated as "not
-// reported by this ConfigTarget field" (e.g. SupportedMaxMem is +optional)
-// and does not restrict the result; a zero b is real data, see minInt32.
-func minQuantity(a resource.Quantity, b *resource.Quantity) resource.Quantity {
+// minQuantityPtr returns the smaller of a and b, treating either as "not
+// reported by this ConfigTarget field" (SupportedMaxMem is +optional) when
+// nil, rather than a real zero -- so seeding or folding in a target that
+// omitted the field never forces the result to zero and discards every
+// other target's real reported value. A zero, non-nil Quantity is real
+// data, see minInt32.
+func minQuantityPtr(a, b *resource.Quantity) *resource.Quantity {
+	if a == nil {
+		return quantityPtrCopy(b)
+	}
+
 	if b == nil {
 		return a
 	}
 
-	if b.Cmp(a) < 0 {
-		return b.DeepCopy()
+	if b.Cmp(*a) < 0 {
+		return quantityPtrCopy(b)
 	}
 
 	return a
 }
 
-// quantityOrZero returns *q, or the zero Quantity if q is nil.
-func quantityOrZero(q *resource.Quantity) resource.Quantity {
+// quantityPtrCopy returns a deep copy of q, or nil if q is nil.
+func quantityPtrCopy(q *resource.Quantity) *resource.Quantity {
 	if q == nil {
-		return resource.Quantity{}
+		return nil
 	}
 
-	return q.DeepCopy()
+	c := q.DeepCopy()
+
+	return &c
 }
 
 // mergeIntRangeMax returns a copy of existing with Max set to maxVal, or a

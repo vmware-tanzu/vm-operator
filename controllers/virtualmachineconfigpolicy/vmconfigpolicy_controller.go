@@ -76,9 +76,12 @@ const (
 
 	// InvalidRangeReason is the Ready condition reason used when a
 	// cluster's reported capability has narrowed below an existing,
-	// tenant-managed Min on one of the policy's range fields. spec is
-	// left untouched: applying the sync would otherwise publish a
-	// Min > Max range, which is meaningless to whatever enforces it.
+	// tenant-managed Min on one or more of the policy's range fields.
+	// configpolicysync.Merge leaves each such field unchanged rather than
+	// publishing a Min > Max range for it, but every other
+	// ConfigTarget-derived field -- including other range fields -- still
+	// converges normally, so this reason does not mean spec as a whole is
+	// untouched.
 	InvalidRangeReason = "InvalidRange"
 )
 
@@ -109,7 +112,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		policyByZoneIndex,
 		func(rawObj client.Object) []string {
 			policy := rawObj.(*vimv1.VirtualMachineConfigPolicy) //nolint:forcetypeassert
-			if policy.Spec.Zone == "" {
+
+			// A Disabled policy never syncs, so it has no reason to be
+			// woken by a Zone/ConfigTarget event -- omitting it here keeps
+			// zoneToPolicyMapper/configTargetToPolicyMapper's List calls
+			// from enqueuing (and patching status.observedGeneration on)
+			// every Disabled policy in the namespace on every capability
+			// change. A policy transitioning to/from Disabled still
+			// reconciles immediately via For(controlledType) on its own
+			// update, so nothing is lost.
+			if policy.Spec.Zone == "" || policy.Spec.SyncMode == vimv1.VirtualMachineConfigPolicySyncModeDisabled {
 				return nil
 			}
 
@@ -350,18 +362,22 @@ func (r *Reconciler) ReconcileNormal(
 	}
 
 	mergedSpec, err := configpolicysync.Merge(obj.Spec, targets...)
-	if err != nil {
-		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, InvalidRangeReason, "%v", err)
-		obj.Status.ObservedGeneration = obj.Generation
-
-		return nil
-	}
 
 	if !apiequality.Semantic.DeepEqual(base.Spec, mergedSpec) {
 		obj.Spec = mergedSpec
 	}
 
 	obj.Status.ObservedGeneration = obj.Generation
+
+	if err != nil {
+		// Merge still converged every field it could; only the field(s)
+		// named in err were left unchanged. Apply the spec above as usual
+		// and only use Ready=False to surface the conflict.
+		pkgcond.MarkFalse(obj, vimv1.ReadyConditionType, InvalidRangeReason, "%v", err)
+
+		return nil
+	}
+
 	pkgcond.MarkTrue(obj, vimv1.ReadyConditionType)
 
 	logger.V(4).Info("Reconciled VirtualMachineConfigPolicy", "zone", zone.Name, "clusters", len(targets))

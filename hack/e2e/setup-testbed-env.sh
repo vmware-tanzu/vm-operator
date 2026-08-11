@@ -271,6 +271,48 @@ _parse_vc_credentials() {
 }
 
 # ---------------------------------------------------------------------------
+# _parse_pykmip_server
+#
+# Reads testbed_info (via _jq) and populates pykmip_ip, pykmip_username,
+# pykmip_password from a dedicated PyKMIP server VM, when the testbed
+# provisioned one.
+#
+# testbedInfo.json's genericVm schema varies by testbed: some surface it as a
+# 'genericVm' array with a 'PyKMIPServer' type entry; others (e.g. VPC
+# testbeds) surface it under a top-level 'pykmipserver' key, keyed by string
+# id (e.g. "1") the same way '.vc'/'.nsxmanager' are, rather than as an
+# array. Resolve the source object once so ip/username/password always come
+# from the same entry.
+#
+# When present, this takes priority over installing pykmip on the external
+# gateway VM (see _setup_gateway_and_proxy / kms.sh). Leaves pykmip_ip empty
+# when no such VM exists so callers fall back to the gateway-install path.
+# ---------------------------------------------------------------------------
+_parse_pykmip_server() {
+    pykmip_ip="" pykmip_username="" pykmip_password=""
+
+    local kms_server
+    kms_server=$(_jq -c '
+        (.genericVm // [] | map(select(.type == "PyKMIPServer")))[0] //
+        (.pykmipserver // {} | if type == "array" then .[0] else (to_entries[0].value // empty) end) //
+        empty
+    ')
+    if [[ -z "${kms_server}" || "${kms_server}" == "null" ]]; then
+        return 0
+    fi
+
+    pykmip_ip=$(jq -r '.ip4 // .ip // empty' <<< "${kms_server}")
+    if [[ -z "${pykmip_ip}" || "${pykmip_ip}" == "null" ]]; then
+        pykmip_ip=""
+        return 0
+    fi
+    pykmip_username=$(jq -r '.username // "root"' <<< "${kms_server}")
+    pykmip_password=$(jq -r '.password // empty' <<< "${kms_server}")
+
+    _log "PyKMIP server (testbedInfo.json): ${pykmip_ip} (user: ${pykmip_username})"
+}
+
+# ---------------------------------------------------------------------------
 # _export_common_vars
 #
 # Exports all standard test-framework environment variables derived from the
@@ -545,6 +587,20 @@ _setup_gateway_and_proxy() {
     _export GOVC_URL      "${govc_url}"
     _export GOVC_INSECURE "true"
 
+    # Prefer a dedicated PyKMIP server supplied via testbedInfo.json (nimbus
+    # genericVm entry, type == "PyKMIPServer") over installing pykmip on the
+    # external gateway VM. When present, kms.sh installs/configures against
+    # that host directly and gce2e-standard is available regardless of
+    # whether the gateway VM itself is reachable.
+    local kms_mode="native-only"
+    if [[ -n "${pykmip_ip:-}" ]]; then
+        _export PYKMIP_HOST_IP       "${pykmip_ip}"
+        _export PYKMIP_HOST_USERNAME "${pykmip_username}"
+        _export PYKMIP_HOST_PASSWORD "${pykmip_password}"
+        _log "Using dedicated PyKMIP server from testbedInfo.json: ${pykmip_ip}"
+        kms_mode="full"
+    fi
+
     _log "Discovering gateway VM via govc..."
     local gateway_ip
     gateway_ip=$(GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
@@ -553,7 +609,7 @@ _setup_gateway_and_proxy() {
 
     if [[ -z "${gateway_ip:-}" || "${gateway_ip}" == "null" ]]; then
         _warn "Could not find gateway VM (may not be a VDS testbed)"
-        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "native-only"
+        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "${kms_mode}"
         return 0
     fi
 
@@ -561,7 +617,7 @@ _setup_gateway_and_proxy() {
 
     local _gw_password=""
     if ! _probe_gateway_ssh "${gateway_ip}"; then
-        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "native-only"
+        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "${kms_mode}"
         return 0
     fi
 
@@ -608,6 +664,10 @@ _setup_gateway_and_proxy() {
     _export GATEWAY_VM_PASSWORD "${_gw_password}"
     _log "✓ HTTP_PROXY=${gateway_ip}:3128  NO_PROXY=${no_proxy_val}"
 
+    # Reaching here means the gateway VM was found and is SSH-reachable, so
+    # "full" mode is always correct now — kms_mode's native-only/full split
+    # only matters for the two early-return branches above, where there may
+    # be no usable pykmip target at all.
     _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "${_gw_password}" "full"
 }
 
@@ -684,9 +744,11 @@ EOF
     local vc_url="" vc_root_password="" vc_root_old_password=""
     local vc_root_username="" vc_vim_username="" vc_vim_password=""
     local wcp_ip="" wcp_ip_primary="" wcp_password=""
+    local pykmip_ip="" pykmip_username="" pykmip_password=""
 
     _load_testbed "${testbed_source}"  || return
     _parse_vc_credentials              || return
+    _parse_pykmip_server
     _export_common_vars
     _fetch_supervisor_access "${enable_e2e}" || return
 

@@ -25,7 +25,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/testutils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
@@ -89,8 +88,7 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 		)
 		Expect(err).NotTo(HaveOccurred())
 
-		sshCommandRunner, _, _ := testutils.GetHelpersFromKubeconfig(ctx, kubeConfig)
-		user, nonAdminClient = setupNonAdminUserForTests(ctx, vimClient, sshCommandRunner, vmSvcClusterProxy.GetClient(), vmSvcClusterProxy)
+		user, nonAdminClient = setupNonAdminUserForTests(ctx, vimClient, vmSvcClusterProxy)
 
 		inventoryFolderName := fmt.Sprintf("%s-%s-%s", vmPubSpecName, "folder", capiutil.RandomString(4))
 		inventoryCLName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "content-library", capiutil.RandomString(4))

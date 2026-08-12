@@ -30,7 +30,6 @@ import (
 	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	libssh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -366,7 +365,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				inventoryFolder *object.Folder
 				inventoryCL     *imgregv1a2.ContentLibrary
 
-				user           *vcenter.User
 				nonAdminClient ctrlclient.Client
 			)
 
@@ -386,13 +384,12 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				)
 				Expect(err).NotTo(HaveOccurred())
 
-				sshCommandRunner, _, _ := testutils.GetHelpersFromKubeconfig(ctx, kubeConfig)
-				user, nonAdminClient = setupNonAdminUserForTests(ctx, vimClient, sshCommandRunner, svClusterClient, clusterProxy)
-			})
-
-			AfterAll(func() {
-				By("Deleting non admin user")
-				vcenter.DeleteUserOrFail(user)
+				var user *vcenter.User
+				user, nonAdminClient = setupNonAdminUserForTests(ctx, vimClient, clusterProxy)
+				DeferCleanup(func() {
+					By("Deleting non admin user")
+					vcenter.DeleteUserOrFail(user)
+				})
 			})
 
 			BeforeEach(func() {
@@ -770,21 +767,22 @@ func validateContentLibraryV2(ctx context.Context, svClusterClient ctrlclient.Cl
 	}).WithTimeout(5 * time.Minute).Should(Succeed())
 }
 
-func setupNonAdminUserForTests(ctx context.Context, vimClient *vim25.Client, sshCommandRunner libssh.SSHCommandRunner, _ ctrlclient.Client, svClusterProxy *common.VMServiceClusterProxy) (*vcenter.User, ctrlclient.Client) {
-	By("Creating non-admin user and assign it to SupervisorProviderAdministrators group")
+func setupNonAdminUserForTests(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	svClusterProxy *common.VMServiceClusterProxy) (*vcenter.User, ctrlclient.Client) {
 
-	user, err := vcenter.CreateUserAndAssignToGrp(ctx, vimClient, sshCommandRunner, "gce2e-test-user", "Admin!23Admin", "SupervisorProviderAdministrators")
+	By("Creating non-admin user and assign it to SupervisorProviderAdministrators group")
+	sshCommandRunner, _, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, svClusterProxy.GetKubeconfigPath())
+
+	username := "gce2e-test-user-" + capiutil.RandomString(4)
+	user, err := vcenter.CreateUserAndAssignToGrp(ctx, vimClient, sshCommandRunner, username, "Admin!23Admin", "SupervisorProviderAdministrators")
 	Expect(err).ToNot(HaveOccurred())
 
-	svClusterKubeConfig := svClusterProxy.GetKubeconfigPath()
-	_, _, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, svClusterKubeConfig)
-
 	By("Logging in as non-admin user in supervisor")
-
 	kubectlPlugin := testutils.LoginWithUserWithRetry(user, supervisorClusterIP, "", "")
 
 	By("Creating a k8s client from the non-admin user kubeconfig")
-
 	restCfg, err := clientcmd.BuildConfigFromFlags("", kubectlPlugin.KubeconfigPath())
 	Expect(err).NotTo(HaveOccurred())
 

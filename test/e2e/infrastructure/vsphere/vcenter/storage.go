@@ -160,57 +160,6 @@ func GetOrCreateEZTStoragePolicy(ctx context.Context, client *vim25.Client, prof
 	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
 }
 
-// GetOrCreateWorkerStoragePolicy returns an existing vSphere profile ID for profileName, or creates
-// a policy that duplicates the supervisor primary (WCP global) storage policy placement rules.
-// After creation, WCPSVC syncs a Kubernetes StorageClass; callers should wait for that object.
-// Pattern matches vks-gce2e EZT helper (duplicate base capabilities under a new name).
-func GetOrCreateWorkerStoragePolicy(ctx context.Context, client *vim25.Client, profileName, wcpProfileID string) (string, error) {
-	pbmClient, err := pbm.NewClient(ctx, client)
-	if err != nil {
-		return "", err
-	}
-
-	policyID, err := pbmClient.ProfileIDByName(ctx, profileName)
-	if err == nil {
-		return policyID, nil
-	}
-
-	if !strings.Contains(err.Error(), "no pbm profile found") {
-		return "", err
-	}
-
-	m, err := pbmClient.ProfileMap(ctx, wcpProfileID)
-	if err != nil {
-		return "", err
-	}
-
-	wcpProfile := m.Profile[0]
-
-	createSpec, err := pbm.CreateCapabilityProfileSpec(pbm.CapabilityProfileCreateSpec{
-		Name:           profileName,
-		SubProfileName: "Datastore placement",
-		Description:    "Worker storage profile (clone of WCP global capabilities) — " + wcpProfile.GetPbmProfile().Description,
-		CapabilityList: []pbm.Capability{},
-		Category:       string(types.PbmProfileCategoryEnumREQUIREMENT),
-	})
-	if err != nil {
-		return "", err
-	}
-
-	subProfile := &createSpec.Constraints.(*types.PbmCapabilitySubProfileConstraints).SubProfiles[0]
-	if p, ok := wcpProfile.(*types.PbmCapabilityProfile); ok {
-		if c, ok := p.Constraints.(*types.PbmCapabilitySubProfileConstraints); ok {
-			subProfile.Capability = append(subProfile.Capability, c.SubProfiles[0].Capability...)
-		}
-	}
-
-	if len(subProfile.Capability) == 0 {
-		return "", errors.New("could not copy capability constraints from base WCP storage policy")
-	}
-
-	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
-}
-
 // createPbmProfile creates a PBM profile from spec and returns
 // its ID. If a concurrent caller wins the create race (e.g. a sibling e2e
 // shard provisioning the same globally-named policy against the same shared

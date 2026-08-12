@@ -57,5 +57,4 @@ intervals:
   default/wait-subnet-deletion: ["6m", "10s"]
   default/wait-security-policy-creation: ["2m", "10s"]
   default/wait-pvc-attachment: ["5m", "10s"]
-  default/wait-worker-storage-class: ["15m", "15s"]
   default/wait-jumpbox-sshpass-ready: ["30m", "10s"]

@@ -45,7 +45,6 @@ type Resources struct {
 	WindowsImageDisplayName       string `json:"windowsImageDisplayName,omitempty"`
 	EncryptedImageDisplayName     string `json:"encryptedImageDisplayName,omitempty"`
 	StorageClassName              string `json:"storageClassName,omitempty"`
-	WorkerStorageClassName        string `json:"workerStorageClassName,omitempty"`
 	VMClassName                   string `json:"vmClassName,omitempty"`
 	VMResourcePolicyName          string `json:"vmResourcePolicyName,omitempty"`
 	ContentLibrarySubscriptionURL string `json:"contentLibrarySubscriptionURL,omitempty"`

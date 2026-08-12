@@ -89,7 +89,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 		if _, err := wcpClient.GetNamespace(secondNamespaceName); err != nil {
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{}, []string{})
-			secondNSContext, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, secondNamespaceName, input.ArtifactFolder)
+			secondNSContext, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, secondNamespaceName, input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create a second test WCP namespace")
 			wcp.WaitForNamespaceReady(wcpClient, secondNamespaceName)
 		}

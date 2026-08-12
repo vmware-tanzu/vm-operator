@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -23,7 +22,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	conformancetestdata "k8s.io/kubernetes/test/conformance/testdata"
@@ -35,14 +33,14 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	
+
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
-	vmserviceutils "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
+	vmserviceutils "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
@@ -56,7 +54,6 @@ var (
 	echoPodLogs                 bool
 	skipCleanup                 bool
 	workloadIsolationFSSEnabled bool
-	vksTesting                  bool
 	configFilePath              string
 	artifactFolder              string
 	skipTests                   string
@@ -146,7 +143,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	vmClassName := config.InfraConfig.ManagementClusterConfig.Resources.VMClassName
 	storageClassName := config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName
-	workerStorageClassName := config.InfraConfig.ManagementClusterConfig.Resources.WorkerStorageClassName
 
 	if wcpNamespaceName == "" {
 		wcpNamespaceName = config.GetVariable("E2ENamespace")
@@ -154,25 +150,18 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	if wcpNamespaceName == "" {
 		namespaceName := fmt.Sprintf("%s-%s", testSuiteName, capiutil.RandomString(6))
-		wcpNamespaceCtx = createWCPNamespaceCtx(ctx, namespaceName, consts.VMServiceCLName, vmClassName, storageClassName, workerStorageClassName)
+		wcpNamespaceCtx = createWCPNamespaceCtx(ctx, namespaceName, consts.VMServiceCLName, vmClassName, storageClassName)
 		wcpNamespaceName = wcpNamespaceCtx.GetNamespace().Name
 		wcp.WaitForNamespaceReady(wcpClient, wcpNamespaceName)
 	} else {
 		_, err := wcpClient.GetNamespace(wcpNamespaceName)
 		if err != nil {
 			framework.Byf("Namespace %q does not exist, creating it", wcpNamespaceName)
-			wcpNamespaceCtx = createWCPNamespaceCtx(ctx, wcpNamespaceName, consts.VMServiceCLName, vmClassName, storageClassName, workerStorageClassName)
+			wcpNamespaceCtx = createWCPNamespaceCtx(ctx, wcpNamespaceName, consts.VMServiceCLName, vmClassName, storageClassName)
 			wcp.WaitForNamespaceReady(wcpClient, wcpNamespaceName)
 		} else {
 			framework.Byf("Namespace %q already exists, skipping creation", wcpNamespaceName)
 		}
-	}
-
-	if workerStorageClassName != "" {
-		svClient := svClusterProxy.GetClientSet()
-		primarySC, err := svClient.StorageV1().StorageClasses().Get(ctx, storageClassName, metav1.GetOptions{})
-		Expect(err).NotTo(HaveOccurred(), "primary storage class %q must exist for worker StorageClass setup", storageClassName)
-		wcp.EnsureWorkerKubernetesStorageClassIfMissing(ctx, kubeconfigPath, svClient, primarySC, workerStorageClassName, config, wcpNamespaceName, wcpClient)
 	}
 
 	By("Ensure the storage class is available in the WCP namespace")
@@ -186,14 +175,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"),
 	)
 	utils.EnsureStorageClassInNamespace(ctx, svClusterProxy.GetClient(),
-		wcpNamespaceName, storageClassName, podVMOnStretchedSupervisorEnabled, 
+		wcpNamespaceName, storageClassName, podVMOnStretchedSupervisorEnabled,
 		*config)
-
-	if workerStorageClassName != "" {
-		utils.EnsureStorageClassInNamespace(ctx, svClusterProxy.GetClient(), 
-			wcpNamespaceName, workerStorageClassName, 
-			podVMOnStretchedSupervisorEnabled, *config)
-	}
 
 	By("Ensure the VM Class is available in the WCP namespace")
 	Expect(vmservice.EnsureVMClassPresent(wcpClient, vmClassName)).To(Succeed())
@@ -265,20 +248,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"),
 		config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvWorkloadIsolation"))
 
-	stretchedTestbed := false
-
 	if workloadIsolationFSSEnabled && os.Getenv("STRETCHED_SUPERVISOR") == "true" {
 		supervisorID := vcenter.GetSupervisorIDFromKubeconfig(ctx, kubeconfigPath)
 		err := svClusterProxy.CreateMissingZoneBindingsWithSupervisor(supervisorID, []string{"zone-2", "zone-3"})
 		Expect(err).ToNot(HaveOccurred(), "failed to update zone bindings with supervisor")
-
-		// The VKS test we're using doesn't work with stretched since it does not set the
-		// zones on the worker pools.
-		stretchedTestbed = true
-	}
-
-	if !checkSkipVKSTests(skipTests) && !stretchedTestbed {
-		vksTesting = true
 	}
 
 	return []byte(
@@ -352,10 +325,10 @@ func setupSupervisorClusterProxy(kubeconfigPath string, sc *runtime.Scheme, conf
 }
 
 // createWCPNamespaceCtx creates a WCP namespace with the default associations.
-func createWCPNamespaceCtx(ctx context.Context, name, clName, vmClassName, storageClassName, workerStorageClassName string) wcpframework.NamespaceContext {
+func createWCPNamespaceCtx(ctx context.Context, name, clName, vmClassName, storageClassName string) wcpframework.NamespaceContext {
 	clID := vmservice.GetContentLibraryUUIDByName(clName, wcpClient)
 	vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{vmClassName}, []string{clID})
-	wcpNamespaceCtx, err := svClusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, storageClassName, workerStorageClassName, name, artifactFolder)
+	wcpNamespaceCtx, err := svClusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, storageClassName, name, artifactFolder)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create the test WCP namespace")
 
 	return wcpNamespaceCtx
@@ -483,16 +456,6 @@ func deployVMWithCloudInit(ctx context.Context, ns, vmName, vmiName string) {
 	}
 	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
 	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
-}
-
-func checkSkipVKSTests(skipStr string) bool {
-	if skipStr == "" {
-		return false
-	}
-
-	skippedTests := regexp.MustCompile(`\bVKS\b`)
-	// If 'VKS' is specified in test-skip, then do not create a VKS cluster.
-	return skippedTests.MatchString(skipStr)
 }
 
 func deployJumpboxPodVM(ctx context.Context) {

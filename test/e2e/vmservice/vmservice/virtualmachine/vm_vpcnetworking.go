@@ -414,7 +414,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 
 			var err error
 
-			secondNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, secondNamespaceName, input.ArtifactFolder)
+			secondNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, secondNamespaceName, input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create a second test WCP namespace")
 			wcp.WaitForNamespaceReady(wcpClient, secondNamespaceName)
 

@@ -10,10 +10,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -61,7 +62,6 @@ func VIAdminNamespaceRoleSpec(ctx context.Context, inputGetter func() VIAdminNam
 
 		nsContext, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs,
 			config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-			config.InfraConfig.ManagementClusterConfig.Resources.WorkerStorageClassName,
 			fmt.Sprintf("%s-%s", nsRoleSpecName, capiutil.RandomString(6)),
 			input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")

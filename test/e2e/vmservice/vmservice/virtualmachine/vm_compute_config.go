@@ -1395,9 +1395,10 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
 				vmNamespace, vmName)
-			waitForComputeConfigSynced(ctx, svClusterClient, config,
+			condInitial := waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
 				metav1.ConditionTrue, "")
+			Expect(condInitial).ToNot(BeNil())
 
 			By("Looking up host CpuMhz via govmomi for full CPU reservation")
 			vmObj, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -1441,7 +1442,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			By("Waiting for ComputeConfigSynced=True after latency sensitivity patch")
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
-				metav1.ConditionTrue, "")
+				metav1.ConditionTrue, "", condInitial.LastTransitionTime)
 
 			By("Asserting latencySensitivity and reservation in status")
 			Eventually(func(g Gomega) {
@@ -1487,9 +1488,10 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			By("Waiting for VM to be created and condition=True (powered-off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
 				vmNamespace, vmName)
-			waitForComputeConfigSynced(ctx, svClusterClient, config,
+			condInitial := waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
 				metav1.ConditionTrue, "")
+			Expect(condInitial).ToNot(BeNil())
 
 			By("Checking hardware version; skip if < 20")
 			vmObj, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -1516,7 +1518,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			By("Waiting for ComputeConfigSynced=True after vNUMA patch")
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
-				metav1.ConditionTrue, "")
+				metav1.ConditionTrue, "", condInitial.LastTransitionTime)
 
 			vmObj, err = utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 			Expect(err).ToNot(HaveOccurred())
@@ -1603,9 +1605,10 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			By("Waiting for VM to be created and condition=True (powered-off with hot-add flags applied)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
 				vmNamespace, vmName)
-			waitForComputeConfigSynced(ctx, svClusterClient, config,
+			condInitial := waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
 				metav1.ConditionTrue, "")
+			Expect(condInitial).ToNot(BeNil())
 
 			By("Asserting hotAddEnabled=true in status before size patch")
 			Eventually(func(g Gomega) {
@@ -1639,7 +1642,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			By("Waiting for ComputeConfigSynced=True after size patch (VM powered-off; no power cycle needed)")
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
-				metav1.ConditionTrue, "")
+				metav1.ConditionTrue, "", condInitial.LastTransitionTime)
 
 			By("Powering on VM")
 			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
@@ -1657,7 +1660,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			}, config.GetIntervals("default", "wait-vm-compute-config-synced")...).
 				Should(Succeed(), "cpu size assertions failed for %s/%s", vmNamespace, vmName)
 
-			By("Asserting memory total = 3072M")
+			By("Asserting memory total = 3Gi")
 			Eventually(func(g Gomega) {
 				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 				g.Expect(err).ToNot(HaveOccurred())
@@ -1672,11 +1675,11 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 					}())
 				g.Expect(mem).ToNot(BeNil())
 				g.Expect(mem.Total).ToNot(BeNil())
-				// vSphere reports memory in MB (treated as SI mega by the operator);
-				// 3Gi spec → 3072 vSphere MB → status stores 3072M.
-				want := resource.MustParse("3072M")
+				// vSphere's MemoryMB is a binary mebibyte count; 3Gi spec →
+				// 3072 vSphere MB → status stores 3Gi (exact round trip).
+				want := resource.MustParse("3Gi")
 				g.Expect(mem.Total.Equal(want)).To(BeTrue(),
-					"expected memory total=3072M, got %s", mem.Total.String())
+					"expected memory total=3Gi, got %s", mem.Total.String())
 			}, config.GetIntervals("default", "wait-vm-compute-config-synced")...).
 				Should(Succeed())
 		})

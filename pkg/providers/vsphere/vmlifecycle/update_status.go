@@ -274,12 +274,17 @@ func reconcileStatusHardware(
 
 		memStatus := &vmopv1.VirtualMachineMemoryAllocationStatus{}
 
-		b := memTotal * 1000 * 1000
-		memStatus.Total = kubeutil.BytesToResource(b)
+		// vSphere's MemoryMB (and MemoryAllocation.{Reservation,Limit}) are
+		// always binary mebibyte counts, not decimal megabytes — convert via
+		// virtualmachine.MbToBytes to match every other MemoryMB conversion
+		// in this codebase (e.g. pkg/util/vmopv1/compute_overwrite.go's
+		// desiredMemoryAllocation and the ConfigSpec.MemoryMB assignment), so
+		// status round-trips to the same byte value as spec.resources.size.memory.
+		memStatus.Total = kubeutil.BytesToResource(virtualmachine.MbToBytes(memTotal))
 
 		if a := config.MemoryAllocation; a != nil {
 			if res := a.Reservation; res != nil && *res > 0 {
-				memStatus.Reservation = kubeutil.BytesToResource(*res * 1000 * 1000)
+				memStatus.Reservation = kubeutil.BytesToResource(virtualmachine.MbToBytes(*res))
 			}
 		}
 
@@ -287,7 +292,7 @@ func reconcileStatusHardware(
 			if a := config.MemoryAllocation; a != nil {
 				// Nil or -1 Limit means unlimited in vSphere; only surface explicit positive limits.
 				if lim := a.Limit; lim != nil && *lim >= 0 {
-					memStatus.Limit = kubeutil.BytesToResource(*lim * 1000 * 1000)
+					memStatus.Limit = kubeutil.BytesToResource(virtualmachine.MbToBytes(*lim))
 				}
 			}
 

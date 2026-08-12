@@ -5543,10 +5543,10 @@ var _ = Describe("Hardware status", func() {
 				Expect(vmCtx.VM.Status.Hardware.CPU.Reservation).To(Equal(int64(1000)))
 
 				Expect(vmCtx.VM.Status.Hardware.Memory.Total).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2048M"))
+				Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2Gi"))
 
 				Expect(vmCtx.VM.Status.Hardware.Memory.Reservation).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.Hardware.Memory.Reservation.String()).To(Equal("1024M"))
+				Expect(vmCtx.VM.Status.Hardware.Memory.Reservation.String()).To(Equal("1Gi"))
 			})
 
 			When("CPU total is zero and allocation is nil", func() {
@@ -5730,13 +5730,13 @@ var _ = Describe("Hardware status", func() {
 
 			When("memory is larger than math.MaxInt32 bytes", func() {
 				BeforeEach(func() {
-					vmCtx.MoVM.Config.Hardware.MemoryMB = math.MaxInt32/(1000*1000) + 1
+					vmCtx.MoVM.Config.Hardware.MemoryMB = math.MaxInt32/(1024*1024) + 1
 				})
 
 				It("should set the memory status", func() {
 					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2148M"))
+					Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2Gi"))
 				})
 			})
 			When("full compute configuration is set", func() {
@@ -5827,7 +5827,7 @@ var _ = Describe("Hardware status", func() {
 						mem := vmCtx.VM.Status.Hardware.Memory
 						Expect(mem).ToNot(BeNil())
 						Expect(mem.Limit).ToNot(BeNil())
-						Expect(mem.Limit.String()).To(Equal("2048M"))
+						Expect(mem.Limit.String()).To(Equal("2Gi"))
 						Expect(mem.ReservationLockedToMax).To(Equal(ptr.To(true)))
 						Expect(mem.HotAddEnabled).To(Equal(ptr.To(true)))
 					})

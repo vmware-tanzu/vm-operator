@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,12 +37,31 @@ const (
 	defaultKMSProviderLockName      = "vmservice-e2e-default-kms-provider-lock"
 	defaultKMSProviderLockNamespace = "vmware-system-vmop"
 
-	// defaultKMSProviderLockLeaseDuration bounds how long a lock holder that
-	// crashes or panics without releasing can block other jobs. It must
-	// exceed the slowest encryption spec's full BeforeEach+It+AfterEach
-	// runtime.
-	defaultKMSProviderLockLeaseDuration = 15 * time.Minute
+	// defaultKMSProviderLockLeaseBuffer is subtracted from the Ginkgo suite's
+	// own --timeout to derive the lease duration (see
+	// defaultKMSProviderLockLeaseDuration), so a crashed holder is reclaimed
+	// with margin to spare before the suite itself would time out.
+	defaultKMSProviderLockLeaseBuffer = 5 * time.Minute
+
+	// defaultKMSProviderLockLeaseDurationFloor is the minimum lease duration,
+	// used if the suite's --timeout is at or below
+	// defaultKMSProviderLockLeaseBuffer.
+	defaultKMSProviderLockLeaseDurationFloor = 5 * time.Minute
 )
+
+// defaultKMSProviderLockLeaseDuration bounds how long a lock holder that
+// crashes or panics without releasing can block other jobs. It is derived
+// from the running suite's own Ginkgo --timeout (the same source
+// hack/e2e/run-e2e.sh sets via GINKGO_TIMEOUT) rather than a separately
+// maintained constant, so it always exceeds the slowest encryption spec's
+// full BeforeEach+It+AfterEach runtime by construction.
+func defaultKMSProviderLockLeaseDuration() time.Duration {
+	suiteConfig, _ := GinkgoConfiguration()
+	if d := suiteConfig.Timeout - defaultKMSProviderLockLeaseBuffer; d > defaultKMSProviderLockLeaseDurationFloor {
+		return d
+	}
+	return defaultKMSProviderLockLeaseDurationFloor
+}
 
 // AcquireDefaultKMSProviderLock blocks until this process holds the
 // exclusive lock on vCenter's default KMS provider setting, then returns a
@@ -84,7 +104,7 @@ func tryAcquireKMSLease(ctx context.Context, c ctrlclient.Client, holder string)
 		lease.Spec.HolderIdentity = ptr.To(holder)
 		lease.Spec.AcquireTime = ptr.To(now)
 		lease.Spec.RenewTime = ptr.To(now)
-		lease.Spec.LeaseDurationSeconds = ptr.To(int32(defaultKMSProviderLockLeaseDuration.Seconds()))
+		lease.Spec.LeaseDurationSeconds = ptr.To(int32(defaultKMSProviderLockLeaseDuration().Seconds()))
 		// Update carries the Lease's resourceVersion, so a concurrent
 		// takeover attempt by another job fails with a conflict here rather
 		// than both believing they hold the lock.
@@ -109,7 +129,12 @@ func releaseKMSLease(ctx context.Context, c ctrlclient.Client, holder string) {
 		// Lease already expired and another job reclaimed it.
 		return
 	}
-	if err := c.Delete(ctx, lease); err != nil {
+	// Precondition the delete on the UID/resourceVersion we just read, so a
+	// take-over that lands between our Get and Delete (e.g. another job
+	// reclaiming an expired lease) fails this delete with a conflict instead
+	// of deleting a Lease it doesn't hold.
+	precondition := ctrlclient.Preconditions{UID: &lease.UID, ResourceVersion: &lease.ResourceVersion}
+	if err := c.Delete(ctx, lease, precondition); err != nil {
 		framework.Byf("WARNING: failed to release default KMS provider lock held by %q: %v", holder, err)
 		return
 	}
@@ -127,7 +152,7 @@ func newKMSLease(holder string) *coordinationv1.Lease {
 			HolderIdentity:       ptr.To(holder),
 			AcquireTime:          ptr.To(now),
 			RenewTime:            ptr.To(now),
-			LeaseDurationSeconds: ptr.To(int32(defaultKMSProviderLockLeaseDuration.Seconds())),
+			LeaseDurationSeconds: ptr.To(int32(defaultKMSProviderLockLeaseDuration().Seconds())),
 		},
 	}
 }

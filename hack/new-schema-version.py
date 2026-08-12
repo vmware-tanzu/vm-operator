@@ -350,127 +350,6 @@ def _generate_conversion_webhooks_go(
     return "\n".join(lines)
 
 
-def _make_v1aN_template_functions_block(new_num: str, new_ver_go: str) -> str:
-    """Generate Go source for func v1a{N}TemplateFunctions (vmopv1 types, constants.{VerGo})."""
-    return (
-        f"func v1a{new_num}TemplateFunctions(\n"
-        f"\tnetworkStatusV1A{new_num} vmopv1.NetworkStatus,\n"
-        f"\tnetworkDevicesStatusV1A{new_num} []vmopv1.NetworkDeviceStatus) map[string]any {{\n\n"
-        "	// Get the first IP address from the first NIC.\n"
-        f"	v1alpha{new_num}FirstIP := func() (string, error) {{\n"
-        f"		if len(networkDevicesStatusV1A{new_num}) == 0 {{\n"
-        '			return "", errors.New("no available network device, check with VI admin")\n'
-        "		}\n"
-        f"		return networkDevicesStatusV1A{new_num}[0].IPAddresses[0], nil\n"
-        "	}\n\n"
-        "	// Get the first NIC's MAC address.\n"
-        f"	v1alpha{new_num}FirstNicMacAddr := func() (string, error) {{\n"
-        f"		if len(networkDevicesStatusV1A{new_num}) == 0 {{\n"
-        '			return "", errors.New("no available network device, check with VI admin")\n'
-        "		}\n"
-        f"		return networkDevicesStatusV1A{new_num}[0].MacAddress, nil\n"
-        "	}\n\n"
-        "	// Get the first IP address from the ith NIC.\n"
-        f"	v1alpha{new_num}FirstIPFromNIC := func(index int) (string, error) {{\n"
-        f"		if len(networkDevicesStatusV1A{new_num}) == 0 {{\n"
-        '			return "", errors.New("no available network device, check with VI admin")\n'
-        "		}\n"
-        f"		if index >= len(networkDevicesStatusV1A{new_num}) {{\n"
-        '			return "", errors.New("index out of bound")\n'
-        "		}\n"
-        f"		return networkDevicesStatusV1A{new_num}[index].IPAddresses[0], nil\n"
-        "	}\n\n"
-        "	// Get all IP addresses from the ith NIC.\n"
-        f"	v1alpha{new_num}IPsFromNIC := func(index int) ([]string, error) {{\n"
-        f"		if len(networkDevicesStatusV1A{new_num}) == 0 {{\n"
-        '			return []string{""}, errors.New("no available network device, check with VI admin")\n'
-        "		}\n"
-        f"		if index >= len(networkDevicesStatusV1A{new_num}) {{\n"
-        '			return []string{""}, errors.New("index out of bound")\n'
-        "		}\n"
-        f"		return networkDevicesStatusV1A{new_num}[index].IPAddresses, nil\n"
-        "	}\n\n"
-        "	// Format the first occurred count of nameservers with specific delimiter\n"
-        f"	v1alpha{new_num}FormatNameservers := func(count int, delimiter string) (string, error) {{\n"
-        f"		var nameservers []string\n"
-        f"		if len(networkStatusV1A{new_num}.Nameservers) == 0 {{\n"
-        '			return "", errors.New("no available nameservers, check with VI admin")\n'
-        "		}\n"
-        f"		if count < 0 || count >= len(networkStatusV1A{new_num}.Nameservers) {{\n"
-        f"			nameservers = networkStatusV1A{new_num}.Nameservers\n"
-        "			return strings.Join(nameservers, delimiter), nil\n"
-        "		}\n"
-        f"		nameservers = networkStatusV1A{new_num}.Nameservers[:count]\n"
-        "		return strings.Join(nameservers, delimiter), nil\n"
-        "	}\n\n"
-        "	// Get subnet mask from a CIDR notation IP address and prefix length\n"
-        f"	v1alpha{new_num}SubnetMask := func(cidr string) (string, error) {{\n"
-        "		_, ipv4Net, err := net.ParseCIDR(cidr)\n"
-        "		if err != nil {\n"
-        '			return "", err\n'
-        "		}\n"
-        '		netmask := fmt.Sprintf("%d.%d.%d.%d", ipv4Net.Mask[0], ipv4Net.Mask[1], ipv4Net.Mask[2], ipv4Net.Mask[3])\n'
-        "		return netmask, nil\n"
-        "	}\n\n"
-        "	// Format an IP address with default netmask CIDR\n"
-        f"	v1alpha{new_num}IP := func(IP string) (string, error) {{\n"
-        "		if net.ParseIP(IP) == nil {\n"
-        '			return "", errors.New("input IP address not valid")\n'
-        "		}\n"
-        "		defaultMask := net.ParseIP(IP).DefaultMask()\n"
-        "		ones, _ := defaultMask.Size()\n"
-        '		expectedCidrNotation := IP + "/" + strconv.Itoa(ones)\n'
-        "		return expectedCidrNotation, nil\n"
-        "	}\n\n"
-        "	// Format an IP address with network length(eg. /24) or decimal\n"
-        f"	v1alpha{new_num}FormatIP := func(s string, mask string) (string, error) {{\n"
-        "		ip, _, err := net.ParseCIDR(s)\n"
-        "		if err != nil {\n"
-        "			ip = net.ParseIP(s)\n"
-        "			if ip == nil {\n"
-        '				return "", fmt.Errorf("input IP address not valid")\n'
-        "			}\n"
-        "		}\n"
-        "		s = ip.String()\n"
-        '		if mask == "" {\n'
-        "			return s, nil\n"
-        "		}\n"
-        '		if strings.HasPrefix(mask, "/") {\n'
-        "			s += mask\n"
-        "			if _, _, err := net.ParseCIDR(s); err != nil {\n"
-        '				return "", err\n'
-        "			}\n"
-        "			return s, nil\n"
-        "		}\n"
-        "		maskIP := net.ParseIP(mask)\n"
-        "		if maskIP == nil {\n"
-        '			return "", fmt.Errorf("mask is an invalid IP")\n'
-        "		}\n"
-        "		maskIPBytes := maskIP.To4()\n"
-        "		if len(maskIPBytes) == 0 {\n"
-        "			maskIPBytes = maskIP.To16()\n"
-        "		}\n"
-        "		ipNet := net.IPNet{IP: ip, Mask: net.IPMask(maskIPBytes)}\n"
-        "		s = ipNet.String()\n"
-        "		if _, _, err := net.ParseCIDR(s); err != nil {\n"
-        '			return "", fmt.Errorf("invalid ip net: %s", s)\n'
-        "		}\n"
-        "		return s, nil\n"
-        "	}\n\n"
-        "	return template.FuncMap{\n"
-        f"\t\tconstants.{new_ver_go}FirstIP:           v1alpha{new_num}FirstIP,\n"
-        f"\t\tconstants.{new_ver_go}FirstNicMacAddr:   v1alpha{new_num}FirstNicMacAddr,\n"
-        f"\t\tconstants.{new_ver_go}FirstIPFromNIC:    v1alpha{new_num}FirstIPFromNIC,\n"
-        f"\t\tconstants.{new_ver_go}IPsFromNIC:        v1alpha{new_num}IPsFromNIC,\n"
-        f"\t\tconstants.{new_ver_go}FormatNameservers: v1alpha{new_num}FormatNameservers,\n"
-        f"\t\tconstants.{new_ver_go}SubnetMask: v1alpha{new_num}SubnetMask,\n"
-        f"\t\tconstants.{new_ver_go}IP:         v1alpha{new_num}IP,\n"
-        f"\t\tconstants.{new_ver_go}FormatIP:   v1alpha{new_num}FormatIP,\n"
-        "\t}\n"
-        "}\n"
-    )
-
-
 class SchemaMigration:
     """Handles the migration to a new API schema version."""
 
@@ -1667,9 +1546,22 @@ class SchemaMigration:
         return None
 
     def step_update_template_constants(self) -> None:
-        """Add new hub version template function constants to constants/constants.go."""
+        """Add new hub version template function constants to constants/constants.go.
+
+        Rather than hardcoding a fixed list of constant names, this copies
+        the old (current hub) version's whole constant block verbatim and
+        renames its version tokens -- so the new version automatically
+        inherits every constant the old hub had, including any added after
+        this script was last touched (e.g. IsUsableIP, PrefixLength, the
+        strict FirstIPv4/FirstIPv6/FirstIPv4FromNIC/FirstIPv6FromNIC
+        functions added alongside the original FirstIP/FirstIPFromNIC/
+        IPsFromNIC/FormatIP/IP/SubnetMask/FormatNameservers/FirstNicMacAddr
+        set), with no risk of the new version silently missing functions
+        the old hub already has.
+        """
         old_ver = self.ctx.old_ver
         new_ver = self.ctx.new_ver
+        old_ver_go = self._version_go_form(old_ver)
         new_ver_go = self._version_go_form(new_ver)
         new_num = self._version_alpha_num(new_ver)
         if not new_num:
@@ -1681,48 +1573,22 @@ class SchemaMigration:
 
         content = self.ops.read_file(constants_go)
         # Already has new version constants
-        if f"V1alpha{new_num}FirstIP" in content or f"{new_ver_go}FirstIP" in content:
+        if f"{new_ver_go}FirstIP" in content:
             return
 
-        old_ver_go = self._version_go_form(old_ver)
-        # Insert new version block after old version's FormatNameservers line
-        marker = (
-            f"\t// {old_ver_go}FormatNameservers is an alias for versioned "
-            f"templating function {old_ver_go}_FormatNameservers.\n"
-            f'\t{old_ver_go}FormatNameservers = "{old_ver_go}_FormatNameservers"\n)'
-        )
-        new_block = (
-            f"\t// {old_ver_go}FormatNameservers is an alias for versioned "
-            f"templating function {old_ver_go}_FormatNameservers.\n"
-            f'\t{old_ver_go}FormatNameservers = "{old_ver_go}_FormatNameservers"\n\n'
-            f"\t// {new_ver_go}FirstIP is an alias for versioned templating "
-            f"function {new_ver_go}_FirstIP.\n"
-            f'\t{new_ver_go}FirstIP = "{new_ver_go}_FirstIP"\n'
-            f"\t// {new_ver_go}FirstNicMacAddr is an alias for versioned templating "
-            f"function {new_ver_go}_FirstNicMacAddr.\n"
-            f'\t{new_ver_go}FirstNicMacAddr = "{new_ver_go}_FirstNicMacAddr"\n'
-            f"\t// {new_ver_go}FirstIPFromNIC is an alias for versioned templating "
-            f"function {new_ver_go}_FirstIPFromNIC.\n"
-            f'\t{new_ver_go}FirstIPFromNIC = "{new_ver_go}_FirstIPFromNIC"\n'
-            f"\t// {new_ver_go}IPsFromNIC is an alias for versioned templating "
-            f"function {new_ver_go}_IPsFromNIC.\n"
-            f'\t{new_ver_go}IPsFromNIC = "{new_ver_go}_IPsFromNIC"\n'
-            f"\t// {new_ver_go}FormatIP is an alias for versioned templating "
-            f"function {new_ver_go}_FormatIP.\n"
-            f'\t{new_ver_go}FormatIP = "{new_ver_go}_FormatIP"\n'
-            f"\t// {new_ver_go}IP is an alias for versioned templating "
-            f"function {new_ver_go}_IP.\n"
-            f'\t{new_ver_go}IP = "{new_ver_go}_IP"\n'
-            f"\t// {new_ver_go}SubnetMask is an alias for versioned templating "
-            f"function  {new_ver_go}_SubnetMask.\n"
-            f'\t{new_ver_go}SubnetMask = "{new_ver_go}_SubnetMask"\n'
-            f"\t// {new_ver_go}FormatNameservers is an alias for versioned "
-            f"templating function {new_ver_go}_FormatNameservers.\n"
-            f'\t{new_ver_go}FormatNameservers = "{new_ver_go}_FormatNameservers"\n)'
-        )
-        if marker not in content:
+        start_marker = f"\t// {old_ver_go}FirstIP is an alias"
+        start_idx = content.find(start_marker)
+        end_idx = content.rfind("\n)")
+        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
             return
-        self.ops.write_file(constants_go, content.replace(marker, new_block, 1))
+
+        old_block = content[start_idx:end_idx]
+        new_block = old_block.replace(old_ver_go, new_ver_go)
+        if new_block in content:
+            return
+
+        content = content[:end_idx] + "\n" + new_block + content[end_idx:]
+        self.ops.write_file(constants_go, content)
 
     # -------------------------------------------------------------------------
     # Step 18: Demote old hub and add new hub in bootstrap_templatedata.go
@@ -1868,90 +1734,68 @@ class SchemaMigration:
             1,
         )
 
-        # 7) toTemplateNetworkStatusV1A{old_num}: return and body use old_alias
-        content = content.replace(
-            f"func toTemplateNetworkStatusV1A{old_num}(bsArgs *BootstrapArgs) "
-            f"[]vmopv1.NetworkDeviceStatus",
-            f"func toTemplateNetworkStatusV1A{old_num}(bsArgs *BootstrapArgs) "
-            f"[]{old_alias}.NetworkDeviceStatus",
-            1,
-        )
-        content = content.replace(
-            f"make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.NetworkResults.Results))",
-            f"make([]{old_alias}.NetworkDeviceStatus, 0, len(bsArgs.NetworkResults.Results))",
-            1,
-        )
-        status_old = "status := vmopv1.NetworkDeviceStatus{\n\t\t\tMacAddress: macAddr,"
-        status_new = (
-            f"status := {old_alias}.NetworkDeviceStatus{{\n\t\t\tMacAddress: macAddr,"
-        )
-        content = content.replace(status_old, status_new, 1)
+        # 7) Demote the old hub's dedicated file and create the new hub's.
+        #
+        # Starting with v1alpha6, each hub version gets its own fully
+        # self-contained bootstrap_templatedata_v1alphaN.go file (see
+        # bootstrap_templatedata_v1alpha6.go) instead of sharing the single
+        # growing bootstrap_templatedata.go that v1alpha1-v1alpha5 still
+        # use. That makes this step a safe whole-file copy + token rename
+        # rather than fragile anchor-based text surgery: because each
+        # dedicated file belongs to exactly one version, there's nothing
+        # else in it that a blanket rename could accidentally catch, no
+        # matter how that version's function set changes over time.
+        vmlifecycle_dir = self.ctx.root / "pkg/providers/vsphere/vmlifecycle"
+        old_hub_file = vmlifecycle_dir / f"bootstrap_templatedata_{old_ver}.go"
+        new_hub_file = vmlifecycle_dir / f"bootstrap_templatedata_{new_ver}.go"
 
-        # 8) Insert toTemplateNetworkStatusV1A{new_num} after toTemplateNetworkStatusV1A{old_num}
-        # In the file, the next function after toTemplateNetworkStatusV1A{old_num} is
-        # v1a3TemplateFunctions (order is V1A1,v1a1, V1A2,v1a2, V1A3,V1A4,V1A5, v1a3,v1a4,v1a5).
-        insert_after = (
-            "return networkDevicesStatus\n"
-            "}\n\n"
-            "// This is basically identical to v1a2TemplateFunctions.\n"
-            "func v1a3TemplateFunctions("
-        )
-        new_func_template = (
-            "return networkDevicesStatus\n"
-            "}\n\n"
-            f"func toTemplateNetworkStatusV1A{new_num}(bsArgs *BootstrapArgs) "
-            f"[]vmopv1.NetworkDeviceStatus {{\n"
-            f"\tnetworkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, "
-            "len(bsArgs.NetworkResults.Results))\n\n"
-            "\tfor _, result := range bsArgs.NetworkResults.Results {\n"
-            '\t\tmacAddr := strings.ReplaceAll(result.MacAddress, ":", "-")\n\n'
-            "\t\tstatus := vmopv1.NetworkDeviceStatus{\n"
-            "\t\t\tMacAddress: macAddr,\n"
-            "\t\t}\n\n"
-            "\t\tfor _, ipConfig := range result.IPConfigs {\n"
-            "\t\t\tif ipConfig.IsIPv4 {\n"
-            '\t\t\t\tif status.Gateway4 == "" {\n'
-            "\t\t\t\t\tstatus.Gateway4 = ipConfig.Gateway\n"
-            "\t\t\t\t}\n\n"
-            "\t\t\t\tstatus.IPAddresses = append(status.IPAddresses, "
-            "ipConfig.IPCIDR)\n"
-            "\t\t\t}\n"
-            "\t\t}\n\n"
-            "\t\tnetworkDevicesStatus = append(networkDevicesStatus, status)\n"
-            "\t}\n\n"
-            "\treturn networkDevicesStatus\n"
-            "}\n\n"
-            "// This is basically identical to v1a2TemplateFunctions.\n"
-            "func v1a3TemplateFunctions("
-        )
-        if f"func toTemplateNetworkStatusV1A{new_num}(" not in content:
-            content = content.replace(insert_after, new_func_template, 1)
-
-        # 9) v1a{old_num}TemplateFunctions: param types to old_alias
-        content = content.replace(
-            f"func v1a{old_num}TemplateFunctions(\n"
-            f"\tnetworkStatusV1A{old_num} vmopv1.NetworkStatus,\n"
-            f"\tnetworkDevicesStatusV1A{old_num} []vmopv1.NetworkDeviceStatus)",
-            f"func v1a{old_num}TemplateFunctions(\n"
-            f"\tnetworkStatusV1A{old_num} {old_alias}.NetworkStatus,\n"
-            f"\tnetworkDevicesStatusV1A{old_num} []{old_alias}.NetworkDeviceStatus)",
-            1,
-        )
-
-        # 10) Insert v1a{new_num}TemplateFunctions (full function) after v1a{old_num}TemplateFunctions
-        # File uses one tab before map closing "}\n" and no tab before func "}\n"
-        v1a_new_func = _make_v1aN_template_functions_block(new_num, new_ver_go)
-        marker_end_prev = (
-            f"\t\tconstants.{old_ver_go}FormatIP:   v1alpha{old_num}FormatIP,\n"
-            "\t}\n"
-            "}\n"
-        )
-        if v1a_new_func not in content and marker_end_prev in content:
-            content = content.replace(
-                marker_end_prev,
-                marker_end_prev + "\n" + v1a_new_func,
-                1,
+        if not old_hub_file.exists():
+            print(
+                f"Warning: {old_hub_file} not found -- skipping per-file hub "
+                f"template function generation. This is only expected if "
+                f"{old_ver} predates the per-file split (v1alpha6+); if not, "
+                f"bootstrap_templatedata.go needs manual attention for the "
+                f"toTemplateNetworkStatusV1A{new_num}/v1a{new_num}TemplateFunctions "
+                f"functions.",
+                file=sys.stderr,
             )
+            self.ops.write_file(path, content)
+            return
+
+        # step_update_imports (an earlier step) already rglob-replaced this
+        # file's import path from old_ver to new_ver repo-wide -- it has no
+        # special knowledge of the per-version hub file split, so by this
+        # point old_hub_file's import already reads
+        # `vmopv1 "{base_import}/{new_ver}"` (alias unchanged) and its body
+        # already uses `vmopv1.`. Build both outputs from that actual state
+        # rather than the pre-migration state.
+        old_hub_content = self.ops.read_file(old_hub_file)
+
+        if not new_hub_file.exists():
+            # Import/body already point at new_ver; only the identifiers
+            # need the version-number rename.
+            new_hub_content = old_hub_content.replace(
+                f"v1a{old_num}", f"v1a{new_num}"
+            )
+            new_hub_content = new_hub_content.replace(
+                f"V1A{old_num}", f"V1A{new_num}"
+            )
+            new_hub_content = new_hub_content.replace(
+                f"V1alpha{old_num}", f"V1alpha{new_num}"
+            )
+            self.ops.write_file(new_hub_file, new_hub_content)
+
+        # Demote the old hub file in place: revert its import path back to
+        # old_ver under a version-specific alias, and retarget every
+        # reference to it, now that it is a spoke rather than the hub.
+        demoted_content = old_hub_content.replace(
+            f'vmopv1 "{base_import}/{new_ver}"',
+            f'{old_alias} "{base_import}/{old_ver}"',
+            1,
+        )
+        demoted_content = demoted_content.replace("vmopv1.", f"{old_alias}.")
+        if demoted_content != old_hub_content:
+            self.ops.write_file(old_hub_file, demoted_content)
 
         self.ops.write_file(path, content)
 

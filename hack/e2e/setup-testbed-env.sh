@@ -372,6 +372,14 @@ _fetch_supervisor_access() {
         return 1
     fi
 
+    # Dual-stack testbeds report this as "IPv4,IPv6" (e.g.
+    # "10.162.79.192,2604:b040:518:12f::4e"). scp/curl/sed below need a
+    # single connectable host, so use the IPv4 address (the part before the
+    # first comma); on a single-stack testbed there is no comma and this is
+    # a no-op. WCP_IP / SUPERVISOR_CLUSTER_IP still export the raw,
+    # comma-joined value for consumers that want both addresses.
+    wcp_ip_primary="${wcp_ip%%,*}"
+
     _log "Supervisor IP: ${wcp_ip}"
 
     mkdir -p "${HOME}/.kube"
@@ -382,15 +390,15 @@ _fetch_supervisor_access() {
     if ! _retry_with_backoff "${_KUBECONFIG_RETRY_ATTEMPTS}" "${_KUBECONFIG_RETRY_INITIAL_DELAY}" "SCP kubeconfig from supervisor" \
             sshpass -p "${wcp_password}" \
             scp "${_SSH_OPTS[@]}" -o ConnectTimeout=30 \
-            "root@${wcp_ip}:~/.kube/config" "${kubeconfig_dest}"; then
+            "root@${wcp_ip_primary}:~/.kube/config" "${kubeconfig_dest}"; then
         _err "Failed to copy kubeconfig from supervisor cluster after retries"
         return 1
     fi
 
     # Replace 127.0.0.1 so the kubeconfig is usable from outside the cluster VM.
     case "${OSTYPE:-$(uname -s)}" in
-        darwin*|Darwin) sed -i ""  "s/127.0.0.1/${wcp_ip}/g" "${kubeconfig_dest}" ;;
-        *)              sed -i     "s/127.0.0.1/${wcp_ip}/g" "${kubeconfig_dest}" ;;
+        darwin*|Darwin) sed -i ""  "s/127.0.0.1/${wcp_ip_primary}/g" "${kubeconfig_dest}" ;;
+        *)              sed -i     "s/127.0.0.1/${wcp_ip_primary}/g" "${kubeconfig_dest}" ;;
     esac
 
     _export KUBECONFIG "${kubeconfig_dest}"
@@ -408,15 +416,15 @@ _fetch_supervisor_access() {
 #
 # Downloads the supervisor-version-specific kubectl-vsphere plugin and
 # prepends its bin directory to PATH.
-# Reads: wcp_ip (from _main's scope via dynamic scoping).
+# Reads: wcp_ip_primary (from _main's scope via dynamic scoping).
 # ---------------------------------------------------------------------------
 _setup_kubectl_vsphere() {
-    if [[ -z "${wcp_ip}" ]]; then
+    if [[ -z "${wcp_ip_primary}" ]]; then
         _err "Cannot install kubectl-vsphere: WCP_IP not set"
         return 1
     fi
 
-    _log "Installing kubectl-vsphere from supervisor ${wcp_ip}..."
+    _log "Installing kubectl-vsphere from supervisor ${wcp_ip_primary}..."
     local plugin_os
     case "$(uname -s)-$(uname -m)" in
         Darwin-arm64)  plugin_os="darwin-amd64" ;; # No arm64 binaries so use translation
@@ -424,13 +432,13 @@ _setup_kubectl_vsphere() {
         *)             plugin_os="linux-amd64"  ;;
     esac
 
-    local -r plugin_url="https://${wcp_ip}/wcp/plugin/${plugin_os}/vsphere-plugin.zip"
+    local -r plugin_url="https://${wcp_ip_primary}/wcp/plugin/${plugin_os}/vsphere-plugin.zip"
     local -r extract_dir="/tmp/vsphere-plugin-$$"
 
     local curl_err
     if ! curl_err=$(curl --insecure --max-time 60 --retry 3 --retry-delay 5 -fsSLo vsphere-plugin.zip "${plugin_url}" 2>&1); then
         rm -f vsphere-plugin.zip
-        _err "Failed to download kubectl-vsphere from ${wcp_ip} (${plugin_os}): ${curl_err}"
+        _err "Failed to download kubectl-vsphere from ${wcp_ip_primary} (${plugin_os}): ${curl_err}"
         return 1
     fi
 
@@ -675,7 +683,7 @@ EOF
     local testbed_data="" testbed_info=""
     local vc_url="" vc_root_password="" vc_root_old_password=""
     local vc_root_username="" vc_vim_username="" vc_vim_password=""
-    local wcp_ip="" wcp_password=""
+    local wcp_ip="" wcp_ip_primary="" wcp_password=""
 
     _load_testbed "${testbed_source}"  || return
     _parse_vc_credentials              || return

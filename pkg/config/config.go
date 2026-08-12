@@ -220,6 +220,7 @@ type FeatureStates struct {
 	WorkloadIPv6                 bool
 	VirtualMachineConfigPolicy   bool
 	WorkloadNetworkConfiguration bool
+	ExtensionCompatConstraint    bool
 }
 
 type InstanceStorage struct {

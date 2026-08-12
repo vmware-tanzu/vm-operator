@@ -138,6 +138,9 @@ REPORT_DIR="${ARTIFACT_FOLDER}"
 # before the container scheduler force-kills the process.
 GINKGO_TIMEOUT="${GINKGO_TIMEOUT:-2h}"
 
+# See "Optionally collect a WCP support bundle" below.
+COLLECT_SUPPORT_BUNDLE_MODE="${COLLECT_SUPPORT_BUNDLE_MODE:-off}"
+
 # Disable color output in CI env.
 export GINKGO_NO_COLOR=${TEST_CALLBACK_URL:+TRUE}
 
@@ -191,6 +194,28 @@ else
     "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS || E2E_EXIT=$?
 fi
 
-# 6. Report result, then propagate the original exit code
+# 6. Report result first so autotriage sees the outcome without waiting on
+# the slower step below.
 report_result "${E2E_EXIT}" "${REPORT_DIR}/report.json"
+
+# 7. Optionally collect a WCP support bundle from this suite's own pod,
+# right after its tests finish, instead of waiting on a separate downstream
+# job once every suite in the pipeline is done. Off by default (e.g. local
+# runs); CI sets COLLECT_SUPPORT_BUNDLE_MODE via e2e job env_vars.
+#   off         - never collect (default)
+#   on-failure  - collect only when E2E_EXIT is non-zero
+#   always      - collect regardless of outcome
+if [ "${COLLECT_SUPPORT_BUNDLE_MODE}" = "always" ] || \
+   { [ "${COLLECT_SUPPORT_BUNDLE_MODE}" = "on-failure" ] && [ "${E2E_EXIT}" -ne 0 ]; }; then
+    if [ -n "${TESTBED_DATA_URL:-}" ] && [ -f "${_SCRIPT_DIR}/collect-support-bundle.sh" ]; then
+        echo "[run-e2e] Collecting support bundle (COLLECT_SUPPORT_BUNDLE_MODE=${COLLECT_SUPPORT_BUNDLE_MODE})..."
+        "${_SCRIPT_DIR}/collect-support-bundle.sh" --testbed-blob-url "${TESTBED_DATA_URL}" --output-dir "${ARTIFACT_FOLDER}" \
+            || echo "[run-e2e] WARNING: support bundle collection failed; continuing" >&2
+    else
+        echo "[run-e2e] WARNING: COLLECT_SUPPORT_BUNDLE_MODE=${COLLECT_SUPPORT_BUNDLE_MODE} but TESTBED_DATA_URL is unset; skipping" >&2
+    fi
+fi
+
+# 8. Propagate the test suite's own exit code — bundle collection above never
+# affects it.
 exit "${E2E_EXIT}"

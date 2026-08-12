@@ -2,12 +2,12 @@
 set -ex
 
 #
-# wait-for-artifact-dir.sh - Wait for RESULTSDIR to exist and make it writable
+# wait-for-artifact-dir.sh - Wait for RESULTSDIR to exist
 #
-# The UTS NFS log directory is created by the svc-vdm_stage0 service account.
-# This script waits for it to appear then uses "sudo -u svc-vdm_stage0 chmod g+w"
-# to make it group-writable. Both vmoperator and svc-vdm_stage0 are in the mts 
-# group (GID 201), so after chmod g+w the directory is writable by our container user.
+# The RESULTSDIR NFS mount is pre-created with g+w permissions already set,
+# so the vmoperator/svc-vdm_stage0 mts-group (GID 201) container user can
+# write logs directly once the directory appears, with no identity switch
+# needed.
 #
 # Usage:
 #   export RESULTSDIR=/cpbu/logs/user-logs/...
@@ -51,9 +51,6 @@ while [[ ! -d "$RESULTSDIR" ]]; do
 done
 
 echo "[wait-for-artifact-dir] Directory found: $RESULTSDIR (after ${elapsed}s)"
-sudo -u svc-vdm_stage0 chmod g+w "$RESULTSDIR"
-sudo -u svc-vdm_stage0 chmod -R g+w "$RESULTSDIR" || true
-echo "[wait-for-artifact-dir] Made directory group-writable: $RESULTSDIR"
 ls -la "$RESULTSDIR"
 touch "$RESULTSDIR/.marker.wait-for-artifact-dir.done"
 echo "[wait-for-artifact-dir] Marker created: $RESULTSDIR/.marker.wait-for-artifact-dir.done"

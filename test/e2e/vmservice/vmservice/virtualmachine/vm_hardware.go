@@ -325,6 +325,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		svClusterClient                ctrlclient.Client
 		clusterResources               *e2eConfig.Resources
 		vCenterClient                  *vim25.Client
+		wcpClient                      wcp.WorkloadManagementAPI
+		vmYaml                         []byte
 		vmYamls                        [][]byte
 		pvcsYamls                      [][]byte
 		vmName                         string

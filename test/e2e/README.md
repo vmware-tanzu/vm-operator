@@ -45,8 +45,11 @@ test/e2e/
 1. **Set up the env** for your WCP cluster:
 The following will export all the required environment variables
 required for the test and download the kubeconfig from the Supervisor cluster.
-The kubeconfig will be stored under the directory `~/.kube/<vcIp>.kubeconfig` 
-and copied to `~/.kube/wcp-config` which the E2E test reads from.
+The kubeconfig will be stored under a unique `~/.kube/<wcpIp>.kubeconfig.<random>`
+file (exported as both `KUBECONFIG` and, with `--e2e`, `E2E_KUBECONFIG_PATH`,
+which the E2E test reads from). The unique filename means concurrent local
+runs (e.g. against two testbeds, or two runs against the same testbed in
+separate terminals) won't stomp on each other's kubeconfig.
 
 ```bash
 source ./hack/e2e/setup-testbed-env.sh <testbedInfo.json> --e2e
@@ -134,6 +137,7 @@ The primary configuration is in `vmservice/config/wcp.yaml`:
 |----------|-------------|---------|------------------|
 | `NETWORK` | Networking topology (vds/nsx) | `vds` | ❌ |
 | `STORAGE_CLASS` | Storage class for VMs | `wcpglobal-storage-profile` | ❌ |
+| `E2E_KUBECONFIG_PATH` | Supervisor kubeconfig path (set by `setup-testbed-env.sh --e2e`; a unique file per invocation avoids concurrent local runs stomping on each other) | `~/.kube/wcp-config` | ❌ |
 | `E2E_NAMESPACE` | Fixed namespace for tests | Random namespace | ✅ |
 | `TEST_FOCUS` | Ginkgo focus pattern | All tests | ✅ |
 | `TEST_SKIP` | Ginkgo skip pattern | No skips | ✅ |

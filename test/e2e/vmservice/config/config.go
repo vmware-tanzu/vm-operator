@@ -87,24 +87,37 @@ func LoadE2EConfig(configPath string) *E2EConfig {
 	Expect(err).ToNot(HaveOccurred(), "failed to read the e2e test config file: %s", configPath)
 	Expect(configData).ToNot(BeEmpty(), "the e2e test config file should not be empty: %s", configPath)
 
-	configData = []byte(os.Expand(string(configData), func(v string) string {
-		parts := strings.SplitN(v, ":-", 2)
-		if val, ok := os.LookupEnv(parts[0]); ok && val != "" {
-			return val
-		}
-
-		if len(parts) == 2 {
-			return parts[1]
-		}
-
-		return ""
-	}))
+	configData = []byte(expandEnv(string(configData)))
 	config := &E2EConfig{}
 	Expect(yaml.Unmarshal(configData, config)).To(Succeed(), "failed to convert the e2e test config file to yaml")
 
 	Expect(config.Validate()).To(Succeed(), "The e2e test config file is not valid")
 
 	return config
+}
+
+// expandEnv substitutes "$NAME", "${NAME}", and "${NAME:-default}" references
+// in data with the named environment variable, falling back to default (or
+// the empty string, if no default is given) when the variable is unset or
+// empty. The default itself is expanded recursively, rather than substituted
+// verbatim, so a pattern like "${E2E_KUBECONFIG_PATH:-$HOME/.kube/wcp-config}"
+// still resolves $HOME when E2E_KUBECONFIG_PATH is unset.
+func expandEnv(data string) string {
+	var expandVar func(v string) string
+	expandVar = func(v string) string {
+		parts := strings.SplitN(v, ":-", 2)
+		if val, ok := os.LookupEnv(parts[0]); ok && val != "" {
+			return val
+		}
+
+		if len(parts) == 2 {
+			return os.Expand(parts[1], expandVar)
+		}
+
+		return ""
+	}
+
+	return os.Expand(data, expandVar)
 }
 
 func (c *E2EConfig) Validate() error {

@@ -40,6 +40,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 007 | [vm-eviction-policy](specs/007-vm-eviction-policy/) | VM Eviction Compute Policies (`AutomaticVMEvictionPolicy`, `BestEffortRestartPolicy`) | Draft | vmop-4057, vmop-4058, vmop-4059 |
 | 008 | [nic-unit-numbers](specs/008-nic-unit-numbers/) | NIC Unit Numbers | In Progress | vmop-3982 |
 | 009 | [virtualmachinereplicaset](specs/009-virtualmachinereplicaset/) | `VirtualMachineReplicaSet` Functional Test Coverage (`tds.md`/`test-plan.md` in place of `spec.md`/`plan.md`) | In Progress | vmop-1701 |
+| 010 | [veeam-e2e-backup-restore](specs/010-veeam-e2e-backup-restore/) | Use Veeam for Backup/Restore E2E Tests | Draft | vmop-4013 |
 
 ### Finding the right spec
 

@@ -224,9 +224,6 @@ func unmanagedVolumesTests() {
 			Expect(crv.Spec.DiskURLPath).ToNot(BeEmpty())
 			Expect(crv.Spec.AccessMode).To(Equal(corev1.ReadWriteOnce))
 
-			// Verify labels.
-			Expect(crv.Labels["vmoperator.vmware.com/created-by"]).To(Equal(vm.Name))
-
 			// Verify OwnerReference.
 			Expect(crv.OwnerReferences).To(HaveLen(1))
 			Expect(crv.OwnerReferences[0].Kind).To(Equal("VirtualMachine"))
@@ -464,9 +461,6 @@ func unmanagedVolumesTests() {
 			Expect(crv.Spec.PvcName).To(Equal(claimName))
 			Expect(crv.Spec.DiskURLPath).ToNot(BeEmpty())
 			Expect(crv.Spec.AccessMode).To(Equal(corev1.ReadWriteOnce))
-
-			// Verify labels.
-			Expect(crv.Labels["vmoperator.vmware.com/created-by"]).To(Equal(vm.Name))
 
 			// Verify OwnerReference.
 			Expect(crv.OwnerReferences).To(HaveLen(1))

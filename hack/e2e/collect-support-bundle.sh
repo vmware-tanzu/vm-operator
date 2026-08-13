@@ -12,6 +12,10 @@
 #
 # Environment variable overrides:
 #   RESULTSDIR   Default output directory when --output-dir is not passed.
+#
+# This is a best-effort diagnostic step, not a test: any runtime failure to
+# obtain or download a bundle exits 0 so it never fails the caller's
+# pipeline. Only invocation errors (bad/missing flags) exit non-zero.
 
 set -uo pipefail
 
@@ -68,9 +72,9 @@ if [[ -n "${TESTBED_BLOB_URL}" ]]; then
     TESTBED_TMP="$(mktemp /tmp/testbedInfo.XXXXXX.json)"
     _raw_tmp="$(mktemp /tmp/testbedInfo-raw.XXXXXX.json)"
     if ! curl -sf "${TESTBED_BLOB_URL}" -o "${_raw_tmp}"; then
-        _err "Failed to fetch testbedInfo from ${TESTBED_BLOB_URL}"
+        _warn "Failed to fetch testbedInfo from ${TESTBED_BLOB_URL}; skipping WCP bundle"
         rm -f "${_raw_tmp}"
-        exit 1
+        exit 0
     fi
     # Unwrap deliverable_blob if present (UTS test_blob API format); otherwise
     # the URL points directly to the raw testbedInfo.json in the logs directory.
@@ -82,7 +86,7 @@ if [[ -n "${TESTBED_BLOB_URL}" ]]; then
     rm -f "${_raw_tmp}"
     TESTBED_INFO_JSON="${TESTBED_TMP}"
 elif [[ -n "${TESTBED_INFO_JSON}" ]]; then
-    [[ -f "${TESTBED_INFO_JSON}" ]] || { _err "File not found: ${TESTBED_INFO_JSON}"; exit 1; }
+    [[ -f "${TESTBED_INFO_JSON}" ]] || { _warn "File not found: ${TESTBED_INFO_JSON}; skipping WCP bundle"; exit 0; }
 else
     _err "Either --testbed-info-json or --testbed-blob-url is required"
     usage; exit 1
@@ -119,8 +123,8 @@ IFS=$'\t' read -r VC_IP VC_VIM_USER VC_VIM_PWD < <(_jq '
 ')
 
 if [[ -z "${VC_IP}" || -z "${VC_VIM_USER}" || -z "${VC_VIM_PWD}" ]]; then
-    _err "Could not extract VC IP or vim credentials from testbedInfo.json"
-    exit 1
+    _warn "Could not extract VC IP or vim credentials from testbedInfo.json; skipping WCP bundle"
+    exit 0
 fi
 
 _log "Collecting WCP support bundle from VC ${VC_IP}..."

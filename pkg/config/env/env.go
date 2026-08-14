@@ -62,6 +62,7 @@ const (
 	FSSBringYourOwnEncryptionKey
 	FSSSVAsyncUpgrade
 	FSSFastDeploy
+	FSSTaggingAPI
 	_varNameEnd
 )
 
@@ -195,6 +196,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_SUPERVISOR_ASYNC_UPGRADE"
 	case FSSFastDeploy:
 		return "FSS_WCP_VMSERVICE_FAST_DEPLOY"
+	case FSSTaggingAPI:
+		return "FSS_WCP_VMSERVICE_TAGGING_API"
 	}
 	panic("unknown environment variable")
 }

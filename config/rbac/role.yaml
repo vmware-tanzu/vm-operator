@@ -423,7 +423,20 @@ rules:
   - vsphere.policy.vmware.com
   resources:
   - policyevaluations/status
+  - tags/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - vsphere.policy.vmware.com
+  resources:
+  - tags
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

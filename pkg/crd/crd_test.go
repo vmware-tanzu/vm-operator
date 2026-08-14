@@ -77,7 +77,9 @@ var (
 
 	externalVSpherePolicy = []string{
 		"computepolicies.vsphere.policy.vmware.com",
+		"controlledrebalancingpolicies.vsphere.policy.vmware.com",
 		"policyevaluations.vsphere.policy.vmware.com",
+		"requiredduringexecutionvmplacementpolicies.vsphere.policy.vmware.com",
 		"tagpolicies.vsphere.policy.vmware.com",
 	}
 

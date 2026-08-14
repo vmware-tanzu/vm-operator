@@ -121,7 +121,9 @@ func Install( //nolint:gocyclo
 		// following "switch" statement in order to keep it up-to-date.
 		switch k {
 		case "ComputePolicy",
+			"ControlledRebalancingPolicy",
 			"PolicyEvaluation",
+			"RequiredDuringExecutionVMPlacementPolicy",
 			"TagPolicy":
 			if err := updateOrDeleteUnstructured(
 				ctx,

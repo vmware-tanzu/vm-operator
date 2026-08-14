@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -68,11 +69,27 @@ func fastDeploy(
 	var (
 		vmDirPath     string
 		vmDirUUIDPath string
-		nm            *object.DatastoreNamespaceManager
+		nm            = object.NewDatastoreNamespaceManager(vimClient)
 		fm            = object.NewFileManager(vimClient)
+		tldSupported  = createArgs.Datastores[0].TopLevelDirectoryCreateSupported
+		ds            = object.NewDatastore(vimClient, createArgs.Datastores[0].MoRef)
 	)
 
-	if createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
+	if err := fastDeployStaleDirectory(
+		vmCtx,
+		logger,
+		datacenter,
+		ds,
+		fm,
+		nm,
+		vmDir,
+		tldSupported,
+		createArgs.Datastores[0].URL); err != nil {
+
+		return nil, fmt.Errorf("failed to delete existing directory: %w", err)
+	}
+
+	if tldSupported {
 		//
 		// The datastore supports TLD creation, so just use file manager.
 		//
@@ -85,10 +102,9 @@ func fastDeploy(
 		// The datastore does NOT support TLD creation, so use the datastore
 		// namespace manager to create the new directory.
 		//
-		nm = object.NewDatastoreNamespaceManager(vimClient)
 		vdp, err := nm.CreateDirectory(
 			vmCtx,
-			object.NewDatastore(vimClient, createArgs.Datastores[0].MoRef),
+			ds,
 			vmDirName,
 			"")
 		if err != nil {
@@ -142,45 +158,17 @@ func fastDeploy(
 			return
 		}
 
-		// Use a context that is not cancelled when the parent is, so cleanup
-		// runs even if the request is cancelled. Preserves the VC opID so
-		// cleanup is correlated with the failed create in VC logs.
-		ctx := context.WithoutCancel(vmCtx.Context)
+		if err := fastDeployDeleteDirectory(
+			context.WithoutCancel(vmCtx.Context),
+			logger,
+			datacenter,
+			fm,
+			vmDirPath,
+			tldSupported,
+			nm,
+			vmDirUUIDPath); err != nil {
 
-		// Delete the VM directory and its contents.
-		// Always use FileManager.DeleteDatastoreFile() first as it can delete
-		// non-empty directories recursively. Note that DeleteDirectory() on a
-		// non-empty directory will return an error, which is why we delete the
-		// directory contents first using DeleteDatastoreFile().
-		t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
-		if err != nil {
-			retErr = fmt.Errorf(
-				"failed to call delete api for vm dir %q: %w,%w",
-				vmDirPath, err, retErr)
-			return
-		}
-
-		// Wait for the delete call to return.
-		if err := t.Wait(ctx); err != nil &&
-			!fault.Is(err, &vimtypes.FileNotFound{}) {
-
-			retErr = fmt.Errorf(
-				"failed to delete vm dir %q: %w,%w",
-				vmDirPath, err, retErr)
-		}
-
-		// For non-TLD datastores, also clean up the namespace mapping.
-		if !createArgs.Datastores[0].TopLevelDirectoryCreateSupported {
-			if err := nm.DeleteDirectory(
-				ctx,
-				datacenter,
-				vmDirUUIDPath); err != nil &&
-				!fault.Is(err, &vimtypes.FileNotFound{}) {
-
-				retErr = fmt.Errorf(
-					"failed to delete vm dir namespace mapping %q: %w,%w",
-					vmDirUUIDPath, err, retErr)
-			}
+			retErr = errors.Join(retErr, err)
 		}
 	}()
 
@@ -643,4 +631,127 @@ func fastDeployDirectCopyDisks(
 	}
 
 	return copyDiskErr
+}
+
+func fastDeployDeleteDirectory(
+	ctx context.Context,
+	logger logr.Logger,
+	datacenter *object.Datacenter,
+	fm *object.FileManager,
+	vmDirPath string,
+	tldSupported bool,
+	nm *object.DatastoreNamespaceManager,
+	vmDirUUIDPath string) error {
+
+	logger.Info("Deleting VM directory", "vmDirPath", vmDirPath)
+
+	// Delete the VM directory and its contents.
+	// Always use FileManager.DeleteDatastoreFile() first as it can delete
+	// non-empty directories recursively. Note that DeleteDirectory() on a
+	// non-empty directory will return an error, which is why we delete the
+	// directory contents first using DeleteDatastoreFile().
+	t, err := fm.DeleteDatastoreFile(ctx, vmDirPath, datacenter)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to call delete api for vm dir %q: %w", vmDirPath, err)
+	}
+	logger.Info("Waiting VM directory deletion", "vmDirPath", vmDirPath)
+
+	// Wait for the delete call to return.
+	if err := t.Wait(ctx); err != nil &&
+		!fault.Is(err, &vimtypes.FileNotFound{}) {
+
+		return fmt.Errorf("failed to delete vm dir %q: %w", vmDirPath, err)
+	}
+	logger.Info("Deleted VM directory", "vmDirPath", vmDirPath)
+
+	if tldSupported {
+		return nil
+	}
+
+	// For non-TLD datastore, also clean up the namespace mapping.
+	logger.Info("Deleting namespace mapping", "vmDirUUIDPath", vmDirUUIDPath)
+	if err := nm.DeleteDirectory(
+		ctx,
+		datacenter,
+		vmDirUUIDPath); err != nil &&
+		!fault.Is(err, &vimtypes.FileNotFound{}) {
+
+		return fmt.Errorf(
+			"failed to delete vm dir namespace mapping %q: %w",
+			vmDirUUIDPath, err)
+	}
+	logger.Info("Deleted namespace mapping", "vmDirUUIDPath", vmDirUUIDPath)
+
+	return nil
+}
+
+func fastDeployStaleDirectory(
+	ctx context.Context,
+	logger logr.Logger,
+	datacenter *object.Datacenter,
+	ds *object.Datastore,
+	fm *object.FileManager,
+	nm *object.DatastoreNamespaceManager,
+	vmDirPath string,
+	tldSupported bool,
+	datastoreURL string,
+) error {
+
+	var dp object.DatastorePath
+	if !dp.FromString(vmDirPath) {
+		return fmt.Errorf("invalid datastore path: %s", vmDirPath)
+	}
+
+	if err := ds.FindInventoryPath(ctx); err != nil {
+		return fmt.Errorf("failed to find inventory path: %w", err)
+	}
+
+	vmDirName := dp.Path
+	_, dirExistsErr := ds.Stat(ctx, vmDirName)
+	if dirExistsErr != nil {
+		if errors.As(dirExistsErr, &object.DatastoreNoSuchFileError{}) ||
+			errors.As(dirExistsErr, &object.DatastoreNoSuchDirectoryError{}) {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"existing directory validation failed: %w", dirExistsErr)
+	}
+	logger.Info("Found stale VM directory", "vmDirPath", vmDirPath)
+
+	var (
+		pathToDelete = vmDirPath
+		uuidPath     string
+	)
+
+	if !tldSupported {
+		if datastoreURL == "" {
+			return fmt.Errorf("received an empty datastore URL")
+		}
+
+		namespaceURL, err := url.Parse(datastoreURL)
+		if err != nil {
+			return fmt.Errorf(
+				"failed to parse datastore URL %q: %w", datastoreURL, err)
+		}
+
+		namespaceURL.Path = path.Join(namespaceURL.Path, vmDirName)
+		namespaceURL.Scheme = ""
+		uuidPath, err = nm.ConvertNamespacePathToUuidPath(
+			ctx,
+			datacenter,
+			namespaceURL.String())
+		if err != nil {
+			return fmt.Errorf(
+				"failed to resolve namespace URL %q to UUID path: %w",
+				namespaceURL.String(), err)
+		}
+
+		uuidName := path.Base(uuidPath)
+		pathToDelete = strings.ReplaceAll(vmDirPath, vmDirName, uuidName)
+	}
+
+	return fastDeployDeleteDirectory(
+		ctx, logger, datacenter, fm, pathToDelete, tldSupported, nm, uuidPath)
 }

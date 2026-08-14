@@ -52,21 +52,29 @@ install() {
   if kms_is_green "gce2e-standard"; then
     echo "KMS provider gce2e-standard already green, skipping pykmip install"
   else
-    if [ ! -e "$crt_dir/pykmip-crt.pem" ] ; then
-      mkdir -p "$crt_dir"
-      openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
-              -subj "/C=US/ST=CA/L=PA/O=Broadcom/OU=VCF/CN=pykmip" \
-              -keyout "$crt_dir"/pykmip-key.pem -out "$crt_dir"/pykmip-crt.pem
-    fi
-
     if [ -n "$2" ]; then
       target="$1@$2"
       password=$3
 
-      sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
+      # Push install-pykmip.sh to the gateway. The script generates the TLS
+      # cert on the gateway itself (if not already present) rather than having
+      # each test-runner container generate its own. This makes the gateway the
+      # canonical cert source so all parallel containers fetch and register the
+      # same cert, preventing the race where two containers push different certs
+      # and one's kms.trust overwrites the other's while PyKMIP uses the cert
+      # from whichever restart happened last.
+      sshpass -p "$password" scp $SSH_OPTS "$script_dir"/install-pykmip.sh "$target":
       sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
         "PIP_INDEX_URL=${PIP_INDEX_URL:-} /bin/bash ./install-pykmip.sh" \
         || echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
+
+      # Fetch the cert the gateway generated so setup() can pass it to
+      # govc kms.trust. All parallel runners end up with the same file.
+      mkdir -p "$crt_dir"
+      sshpass -p "$password" scp $SSH_OPTS \
+        "$target":/root/pykmip-crt.pem "$crt_dir"/pykmip-crt.pem
+      sshpass -p "$password" scp $SSH_OPTS \
+        "$target":/root/pykmip-key.pem "$crt_dir"/pykmip-key.pem
     else
       echo "⚠ No gateway IP available — skipping pykmip install for gce2e-standard"
     fi

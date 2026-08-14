@@ -133,6 +133,12 @@ const (
 	// cluster-scoped WorkloadNetworkConfiguration singleton, which declares
 	// the network providers available on the cluster.
 	CapabilityKeyWorkloadNetworkConfiguration = "supports_workload_network_configuration"
+
+	// CapabilityKeyExtensionCompatConstraint is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the vpxd Safety Rails
+	// extension compatibility constraint mechanism. It gates VM Operator
+	// registering INVARIANT constraints on VMs it creates.
+	CapabilityKeyExtensionCompatConstraint = "supports_extension_compat_constraint"
 )
 
 var (
@@ -309,6 +315,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VirtualMachineConfigPolicy = capStatus.Activated
 		case CapabilityKeyWorkloadNetworkConfiguration:
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
+		case CapabilityKeyExtensionCompatConstraint:
+			fs.ExtensionCompatConstraint = capStatus.Activated
 		}
 
 	}

@@ -286,7 +286,49 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
 			})
 
-			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional"), func() {
+			It("should have expected condition when the published target item already exists in the content library", func() {
+				// Attach the target CL as writable — this test is self-sufficient and
+				// does not rely on the smoke test having run first.
+				if !tarLocationCLIsAttached {
+					Expect(wcpClient.AssociateImageRegistryContentLibrariesToNamespace(input.WCPNamespaceName, wcp.ContentLibrarySpec{
+						ContentLibrary: targetLocationCLID,
+						Writable:       true,
+					})).To(Succeed(), "failed to attach content library '%s' to namespace '%s'", targetLocationCLID, input.WCPNamespaceName)
+					tarLocationCLIsAttached = true
+				}
+
+				// Reset this before any error occurs below to ensure the CL will be deleted in AfterEach().
+				keepTargetLocationCLAttached = false
+
+				targetLocationK8sCLName, err := vmservice.GetK8sContentLibraryNameByUUID(ctx, config, svClusterClient, input.WCPNamespaceName, targetLocationCLID)
+				Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
+
+				// Publish the VM once so that the target item exists in the CL.
+				firstPubReqName := fmt.Sprintf("%s-first", vmPublishRequestName)
+				firstPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, firstPubReqName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
+				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, firstPubReqBuilder)
+				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, firstPubReqName, metav1.Condition{
+					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
+					Status: metav1.ConditionTrue,
+				})
+				DeferCleanup(func() {
+					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, firstPubReqName)
+					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, firstPubReqName)
+				})
+
+				// Now publish again with the same target item name — expect duplicate error.
+				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
+				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+
+				vmPubCondition := metav1.Condition{
+					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+					Status: metav1.ConditionFalse,
+					Reason: vmopv1.TargetItemAlreadyExistsReason,
+				}
+				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
+			})
+
+			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional", "experimental"), func() {
 				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
 
 				By("Attaching the target content library to the namespace as writable")
@@ -327,6 +369,12 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName)
 				})
+
+				// The source VM is deployed as a linked clone, and publishing it while
+				// VM Operator is still promoting its child disks makes the OVF capture
+				// contend with that promotion's XvMotion, which can exceed the publish
+				// request timeout.
+				vmoperator.WaitForVirtualMachineDiskPromotionSynced(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
 
 				By("Publishing the source VM to the target content library")
 				vAppPubReqName := fmt.Sprintf("%s-vapp", vmPublishRequestName)
@@ -522,7 +570,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				}
 			})
 
-			It("should compute the requestedCapacity annotation from the VM's actual used storage, not its provisioned disk size", Label("extended-functional"), func() {
+			It("should compute the requestedCapacity annotation from the VM's actual used storage, not its provisioned disk size", Label("extended-functional", "experimental"), func() {
 				// Labeling the target ContentLibrary opts the publish request into the async
 				// storage-quota check, normally driven by an external VCFA component. This lets
 				// us exercise the controller's capacity estimation (see checkContentLibraryQuota)

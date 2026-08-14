@@ -160,6 +160,11 @@ COPY --chmod=755 kubectl /usr/local/bin/kubectl
 #
 # mts (GID 201): the group that both vmoperator and svc-vdm_stage0 belong to,
 # required for writing test artifacts to the NFS log directory after chmod g+w.
+#
+# chmod 1777 /home: some callers run this container as a dynamic, non-static
+# UID rather than the "vmoperator" user, so $HOME resolves to
+# /home/<uid> — a directory that doesn't exist and, without this, isn't
+# creatable by an arbitrary UID.
 RUN groupadd -g 201 mts && \
     groupadd -g 1000 vmoperator && \
     groupadd -g 2001835 svc-vdm_stage0 && \
@@ -168,11 +173,18 @@ RUN groupadd -g 201 mts && \
     useradd -u 1000 -g vmoperator -G mts -m -s /bin/bash vmoperator && \
     echo "svc-vdm_stage0 ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers && \
     echo "vmoperator ALL=(svc-vdm_stage0) NOPASSWD:ALL" >> /etc/sudoers && \
-    sed -i '/Defaults requiretty/d' /etc/sudoers
+    sed -i '/Defaults requiretty/d' /etc/sudoers && \
+    chmod 1777 /home
 
 # Create directories
+#
+# group mts, mode 775: setup-testbed-env.sh's kubectl-vsphere install does
+# "curl -o vsphere-plugin.zip" relative to the CWD ($WORKDIR), which a
+# dynamic, non-static UID (in the mts group, not the named "vmoperator"
+# group) can't write to otherwise.
 RUN mkdir -p /vm-operator && \
-    chown vmoperator:vmoperator /vm-operator
+    chown vmoperator:mts /vm-operator && \
+    chmod 775 /vm-operator
 
 WORKDIR /vm-operator
 

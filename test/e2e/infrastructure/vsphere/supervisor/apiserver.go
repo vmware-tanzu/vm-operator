@@ -121,7 +121,10 @@ func GetControlPlaneVMConnectionDetails(ctx context.Context, path string, apiSer
 		return ControlPlaneVMConnectionDetails{}, fmt.Errorf("error running command over ssh: %w", err)
 	}
 
-	re := regexp.MustCompile(fmt.Sprintf("IP:\\s*%s\\nPWD:\\s*(.*)\\n", managementAPIServerIP))
+	// Dual-stack testbeds report this line as "IP: <ipv4>,<ipv6>" -- allow an
+	// optional ",<rest-of-line>" suffix after the IP we're matching so this
+	// still finds the entry on both single- and dual-stack testbeds.
+	re := regexp.MustCompile(fmt.Sprintf("IP:\\s*%s(?:,\\S*)?\\s*\\nPWD:\\s*(.*)\\n", regexp.QuoteMeta(managementAPIServerIP)))
 
 	matches := re.FindStringSubmatch(string(out))
 	if matches == nil {

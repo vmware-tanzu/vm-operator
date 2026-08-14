@@ -575,16 +575,26 @@ The following table lists the functions VM Operator defines and passes into the 
 
     Please note the template functions beginning with `V1alpha1` and `V1alpha2` are still supported, but users are encouraged to switch to the `V1alpha6` variants.
 
+!!! note "IPv4/IPv6 fallback and explicit family functions"
+
+    `V1alpha6_FirstIP`, `V1alpha6_FirstIPFromNIC`, and `V1alpha6_IPsFromNIC` prefer IPv4: if the target NIC has an IPv4 address, behavior is unchanged. If the NIC has no IPv4 address, they fall back to IPv6, preferring an address that is not link-local, loopback, or unspecified, but returning whatever IPv6 address is available (e.g. on a NIC that is intentionally link-local-only) rather than failing to parse the template. Callers that need a specific address family, with no fallback and no filtering, should use the explicit `V1alpha6_FirstIPv4`/`V1alpha6_FirstIPv6`/`V1alpha6_FirstIPv4FromNIC`/`V1alpha6_FirstIPv6FromNIC` functions instead, or index directly into `.V1alpha6.Net.Devices` (e.g. `(index .V1alpha6.Net.Devices 0).IPv6Addresses`) for the full, unfiltered list of a specific family. `V1alpha6_IsUsableIP` is available to filter addresses explicitly wherever needed. `V1alpha6_SubnetMask` and `V1alpha6_IP` remain IPv4-only and fail to parse the template if given IPv6 input; use `V1alpha6_PrefixLength` for a dual-stack-safe way to get a CIDR's network prefix length.
+
 | Query name | Signature | Description |
 | -------- | -------- | -------- |
-| V1alpha6_FirstIP | `func () string` | Get the first, non-loopback IP address (formatted with network length) from the first NIC. |
-| V1alpha6_FirstIPFromNIC | `func (index int) string` | Get the first, non-loopback IP address (formatted with network length) from the n'th NIC. If the specified index is out-of-bounds, the template string is not parsed. |
-| V1alpha6_FormatIP | `func (IP string, netmask string) string` | This function may be used to format an IP address with or without a network prefix length. If the provided netmask is empty, then the IP address returned does not include a network length. If the provided netmask is non-empty, then it must be either a length, ex. `/24`, or decimal notation, ex. `255.255.255.0`. |
+| V1alpha6_FirstIP | `func () (string, error)` | Get the first IP address (formatted with network length) from the first NIC, preferring IPv4 and falling back to IPv6 if the NIC has no IPv4 address. |
+| V1alpha6_FirstIPFromNIC | `func (index int) (string, error)` | Get the first IP address (formatted with network length) from the n'th NIC, preferring IPv4 and falling back to IPv6 if the NIC has no IPv4 address. If the specified index is out-of-bounds, the template string is not parsed. |
+| V1alpha6_FormatIP | `func (IP string, netmask string) (string, error)` | This function may be used to format an IP address with or without a network prefix length. If the provided netmask is empty, then the IP address returned does not include a network length. If the provided netmask is non-empty, then it must be either a length, ex. `/24`, or decimal notation, ex. `255.255.255.0`. |
 | V1alpha6_FirstNicMacAddr | `func() (string, error)` | Get the MAC address from the first NIC. |
-| V1alpha6_FormatNameservers| `func (count int, delimiter string) string` | Format the first occurred count of nameservers with the provided delimiter. Specify a negative number to include all nameservers. |
-| V1alpha6_IP | `func(IP string) string` | Format an IP address with the default netmask CIDR. If the specified IP is invalid, the template string is not parsed. |
-| V1alpha6_IPsFromNIC | `func (index int) []string` | List all IPs, formatted with the network length, from the n'th NIC. If the specified index is out-of-bounds, the template string is not parsed. |
-| V1alpha6_SubnetMask | `func(cidr string) (string, error)` | Get a subnet mask from an IP address formatted with a network length. |
+| V1alpha6_FormatNameservers| `func (count int, delimiter string) (string, error)` | Format the first occurred count of nameservers with the provided delimiter. Specify a negative number to include all nameservers. |
+| V1alpha6_IP | `func(IP string) (string, error)` | Format an IPv4 address with the default netmask CIDR. If the specified IP is invalid or is an IPv6 address, the template string is not parsed. |
+| V1alpha6_IPsFromNIC | `func (index int) ([]string, error)` | List all IPs, formatted with the network length, from the n'th NIC: its IPv4 addresses if it has any, otherwise its IPv6 addresses. If the specified index is out-of-bounds, the template string is not parsed. |
+| V1alpha6_SubnetMask | `func(cidr string) (string, error)` | Get a subnet mask from an IPv4 address formatted with a network length. If given an IPv6 CIDR, the template string is not parsed; use `V1alpha6_PrefixLength` instead. |
+| V1alpha6_FirstIPv4 | `func () (string, error)` | Get the first IPv4 address (formatted with network length) from the first NIC. Never falls back to IPv6; the template string is not parsed if the NIC has no IPv4 address. |
+| V1alpha6_FirstIPv6 | `func () (string, error)` | Get the first IPv6 address (formatted with network length) from the first NIC, unfiltered (may be link-local). Never falls back to IPv4; the template string is not parsed if the NIC has no IPv6 address. |
+| V1alpha6_FirstIPv4FromNIC | `func (index int) (string, error)` | Get the first IPv4 address (formatted with network length) from the n'th NIC. Never falls back to IPv6. If the specified index is out-of-bounds or the NIC has no IPv4 address, the template string is not parsed. |
+| V1alpha6_FirstIPv6FromNIC | `func (index int) (string, error)` | Get the first IPv6 address (formatted with network length) from the n'th NIC, unfiltered (may be link-local). Never falls back to IPv4. If the specified index is out-of-bounds or the NIC has no IPv6 address, the template string is not parsed. |
+| V1alpha6_IsUsableIP | `func (ip string) bool` | Report whether an IP address (bare or CIDR) is usable off the local link, i.e. not unspecified, loopback, or link-local (unicast or multicast). Works for either address family. Unparsable input reports `false` rather than failing to parse the template. |
+| V1alpha6_PrefixLength | `func (cidr string) (int, error)` | Get the numeric network prefix length (e.g. `24` or `64`) from an IPv4 or IPv6 CIDR. The dual-stack-safe alternative to `V1alpha6_SubnetMask`. |
 
 ## Deprecated
 

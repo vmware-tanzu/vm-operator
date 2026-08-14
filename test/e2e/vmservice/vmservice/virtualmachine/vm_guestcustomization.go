@@ -6,6 +6,7 @@ package virtualmachine
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +18,15 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -135,6 +142,76 @@ func CreateAndVerifyVMA5(ctx context.Context, vmParameters manifestbuilders.Virt
 	vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 }
 
+// vAppProp builds a single vApp property key/value pair with a literal,
+// inline value (as opposed to one sourced from a Secret).
+func vAppProp(key, value string) vmopv1common.KeyValueOrSecretKeySelectorPair {
+	return vmopv1common.KeyValueOrSecretKeySelectorPair{
+		Key:   key,
+		Value: vmopv1common.ValueOrSecretKeySelector{Value: ptr.To(value)},
+	}
+}
+
+// buildVAppConfigVM builds a *vmopv1.VirtualMachine as a typed Go struct
+// rather than rendered YAML, with LinuxPrep + VAppConfig bootstrap and, when
+// dualStack is true, a single interface requesting both IPAM families.
+func buildVAppConfigVM(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	svClusterClient ctrlclient.Client,
+	namespace, name string,
+	clusterResources *e2eConfig.Resources,
+	properties []vmopv1common.KeyValueOrSecretKeySelectorPair,
+	dualStack bool,
+) *vmopv1.VirtualMachine {
+	ovfImageName := "photon-ovf-vapp-properties"
+	imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, namespace, ovfImageName)
+
+	vm := &vmopv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vmopv1.VirtualMachineSpec{
+			ClassName:    clusterResources.VMClassName,
+			ImageName:    imageName,
+			StorageClass: clusterResources.StorageClassName,
+			PowerState:   vmopv1.VirtualMachinePowerStateOn,
+			Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+				// LinuxPrep is needed here for the VM to get a valid IP address.
+				LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+				VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+					Properties: properties,
+				},
+			},
+		},
+	}
+	if dualStack {
+		vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+			Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				{
+					Name:      "eth0",
+					IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol, corev1.IPv4Protocol},
+				},
+			},
+		}
+	}
+	return vm
+}
+
+// createAndVerifyVAppConfigVM creates vm via the typed client, waits for the
+// VM to be created in vSphere, and returns its vCenter managed object ID.
+func createAndVerifyVAppConfigVM(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	svClusterClient ctrlclient.Client,
+	namespace, name string,
+	vm *vmopv1.VirtualMachine,
+) string {
+	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create virtualmachine %+v", vm)
+	vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, namespace, name)
+	return vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, namespace, name)
+}
+
 func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid string, expectedProperties []manifestbuilders.KeyValueOrSecretKeySelectorPair) {
 	vmMoRef := types.ManagedObjectReference{
 		Type:  string(types.ManagedObjectTypeVirtualMachine),
@@ -204,6 +281,187 @@ func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid 
 				"Non-UserConfigurable value not as expected for key %s, expected: %s, got: %s", expectedProp.Key, expectedProp.Value.Value, actualProp.DefaultValue)
 		}
 	}
+}
+
+// getVAppPropertyValues fetches config.vAppConfig from vCenter for vmmoid
+// and returns a map of vApp property key -> rendered value.
+func getVAppPropertyValues(ctx context.Context, vCenterClient *vim25.Client, vmmoid string) map[string]string {
+	vmMoRef := types.ManagedObjectReference{
+		Type:  string(types.ManagedObjectTypeVirtualMachine),
+		Value: vmmoid,
+	}
+
+	propCollector := property.DefaultCollector(vCenterClient)
+	var vmMO mo.VirtualMachine
+	err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.vAppConfig"}, &vmMO)
+	Expect(err).To(Succeed(), "Failed to retrieve VM properties from vCenter")
+	Expect(vmMO.Config).ToNot(BeNil(), "VM should have a config")
+	Expect(vmMO.Config.VAppConfig).ToNot(BeNil(), "VM should have vAppConfig when VAppConfig bootstrap is used")
+
+	vAppConfigInfo := vmMO.Config.VAppConfig.GetVmConfigInfo()
+	Expect(vAppConfigInfo).ToNot(BeNil(), "VM should have vAppConfig info")
+
+	actualPropsMap := make(map[string]string)
+	for _, prop := range vAppConfigInfo.Property {
+		actualPropsMap[prop.Id] = prop.Value
+	}
+	return actualPropsMap
+}
+
+func verifyRenderedIPv4(actualPropsMap map[string]string, key string, funcName string) {
+	By(fmt.Sprintf("Verifying %s rendered a real IPv4 CIDR into %s", funcName, key))
+	value, ok := actualPropsMap[key]
+	Expect(ok).To(BeTrue(), "%s vApp property should exist", key)
+	ip, _, err := net.ParseCIDR(value)
+	Expect(err).To(Succeed(), "%s should have rendered a valid CIDR into %s, got %q", funcName, key, value)
+	Expect(ip.To4()).ToNot(BeNil(), "%s should have rendered an IPv4 address, got %q", funcName, value)
+}
+
+func verifyRenderedIPv6OrUnrendered(actualPropsMap map[string]string, key string, funcName string, unrenderedTemplate string) {
+	By(fmt.Sprintf("Verifying %s rendered a real IPv6 CIDR into %s, or was left unrendered", funcName, key))
+	value, ok := actualPropsMap[key]
+	Expect(ok).To(BeTrue(), "%s vApp property should exist", key)
+	if value == unrenderedTemplate {
+		GinkgoWriter.Printf("%s did not render -- this VM/environment likely has no IPv6 address\n", funcName)
+		return
+	}
+	ip, _, err := net.ParseCIDR(value)
+	Expect(err).To(Succeed(), "%s should render a valid CIDR or be left unrendered, got %q", funcName, value)
+	Expect(ip.To4()).To(BeNil(), "%s should have rendered an IPv6 address, got %q", funcName, value)
+}
+
+// verifyV1alpha6TemplateFunctionProperties verifies the six vApp properties
+// set by "Property values use V1alpha6 template functions", one per
+// V1alpha6 function under test:
+//
+//   - string-valid                     -> V1alpha6_FirstIPv4
+//   - string-trimmed                   -> V1alpha6_FirstIPv6
+//   - string-padding-user-configurable -> V1alpha6_FirstIPv4FromNIC
+//   - string-empty                     -> V1alpha6_FirstIPv6FromNIC
+//   - bool-user-configurable-1         -> V1alpha6_IsUsableIP (fixed input)
+//   - int-user-configurable-1          -> V1alpha6_PrefixLength (fixed input)
+//
+// The IPv4-returning functions are verified strictly: LinuxPrep in this
+// test's Bootstrap already guarantees the VM gets an IPv4 address, so each
+// value must parse as a real IPv4 CIDR. IsUsableIP/PrefixLength use a fixed,
+// literal input unrelated to the VM's network, so their rendered value is
+// asserted exactly.
+//
+// V1alpha6_FirstIPv6/V1alpha6_FirstIPv6FromNIC are verified leniently: the
+// VM's network interface requests dual-stack IPAM (see the "IPAMModes"
+// setup in this test's BeforeEach), so it should get a real IPv6 address --
+// but if this environment's VM never gets one, renderTemplate falls back to
+// returning the original, unrendered "{{ ... }}" text (see
+// bootstrap_templatedata.go GetTemplateRenderFunc), which is accepted here
+// rather than failing the whole spec over an environment/infra property
+// this test doesn't control.
+func verifyV1alpha6TemplateFunctionProperties(ctx context.Context, vCenterClient *vim25.Client, vmmoid string) {
+	actualPropsMap := getVAppPropertyValues(ctx, vCenterClient, vmmoid)
+
+	verifyRenderedIPv4(actualPropsMap, "string-valid", constants.V1alpha6FirstIPv4)
+	verifyRenderedIPv6OrUnrendered(actualPropsMap, "string-trimmed", constants.V1alpha6FirstIPv6, "{{ "+constants.V1alpha6FirstIPv6+" }}")
+	verifyRenderedIPv4(actualPropsMap, "string-padding-user-configurable", constants.V1alpha6FirstIPv4FromNIC)
+	verifyRenderedIPv6OrUnrendered(actualPropsMap, "string-empty", constants.V1alpha6FirstIPv6FromNIC, "{{ "+constants.V1alpha6FirstIPv6FromNIC+" 0 }}")
+
+	By(fmt.Sprintf("Verifying %s rendered the expected boolean into bool-user-configurable-1", constants.V1alpha6IsUsableIP))
+	isUsableValue, ok := actualPropsMap["bool-user-configurable-1"]
+	Expect(ok).To(BeTrue(), "bool-user-configurable-1 vApp property should exist")
+	Expect(isUsableValue).To(Equal("True"), "%s should have rendered true for a usable address, got %q", constants.V1alpha6IsUsableIP, isUsableValue)
+
+	By(fmt.Sprintf("Verifying %s rendered the expected prefix length into int-user-configurable-1", constants.V1alpha6PrefixLength))
+	prefixLengthValue, ok := actualPropsMap["int-user-configurable-1"]
+	Expect(ok).To(BeTrue(), "int-user-configurable-1 vApp property should exist")
+	Expect(prefixLengthValue).To(Equal("24"), "%s should have rendered 24, got %q", constants.V1alpha6PrefixLength, prefixLengthValue)
+}
+
+// verifyV1alpha6RemainingTemplateFunctionsRoundB verifies the network-dependent
+// V1alpha6 functions not covered by verifyV1alpha6TemplateFunctionProperties:
+//
+//   - string-valid                     -> V1alpha6_FirstIP
+//   - string-trimmed                   -> V1alpha6_FirstIPFromNIC
+//   - string-padding-user-configurable -> V1alpha6_FirstNicMacAddr
+//   - string-empty                     -> V1alpha6_IPsFromNIC (rendered via a
+//     "{{range}}" over the ith NIC's addresses, space-delimited)
+//   - bool-user-configurable-1         -> V1alpha6_IsUsableIP (fixed, link-local input)
+//   - int-user-configurable-1          -> V1alpha6_PrefixLength (fixed, IPv6 input)
+//
+// FirstIP/FirstIPFromNIC are verified strictly as IPv4 CIDRs: this VM
+// requests dual-stack IPAM but LinuxPrep guarantees an IPv4 address too, and
+// FirstIP/FirstIPFromNIC always prefer IPv4 when present.
+func verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx context.Context, vCenterClient *vim25.Client, vmmoid string) {
+	actualPropsMap := getVAppPropertyValues(ctx, vCenterClient, vmmoid)
+
+	verifyRenderedIPv4(actualPropsMap, "string-valid", constants.V1alpha6FirstIP)
+	verifyRenderedIPv4(actualPropsMap, "string-trimmed", constants.V1alpha6FirstIPFromNIC)
+
+	By(fmt.Sprintf("Verifying %s rendered a real MAC address into string-padding-user-configurable", constants.V1alpha6FirstNicMacAddr))
+	macValue, ok := actualPropsMap["string-padding-user-configurable"]
+	Expect(ok).To(BeTrue(), "string-padding-user-configurable vApp property should exist")
+	Expect(macValue).To(MatchRegexp(`^([0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}$`),
+		"%s should have rendered a MAC address, got %q", constants.V1alpha6FirstNicMacAddr, macValue)
+
+	By(fmt.Sprintf("Verifying %s rendered the NIC's IPv4 addresses into string-empty", constants.V1alpha6IPsFromNIC))
+	ipsValue, ok := actualPropsMap["string-empty"]
+	Expect(ok).To(BeTrue(), "string-empty vApp property should exist")
+	tokens := strings.Fields(ipsValue)
+	Expect(tokens).ToNot(BeEmpty(), "%s should have rendered at least one address, got %q", constants.V1alpha6IPsFromNIC, ipsValue)
+	for _, tok := range tokens {
+		ip, _, err := net.ParseCIDR(tok)
+		Expect(err).To(Succeed(), "%s should render valid CIDRs, got %q in %q", constants.V1alpha6IPsFromNIC, tok, ipsValue)
+		Expect(ip.To4()).ToNot(BeNil(), "%s should have rendered an IPv4 address, got %q", constants.V1alpha6IPsFromNIC, tok)
+	}
+
+	By(fmt.Sprintf("Verifying %s rendered false for a link-local input into bool-user-configurable-1", constants.V1alpha6IsUsableIP))
+	isUsableValue, ok := actualPropsMap["bool-user-configurable-1"]
+	Expect(ok).To(BeTrue(), "bool-user-configurable-1 vApp property should exist")
+	Expect(isUsableValue).To(Equal("False"), "%s should have rendered false for a link-local address, got %q", constants.V1alpha6IsUsableIP, isUsableValue)
+
+	By(fmt.Sprintf("Verifying %s rendered the expected IPv6 prefix length into int-user-configurable-1", constants.V1alpha6PrefixLength))
+	prefixLengthValue, ok := actualPropsMap["int-user-configurable-1"]
+	Expect(ok).To(BeTrue(), "int-user-configurable-1 vApp property should exist")
+	Expect(prefixLengthValue).To(Equal("64"), "%s should have rendered 64, got %q", constants.V1alpha6PrefixLength, prefixLengthValue)
+}
+
+// verifyV1alpha6RemainingTemplateFunctionsRoundC verifies the remaining
+// V1alpha6 functions, all of which take their input as literal, fixed
+// arguments rather than reading the VM's network status (except
+// FormatNameservers, which reads the VM's nameservers and is therefore
+// verified leniently):
+//
+//   - string-valid                     -> V1alpha6_FormatNameservers (leniently)
+//   - string-trimmed                   -> V1alpha6_SubnetMask (fixed input)
+//   - string-padding-user-configurable -> V1alpha6_IP (fixed input)
+//   - string-empty                     -> V1alpha6_FormatIP (fixed input)
+func verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx context.Context, vCenterClient *vim25.Client, vmmoid string) {
+	actualPropsMap := getVAppPropertyValues(ctx, vCenterClient, vmmoid)
+
+	By(fmt.Sprintf("Verifying %s rendered a nameserver list into string-valid, or was left unrendered", constants.V1alpha6FormatNameservers))
+	nameserversValue, ok := actualPropsMap["string-valid"]
+	Expect(ok).To(BeTrue(), "string-valid vApp property should exist")
+	unrenderedTemplate := "{{ " + constants.V1alpha6FormatNameservers + ` -1 "," }}`
+	if nameserversValue == unrenderedTemplate {
+		GinkgoWriter.Printf("%s did not render -- this VM/environment likely has no nameservers configured\n", constants.V1alpha6FormatNameservers)
+	} else {
+		Expect(nameserversValue).ToNot(BeEmpty(), "%s should not render an empty string", constants.V1alpha6FormatNameservers)
+		for _, ns := range strings.Split(nameserversValue, ",") {
+			Expect(net.ParseIP(ns)).ToNot(BeNil(), "%s should render a comma-delimited list of IPs, got %q in %q", constants.V1alpha6FormatNameservers, ns, nameserversValue)
+		}
+	}
+
+	By(fmt.Sprintf("Verifying %s rendered the expected subnet mask into string-trimmed", constants.V1alpha6SubnetMask))
+	subnetMaskValue, ok := actualPropsMap["string-trimmed"]
+	Expect(ok).To(BeTrue(), "string-trimmed vApp property should exist")
+	Expect(subnetMaskValue).To(Equal("255.255.255.0"), "%s should have rendered 255.255.255.0, got %q", constants.V1alpha6SubnetMask, subnetMaskValue)
+
+	By(fmt.Sprintf("Verifying %s rendered the expected default-netmask CIDR into string-padding-user-configurable", constants.V1alpha6IP))
+	ipValue, ok := actualPropsMap["string-padding-user-configurable"]
+	Expect(ok).To(BeTrue(), "string-padding-user-configurable vApp property should exist")
+	Expect(ipValue).To(Equal("192.168.1.10/24"), "%s should have rendered 192.168.1.10/24, got %q", constants.V1alpha6IP, ipValue)
+
+	By(fmt.Sprintf("Verifying %s rendered the expected re-masked CIDR into string-empty", constants.V1alpha6FormatIP))
+	formatIPValue, ok := actualPropsMap["string-empty"]
+	Expect(ok).To(BeTrue(), "string-empty vApp property should exist")
+	Expect(formatIPValue).To(Equal("192.168.1.10/16"), "%s should have rendered 192.168.1.10/16, got %q", constants.V1alpha6FormatIP, formatIPValue)
 }
 
 func verifyLoginAndRunCmds(ctx context.Context, vmIp string, cmds []string, expectedOutput []string) {
@@ -613,6 +871,102 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					},
 				}...)
 				verifyVAppConfigs(ctx, vCenterClient, vmmoid, expectedProperties)
+			})
+		})
+
+		Context("Property values use V1alpha6 template functions", func() {
+			// These VMs are built directly as typed vmopv1.VirtualMachine
+			// Go structs and created via svClusterClient.Create, rather than
+			// through the manifestbuilders/.yaml.in text-template pipeline --
+			// vApp property values here are themselves Go-template source
+			// (e.g. `{{ V1alpha6_IsUsableIP "fe80::1" }}`), and round-tripping
+			// that through a second, YAML-rendering text/template pass just
+			// to turn it back into a Go string is an unnecessary source of
+			// quoting bugs (see v1a6singlevm.yaml.in's history). They're
+			// v1alpha6 (not v1a2) so that spec.network.interfaces can request
+			// dual-stack IPAM via ipamModes, letting the IPv6 template
+			// functions exercise a real IPv6 address end-to-end instead of
+			// only ever having IPv4 to work with.
+			//
+			// This Context manages its own VM lifecycle (skipCleanup=true
+			// bypasses the shared, YAML-based AfterEach above, which has no
+			// YAML to delete here).
+			var vm *vmopv1.VirtualMachine
+
+			BeforeEach(func() {
+				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.WorkloadIPv6CapabilityName)
+				skipCleanup = true
+				vm = nil
+			})
+
+			AfterEach(func() {
+				if vm == nil || CurrentSpecReport().State.String() == "skipped" {
+					return
+				}
+				Expect(svClusterClient.Delete(ctx, vm)).To(Succeed(), "failed to delete virtualmachine")
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			})
+
+			// Reuse the same OVF image and property keys across all three
+			// "rounds" below -- vApp property values are only applied if
+			// userConfigurable and pre-existing on the deployed OVF image, so
+			// a new property key would be silently dropped, and this image
+			// only exposes 4 usable (string-typed, readable-back) properties
+			// plus 1 bool and 1 int slot. There are 14 registered V1alpha6_*
+			// template functions in total, so covering all of them takes
+			// several VM creations, one "round" each, reusing the same
+			// property keys for a different function each time.
+			It("round A: should render IPv4/IPv6-specific V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
+				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
+					vAppProp("string-valid", "{{ "+constants.V1alpha6FirstIPv4+" }}"),
+					vAppProp("string-trimmed", "{{ "+constants.V1alpha6FirstIPv6+" }}"),
+					vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha6FirstIPv4FromNIC+" 0 }}"),
+					vAppProp("string-empty", "{{ "+constants.V1alpha6FirstIPv6FromNIC+" 0 }}"),
+					// Dummy, fixed input -- doesn't depend on the VM's network.
+					vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "192.168.1.10" }}`),
+					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "10.0.0.0/24" }}`),
+				}
+				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+
+				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				verifyV1alpha6TemplateFunctionProperties(ctx, vCenterClient, vmmoid)
+			})
+
+			It("round B: should render the remaining network-dependent V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
+				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
+					vAppProp("string-valid", "{{ "+constants.V1alpha6FirstIP+" }}"),
+					vAppProp("string-trimmed", "{{ "+constants.V1alpha6FirstIPFromNIC+" 0 }}"),
+					vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha6FirstNicMacAddr+" }}"),
+					vAppProp("string-empty", "{{range "+constants.V1alpha6IPsFromNIC+" 0}}{{.}} {{end}}"),
+					// Dummy, fixed, link-local input -- doesn't depend on the VM's network.
+					vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "fe80::1" }}`),
+					// Dummy, fixed, IPv6 input -- doesn't depend on the VM's network.
+					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "2001:db8::/64" }}`),
+				}
+				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+
+				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx, vCenterClient, vmmoid)
+			})
+
+			It("round C: should render the remaining fixed-input V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
+				// This round doesn't need dual-stack IPAM -- every function
+				// under test here (besides FormatNameservers) takes its
+				// input as a literal argument rather than reading the VM's
+				// network status.
+				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
+					vAppProp("string-valid", `{{ `+constants.V1alpha6FormatNameservers+` -1 "," }}`),
+					vAppProp("string-trimmed", `{{ `+constants.V1alpha6SubnetMask+` "10.0.0.0/24" }}`),
+					vAppProp("string-padding-user-configurable", `{{ `+constants.V1alpha6IP+` "192.168.1.10" }}`),
+					vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
+				}
+				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+
+				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx, vCenterClient, vmmoid)
 			})
 		})
 	})

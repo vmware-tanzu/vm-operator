@@ -144,6 +144,70 @@ var _ = Describe("CreateConfigSpec", func() {
 			})
 		})
 
+		When("ExtensionCompatConstraint capability is disabled", func() {
+			It("does not set the extension compatibility constraint", func() {
+				Expect(configSpec.ExtensionCompatibilityConstraint).To(BeNil())
+			})
+
+			When("the incoming ConfigSpec already has a constraint set", func() {
+				BeforeEach(func() {
+					classConfigSpec.ExtensionCompatibilityConstraint = &vimtypes.VirtualMachineExtensionCompatibilityConstraintSet{
+						Constraint: []vimtypes.VirtualMachineExtensionCompatibilityConstraint{
+							{
+								ConstraintName: "stale-invariant",
+								ConstraintType: string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypePOOL),
+								ConstraintKind: string(vimtypes.VirtualMachineExtensionCompatibilityConstraintKindINVARIANT),
+							},
+						},
+					}
+				})
+
+				It("wipes out the existing extension compatibility constraint", func() {
+					Expect(configSpec.ExtensionCompatibilityConstraint).To(BeNil())
+				})
+			})
+		})
+
+		When("ExtensionCompatConstraint capability is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.ExtensionCompatConstraint = true
+				})
+			})
+
+			It("embeds the 6 INVARIANT extension compatibility constraints", func() {
+				Expect(configSpec.ExtensionCompatibilityConstraint).ToNot(BeNil())
+
+				constraints := configSpec.ExtensionCompatibilityConstraint.Constraint
+				Expect(constraints).To(HaveLen(6))
+
+				byType := map[string]vimtypes.VirtualMachineExtensionCompatibilityConstraint{}
+				for _, c := range constraints {
+					Expect(c.ConstraintKind).To(Equal(string(vimtypes.VirtualMachineExtensionCompatibilityConstraintKindINVARIANT)))
+					byType[c.ConstraintType] = c
+				}
+
+				Expect(byType).To(HaveKeyWithValue(
+					string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeSERVICE),
+					HaveField("ConstraintName", "svc-invariant")))
+				Expect(byType).To(HaveKeyWithValue(
+					string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeFOLDER),
+					HaveField("ConstraintName", "folder-invariant")))
+				Expect(byType).To(HaveKeyWithValue(
+					string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypePOOL),
+					HaveField("ConstraintName", "pool-invariant")))
+				Expect(byType).To(HaveKeyWithValue(
+					string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeVM_STORAGE_POLICY),
+					HaveField("ConstraintName", "vm-policy-invariant")))
+				Expect(byType).To(HaveKeyWithValue(
+					string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeDISK_STORAGE_POLICY),
+					HaveField("ConstraintName", "disk-policy-invariant")))
+				Expect(byType).To(HaveKeyWithValue(
+					string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeDEVICE),
+					HaveField("ConstraintName", "device-invariant")))
+			})
+		})
+
 		When("VM has no bios or instance uuid", func() {
 			BeforeEach(func() {
 				vm.Spec.InstanceUUID = ""

@@ -127,6 +127,56 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 
+// WaitForVirtualMachineDiskPromotionSynced waits until the VirtualMachine has
+// no disk promotion in flight.
+//
+// VMs deployed via fast deploy start life as linked clones, and VM Operator
+// then promotes the child disks in the background. In Online mode that
+// promotion is an XvMotion that migrates the VM's active state, so any
+// operation that reads the VM's disks — publishing it as an OVF, inspecting
+// its file layout — contends with the promotion and can block behind it for
+// minutes. Call this before starting such an operation.
+//
+// A missing VirtualMachineDiskPromotionSynced condition means no promotion is
+// in flight, so this returns rather than waiting. The condition is only ever
+// set by the diskpromo reconciler, which VM Operator registers solely when the
+// FastDeploy feature is enabled, and which removes the condition outright when
+// the VM sets spec.promoteDisksMode to Disabled. Requiring the condition to be
+// present would therefore hang for the full interval on any testbed without
+// FastDeploy, where there is no linked clone to promote in the first place.
+// This is also why WaitOnVirtualMachineCondition is not reused here: it
+// asserts the condition exists.
+//
+// Note this keys off the condition rather than spec.promoteDisksMode. The
+// reconciler checks for a running promotion task before it checks the mode, so
+// a VM switched to Disabled mid-promotion still reports the condition as False
+// until that task finishes; reading the mode would proceed while the promotion
+// is still running.
+func WaitForVirtualMachineDiskPromotionSynced(ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client, ns, vmName string) {
+	By("Waiting for any VirtualMachine disk promotion to complete")
+
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+		if err != nil {
+			e2eframework.Logf("retry waiting for disk promotion: %v", err)
+			g.Expect(err).ToNot(HaveOccurred())
+			return
+		}
+
+		cond := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced)
+		if cond == nil {
+			// Disk promotion is not in play for this VM.
+			return
+		}
+
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
+			"VirtualMachineDiskPromotionSynced is %s (%s): %s", cond.Status, cond.Reason, cond.Message)
+	}, config.GetIntervals("default", "wait-virtual-machine-disk-promotion")...).
+		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s disk promotion to complete", ns, vmName)
+}
+
 // WaitForVirtualMachineStatusClassUpdated waits for the VM Status to
 // report the expected class name.
 func WaitForVirtualMachineStatusClassUpdated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, className string) {

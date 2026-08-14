@@ -1968,7 +1968,16 @@ func (v validator) validateSharedVolumesOrControllers(
 
 	// Rule 2 -- If the PVC is shared then the volume or controller must be
 	//           shared.
-	if pvcShared && !volShared && !controllerShared {
+	//
+	// Skip this check until a controller has actually been assigned to the
+	// volume (vol.ControllerType != ""). Controller placement is computed
+	// by the mutation webhook only after schema-upgrade backfill has
+	// populated spec.hardware.*Controllers from the VM's real,
+	// already-created state, so an unset ControllerType means placement is
+	// still pending, not invalid. Once a controller has been assigned,
+	// this rule still applies -- e.g. the user explicitly referenced an
+	// existing, non-shared controller.
+	if pvcShared && !volShared && vol.ControllerType != "" && !controllerShared {
 		allErrs = append(allErrs,
 			field.Invalid(
 				volPath.Child("sharingMode"),

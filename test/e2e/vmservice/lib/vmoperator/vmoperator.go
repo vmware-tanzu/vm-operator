@@ -130,28 +130,17 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 // WaitForVirtualMachineDiskPromotionSynced waits until the VirtualMachine has
 // no disk promotion in flight.
 //
-// VMs deployed via fast deploy start life as linked clones, and VM Operator
-// then promotes the child disks in the background. In Online mode that
-// promotion is an XvMotion that migrates the VM's active state, so any
-// operation that reads the VM's disks — publishing it as an OVF, inspecting
-// its file layout — contends with the promotion and can block behind it for
-// minutes. Call this before starting such an operation.
+// A missing condition is treated as "nothing in flight", not "keep waiting":
+// it only exists once the diskpromo reconciler runs (gated behind the
+// FastDeploy feature) and is deleted when promoteDisksMode is Disabled, so
+// requiring it to be present would hang the full interval on a testbed
+// without FastDeploy. This is why WaitOnVirtualMachineCondition, which
+// asserts the condition exists, isn't reused here.
 //
-// A missing VirtualMachineDiskPromotionSynced condition means no promotion is
-// in flight, so this returns rather than waiting. The condition is only ever
-// set by the diskpromo reconciler, which VM Operator registers solely when the
-// FastDeploy feature is enabled, and which removes the condition outright when
-// the VM sets spec.promoteDisksMode to Disabled. Requiring the condition to be
-// present would therefore hang for the full interval on any testbed without
-// FastDeploy, where there is no linked clone to promote in the first place.
-// This is also why WaitOnVirtualMachineCondition is not reused here: it
-// asserts the condition exists.
-//
-// Note this keys off the condition rather than spec.promoteDisksMode. The
-// reconciler checks for a running promotion task before it checks the mode, so
-// a VM switched to Disabled mid-promotion still reports the condition as False
-// until that task finishes; reading the mode would proceed while the promotion
-// is still running.
+// The condition is checked rather than spec.promoteDisksMode directly because
+// the reconciler defers to a running task before it looks at the mode, so a
+// VM switched to Disabled mid-promotion still reports False until that task
+// finishes.
 func WaitForVirtualMachineDiskPromotionSynced(ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client, ns, vmName string) {
@@ -167,7 +156,6 @@ func WaitForVirtualMachineDiskPromotionSynced(ctx context.Context,
 
 		cond := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced)
 		if cond == nil {
-			// Disk promotion is not in play for this VM.
 			return
 		}
 

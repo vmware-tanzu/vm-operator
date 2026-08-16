@@ -12,6 +12,10 @@
 #
 # Environment variable overrides:
 #   RESULTSDIR   Default output directory when --output-dir is not passed.
+#
+# This is a best-effort diagnostic step, not a test: any runtime failure to
+# obtain or download a bundle exits 0 so it never fails the caller's
+# pipeline. Only invocation errors (bad/missing flags) exit non-zero.
 
 set -uo pipefail
 
@@ -23,6 +27,14 @@ _err()  { echo "[${SCRIPT_NAME}] ERROR: $*" >&2; }
 TESTBED_INFO_JSON=""
 TESTBED_BLOB_URL=""
 OUTPUT_DIR="${RESULTSDIR:-/tmp/support-bundles}"
+
+# WCP allows only one support-bundle generation in flight per supervisor/
+# cluster; a request made while another is running fails until it completes.
+# Multiple pipelines (or multiple test suites within one pipeline) can now
+# collect bundles from the same VC around the same time, so retry on failure
+# instead of giving up immediately. ~10 minutes of total wait by default.
+SUPPORT_BUNDLE_RETRY_ATTEMPTS="${SUPPORT_BUNDLE_RETRY_ATTEMPTS:-20}"
+SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS="${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS:-30}"
 
 usage() {
     cat >&2 <<EOF
@@ -60,9 +72,9 @@ if [[ -n "${TESTBED_BLOB_URL}" ]]; then
     TESTBED_TMP="$(mktemp /tmp/testbedInfo.XXXXXX.json)"
     _raw_tmp="$(mktemp /tmp/testbedInfo-raw.XXXXXX.json)"
     if ! curl -sf "${TESTBED_BLOB_URL}" -o "${_raw_tmp}"; then
-        _err "Failed to fetch testbedInfo from ${TESTBED_BLOB_URL}"
+        _warn "Failed to fetch testbedInfo from ${TESTBED_BLOB_URL}; skipping WCP bundle"
         rm -f "${_raw_tmp}"
-        exit 1
+        exit 0
     fi
     # Unwrap deliverable_blob if present (UTS test_blob API format); otherwise
     # the URL points directly to the raw testbedInfo.json in the logs directory.
@@ -74,7 +86,7 @@ if [[ -n "${TESTBED_BLOB_URL}" ]]; then
     rm -f "${_raw_tmp}"
     TESTBED_INFO_JSON="${TESTBED_TMP}"
 elif [[ -n "${TESTBED_INFO_JSON}" ]]; then
-    [[ -f "${TESTBED_INFO_JSON}" ]] || { _err "File not found: ${TESTBED_INFO_JSON}"; exit 1; }
+    [[ -f "${TESTBED_INFO_JSON}" ]] || { _warn "File not found: ${TESTBED_INFO_JSON}; skipping WCP bundle"; exit 0; }
 else
     _err "Either --testbed-info-json or --testbed-blob-url is required"
     usage; exit 1
@@ -111,8 +123,8 @@ IFS=$'\t' read -r VC_IP VC_VIM_USER VC_VIM_PWD < <(_jq '
 ')
 
 if [[ -z "${VC_IP}" || -z "${VC_VIM_USER}" || -z "${VC_VIM_PWD}" ]]; then
-    _err "Could not extract VC IP or vim credentials from testbedInfo.json"
-    exit 1
+    _warn "Could not extract VC IP or vim credentials from testbedInfo.json; skipping WCP bundle"
+    exit 0
 fi
 
 _log "Collecting WCP support bundle from VC ${VC_IP}..."
@@ -137,6 +149,35 @@ BUNDLE_URL=""
 BUNDLE_TOKEN=""
 
 # ---------------------------------------------------------------------------
+# Request a support bundle, retrying while another collection is already in
+# progress on this VC. Prints the response body on success (HTTP 2xx and a
+# recognizable bundle field); returns non-zero once retries are exhausted.
+# ---------------------------------------------------------------------------
+request_support_bundle() {
+    local url="$1"
+    local attempt=1 response http_code body
+
+    while (( attempt <= SUPPORT_BUNDLE_RETRY_ATTEMPTS )); do
+        response=$(curl -sk -w '\n%{http_code}' --max-time 30 -X POST \
+            -H "vmware-api-session-id: ${VC_SESSION}" "${url}")
+        http_code=$(printf '%s' "${response}" | tail -1)
+        body=$(printf '%s' "${response}" | sed '$d')
+
+        if [[ "${http_code}" == "20"* ]] && printf '%s' "${body}" | jq -e '.url // .support_bundle_token // empty' >/dev/null 2>&1; then
+            printf '%s' "${body}"
+            return 0
+        fi
+
+        _warn "Support bundle request attempt ${attempt}/${SUPPORT_BUNDLE_RETRY_ATTEMPTS} on ${VC_IP} did not return a bundle (HTTP ${http_code}); another collection may be in progress. Retrying in ${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}s..."
+        sleep "${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}"
+        ((attempt++))
+    done
+
+    _warn "Gave up requesting a support bundle from ${VC_IP} after ${SUPPORT_BUNDLE_RETRY_ATTEMPTS} attempts"
+    return 1
+}
+
+# ---------------------------------------------------------------------------
 # v2 API: supervisors endpoint (vSphere 8.0+)
 # ---------------------------------------------------------------------------
 SUPERVISOR_ID=$(curl -sk --max-time 30 -H "vmware-api-session-id: ${VC_SESSION}" \
@@ -145,9 +186,7 @@ SUPERVISOR_ID=$(curl -sk --max-time 30 -H "vmware-api-session-id: ${VC_SESSION}"
 
 if [[ -n "${SUPERVISOR_ID}" ]]; then
     _log "Getting WCP bundle for supervisor ${SUPERVISOR_ID} (v2 API)..."
-    BUNDLE_INFO=$(curl -sk --max-time 30 -X POST \
-        -H "vmware-api-session-id: ${VC_SESSION}" \
-        "https://${VC_IP}/api/vcenter/namespace-management/supervisors/${SUPERVISOR_ID}/support-bundles")
+    BUNDLE_INFO=$(request_support_bundle "https://${VC_IP}/api/vcenter/namespace-management/supervisors/${SUPERVISOR_ID}/support-bundles") || BUNDLE_INFO='{}'
     BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
     BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.support_bundle_token.token // empty')
 else
@@ -159,10 +198,7 @@ else
         | jq -r 'if type == "array" then .[0].cluster // empty else empty end')
     if [[ -n "${CLUSTER_ID}" ]]; then
         _log "Getting WCP bundle for cluster ${CLUSTER_ID} (v1 API)..."
-        BUNDLE_INFO=$(curl -sk --max-time 30 -X POST \
-            -H "vmware-api-session-id: ${VC_SESSION}" \
-            "https://${VC_IP}/api/vcenter/namespace-management/clusters/${CLUSTER_ID}/support-bundle" \
-            || echo '{}')
+        BUNDLE_INFO=$(request_support_bundle "https://${VC_IP}/api/vcenter/namespace-management/clusters/${CLUSTER_ID}/support-bundle") || BUNDLE_INFO='{}'
         BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
         BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.wcp_support_bundle_token.token // empty')
     else

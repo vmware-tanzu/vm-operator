@@ -79,61 +79,10 @@ func UpdateRole(ctx context.Context, vimClient *vim25.Client, roleID int32, role
 	return nil
 }
 
-// EnsureRolePrivileges makes sure the role with the given id grants at least the specified
-// privileges, without removing any privileges it already has. It is a no-op if the role
-// already grants every requested privilege.
-func EnsureRolePrivileges(ctx context.Context, vimClient *vim25.Client, roleID int32, privilegeIDs []string) error {
-	authzManager := object.NewAuthorizationManager(vimClient)
-
-	roleList, err := authzManager.RoleList(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list roles: %w", err)
-	}
-
-	role := roleList.ById(roleID)
-	if role == nil {
-		return fmt.Errorf("role %d not found", roleID)
-	}
-
-	merged := slices.Clone(role.Privilege)
-	for _, p := range privilegeIDs {
-		if !slices.Contains(merged, p) {
-			merged = append(merged, p)
-		}
-	}
-
-	if len(merged) == len(role.Privilege) {
-		return nil
-	}
-
-	if err := authzManager.UpdateRole(ctx, roleID, role.Name, merged); err != nil {
-		return fmt.Errorf("failed to update role %d (%s): %w", roleID, role.Name, err)
-	}
-
-	return nil
-}
-
-// GrantExtraPrivileges grants extraPrivileges, on top of the privileges the role named
-// baseRoleName already carries, to whichever principal currently holds baseRoleName on each
-// of the given entities.
-//
-// WCP pins roles such as VM-Service-VM-Management directly onto the objects it manages, and
-// that grant overrides whatever role those principals inherit from higher up the inventory.
-// Mutating the pinned role in place would affect every object it is granted on across the
-// whole vCenter, so this creates a role named tempRoleName and swaps it in for baseRoleName
-// on just the given entities instead.
-//
-// The temporary role starts as an exact clone of baseRoleName and only gains extraPrivileges
-// once every entity has been swapped over: vCenter refuses to grant a role carrying
-// privileges the acting principal does not already hold on that same entity, whereas editing
-// a role's definition afterwards is not subject to that check and takes effect on every
-// entity at once. Passing all the entities to a single call is therefore required -- granting
-// them across two calls would fail the check on the entities of the second call.
-//
-// The returned restore func reverts every swap and removes the temporary role. It is always
-// non-nil, including on error so that partial work can be unwound, so register it before
-// inspecting err. Callers must invoke it -- e.g. via DeferCleanup -- while their vCenter
-// session is still authenticated.
+// GrantExtraPrivileges grants extraPrivileges to whoever holds baseRoleName on each entity,
+// by cloning baseRoleName into tempRoleName, swapping that role onto every entity, then
+// adding extraPrivileges to the clone's definition (unlike SetEntityPermissions, a role edit
+// isn't checked for privilege escalation). restore (always non-nil) undoes everything.
 func GrantExtraPrivileges(
 	ctx context.Context,
 	vimClient *vim25.Client,
@@ -141,30 +90,22 @@ func GrantExtraPrivileges(
 	extraPrivileges []string,
 	entities ...types.ManagedObjectReference,
 ) (restore func(context.Context) error, err error) {
-	authzManager := object.NewAuthorizationManager(vimClient)
+	noop := func(context.Context) error { return nil }
 
-	// A single RoleList serves both lookups below.
-	roleList, err := authzManager.RoleList(ctx)
+	baseRole, err := GetRoleByName(ctx, vimClient, baseRoleName)
 	if err != nil {
-		return func(context.Context) error { return nil }, fmt.Errorf("failed to list roles: %w", err)
+		return noop, fmt.Errorf("failed to look up %q role: %w", baseRoleName, err)
 	}
-
-	baseRole := roleList.ByName(baseRoleName)
 	if baseRole == nil {
-		return func(context.Context) error { return nil }, fmt.Errorf("role %q not found", baseRoleName)
+		return noop, fmt.Errorf("role %q not found", baseRoleName)
 	}
 
-	var tempRoleID int32
-	if existing := roleList.ByName(tempRoleName); existing != nil {
-		// Left behind by an interrupted run; reset it to the clone state.
-		tempRoleID = existing.RoleId
-		if err := authzManager.UpdateRole(ctx, tempRoleID, tempRoleName, baseRole.Privilege); err != nil {
-			return func(context.Context) error { return nil },
-				fmt.Errorf("failed to reset role %q: %w", tempRoleName, err)
-		}
-	} else if tempRoleID, err = authzManager.AddRole(ctx, tempRoleName, baseRole.Privilege); err != nil {
-		return func(context.Context) error { return nil },
-			fmt.Errorf("failed to create role %q: %w", tempRoleName, err)
+	// CreateOrUpdateRole resets tempRoleName to exactly baseRole's current privileges whether
+	// it is being created for the first time or left behind, possibly stale, by an interrupted
+	// run.
+	tempRoleID, err := CreateOrUpdateRole(ctx, vimClient, tempRoleName, baseRole.Privilege)
+	if err != nil {
+		return noop, fmt.Errorf("failed to create %q role: %w", tempRoleName, err)
 	}
 
 	var undos []func(context.Context) error
@@ -185,8 +126,18 @@ func GrantExtraPrivileges(
 		undos = append(undos, undo)
 	}
 
-	if err := EnsureRolePrivileges(ctx, vimClient, tempRoleID, extraPrivileges); err != nil {
-		return restore, fmt.Errorf("failed to add privileges to role %q: %w", tempRoleName, err)
+	// tempRoleName currently holds exactly baseRole.Privilege (see CreateOrUpdateRole above),
+	// so merging against it here -- rather than re-reading the role back -- is sufficient.
+	merged := slices.Clone(baseRole.Privilege)
+	for _, p := range extraPrivileges {
+		if !slices.Contains(merged, p) {
+			merged = append(merged, p)
+		}
+	}
+	if len(merged) != len(baseRole.Privilege) {
+		if err := UpdateRole(ctx, vimClient, tempRoleID, tempRoleName, merged); err != nil {
+			return restore, fmt.Errorf("failed to add privileges to role %q: %w", tempRoleName, err)
+		}
 	}
 
 	return restore, nil

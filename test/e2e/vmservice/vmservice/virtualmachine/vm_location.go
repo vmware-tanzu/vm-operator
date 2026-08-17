@@ -55,14 +55,12 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		specName = "vm-location"
 		vmKind   = "VirtualMachine"
 
-		// vmServiceVMMgmtRoleID is the hardcoded vCenter role ID for the VM-Service-VM-Management role.
-		vmServiceVMMgmtRoleID   = int32(1039)
+		// vmServiceVMMgmtRoleName is the vCenter role WCP grants to the Administrators group
+		// directly on the objects backing a Supervisor Namespace.
 		vmServiceVMMgmtRoleName = "VM-Service-VM-Management"
 
-		// relocateRoleName is a test-scoped role, created fresh for this spec, that grants
-		// the privileges required to relocate a VM between resource pools and folders. It is
-		// swapped in for vmServiceVMMgmtRoleID only on the specific entities under test,
-		// rather than mutating the shared vmServiceVMMgmtRoleName role in place.
+		// relocateRoleName is the test-scoped role that stands in for
+		// vmServiceVMMgmtRoleName on the entities each spec relocates a VM across.
 		relocateRoleName = "VM-Service-VM-Management-E2E-Relocate"
 	)
 
@@ -82,12 +80,8 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		vCenterAdminClient *vim25.Client
 		clusterResources   *e2eConfig.Resources
 
-		vmName                 string
-		linuxVMIName           string
-		relocateRoleID         int32
-		relocateRolePrivileges []string
-		relocateRoleUpgraded   bool
-		permissionRestores     []func(context.Context) error
+		vmName       string
+		linuxVMIName string
 	)
 
 	BeforeEach(func() {
@@ -125,34 +119,12 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		var err error
 		vCenterAdminClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create vCenter admin client")
-
-		// WCP grants the VM-Service-VM-Management role to the Administrators group directly on the
-		// namespace RP/folder, which overrides the inherited vCenter Administrator role for those
-		// objects. That role does not always include the privileges the specs below need to
-		// relocate a VM between resource pools and move it in/out of the namespace folder.
-		// Rather than mutating the shared role in place, create a dedicated relocate role and
-		// swap it in for just the entities each spec touches; see grantRelocateRole and
-		// upgradeRelocateRole below.
-		//
-		// The role starts as an exact clone of the shared role's current privileges (a set the
-		// Administrators group already effectively holds on those entities), because vCenter
-		// blocks SetEntityPermissions from granting a role containing privileges the acting
-		// principal doesn't already have there -- granting a role with the relocate-only
-		// privileges already mixed in fails with "Permission ... denied" naming exactly those
-		// privileges. Once the clone is granted on every entity the spec needs it on,
-		// upgradeRelocateRole adds the relocate-only privileges to the role's own definition
-		// (a role-definition edit, not a fresh grant), which is not subject to that same-entity
-		// check and takes effect on all of those entities at once.
-		vmMgmtRole, err := vcenter.GetRoleByName(ctx, vCenterAdminClient, vmServiceVMMgmtRoleName)
-		Expect(err).ToNot(HaveOccurred(), "failed to look up %s role", vmServiceVMMgmtRoleName)
-		Expect(vmMgmtRole).ToNot(BeNil(), "%s role not found", vmServiceVMMgmtRoleName)
-
-		permissionRestores = nil
-		relocateRoleUpgraded = false
-		relocateRolePrivileges = vcenter.MergePrivileges(vmMgmtRole.Privilege, relocatePrivileges)
-
-		relocateRoleID, err = vcenter.CreateOrUpdateRole(ctx, vCenterAdminClient, relocateRoleName, vmMgmtRole.Privilege)
-		Expect(err).ToNot(HaveOccurred(), "failed to create %s role", relocateRoleName)
+		// Log out via DeferCleanup rather than AfterEach so that the permission cleanup
+		// registered later by grantRelocatePrivileges, which needs an authenticated session,
+		// runs first under Ginkgo's LIFO ordering.
+		DeferCleanup(func() {
+			vcenter.LogoutVimClient(vCenterAdminClient)
+		})
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
@@ -161,18 +133,6 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	})
 
 	AfterEach(func() {
-		// Undo the entity permission swaps and remove the temporary relocate role while
-		// vCenterAdminClient's session is still authenticated. DeferCleanup callbacks
-		// registered during BeforeEach/It run after this AfterEach, by which point
-		// LogoutVimClient below would have already invalidated the session.
-		for i := len(permissionRestores) - 1; i >= 0; i-- {
-			Expect(permissionRestores[i](ctx)).To(Succeed(), "failed to restore entity permission")
-		}
-		if relocateRoleID != 0 {
-			Expect(vcenter.RemoveRole(ctx, vCenterAdminClient, relocateRoleID)).To(Succeed(),
-				"failed to remove %s role", relocateRoleName)
-		}
-
 		if CurrentSpecReport().Failed() {
 			vmoperator.DescribeResourceIfExists(
 				ctx, svClusterClient,
@@ -181,7 +141,6 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		}
 
 		vmoperator.VerifyVMDeleted(ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
-		vcenter.LogoutVimClient(vCenterAdminClient)
 	})
 
 	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given
@@ -292,36 +251,16 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	// grantRelocateRole swaps the relocate role in for vmServiceVMMgmtRoleID on the given
-	// entity for the remainder of the current spec. The restore function is recorded and
-	// invoked from AfterEach (not DeferCleanup) so it runs while the session is still
-	// authenticated.
-	//
-	// Call this for every entity a spec needs the relocate role on *before* calling
-	// upgradeRelocateRole: the swap only succeeds while the role's definition is still the
-	// base clone (see BeforeEach); upgrading first would make later swaps, onto entities that
-	// haven't been granted yet, fail the same escalation check on those entities.
-	grantRelocateRole := func(entity vimtypes.ManagedObjectReference) {
-		restore, err := vcenter.SwapEntityPermissionRole(ctx, vCenterAdminClient, entity,
-			vmServiceVMMgmtRoleID, relocateRoleID)
-		Expect(err).ToNot(HaveOccurred(),
-			"failed to grant relocate role on %s %s", entity.Type, entity.Value)
-		permissionRestores = append(permissionRestores, restore)
-	}
-
-	// upgradeRelocateRole adds the relocate-only privileges to the relocate role's definition.
-	// Call once, after every grantRelocateRole call for the current spec has completed: this
-	// is a role-definition edit rather than a fresh grant, so it takes effect immediately on
-	// every entity already granted the role, without re-triggering the escalation check that
-	// blocks a grant containing privileges not yet held on that specific entity.
-	upgradeRelocateRole := func() {
-		if relocateRoleUpgraded {
-			return
-		}
-		Expect(vcenter.UpdateRole(ctx, vCenterAdminClient, relocateRoleID, relocateRoleName,
-			relocateRolePrivileges)).To(Succeed(),
-			"failed to add relocate privileges to %s role", relocateRoleName)
-		relocateRoleUpgraded = true
+	// grantRelocatePrivileges gives the test's vCenter account the privileges it needs to
+	// relocate a VM across the given entities, reverting them when the spec ends. WCP pins
+	// vmServiceVMMgmtRoleName onto the objects backing a namespace, which shadows the
+	// inherited vCenter Administrator role there, so those privileges are not otherwise
+	// present. Pass every entity the spec touches in one call -- see GrantExtraPrivileges.
+	grantRelocatePrivileges := func(entities ...vimtypes.ManagedObjectReference) {
+		restore, err := vcenter.GrantExtraPrivileges(ctx, vCenterAdminClient,
+			vmServiceVMMgmtRoleName, relocateRoleName, relocatePrivileges, entities...)
+		DeferCleanup(restore)
+		Expect(err).ToNot(HaveOccurred(), "failed to grant privileges required for VM relocation")
 	}
 
 	When("VM is created in the correct namespace RP and folder", Label("core-functional", "experimental"), func() {
@@ -355,14 +294,13 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
 
-			By("Granting the relocate role on the namespace RP and folder")
+			By("Granting the privileges required to relocate the VM")
 			// Relocate needs Resource.* on the RP, but vCenter also checks
 			// VirtualMachine.Inventory.Move on the VM's parent folder even when the
-			// relocate spec leaves the folder unchanged -- and WCP pins role 1039 on the
-			// namespace folder too, so inherited Administrator does not cover it there.
-			grantRelocateRole(vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: nsRPMoID})
-			grantRelocateRole(vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID})
-			upgradeRelocateRole()
+			// relocate spec leaves the folder unchanged.
+			grantRelocatePrivileges(
+				vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: nsRPMoID},
+				vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID})
 
 			By("Retrieving the cluster root RP to use as an invalid location")
 			// 1. Resolve the specific Cluster MoID for the active Supervisor context
@@ -424,9 +362,6 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			_, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
 
-			By("Granting the relocate role on the namespace folder")
-			grantRelocateRole(vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID})
-
 			By("Retrieving another Supervisor Namespace's folder as the invalid folder location")
 			// A different namespace's folder always lies outside the 2-level hierarchy
 			// that validateVMFolder checks, so it reliably triggers the LocationMismatch.
@@ -442,9 +377,10 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 				"other namespace's folder unexpectedly equals the namespace folder itself")
 			e2eframework.Logf("invalid folder MoID (folder of namespace %s): %s", otherNamespace, invalidFolderMoID)
 
-			By("Granting the relocate role on the other namespace's folder")
-			grantRelocateRole(vimtypes.ManagedObjectReference{Type: "Folder", Value: invalidFolderMoID})
-			upgradeRelocateRole()
+			By("Granting the privileges required to move the VM between the two folders")
+			grantRelocatePrivileges(
+				vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID},
+				vimtypes.ManagedObjectReference{Type: "Folder", Value: invalidFolderMoID})
 
 			By("Moving VM into the other namespace's folder via MoveIntoFolder (direct inventory move)")
 			// Use Folder.MoveInto rather than Relocate.Folder: in WCP, the

@@ -190,7 +190,7 @@ WORKDIR /vm-operator
 
 # hack/e2e/ contains only shell scripts — copy directly from the build context
 # rather than routing through builder-e2e, which does not need them for compilation.
-COPY --chown=vmoperator:vmoperator --chmod=755 hack/e2e/ ./hack/e2e/
+COPY --chown=vmoperator:mts --chmod=775 hack/e2e/ ./hack/e2e/
 
 COPY --from=builder-packer /usr/local/bin/packer-plugin-vsphere /usr/local/bin/packer-plugin-vsphere
 COPY --from=builder-e2e --chown=vmoperator:vmoperator /vm-operator/Makefile ./Makefile

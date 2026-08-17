@@ -5,9 +5,11 @@ package vcenter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
+	"slices"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ssoadmin"
@@ -77,35 +79,128 @@ func UpdateRole(ctx context.Context, vimClient *vim25.Client, roleID int32, role
 	return nil
 }
 
-// MergePrivileges returns the union of the given privilege lists, in the base
-// list's order followed by any privileges from extra not already present.
-func MergePrivileges(base []string, extra []string) []string {
-	have := make(map[string]struct{}, len(base))
-	for _, p := range base {
-		have[p] = struct{}{}
+// EnsureRolePrivileges makes sure the role with the given id grants at least the specified
+// privileges, without removing any privileges it already has. It is a no-op if the role
+// already grants every requested privilege.
+func EnsureRolePrivileges(ctx context.Context, vimClient *vim25.Client, roleID int32, privilegeIDs []string) error {
+	authzManager := object.NewAuthorizationManager(vimClient)
+
+	roleList, err := authzManager.RoleList(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list roles: %w", err)
 	}
 
-	merged := append([]string{}, base...)
-	for _, p := range extra {
-		if _, ok := have[p]; !ok {
+	role := roleList.ById(roleID)
+	if role == nil {
+		return fmt.Errorf("role %d not found", roleID)
+	}
+
+	merged := slices.Clone(role.Privilege)
+	for _, p := range privilegeIDs {
+		if !slices.Contains(merged, p) {
 			merged = append(merged, p)
-			have[p] = struct{}{}
 		}
 	}
 
-	return merged
+	if len(merged) == len(role.Privilege) {
+		return nil
+	}
+
+	if err := authzManager.UpdateRole(ctx, roleID, role.Name, merged); err != nil {
+		return fmt.Errorf("failed to update role %d (%s): %w", roleID, role.Name, err)
+	}
+
+	return nil
 }
 
-// SwapEntityPermissionRole finds the entity permission that currently grants fromRoleID and
+// GrantExtraPrivileges grants extraPrivileges, on top of the privileges the role named
+// baseRoleName already carries, to whichever principal currently holds baseRoleName on each
+// of the given entities.
+//
+// WCP pins roles such as VM-Service-VM-Management directly onto the objects it manages, and
+// that grant overrides whatever role those principals inherit from higher up the inventory.
+// Mutating the pinned role in place would affect every object it is granted on across the
+// whole vCenter, so this creates a role named tempRoleName and swaps it in for baseRoleName
+// on just the given entities instead.
+//
+// The temporary role starts as an exact clone of baseRoleName and only gains extraPrivileges
+// once every entity has been swapped over: vCenter refuses to grant a role carrying
+// privileges the acting principal does not already hold on that same entity, whereas editing
+// a role's definition afterwards is not subject to that check and takes effect on every
+// entity at once. Passing all the entities to a single call is therefore required -- granting
+// them across two calls would fail the check on the entities of the second call.
+//
+// The returned restore func reverts every swap and removes the temporary role. It is always
+// non-nil, including on error so that partial work can be unwound, so register it before
+// inspecting err. Callers must invoke it -- e.g. via DeferCleanup -- while their vCenter
+// session is still authenticated.
+func GrantExtraPrivileges(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	baseRoleName, tempRoleName string,
+	extraPrivileges []string,
+	entities ...types.ManagedObjectReference,
+) (restore func(context.Context) error, err error) {
+	authzManager := object.NewAuthorizationManager(vimClient)
+
+	// A single RoleList serves both lookups below.
+	roleList, err := authzManager.RoleList(ctx)
+	if err != nil {
+		return func(context.Context) error { return nil }, fmt.Errorf("failed to list roles: %w", err)
+	}
+
+	baseRole := roleList.ByName(baseRoleName)
+	if baseRole == nil {
+		return func(context.Context) error { return nil }, fmt.Errorf("role %q not found", baseRoleName)
+	}
+
+	var tempRoleID int32
+	if existing := roleList.ByName(tempRoleName); existing != nil {
+		// Left behind by an interrupted run; reset it to the clone state.
+		tempRoleID = existing.RoleId
+		if err := authzManager.UpdateRole(ctx, tempRoleID, tempRoleName, baseRole.Privilege); err != nil {
+			return func(context.Context) error { return nil },
+				fmt.Errorf("failed to reset role %q: %w", tempRoleName, err)
+		}
+	} else if tempRoleID, err = authzManager.AddRole(ctx, tempRoleName, baseRole.Privilege); err != nil {
+		return func(context.Context) error { return nil },
+			fmt.Errorf("failed to create role %q: %w", tempRoleName, err)
+	}
+
+	var undos []func(context.Context) error
+	restore = func(ctx context.Context) error {
+		errs := make([]error, 0, len(undos)+1)
+		for _, undo := range undos {
+			errs = append(errs, undo(ctx))
+		}
+		errs = append(errs, RemoveRole(ctx, vimClient, tempRoleID))
+		return errors.Join(errs...)
+	}
+
+	for _, entity := range entities {
+		undo, err := swapEntityPermissionRole(ctx, vimClient, entity, baseRole.RoleId, tempRoleID)
+		if err != nil {
+			return restore, err
+		}
+		undos = append(undos, undo)
+	}
+
+	if err := EnsureRolePrivileges(ctx, vimClient, tempRoleID, extraPrivileges); err != nil {
+		return restore, fmt.Errorf("failed to add privileges to role %q: %w", tempRoleName, err)
+	}
+
+	return restore, nil
+}
+
+// swapEntityPermissionRole finds the entity permission that currently grants fromRoleID and
 // re-points it at toRoleID, leaving the principal, group, and propagate settings unchanged.
-// It returns a restore function that reverts the entity's permission back to fromRoleID;
-// callers must invoke it (e.g. via DeferCleanup) once toRoleID is no longer needed.
-func SwapEntityPermissionRole(
+// It returns a func that reverts the entity's permission back to fromRoleID.
+func swapEntityPermissionRole(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	entity types.ManagedObjectReference,
 	fromRoleID, toRoleID int32,
-) (restore func(context.Context) error, err error) {
+) (func(context.Context) error, error) {
 	authzManager := object.NewAuthorizationManager(vimClient)
 
 	perms, err := authzManager.RetrieveEntityPermissions(ctx, entity, false)
@@ -113,18 +208,12 @@ func SwapEntityPermissionRole(
 		return nil, fmt.Errorf("failed to retrieve permissions on %s %s: %w", entity.Type, entity.Value, err)
 	}
 
-	idx := -1
-	for i := range perms {
-		if perms[i].RoleId == fromRoleID {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
+	i := slices.IndexFunc(perms, func(p types.Permission) bool { return p.RoleId == fromRoleID })
+	if i < 0 {
 		return nil, fmt.Errorf("no permission granting role %d found on %s %s", fromRoleID, entity.Type, entity.Value)
 	}
 
-	original := perms[idx]
+	original := perms[i]
 	swapped := original
 	swapped.RoleId = toRoleID
 
@@ -132,11 +221,9 @@ func SwapEntityPermissionRole(
 		return nil, fmt.Errorf("failed to set role %d on %s %s: %w", toRoleID, entity.Type, entity.Value, err)
 	}
 
-	restore = func(ctx context.Context) error {
+	return func(ctx context.Context) error {
 		return authzManager.SetEntityPermissions(ctx, entity, []types.Permission{original})
-	}
-
-	return restore, nil
+	}, nil
 }
 
 // RemoveRole removes the role with specified id in VC.

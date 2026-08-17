@@ -251,11 +251,10 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	// grantRelocatePrivileges gives the test's vCenter account the privileges it needs to
-	// relocate a VM across the given entities, reverting them when the spec ends. WCP pins
-	// vmServiceVMMgmtRoleName onto the objects backing a namespace, which shadows the
-	// inherited vCenter Administrator role there, so those privileges are not otherwise
-	// present. Pass every entity the spec touches in one call -- see GrantExtraPrivileges.
+	// grantRelocatePrivileges grants the test's vCenter account the privileges needed to
+	// relocate a VM across the given entities, and reverts them when the spec ends. WCP pins
+	// vmServiceVMMgmtRoleName on namespace objects, shadowing the inherited Administrator
+	// role, so those privileges aren't otherwise present. Pass every entity in one call.
 	grantRelocatePrivileges := func(entities ...vimtypes.ManagedObjectReference) {
 		restore, err := vcenter.GrantExtraPrivileges(ctx, vCenterAdminClient,
 			vmServiceVMMgmtRoleName, relocateRoleName, relocatePrivileges, entities...)

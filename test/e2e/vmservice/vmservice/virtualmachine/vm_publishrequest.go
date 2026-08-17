@@ -370,9 +370,10 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName)
 				})
 
-				// The source VM is a linked clone; VM Operator promotes its disks in the
-				// background (an XvMotion in Online mode). Publishing before that
-				// finishes races the OVF capture against the migration.
+				// The source VM is freshly deployed, so its Fast Deploy linked-clone
+				// disks are still being consolidated by a PromoteDisks task. vSphere
+				// serializes the OVF capture behind that task, and the capture can
+				// stay queued past the publish timeout, so wait for promotion first.
 				vmoperator.WaitForVirtualMachineDiskPromotionSynced(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
 
 				By("Publishing the source VM to the target content library")

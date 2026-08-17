@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,36 +37,32 @@ const (
 	defaultKMSProviderLockName      = "vmservice-e2e-default-kms-provider-lock"
 	defaultKMSProviderLockNamespace = "vmware-system-vmop"
 
-	// defaultKMSProviderLockLeaseBuffer is subtracted from the Ginkgo suite's
-	// own --timeout to derive the lease duration (see
-	// defaultKMSProviderLockLeaseDuration), so a crashed holder is reclaimed
-	// with margin to spare before the suite itself would time out.
-	defaultKMSProviderLockLeaseBuffer = 5 * time.Minute
+	// defaultKMSProviderLockLeaseDuration bounds how long a holder that
+	// stops renewing (crash, panic, hard timeout) can block other jobs. A
+	// live holder never approaches this: it renews on
+	// defaultKMSProviderLockRenewInterval, well inside this window,
+	// regardless of how long its actual test work takes. Keeping this short
+	// and fixed - rather than derived from the suite's --timeout - means a
+	// dead holder is reclaimed in roughly this long, not in however long
+	// the suite's overall timeout happens to be.
+	defaultKMSProviderLockLeaseDuration = 90 * time.Second
 
-	// defaultKMSProviderLockLeaseDurationFloor is the minimum lease duration,
-	// used if the suite's --timeout is at or below
-	// defaultKMSProviderLockLeaseBuffer.
-	defaultKMSProviderLockLeaseDurationFloor = 5 * time.Minute
+	// defaultKMSProviderLockRenewInterval is how often a live holder
+	// refreshes the Lease's RenewTime. It must comfortably clear
+	// defaultKMSProviderLockLeaseDuration so transient API server hiccups
+	// don't cause a live holder to be mistaken for a dead one.
+	defaultKMSProviderLockRenewInterval = 30 * time.Second
 )
-
-// defaultKMSProviderLockLeaseDuration bounds how long a lock holder that
-// crashes or panics without releasing can block other jobs. It is derived
-// from the running suite's own Ginkgo --timeout (the same source
-// hack/e2e/run-e2e.sh sets via GINKGO_TIMEOUT) rather than a separately
-// maintained constant, so it always exceeds the slowest encryption spec's
-// full BeforeEach+It+AfterEach runtime by construction.
-func defaultKMSProviderLockLeaseDuration() time.Duration {
-	suiteConfig, _ := GinkgoConfiguration()
-	if d := suiteConfig.Timeout - defaultKMSProviderLockLeaseBuffer; d > defaultKMSProviderLockLeaseDurationFloor {
-		return d
-	}
-	return defaultKMSProviderLockLeaseDurationFloor
-}
 
 // AcquireDefaultKMSProviderLock blocks until this process holds the
 // exclusive lock on vCenter's default KMS provider setting, then returns a
 // function that releases it. Callers must arrange for the returned function
 // to run (e.g. via DeferCleanup) even if the calling spec fails.
+//
+// While held, the lock is kept alive by a background renewal loop, so a
+// live holder can run for as long as its test actually takes - the caller's
+// timeout only bounds how long to wait to *acquire* the lock, not how long
+// it may be held afterward.
 func AcquireDefaultKMSProviderLock(
 	ctx context.Context,
 	c ctrlclient.Client,
@@ -81,8 +77,64 @@ func AcquireDefaultKMSProviderLock(
 		"timed out waiting to acquire the default KMS provider lock (namespace %s, lease %s)",
 		defaultKMSProviderLockNamespace, defaultKMSProviderLockName)
 
+	stopRenewing := make(chan struct{})
+	var renewWG sync.WaitGroup
+	renewWG.Go(func() {
+		renewKMSLeaseUntilStopped(ctx, c, holder, stopRenewing)
+	})
+
 	return func() {
+		close(stopRenewing)
+		renewWG.Wait()
 		releaseKMSLease(ctx, c, holder)
+	}
+}
+
+// renewKMSLeaseUntilStopped refreshes the Lease's RenewTime on
+// defaultKMSProviderLockRenewInterval until stop is closed, keeping a live
+// holder from being mistaken for a dead one no matter how long its actual
+// work takes.
+func renewKMSLeaseUntilStopped(ctx context.Context, c ctrlclient.Client, holder string, stop <-chan struct{}) {
+	ticker := time.NewTicker(defaultKMSProviderLockRenewInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			renewKMSLease(ctx, c, holder)
+		}
+	}
+}
+
+// renewKMSLease refreshes the Lease's RenewTime if, and only if, it is still
+// held by holder. A failure here (lost race, transient API error) is
+// logged, not fatal: the next tick tries again, and if the Lease is
+// genuinely gone or held by someone else, the caller's own work will
+// eventually surface that as a correctness problem elsewhere rather than
+// silently corrupting vCenter's global setting.
+func renewKMSLease(ctx context.Context, c ctrlclient.Client, holder string) {
+	key := ctrlclient.ObjectKey{Namespace: defaultKMSProviderLockNamespace, Name: defaultKMSProviderLockName}
+
+	lease := &coordinationv1.Lease{}
+	if err := c.Get(ctx, key, lease); err != nil {
+		framework.Byf("WARNING: failed to read default KMS provider lock for renewal (holder %q): %v", holder, err)
+		return
+	}
+	if ptr.DerefWithDefault(lease.Spec.HolderIdentity, "") != holder {
+		framework.Byf("WARNING: default KMS provider lock no longer held by %q; another job may believe it holds it concurrently", holder)
+		return
+	}
+	lease.Spec.RenewTime = ptr.To(metav1.NowMicro())
+	// Update carries the Lease's resourceVersion, so a takeover that landed
+	// between our Get and Update (e.g. this Lease was judged expired just
+	// before this renewal) fails here with a conflict instead of silently
+	// overwriting the new holder's claim.
+	if err := c.Update(ctx, lease); err != nil {
+		framework.Byf("WARNING: failed to renew default KMS provider lock held by %q: %v", holder, err)
 	}
 }
 
@@ -104,7 +156,7 @@ func tryAcquireKMSLease(ctx context.Context, c ctrlclient.Client, holder string)
 		lease.Spec.HolderIdentity = ptr.To(holder)
 		lease.Spec.AcquireTime = ptr.To(now)
 		lease.Spec.RenewTime = ptr.To(now)
-		lease.Spec.LeaseDurationSeconds = ptr.To(int32(defaultKMSProviderLockLeaseDuration().Seconds()))
+		lease.Spec.LeaseDurationSeconds = ptr.To(int32(defaultKMSProviderLockLeaseDuration.Seconds()))
 		// Update carries the Lease's resourceVersion, so a concurrent
 		// takeover attempt by another job fails with a conflict here rather
 		// than both believing they hold the lock.
@@ -152,7 +204,7 @@ func newKMSLease(holder string) *coordinationv1.Lease {
 			HolderIdentity:       ptr.To(holder),
 			AcquireTime:          ptr.To(now),
 			RenewTime:            ptr.To(now),
-			LeaseDurationSeconds: ptr.To(int32(defaultKMSProviderLockLeaseDuration().Seconds())),
+			LeaseDurationSeconds: ptr.To(int32(defaultKMSProviderLockLeaseDuration.Seconds())),
 		},
 	}
 }

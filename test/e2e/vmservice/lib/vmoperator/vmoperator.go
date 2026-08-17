@@ -127,20 +127,8 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 
-// WaitForVirtualMachineDiskPromotionSynced waits until the VirtualMachine has
-// no disk promotion in flight.
-//
-// A missing condition is treated as "nothing in flight", not "keep waiting":
-// it only exists once the diskpromo reconciler runs (gated behind the
-// FastDeploy feature) and is deleted when promoteDisksMode is Disabled, so
-// requiring it to be present would hang the full interval on a testbed
-// without FastDeploy. This is why WaitOnVirtualMachineCondition, which
-// asserts the condition exists, isn't reused here.
-//
-// The condition is checked rather than spec.promoteDisksMode directly because
-// the reconciler defers to a running task before it looks at the mode, so a
-// VM switched to Disabled mid-promotion still reports False until that task
-// finishes.
+// WaitForVirtualMachineDiskPromotionSynced waits for the VM's disk promotion to
+// finish, as indicated by the VirtualMachineDiskPromotionSynced condition.
 func WaitForVirtualMachineDiskPromotionSynced(ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client, ns, vmName string) {

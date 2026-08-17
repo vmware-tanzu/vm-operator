@@ -17,7 +17,6 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -30,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
@@ -82,6 +82,11 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		vmName       string
 		linuxVMIName string
+
+		// workloadDomainIsolationEnabled mirrors the WorkloadDomainIsolation FSS
+		// that topology.GetNamespaceFolderAndRPMoID branches on: Zone when
+		// enabled, AvailabilityZone when not.
+		workloadDomainIsolationEnabled bool
 	)
 
 	BeforeEach(func() {
@@ -112,6 +117,10 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		DeferCleanup(cancelPodWatches)
 
 		svClusterClient = clusterProxy.GetClient()
+
+		workloadDomainIsolationEnabled = utils.IsFssEnabled(ctx, svClusterClient,
+			config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"),
+			config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvWorkloadIsolation"))
 
 		kubeconfigPath := clusterProxy.GetKubeconfigPath()
 		vCenterHostname := vcenter.GetVCPNIDFromKubeconfigFile(ctx, kubeconfigPath)
@@ -144,41 +153,36 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	})
 
 	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given
-	// zone, mirroring the controller's topology.GetNamespaceFolderAndRPMoID:
-	// the namespaced Zone first, then the AvailabilityZone as fallback. The RP
-	// is per-zone, so zone must match the VM's status.zone or the resolved RP
-	// belongs to a different zone.
+	// zone. It mirrors the controller's topology.GetNamespaceFolderAndRPMoID,
+	// which resolves against Zone when WorkloadDomainIsolation is enabled and
+	// AvailabilityZone otherwise -- the two are never both live on the same
+	// cluster, so this branches on the same FSS rather than probing for
+	// whichever CR happens to exist. The RP is per-zone, so zone must match
+	// the VM's status.zone or the resolved RP belongs to a different zone.
 	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
-		// A found Zone is authoritative: assert it carries a pool rather than
-		// falling through to the AvailabilityZone path, which would otherwise
-		// surface a misleading "AvailabilityZone not found" error.
-		z := &topologyv1.Zone{}
-		err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: zone}, z)
-		if err == nil {
+		if workloadDomainIsolationEnabled {
+			z := &topologyv1.Zone{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: zone}, z)).
+				To(Succeed(), "failed to get Zone %s/%s", namespace, zone)
 			Expect(z.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty(),
 				"Zone %s/%s has no ManagedVMs.PoolMoIDs", namespace, zone)
 			e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
 				z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
 			return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
 		}
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "failed to get Zone %s/%s", namespace, zone)
 
-		// Fallback for older, non-zonal configs (no Zone object), where the VM's
-		// status.zone is the cluster-scoped AvailabilityZone name.
+		// WorkloadDomainIsolation disabled: the VM's status.zone is the
+		// cluster-scoped AvailabilityZone name.
 		az := &topologyv1.AvailabilityZone{}
 		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: zone}, az)).
 			To(Succeed(), "failed to get AvailabilityZone %s", zone)
 
-		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok && nsInfo.PoolMoId != "" {
-			e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
-				az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
-			return nsInfo.PoolMoId, nsInfo.FolderMoId
-		}
-
-		Fail(fmt.Sprintf(
-			"could not determine namespace RP and folder MoIDs for namespace %s in zone %s",
-			namespace, zone))
-		return "", ""
+		nsInfo, ok := az.Spec.Namespaces[namespace]
+		Expect(ok && nsInfo.PoolMoId != "").To(BeTrue(),
+			"AvailabilityZone %s missing pool info for namespace %s", zone, namespace)
+		e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
+			az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
+		return nsInfo.PoolMoId, nsInfo.FolderMoId
 	}
 
 	// getOtherNamespaceFolder returns the folder MoID and name of a Supervisor Namespace other
@@ -188,16 +192,18 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	// vCenter account -- unlike an arbitrary vCenter folder (e.g. the Datacenter's root VM
 	// folder), which WCP never grants permissions on.
 	getOtherNamespaceFolder := func(namespace string) (folderMoID, otherNamespace string) {
-		zoneList := &topologyv1.ZoneList{}
-		Expect(svClusterClient.List(ctx, zoneList)).To(Succeed(), "failed to list Zones")
+		if workloadDomainIsolationEnabled {
+			zoneList := &topologyv1.ZoneList{}
+			Expect(svClusterClient.List(ctx, zoneList)).To(Succeed(), "failed to list Zones")
 
-		for _, z := range zoneList.Items {
-			if z.Namespace != namespace && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
-				return z.Spec.ManagedVMs.FolderMoID, z.Namespace
+			for _, z := range zoneList.Items {
+				if z.Namespace != namespace && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
+					return z.Spec.ManagedVMs.FolderMoID, z.Namespace
+				}
 			}
+			return "", ""
 		}
 
-		// Fallback: AvailabilityZone.Spec.Namespaces (older cluster configurations).
 		azList := &topologyv1.AvailabilityZoneList{}
 		Expect(svClusterClient.List(ctx, azList)).
 			To(Succeed(), "failed to list AvailabilityZones")

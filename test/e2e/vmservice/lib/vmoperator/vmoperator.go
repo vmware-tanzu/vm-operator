@@ -129,6 +129,10 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 
 // WaitForVirtualMachineDiskPromotionSynced waits for the VM's disk promotion to
 // finish, as indicated by the VirtualMachineDiskPromotionSynced condition.
+//
+// A missing condition means no promotion is in flight (e.g. FastDeploy is
+// disabled, or promoteDisksMode is Disabled), not that one is pending, so it
+// is treated as success rather than something to keep waiting on.
 func WaitForVirtualMachineDiskPromotionSynced(ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client, ns, vmName string) {
@@ -136,11 +140,7 @@ func WaitForVirtualMachineDiskPromotionSynced(ctx context.Context,
 
 	Eventually(func(g Gomega) {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
-		if err != nil {
-			e2eframework.Logf("retry waiting for disk promotion: %v", err)
-			g.Expect(err).ToNot(HaveOccurred())
-			return
-		}
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine %s/%s", ns, vmName)
 
 		cond := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced)
 		if cond == nil {

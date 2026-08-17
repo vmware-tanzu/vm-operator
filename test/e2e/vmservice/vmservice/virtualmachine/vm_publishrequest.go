@@ -570,7 +570,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				}
 			})
 
-			It("should compute the requestedCapacity annotation from the VM's actual used storage, not its provisioned disk size", Label("extended-functional", "experimental"), func() {
+			It("should compute the requestedCapacity annotation from the VM's actual used storage, not its provisioned disk size", Label("extended-functional"), func() {
 				// Labeling the target ContentLibrary opts the publish request into the async
 				// storage-quota check, normally driven by an external VCFA component. This lets
 				// us exercise the controller's capacity estimation (see checkContentLibraryQuota)

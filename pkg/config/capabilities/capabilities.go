@@ -152,6 +152,10 @@ const (
 	// ControlledRebalancingPolicy CRD, which excludes matching workloads from
 	// DRS evacuation during cluster load balancing.
 	CapabilityKeyControlledRebalancingPolicy = "supports_infrapolicy_controlled_rebalancing"
+
+	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
+	// the Supervisor capabilities CRD for exposing disk lists in VM snapshots.
+	CapabilityKeyCSIBackupAPI = "supports_CSI_Backup_API"
 )
 
 var (
@@ -334,6 +338,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMEviction = capStatus.Activated
 		case CapabilityKeyControlledRebalancingPolicy:
 			fs.ControlledRebalancingPolicy = capStatus.Activated
+		case CapabilityKeyCSIBackupAPI:
+			fs.CSIBackupAPI = capStatus.Activated
 		}
 
 	}

@@ -146,6 +146,10 @@ const (
 	// BestEffortRestartPolicy CRDs as well as the VirtualMachinePowerStateSynced
 	// condition's InfraInMaintenance reason.
 	CapabilityKeyVMEviction = "supports_infrapolicy_vm_evacuation"
+
+	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
+	// the Supervisor capabilities CRD for exposing disk lists in VM snapshots.
+	CapabilityKeyCSIBackupAPI = "supports_CSI_Backup_API"
 )
 
 var (
@@ -326,6 +330,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.ExtensionCompatConstraint = capStatus.Activated
 		case CapabilityKeyVMEviction:
 			fs.VMEviction = capStatus.Activated
+		case CapabilityKeyCSIBackupAPI:
+			fs.CSIBackupAPI = capStatus.Activated
 		}
 
 	}

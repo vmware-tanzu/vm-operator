@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25"
+	"k8s.io/utils/ptr"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -561,5 +562,64 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 					vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage",
 					vmSnapshot1Name)
 			})
+	})
+
+	When("CSI Backup API is enabled", Label("experimental"), func() {
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.CSIBackupAPICapabilityName)
+
+			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+
+			By("Enabling ChangeBlockTracking on the VM")
+			vm := &vmopv1.VirtualMachine{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmName}, vm)).To(Succeed())
+			if vm.Spec.Advanced == nil {
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+			}
+			vm.Spec.Advanced.ChangeBlockTracking = ptr.To(true)
+			Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+
+			By("Waiting for the VM to be reconfigured with CBT")
+			Eventually(func(g Gomega) {
+				g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmName}, vm)).To(Succeed())
+
+				g.Expect(vm.Status.ChangeBlockTracking).ToNot(BeNil())
+				g.Expect(*vm.Status.ChangeBlockTracking).To(BeTrue())
+			}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed(), "Timed out waiting for VM to be updated with CBT")
+		})
+
+		It("exposes the disk list in VirtualMachineSnapshot", func() {
+			By("create vm snapshot 1")
+			vmservice.CreateVMSnapshotA6(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace: vmSvcNamespace,
+				Name:      vmSnapshot1Name,
+				VMName:    vmName,
+			})
+
+			By("Verifying Snapshot's status")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot1Name,
+				vmopv1.VirtualMachinePowerStateOff,
+				false,
+				[]vmopv1.VirtualMachineSnapshotReference{})
+
+			By("Verifying Snapshot's disks are populated")
+			Eventually(func(g Gomega) {
+				vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
+				err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmSnapshot1Name}, vmSnapshot)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vmSnapshot.Status.Disks).ToNot(BeEmpty(), "Expected snapshot disks to be populated")
+
+				// Verify ChangedBlockTrackingID is populated. This is verified here in e2e
+				// since unit tests using vcsim cannot verify it due to govmomi limitations.
+				for _, disk := range vmSnapshot.Status.Disks {
+					g.Expect(disk.ChangedBlockTrackingID).ToNot(BeEmpty(), "Expected ChangeBlockTrackingID to be populated")
+				}
+			}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-snapshot-condition")...).Should(Succeed(), "Timed out waiting for snapshot disks to be populated")
+		})
 	})
 }

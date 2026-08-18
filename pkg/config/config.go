@@ -222,6 +222,7 @@ type FeatureStates struct {
 	WorkloadNetworkConfiguration bool
 	ExtensionCompatConstraint    bool
 	VMEviction                   bool
+	CSIBackupAPI                 bool
 }
 
 type InstanceStorage struct {

@@ -139,6 +139,12 @@ const (
 	// extension compatibility constraint mechanism. It gates VM Operator
 	// registering INVARIANT constraints on VMs it creates.
 	CapabilityKeyExtensionCompatConstraint = "supports_extension_compat_constraint"
+
+	// CapabilityKeyControlledRebalancingPolicy is the name of the capability
+	// key defined in the Supervisor capabilities CRD for the
+	// ControlledRebalancingPolicy API and its associated controllers and
+	// webhooks.
+	CapabilityKeyControlledRebalancingPolicy = "supports_infrapolicy_controlled_rebalancing"
 )
 
 var (
@@ -317,6 +323,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		case CapabilityKeyExtensionCompatConstraint:
 			fs.ExtensionCompatConstraint = capStatus.Activated
+		case CapabilityKeyControlledRebalancingPolicy:
+			fs.ControlledRebalancingPolicy = capStatus.Activated
 		}
 
 	}

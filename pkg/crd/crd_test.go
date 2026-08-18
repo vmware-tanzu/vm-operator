@@ -77,10 +77,13 @@ var (
 
 	externalVSpherePolicy = []string{
 		"computepolicies.vsphere.policy.vmware.com",
-		"controlledrebalancingpolicies.vsphere.policy.vmware.com",
 		"policyevaluations.vsphere.policy.vmware.com",
 		"requiredduringexecutionvmplacementpolicies.vsphere.policy.vmware.com",
 		"tagpolicies.vsphere.policy.vmware.com",
+	}
+
+	externalControlledRebalancingPolicy = []string{
+		"controlledrebalancingpolicies.vsphere.policy.vmware.com",
 	}
 
 	externalVIMConfigPolicy = []string{
@@ -93,6 +96,7 @@ var (
 	externalAll = slices.Concat(
 		externalBYOK,
 		externalVSpherePolicy,
+		externalControlledRebalancingPolicy,
 		externalVIMConfigPolicy,
 		[]string{storagePoliciesCRD},
 	)
@@ -409,6 +413,49 @@ var _ = Describe("Install", func() {
 				},
 				Entry("policies", "policies"),
 			)
+		})
+
+		When("vSphere policies are enabled but controlled rebalancing policy is not", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VSpherePolicies = true
+				})
+			})
+			It("should not install the controlled rebalancing policy crd", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVSpherePolicy)...)
+			})
+		})
+
+		When("controlled rebalancing policy is enabled but vSphere policies is not", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.ControlledRebalancingPolicy = true
+				})
+			})
+			It("should not install the controlled rebalancing policy crd", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
+			})
+		})
+
+		When("vSphere policies and controlled rebalancing policy are enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VSpherePolicies = true
+					config.Features.ControlledRebalancingPolicy = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(
+					basesNonGated,
+					externalVSpherePolicy,
+					externalControlledRebalancingPolicy)...)
+			})
 		})
 
 		When("groups are enabled", func() {
@@ -744,6 +791,7 @@ var _ = Describe("Install", func() {
 					config.Features.VMGroups = true
 					config.Features.VMSnapshots = true
 					config.Features.VSpherePolicies = true
+					config.Features.ControlledRebalancingPolicy = true
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.TelcoVMServiceAPI = true
@@ -784,13 +832,14 @@ var _ = Describe("Install", func() {
 			Expect(pkgcrd.Install(
 				pkgcfg.WithConfig(pkgcfg.Config{
 					Features: pkgcfg.FeatureStates{
-						FastDeploy:                   true,
-						ImmutableClasses:             true,
-						VMGroups:                     true,
-						VMSnapshots:                  true,
-						VSpherePolicies:              true,
-						BringYourOwnEncryptionKey:    true,
-						VirtualMachineConfigPolicy:   true,
+						FastDeploy:                  true,
+						ImmutableClasses:            true,
+						VMGroups:                    true,
+						VMSnapshots:                 true,
+						VSpherePolicies:             true,
+						ControlledRebalancingPolicy: true,
+						BringYourOwnEncryptionKey:   true,
+						VirtualMachineConfigPolicy:  true,
 					},
 				}),
 				client,

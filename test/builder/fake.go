@@ -89,6 +89,7 @@ func KnownObjectTypes() []client.Object {
 		&capv1.Capabilities{},
 		&appv1a1.SupervisorProperties{},
 		&vspherepolv1.ComputePolicy{},
+		&vspherepolv1.ControlledRebalancingPolicy{},
 		&vspherepolv1.PolicyEvaluation{},
 		&vspherepolv1.TagPolicy{},
 		&infrav1.StoragePolicy{},

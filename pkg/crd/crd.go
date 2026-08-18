@@ -121,7 +121,6 @@ func Install( //nolint:gocyclo
 		// following "switch" statement in order to keep it up-to-date.
 		switch k {
 		case "ComputePolicy",
-			"ControlledRebalancingPolicy",
 			"PolicyEvaluation",
 			"RequiredDuringExecutionVMPlacementPolicy",
 			"TagPolicy":
@@ -129,6 +128,17 @@ func Install( //nolint:gocyclo
 				ctx,
 				k8sClient,
 				features.VSpherePolicies,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
+		case "ControlledRebalancingPolicy":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				features.VSpherePolicies && features.ControlledRebalancingPolicy,
 				c,
 				k,
 				nil); err != nil {

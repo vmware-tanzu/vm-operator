@@ -50,6 +50,7 @@ const (
 	VirtualMachineConfigPolicyCapabilityName = "supports_vm_service_vm_config_policy"
 	TelcoVMServiceAPICapabilityName          = "supports_telco_vm_service_api"
 	WorkloadIPv6CapabilityName               = "supports_workload_ipv6"
+	CSIBackupAPICapabilityName               = "supports_CSI_Backup_API"
 
 	// VMEvictionCapabilityName gates the AutomaticVMEvictionPolicy and
 	// BestEffortRestartPolicy CRDs; must match

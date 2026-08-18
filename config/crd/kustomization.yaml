@@ -36,6 +36,7 @@ patches:
 - path: patches/webhook_in_virtualmachineimages.yaml
 - path: patches/webhook_in_virtualmachinepublishrequests.yaml
 - path: patches/webhook_in_virtualmachines.yaml
+- path: patches/webhook_in_virtualmachinesnapshots.yaml
 - path: patches/webhook_in_virtualmachineservices.yaml
 - path: patches/webhook_in_virtualmachinesetresourcepolicies.yaml
 
@@ -47,3 +48,4 @@ patches:
 - path: patches/cainjection_in_virtualmachines.yaml
 - path: patches/cainjection_in_virtualmachineservices.yaml
 - path: patches/cainjection_in_virtualmachinesetresourcepolicies.yaml
+- path: patches/cainjection_in_virtualmachinesnapshots.yaml

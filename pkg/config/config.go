@@ -222,6 +222,7 @@ type FeatureStates struct {
 	ExtensionCompatConstraint    bool
 	VMEviction                   bool
 	ControlledRebalancingPolicy  bool
+	CSIBackupAPI                 bool
 }
 
 type InstanceStorage struct {

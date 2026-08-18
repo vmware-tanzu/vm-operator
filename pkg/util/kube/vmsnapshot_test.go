@@ -331,13 +331,24 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 			})
 
 			It("succeeds", func() {
+				disks := []vmopv1.VirtualMachineSnapshotDiskStatus{
+					{
+						ID:                     "disk-1",
+						ChangedBlockTrackingID: "cbt-1",
+					},
+					{
+						ID:                     "disk-2",
+						ChangedBlockTrackingID: "cbt-2",
+					},
+				}
 				err := kubeutil.PatchSnapshotSuccessStatus(
 					vmCtx,
 					logr.Discard(),
 					k8sClient,
 					vmSnapshot,
 					snapNode,
-					vmCtx.VM.Spec.PowerState)
+					vmCtx.VM.Spec.PowerState,
+					disks)
 				Expect(err).ToNot(HaveOccurred())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
@@ -350,6 +361,7 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 				Expect(snapObj.Status.UniqueID).To(Equal(snapNode.Snapshot.Value))
 				Expect(snapObj.Status.Quiesced).To(BeTrue())
 				Expect(snapObj.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+				Expect(snapObj.Status.Disks).To(Equal(disks))
 				Expect(conditions.IsTrue(snapObj, vmopv1.VirtualMachineSnapshotCreatedCondition)).To(BeTrue())
 			})
 
@@ -374,7 +386,8 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 					k8sClient,
 					vmSnapshot,
 					snapNode,
-					powerState)).To(Succeed())
+					powerState,
+					nil)).To(Succeed())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
 				Expect(k8sClient.Get(vmCtx,

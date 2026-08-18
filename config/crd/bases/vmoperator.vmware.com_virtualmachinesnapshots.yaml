@@ -391,6 +391,30 @@ spec:
                   - type
                   type: object
                 type: array
+              disks:
+                description: Disks represents the list of disks included in the snapshot.
+                items:
+                  description: |-
+                    VirtualMachineSnapshotDiskStatus defines the status of a specific disk
+                    captured in the VirtualMachineSnapshot.
+                  properties:
+                    changedBlockTrackingID:
+                      description: |-
+                        ChangedBlockTrackingID represents the Change Block Tracking (CBT) change ID
+                        for the disk at the time the snapshot was taken. This value may be empty
+                        if CBT is not enabled or not applicable.
+                      type: string
+                    id:
+                      description: ID is the unique identifier of the disk in the
+                        snapshot.
+                      type: string
+                  required:
+                  - id
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
               powerState:
                 description: |-
                   PowerState represents the observed power state of the virtual

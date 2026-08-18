@@ -1,0 +1,60 @@
+name: dependabot-codegen
+
+# Dependabot only edits go.mod/go.sum. It never runs `make modules` (to
+# re-tidy every module in this multi-module repo) or `make generate` (to
+# regenerate CRDs, webhooks, RBAC, and Go sources), so a bumped dependency
+# can silently leave stale generated files behind, which then fails
+# verify-go-modules/verify-codegen in ci.yml. This workflow runs both right
+# after Dependabot opens or updates a PR and pushes any resulting changes
+# back onto the PR branch, so the PR arrives with generated output already
+# in sync with the bump.
+#
+# pull_request_target is required (not pull_request) so GITHUB_TOKEN keeps
+# the write permissions granted below instead of being downgraded to
+# read-only, which GitHub always does for pull_request runs triggered by
+# Dependabot. The workflow file itself still runs from the base branch;
+# only the checkout step below pulls in the PR's own head commit.
+on:
+  pull_request_target:
+    types:
+    - opened
+    - synchronize
+    - reopened
+
+jobs:
+  regenerate:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Check out PR head
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ github.event.pull_request.head.ref }}
+
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+        cache: true
+        cache-dependency-path: '**/go.sum'
+
+    - name: Run go mod tidy across all modules
+      run: make modules
+
+    - name: Regenerate CRDs, webhooks, RBAC, and Go sources
+      run: make generate
+
+    - name: Commit and push regenerated files, if any
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        if git status --porcelain | grep -q .; then
+          git add -A
+          git commit -m "Regenerate code and tidy modules for dependency bump"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+        else
+          echo "No generated changes; nothing to push."
+        fi

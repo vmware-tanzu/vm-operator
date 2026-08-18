@@ -1,0 +1,50 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    open-pull-requests-limit: 10
+    # Update go.mod files stored in these directories daily
+    directories:
+      - "/"
+      - "/hack/tools"
+      - "/test/e2e"
+    schedule:
+      interval: "daily"
+    groups:
+      # Kubernetes Core, Extended Tools, and Controller Runtime
+      kubernetes-and-sigs:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+      # Go Standard Tools & Extension Libraries
+      golang-x-libs:
+        patterns:
+          - "golang.org/x/*"
+      # Go ci
+      golang-ci:
+        patterns:
+          - "github.com/golangci/*"
+      # Testing Frameworks (Ginkgo & Gomega)
+      testing-modules:
+        patterns:
+          - "github.com/onsi/ginkgo/*"
+          - "github.com/onsi/gomega"
+      # Telemetry, Observability & Metrics
+      observability-modules:
+        patterns:
+          - "github.com/prometheus/*"
+          - "go.opentelemetry.io/*"
+          - "go.uber.org/zap"
+      # Logs
+      log-modules:
+        patterns:
+          - "github.com/go-logr/*"
+      # Go other dependencies
+      go-other-dependencies:
+        patterns:
+          - "*"
+
+    ignore:
+      - dependency-name: "github.com/vmware-tanzu/image-registry-operator-api"
+      - dependency-name: "github.com/vmware-tanzu/net-operator-api"
+      - dependency-name: "github.com/vmware-tanzu/nsx-operator/pkg/apis"
+      - dependency-name: "github.com/vmware/govmomi"

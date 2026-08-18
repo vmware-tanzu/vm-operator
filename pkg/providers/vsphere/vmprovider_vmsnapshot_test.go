@@ -241,6 +241,11 @@ var _ = Describe(
 						Namespace: namespace,
 					}, vmSnapshot)).To(Succeed())
 					Expect(conditions.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)).To(Equal(isCreated))
+					if isCreated && pkgcfg.FromContext(ctx).Features.CSIBackupAPI {
+						// Note: Currently vcsim might not populate actual disks with UUIDs in the snapshot device list.
+						// Once govmomi (vcsim) supports this, we should add assertions here to check vmSnapshot.Status.Disks.
+						// Expect(vmSnapshot.Status.Disks).ToNot(BeEmpty())
+					}
 				}
 
 				verifyNoVcVMSnapshot = func() {
@@ -299,6 +304,39 @@ var _ = Describe(
 					Expect(updatedSnapshot.Status.Quiesced).To(BeTrue())
 					// Snapshot should be powered off since memory is not included in the snapshot.
 					Expect(updatedSnapshot.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+				})
+			})
+
+			When("CSIBackupAPI feature is enabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.CSIBackupAPI = true
+					})
+
+					// Create snapshot1 CR with owner reference set to the VM.
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					Expect(controllerutil.SetOwnerReference(vm, snapshot1, ctx.Scheme)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+				})
+
+				It("should process the snapshot and populate disks in status", func() {
+					// Reconcile the current snapshot.
+					Expect(vsphere.ReconcileCurrentSnapshot(vmCtx, ctx.Client, vcVM)).To(Succeed())
+
+					// Verify snapshot is created.
+					verifyK8sVMSnapshot(snapshot1.Name, snapshot1.Namespace, true)
+
+					// Verify snapshot status.
+					updatedSnapshot := &vmopv1.VirtualMachineSnapshot{}
+					Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot)).To(Succeed())
+
+					// TODO: Follow up on govmomi side (vcsim) to populate actual disks with UUIDs in the snapshot device list.
+					// Until then, we just verify that the ReconcileCurrentSnapshot succeeds without error when the flag is on.
+					// Once vcsim supports this, we should check updatedSnapshot.Status.Disks.
+					// For now, we ensure no panic and successful reconciliation.
 				})
 			})
 

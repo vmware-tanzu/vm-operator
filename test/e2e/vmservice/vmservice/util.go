@@ -1326,9 +1326,32 @@ func CreateVMSnapshot(
 	vmSvcClusterProxy *common.VMServiceClusterProxy,
 	params manifestbuilders.VirtualMachineSnapshotYaml,
 ) {
-	vmSnapshotYaml := manifestbuilders.GetVirtualMachineSnapshotYaml(params)
-	framework.Logf("Create VirtualMachineSnapshot:\n%s", string(vmSnapshotYaml))
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmSnapshotYaml)).To(Succeed())
+	vmSnapshot := &vmopv1.VirtualMachineSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      params.Name,
+			Namespace: params.Namespace,
+		},
+		Spec: vmopv1.VirtualMachineSnapshotSpec{
+			VMName:      params.VMName,
+			Memory:      params.Memory,
+			Description: params.Description,
+		},
+	}
+	if params.Quiesce != "" {
+		duration, err := time.ParseDuration(params.Quiesce)
+		Expect(err).NotTo(HaveOccurred())
+		vmSnapshot.Spec.Quiesce = &vmopv1.QuiesceSpec{
+			Timeout: &metav1.Duration{Duration: duration},
+		}
+	}
+	if params.ImportedSnapshot {
+		vmSnapshot.Annotations = map[string]string{
+			"vmoperator.vmware.com/imported-snapshot": "",
+		}
+	}
+
+	framework.Logf("Create VirtualMachineSnapshot: %s/%s", params.Namespace, params.Name)
+	Expect(vmSvcClusterProxy.GetClient().Create(ctx, vmSnapshot)).To(Succeed())
 }
 
 func CreateSnapshotInVC(

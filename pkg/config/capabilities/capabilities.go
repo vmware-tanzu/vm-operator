@@ -139,6 +139,10 @@ const (
 	// extension compatibility constraint mechanism. It gates VM Operator
 	// registering INVARIANT constraints on VMs it creates.
 	CapabilityKeyExtensionCompatConstraint = "supports_extension_compat_constraint"
+
+	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
+	// the Supervisor capabilities CRD for exposing disk lists in VM snapshots.
+	CapabilityKeyCSIBackupAPI = "supports_CSI_Backup_API"
 )
 
 var (
@@ -317,6 +321,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		case CapabilityKeyExtensionCompatConstraint:
 			fs.ExtensionCompatConstraint = capStatus.Activated
+		case CapabilityKeyCSIBackupAPI:
+			fs.CSIBackupAPI = capStatus.Activated
 		}
 
 	}

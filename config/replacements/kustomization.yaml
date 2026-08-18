@@ -200,6 +200,17 @@ replacements:
       version: v1
       kind: CustomResourceDefinition
       name: virtualmachinesetresourcepolicies.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachinesnapshots.vmoperator.vmware.com
+
 
 
 # WEBHOOK_SECRET_NAME
@@ -330,6 +341,17 @@ replacements:
       version: v1
       kind: CustomResourceDefinition
       name: virtualmachinesetresourcepolicies.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachinesnapshots.vmoperator.vmware.com
+
 
 # DEPLOYMENT_NAME
 - source:

@@ -355,15 +355,9 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "PoweredOn",
 					Annotations: map[string]string{
-						// Deploy with full disk copies instead of a linked clone. A
-						// linked clone is consolidated by a background PromoteDisks
-						// task, and vSphere serializes the OVF capture behind that
-						// task, which can leave the publish queued past its timeout.
-						// Direct mode has no delta disks to promote, so nothing
-						// competes with the capture. Disk provenance is irrelevant to
-						// the vAppConfig behavior under test here.
-						//
-						// The template inserts annotation values verbatim, so quote it.
+						// Deploy full disk copies so no background PromoteDisks task
+						// can leave the OVF capture queued past the publish timeout.
+						// Disk provenance is irrelevant to the vAppConfig behavior under test here.
 						pkgconst.FastDeployAnnotationKey: fmt.Sprintf("%q", pkgconst.FastDeployModeDirect),
 					},
 					Bootstrap: manifestbuilders.Bootstrap{

@@ -355,6 +355,18 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					StorageClassName: clusterResources.StorageClassName,
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "PoweredOn",
+					Annotations: map[string]string{
+						// Deploy with full disk copies instead of a linked clone. A
+						// linked clone is consolidated by a background PromoteDisks
+						// task, and vSphere serializes the OVF capture behind that
+						// task, which can leave the publish queued past its timeout.
+						// Direct mode has no delta disks to promote, so nothing
+						// competes with the capture. Disk provenance is irrelevant to
+						// the vAppConfig behavior under test here.
+						//
+						// The template inserts annotation values verbatim, so quote it.
+						pkgconst.FastDeployAnnotationKey: fmt.Sprintf("%q", pkgconst.FastDeployModeDirect),
+					},
 					Bootstrap: manifestbuilders.Bootstrap{
 						// LinuxPrep is needed here for the VM to get a valid IP address.
 						LinuxPrep: &manifestbuilders.LinuxPrep{},
@@ -369,12 +381,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName)
 				})
-
-				// The source VM is freshly deployed, so its Fast Deploy linked-clone
-				// disks are still being consolidated by a PromoteDisks task. vSphere
-				// serializes the OVF capture behind that task, and the capture can
-				// stay queued past the publish timeout, so wait for promotion first.
-				vmoperator.WaitForVirtualMachineDiskPromotionSynced(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
 
 				By("Publishing the source VM to the target content library")
 				vAppPubReqName := fmt.Sprintf("%s-vapp", vmPublishRequestName)

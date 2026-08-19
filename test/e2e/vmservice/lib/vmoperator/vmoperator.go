@@ -127,32 +127,6 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 
-// WaitForVirtualMachineDiskPromotionSynced waits for the VM's disk promotion to
-// finish, as indicated by the VirtualMachineDiskPromotionSynced condition.
-//
-// A missing condition means no promotion is in flight (e.g. FastDeploy is
-// disabled, or promoteDisksMode is Disabled), not that one is pending, so it
-// is treated as success rather than something to keep waiting on.
-func WaitForVirtualMachineDiskPromotionSynced(ctx context.Context,
-	config *config.E2EConfig,
-	client ctrlclient.Client, ns, vmName string) {
-	By("Waiting for any VirtualMachine disk promotion to complete")
-
-	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine %s/%s", ns, vmName)
-
-		cond := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced)
-		if cond == nil {
-			return
-		}
-
-		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
-			"VirtualMachineDiskPromotionSynced is %s (%s): %s", cond.Status, cond.Reason, cond.Message)
-	}, config.GetIntervals("default", "wait-virtual-machine-disk-promotion")...).
-		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s disk promotion to complete", ns, vmName)
-}
-
 // WaitForVirtualMachineStatusClassUpdated waits for the VM Status to
 // report the expected class name.
 func WaitForVirtualMachineStatusClassUpdated(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, className string) {

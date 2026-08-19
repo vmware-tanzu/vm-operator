@@ -21,7 +21,8 @@ script_dir="$(dirname "$0")"
 # -T: no PTY (avoids "Too many authentication failures" from the SSH agent)
 # PubkeyAuthentication=no: force password auth, don't offer agent keys
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password"
-crt_dir="$script_dir/tools/bin"
+#crt_dir="$script_dir/tools/bin"
+crt_dir=$(mktemp -d)
 
 find_gateway_ip() {
   mgmtCidr="$1"

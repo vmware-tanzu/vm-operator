@@ -52,7 +52,6 @@ intervals:
   default/wait-virtual-machine-vmip: ["5m", "3s"]
   default/wait-virtual-machine-service-endpoints: ["2m", "5s"]
   default/wait-virtual-machine-image-creation: ["10m", "5s"]
-  default/wait-virtual-machine-disk-promotion: ["10m", "10s"]
   default/consistent-virtual-machine-condition: ["30s", "5s"]
   default/wait-virtual-machine-annotation-update: ["30s", "5s"]
   default/wait-virtual-machine-group-deletion: [ "60s", "5s" ]

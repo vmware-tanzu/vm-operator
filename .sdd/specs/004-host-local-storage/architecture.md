@@ -518,15 +518,46 @@ binding modes:
 
 1. **End-to-end suite coverage.** A Supervisor-level E2E spec, skipped unless
    the capability is active, is required to guard this behavior in CI.
-2. **VM Groups.** Currently unsupported; a validation error would be clearer
+2. **VM Groups.** Group placement issues `PlaceVmsXCluster`. A real 3-VM batch
+   call of exactly the shape it sends — several `VmPlacementSpecs` in one
+   request, `HostRecommRequired` true — was measured against real DRS: three
+   VMs, each carrying its own already-provisioned host-local volume on a
+   distinct host, all came back with the *same* substituted host and the
+   *same* substituted datastore, with no relationship to any of the three
+   volumes' real locations. This was deterministic across three trials. So the
+   mechanism this design rests on is not available there, and the per-VM flow
+   uses `PlaceVm` for that reason (§5). The PVCs are still passed so the
+   recommendation accounts for their storage policies; only the host
+   constraint is missing. This is an observed limitation of that API rather
+   than a statement from the DRS team, so an RFE is filed asking DRS to honor
+   ConfigSpec disk backings in `PlaceVmsXCluster`, or to accept a per-VM host
+   constraint (`vmop-NNNN`). Until then a validation error would be clearer
    than falling back to zone-only placement.
 3. **Self-referential volumes.** Volumes whose data source is the VM itself are
    derived from the VM's own placement and need not participate in host
    resolution; excluding them keeps the conflict check strictly about
    externally-provisioned volumes.
-4. **Post-creation movement.** Nothing prevents an administrator from
-   relocating a host-local VM in vCenter; detecting and reporting that drift is
-   out of scope.
+4. **Post-creation movement.** What guarantee exists depends on how the VM
+   itself is provisioned:
+
+   - **A VM provisioned with a host-local storage class** has its home *and* its
+     disks on the host-local datastore. It cannot move to another host, since
+     that would require a storage vMotion, which DRS load balancing does not
+     perform. The host it is created on is the host it keeps.
+   - **A VM provisioned with a shared zonal policy that also requests a
+     host-local `WaitForFirstConsumer` volume** carries no such guarantee.
+     Nothing keeps it on the host chosen at create time, because until the
+     volume is bound and attached the VM has no host-local disk holding it in
+     place. While the PVC is still unprovisioned this self-corrects: the
+     selected node is re-published from the VM's *current* host on every
+     reconcile (§6). Once CNS has provisioned the volume it cannot move, so a
+     VM that migrated in the interim fails to attach it, with no recovery short
+     of deleting the PVC. This configuration is not supported.
+
+   Closing the second case would need a DRS VM-Host rule, or placing the VM's
+   home on the same host-local datastore. Separately, nothing prevents an
+   administrator from relocating a host-local VM in vCenter by hand; detecting
+   and reporting that drift is out of scope.
 5. **More than one host-local volume on a VM requires a
    `WaitForFirstConsumer` StorageClass.** Under `Immediate` binding each PVC is
    provisioned before a consumer exists, so nothing correlates the decisions.

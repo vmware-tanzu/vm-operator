@@ -11,7 +11,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25/mo"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -48,7 +47,7 @@ func vmHostLocalStorageTests() {
 
 	var (
 		parentCtx   context.Context
-		initObjects []client.Object
+		initObjects []ctrlclient.Object
 		testConfig  builder.VCSimTestConfig
 		ctx         *builder.TestContextForVCSim
 		vmProvider  providers.VirtualMachineProviderInterface
@@ -106,7 +105,7 @@ func vmHostLocalStorageTests() {
 
 		clusterVMI1 := &vmopv1.ClusterVirtualMachineImage{}
 		Expect(ctx.Client.Get(
-			ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name},
+			ctx, ctrlclient.ObjectKey{Name: ctx.ContentLibraryItem1Name},
 			clusterVMI1)).To(Succeed())
 
 		vm.Namespace = nsInfo.Namespace
@@ -314,7 +313,7 @@ func vmHostLocalStorageTests() {
 		var pvc corev1.PersistentVolumeClaim
 		Expect(ctx.Client.Get(
 			ctx,
-			client.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
+			ctrlclient.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
 			&pvc)).To(Succeed())
 		Expect(pvc.Annotations).ToNot(HaveKey(storagehelpers.AnnSelectedNode))
 	})
@@ -351,7 +350,7 @@ func vmHostLocalStorageTests() {
 		var pvc corev1.PersistentVolumeClaim
 		Expect(ctx.Client.Get(
 			ctx,
-			client.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
+			ctrlclient.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
 			&pvc)).To(Succeed())
 		Expect(pvc.Annotations).To(HaveKeyWithValue(
 			storagehelpers.AnnSelectedNode, expectedNodeName))
@@ -384,7 +383,7 @@ func vmHostLocalStorageTests() {
 		var pvc corev1.PersistentVolumeClaim
 		Expect(ctx.Client.Get(
 			ctx,
-			client.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
+			ctrlclient.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
 			&pvc)).To(Succeed())
 		Expect(pvc.Annotations).ToNot(HaveKey(storagehelpers.AnnSelectedNode))
 	})
@@ -417,7 +416,7 @@ func vmHostLocalStorageTests() {
 		var pvc corev1.PersistentVolumeClaim
 		Expect(ctx.Client.Get(
 			ctx,
-			client.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
+			ctrlclient.ObjectKey{Namespace: nsInfo.Namespace, Name: pvcName},
 			&pvc)).To(Succeed())
 		Expect(pvc.Annotations).ToNot(HaveKey(storagehelpers.AnnSelectedNode))
 	})

@@ -1907,14 +1907,6 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		needHostLocalPlacement = need
 	}
 
-	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
-		vmCtx,
-		createArgs.ConfigSpec,
-		createArgs.Storage.StorageClassToPolicyID)
-	if err != nil {
-		return err
-	}
-
 	// Naming each provisioned volume's disk by its real datastore path is what
 	// lets DRS work out the host, so no host or datastore has to be passed to
 	// placement.
@@ -1924,9 +1916,12 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		return err
 	}
 
-	if err := AddPVCPlacementDisks(
-		&placementConfigSpec, createArgs.Storage, diskPaths); err != nil {
-
+	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
+		vmCtx,
+		createArgs.ConfigSpec,
+		createArgs.Storage,
+		diskPaths)
+	if err != nil {
 		return err
 	}
 

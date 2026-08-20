@@ -27,6 +27,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -625,7 +626,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, false, nil)).To(Succeed())
 		before, err := vimtypes.DeepCopy(spec)
 		Expect(err).NotTo(HaveOccurred())
-		placed, err := virtualmachine.CreateConfigSpecForPlacement(vmCtx, spec, nil, nil)
+		placed, err := virtualmachine.CreateConfigSpecForPlacement(vmCtx, spec, storage.VMStorageData{}, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(spec).To(Equal(before))
 		Expect(base.TagSpecs).To(HaveLen(2))

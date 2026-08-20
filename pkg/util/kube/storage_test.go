@@ -1255,3 +1255,84 @@ var _ = Describe("MarkEncryptedStorageClass", func() {
 		})
 	})
 })
+
+var _ = Describe("IsHostLocalStorageProfile", func() {
+	var (
+		ctx           context.Context
+		client        ctrlclient.Client
+		withObjs      []ctrlclient.Object
+		storageClass  storagev1.StorageClass
+		storagePolicy infrav1.StoragePolicy
+		profileID     string
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{PodNamespace: fakeString})
+		profileID = uuid.NewString()
+		storageClass = storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{Name: fakeString},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: profileID,
+			},
+		}
+		storagePolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			},
+			Spec:   infrav1.StoragePolicySpec{ID: profileID},
+			Status: infrav1.StoragePolicyStatus{HostLocal: true},
+		}
+		withObjs = []ctrlclient.Object{&storageClass, &storagePolicy}
+	})
+
+	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+		Expect(storagev1.AddToScheme(scheme)).To(Succeed())
+
+		client = fake.NewClientBuilder().
+			WithObjects(withObjs...).
+			WithScheme(scheme).
+			Build()
+	})
+
+	When("the policy declares host-local storage", func() {
+		It("reports true", func() {
+			Expect(kubeutil.IsHostLocalStorageProfile(
+				ctx, client, profileID)).To(BeTrue())
+		})
+	})
+
+	When("the policy does not declare host-local storage", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.HostLocal = false
+		})
+
+		It("reports false", func() {
+			Expect(kubeutil.IsHostLocalStorageProfile(
+				ctx, client, profileID)).To(BeFalse())
+		})
+	})
+
+	When("the StoragePolicy does not exist", func() {
+		BeforeEach(func() {
+			withObjs = []ctrlclient.Object{&storageClass}
+		})
+
+		It("returns an error rather than false, so callers retry instead of "+
+			"treating host-local storage as ordinary storage", func() {
+
+			_, err := kubeutil.IsHostLocalStorageProfile(ctx, client, profileID)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to get StoragePolicy"))
+		})
+	})
+
+	When("the profile ID is empty", func() {
+		It("reports false without an error", func() {
+			Expect(kubeutil.IsHostLocalStorageProfile(ctx, client, "")).To(BeFalse())
+		})
+	})
+
+})

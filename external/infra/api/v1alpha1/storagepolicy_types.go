@@ -98,6 +98,14 @@ type StoragePolicyStatus struct {
 	// Encrypted is the observed status of encryption support for the storage
 	// policy.
 	Encrypted bool `json:"encrypted,omitempty"`
+
+	// +optional
+
+	// HostLocal is the observed status of host-local storage support for the
+	// storage policy. It is true when the policy requires that a volume be
+	// placed on storage attached to, and mounted on, a single ESXi host, which
+	// means a virtual machine using the volume can only run on that host.
+	HostLocal bool `json:"hostLocal,omitempty"`
 }
 
 // Sort ensures the list elements in the status are in a deterministic order.

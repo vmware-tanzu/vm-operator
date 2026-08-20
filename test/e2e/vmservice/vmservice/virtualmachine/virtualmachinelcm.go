@@ -741,19 +741,43 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		cdromFileName := cdrom.Backing.(*types.VirtualCdromIsoBackingInfo).FileName
 		Expect(cdromFileName).To(Equal(clItem.Status.FileInfo[0].StorageURI))
 
-		By("Verifying CD-ROM can be disconnected from the VM")
-		// Use a host-forced (allowGuestControl=false) disconnect here: the guest
-		// is still sitting at the ISO's boot/installer screen with no VMware
-		// Tools running, so a guest-mediated disconnect (allowGuestControl=true)
-		// cannot get a guest ack and fails with msg.disk.onlineConnectFail. This
-		// step is only exercising the k8s-to-vSphere connection-state plumbing,
-		// not a guest-cooperative eject, so the host-forced path is the correct
-		// one to assert against.
+		// The guest is still sitting at the ISO's boot/installer screen with no
+		// VMware Tools running and is actively reading the CD-ROM, so vCenter
+		// raises a blocking "device is locked, force disconnect?" question on a
+		// live ReconfigVM to disconnect it -- guest-mediated
+		// (allowGuestControl=true) or host-forced (allowGuestControl=false)
+		// alike. Nothing answers that question, so the task hangs until
+		// vCenter's own timeout and then fails with msg.disk.onlineConnectFail.
+		// In practice a guest would unmount the media first (releasing the
+		// lock) and then a live disconnect succeeds with no question raised;
+		// since this test doesn't control the guest, it powers the VM off to
+		// disconnect the CD-ROM instead.
+		// TODO: vSphere also has a per-VM advanced option,
+		// cdrom.showIsoLockWarning=FALSE, that suppresses this question
+		// entirely and would allow a live disconnect. Consider surfacing that
+		// as a v1alpha6 CD-ROM option instead of requiring a power cycle.
+		// https://knowledge.broadcom.com/external/article?legacyId=2144053
+		By("Powering off the VM to safely disconnect the CD-ROM")
+		vmParameters.PowerState = poweredOffState
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML to power off the VM %s", string(vmYaml))
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOffState)
+
+		By("Verifying CD-ROM can be disconnected from the VM while powered off")
 		//nolint:staticcheck // VirtualMachineYaml (v1alpha3) still exposes deprecated Cdrom for this spec path.
 		vmParameters.Cdrom[0].Connected = false
 		vmParameters.Cdrom[0].AllowGuestControl = false
 		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML with CD-ROM disconnected %s", string(vmYaml))
+		verifyCdromConnectionState(ctx, vmMoRef, propCollector, false, false)
+
+		By("Powering the VM back on")
+		vmParameters.PowerState = poweredOnState
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML to power on the VM %s", string(vmYaml))
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOnState)
+
+		By("Verifying CD-ROM did not auto-connect on power on")
 		verifyCdromConnectionState(ctx, vmMoRef, propCollector, false, false)
 
 		By("Verifying CD-ROM can be reconnected to the VM with allowGuestControl disabled")

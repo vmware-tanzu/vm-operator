@@ -92,6 +92,7 @@ func unitTestsValidateCreate() {
 		mismatchedVMNameLabel bool
 		createVKSNode         bool
 		hardware              *vmopv1.VirtualMachineHardwareSpec
+		volumes               []vmopv1.VirtualMachineVolume
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -104,7 +105,7 @@ func unitTestsValidateCreate() {
 		}
 
 		// Create a VM with CAPI labels to simulate a VKS/TKG node
-		if args.hardware != nil || args.createVKSNode {
+		if args.hardware != nil || args.createVKSNode || args.volumes != nil {
 			vm := builder.DummyBasicVirtualMachine(ctx.vmSnapshot.Spec.VMName, ctx.vmSnapshot.Namespace)
 			if args.createVKSNode {
 				vm.Labels = map[string]string{
@@ -112,6 +113,7 @@ func unitTestsValidateCreate() {
 				}
 			}
 			vm.Spec.Hardware = args.hardware
+			vm.Spec.Volumes = args.volumes
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 		}
 
@@ -205,6 +207,47 @@ func unitTestsValidateCreate() {
 							BusNumber:   0,
 							SharingMode: vmopv1.VirtualControllerSharingModeNone,
 						},
+					},
+				},
+			},
+			true,
+			nil,
+			nil,
+		),
+		Entry("should deny snapshot if a volume has MultiWriter sharing mode",
+			createArgs{
+				volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name:        "test-volume",
+						SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+					},
+				},
+			},
+			false,
+			field.NotSupported(vmNameField, "volume test-volume is using unsupported sharingMode for snapshot: MultiWriter", []string{string(vmopv1.VolumeSharingModeNone)}).Error(),
+			nil,
+		),
+		Entry("should allow snapshot if a volume has none sharing mode",
+			createArgs{
+				volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name:        "test-volume",
+						SharingMode: vmopv1.VolumeSharingModeNone,
+					},
+				},
+			},
+			true,
+			nil,
+			nil,
+		),
+		Entry("should allow snapshot if an independent-mode volume (e.g. OracleRAC) has MultiWriter sharing mode",
+			createArgs{
+				volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name:            "test-volume",
+						ApplicationType: vmopv1.VolumeApplicationTypeOracleRAC,
+						SharingMode:     vmopv1.VolumeSharingModeMultiWriter,
+						DiskMode:        vmopv1.VolumeDiskModeIndependentPersistent,
 					},
 				},
 			},

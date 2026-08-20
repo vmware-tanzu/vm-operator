@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -91,10 +92,45 @@ func (vm *VirtualMachine) Reconfigure(
 
 	taskInfo, err := reconfigureTask.WaitForResult(ctx, nil)
 	if err != nil {
+		// When a task fails, WaitForResult returns an error that contains the
+		// LocalizedMessage, but taskInfo.Error contains the full fault details.
+		// Extract a comprehensive error message that includes both the
+		// localized message and all fault messages, skipping it when it's
+		// identical to err.Error() (e.g. when the fault has no additional
+		// FaultMessage detail) to avoid duplicating the same text twice.
+		if taskInfo != nil {
+			if errMsg := taskutil.ErrorMessageFromTaskInfo(taskInfo); errMsg != "" && errMsg != err.Error() {
+				err = fmt.Errorf("%s: %w", errMsg, err)
+			}
+		}
+
+		if IsSharedBusControllerNotSupportedFault(err) {
+			return taskInfo, pkgerr.NoRequeueErrorf(
+				"reconfigure VM task failed: %s: adding a bus-sharing SCSI controller is not supported while the VM has a snapshot",
+				err)
+		}
+
 		return taskInfo, fmt.Errorf("reconfigure VM task failed: %w", err)
 	}
 
 	return taskInfo, nil
+}
+
+// IsSharedBusControllerNotSupportedFault returns true if err is, or wraps,
+// vim.fault.SharedBusControllerNotSupported. vSphere never allows a
+// bus-sharing (Physical/Virtual) SCSI controller to be added to a VM that
+// has a snapshot, and the reverse -- taking a snapshot of a VM with such a
+// controller -- is also unsupported:
+//   - https://knowledge.broadcom.com/external/article/314360
+//   - https://knowledge.broadcom.com/external/article/311074
+//
+// This is a VM-wide, disk-mode-agnostic restriction, distinct from the
+// disk-level MultiWriter flag (see vmopv1util.GetControllerSharingMode).
+// Once a VM is in this state, retrying the same reconfigure will fail
+// identically forever, so callers should stop requeuing instead of
+// retrying in a tight loop.
+func IsSharedBusControllerNotSupportedFault(err error) bool {
+	return fault.Is(err, &vimtypes.SharedBusControllerNotSupported{})
 }
 
 func (vm *VirtualMachine) GetProperties(ctx context.Context, properties []string) (*mo.VirtualMachine, error) {

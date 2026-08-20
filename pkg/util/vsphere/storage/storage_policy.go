@@ -22,6 +22,73 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
+const (
+	volumeAllocationNamespace = "com.vmware.storage.volumeallocation"
+	// storageLocalityID is both the capability id and the property id in this
+	// schema.
+	storageLocalityID        = "StorageLocality"
+	storageLocalityHostLocal = "HostLocalStorage"
+)
+
+// IsHostLocalStorageCapabilityPolicy returns true if the policy contains the
+// com.vmware.storage.volumeallocation/StorageLocality SPBM capability with its
+// property value set to HostLocalStorage. The StorageLocality capability also
+// allows the value None (its default), which means no locality preference must
+// NOT be treated as host-local.
+// This function does NOT match vSAN Direct or vSAN locality/SNA policies.
+func IsHostLocalStorageCapabilityPolicy(
+	subprofiles *pbmtypes.PbmCapabilitySubProfileConstraints) bool {
+
+	if subprofiles == nil {
+		return false
+	}
+	for _, subprofile := range subprofiles.SubProfiles {
+		for _, capIns := range subprofile.Capability {
+			if capIns.Id.Namespace != volumeAllocationNamespace ||
+				capIns.Id.Id != storageLocalityID {
+
+				continue
+			}
+			for _, constraint := range capIns.Constraint {
+				for _, propInstance := range constraint.PropertyInstance {
+					if propInstance.Id == storageLocalityID &&
+						storageLocalityValueIsHostLocal(propInstance.Value) {
+
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// storageLocalityValueIsHostLocal reports whether a StorageLocality property
+// value denotes host-local storage. The value is normally a plain string, but
+// SPBM may express it as a discrete set of allowed values, in which case any
+// member matching is sufficient.
+func storageLocalityValueIsHostLocal(value vimtypes.AnyType) bool {
+	switch v := value.(type) {
+	case string:
+		return v == storageLocalityHostLocal
+	case pbmtypes.PbmCapabilityDiscreteSet:
+		for _, item := range v.Values {
+			if s, ok := item.(string); ok && s == storageLocalityHostLocal {
+				return true
+			}
+		}
+	case *pbmtypes.PbmCapabilityDiscreteSet:
+		if v != nil {
+			for _, item := range v.Values {
+				if s, ok := item.(string); ok && s == storageLocalityHostLocal {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // GetStoragePolicyStatus returns the storage policy status for a given profile
 // ID.
 func GetStoragePolicyStatus(
@@ -67,6 +134,11 @@ func GetStoragePolicyStatus(
 	if err := parseConstraints(c, &status); err != nil {
 		return infrav1.StoragePolicyStatus{}, err
 	}
+
+	// Determine if the policy requires host-local storage. This is a distinct
+	// capability from the disk format and provisioning mode read above, so it
+	// is evaluated separately rather than folded into parseConstraints.
+	status.HostLocal = IsHostLocalStorageCapabilityPolicy(c)
 
 	// Determine if the policy supports encryption.
 	if err := supportsEncryption(

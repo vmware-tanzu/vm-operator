@@ -33,6 +33,7 @@ var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
 	Describe("GuestHeartbeat", vmGuestHeartbeatTests)
 	Describe("GuestID", vmGuestIDTests)
 	Describe("HardwareVersion", vmHardwareVersionTests)
+	Describe("HostLocalStorage", vmHostLocalStorageTests)
 	Describe("ISO", vmISOTests)
 	Describe("InstanceStorage", vmInstanceStorageTests)
 	Describe("Metadata", vmMetadataTests)

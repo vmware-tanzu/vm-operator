@@ -533,9 +533,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, "vm")
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 
 		if skipCleanup {
 			return

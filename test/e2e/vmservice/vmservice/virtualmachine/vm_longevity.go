@@ -111,8 +111,8 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 	AfterEach(func() {
 		if CurrentSpecReport().Failed() {
 			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmClassName, "vmclass")
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, "vm")
 		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 
 		// Delete and verify the virtual machine doesn't exist.
 		if len(vmYaml) > 0 {

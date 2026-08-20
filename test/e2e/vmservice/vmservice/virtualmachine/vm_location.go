@@ -130,12 +130,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(
-				ctx, svClusterClient,
-				clusterProxy.GetKubeconfigPath(),
-				input.WCPNamespaceName, vmName, vmKind)
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 
 		vmoperator.VerifyVMDeleted(ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
 		vcenter.LogoutVimClient(vCenterAdminClient)

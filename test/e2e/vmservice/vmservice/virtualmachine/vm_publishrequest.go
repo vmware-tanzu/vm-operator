@@ -108,9 +108,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 		})
 
 		AfterEach(func() {
-			if CurrentSpecReport().Failed() {
-				vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, input.LinuxVMName, "vm")
-			}
+			vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 		})
 
 		Context("CLS Content Library", Ordered, func() {

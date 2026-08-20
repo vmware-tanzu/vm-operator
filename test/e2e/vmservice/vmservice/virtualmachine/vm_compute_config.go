@@ -121,6 +121,10 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			config.InfraConfig.ManagementClusterConfig.Resources.PhotonImageDisplayName)
 	})
 
+	AfterEach(func() {
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), vmNamespace)
+	})
+
 	It("creates VM with hot-pluggable allocation and verifies condition True after live update",
 		Label("core-functional", "experimental"), func() {
 

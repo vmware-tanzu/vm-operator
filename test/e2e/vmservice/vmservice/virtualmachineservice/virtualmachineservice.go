@@ -29,11 +29,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
-const (
-	virtualMachineKind        = "VirtualMachine"
-	virtualMachineServiceKind = "VirtualMachineService"
-)
-
 type SpecInput struct {
 	Config           *e2eConfig.E2EConfig
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
@@ -86,12 +81,7 @@ func VirtualMachineServiceSpec(ctx context.Context, inputGetter func() SpecInput
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmServiceName, virtualMachineServiceKind)
-			for _, vmName := range vmNames {
-				vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, virtualMachineKind)
-			}
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 
 		Expect(ctrlclient.IgnoreNotFound(svClusterClient.Delete(ctx, &vmopv1.VirtualMachineService{
 			ObjectMeta: metav1.ObjectMeta{Name: vmServiceName, Namespace: input.WCPNamespaceName},

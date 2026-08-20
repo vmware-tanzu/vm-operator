@@ -78,9 +78,7 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, input.ClusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, "vm")
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, input.ClusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 
 		// Delete the virtual machine
 		vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)

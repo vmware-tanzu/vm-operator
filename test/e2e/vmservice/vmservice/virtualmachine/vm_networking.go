@@ -111,9 +111,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 			vmNamespaceName = tmpNamespaceCtx.GetNamespace().Name
 		}
 
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), vmNamespaceName, vmName, "vm")
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), vmNamespaceName)
 
 		// Delete the virtual machine if it was created.
 		if len(vmYaml) > 0 {

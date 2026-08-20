@@ -7,10 +7,13 @@ package virtualmachine
 import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	corev1 "k8s.io/api/core/v1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -169,10 +172,14 @@ func CreateConfigSpec(
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for
 // Placement. configSpec will likely be - or at least derived from - the
 // ConfigSpec returned by CreateConfigSpec above.
+//
+// diskPaths optionally maps a PVC name to the datastore path of its
+// already-provisioned volume. See addPVCPlacementDisks.
 func CreateConfigSpecForPlacement(
 	vmCtx pkgctx.VirtualMachineContext,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	storageClassesToIDs map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
+	storageData storage.VMStorageData,
+	diskPaths map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	pciDevKey := pciDevicesStartDeviceKey - 28000
 
@@ -269,10 +276,16 @@ func CreateConfigSpecForPlacement(
 
 	configSpec.DeviceChange = deviceChangeCopy
 
+	// Add a placement-only disk for each of the VM's PVCs, so the recommendation
+	// accounts for their storage policies and, for the volumes that already
+	// exist, for where they actually live.
+	hasVirtualDisk = addPVCPlacementDisks(
+		&configSpec, storageData, diskPaths) || hasVirtualDisk
+
 	if !hasVirtualDisk {
 		// PlaceVmsXCluster expects there to always be at least one disk so add a dummy disk. Typically
 		// because of fast deploy, the image's disks will be present, but for like ISO there is no image
-		// and since we aren't adding the PVCs yet, add the dummy disk.
+		// and the VM may have no PVCs either, so add the dummy disk.
 		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 			Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
@@ -288,7 +301,7 @@ func CreateConfigSpecForPlacement(
 			},
 			Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 				&vimtypes.VirtualMachineDefinedProfileSpec{
-					ProfileId: storageClassesToIDs[vmCtx.VM.Spec.StorageClass],
+					ProfileId: storageData.StorageClassToPolicyID[vmCtx.VM.Spec.StorageClass],
 				},
 			},
 		})
@@ -304,7 +317,7 @@ func CreateConfigSpecForPlacement(
 				Device:        dev,
 				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 					&vimtypes.VirtualMachineDefinedProfileSpec{
-						ProfileId: storageClassesToIDs[isVolumes[idx].PersistentVolumeClaim.InstanceVolumeClaim.StorageClass],
+						ProfileId: storageData.StorageClassToPolicyID[isVolumes[idx].PersistentVolumeClaim.InstanceVolumeClaim.StorageClass],
 						ProfileData: &vimtypes.VirtualMachineProfileRawData{
 							ExtensionKey: "com.vmware.vim.sps",
 						},
@@ -327,7 +340,6 @@ func CreateConfigSpecForPlacement(
 
 	// TODO: Add more devices and fields
 	//  - storage profile/class
-	//  - PVC volumes
 	//  - anything in ExtraConfig matter here?
 	//  - any way to do the cluster modules for anti-affinity?
 	//  - whatever else I'm forgetting
@@ -499,4 +511,117 @@ func initResourceAllocation(ap **vimtypes.ResourceAllocationInfo) {
 	if a.Limit == nil {
 		a.Limit = ptr.To[int64](-1)
 	}
+}
+
+// addPVCPlacementDisks adds one placement-only disk to the given placement
+// ConfigSpec for each of the VM's PVCs, carrying that PVC's storage policy, so
+// that the recommended host and datastore are compatible with all of the VM's
+// storage rather than only with the VM's own files. It reports whether any disk
+// was added.
+//
+// diskPaths optionally maps a PVC name to the datastore path of its
+// already-provisioned volume. A disk given its real path is what lets DRS
+// resolve the host for host-local storage: only one host can reach a host-local
+// datastore, so naming the path narrows placement to that host without
+// placement having to be told which host to use.
+//
+// PVCs whose data source is the VM itself are skipped: those disks originate
+// from the image and are already present in the ConfigSpec, where
+// vmCreateGenConfigSpecImagePVCDataSourceRefs applies their policy and size.
+// Adding them again would count the same storage twice.
+//
+// Controllers for these disks are not created here. The caller runs
+// EnsureDisksHaveControllers once for the whole ConfigSpec.
+func addPVCPlacementDisks(
+	configSpec *vimtypes.VirtualMachineConfigSpec,
+	storageData storage.VMStorageData,
+	diskPaths map[string]string) bool {
+
+	pvcs := make([]corev1.PersistentVolumeClaim, 0, len(storageData.PVCs))
+	for _, pvc := range storageData.PVCs {
+		if !kubeutil.HasVirtualMachineDataSourceRef(pvc) {
+			pvcs = append(pvcs, pvc)
+		}
+	}
+
+	if len(pvcs) == 0 {
+		return false
+	}
+
+	deviceKey := pvcPlacementStartDeviceKey(configSpec)
+
+	for _, pvc := range pvcs {
+		capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]
+		if !ok {
+			capacity = pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+		}
+
+		var policyID string
+		if scName := pvc.Spec.StorageClassName; scName != nil {
+			policyID = storageData.StorageClassToPolicyID[*scName]
+		}
+
+		backing := &vimtypes.VirtualDiskFlatVer2BackingInfo{
+			ThinProvisioned: ptr.To(false),
+		}
+
+		// A volume that already exists is named by its path, so it is not
+		// created. One that does not exist yet -- a WaitForFirstConsumer volume,
+		// or a Bound volume CNS returned no path for -- has no file, so
+		// placement must account for the space its disk will need on the
+		// candidate datastore. This is the same rule fastDeployDirect applies,
+		// and it only affects how DRS accounts for the disk: this ConfigSpec is
+		// used to ask for a recommendation and never creates anything.
+		fileOp := vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+		if p := diskPaths[pvc.Name]; p != "" {
+			backing.FileName = p
+			fileOp = ""
+		}
+
+		configSpec.DeviceChange = append(
+			configSpec.DeviceChange,
+			&vimtypes.VirtualDeviceConfigSpec{
+				Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				FileOperation: fileOp,
+				Device: &vimtypes.VirtualDisk{
+					CapacityInBytes: capacity.Value(),
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:     deviceKey,
+						Backing: backing,
+					},
+				},
+				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+					&vimtypes.VirtualMachineDefinedProfileSpec{
+						ProfileId: policyID,
+					},
+				},
+			})
+
+		deviceKey--
+	}
+
+	return true
+}
+
+// pvcPlacementStartDeviceKey returns the first device key to use for the
+// placement-only PVC disks, below every key already in the ConfigSpec. This
+// mirrors what EnsureDisksHaveControllers does for the controllers it adds,
+// rather than assuming a fixed range is free.
+func pvcPlacementStartDeviceKey(
+	configSpec *vimtypes.VirtualMachineConfigSpec) int32 {
+
+	// Device keys in a ConfigSpec are negative, so the lowest key is the most
+	// negative one. Starting at zero keeps the result negative even when the
+	// ConfigSpec holds no devices, or only ones with positive keys.
+	minKey := int32(0)
+
+	for _, bdc := range configSpec.DeviceChange {
+		if dc := bdc.GetVirtualDeviceConfigSpec(); dc != nil && dc.Device != nil {
+			if key := dc.Device.GetVirtualDevice().Key; key < minKey {
+				minKey = key
+			}
+		}
+	}
+
+	return minKey - pvcPlacementDeviceKeyOffset
 }

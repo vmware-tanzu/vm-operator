@@ -9,11 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vmware/govmomi/cns"
-	cnstypes "github.com/vmware/govmomi/cns/types"
-	"github.com/vmware/govmomi/vim25"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	storagehelpers "k8s.io/component-helpers/storage/volume"
@@ -23,23 +18,18 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-// hostLocalPVCBindRequeueDelay is how long to wait before re-checking a
-// host-local PVC that has been given a host but is not Bound yet.
-const hostLocalPVCBindRequeueDelay = 10 * time.Second
+const (
+	// hostLocalPVCBindRequeueDelay is how long to wait before re-checking a
+	// host-local PVC that has been given a host but is not Bound yet.
+	hostLocalPVCBindRequeueDelay = 10 * time.Second
 
-// pvcPlacementStartDeviceKey is the starting key for the placement-only PVC
-// disks. A negative range is traditionally used, and this is kept clear of the
-// ranges used for PCI passthrough and instance storage devices.
-const pvcPlacementStartDeviceKey = int32(-1000)
-
-// esxHostMoIDNodeAnnotationKey is the annotation a Supervisor Node object
-// carries naming the MOID of the ESXi host it corresponds to.
-const esxHostMoIDNodeAnnotationKey = "vmware-system-esxi-node-moid"
+	// esxHostMoIDNodeAnnotationKey is the annotation a Supervisor Node object
+	// carries naming the MOID of the ESXi host it corresponds to.
+	esxHostMoIDNodeAnnotationKey = "vmware-system-esxi-node-moid"
+)
 
 // getNodeNameForESXHostMoID returns the name of the Supervisor Node that
 // corresponds to the ESXi host with the given MOID. The name it returns is the
@@ -64,172 +54,6 @@ func getNodeNameForESXHostMoID(
 	return "", fmt.Errorf(
 		"no Node has the %q annotation with value %q",
 		esxHostMoIDNodeAnnotationKey, hostMoID)
-}
-
-// AddPVCPlacementDisks adds one placement-only disk to the given placement
-// ConfigSpec for each of the VM's PVCs, carrying that PVC's storage policy, so
-// that the recommended host and datastore are compatible with all of the VM's
-// storage rather than only with the VM's own files.
-//
-// diskPaths optionally maps a PVC name to the datastore path of its
-// already-provisioned volume. A disk given its real path is what lets DRS
-// resolve the host for host-local storage: only one host can reach a host-local
-// datastore, so naming the path narrows placement to that host without
-// placement having to be told which host to use. Such a disk carries no file
-// operation, since the file already exists.
-//
-// PVCs whose data source is the VM itself are skipped: those disks originate
-// from the image and are already present in the ConfigSpec, where
-// vmCreateGenConfigSpecImagePVCDataSourceRefs applies their policy and size.
-// Adding them again would count the same storage twice.
-func AddPVCPlacementDisks(
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	storageData storage.VMStorageData,
-	diskPaths map[string]string) error {
-
-	pvcs := make([]corev1.PersistentVolumeClaim, 0, len(storageData.PVCs))
-	for _, pvc := range storageData.PVCs {
-		if !kubeutil.HasVirtualMachineDataSourceRef(pvc) {
-			pvcs = append(pvcs, pvc)
-		}
-	}
-
-	if len(pvcs) == 0 {
-		return nil
-	}
-
-	deviceKey := pvcPlacementStartDeviceKey
-
-	for _, pvc := range pvcs {
-		capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]
-		if !ok {
-			capacity = pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-		}
-
-		var policyID string
-		if scName := pvc.Spec.StorageClassName; scName != nil {
-			policyID = storageData.StorageClassToPolicyID[*scName]
-		}
-
-		backing := &vimtypes.VirtualDiskFlatVer2BackingInfo{
-			ThinProvisioned: ptr.To(false),
-		}
-
-		// A provisioned volume is named by its path and is not created.
-		fileOp := vimtypes.VirtualDeviceConfigSpecFileOperationCreate
-		if p := diskPaths[pvc.Name]; p != "" {
-			backing.FileName = p
-			fileOp = ""
-		}
-
-		configSpec.DeviceChange = append(
-			configSpec.DeviceChange,
-			&vimtypes.VirtualDeviceConfigSpec{
-				Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
-				FileOperation: fileOp,
-				Device: &vimtypes.VirtualDisk{
-					CapacityInBytes: capacity.Value(),
-					VirtualDevice: vimtypes.VirtualDevice{
-						Key:     deviceKey,
-						Backing: backing,
-					},
-				},
-				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-					&vimtypes.VirtualMachineDefinedProfileSpec{
-						ProfileId: policyID,
-					},
-				},
-			})
-
-		deviceKey--
-	}
-
-	// The disks added above need controllers, exactly as the image-sourced PVC
-	// disks do.
-	if err := pkgutil.EnsureDisksHaveControllers(configSpec); err != nil {
-		return fmt.Errorf(
-			"failed to ensure disk/controller specs for placement pvcs: %w", err)
-	}
-
-	return nil
-}
-
-// pvcDiskPaths returns the datastore path of each Bound PVC's volume, keyed by
-// PVC name. PVCs that are not Bound are skipped, since nothing is provisioned
-// for them yet.
-//
-// This does not care whether a volume is host-local. A path on shared storage
-// names a datastore every host can reach and so constrains nothing, while a
-// path on host-local storage names one only a single host can reach. Handing
-// DRS the true location of every existing disk is what lets it work the host
-// out, with no need to classify the volumes first.
-//
-// The path is not recorded on any Kubernetes object: the PV's volume attributes
-// and the CnsVolumeInfo both omit it. The PV's volumeHandle is the FCD ID
-// though, and CNS answers for that, so the path is resolved by querying CNS.
-func pvcDiskPaths(
-	ctx context.Context,
-	vimClient *vim25.Client,
-	k8sClient ctrlclient.Client,
-	pvcs []corev1.PersistentVolumeClaim) (map[string]string, error) {
-
-	volumeIDToPVC := map[string]string{}
-
-	for _, pvc := range pvcs {
-		if pvc.Status.Phase != corev1.ClaimBound || pvc.Spec.VolumeName == "" {
-			continue
-		}
-
-		var pv corev1.PersistentVolume
-		if err := k8sClient.Get(
-			ctx, ctrlclient.ObjectKey{Name: pvc.Spec.VolumeName}, &pv); err != nil {
-
-			return nil, fmt.Errorf("failed to get PV %s for PVC %s: %w",
-				pvc.Spec.VolumeName, pvc.Name, err)
-		}
-
-		if pv.Spec.CSI == nil || pv.Spec.CSI.VolumeHandle == "" {
-			continue
-		}
-
-		volumeIDToPVC[pv.Spec.CSI.VolumeHandle] = pvc.Name
-	}
-
-	if len(volumeIDToPVC) == 0 {
-		return nil, nil
-	}
-
-	cnsClient, err := cns.NewClient(ctx, vimClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create CNS client: %w", err)
-	}
-
-	volumeIDs := make([]cnstypes.CnsVolumeId, 0, len(volumeIDToPVC))
-	for id := range volumeIDToPVC {
-		volumeIDs = append(volumeIDs, cnstypes.CnsVolumeId{Id: id})
-	}
-
-	res, err := cnsClient.QueryVolume(ctx, &cnstypes.CnsQueryFilter{
-		VolumeIds: volumeIDs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query CNS for volumes %v: %w",
-			volumeIDs, err)
-	}
-
-	paths := map[string]string{}
-
-	for _, vol := range res.Volumes {
-		details, ok := vol.BackingObjectDetails.(*cnstypes.CnsBlockBackingDetails)
-		if !ok || details.BackingDiskPath == "" {
-			continue
-		}
-		if pvcName := volumeIDToPVC[vol.VolumeId.Id]; pvcName != "" {
-			paths[pvcName] = details.BackingDiskPath
-		}
-	}
-
-	return paths, nil
 }
 
 // hostLocalPlacementNeeded reports whether the VM has any host-local PVC, in
@@ -357,16 +181,14 @@ func hostLocalPVCsForVM(
 		// takes no part in host resolution or in the handoff to CNS. This is
 		// the same exclusion that placement and zone-constraint derivation
 		// make. Check it first, since it avoids a lookup.
-		if kubeutil.HasVirtualMachineDataSourceRef(pvc) {
-			continue
-		}
-
-		hostLocal, err := isHostLocalPVC(ctx, k8sClient, pvc, storageData)
-		if err != nil {
-			return nil, err
-		}
-		if hostLocal {
-			pvcs = append(pvcs, pvc)
+		if !kubeutil.HasVirtualMachineDataSourceRef(pvc) {
+			hostLocal, err := isHostLocalPVC(ctx, k8sClient, pvc, storageData)
+			if err != nil {
+				return nil, err
+			}
+			if hostLocal {
+				pvcs = append(pvcs, pvc)
+			}
 		}
 	}
 

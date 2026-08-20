@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -820,15 +822,19 @@ var _ = Describe("CreateConfigSpec", func() {
 var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	var (
-		vmCtx               pkgctx.VirtualMachineContext
-		storageClassesToIDs map[string]string
-		baseConfigSpec      vimtypes.VirtualMachineConfigSpec
-		configSpec          vimtypes.VirtualMachineConfigSpec
+		vmCtx          pkgctx.VirtualMachineContext
+		storageData    storage.VMStorageData
+		diskPaths      map[string]string
+		baseConfigSpec vimtypes.VirtualMachineConfigSpec
+		configSpec     vimtypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
 		baseConfigSpec = vimtypes.VirtualMachineConfigSpec{}
-		storageClassesToIDs = map[string]string{}
+		storageData = storage.VMStorageData{
+			StorageClassToPolicyID: map[string]string{},
+		}
+		diskPaths = nil
 
 		vm := builder.DummyVirtualMachine()
 		vmCtx = pkgctx.VirtualMachineContext{
@@ -843,7 +849,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		configSpec, err = virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			baseConfigSpec,
-			storageClassesToIDs)
+			storageData,
+			diskPaths)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(configSpec).ToNot(BeNil())
 	})
@@ -1018,7 +1025,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			})
 
 			builder.AddDummyInstanceStorageVolume(vmCtx.VM)
-			storageClassesToIDs[builder.DummyStorageClassName] = storagePolicyID
+			storageData.StorageClassToPolicyID[builder.DummyStorageClassName] = storagePolicyID
 		})
 		It("ConfigSpec contains expected InstanceStorage devices", func() {
 			Expect(configSpec.DeviceChange).To(HaveLen(5))
@@ -2599,18 +2606,6 @@ func findVirtualDiskDeviceChanges(configSpec vimtypes.VirtualMachineConfigSpec) 
 	return out
 }
 
-func findVirtualDiskDeviceChangeByCapacity(
-	configSpec vimtypes.VirtualMachineConfigSpec,
-	capacityInBytes int64) *vimtypes.VirtualDeviceConfigSpec {
-
-	for _, dc := range findVirtualDiskDeviceChanges(configSpec) {
-		if dc.Device.(*vimtypes.VirtualDisk).CapacityInBytes == capacityInBytes {
-			return dc
-		}
-	}
-	return nil
-}
-
 func assertVMTags(
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	expectedTagNames []string,
@@ -2632,3 +2627,143 @@ func assertVMTags(
 	}
 	Expect(configSpec.TagSpecs).To(ConsistOf(tagSpecs))
 }
+
+var _ = Describe("CreateConfigSpecForPlacement PVC disks", func() {
+
+	var (
+		vmCtx          pkgctx.VirtualMachineContext
+		storageData    storage.VMStorageData
+		diskPaths      map[string]string
+		baseConfigSpec vimtypes.VirtualMachineConfigSpec
+		configSpec     vimtypes.VirtualMachineConfigSpec
+	)
+
+	// pvcDiskChanges returns the device changes the PVC placement added, i.e.
+	// every disk whose key is below the lowest key the base ConfigSpec had.
+	pvcDiskChanges := func(
+		spec vimtypes.VirtualMachineConfigSpec,
+		below int32) []*vimtypes.VirtualDeviceConfigSpec {
+
+		var out []*vimtypes.VirtualDeviceConfigSpec
+		for _, dc := range findVirtualDiskDeviceChanges(spec) {
+			if dc.Device.(*vimtypes.VirtualDisk).Key < below {
+				out = append(out, dc)
+			}
+		}
+		return out
+	}
+
+	BeforeEach(func() {
+		baseConfigSpec = vimtypes.VirtualMachineConfigSpec{}
+		diskPaths = nil
+		storageData = storage.VMStorageData{
+			StorageClassToPolicyID: map[string]string{"my-sc": "my-policy-id"},
+			PVCs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-1"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("my-sc"),
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("10Gi"),
+							},
+						},
+					},
+				},
+			},
+		}
+
+		vm := builder.DummyVirtualMachine()
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: pkgcfg.NewContext(),
+			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
+			VM:      vm,
+		}
+	})
+
+	JustBeforeEach(func() {
+		var err error
+		configSpec, err = virtualmachine.CreateConfigSpecForPlacement(
+			vmCtx, baseConfigSpec, storageData, diskPaths)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	When("the PVC is not provisioned", func() {
+		It("adds a disk that is created, carrying the PVC's policy", func() {
+			changes := pvcDiskChanges(configSpec, 0)
+			Expect(changes).To(HaveLen(1))
+
+			disk := changes[0].Device.(*vimtypes.VirtualDisk)
+			Expect(disk.CapacityInBytes).To(BeEquivalentTo(10 * 1024 * 1024 * 1024))
+
+			// The volume does not exist yet, so placement must account for the
+			// space the disk will need on the candidate datastore.
+			Expect(changes[0].FileOperation).To(Equal(
+				vimtypes.VirtualDeviceConfigSpecFileOperationCreate))
+			Expect(changes[0].Profile).To(HaveLen(1))
+			Expect(changes[0].Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec).
+				ProfileId).To(Equal("my-policy-id"))
+		})
+	})
+
+	When("the PVC is provisioned and its disk path is known", func() {
+		BeforeEach(func() {
+			diskPaths = map[string]string{"pvc-1": "[my-ds] fcd/abc.vmdk"}
+		})
+
+		It("names the disk by its path and does not create it", func() {
+			changes := pvcDiskChanges(configSpec, 0)
+			Expect(changes).To(HaveLen(1))
+
+			disk := changes[0].Device.(*vimtypes.VirtualDisk)
+			backing, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+			Expect(ok).To(BeTrue())
+			Expect(backing.FileName).To(Equal("[my-ds] fcd/abc.vmdk"))
+
+			// The file already exists, so it must not be created.
+			Expect(changes[0].FileOperation).To(BeEmpty())
+		})
+	})
+
+	When("the ConfigSpec already contains a very low device key", func() {
+		BeforeEach(func() {
+			// The PCI passthrough range starts far below the disk ranges, so a
+			// fixed starting key cannot be assumed free.
+			baseConfigSpec.DeviceChange = append(baseConfigSpec.DeviceChange,
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualDisk{
+						CapacityInBytes: 1024,
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -28200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								ThinProvisioned: ptr.To(true),
+							},
+						},
+					},
+				})
+		})
+
+		It("starts the PVC disks below every existing key", func() {
+			changes := pvcDiskChanges(configSpec, -28200)
+			Expect(changes).To(HaveLen(1))
+			Expect(changes[0].Device.(*vimtypes.VirtualDisk).Key).
+				To(BeNumerically("<", -28200))
+		})
+	})
+
+	When("the only PVC is the VM's own disk", func() {
+		BeforeEach(func() {
+			storageData.PVCs[0].Spec.DataSourceRef = &corev1.TypedObjectReference{
+				APIGroup: ptr.To(vmopv1.GroupVersion.Group),
+				Kind:     "VirtualMachine",
+				Name:     vmCtx.VM.Name,
+			}
+		})
+
+		It("adds no PVC disk, since that disk is already in the ConfigSpec", func() {
+			// Only the dummy disk the placement API requires is present.
+			Expect(pvcDiskChanges(configSpec, -1000)).To(BeEmpty())
+		})
+	})
+})

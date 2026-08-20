@@ -1330,8 +1330,31 @@ var _ = Describe("IsHostLocalStorageProfile", func() {
 	})
 
 	When("the profile ID is empty", func() {
-		It("reports false without an error", func() {
-			Expect(kubeutil.IsHostLocalStorageProfile(ctx, client, "")).To(BeFalse())
+		It("panics, since a caller that skipped resolving the profile ID must "+
+			"not be told the policy is not host-local", func() {
+
+			fn := func() {
+				_, _ = kubeutil.IsHostLocalStorageProfile(ctx, client, "")
+			}
+			Expect(fn).To(PanicWith("profileID is empty"))
+		})
+	})
+
+	When("the context is nil", func() {
+		It("panics", func() {
+			fn := func() {
+				_, _ = kubeutil.IsHostLocalStorageProfile(nil, client, profileID) //nolint:staticcheck // testing the nil guard
+			}
+			Expect(fn).To(PanicWith("ctx is nil"))
+		})
+	})
+
+	When("the client is nil", func() {
+		It("panics", func() {
+			fn := func() {
+				_, _ = kubeutil.IsHostLocalStorageProfile(ctx, nil, profileID)
+			}
+			Expect(fn).To(PanicWith("k8sClient is nil"))
 		})
 	})
 

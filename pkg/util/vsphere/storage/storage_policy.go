@@ -42,24 +42,40 @@ func IsHostLocalStorageCapabilityPolicy(
 	if subprofiles == nil {
 		return false
 	}
+
 	for _, subprofile := range subprofiles.SubProfiles {
-		for _, capIns := range subprofile.Capability {
-			if capIns.Id.Namespace != volumeAllocationNamespace ||
-				capIns.Id.Id != storageLocalityID {
-
-				continue
-			}
-			for _, constraint := range capIns.Constraint {
-				for _, propInstance := range constraint.PropertyInstance {
-					if propInstance.Id == storageLocalityID &&
-						storageLocalityValueIsHostLocal(propInstance.Value) {
-
-						return true
-					}
-				}
+		for _, capability := range subprofile.Capability {
+			if capabilityIsHostLocalStorage(capability) {
+				return true
 			}
 		}
 	}
+
+	return false
+}
+
+// capabilityIsHostLocalStorage reports whether a single capability instance is
+// the StorageLocality capability with its property value set to
+// HostLocalStorage.
+func capabilityIsHostLocalStorage(
+	capability pbmtypes.PbmCapabilityInstance) bool {
+
+	if capability.Id.Namespace != volumeAllocationNamespace ||
+		capability.Id.Id != storageLocalityID {
+
+		return false
+	}
+
+	for _, constraint := range capability.Constraint {
+		for _, propInstance := range constraint.PropertyInstance {
+			if propInstance.Id == storageLocalityID &&
+				storageLocalityValueIsHostLocal(propInstance.Value) {
+
+				return true
+			}
+		}
+	}
+
 	return false
 }
 
@@ -79,11 +95,7 @@ func storageLocalityValueIsHostLocal(value vimtypes.AnyType) bool {
 		}
 	case *pbmtypes.PbmCapabilityDiscreteSet:
 		if v != nil {
-			for _, item := range v.Values {
-				if s, ok := item.(string); ok && s == storageLocalityHostLocal {
-					return true
-				}
-			}
+			return storageLocalityValueIsHostLocal(*v)
 		}
 	}
 	return false

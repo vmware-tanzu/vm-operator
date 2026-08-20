@@ -134,9 +134,9 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
 1. **Given** `supports_host_local_storage` is enabled and a VM references a
    `Pending` PVC on a WFFC host-local `StorageClass` with no requested-
    topology hint, **when** the VM is created, **then** VM Operator injects a
-   placement-only phantom disk carrying the `StorageClass`'s SPBM policy ID,
-   forces a `PlaceVmsXCluster` host recommendation, and pins the VM to the
-   recommended host.
+   placement-only disk carrying the `StorageClass`'s SPBM policy ID and asks
+   `PlaceVm` for a host recommendation, so the host DRS returns is one with a
+   compliant datastore.
 2. **Given** the VM has been created on a host, **when** the provider next
    reconciles it, **then** it maps that host back to its Supervisor node and
    sets the PVC's `selected-node` to that node with `selected-node-is-zone`
@@ -162,28 +162,28 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
 ## Edge cases
 
 - A VM with volumes on **both** a host-local `StorageClass` and an ordinary
-  zone-based `StorageClass` is unaffected for the zone-based volume; only
-  the host-local volume drives host-level pinning.
-- Multiple host-local PVCs on one VM that disagree on host (bound-vs-bound,
-  or bound-vs-explicit-override) is a hard error, not a "pick one"
-  heuristic — see US1 scenario 2.
+  zone-based `StorageClass` is unaffected for the zone-based volume. Every
+  volume's disk path goes into the placement ConfigSpec regardless; only the
+  host-local one narrows the result to a single host.
+- Multiple host-local volumes on one VM that already live on different hosts
+  leave DRS no host that can reach all of them, so placement fails rather than
+  creating a VM that cannot attach its disks — see US1 scenario 2.
 - A `Pending` PVC on an **Immediate**-binding-mode host-local `StorageClass`
   does not fail — it **waits**. `GetPVCZoneConstraints`' existing "PVC is not
   bound" error blocks placement and is retried, while CNS provisions the
-  volume without needing a consumer and picks the host itself. Once the PVC
-  is `Bound`, the next reconcile resolves that host from its topology
-  annotation, so the VM follows CNS's choice. This is the path VKS/CAPI node
-  volumes take.
+  volume without needing a consumer and picks the host itself. Once the PVC is
+  `Bound`, the next reconcile puts its real disk path in the placement
+  ConfigSpec, so DRS lands the VM on whichever host CNS chose. This is the path
+  VKS/CAPI node volumes take.
   - Consequently, a requested-topology annotation naming a **zone but no
     hostname** deadlocks: CNS cannot satisfy it for host-local storage, and
     placement is meanwhile waiting for the bind that will never happen. Such
     a PVC must either omit the annotation, letting CNS choose, or name a
     hostname.
   - **More than one host-local volume on a VM requires a
-    `WaitForFirstConsumer` StorageClass**, which is also satisfied when every
-    host-local PVC names the same hostname. Under `Immediate` with no
+    `WaitForFirstConsumer` StorageClass.** Under `Immediate` with no
     requested topology, each volume is provisioned independently and may land
-    on a different host — which the conflict check above then rejects, and the
+    on a different host — leaving no host that can reach them all, and the
     bound volumes cannot afterwards be moved. Verified on a Supervisor with
     four candidate hosts: a VKS cluster requesting three additional node disks
     on an `Immediate` host-local class had one machine's volumes co-locate and
@@ -194,45 +194,46 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
     intersect. Host-local storage only makes the case more likely to be
     reached, since a cluster has many hosts whereas most namespaces have a
     single zone.
-- **A resolved host is authoritative.** Once a host has been resolved, no
-  placement recommendation may replace it — the VM's disks may only be
-  reachable from that host, so a different host leaves the VM unable to
-  attach them. `Placement` fails loudly if a recommendation contradicts the
-  pin rather than silently placing the VM elsewhere.
-- **`FastDeploy` stays enabled for host-local VMs, and placement is
-  constrained to the pinned host instead.** Fast deploy is the only create
-  path that places the VM's files on an explicit datastore, which is what
-  keeps them on the pinned host's host-local datastore. The content-library
-  path cannot pin a datastore when a storage profile is set
-  (`DeploymentSpec.DefaultDatastoreID` is only honored when there is no
-  profile), so vCenter is free to choose a datastore the pinned host cannot
-  reach — observed on a real cluster as `Invalid configuration for device
-  '2'. Device: VirtualDisk. Provided backing file is not accessible from
-  host.` Because fast deploy needs a datastore recommendation, a pinned VM
-  cannot take the placement early return; instead the recommendation is
-  obtained from the legacy `PlaceVm` API constrained via
-  `PlacementSpec.Hosts` to the pinned host, so the datastore it returns is
-  reachable from that host. The modern `PlaceVmsXCluster` cannot express this
-  constraint for a create.
-- **Host-local placement always requests datastore recommendations.** The
-  placement ConfigSpec carries a phantom disk tagged with the host-local
-  storage policy purely so the recommended host is one with a compliant
-  datastore, and DRS only evaluates that policy when it is asked to recommend
-  a datastore. This must not be conditioned on the fast deploy feature.
+- **DRS resolves the host; VM Operator does not.** For a volume that already
+  exists, its real datastore path is put on that volume's placement-only disk
+  in the ConfigSpec, and DRS returns the one host that can reach it. No host
+  and no datastore is passed to placement, and nothing about the host is
+  derived, recorded, or made immutable — a VM whose create fails is free to be
+  placed elsewhere on the next attempt. Host-local placement is issued through
+  `PlaceVm`, because `PlaceVmsXCluster` was measured to return the same host
+  regardless of the disk backings in the ConfigSpec.
+- **Every PVC contributes a placement disk, not only host-local ones.** A
+  placement-only disk carrying the PVC's storage policy is added for each of
+  the VM's PVCs, so the recommendation accounts for all of the VM's storage
+  rather than only the VM's own files. A path on shared storage names a
+  datastore every host can reach and so constrains nothing, which is why the
+  volumes need not be classified first.
 - A VM with **both** instance storage volumes and a host-local PVC is not
-  supported: instance storage needs placement to choose a host while
-  host-local requires a specific one. This surfaces as the
-  authoritative-host error above rather than a silently mis-placed VM.
-- VM Groups: host-local storage placement (explicit override, bound-PVC
-  pinning, and auto-placement alike) is not supported when a VM is placed
-  via its `VirtualMachineGroup`, since that batch, multi-VM, cross-cluster
-  DRS flow is independent of the per-VM placement path this feature
-  extends. A host-local VM with a `Spec.GroupName` set falls back to
-  whatever zone-only placement its group computes.
-- `VirtualMachineStatus.NodeName` (`api/v1alpha6`) already exists but serves
-  a different purpose (VKS node identity) and is not reused by this
-  feature — host info lives in annotations only, consistent with the
-  existing Instance Storage feature's own precedent.
+  supported: instance storage needs placement to choose a host freely, while a
+  host-local volume admits only one.
+- **VM mobility after create** depends on how the VM itself is provisioned. A
+  VM provisioned with a host-local storage class has its home and its disks on
+  the host-local datastore and cannot move to another host, since that would
+  require a storage vMotion. A VM provisioned with a shared zonal policy that
+  also requests a host-local `WaitForFirstConsumer` volume carries no such
+  guarantee: nothing keeps it on the host chosen at create time, and once CNS
+  has provisioned the volume it cannot follow. That configuration is not
+  supported.
+- **VM Groups.** Group placement issues `PlaceVmsXCluster`, so the disk-path
+  mechanism above is unavailable and the host constraint is not honored — a
+  real 3-VM batch call of the exact shape it sends, each VM carrying its own
+  already-provisioned host-local volume on a distinct host, came back with
+  every VM given the same substituted host and datastore, unrelated to any of
+  the three real locations, deterministically across three trials. The PVCs
+  are still passed so the recommendation accounts for their storage policies.
+  This is an observed property of that API rather than a statement from the
+  DRS team; an RFE asks DRS to honor ConfigSpec disk backings there, or to
+  accept a per-VM host constraint (`vmop-NNNN`). A host-local VM with
+  `Spec.GroupName` set falls back to whatever placement its group computes.
+- `VirtualMachineStatus.NodeName` (`api/v1alpha6`) already exists but serves a
+  different purpose (VKS node identity) and is not reused by this feature. The
+  host a pending volume must be provisioned on is published to the PVC, and no
+  annotation is written on the VirtualMachine at all.
 
 ---
 
@@ -242,8 +243,7 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
 - [ ] Each scenario is independently testable.
 - [ ] `supports_host_local_storage` opt-in behavior is specified for every
       user story.
-- [ ] The explicit-request annotation's validation/immutability rules are
-      specified (existence on Create, immutability on Update).
 - [ ] Conflicting host-local requirements across volumes on one VM are
       specified as a hard error.
-- [ ] Out-of-scope items (FastDeploy interaction) are listed.
+- [ ] VM mobility guarantees are stated per storage-class configuration.
+- [ ] Out-of-scope items (VM Groups, instance storage) are listed.

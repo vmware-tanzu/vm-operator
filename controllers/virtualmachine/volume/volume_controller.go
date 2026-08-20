@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -610,6 +611,24 @@ func (r *Reconciler) handlePVCWithWFFC(
 
 	if !pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC {
 		return errors.New("PVC with WFFC storage class support is not enabled")
+	}
+
+	if pkgcfg.FromContext(ctx).Features.HostLocalStorage {
+		policyID, err := kubeutil.GetStoragePolicyIDFromStorageClass(*sc)
+		if err != nil {
+			return err
+		}
+		hostLocal, err := kubeutil.IsHostLocalStorageProfile(
+			ctx, r.Client, policyID)
+		if err != nil {
+			return err
+		}
+		if hostLocal {
+			// A host-local PVC's selected node is a host rather than a zone,
+			// and it is published by the vSphere provider once the VM has
+			// actually been created on that host. Leave it alone here.
+			return nil
+		}
 	}
 
 	zoneName := ctx.VM.Status.Zone

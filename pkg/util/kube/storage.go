@@ -62,6 +62,65 @@ func getPVCAccessibleZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
 	return getPVCZones(pvc, csiAccessibleTopologyAnnotation)
 }
 
+// IsHostLocalStorageProfile returns true if the storage policy with the given
+// profile ID requires host-local storage, i.e. storage attached to and mounted
+// on a single ESXi host.
+//
+// This reads the observed SPBM capability from the profile's StoragePolicy
+// object rather than trusting an annotation on the StorageClass. A missing or
+// unreadable StoragePolicy is returned as an error rather than as false,
+// because falsely reporting a host-local policy as ordinary storage would let
+// the VM be placed on a host that cannot reach its disks — the exact failure
+// this is meant to prevent. Callers should propagate the error and retry.
+func IsHostLocalStorageProfile(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	profileID string) (bool, error) {
+
+	if profileID == "" {
+		return false, nil
+	}
+
+	name := GetStoragePolicyObjectName(profileID)
+	if name == "" {
+		return false, fmt.Errorf(
+			"was not able to construct a storage policy name for profile ID %s",
+			profileID)
+	}
+
+	var obj infrav1.StoragePolicy
+	if err := k8sClient.Get(
+		ctx,
+		ctrlclient.ObjectKey{
+			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+			Name:      name,
+		},
+		&obj); err != nil {
+
+		return false, fmt.Errorf(
+			"failed to get StoragePolicy %q for profile ID %s: %w",
+			name, profileID, err)
+	}
+
+	return obj.Status.HostLocal, nil
+}
+
+// HasVirtualMachineDataSourceRef returns true if the given PVC's data source is
+// the VirtualMachine itself, meaning the volume is one of the VM's own disks.
+// Such disks are already present in the placement ConfigSpec, so they must not
+// be counted a second time when deriving placement constraints. Note that a
+// PVC's data source may instead point at another object type, such as a
+// VolumeSnapshot.
+func HasVirtualMachineDataSourceRef(pvc corev1.PersistentVolumeClaim) bool {
+	dsRef := pvc.Spec.DataSourceRef
+	if dsRef == nil || dsRef.APIGroup == nil {
+		return false
+	}
+
+	return *dsRef.APIGroup == vmopv1.GroupVersion.Group &&
+		dsRef.Kind == "VirtualMachine"
+}
+
 func GetPVCZoneConstraints(
 	storageClasses map[string]storagev1.StorageClass,
 	pvcs []corev1.PersistentVolumeClaim) (sets.Set[string], error) {
@@ -69,13 +128,8 @@ func GetPVCZoneConstraints(
 	var zones sets.Set[string]
 
 	for _, pvc := range pvcs {
-		if dsRef := pvc.Spec.DataSourceRef; dsRef != nil && dsRef.APIGroup != nil {
-			// Skip the zonal constraint check for PVCs with us as the DataSourceRef since
-			// those disks are in the placement ConfigSpec. Note that the reference may
-			// point to another object type such as VolumeSnapshot.
-			if *dsRef.APIGroup == vmopv1.GroupVersion.Group && dsRef.Kind == "VirtualMachine" {
-				continue
-			}
+		if HasVirtualMachineDataSourceRef(pvc) {
+			continue
 		}
 
 		var z sets.Set[string]
@@ -215,7 +269,7 @@ func GetStoragePolicyID(
 
 		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
 			return "", fmt.Errorf(
-				"%s %q object is specified but capability is not enabled", 
+				"%s %q object is specified but capability is not enabled",
 				objKind, objName,
 			)
 		}

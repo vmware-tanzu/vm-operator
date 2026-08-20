@@ -193,6 +193,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadNetworkConfiguration: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyHostLocalStorage: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -219,6 +222,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.WorkloadIPv6 = true
 							config.Features.VirtualMachineConfigPolicy = true
 							config.Features.WorkloadNetworkConfiguration = true
+							config.Features.HostLocalStorage = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -283,6 +287,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyHostLocalStorage, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeTrue())
 					})
 				})
 
@@ -349,6 +356,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyHostLocalStorage, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeTrue())
 					})
 				})
 			})
@@ -424,6 +434,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadNetworkConfiguration: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyHostLocalStorage: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -490,6 +503,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyHostLocalStorage, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeFalse())
 					})
 				})
 
@@ -571,6 +587,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyHostLocalStorage, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeFalse())
 					})
 				})
 			})
@@ -957,6 +976,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyHostLocalStorage, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyHostLocalStorage] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("HostLocalStorage=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -1036,6 +1068,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyExtensionCompatConstraint: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyHostLocalStorage: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -1070,6 +1105,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VirtualMachineConfigPolicy = true
 					config.Features.WorkloadNetworkConfiguration = true
 					config.Features.ExtensionCompatConstraint = true
+					config.Features.HostLocalStorage = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -1139,6 +1175,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyExtensionCompatConstraint, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyHostLocalStorage, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -1163,11 +1202,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VirtualMachineConfigPolicy = false
 					config.Features.WorkloadNetworkConfiguration = false
 					config.Features.ExtensionCompatConstraint = false
+					config.Features.HostLocalStorage = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,HostLocalStorage=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1231,6 +1271,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyExtensionCompatConstraint, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyHostLocalStorage, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.HostLocalStorage).To(BeFalse())
 			})
 		})
 	})

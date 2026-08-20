@@ -895,7 +895,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Bounded so a broken vSphere-side disk state left behind by an earlier
 			// assertion failure in this spec fails cleanup fast instead of blocking
 			// the rest of the suite for hours.
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, vmNamespace, vmName, vmYaml, NodeTimeout(3*time.Minute))
+			DeferCleanup(deleteRegisteredVMAndPVCs, svClusterClient, clusterProxy, vmNamespace, vmName, vmYaml, NodeTimeout(3*time.Minute))
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.

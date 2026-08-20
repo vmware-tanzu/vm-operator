@@ -72,19 +72,29 @@ func getPVCAccessibleZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
 // because falsely reporting a host-local policy as ordinary storage would let
 // the VM be placed on a host that cannot reach its disks — the exact failure
 // this is meant to prevent. Callers should propagate the error and retry.
+//
+// The profile ID must not be empty. Callers resolve it from a StorageClass, so
+// an empty value means the caller skipped that step rather than that the policy
+// is not host-local.
 func IsHostLocalStorageProfile(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
 	profileID string) (bool, error) {
 
+	if ctx == nil {
+		panic("ctx is nil")
+	}
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
 	if profileID == "" {
-		return false, nil
+		panic("profileID is empty")
 	}
 
 	name := GetStoragePolicyObjectName(profileID)
 	if name == "" {
 		return false, fmt.Errorf(
-			"was not able to construct a storage policy name for profile ID %s",
+			"failed to construct storage policy name for profile ID %q",
 			profileID)
 	}
 
@@ -98,7 +108,7 @@ func IsHostLocalStorageProfile(
 		&obj); err != nil {
 
 		return false, fmt.Errorf(
-			"failed to get StoragePolicy %q for profile ID %s: %w",
+			"failed to get StoragePolicy %q for profile ID %q: %w",
 			name, profileID, err)
 	}
 
@@ -106,11 +116,10 @@ func IsHostLocalStorageProfile(
 }
 
 // HasVirtualMachineDataSourceRef returns true if the given PVC's data source is
-// the VirtualMachine itself, meaning the volume is one of the VM's own disks.
-// Such disks are already present in the placement ConfigSpec, so they must not
-// be counted a second time when deriving placement constraints. Note that a
-// PVC's data source may instead point at another object type, such as a
-// VolumeSnapshot.
+// a VirtualMachine, i.e. the volume is one of a VM's own disks. Such disks are
+// already in the placement ConfigSpec and must not be counted twice.
+//
+// Only the API group and kind are compared, not the name.
 func HasVirtualMachineDataSourceRef(pvc corev1.PersistentVolumeClaim) bool {
 	dsRef := pvc.Spec.DataSourceRef
 	if dsRef == nil || dsRef.APIGroup == nil {

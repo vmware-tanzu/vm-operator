@@ -16,6 +16,13 @@ const (
 	// A negative device range is traditionally used.
 	pciDevicesStartDeviceKey      = int32(-200)
 	instanceStorageStartDeviceKey = int32(-300)
+
+	// pvcPlacementDeviceKeyOffset is how far past the lowest device key already
+	// in a placement ConfigSpec the placement-only PVC disks begin. No fixed
+	// range can be assumed free, since the ConfigSpec carries devices from the
+	// VM class, whose keys are authored outside this repository. Device keys are
+	// negative by convention, so this is subtracted rather than added.
+	pvcPlacementDeviceKeyOffset = int32(1000)
 )
 
 func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimtypes.BaseVirtualDeviceBackingInfo) vimtypes.BaseVirtualDevice {

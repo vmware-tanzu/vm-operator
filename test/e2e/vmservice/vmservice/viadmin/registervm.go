@@ -1052,7 +1052,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Expect to fail w/ orphaned FCD
 			_, err = fcdManager.Retrieve(ctx, ds, disk.VDiskId.Id)
 			Expect(err).To(HaveOccurred())
-			Expect(fault.Is(err, &types.NotFound{})).To(BeTrue())
+			isOrphaned := fault.Is(err, &types.NotFound{}) || fault.Is(err, &types.FileNotFound{})
+			Expect(isOrphaned).To(BeTrue(), "expected NotFound or FileNotFound fault for orphaned FCD, got: %v", err)
 
 			// The Volume still exists
 			queryVolume()

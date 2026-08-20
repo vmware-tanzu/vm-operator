@@ -240,7 +240,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
 
 		DeferCleanup(func() {
-			vmoperator.DeleteSubnetOrSubnetSet(ctx, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
+			vmoperator.DeleteSubnetOrSubnetSet(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
 			vmoperator.WaitForSubnetOrSubnetSetToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
 		})
 

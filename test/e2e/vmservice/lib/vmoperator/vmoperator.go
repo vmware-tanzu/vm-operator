@@ -582,23 +582,52 @@ func DeleteVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, vmN
 	Expect(client.Delete(ctx, vm)).Should(Succeed())
 }
 
-func DeleteSubnetOrSubnetSet(ctx context.Context, client ctrlclient.Client, ns, subnetName, kind string) {
-	var (
-		obj ctrlclient.Object
-		err error
-	)
+// DeleteVirtualMachineAndWait deletes the VirtualMachine and waits for it to
+// be gone. It is a no-op if the VM does not exist, so it can be registered
+// unconditionally in cleanup (e.g. via DeferCleanup).
+func DeleteVirtualMachineAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+	if apierrors.IsNotFound(err) {
+		return
+	}
+	Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine %s/%s", ns, vmName)
+	Expect(client.Delete(ctx, vm)).To(Succeed(), "failed to delete VirtualMachine %s/%s", ns, vmName)
+	WaitForVirtualMachineToBeDeleted(ctx, config, client, ns, vmName)
+}
+
+// DeleteSubnetOrSubnetSet deletes the Subnet or SubnetSet. It is a no-op if
+// the object does not exist. The delete is retried because a network cannot
+// be deleted until the SubnetPorts owned by a recently deleted VirtualMachine
+// have been garbage-collected.
+func DeleteSubnetOrSubnetSet(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, subnetName, kind string) {
+	var getObj func() (ctrlclient.Object, error)
 
 	switch kind {
 	case "Subnet":
-		obj, err = utils.GetSubnet(ctx, client, ns, subnetName)
+		getObj = func() (ctrlclient.Object, error) { return utils.GetSubnet(ctx, client, ns, subnetName) }
 	case "SubnetSet":
-		obj, err = utils.GetSubnetSet(ctx, client, ns, subnetName)
+		getObj = func() (ctrlclient.Object, error) { return utils.GetSubnetSet(ctx, client, ns, subnetName) }
 	default:
-		err = fmt.Errorf("unsupported kind: %s", kind)
+		Expect(false).To(BeTrue(), "unsupported kind: %s", kind)
 	}
 
-	Expect(err).ToNot(HaveOccurred())
-	Expect(client.Delete(ctx, obj)).To(Succeed())
+	Eventually(func(g Gomega) {
+		obj, err := getObj()
+		if apierrors.IsNotFound(err) {
+			return
+		}
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(client.Delete(ctx, obj)).To(Succeed())
+	}, config.GetIntervals("default", "wait-subnet-deletion")...).Should(Succeed(), "Timed out deleting %s %s/%s", kind, ns, subnetName)
+}
+
+// DeleteSubnetOrSubnetSetAndWait deletes the Subnet or SubnetSet and waits
+// for it to be gone. It is a no-op if the object does not exist, so it can be
+// registered unconditionally in cleanup (e.g. via DeferCleanup).
+func DeleteSubnetOrSubnetSetAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, subnetName, kind string) {
+	DeleteSubnetOrSubnetSet(ctx, config, client, ns, subnetName, kind)
+	WaitForSubnetOrSubnetSetToBeDeleted(ctx, config, client, ns, subnetName, kind)
 }
 
 // DescribeResourceIfExists logs the output of `kubectl describe <resource>` if the given resource exists.

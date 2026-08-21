@@ -45,6 +45,7 @@ import (
 	vmconfcdrom "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/cdrom"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
+	vmconfextensioncompatconstraint "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extensioncompatconstraint"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
@@ -1278,6 +1279,25 @@ func reconcileRegisterUnmanagedDisks(
 		configSpec)
 }
 
+func reconcileExtensionCompatConstraint(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling extension compat constraint")
+
+	return vmconfextensioncompatconstraint.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func reconcileAnnotationsToExtraConfig(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1424,6 +1444,19 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 		if err := reconcileRegisterUnmanagedDisks(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint {
+		if err := reconcileExtensionCompatConstraint(
 			ctx,
 			k8sClient,
 			vm,

@@ -135,6 +135,17 @@ func Install( //nolint:gocyclo
 
 				return err
 			}
+		case "Tag":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				features.TaggingAPI,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
 		case "StoragePolicy":
 			if err := updateOrDeleteUnstructured(
 				ctx,

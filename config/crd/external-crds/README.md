@@ -14,6 +14,7 @@ These CRDs are referenced by `config/default/kustomization.yaml` and are install
 * `vsphere.policy.vmware.com_policyevaluations.yaml` — vSphere policy evaluation API
 * `vsphere.policy.vmware.com_requiredduringexecutionvmplacementpolicies.yaml` — vSphere required-during-execution VM placement policy API
 * `vsphere.policy.vmware.com_tagpolicies.yaml` — vSphere tag policy API
+* `vsphere.policy.vmware.com_tags.yaml` — vSphere affinity tag API
 * `infra.vmware.com_storagepolicies.yaml` — Infrastructure storage policy API
 * `vim.vmware.com_configtargets.yaml` — VIM config target API
 * `vim.vmware.com_virtualmachineconfigoptions.yaml` — VIM VM config options API

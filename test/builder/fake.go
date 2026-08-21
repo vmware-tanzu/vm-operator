@@ -91,6 +91,7 @@ func KnownObjectTypes() []client.Object {
 		&vspherepolv1.ComputePolicy{},
 		&vspherepolv1.PolicyEvaluation{},
 		&vspherepolv1.TagPolicy{},
+		&vspherepolv1.Tag{},
 		&infrav1.StoragePolicy{},
 		&vimv1.ConfigTarget{},
 		&vimv1.VirtualMachineConfigOptions{},

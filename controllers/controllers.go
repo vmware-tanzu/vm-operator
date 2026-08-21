@@ -87,7 +87,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+	if features := pkgcfg.FromContext(ctx).Features; features.VSpherePolicies || features.TaggingAPI {
 		if err := vspherepolicy.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize vSphere Policy controllers: %w", err)
 		}

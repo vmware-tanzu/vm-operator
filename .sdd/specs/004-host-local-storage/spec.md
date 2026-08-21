@@ -231,12 +231,16 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
   real 3-VM batch call of the exact shape it sends, each VM carrying its own
   already-provisioned host-local volume on a distinct host, came back with
   every VM given the same substituted host and datastore, unrelated to any of
-  the three real locations, deterministically across three trials. The PVCs
-  are still passed so the recommendation accounts for their storage policies.
-  This is an observed property of that API rather than a statement from the
-  DRS team; an RFE asks DRS to honor ConfigSpec disk backings there, or to
-  accept a per-VM host constraint (`vmop-NNNN`). A host-local VM with
-  `Spec.GroupName` set falls back to whatever placement its group computes.
+  the three real locations, deterministically across three trials, both for
+  independently-created FCDs and for a real namespace's own live PVCs. The
+  same ConfigSpecs sent through `PlaceVm` instead derived the correct host
+  and datastore for every volume, confirming this is specific to
+  `PlaceVmsXCluster`. The PVCs are still passed so the recommendation
+  accounts for their storage policies. This is an observed property of that
+  API rather than a statement from the DRS team; it is filed and tracked as
+  `CRM-4964`, asking DRS to honor ConfigSpec disk backings there, or to
+  accept a per-VM host constraint. A host-local VM with `Spec.GroupName` set
+  falls back to whatever placement its group computes.
 - `VirtualMachineStatus.NodeName` (`api/v1alpha6`) already exists but serves a
   different purpose (VKS node identity) and is not reused by this feature. The
   host a pending volume must be provisioned on is published to the PVC, and no

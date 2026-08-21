@@ -312,7 +312,7 @@ Which of the two modes in §4 a VM takes is decided by the binding mode of the h
 |---|---|---|
 | **When CNS provisions** | On PVC creation; no consumer required | Only once a consumer nominates a node |
 | **Who selects the host** | **CNS**, autonomously | **VM Operator** (operator-selected, §4) |
-| **How VM Operator learns it** | It does not need to: the volume's disk path in the ConfigSpec tells DRS | It made the decision, and publishes it via the volume handoff (§6) |
+| **How VM Operator learns it** | It does not need to: the volume's disk path in the ConfigSpec tells DRS | It made the decision, and publishes it via the volume handoff |
 | **VM creation meanwhile** | **Waits for the bind.** A `Pending` PVC yields a "not bound" error from zone-constraint derivation, so placement retries until CNS binds the volume | Proceeds; the volume follows the VM |
 | **Several host-local PVCs on one VM** | **Not supported.** Each volume is provisioned independently and may land on a different host, which the VM then rejects as unsatisfiable (§9) — observed on a real cluster. A VM needing several co-located host-local volumes requires the WFFC column; see §11 item 5 | **Co-location is guaranteed.** One host is chosen for the VM and stamped on every host-local PVC |
 
@@ -524,15 +524,21 @@ binding modes:
    VMs, each carrying its own already-provisioned host-local volume on a
    distinct host, all came back with the *same* substituted host and the
    *same* substituted datastore, with no relationship to any of the three
-   volumes' real locations. This was deterministic across three trials. So the
-   mechanism this design rests on is not available there, and the per-VM flow
-   uses `PlaceVm` for that reason (§5). The PVCs are still passed so the
+   volumes' real locations. This was deterministic across three trials, and
+   holds against both independently-created FCDs and a real Supervisor
+   namespace's own live PVCs. The same `ConfigSpec`s sent through `PlaceVm`
+   instead derived the correct host and datastore for every one of them,
+   which is the control that rules out an ambiguous API contract and
+   confirms this is specific to `PlaceVmsXCluster`. So the mechanism this
+   design rests on is not available there, and the per-VM flow uses
+   `PlaceVm` for that reason (§5). The PVCs are still passed so the
    recommendation accounts for their storage policies; only the host
    constraint is missing. This is an observed limitation of that API rather
-   than a statement from the DRS team, so an RFE is filed asking DRS to honor
-   ConfigSpec disk backings in `PlaceVmsXCluster`, or to accept a per-VM host
-   constraint (`vmop-NNNN`). Until then a validation error would be clearer
-   than falling back to zone-only placement.
+   than a statement from the DRS team; it is filed and tracked as
+   `CRM-4964`, asking DRS to honor ConfigSpec disk backings in
+   `PlaceVmsXCluster`, or to accept a per-VM host constraint. Until that
+   lands, a validation error would be clearer than falling back to zone-only
+   placement.
 3. **Self-referential volumes.** Volumes whose data source is the VM itself are
    derived from the VM's own placement and need not participate in host
    resolution; excluding them keeps the conflict check strictly about
@@ -552,7 +558,7 @@ binding modes:
      because until the volume is bound and attached the VM has no host-local
      disk holding it in place. While the PVC is still unprovisioned this
      self-corrects: the selected node is re-published from the VM's *current*
-     host on every reconcile (§6). The gap is narrow and specific: only a DRS
+     host on every reconcile. The gap is narrow and specific: only a DRS
      migration that lands *after* CNS has committed the volume causes a
      problem, since the volume cannot then follow — the VM fails to attach it,
      with no recovery short of deleting the PVC. Nothing in this feature

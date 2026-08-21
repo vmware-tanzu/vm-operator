@@ -337,7 +337,8 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 					k8sClient,
 					vmSnapshot,
 					snapNode,
-					vmCtx.VM.Spec.PowerState)
+					vmCtx.VM.Spec.PowerState,
+					nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
@@ -374,7 +375,8 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 					k8sClient,
 					vmSnapshot,
 					snapNode,
-					powerState)).To(Succeed())
+					powerState,
+					nil)).To(Succeed())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
 				Expect(k8sClient.Get(vmCtx,

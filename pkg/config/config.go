@@ -221,6 +221,7 @@ type FeatureStates struct {
 	VirtualMachineConfigPolicy   bool
 	WorkloadNetworkConfiguration bool
 	ExtensionCompatConstraint    bool
+	CSIBackupAPI                 bool
 }
 
 type InstanceStorage struct {

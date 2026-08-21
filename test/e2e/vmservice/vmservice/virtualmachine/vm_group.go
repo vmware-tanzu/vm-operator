@@ -831,7 +831,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			clIDs := []string{vmserviceCLID}
 			vmClassNames := []string{clusterResources.VMClassName}
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
-			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 			Expect(tmpNamespaceCtx.GetNamespace()).ToNot(BeNil(), "namespace should not be nil")
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
@@ -1435,7 +1435,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			clIDs := []string{vmserviceCLID}
 			vmClassNames := []string{clusterResources.VMClassName}
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
-			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 			Expect(tmpNamespaceCtx.GetNamespace()).ToNot(BeNil(), "namespace should not be nil")
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name

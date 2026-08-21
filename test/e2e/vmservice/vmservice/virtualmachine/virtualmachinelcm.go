@@ -426,7 +426,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmClassNames := []string{clusterResources.VMClassName}
 		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
 		var err error
-		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
@@ -456,7 +456,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceName)
 
 		// Recreate the namespace with the same name and spec.
-		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 		Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
@@ -526,7 +526,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
 		// Not assigning to the tmpNamespaceCtx because no VMs will be deployed in this namespace.
 		// So that in AfterEach, it will delete the VM from the correct namespace (input.WCPNamespaceName).
-		newNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, newNamespaceName, input.ArtifactFolder)
+		newNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, newNamespaceName, input.ArtifactFolder)
 		Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 		wcp.WaitForNamespaceReady(wcpClient, newNamespaceName)
 
@@ -589,7 +589,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		clIDs := []string{vmserviceCLID}
 		vmClassNames := []string{clusterResources.VMClassName}
 		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
-		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace %s", tmpNamespaceName)
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
@@ -876,7 +876,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			clIDs := []string{vmserviceCLID}
 			vmClassNames := []string{clusterResources.VMClassName}
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
-			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, tmpNamespaceName, input.ArtifactFolder)
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 			Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
 			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
@@ -1105,7 +1105,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			vmClassNames := []string{clusterResources.VMClassName}
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
 			var err error
-			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, tmpNamespaceName, input.ArtifactFolder)
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 			Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
 			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 

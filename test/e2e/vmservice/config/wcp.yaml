@@ -10,7 +10,6 @@ infraConfig:
       windowsImageDisplayName: "windows-server2022-efi-tools"
       encryptedImageDisplayName: "${ENCRYPTED_IMAGE_DISPLAY_NAME:-photon-5.0-encrypted}"
       storageClassName: "${STORAGE_CLASS:-wcpglobal-storage-profile}"
-      workerStorageClassName: "${WORKER_STORAGE_CLASS:-worker-storagepolicy}"
       vmClassName: "best-effort-small"
       vmResourcePolicyName: ""
       contentLibrarySubscriptionURL: "${CONTENT_LIBRARY_SUBSCRIPTION_URL:-https://wp-content-pstg.broadcom.com/vmsvc/lib.json}"

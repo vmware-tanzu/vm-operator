@@ -16,33 +16,19 @@ From the VC UI,
 
 ### 2. Storage Classes
 
-The e2e tests require two storage policies to be created beforehand:
-- `wcpglobal_storage_profile` exists or create one
-- `worker-storagepolicy` 
+The e2e tests require the `wcpglobal_storage_profile` storage policy to exist beforehand.
+Testbed provision jobs will automatically create it.
 
-Testbeds created using the `dev-integ-vds` already have the `wcpglobal_storage_profile`, 
-so you would need to only create the `worker-storagepolicy`.
-
-#### Option 1: Create missing policy
-
-Run the following script which creates the `worker-storagepolicy` for you.
-```bash
-GOVC_PASSWORD="${SSH_PASSWORD}" ./hack/managestoragepolicy.sh create "${VCSA_IP}"
-```
-
-#### Option 2: From VC UI
-
+From the VC UI:
 - Left pane > Policies and Profiles
 - VM Storage Policies from the left lane
 - Confirm `wcpglobal_storage_profile` exists or create one
     - K8s compliant name must be `wcpglobal-storage-profile`
-- Create `worker-storagepolicy` 
-    - K8s compliant name must be `worker-storagepolicy`
-- Add both policies to any namespace in the Supervisor cluster. 
+- Add the policy to any namespace in the Supervisor cluster.
 This will add the storage policy CRD to the cluster which is a cluster resource.
     - Supervisor > Select any namespace
     - Storage > Edit button
-    - Select both storage policies
+    - Select the storage policy
 
 ## Running tests
 

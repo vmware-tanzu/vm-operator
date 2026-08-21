@@ -11,14 +11,11 @@ import (
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 )
 
@@ -77,9 +74,6 @@ type NamespaceCreateInput struct {
 	Client                 ctrlclient.Client
 	WCPClient              WorkloadManagementAPI
 	StorageClassName       string
-	WorkerStorageClassName string
-	// Config supplies loaded e2e intervals (wcp.yaml); nil uses built-in defaults for worker StorageClass wait only.
-	Config                 framework.ConfigInterface
 	VMServiceSpec          VMServiceSpecDetails
 	Zone                   string
 	SupervisorID           string
@@ -141,106 +135,6 @@ func GetNamespace(ctx context.Context, input NamespaceGetInput) (*corev1.Namespa
 // defaultNamespaceStorageQuotaMiB is the default per-policy quota (MiB) used when associating storage with a WCP namespace.
 const defaultNamespaceStorageQuotaMiB = int64(1024 * 500)
 
-// EnsureWorkerKubernetesStorageClassIfMissing duplicates the primary WCP storage policy on vSphere when the
-// worker-named StorageClass is missing from the supervisor, then waits for WCPSVC to sync the StorageClass.
-// Wait/poll intervals use built-in defaults (NamespaceCreateInput.Config drives config when creating a namespace).
-//
-// When namespace and wcpClient are set, the worker storage policy is also associated with that supervisor namespace
-// (via SetNamespaceStorageSpecs) if it is not already present. Use this for pre-provisioned namespaces that were
-// created before the worker StorageClass existed.
-func EnsureWorkerKubernetesStorageClassIfMissing(
-	ctx context.Context,
-	kubeconfigPath string,
-	client kubernetes.Interface,
-	primaryStorageClass *storagev1.StorageClass,
-	workerStorageClassName string,
-	cfg framework.ConfigInterface,
-	namespace string,
-	wcpClient WorkloadManagementAPI) *storagev1.StorageClass {
-	if workerStorageClassName == "" {
-		return nil
-	}
-
-	sc, err := client.StorageV1().StorageClasses().Get(ctx, workerStorageClassName, metav1.GetOptions{})
-	if err == nil {
-		Expect(sc.Parameters).NotTo(BeNil())
-		policyID, ok := sc.Parameters["storagePolicyID"]
-		Expect(ok).To(BeTrue(), "worker storage class must expose storagePolicyID for namespace association")
-		ensureNamespaceAssociatesWorkerStoragePolicyByID(wcpClient, namespace, policyID)
-
-		return sc
-	}
-
-	if !apierrors.IsNotFound(err) {
-		Expect(err).NotTo(HaveOccurred())
-	}
-
-	Expect(primaryStorageClass.Parameters).NotTo(BeNil())
-	basePolicyID, ok := primaryStorageClass.Parameters["storagePolicyID"]
-	Expect(ok).To(BeTrue(), "primary storage class must expose storagePolicyID for cloning worker policy")
-	Expect(basePolicyID).NotTo(BeEmpty())
-
-	vimClient := vcenter.NewVimClientFromKubeconfig(ctx, kubeconfigPath)
-	defer vcenter.LogoutVimClient(vimClient)
-
-	workerPolicyID, createErr := vcenter.GetOrCreateWorkerStoragePolicy(ctx, vimClient, workerStorageClassName, basePolicyID)
-	Expect(createErr).NotTo(HaveOccurred(), "failed to create or resolve worker storage policy %q", workerStorageClassName)
-	ensureNamespaceAssociatesWorkerStoragePolicyByID(wcpClient, namespace, workerPolicyID)
-
-	sc = waitForWorkerStorageClass(ctx, client, workerStorageClassName, cfg)
-
-	return sc
-}
-
-// ensureNamespaceAssociatesWorkerStoragePolicyByID appends the worker policy to the namespace storage
-// specs when missing. The policy ID must be passed directly so this can be called before the
-// Kubernetes StorageClass object exists (WCPSVC only syncs the StorageClass after the association).
-func ensureNamespaceAssociatesWorkerStoragePolicyByID(
-	wcpClient WorkloadManagementAPI,
-	namespace string,
-	workerPolicyID string) {
-	if namespace == "" || wcpClient == nil || workerPolicyID == "" {
-		return
-	}
-
-	details, err := wcpClient.GetNamespace(namespace)
-	Expect(err).NotTo(HaveOccurred(), "get wcp namespace failed for storage policy sync %q", namespace)
-
-	for _, s := range details.VMStorageSpec {
-		if s.Policy == workerPolicyID {
-			return
-		}
-	}
-
-	limit := defaultNamespaceStorageQuotaMiB
-	if len(details.VMStorageSpec) > 0 && details.VMStorageSpec[0].Limit > 0 {
-		limit = details.VMStorageSpec[0].Limit
-	}
-
-	merged := append(append([]StorageSpec(nil), details.VMStorageSpec...),
-		StorageSpec{Policy: workerPolicyID, Limit: limit})
-	Expect(wcpClient.SetNamespaceStorageSpecs(namespace, merged)).NotTo(HaveOccurred(),
-		"failed to associate worker storage policy with namespace %q", namespace)
-	WaitForNamespaceReady(wcpClient, namespace)
-}
-
-// waitForWorkerStorageClass polls until the StorageClass appears after vSphere policy creation (WCPSVC sync).
-func waitForWorkerStorageClass(ctx context.Context, client kubernetes.Interface, name string, cfg framework.ConfigInterface) *storagev1.StorageClass {
-	var sc *storagev1.StorageClass
-
-	Eventually(func() error {
-		var err error
-
-		sc, err = client.StorageV1().StorageClasses().Get(ctx, name, metav1.GetOptions{})
-
-		return err
-	}, cfg.GetIntervals("default", "wait-storage-class-ready")...).Should(Succeed(),
-		"timed out waiting for StorageClass %q after ensuring worker storage policy on vCenter", name)
-	Expect(sc).NotTo(BeNil())
-
-	return sc
-}
-
 // CreateNamespace creates a WCP kubernetes namespace object using DCLI client.
 func CreateNamespace(ctx context.Context, input NamespaceCreateInput) (*corev1.Namespace, context.CancelFunc) {
 	wcpClient := input.WCPClient
@@ -278,16 +172,6 @@ func CreateNamespace(ctx context.Context, input NamespaceCreateInput) (*corev1.N
 
 	Expect(err).NotTo(HaveOccurred())
 	WaitForNamespaceReady(wcpClient, namespaceForTest)
-
-	if input.WorkerStorageClassName != "" {
-		workerStorageClass := EnsureWorkerKubernetesStorageClassIfMissing(ctx, input.Kubeconfig, svClientSet,
-			storageClass, input.WorkerStorageClassName, input.Config, namespaceForTest, wcpClient)
-
-		Expect(workerStorageClass).NotTo(BeNil())
-		Expect(workerStorageClass.Parameters).NotTo(BeNil())
-		_, ok = workerStorageClass.Parameters["storagePolicyID"]
-		Expect(ok).To(BeTrue(), "supervisor storage class must have a corresponding storage policy ID")
-	}
 
 	_, cancelWatches := context.WithCancel(ctx)
 	ns, err := GetCorev1Namespace(ctx, input.Client, namespaceForTest)

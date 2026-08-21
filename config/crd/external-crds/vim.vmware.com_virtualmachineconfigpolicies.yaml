@@ -550,6 +550,23 @@ spec:
                       type: string
                   type: object
                 type: array
+              hardwareVersions:
+                description: HardwareVersions describes the range of supported hardware
+                  vesions.
+                properties:
+                  max:
+                    description: |-
+                      Max is the maximum value.
+                      A zero value means there is no maximum.
+                    pattern: (?i)^(?:vmx-)?(\d+)$
+                    type: string
+                  min:
+                    description: |-
+                      Min is the minimum value.
+                      A zero value means there is no minimum.
+                    pattern: (?i)^(?:vmx-)?(\d+)$
+                    type: string
+                type: object
               hugePagesSupported:
                 description: HugePagesSupported describes whether huge pages are supported.
                 type: boolean
@@ -625,7 +642,7 @@ spec:
               memory:
                 description: |-
                   ResourceQuantityRange describes a range of resource.Quantity values with
-                  min, max, and default.
+                  min and max.
                 properties:
                   max:
                     anyOf:

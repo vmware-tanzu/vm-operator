@@ -215,10 +215,17 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
   VM provisioned with a host-local storage class has its home and its disks on
   the host-local datastore and cannot move to another host, since that would
   require a storage vMotion. A VM provisioned with a shared zonal policy that
-  also requests a host-local `WaitForFirstConsumer` volume carries no such
-  guarantee: nothing keeps it on the host chosen at create time, and once CNS
-  has provisioned the volume it cannot follow. That configuration is not
-  supported.
+  also requests a host-local `WaitForFirstConsumer` volume creates and powers
+  on normally — DRS picks a host, that host is stamped onto the PVC, and CSI
+  provisions there, the same mechanism a host-local storage class uses. **The
+  gap is narrower than "unsupported":** nothing pins the VM to that host
+  afterward, so if DRS migrates it — for load balancing or host maintenance —
+  in the window between power-on and the volume finishing its bind, the VM can
+  end up unable to reach a volume CNS already committed elsewhere. While the
+  volume is still unprovisioned this self-corrects, since the stamped host is
+  re-published from wherever the VM currently is on every reconcile; only a
+  migration that lands after CNS commits the volume causes a problem, and
+  nothing in this feature detects or guards against that specific race.
 - **VM Groups.** Group placement issues `PlaceVmsXCluster`, so the disk-path
   mechanism above is unavailable and the host constraint is not honored — a
   real 3-VM batch call of the exact shape it sends, each VM carrying its own
@@ -245,5 +252,8 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
       user story.
 - [ ] Conflicting host-local requirements across volumes on one VM are
       specified as a hard error.
-- [ ] VM mobility guarantees are stated per storage-class configuration.
+- [ ] The migration race is stated as a narrow, specific gap (a DRS migration
+      landing after CNS commits the volume), not as a blanket "unsupported"
+      for the shared-zonal-home-plus-host-local-WFFC configuration, which
+      creates and provisions normally in the common case.
 - [ ] Out-of-scope items (VM Groups, instance storage) are listed.

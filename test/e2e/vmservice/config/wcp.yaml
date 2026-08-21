@@ -15,35 +15,6 @@ infraConfig:
       vmResourcePolicyName: ""
       contentLibrarySubscriptionURL: "${CONTENT_LIBRARY_SUBSCRIPTION_URL:-https://wp-content-pstg.broadcom.com/vmsvc/lib.json}"
 
-versionDiscovery:
-  enabled: true
-  systemSpecs:
-    guest-cluster-controller: docker-registry.kube-system.svc:5000/tkg-svs/package/tkg-service@sha256:b190d50fc2d35329d1be5299c24e9bf45bf7f8e40f36323c6648c9f9ed43902d
-    vm-operator: vmoperator-controller:1.9.0-e83c447f
-
-variables:
-  VMOPNamespace: "vmware-system-vmop"
-  VMOPDeploymentName: "vmware-system-vmop-controller-manager"
-  VMOPLeaderElectionResourceName: "vmware-system-vmop-controller-manager-runtime"
-  VMOPImagePrefix: "localhost:5000/vmware/vmop"
-  VMOPManagerCommand: "/manager"
-  EnvFSSVMSVC: "FSS_WCP_VMSERVICE"
-  EnvFSSInstanceStorage: "FSS_WCP_INSTANCE_STORAGE"
-  EnvFSSVMClassAsConfig: "FSS_WCP_VM_CLASS_AS_CONFIG"
-  EnvFSSVMClassAsConfigDaynDate: "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
-  EnvFSSVMImageRegistry: "FSS_WCP_VM_IMAGE_REGISTRY"
-  EnvFSSNamespacedVMClass: "FSS_WCP_NAMESPACED_VM_CLASS"
-  EnvFSSWindowsSysprep: "FSS_WCP_WINDOWS_SYSPREP"
-  EnvFSSV1alpha2: "FSS_WCP_VMSERVICE_V1ALPHA2"
-  EnvFSSVMServiceBackupRestore: "FSS_WCP_VMSERVICE_BACKUPRESTORE"
-  EnvFSSIncrementalRestore: "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
-  EnvFSSVMResizeCPUMemory: "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
-  EnvFSSIsoSupport: "FSS_WCP_VMSERVICE_ISO_SUPPORT"
-  EnvNetworkProvider: "NETWORK_PROVIDER"
-  EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
-  EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
-  EnvWorkloadIsolation: "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
-
 variables:
   VMOPNamespace: "vmware-system-vmop"
   VMOPDeploymentName: "vmware-system-vmop-controller-manager"

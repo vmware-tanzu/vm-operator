@@ -118,11 +118,26 @@ Addresses the second round of code-owner review on the ConfigSpec-driven design.
       any of their real volumes. Deterministic across three trials. Confirms
       the limitation as measured fact rather than inference from the
       single-VM case
-- [ ] T040 File the DRS RFE for `PlaceVmsXCluster` honoring ConfigSpec disk
-      backings (or accepting a per-VM host constraint), and replace the
-      `vmop-NNNN` placeholders in `vmprovider_vmgroup.go`, `architecture.md`
-      and `spec.md` with the real ticket. The group-placement limitation is an
-      observed property of that API, not a statement from the DRS team
+- [x] T040 File the DRS RFE for `PlaceVmsXCluster` honoring ConfigSpec disk
+      backings (or accepting a per-VM host constraint). Filed as `CRM-4964`
+      against the DRS team's own tracker — not this repo's `vmop` project, so
+      referenced by its real ID rather than the usual prefix substitution.
+      Substituted for the `vmop-NNNN` placeholders in `zone_placement.go`,
+      `vmprovider_vmgroup.go`, `architecture.md` §11.2, and `spec.md`. The
+      group-placement limitation is an observed property
+      of that API, not a statement from the DRS team
+- [x] T042 Strengthen the DRS ticket's evidence before filing: run `PlaceVm`
+      against the identical `ConfigSpec`s used for the `PlaceVmsXCluster`
+      batch call, as a control. Every volume got its correct host, datastore,
+      and disk path back — proving the defect is specific to
+      `PlaceVmsXCluster`, not an ambiguity in what a disk backing means to
+      either API. Also re-ran the batch test against three fresh, real PVCs
+      created directly in the namespace under review rather than only
+      independently-created FCDs, including one volume whose real host
+      happened to be the same host `PlaceVmsXCluster` always substitutes —
+      its disk backing was *still* rewritten to a different datastore,
+      showing the substitution is unconditional rather than coincidentally
+      correct for that one volume
 - [x] T041 Correct T038's "is not supported" wording after it read as a
       blanket rejection rather than the narrow migration race it actually
       describes. Two real VMs on the deployed build (`vm-9n8y`,

@@ -248,13 +248,16 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 		// this exact shape -- several VmPlacementSpecs, HostRecommRequired
 		// true -- was measured against real DRS to substitute the same host
 		// and datastore for every VM in the batch, ignoring each one's disk
-		// backing entirely. Host derivation for host-local storage therefore
-		// does not work here the way it does in vmCreateDoPlacement, which
-		// uses PlaceVm for that reason.
+		// backing entirely. The same ConfigSpecs sent through PlaceVm instead
+		// derived the correct host and datastore for every volume, confirming
+		// this is specific to PlaceVmsXCluster rather than an ambiguity in
+		// what a disk backing means. Host derivation for host-local storage
+		// therefore does not work here the way it does in vmCreateDoPlacement,
+		// which uses PlaceVm for that reason.
 		//
-		// TODO(vmop-NNNN): RFE with DRS to honor ConfigSpec disk backings in
-		// PlaceVmsXCluster, or to accept a per-VM host constraint. Revisit once
-		// that lands.
+		// TODO(CRM-4964): RFE filed with DRS to honor ConfigSpec disk
+		// backings in PlaceVmsXCluster, or to accept a per-VM host constraint.
+		// Revisit once that lands.
 		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			createArgs.ConfigSpec,

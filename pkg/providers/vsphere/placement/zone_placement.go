@@ -363,9 +363,14 @@ func getPlacementRecommendation(
 		//
 		//   2. Only PlaceVm derives the host from the disks in the ConfigSpec.
 		//      A VM with host-local storage must land on a host that can reach
-		//      its volumes, and measured against real DRS, PlaceVmsXCluster
-		//      returns the same host regardless of those disks - including
-		//      hosts that cannot reach the datastore the ConfigSpec names.
+		//      its volumes. Measured against real DRS on the identical
+		//      ConfigSpec sent through both APIs, PlaceVm derives the correct
+		//      host and datastore for every volume, while PlaceVmsXCluster
+		//      substitutes its own choice of datastore regardless of those
+		//      disks - including a datastore that the recommended host cannot
+		//      even reach. Filed as CRM-4964; group placement (which only has
+		//      PlaceVmsXCluster available) cannot support host-local storage
+		//      until that is fixed.
 		//
 		rec, err := getPlaceVMRecommendation(vmCtx, vcClient, candidates, configSpec)
 		if err != nil {

@@ -29,12 +29,14 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -1361,6 +1363,63 @@ func unitTestsReconcile() {
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
 					Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "true"))
 					Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, zoneName))
+				})
+			})
+
+			Context("PVC StorageClass is host-local", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.HostLocalStorage = true
+					})
+
+					// Host-local is detected from the storage policy's
+					// StorageLocality SPBM capability, which the storagepolicy
+					// controller surfaces on the StoragePolicy CR's status.
+					// Created here rather than via initObjects because the
+					// namespace comes from the context's config.
+					policyID := storageClass.Parameters["storagePolicyID"]
+					sp := &infrav1.StoragePolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+							Name:      kubeutil.GetStoragePolicyObjectName(policyID),
+						},
+						Spec: infrav1.StoragePolicySpec{ID: policyID},
+					}
+					Expect(ctx.Client.Create(ctx, sp)).To(Succeed())
+					sp.Status.HostLocal = true
+					Expect(ctx.Client.Status().Update(ctx, sp)).To(Succeed())
+				})
+
+				// A host-local PVC's selected node is a host rather than a
+				// zone, and it is published by the vSphere provider once the
+				// VM has actually been created on that host, so this
+				// controller must not stamp a zone onto it.
+				It("leaves the selected node to the provider", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					pvc := &corev1.PersistentVolumeClaim{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+					Expect(pvc.Annotations).ToNot(HaveKey(storagehelpers.AnnSelectedNode))
+					Expect(pvc.Annotations).ToNot(HaveKey(constants.CNSSelectedNodeIsZoneAnnotationKey))
+				})
+
+				When("the HostLocalStorage feature is disabled", func() {
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.HostLocalStorage = false
+						})
+					})
+
+					It("falls back to zone-based selected-node", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						pvc := &corev1.PersistentVolumeClaim{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+						Expect(pvc.Annotations).To(HaveKeyWithValue(constants.CNSSelectedNodeIsZoneAnnotationKey, "true"))
+						Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, zoneName))
+					})
 				})
 			})
 

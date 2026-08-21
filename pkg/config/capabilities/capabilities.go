@@ -139,6 +139,14 @@ const (
 	// extension compatibility constraint mechanism. It gates VM Operator
 	// registering INVARIANT constraints on VMs it creates.
 	CapabilityKeyExtensionCompatConstraint = "supports_extension_compat_constraint"
+
+	// CapabilityKeyHostLocalStorage is the name of the capability key defined
+	// in the Supervisor capabilities CRD for host-local storage support: VM
+	// placement pinned to the specific ESXi host that owns a host-local
+	// (direct attached VMFS, single-host) datastore. This capability
+	// is activated on vCenter's side by the FSS HostLocalStorageSupport; VM
+	// Operator only ever observes the resulting Supervisor capability state.
+	CapabilityKeyHostLocalStorage = "supports_host_local_storage"
 )
 
 var (
@@ -317,6 +325,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		case CapabilityKeyExtensionCompatConstraint:
 			fs.ExtensionCompatConstraint = capStatus.Activated
+		case CapabilityKeyHostLocalStorage:
+			fs.HostLocalStorage = capStatus.Activated
 		}
 
 	}

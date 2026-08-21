@@ -96,6 +96,13 @@ spec:
                   Encrypted is the observed status of encryption support for the storage
                   policy.
                 type: boolean
+              hostLocal:
+                description: |-
+                  HostLocal is the observed status of host-local storage support for the
+                  storage policy. It is true when the policy requires that a volume be
+                  placed on storage attached to, and mounted on, a single ESXi host, which
+                  means a virtual machine using the volume can only run on that host.
+                type: boolean
               storageClasses:
                 description: |-
                   StorageClasses are the observed names of StorageClass objects that

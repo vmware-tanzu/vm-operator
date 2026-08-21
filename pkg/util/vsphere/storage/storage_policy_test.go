@@ -965,3 +965,122 @@ func (m *fakePlacementSolver) PbmCheckRequirements(
 
 	return body
 }
+
+var _ = Describe("IsHostLocalStorageCapabilityPolicy", func() {
+
+	const (
+		ns = "com.vmware.storage.volumeallocation"
+		id = "StorageLocality"
+	)
+
+	// subProfiles wraps a single StorageLocality property value in the nesting
+	// SPBM uses, so each spec below varies only what it is testing.
+	subProfiles := func(
+		capNS, capID, propID string,
+		value vimtypes.AnyType) *pbmtypes.PbmCapabilitySubProfileConstraints {
+
+		return &pbmtypes.PbmCapabilitySubProfileConstraints{
+			SubProfiles: []pbmtypes.PbmCapabilitySubProfile{
+				{
+					Capability: []pbmtypes.PbmCapabilityInstance{
+						{
+							Id: pbmtypes.PbmCapabilityMetadataUniqueId{
+								Namespace: capNS,
+								Id:        capID,
+							},
+							Constraint: []pbmtypes.PbmCapabilityConstraintInstance{
+								{
+									PropertyInstance: []pbmtypes.PbmCapabilityPropertyInstance{
+										{
+											Id:    propID,
+											Value: value,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	When("the subprofiles are nil", func() {
+		It("reports false", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(nil)).To(BeFalse())
+		})
+	})
+
+	When("the capability namespace does not match", func() {
+		It("reports false", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles("com.vmware.storage.other", id, id,
+					"HostLocalStorage"))).To(BeFalse())
+		})
+	})
+
+	When("the capability ID does not match", func() {
+		It("reports false", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, "SomethingElse", id,
+					"HostLocalStorage"))).To(BeFalse())
+		})
+	})
+
+	When("the property ID does not match", func() {
+		It("reports false", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, id, "SomethingElse",
+					"HostLocalStorage"))).To(BeFalse())
+		})
+	})
+
+	When("the value is None", func() {
+		It("reports false, since None is the capability's default and means no "+
+			"locality preference", func() {
+
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, id, id, "None"))).To(BeFalse())
+		})
+	})
+
+	When("the value is the HostLocalStorage string", func() {
+		It("reports true", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, id, id, "HostLocalStorage"))).To(BeTrue())
+		})
+	})
+
+	When("the value is a discrete set containing HostLocalStorage", func() {
+		It("reports true", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, id, id, pbmtypes.PbmCapabilityDiscreteSet{
+					Values: []vimtypes.AnyType{"None", "HostLocalStorage"},
+				}))).To(BeTrue())
+		})
+	})
+
+	When("the value is a pointer to a discrete set containing HostLocalStorage", func() {
+		It("reports true", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, id, id, &pbmtypes.PbmCapabilityDiscreteSet{
+					Values: []vimtypes.AnyType{"HostLocalStorage"},
+				}))).To(BeTrue())
+		})
+	})
+
+	When("the value is a nil discrete set pointer", func() {
+		It("reports false", func() {
+			var set *pbmtypes.PbmCapabilityDiscreteSet
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, id, id, set))).To(BeFalse())
+		})
+	})
+
+	When("the value is an unexpected type", func() {
+		It("reports false", func() {
+			Expect(storutil.IsHostLocalStorageCapabilityPolicy(
+				subProfiles(ns, id, id, int32(42)))).To(BeFalse())
+		})
+	})
+})

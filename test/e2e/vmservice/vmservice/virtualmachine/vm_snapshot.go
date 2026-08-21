@@ -116,6 +116,8 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 	})
 
 	AfterEach(func() {
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, vmSvcClusterProxy.GetKubeconfigPath(), vmSvcNamespace)
+
 		if skipCleanup {
 			return
 		}

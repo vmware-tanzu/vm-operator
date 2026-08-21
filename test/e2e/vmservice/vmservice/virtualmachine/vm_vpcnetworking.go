@@ -167,12 +167,9 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		}
 	})
 
-	// Describe the VMs if the test failed before they are deleted.
+	// Describe the VMs (and other vm-operator CRs) if the test failed before they are deleted.
 	JustAfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, "vm")
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm2Name, "vm")
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 	})
 
 	AfterEach(func() {
@@ -367,6 +364,10 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		)
 
 		AfterEach(func() {
+			if secondNamespaceCtx.GetNamespace() != nil {
+				vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), secondNamespaceName)
+			}
+
 			if vm1IP != "" {
 				deleteVMAndSubnet(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name, subnetName, subnetKind)
 			}

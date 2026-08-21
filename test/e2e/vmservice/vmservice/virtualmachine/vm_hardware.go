@@ -458,6 +458,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		})
 
 		AfterEach(func() {
+			vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), vmSvcNamespace)
+
 			if CurrentSpecReport().Failed() {
 				By("Logging Virtual Machines and Batch Attachments after failure")
 
@@ -2034,6 +2036,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 
 			AfterEach(func() {
+				vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), vmSvcNamespace)
+
 				CleanupBrownfieldVM(ctx, BrownfieldVMCleanupInput{
 					VCenterAdminClient: vCenterAdminClient,
 					BrownfieldVMName:   brownfieldVMName,

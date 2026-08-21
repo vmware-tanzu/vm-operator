@@ -588,6 +588,55 @@ func DescribeResourceIfExists(ctx context.Context, client ctrlclient.Client, kub
 	e2eframework.Logf("kubectl describe %s -n %s %s:\n%s", resource, ns, resourceName, stdout)
 }
 
+// DescribeObjectsOnFailure describes every instance of the vm-operator CR kinds tests
+// commonly create in ns, if the current spec failed — without depending on the caller
+// having tracked each resource's name/YAML correctly in an outer variable.
+func DescribeObjectsOnFailure(ctx context.Context, client ctrlclient.Client, kubeconfigPath, ns string) {
+	if !CurrentSpecReport().Failed() {
+		return
+	}
+
+	if ns == "" {
+		e2eframework.Logf("skipping vm-operator failure diagnostics: empty namespace")
+		return
+	}
+
+	// Typed List results don't have TypeMeta/Kind populated on their items (a
+	// well-known controller-runtime/client-go quirk), so each List is paired with
+	// the kubectl "resource" argument we pass to DescribeResourceIfExists below.
+	for _, entry := range []struct {
+		list ctrlclient.ObjectList
+		kind string
+	}{
+		{&vmopv1.VirtualMachineList{}, virtualMachineKind},
+		{&vmopv1.VirtualMachineGroupList{}, "VirtualMachineGroup"},
+		{&vmopv1.VirtualMachineGroupPublishRequestList{}, "VirtualMachineGroupPublishRequest"},
+		{&vmopv1.VirtualMachinePublishRequestList{}, "VirtualMachinePublishRequest"},
+		{&vmopv1.VirtualMachineServiceList{}, "VirtualMachineService"},
+		{&vmopv1.VirtualMachineSnapshotList{}, "VirtualMachineSnapshot"},
+		{&vmopv1.VirtualMachineWebConsoleRequestList{}, "VirtualMachineWebConsoleRequest"},
+	} {
+		if err := client.List(ctx, entry.list, ctrlclient.InNamespace(ns)); err != nil {
+			e2eframework.Logf("failed to list %s in %s for failure diagnostics: %v", entry.kind, ns, err)
+			continue
+		}
+
+		items, err := meta.ExtractList(entry.list)
+		if err != nil {
+			e2eframework.Logf("failed to extract %s items for failure diagnostics: %v", entry.kind, err)
+			continue
+		}
+
+		for _, item := range items {
+			accessor, err := meta.Accessor(item)
+			if err != nil {
+				continue
+			}
+			DescribeResourceIfExists(ctx, client, kubeconfigPath, ns, accessor.GetName(), entry.kind)
+		}
+	}
+}
+
 // Utility function to get a image k8s name given its display name.
 func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, namespace, imageDisplayName string) string {

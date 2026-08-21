@@ -79,8 +79,11 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 
 	AfterEach(func() {
 		if CurrentSpecReport().Failed() {
+			// resourceName can be the legacy v1a1 "webconsolerequests" resource, which
+			// isn't a vm-operator v1alpha6 CR and so isn't covered by DescribeObjectsOnFailure.
 			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, webconsoleName, resourceName)
 		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 	})
 
 	Context("Create web console request CR", func() {

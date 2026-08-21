@@ -377,6 +377,10 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmNamespace, linuxImageDisplayName)
 	})
 
+	AfterEach(func() {
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), vmNamespace)
+	})
+
 	It("creates VM with live-mode ExtraConfig and verifies both coalescingScheme and coalescingParams",
 		Label("core-functional", "experimental"), func() {
 			vmName := "nic-ec-live-" + capiutil.RandomString(5)

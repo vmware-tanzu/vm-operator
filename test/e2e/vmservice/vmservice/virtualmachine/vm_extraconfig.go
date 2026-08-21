@@ -128,6 +128,10 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			input.WCPNamespaceName, linuxImageDisplayName)
 	})
 
+	AfterEach(func() {
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
+	})
+
 	// ── It block 1: phases 1-2 ────────────────────────────────────────────────
 	// Creates a VM with PowerCycle first-class fields and two bag keys, waits for
 	// ExtraConfigSynced=True, then exercises bag key CRUD and verifies status.extraConfig

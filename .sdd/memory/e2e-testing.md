@@ -6,7 +6,7 @@
 
 ## Running tests
 
-**Environment setup** (kubeconfig under `~/.kube/wcp-config`, vars exported — see README for `testbedInfo.json` or a remote URL):
+**Environment setup** (kubeconfig written to a unique file, exported as `KUBECONFIG` and `E2E_KUBECONFIG_PATH`, so concurrent local runs don't stomp on each other's kubeconfig, vars exported — see README for `testbedInfo.json` or a remote URL):
 
 ```bash
 source ./hack/e2e/setup-testbed-env.sh <testbedInfo.json|URL> --e2e

@@ -337,7 +337,7 @@ _decrypt_wcp_credentials() {
 # SSHes to vCenter to run decryptK8Pwd.py, downloads the supervisor kubeconfig,
 # and patches it to use the real supervisor IP (instead of 127.0.0.1).
 # Populates: wcp_ip, wcp_password (in _main's scope via dynamic scoping).
-# Exports:   KUBECONFIG
+# Exports:   KUBECONFIG, E2E_KUBECONFIG_PATH (--e2e only)
 # ---------------------------------------------------------------------------
 _fetch_supervisor_access() {
     local -r enable_e2e="$1"
@@ -383,8 +383,20 @@ _fetch_supervisor_access() {
     _log "Supervisor IP: ${wcp_ip}"
 
     mkdir -p "${HOME}/.kube"
-    local -r kubeconfig_dest="${HOME}/.kube/${vc_url}.kubeconfig"
-    local -r wcp_kubeconfig_dest="${HOME}/.kube/wcp-config"
+
+    # Unique-per-invocation filename, named for the supervisor (wcp_ip) this
+    # kubeconfig actually targets rather than the vCenter (vc_url) — the
+    # file is patched below to point at wcp_ip, not vc_url. The unique
+    # suffix means concurrent local runs — two testbeds, or two runs
+    # against the same testbed in separate terminals — each get their own
+    # file instead of one racing to overwrite the other's mid-run. This is
+    # the one file KUBECONFIG and (when --e2e is passed) E2E_KUBECONFIG_PATH
+    # both point at; see the Exports comment above.
+    local kubeconfig_dest
+    if ! kubeconfig_dest="$(mktemp "${HOME}/.kube/${wcp_ip}.kubeconfig.XXXXXX")"; then
+        _err "Failed to create a unique kubeconfig file under ${HOME}/.kube"
+        return 1
+    fi
 
     _log "Downloading kubeconfig to ${kubeconfig_dest}..."
     if ! _retry_with_backoff "${_KUBECONFIG_RETRY_ATTEMPTS}" "${_KUBECONFIG_RETRY_INITIAL_DELAY}" "SCP kubeconfig from supervisor" \
@@ -404,10 +416,15 @@ _fetch_supervisor_access() {
     _export KUBECONFIG "${kubeconfig_dest}"
 
     if [[ "${enable_e2e}" == "true" ]]; then
-        _log "Copying kubeconfig → ${wcp_kubeconfig_dest} (--e2e)"
-        cp "${kubeconfig_dest}" "${wcp_kubeconfig_dest}"
+        # Point the E2E test suite at the same unique kubeconfig file as
+        # KUBECONFIG (no separate copy needed — test/e2e/vmservice/config/
+        # wcp.yaml's kubeconfigPath reads E2E_KUBECONFIG_PATH first, falling
+        # back to the historical ~/.kube/wcp-config only for the manual,
+        # non-scripted flow documented in test/e2e/vmservice/README.md,
+        # which never goes through this script).
+        _export E2E_KUBECONFIG_PATH "${kubeconfig_dest}"
     else
-        _log "Skipping kubeconfig copy to ${wcp_kubeconfig_dest} (pass --e2e to enable)"
+        _log "Skipping E2E kubeconfig setup (pass --e2e to enable)"
     fi
 }
 
@@ -651,8 +668,9 @@ Arguments:
   TESTBED_SOURCE  Path to a local testbedinfo.json file or an HTTP(S) URL
 
 Options:
-  --e2e       Copy kubeconfig to ~/.kube/wcp-config, install kubectl-vsphere,
-              set up the squid HTTP proxy, and configure KMS key providers
+  --e2e       Also export KUBECONFIG as E2E_KUBECONFIG_PATH, install
+              kubectl-vsphere, set up the squid HTTP proxy, and configure
+              KMS key providers
   -h, --help  Show this help and exit
 
 Examples:
@@ -727,6 +745,7 @@ EOF
         _log "  VC_VIM_USERNAME (govc):     ${VC_VIM_USERNAME}"
         _log "  NETWORK:                    ${NETWORK}"
         _log "  KUBECONFIG:                 ${KUBECONFIG:-not set}"
+        _log "  E2E_KUBECONFIG_PATH:        ${E2E_KUBECONFIG_PATH:-not set}"
         _log "  SUPERVISOR_CLUSTER_IP:      ${SUPERVISOR_CLUSTER_IP}"
         _log "  HTTP_PROXY:                 ${HTTP_PROXY:-not set}"
         _log "  GATEWAY_IP:                 ${GATEWAY_IP:-not set}"

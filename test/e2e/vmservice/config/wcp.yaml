@@ -1,7 +1,7 @@
 ---
 infraConfig:
   infraName: "wcp"
-  kubeconfigPath: "$HOME/.kube/wcp-config"
+  kubeconfigPath: "${E2E_KUBECONFIG_PATH:-$HOME/.kube/wcp-config}"
   networkingTopology: "${NETWORK:-vds}"
   managementClusterConfig:
     managementClusterName: "wcp"

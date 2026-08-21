@@ -545,17 +545,21 @@ binding modes:
      that would require a storage vMotion, which DRS load balancing does not
      perform. The host it is created on is the host it keeps.
    - **A VM provisioned with a shared zonal policy that also requests a
-     host-local `WaitForFirstConsumer` volume** carries no such guarantee.
-     Nothing keeps it on the host chosen at create time, because until the
-     volume is bound and attached the VM has no host-local disk holding it in
-     place. While the PVC is still unprovisioned this self-corrects: the
-     selected node is re-published from the VM's *current* host on every
-     reconcile (§6). Once CNS has provisioned the volume it cannot move, so a
-     VM that migrated in the interim fails to attach it, with no recovery short
-     of deleting the PVC. This configuration is not supported.
+     host-local `WaitForFirstConsumer` volume** creates and powers on
+     normally, by the same mechanism as above: DRS picks a host, that host is
+     stamped onto the PVC, and CSI provisions there. What this shape lacks is
+     a guarantee that the VM *stays* on that host. Nothing pins it there,
+     because until the volume is bound and attached the VM has no host-local
+     disk holding it in place. While the PVC is still unprovisioned this
+     self-corrects: the selected node is re-published from the VM's *current*
+     host on every reconcile (§6). The gap is narrow and specific: only a DRS
+     migration that lands *after* CNS has committed the volume causes a
+     problem, since the volume cannot then follow — the VM fails to attach it,
+     with no recovery short of deleting the PVC. Nothing in this feature
+     detects or guards against that specific race.
 
-   Closing the second case would need a DRS VM-Host rule, or placing the VM's
-   home on the same host-local datastore. Separately, nothing prevents an
+   Closing that gap would need a DRS VM-Host rule, or placing the VM's home on
+   the same host-local datastore. Separately, nothing prevents an
    administrator from relocating a host-local VM in vCenter by hand; detecting
    and reporting that drift is out of scope.
 5. **More than one host-local volume on a VM requires a

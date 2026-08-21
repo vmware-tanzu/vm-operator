@@ -286,7 +286,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
 			})
 
-			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional"), func() {
+			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional", "experimental"), func() {
 				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
 
 				By("Attaching the target content library to the namespace as writable")
@@ -313,6 +313,12 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					StorageClassName: clusterResources.StorageClassName,
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "PoweredOn",
+					Annotations: map[string]string{
+						// Deploy full disk copies so no background PromoteDisks task
+						// can leave the OVF capture queued past the publish timeout.
+						// Disk provenance is irrelevant to the vAppConfig behavior under test here.
+						pkgconst.FastDeployAnnotationKey: fmt.Sprintf("%q", pkgconst.FastDeployModeDirect),
+					},
 					Bootstrap: manifestbuilders.Bootstrap{
 						// LinuxPrep is needed here for the VM to get a valid IP address.
 						LinuxPrep: &manifestbuilders.LinuxPrep{},

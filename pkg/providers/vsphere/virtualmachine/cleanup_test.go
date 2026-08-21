@@ -186,6 +186,30 @@ func cleanupOnDeleteTests() {
 			})
 		})
 
+		Context("when the extension compat constraint feature is enabled", func() {
+			BeforeEach(func() {
+				initialExtraConfig = nil
+				initialManagedBy = &vimtypes.ManagedByInfo{
+					ExtensionKey: vmopv1.ManagedByExtensionKey,
+					Type:         vmopv1.ManagedByExtensionType,
+				}
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.ExtensionCompatConstraint = true
+				})
+			})
+
+			It("bypasses compat checks and clears ManagedBy successfully", func() {
+				err := virtualmachine.CleanupVMServiceState(vmCtx, vcVM)
+				Expect(err).NotTo(HaveOccurred())
+
+				var moVM mo.VirtualMachine
+				err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"config"}, &moVM)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(moVM.Config).ToNot(BeNil())
+				Expect(moVM.Config.ManagedBy).To(BeNil())
+			})
+		})
+
 		Context("when VM has tag associations", func() {
 			var (
 				policyTag1ID string

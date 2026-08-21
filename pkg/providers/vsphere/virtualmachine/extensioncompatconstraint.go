@@ -6,6 +6,8 @@ package virtualmachine
 
 import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
 // extensionCompatConstraintKey identifies an extension compatibility
@@ -61,4 +63,32 @@ func UpdateConfigSpecExtensionCompatibilityConstraint(
 	}
 
 	configSpec.ExtensionCompatibilityConstraint = extensionCompatibilityConstraintSet()
+}
+
+// ClearConfigSpecExtensionCompatibilityConstraint removes the extension
+// compatibility constraints VM Operator registered on the VM. This should be
+// called when unregistering a VM from Supervisor (see CleanupVMServiceState),
+// since the constraints otherwise persist and continue to be enforced
+// against whatever manages the VM next.
+//
+// The constraint set is declared by the VM's managing extension as a whole
+// (see ManagedBy), not per-constraint, so it is only cleared when VM
+// Operator is still the managing extension.
+func ClearConfigSpecExtensionCompatibilityConstraint(
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec) {
+
+	if config == nil || config.ExtensionCompatibilityConstraint == nil {
+		return
+	}
+
+	if config.ManagedBy == nil ||
+		config.ManagedBy.ExtensionKey != vmopv1.ManagedByExtensionKey ||
+		config.ManagedBy.Type != vmopv1.ManagedByExtensionType {
+		return
+	}
+
+	// A reconfigure's constraint set is a full-set-replace, so a non-nil,
+	// empty set clears the field.
+	configSpec.ExtensionCompatibilityConstraint = &vimtypes.VirtualMachineExtensionCompatibilityConstraintSet{}
 }

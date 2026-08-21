@@ -18,8 +18,10 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vspheretask "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/task"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm/internal"
 )
@@ -686,13 +688,24 @@ func setLastRestartTimeInExtraConfigAndWait(
 		"extraConfigKey", ExtraConfigKeyLastRestartTime,
 		"extraConfigValue", lastRestartTimeEpoch)
 
-	t, err := obj.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+	configSpec := vimtypes.VirtualMachineConfigSpec{
 		ExtraConfig: []vimtypes.BaseOptionValue{
 			&vimtypes.OptionValue{
 				Key:   ExtraConfigKeyLastRestartTime,
 				Value: strconv.FormatInt(lastRestartTimeEpoch, 10),
 			},
-		}})
+		},
+	}
+
+	// VM Operator registered these constraints on the VM (see CreateConfigSpec
+	// and the extension compat constraint reconciler), so its own reconfigures
+	// must not be blocked by them. VM Operator holds the ExtensionCompat.Bypass
+	// privilege required for vpxd to honor this flag.
+	if pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint {
+		configSpec.SkipExtensionCompatibilityChecks = ptr.To(true)
+	}
+
+	t, err := obj.Reconfigure(ctx, configSpec)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to invoke reconfigure that records extra config key=%s value=%v to vm %w",

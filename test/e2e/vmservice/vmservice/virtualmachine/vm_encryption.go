@@ -140,6 +140,17 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			To(Succeed(), "failed to ensure encryption storage in namespace %s",
 				tmpNamespaceName)
 
+		// vCenter's default KMS provider is VC-wide, not test-scoped;
+		// serialize this read-mutate-restore section against other E2E jobs
+		// on the same vCenter so a concurrent job's cleanup can't clobber
+		// the default provider this spec depends on mid-flight. The lock is
+		// kept alive by a renewal loop while held, so this timeout only
+		// bounds how long to wait for other jobs' encryption specs ahead in
+		// line to finish and release it, not how long any one spec may hold
+		// it - 25m comfortably covers a few queued specs at their observed
+		// several-minute runtimes.
+		DeferCleanup(vmserviceutils.AcquireDefaultKMSProviderLock(ctx, svClusterClient, 25*time.Minute))
+
 		defaultKeyProviderID, err = cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
 		Expect(err).NotTo(HaveOccurred(), "failed to get default Key Provider ID")
 	})

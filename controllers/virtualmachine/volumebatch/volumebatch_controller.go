@@ -1320,4 +1320,5 @@ func updateVolumeStatusWithExistingVMStatus(
 	vmVolStatus.UnitNumber = existingVolStatus.UnitNumber
 	vmVolStatus.DiskMode = existingVolStatus.DiskMode
 	vmVolStatus.SharingMode = existingVolStatus.SharingMode
+	vmVolStatus.ProvisioningMode = existingVolStatus.ProvisioningMode
 }

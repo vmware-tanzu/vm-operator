@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -891,7 +892,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, vmNamespace, vmName, vmYaml)
+			// Bounded so a broken vSphere-side disk state left behind by an earlier
+			// assertion failure in this spec fails cleanup fast instead of blocking
+			// the rest of the suite for hours.
+			DeferCleanup(deleteRegisteredVMAndPVCs, svClusterClient, clusterProxy, vmNamespace, vmName, vmYaml, NodeTimeout(3*time.Minute))
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.
@@ -1022,6 +1026,24 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(vmObj.RemoveDevice(ctx, true, disk)).To(Succeed())
 			findDisk(Default, pvcNameA, false)
 
+			// If a later assertion in this spec fails before RegisterVM successfully
+			// re-registers this disk, the FCD catalog entry below is left dangling,
+			// pointing at a backing file that no longer exists at its original
+			// location. That dangling entry is what makes the outer VM/PVC
+			// DeferCleanup above hang for hours waiting on CNS/CSI to tear down
+			// storage that will never resolve cleanly. Best-effort force-remove it
+			// directly (runs before the outer cleanup since DeferCleanup is LIFO) so
+			// that cleanup isn't left waiting on it. A no-op if RegisterVM already
+			// reconciled this FCD away via the normal (passing) path.
+			origDatastore, origFCDID := ds, disk.VDiskId.Id
+			DeferCleanup(func(ctx context.Context) {
+				task, err := fcdManager.Delete(ctx, origDatastore, origFCDID)
+				if err != nil {
+					return
+				}
+				_ = task.Wait(ctx)
+			}, NodeTimeout(1*time.Minute))
+
 			// Create "new" disk
 			dstPath := object.DatastorePath{Datastore: vmPath.Datastore, Path: path.Join(vmHome, path.Base(datastorePath.Path))}
 			Expect(fileManager.Copy(ctx, datastorePath.Path, dstPath.String())).To(Succeed())
@@ -1030,7 +1052,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Expect to fail w/ orphaned FCD
 			_, err = fcdManager.Retrieve(ctx, ds, disk.VDiskId.Id)
 			Expect(err).To(HaveOccurred())
-			Expect(fault.Is(err, &types.NotFound{})).To(BeTrue())
+			isOrphaned := fault.Is(err, &types.NotFound{}) || fault.Is(err, &types.FileNotFound{})
+			Expect(isOrphaned).To(BeTrue(), "expected NotFound or FileNotFound fault for orphaned FCD, got: %v", err)
 
 			// The Volume still exists
 			queryVolume()

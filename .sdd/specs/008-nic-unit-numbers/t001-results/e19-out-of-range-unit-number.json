@@ -1,0 +1,217 @@
+{
+  "environment": {
+    "runAt": "2026-08-31T20:01:12Z",
+    "vcName": "10.162.38.193 (VMware vCenter Server 9.2.0.0.25689988)",
+    "vcVersion": "9.2.0",
+    "vcBuild": "25689988",
+    "vcAPIVersion": "9.1.2.0.rc0",
+    "hostName": "10.162.34.186",
+    "hostVersion": "9.2.0",
+    "hostBuild": "25690016",
+    "hardwareVersion": "vmx-23",
+    "datacenter": "/dc",
+    "resourcePool": "/dc/host/dc-cluster/Resources",
+    "datastore": "/dc/datastore/sharedVmfs-0",
+    "folder": "/dc/vm",
+    "network": "/dc/network/VM Network",
+    "govmomiVersion": "v0.56.0-alpha.0.0.20260720221020-d993be43fe66"
+  },
+  "results": [
+    {
+      "id": "E19",
+      "title": "vSphere's handling of an explicit NIC UnitNumber outside the 7-16 band",
+      "status": "RECORDED",
+      "steps": [
+        {
+          "name": "CreateVM with a NIC at out-of-range unit 3",
+          "requested": [
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -676829513,
+              "unitNumber": 3,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "observed": [
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4000,
+              "unitNumber": 7,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:9b:35",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ]
+        },
+        {
+          "name": "ReconfigVM_Task Add at out-of-range unit 3",
+          "requested": [
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -2036053110,
+              "unitNumber": 3,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "observed": [
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4000,
+              "unitNumber": 7,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:71:4c",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            },
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4001,
+              "unitNumber": 8,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:f5:50",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ]
+        },
+        {
+          "name": "CreateVM with a NIC at out-of-range unit 17",
+          "requested": [
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -2090104660,
+              "unitNumber": 17,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "faults": [
+            {
+              "type": "InvalidArgument",
+              "message": "A specified parameter was not correct: unitNumber",
+              "localized": [
+                "backtrace: [context]zKq7AVIDAgAAAKD/hwEcaG9zdGQAAIKtV2xpYnZtYWNvcmUuc28AADP3OACo7DoAAfdHAe2fZWhvc3RkAAF6p2WBjO98AYFsTH0BgXPDZwGBcM5nAYEs22cBgc/iZwGBAJNiAYHp1W0BgX/kbQGBNNJ0AYFA13QBAahu2IJPhSsBbGlidmltLXR5cGVzLnNvAAOnfSdsaWJ2bW9taS5zbwABOzxuBOsXFWxpYnZhcGktY29yZS5zby4yAAALiSQA0mklAG1sJQDXJlUFd2gIbGliYy5zby42AAWAaRA=[/context]",
+                "backtrace: [context]zKq7AVIDAgAAAKD/hwETdnB4YQAAgq1XbGlidm1hY29yZS5zbwAAM/c4AKjsOgAB90cBJbctbGlidm1vbWkuc28AAgsdL3ZweGEAApQEHgK8xB0CQv4dAp9wHgLTiR4CwdcdAjnfHgALiSQA0mklAG1sJQDXJlUDd2gIbGliYy5zby42AAOAaRA=[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwEudnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQAGHhggUHuogR2cHhkAIHoGKUEgfIwpQSB8agsBYFbqiwFgf1bKwWBm6osBYH+tCwFgaA7KwWBW1srBYGmWysFgVe5LAWBC0CVBIF+WZUEgW7kRQKCpUePAWxpYnZpbS10eXBlcy5zbwAD6PMybGlidm1vbWkuc28AgbwLLwWB9A0vBQML4CiB1zibAoGBTOAEgfGoLAWBW6osBYH9WysFgZuqLAWB/rQsBYGgOysFgVtbKwWBplsrBYGf2CwFgaY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwEmdnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQABWdgAcEYIWxpYnZtb21pLnNvAAF/pTiCNdxFAnZweGQAgkdVKwWCHECVBIJ+WZUEgm7kRQKDpUePAWxpYnZpbS10eXBlcy5zbwAB6PMygrwLLwWC9A0vBQEL4CiC1zibAoKBTOAEgvGoLAWCW6osBYL9WysFgpuqLAWC/rQsBYKgOysFgltbKwWCplsrBYKf2CwFgqY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]"
+              ]
+            }
+          ],
+          "error": "CreateVM failed for nic-unit-research-e19-tkngxy-create-oor-17: A specified parameter was not correct: unitNumber"
+        },
+        {
+          "name": "ReconfigVM_Task Add at out-of-range unit 17",
+          "requested": [
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -1483942035,
+              "unitNumber": 17,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "observed": [
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4000,
+              "unitNumber": 7,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:53:8a",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "faults": [
+            {
+              "type": "InvalidArgument",
+              "message": "A specified parameter was not correct: unitNumber",
+              "localized": [
+                "backtrace: [context]zKq7AVIDAgAAAKD/hwEcdnB4YQAAgq1XbGlidm1hY29yZS5zbwAAM/c4AKjsOgAB90cBErUTbGlidm1vbWkuc28AAVHXLQItbR12cHhhAAK/+B4CT/0eAujqNgLgSC2DMR4rAWxpYnZpbS10eXBlcy5zbwABp30nAqSjIAFDmxsCmc0uApE3HgJC/h0Cn3AeAvyGHgLB1x0COd8eAAuJJADSaSUAbWwlANcmVQR3aAhsaWJjLnNvLjYABIBpEA==[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwExdnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQAGHhggUHuogR2cHhkAIHoGKUEgfIwpQSB8agsBYFbqiwFgf1bKwWBm6osBYH+tCwFgaA7KwWBW1srBYGmWysFgVe5LAWBOj2VBIECPpUEgQXZGQSB5dwZBIF73RkEgXMZGgSCDb2OAWxpYnZpbS10eXBlcy5zbwAD6PMybGlidm1vbWkuc28AgbwLLwWB9A0vBQML4CiB1zibAoGBTOAEgfGoLAWBW6osBYH9WysFgZuqLAWB/rQsBYGgOysFgVtbKwWBplsrBYGf2CwFgaY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwEpdnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQABWdgAcEYIWxpYnZtb21pLnNvAAF/pTiCNdxFAnZweGQAgkdVKwWCSz2VBIICPpUEggXZGQSC5dwZBIJ73RkEgnMZGgSDDb2OAWxpYnZpbS10eXBlcy5zbwAB6PMygrwLLwWC9A0vBQEL4CiC1zibAoKBTOAEgvGoLAWCW6osBYL9WysFgpuqLAWC/rQsBYKgOysFgltbKwWCplsrBYKf2CwFgqY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]"
+              ]
+            }
+          ],
+          "error": "ReconfigVM_Task failed: A specified parameter was not correct: unitNumber"
+        },
+        {
+          "name": "CreateVM with a NIC at out-of-range unit 200",
+          "requested": [
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -1880184701,
+              "unitNumber": 200,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "faults": [
+            {
+              "type": "InvalidArgument",
+              "message": "A specified parameter was not correct: unitNumber",
+              "localized": [
+                "backtrace: [context]zKq7AVIDAgAAAKD/hwEcaG9zdGQAAIKtV2xpYnZtYWNvcmUuc28AADP3OACo7DoAAfdHAe2fZWhvc3RkAAF6p2WBjO98AYFsTH0BgXPDZwGBcM5nAYEs22cBgc/iZwGBAJNiAYHp1W0BgX/kbQGBNNJ0AYFA13QBAahu2IJPhSsBbGlidmltLXR5cGVzLnNvAAOnfSdsaWJ2bW9taS5zbwABOzxuBOsXFWxpYnZhcGktY29yZS5zby4yAAALiSQA0mklAG1sJQDXJlUFd2gIbGliYy5zby42AAWAaRA=[/context]",
+                "backtrace: [context]zKq7AVIDAgAAAKD/hwETdnB4YQAAgq1XbGlidm1hY29yZS5zbwAAM/c4AKjsOgAB90cBJbctbGlidm1vbWkuc28AAgsdL3ZweGEAApQEHgK8xB0CQv4dAp9wHgLTiR4CwdcdAjnfHgALiSQA0mklAG1sJQDXJlUDd2gIbGliYy5zby42AAOAaRA=[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwEudnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQAGHhggUHuogR2cHhkAIHoGKUEgfIwpQSB8agsBYFbqiwFgf1bKwWBm6osBYH+tCwFgaA7KwWBW1srBYGmWysFgVe5LAWBC0CVBIF+WZUEgW7kRQKCpUePAWxpYnZpbS10eXBlcy5zbwAD6PMybGlidm1vbWkuc28AgbwLLwWB9A0vBQML4CiB1zibAoGBTOAEgfGoLAWBW6osBYH9WysFgZuqLAWB/rQsBYGgOysFgVtbKwWBplsrBYGf2CwFgaY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwEmdnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQABWdgAcEYIWxpYnZtb21pLnNvAAF/pTiCNdxFAnZweGQAgkdVKwWCHECVBIJ+WZUEgm7kRQKDpUePAWxpYnZpbS10eXBlcy5zbwAB6PMygrwLLwWC9A0vBQEL4CiC1zibAoKBTOAEgvGoLAWCW6osBYL9WysFgpuqLAWC/rQsBYKgOysFgltbKwWCplsrBYKf2CwFgqY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]"
+              ]
+            }
+          ],
+          "error": "CreateVM failed for nic-unit-research-e19-tkngxy-create-oor-200: A specified parameter was not correct: unitNumber"
+        },
+        {
+          "name": "ReconfigVM_Task Add at out-of-range unit 200",
+          "requested": [
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -2052801363,
+              "unitNumber": 200,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "observed": [
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4000,
+              "unitNumber": 7,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:92:74",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "faults": [
+            {
+              "type": "InvalidArgument",
+              "message": "A specified parameter was not correct: unitNumber",
+              "localized": [
+                "backtrace: [context]zKq7AVIDAgAAAKD/hwEcdnB4YQAAgq1XbGlidm1hY29yZS5zbwAAM/c4AKjsOgAB90cBErUTbGlidm1vbWkuc28AAVHXLQItbR12cHhhAAK/+B4CT/0eAujqNgLgSC2DMR4rAWxpYnZpbS10eXBlcy5zbwABp30nAqSjIAFDmxsCmc0uApE3HgJC/h0Cn3AeAvyGHgLB1x0COd8eAAuJJADSaSUAbWwlANcmVQR3aAhsaWJjLnNvLjYABIBpEA==[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwExdnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQAGHhggUHuogR2cHhkAIHoGKUEgfIwpQSB8agsBYFbqiwFgf1bKwWBm6osBYH+tCwFgaA7KwWBW1srBYGmWysFgVe5LAWBOj2VBIECPpUEgQXZGQSB5dwZBIF73RkEgXMZGgSCDb2OAWxpYnZpbS10eXBlcy5zbwAD6PMybGlidm1vbWkuc28AgbwLLwWB9A0vBQML4CiB1zibAoGBTOAEgfGoLAWBW6osBYH9WysFgZuqLAWB/rQsBYGgOysFgVtbKwWBplsrBYGf2CwFgaY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]",
+                "backtrace: [context]zKq7AVEDAQAAAIT/hwEpdnB4ZAAAGdhtbGlidm1hY29yZS5zbwAA/x1TAIM4PwCwyFQABWdgAcEYIWxpYnZtb21pLnNvAAF/pTiCNdxFAnZweGQAgkdVKwWCSz2VBIICPpUEggXZGQSC5dwZBIJ73RkEgnMZGgSDDb2OAWxpYnZpbS10eXBlcy5zbwAB6PMygrwLLwWC9A0vBQEL4CiC1zibAoKBTOAEgvGoLAWCW6osBYL9WysFgpuqLAWC/rQsBYKgOysFgltbKwWCplsrBYKf2CwFgqY+QwIAf8g+AOSPQAACWkEARlxBAHtcQQB/yD4AHYprBJvnCGxpYmMuc28uNgAEeHAQ[/context]"
+              ]
+            }
+          ],
+          "error": "ReconfigVM_Task failed: A specified parameter was not correct: unitNumber"
+        }
+      ],
+      "findings": [
+        "Step \"CreateVM with a NIC at out-of-range unit 3\" succeeded but was silently reassigned: Requested unit 3 is absent from the observed units [7] — the task succeeded but the platform placed the device elsewhere.",
+        "Step \"ReconfigVM_Task Add at out-of-range unit 3\" succeeded but was silently reassigned: Requested unit 3 is absent from the observed units [7 8] — the task succeeded but the platform placed the device elsewhere.",
+        "Step \"CreateVM with a NIC at out-of-range unit 17\" returned fault `InvalidArgument` — vSphere rejects this out-of-range value outright.",
+        "Step \"ReconfigVM_Task Add at out-of-range unit 17\" returned fault `InvalidArgument` — vSphere rejects this out-of-range value outright.",
+        "Step \"CreateVM with a NIC at out-of-range unit 200\" returned fault `InvalidArgument` — vSphere rejects this out-of-range value outright.",
+        "Step \"ReconfigVM_Task Add at out-of-range unit 200\" returned fault `InvalidArgument` — vSphere rejects this out-of-range value outright."
+      ]
+    }
+  ]
+}

@@ -5016,6 +5016,38 @@ func unitTestsValidateCreate() {
 						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "unsupported-key": supported values: "topology.kubernetes.io/zone", "kubernetes.io/hostname"`),
 				},
 			),
+
+			Entry("disallow VM Affinity with RequiredDuringSchedulingRequiredDuringExecution",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution is not supported`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingRequiredDuringExecution",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution is not supported`),
+				},
+			),
 		)
 	})
 

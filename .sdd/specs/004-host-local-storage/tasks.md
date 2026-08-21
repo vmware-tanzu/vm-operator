@@ -123,6 +123,16 @@ Addresses the second round of code-owner review on the ConfigSpec-driven design.
       `vmop-NNNN` placeholders in `vmprovider_vmgroup.go`, `architecture.md`
       and `spec.md` with the real ticket. The group-placement limitation is an
       observed property of that API, not a statement from the DRS team
+- [x] T041 Correct T038's "is not supported" wording after it read as a
+      blanket rejection rather than the narrow migration race it actually
+      describes. Two real VMs on the deployed build (`vm-9n8y`,
+      `vm-bdf9`) — a shared zonal storage class with WaitForFirstConsumer
+      host-local PVCs — created, provisioned, and powered on normally,
+      surfacing that the prior phrasing overstated the gap. Reworded
+      `spec.md` and `architecture.md` §11.4 to state plainly that this
+      configuration works by the same mechanism as a host-local storage
+      class, and that the only unguaranteed case is a DRS migration landing
+      after CNS has already committed the volume
 
 ## Known limitations
 

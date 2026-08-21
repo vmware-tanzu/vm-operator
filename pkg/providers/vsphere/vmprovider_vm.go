@@ -2527,11 +2527,6 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
-		pkgcond.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
-		return nil
-	}
-
 	devices, err := network.CreateNetworkDevices(
 		vmCtx,
 		vmCtx.VM,
@@ -2539,13 +2534,19 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 		vcClient.VimClient(),
 		vcClient.Finder())
 	if err != nil {
-		pkgcond.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady,
-			"NotReady", "%v", err)
+		pkgcond.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady,
+			"NotReady", err)
 		return err
 	}
 
-	createArgs.NetworkDevices = devices
-	pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+	if len(devices) > 0 {
+		createArgs.NetworkDevices = devices
+		pkgcond.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+	} else {
+		// Either no network interfaces or marked as disabled. Historically, we have
+		// removed the network ready condition to indicate there is no networking.
+		pkgcond.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
+	}
 
 	return nil
 }
@@ -3165,18 +3166,28 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 
 	for idx := range createArgs.ConfigSpec.DeviceChange {
 		spec := createArgs.ConfigSpec.DeviceChange[idx].GetVirtualDeviceConfigSpec()
-		if spec == nil || !pkgutil.IsEthernetCard(spec.Device) {
+		if spec == nil || spec.Operation != vimtypes.VirtualDeviceConfigSpecOperationAdd ||
+			!pkgutil.IsEthernetCard(spec.Device) {
 			continue
 		}
 
-		device := spec.Device
-		ethCard := device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-
 		if devIdx < len(createArgs.NetworkDevices) {
-			err := network.ApplyNetworkDeviceToVirtualEthCard(vmCtx, ethCard, &createArgs.NetworkDevices[devIdx])
-			if err != nil {
-				return err
+			dev := createArgs.NetworkDevices[devIdx]
+			interfaceSpec := vmCtx.VM.Spec.Network.Interfaces[devIdx]
+
+			if interfaceSpec.Type == "" {
+				ethCard := spec.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+				if err := network.UpdateVMClassEthCardFromDevice(vmCtx, dev, ethCard); err != nil {
+					return err
+				}
+			} else {
+				ethCard, err := network.CreateVirtualEthernetCard(vmCtx, dev, interfaceSpec)
+				if err != nil {
+					return err
+				}
+				spec.Device = ethCard
 			}
+
 			devIdx++
 
 		} else {
@@ -3200,16 +3211,18 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 	}
 
 	// Any remaining VM Spec network interfaces were not matched with a device in the ConfigSpec, so
-	// create a default virtual ethernet card for them.
+	// create a new virtual Ethernet card for them.
 	for i := devIdx; i < len(createArgs.NetworkDevices); i++ {
-		ethCardDev, err := network.CreateDefaultEthCardFromNetworkDevice(vmCtx, &createArgs.NetworkDevices[i])
+		interfaceSpec := vmCtx.VM.Spec.Network.Interfaces[i]
+
+		ethCard, err := network.CreateVirtualEthernetCard(vmCtx, createArgs.NetworkDevices[i], interfaceSpec)
 		if err != nil {
 			return err
 		}
 
 		createArgs.ConfigSpec.DeviceChange = append(createArgs.ConfigSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-			Device:    ethCardDev,
+			Device:    ethCard,
 		})
 	}
 

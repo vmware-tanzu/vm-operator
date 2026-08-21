@@ -57,7 +57,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 		bsArgs = &vmlifecycle.BootstrapArgs{}
 		bsArgs.Data = make(map[string]string)
 		bsArgs.DNSServers = []string{nameserver1, nameserver2}
-		bsArgs.NetworkResults.Results = []network.NetworkInterfaceResult{
+		bsArgs.NetBootstraps = []network.Bootstrap{
 			{
 				MacAddress: macAddr1,
 				IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -340,7 +340,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 
 		When("a device has both an IPv4 and a global IPv6 address", func() {
 			BeforeEach(func() {
-				bsArgs.NetworkResults.Results = []network.NetworkInterfaceResult{
+				bsArgs.NetBootstraps = []network.Bootstrap{
 					{
 						MacAddress: macAddr1,
 						IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -369,7 +369,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 
 		When("a device has only a global IPv6 address (no IPv4)", func() {
 			BeforeEach(func() {
-				bsArgs.NetworkResults.Results = []network.NetworkInterfaceResult{
+				bsArgs.NetBootstraps = []network.Bootstrap{
 					{
 						MacAddress: macAddr1,
 						IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -395,7 +395,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 
 		When("a device has only a link-local IPv6 address (no IPv4, no other IPv6)", func() {
 			BeforeEach(func() {
-				bsArgs.NetworkResults.Results = []network.NetworkInterfaceResult{
+				bsArgs.NetBootstraps = []network.Bootstrap{
 					{
 						MacAddress: macAddr1,
 						IPConfigs: []network.NetworkInterfaceIPConfig{
@@ -421,7 +421,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 
 		When("a device has both a usable and a link-local IPv6 address (no IPv4)", func() {
 			BeforeEach(func() {
-				bsArgs.NetworkResults.Results = []network.NetworkInterfaceResult{
+				bsArgs.NetBootstraps = []network.Bootstrap{
 					{
 						MacAddress: macAddr1,
 						IPConfigs: []network.NetworkInterfaceIPConfig{

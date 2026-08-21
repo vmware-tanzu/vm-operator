@@ -158,41 +158,41 @@ func getDVPGsForCCR(
 func VPCPostRestoreBackingFixup(
 	vmCtx pkgctx.VirtualMachineContext,
 	currentEthCards []vimtypes.BaseVirtualDevice,
-	networkResults NetworkInterfaceResults) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
+	devices []Device) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
 	// Post a VPC restore, the SubnetPort will be updated with a new ExternalID and
 	// LogicalSwitchUUID (NetworkID) but the MAC is supposed to stay the same. Use that
 	// do an edit on existing device that have changed.
-	for _, result := range networkResults.Results {
-		if result.MacAddress == "" || result.ExternalID == "" {
+	for _, dev := range devices {
+		if dev.MacAddress == "" || dev.ExternalID == "" {
 			continue
 		}
 
 		// Find device by MAC address.
-		for _, dev := range currentEthCards {
-			ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+		for _, curDev := range currentEthCards {
+			ethCard := curDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 
-			if !strings.EqualFold(ethCard.MacAddress, result.MacAddress) {
+			if !strings.EqualFold(ethCard.MacAddress, dev.MacAddress) {
 				continue
 			}
 
-			if ethCard.ExternalId != result.ExternalID {
+			if ethCard.ExternalId != dev.ExternalID {
 				vmCtx.Logger.Info(
 					"Updating network device ExternalID for restored/failed-over VM",
-					"name", result.Name,
-					"macAddress", result.MacAddress,
+					"name", dev.InterfaceName,
+					"macAddress", dev.MacAddress,
 					"oldExternalID", ethCard.ExternalId,
-					"newExternalID", result.ExternalID,
+					"newExternalID", dev.ExternalID,
 					"oldSubnetID", ethCard.SubnetId)
 
-				ethCard.ExternalId = result.ExternalID
-				ethCard.Backing = result.Device.GetVirtualDevice().Backing
+				ethCard.ExternalId = dev.ExternalID
+				ethCard.Backing = dev.EthCard.GetVirtualDevice().Backing
 				ethCard.SubnetId = ""
 
 				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-					Device:    dev,
+					Device:    curDev,
 					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
 				})
 			}

@@ -10,24 +10,24 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
-func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.CustomizationAdapterMapping, error) {
-	mappings := make([]vimtypes.CustomizationAdapterMapping, 0, len(results.Results))
+func GuestOSCustomization(bootstraps []Bootstrap) ([]vimtypes.CustomizationAdapterMapping, error) {
+	mappings := make([]vimtypes.CustomizationAdapterMapping, 0, len(bootstraps))
 
-	for _, r := range results.Results {
+	for _, b := range bootstraps {
 		adapter := vimtypes.CustomizationIPSettings{
 			// Per-adapter is only supported on Windows. Linux only supports the global and ignores this field.
-			DnsServerList: r.Nameservers,
+			DnsServerList: b.Nameservers,
 		}
 
 		switch {
-		case r.DHCP4:
+		case b.DHCP4:
 			adapter.Ip = &vimtypes.CustomizationDhcpIpGenerator{}
-		case r.NoIPAM:
+		case b.NoIPAM:
 			adapter.Ip = &vimtypes.CustomizationDisableIpV4{}
 		default:
 			// GOSC doesn't support multiple IPv4 address per interface so use the first one.
 			// Old code only ever set one gateway so do the same here too.
-			for _, ipConfig := range r.IPConfigs {
+			for _, ipConfig := range b.IPConfigs {
 				if !ipConfig.IsIPv4 {
 					continue
 				}
@@ -54,14 +54,14 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 		}
 
 		switch {
-		case r.DHCP6:
+		case b.DHCP6:
 			adapter.IpV6Spec = &vimtypes.CustomizationIPSettingsIpV6AddressSpec{
 				Ip: []vimtypes.BaseCustomizationIpV6Generator{
 					&vimtypes.CustomizationDhcpIpV6Generator{},
 				},
 			}
 		default:
-			for _, ipConfig := range r.IPConfigs {
+			for _, ipConfig := range b.IPConfigs {
 				if ipConfig.IsIPv4 {
 					continue
 				}
@@ -86,7 +86,7 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 		}
 
 		mappings = append(mappings, vimtypes.CustomizationAdapterMapping{
-			MacAddress: r.MacAddress,
+			MacAddress: b.MacAddress,
 			Adapter:    adapter,
 		})
 	}

@@ -316,9 +316,9 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		JustBeforeEach(func() {
 			for i := range expectedList {
-				results.Results = append(results.Results,
-					network.NetworkInterfaceResult{
-						Device: expectedList[i],
+				results.Devices = append(results.Devices,
+					network.Device{
+						EthCard: expectedList[i],
 					})
 			}
 			deviceChanges, err = session.UpdateEthCardDeviceChanges(ctx, &results, currentList)

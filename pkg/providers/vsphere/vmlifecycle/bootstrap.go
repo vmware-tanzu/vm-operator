@@ -62,7 +62,8 @@ type BootstrapArgs struct {
 	BootstrapData
 
 	TemplateRenderFn TemplateRenderFunc
-	NetworkResults   network.NetworkInterfaceResults
+	NetBootstraps    []network.Bootstrap
+	UpdatedEthCards  bool
 	DomainName       string
 	HostName         string
 	DNSServers       []string
@@ -246,7 +247,8 @@ func DoBootstrap( //nolint:gocyclo
 func GetBootstrapArgs(
 	ctx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
-	networkResults network.NetworkInterfaceResults,
+	bootstraps []network.Bootstrap,
+	updatedEthCards bool,
 	bootstrapData BootstrapData) (BootstrapArgs, error) {
 
 	var bootstrap vmopv1.VirtualMachineBootstrapSpec
@@ -258,9 +260,10 @@ func GetBootstrapArgs(
 	isGOSC := bootstrap.LinuxPrep != nil || bootstrap.Sysprep != nil
 
 	bsa := BootstrapArgs{
-		BootstrapData:  bootstrapData,
-		NetworkResults: networkResults,
-		HostName:       ctx.VM.Name,
+		BootstrapData:   bootstrapData,
+		NetBootstraps:   bootstraps,
+		UpdatedEthCards: updatedEthCards,
+		HostName:        ctx.VM.Name,
 	}
 
 	if networkSpec := ctx.VM.Spec.Network; networkSpec != nil {
@@ -284,19 +287,19 @@ func GetBootstrapArgs(
 	// probably not correct for every situation.
 	isTKG := kubeutil.HasCAPILabels(ctx.VM.Labels)
 	getDNSInformationFromConfigMap := false
-	for _, r := range networkResults.Results {
-		if r.DHCP4 || r.DHCP6 {
+	for _, b := range bootstraps {
+		if b.DHCP4 || b.DHCP6 {
 			continue
 		}
 
-		if len(bsa.DNSServers) == 0 && len(r.Nameservers) == 0 {
+		if len(bsa.DNSServers) == 0 && len(b.Nameservers) == 0 {
 			getDNSInformationFromConfigMap = true
 			break
 		}
 
 		// V1ALPHA1: Do not default the global search suffixes for LinuxPrep and
 		// Sysprep to what is in the ConfigMap.
-		if len(r.SearchDomains) == 0 && (isTKG || (!isGOSC && len(bsa.SearchSuffixes) == 0)) {
+		if len(b.SearchDomains) == 0 && (isTKG || (!isGOSC && len(bsa.SearchSuffixes) == 0)) {
 			getDNSInformationFromConfigMap = true
 			break
 		}
@@ -323,20 +326,20 @@ func GetBootstrapArgs(
 		if isCloudInit {
 			// Previously we would apply the global DNS config to every
 			// interface so do that here too.
-			for i := range networkResults.Results {
-				r := &networkResults.Results[i]
+			for i := range bootstraps {
+				b := &bootstraps[i]
 
-				if r.DHCP4 || r.DHCP6 {
+				if b.DHCP4 || b.DHCP6 {
 					continue
 				}
 
-				if len(r.Nameservers) == 0 {
-					r.Nameservers = ns
+				if len(b.Nameservers) == 0 {
+					b.Nameservers = ns
 				}
 
 				// V1ALPHA1: Only apply global search domains to TKG VMs.
-				if isTKG && len(r.SearchDomains) == 0 {
-					r.SearchDomains = ss
+				if isTKG && len(b.SearchDomains) == 0 {
+					b.SearchDomains = ss
 				}
 			}
 		}

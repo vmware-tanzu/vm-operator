@@ -40,7 +40,7 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 		initObjects []client.Object
 
 		dev1, dev1Restored, dev2 vimtypes.VirtualVmxnet3
-		result1, result2         network.NetworkInterfaceResult
+		result1, result2         network.Device
 	)
 
 	BeforeEach(func() {
@@ -84,16 +84,16 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 		dev2 = initEthCard(2)
 		dev2.MacAddress = macAddress2
 
-		initNetworkResult := func(idx int, dev vimtypes.BaseVirtualEthernetCard) network.NetworkInterfaceResult {
+		initNetworkResult := func(idx int, dev vimtypes.BaseVirtualEthernetCard) network.Device {
 			dvpgMoRef := ctx.GetNetwork(idx).Backing.Reference()
 
 			ethCard := dev.GetVirtualEthernetCard()
-			r := network.NetworkInterfaceResult{}
-			r.Device = ethCard.GetVirtualDevice()
-			r.Backing = object.NewDistributedVirtualPortgroup(ctx.VCClient.Client, dvpgMoRef)
-			r.MacAddress = ethCard.MacAddress
-			r.ExternalID = ethCard.ExternalId
-			return r
+			var d network.Device
+			d.EthCard = ethCard.GetVirtualDevice()
+			d.Backing = object.NewDistributedVirtualPortgroup(ctx.VCClient.Client, dvpgMoRef)
+			d.MacAddress = ethCard.MacAddress
+			d.ExternalID = ethCard.ExternalId
+			return d
 		}
 
 		result1 = initNetworkResult(1, dev1Restored.GetVirtualEthernetCard())
@@ -111,10 +111,9 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 			&dev2,
 		}
 
-		networkResult := network.NetworkInterfaceResults{}
-		networkResult.Results = []network.NetworkInterfaceResult{result2}
+		devices := []network.Device{result2}
 
-		devChanges, err := network.VPCPostRestoreBackingFixup(vmCtx, currentEthCards, networkResult)
+		devChanges, err := network.VPCPostRestoreBackingFixup(vmCtx, currentEthCards, devices)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(devChanges).To(BeEmpty())
 	})
@@ -124,10 +123,9 @@ var _ = Describe("VPCPostRestoreBackingFixup", Label(testlabels.VCSim), func() {
 			&dev1,
 		}
 
-		networkResult := network.NetworkInterfaceResults{}
-		networkResult.Results = []network.NetworkInterfaceResult{result1, result2}
+		devices := []network.Device{result1, result2}
 
-		devChanges, err := network.VPCPostRestoreBackingFixup(vmCtx, currentEthCards, networkResult)
+		devChanges, err := network.VPCPostRestoreBackingFixup(vmCtx, currentEthCards, devices)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(devChanges).To(HaveLen(1))
 

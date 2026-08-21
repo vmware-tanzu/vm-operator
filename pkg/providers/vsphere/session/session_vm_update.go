@@ -66,7 +66,7 @@ type VMUpdateArgs struct {
 	ExtraConfig    map[string]string
 	BootstrapData  vmlifecycle.BootstrapData
 	ConfigSpec     vimtypes.VirtualMachineConfigSpec
-	NetworkResults network.NetworkInterfaceResults
+	NetworkResults *network.NetworkInterfaceResults
 }
 
 // VMResizeArgs contains the arguments needed to resize a VM on VC.
@@ -77,7 +77,7 @@ type VMResizeArgs struct {
 
 	BootstrapData  vmlifecycle.BootstrapData
 	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
-	NetworkResults network.NetworkInterfaceResults
+	NetworkResults *network.NetworkInterfaceResults
 }
 
 func (s *Session) UpdateVirtualMachine(
@@ -313,7 +313,7 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 
 		if useResizeArgs {
 
-			resizeArgs.NetworkResults = networkResults
+			resizeArgs.NetworkResults = &networkResults
 			if err := s.resizeVMWhenPoweredStateOff(
 				vmCtx,
 				vcVM,
@@ -325,7 +325,7 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 
 		} else {
 
-			updateArgs.NetworkResults = networkResults
+			updateArgs.NetworkResults = &networkResults
 			if err := s.poweredOffReconfigure(
 				vmCtx,
 				vcVM,
@@ -377,7 +377,7 @@ func (s *Session) handleRestoredVPCInterfaces(
 	deviceChanges, err := network.VPCPostRestoreBackingFixup(
 		vmCtx,
 		currentEthCards,
-		networkResults)
+		networkResults.Devices)
 	if err != nil {
 		return err
 	}
@@ -737,7 +737,7 @@ func (s *Session) getConfigSpecForPoweredOffVM(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
 
-	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, &updateArgs.NetworkResults, currentEthCards)
+	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, updateArgs.NetworkResults, currentEthCards)
 	if err != nil {
 		return nil, false, err
 	}
@@ -759,11 +759,10 @@ func (s *Session) reconcileNetworkInterfaces(
 
 	networkSpec := vmCtx.VM.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
-		// TODO: Remove all interfaces.
 		return network.NetworkInterfaceResults{}, nil
 	}
 
-	results, err := network.CreateAndWaitForNetworkInterfaces(
+	devices, err := network.CreateAndWaitForNetworkInterfaces(
 		vmCtx,
 		s.K8sClient,
 		s.Client.VimClient(),
@@ -775,27 +774,31 @@ func (s *Session) reconcileNetworkInterfaces(
 			fmt.Errorf("failed to reconcile network interfaces: %w", err)
 	}
 
-	for idx := range results.Results {
-		result := &results.Results[idx]
+	for i, dev := range devices {
+		interfaceSpec := vmCtx.VM.Spec.Network.Interfaces[i]
 
-		dev, err := network.CreateDefaultEthCard(vmCtx, result)
+		ethCard, err := network.CreateVirtualEthernetCard(vmCtx, dev, interfaceSpec)
 		if err != nil {
 			return network.NetworkInterfaceResults{},
-				fmt.Errorf("failed to create default ethernet card: %w", err)
+				fmt.Errorf("failed to create Ethernet card: %w", err)
 		}
 
-		result.Device = dev
+		devices[i].EthCard = ethCard
 	}
+
+	results := network.NetworkInterfaceResults{Devices: devices}
 
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
 		// TODO: Until we are reconfiguring (hot-plug) a powered on VM for network device
 		// changes, don't list orphan interfaces because they need to hang around until
 		// the device is actually removed from the VM.
 		if vmCtx.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff {
-			if err := network.ListOrphanedNetworkInterfaces(vmCtx, s.K8sClient, &results); err != nil {
+			orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, s.K8sClient, devices)
+			if err != nil {
 				return network.NetworkInterfaceResults{},
 					fmt.Errorf("failed to list orphaned network interfaces: %w", err)
 			}
+			results.OrphanedNetworkInterfaces = orphaned
 		}
 	}
 
@@ -897,8 +900,8 @@ func (s *Session) fixupMacAddresses(
 	}
 
 	missingMAC := false
-	for i := range networkResults.Results {
-		if networkResults.Results[i].MacAddress == "" {
+	for i := range networkResults.Devices {
+		if networkResults.Devices[i].MacAddress == "" {
 			missingMAC = true
 			break
 		}
@@ -914,12 +917,12 @@ func (s *Session) fixupMacAddresses(
 	}
 
 	// Just zip these together until we can do interface identification.
-	for i := 0; i < min(len(networkDevices), len(networkResults.Results)); i++ {
-		result := &networkResults.Results[i]
+	for i := 0; i < min(len(networkDevices), len(networkResults.Devices)); i++ {
+		dev := &networkResults.Devices[i]
 
-		if result.MacAddress == "" {
+		if dev.MacAddress == "" {
 			ethCard := networkDevices[i].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-			result.MacAddress = ethCard.MacAddress
+			dev.MacAddress = ethCard.MacAddress
 		}
 	}
 
@@ -935,8 +938,8 @@ func (s *Session) fixupMacAddressMutableNetworks(
 		// Even if there were no network changes, for VDS we still may have fix up the MAC address
 		// because VC can assign it since NetOP does not specify in the interface CR Status.
 		missingMAC := false
-		for idx := range networkResults.Results {
-			if networkResults.Results[idx].MacAddress == "" {
+		for idx := range networkResults.Devices {
+			if networkResults.Devices[idx].MacAddress == "" {
 				missingMAC = true
 				break
 			}
@@ -951,23 +954,23 @@ func (s *Session) fixupMacAddressMutableNetworks(
 		return err
 	}
 
-	for idx, r := range networkResults.Results {
-		if r.DeviceKey != 0 {
+	for idx, dev := range networkResults.Devices {
+		if dev.EthCardKey != 0 {
 			matchingIdx := slices.IndexFunc(networkDevices,
-				func(d vimtypes.BaseVirtualDevice) bool { return d.GetVirtualDevice().Key == r.DeviceKey })
+				func(d vimtypes.BaseVirtualDevice) bool { return d.GetVirtualDevice().Key == dev.EthCardKey })
 			if matchingIdx >= 0 {
 				matchDev := networkDevices[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-				networkResults.Results[idx].MacAddress = matchDev.MacAddress
+				networkResults.Devices[idx].MacAddress = matchDev.MacAddress
 				networkDevices = slices.Delete(networkDevices, matchingIdx, matchingIdx+1)
 			}
 			continue
 		}
 
-		matchingIdx := network.FindMatchingEthCard(networkDevices, r.Device.(vimtypes.BaseVirtualEthernetCard))
+		matchingIdx := network.FindMatchingEthCard(networkDevices, dev.EthCard.(vimtypes.BaseVirtualEthernetCard))
 		if matchingIdx >= 0 {
 			matchDev := networkDevices[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-			networkResults.Results[idx].DeviceKey = matchDev.Key
-			networkResults.Results[idx].MacAddress = matchDev.MacAddress
+			networkResults.Devices[idx].EthCardKey = matchDev.Key
+			networkResults.Devices[idx].MacAddress = matchDev.MacAddress
 
 			networkDevices = slices.Delete(networkDevices, matchingIdx, matchingIdx+1)
 		}
@@ -1020,7 +1023,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
 		virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 		currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
-		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, &resizeArgs.NetworkResults, currentEthCards)
+		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, resizeArgs.NetworkResults, currentEthCards)
 		if err != nil {
 			return err
 		}
@@ -1211,6 +1214,11 @@ func (s *Session) reconcileNetworkAndGuestCustomizationState(
 		return err
 	}
 
+	bootstraps, err := network.BuildBootstraps(vmCtx, vmCtx.VM, networkResults.Devices)
+	if err != nil {
+		return err
+	}
+
 	// Get the information required to bootstrap/customize the VM. This is
 	// retrieved outside of the customize/DoBootstrap call path in order to use
 	// the information to update the VM object's status with the resolved,
@@ -1218,7 +1226,8 @@ func (s *Session) reconcileNetworkAndGuestCustomizationState(
 	bootstrapArgs, err := vmlifecycle.GetBootstrapArgs(
 		vmCtx,
 		s.K8sClient,
-		networkResults,
+		bootstraps,
+		networkResults.UpdatedEthCards,
 		bootstrapData)
 	if err != nil {
 		return err

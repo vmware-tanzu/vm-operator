@@ -17,7 +17,6 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -30,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
@@ -55,10 +55,22 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		specName = "vm-location"
 		vmKind   = "VirtualMachine"
 
-		// vmServiceVMMgmtRoleID is the hardcoded vCenter role ID for the VM-Service-VM-Management role.
-		vmServiceVMMgmtRoleID   = int32(1039)
+		// vmServiceVMMgmtRoleName is the vCenter role WCP grants to the Administrators group
+		// directly on the objects backing a Supervisor Namespace.
 		vmServiceVMMgmtRoleName = "VM-Service-VM-Management"
+
+		// relocateRoleName is the test-scoped role that stands in for
+		// vmServiceVMMgmtRoleName on the entities each spec relocates a VM across.
+		relocateRoleName = "VM-Service-VM-Management-E2E-Relocate"
 	)
+
+	relocatePrivileges := []string{
+		"Folder.Move",
+		"Resource.AssignVMToPool",
+		"Resource.ColdMigrate",
+		"Resource.HotMigrate",
+		"VirtualMachine.Inventory.Move",
+	}
 
 	var (
 		input              VMLocationSpecInput
@@ -70,6 +82,11 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		vmName       string
 		linuxVMIName string
+
+		// workloadDomainIsolationEnabled mirrors the WorkloadDomainIsolation FSS
+		// that topology.GetNamespaceFolderAndRPMoID branches on: Zone when
+		// enabled, AvailabilityZone when not.
+		workloadDomainIsolationEnabled bool
 	)
 
 	BeforeEach(func() {
@@ -101,27 +118,22 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		svClusterClient = clusterProxy.GetClient()
 
+		workloadDomainIsolationEnabled = utils.IsFssEnabled(ctx, svClusterClient,
+			config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"),
+			config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvWorkloadIsolation"))
+
 		kubeconfigPath := clusterProxy.GetKubeconfigPath()
 		vCenterHostname := vcenter.GetVCPNIDFromKubeconfigFile(ctx, kubeconfigPath)
 
 		var err error
 		vCenterAdminClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create vCenter admin client")
-
-		// WCP grants the VM-Service-VM-Management role to the Administrators group directly on the
-		// namespace RP/folder, which overrides the inherited vCenter Administrator role for those
-		// objects. That role does not always include the privileges the specs below need to
-		// relocate a VM between resource pools and move it in/out of the namespace folder, so
-		// ensure they are present here.
-		Expect(vcenter.EnsureRolePrivileges(ctx, vCenterAdminClient, vmServiceVMMgmtRoleID,
-			[]string{
-				"Folder.Move",
-				"Resource.AssignVMToPool",
-				"Resource.ColdMigrate",
-				"Resource.HotMigrate",
-				"VirtualMachine.Inventory.Move",
-			})).To(Succeed(),
-			"failed to ensure %s role has the privileges required for VM relocation", vmServiceVMMgmtRoleName)
+		// Log out via DeferCleanup rather than AfterEach so that the permission cleanup
+		// registered later by grantRelocatePrivileges, which needs an authenticated session,
+		// runs first under Ginkgo's LIFO ordering.
+		DeferCleanup(func() {
+			vcenter.LogoutVimClient(vCenterAdminClient)
+		})
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
@@ -138,45 +150,40 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		}
 
 		vmoperator.VerifyVMDeleted(ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
-		vcenter.LogoutVimClient(vCenterAdminClient)
 	})
 
-	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given
-	// zone, mirroring the controller's topology.GetNamespaceFolderAndRPMoID:
-	// the namespaced Zone first, then the AvailabilityZone as fallback. The RP
-	// is per-zone, so zone must match the VM's status.zone or the resolved RP
-	// belongs to a different zone.
+	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given zone. It
+	// mirrors the controller's topology.GetNamespaceFolderAndRPMoID, branching on the same
+	// WorkloadDomainIsolation FSS rather than probing for whichever CR exists, since Zone
+	// and AvailabilityZone are never both live on the same cluster. The RP is per-zone, so
+	// zone must match the VM's status.zone or the resolved RP belongs to a different zone.
 	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
-		// A found Zone is authoritative: assert it carries a pool rather than
-		// falling through to the AvailabilityZone path, which would otherwise
-		// surface a misleading "AvailabilityZone not found" error.
-		z := &topologyv1.Zone{}
-		err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: zone}, z)
-		if err == nil {
+		if workloadDomainIsolationEnabled {
+			z := &topologyv1.Zone{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: zone}, z)).
+				To(Succeed(), "failed to get Zone %s/%s", namespace, zone)
 			Expect(z.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty(),
 				"Zone %s/%s has no ManagedVMs.PoolMoIDs", namespace, zone)
 			e2eframework.Logf("resolved namespace RP from Zone %s: %s / %s",
 				z.Name, z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID)
 			return z.Spec.ManagedVMs.PoolMoIDs[0], z.Spec.ManagedVMs.FolderMoID
 		}
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "failed to get Zone %s/%s", namespace, zone)
 
-		// Fallback for older, non-zonal configs (no Zone object), where the VM's
-		// status.zone is the cluster-scoped AvailabilityZone name.
+		// WorkloadDomainIsolation disabled: the VM's status.zone is the
+		// cluster-scoped AvailabilityZone name.
 		az := &topologyv1.AvailabilityZone{}
 		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: zone}, az)).
 			To(Succeed(), "failed to get AvailabilityZone %s", zone)
 
-		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok && nsInfo.PoolMoId != "" {
-			e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
-				az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
-			return nsInfo.PoolMoId, nsInfo.FolderMoId
-		}
-
-		Fail(fmt.Sprintf(
-			"could not determine namespace RP and folder MoIDs for namespace %s in zone %s",
-			namespace, zone))
-		return "", ""
+		nsInfo, ok := az.Spec.Namespaces[namespace]
+		Expect(ok).To(BeTrue(),
+			"AvailabilityZone %s missing pool info for namespace %s", zone, namespace)
+		poolMoID := azNamespacePoolMoID(nsInfo)
+		Expect(poolMoID).ToNot(BeEmpty(),
+			"AvailabilityZone %s has no pool MoID for namespace %s", zone, namespace)
+		e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
+			az.Name, poolMoID, nsInfo.FolderMoId)
+		return poolMoID, nsInfo.FolderMoId
 	}
 
 	// getOtherNamespaceFolder returns the folder MoID and name of a Supervisor Namespace other
@@ -186,23 +193,25 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	// vCenter account -- unlike an arbitrary vCenter folder (e.g. the Datacenter's root VM
 	// folder), which WCP never grants permissions on.
 	getOtherNamespaceFolder := func(namespace string) (folderMoID, otherNamespace string) {
-		zoneList := &topologyv1.ZoneList{}
-		Expect(svClusterClient.List(ctx, zoneList)).To(Succeed(), "failed to list Zones")
+		if workloadDomainIsolationEnabled {
+			zoneList := &topologyv1.ZoneList{}
+			Expect(svClusterClient.List(ctx, zoneList)).To(Succeed(), "failed to list Zones")
 
-		for _, z := range zoneList.Items {
-			if z.Namespace != namespace && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
-				return z.Spec.ManagedVMs.FolderMoID, z.Namespace
+			for _, z := range zoneList.Items {
+				if z.Namespace != namespace && len(z.Spec.ManagedVMs.PoolMoIDs) > 0 {
+					return z.Spec.ManagedVMs.FolderMoID, z.Namespace
+				}
 			}
+			return "", ""
 		}
 
-		// Fallback: AvailabilityZone.Spec.Namespaces (older cluster configurations).
 		azList := &topologyv1.AvailabilityZoneList{}
 		Expect(svClusterClient.List(ctx, azList)).
 			To(Succeed(), "failed to list AvailabilityZones")
 
 		for _, az := range azList.Items {
 			for ns, nsInfo := range az.Spec.Namespaces {
-				if ns != namespace && nsInfo.PoolMoId != "" {
+				if ns != namespace && azNamespacePoolMoID(nsInfo) != "" {
 					return nsInfo.FolderMoId, ns
 				}
 			}
@@ -249,7 +258,18 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		Expect(task.Wait(ctx)).To(Succeed(), "Relocate task failed for VM %s", vmMoID)
 	}
 
-	XWhen("VM is created in the correct namespace RP and folder", Label("core-functional", "experimental"), func() {
+	// grantRelocatePrivileges grants the test's vCenter account the privileges needed to
+	// relocate a VM across the given entities, and reverts them when the spec ends. WCP pins
+	// vmServiceVMMgmtRoleName on namespace objects, shadowing the inherited Administrator
+	// role, so those privileges aren't otherwise present.
+	grantRelocatePrivileges := func(entities ...vimtypes.ManagedObjectReference) {
+		restore, err := vcenter.GrantExtraPrivileges(ctx, vCenterAdminClient,
+			vmServiceVMMgmtRoleName, relocateRoleName, relocatePrivileges, entities...)
+		DeferCleanup(restore)
+		Expect(err).ToNot(HaveOccurred(), "failed to grant privileges required for VM relocation")
+	}
+
+	When("VM is created in the correct namespace RP and folder", Label("core-functional", "experimental"), func() {
 		It("sets VirtualMachineLocationValid condition to True", func() {
 			createVM()
 
@@ -261,7 +281,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	XWhen("VM is moved outside the namespace RP hierarchy", Label("core-functional", "experimental"), func() {
+	When("VM is moved outside the namespace RP hierarchy", Label("core-functional", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -279,6 +299,14 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			By("Retrieving the correct namespace RP and folder MoIDs for the VM's zone")
 			vmZone := vmoperator.GetVirtualMachineZone(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			nsRPMoID, nsFolderMoID := getNsRPAndFolder(input.WCPNamespaceName, vmZone)
+
+			By("Granting the privileges required to relocate the VM")
+			// Relocate needs Resource.* on the RP, but vCenter also checks
+			// VirtualMachine.Inventory.Move on the VM's parent folder even when the
+			// relocate spec leaves the folder unchanged.
+			grantRelocatePrivileges(
+				vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: nsRPMoID},
+				vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID})
 
 			By("Retrieving the cluster root RP to use as an invalid location")
 			// 1. Resolve the specific Cluster MoID for the active Supervisor context
@@ -321,7 +349,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 
-	XWhen("VM is moved outside the namespace Folder hierarchy", Label("core-functional", "experimental"), func() {
+	When("VM is moved outside the namespace Folder hierarchy", Label("core-functional", "experimental"), func() {
 		It("sets condition False, then recovers to True when VM is returned to the correct location", func() {
 			By("Creating VM and waiting for it to reach Running state")
 			createVM()
@@ -354,6 +382,11 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			Expect(invalidFolderMoID).ToNot(Equal(nsFolderMoID),
 				"other namespace's folder unexpectedly equals the namespace folder itself")
 			e2eframework.Logf("invalid folder MoID (folder of namespace %s): %s", otherNamespace, invalidFolderMoID)
+
+			By("Granting the privileges required to move the VM between the two folders")
+			grantRelocatePrivileges(
+				vimtypes.ManagedObjectReference{Type: "Folder", Value: nsFolderMoID},
+				vimtypes.ManagedObjectReference{Type: "Folder", Value: invalidFolderMoID})
 
 			By("Moving VM into the other namespace's folder via MoveIntoFolder (direct inventory move)")
 			// Use Folder.MoveInto rather than Relocate.Folder: in WCP, the
@@ -407,4 +440,15 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 				})
 		})
 	})
+}
+
+// azNamespacePoolMoID returns the namespace RP MoID recorded in an AvailabilityZone's
+// NamespaceInfo, or the empty string if it records none. It mirrors the precedence in the
+// controller's topology.GetNamespaceFolderAndRPMoID: the plural PoolMoIDs wins over the older
+// singular PoolMoId, which is empty on a namespace spanning multiple ResourcePools.
+func azNamespacePoolMoID(nsInfo topologyv1.NamespaceInfo) string {
+	if len(nsInfo.PoolMoIDs) != 0 {
+		return nsInfo.PoolMoIDs[0]
+	}
+	return nsInfo.PoolMoId
 }

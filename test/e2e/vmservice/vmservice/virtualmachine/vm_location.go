@@ -152,13 +152,11 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		vmoperator.VerifyVMDeleted(ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
 	})
 
-	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given
-	// zone. It mirrors the controller's topology.GetNamespaceFolderAndRPMoID,
-	// which resolves against Zone when WorkloadDomainIsolation is enabled and
-	// AvailabilityZone otherwise -- the two are never both live on the same
-	// cluster, so this branches on the same FSS rather than probing for
-	// whichever CR happens to exist. The RP is per-zone, so zone must match
-	// the VM's status.zone or the resolved RP belongs to a different zone.
+	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given zone. It
+	// mirrors the controller's topology.GetNamespaceFolderAndRPMoID, branching on the same
+	// WorkloadDomainIsolation FSS rather than probing for whichever CR exists, since Zone
+	// and AvailabilityZone are never both live on the same cluster. The RP is per-zone, so
+	// zone must match the VM's status.zone or the resolved RP belongs to a different zone.
 	getNsRPAndFolder := func(namespace, zone string) (rpMoID, folderMoID string) {
 		if workloadDomainIsolationEnabled {
 			z := &topologyv1.Zone{}
@@ -178,11 +176,14 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			To(Succeed(), "failed to get AvailabilityZone %s", zone)
 
 		nsInfo, ok := az.Spec.Namespaces[namespace]
-		Expect(ok && nsInfo.PoolMoId != "").To(BeTrue(),
+		Expect(ok).To(BeTrue(),
 			"AvailabilityZone %s missing pool info for namespace %s", zone, namespace)
+		poolMoID := azNamespacePoolMoID(nsInfo)
+		Expect(poolMoID).ToNot(BeEmpty(),
+			"AvailabilityZone %s has no pool MoID for namespace %s", zone, namespace)
 		e2eframework.Logf("resolved namespace RP from AvailabilityZone %s: %s / %s",
-			az.Name, nsInfo.PoolMoId, nsInfo.FolderMoId)
-		return nsInfo.PoolMoId, nsInfo.FolderMoId
+			az.Name, poolMoID, nsInfo.FolderMoId)
+		return poolMoID, nsInfo.FolderMoId
 	}
 
 	// getOtherNamespaceFolder returns the folder MoID and name of a Supervisor Namespace other
@@ -210,7 +211,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		for _, az := range azList.Items {
 			for ns, nsInfo := range az.Spec.Namespaces {
-				if ns != namespace && nsInfo.PoolMoId != "" {
+				if ns != namespace && azNamespacePoolMoID(nsInfo) != "" {
 					return nsInfo.FolderMoId, ns
 				}
 			}
@@ -260,7 +261,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	// grantRelocatePrivileges grants the test's vCenter account the privileges needed to
 	// relocate a VM across the given entities, and reverts them when the spec ends. WCP pins
 	// vmServiceVMMgmtRoleName on namespace objects, shadowing the inherited Administrator
-	// role, so those privileges aren't otherwise present. Pass every entity in one call.
+	// role, so those privileges aren't otherwise present.
 	grantRelocatePrivileges := func(entities ...vimtypes.ManagedObjectReference) {
 		restore, err := vcenter.GrantExtraPrivileges(ctx, vCenterAdminClient,
 			vmServiceVMMgmtRoleName, relocateRoleName, relocatePrivileges, entities...)
@@ -439,4 +440,15 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 				})
 		})
 	})
+}
+
+// azNamespacePoolMoID returns the namespace RP MoID recorded in an AvailabilityZone's
+// NamespaceInfo, or the empty string if it records none. It mirrors the precedence in the
+// controller's topology.GetNamespaceFolderAndRPMoID: the plural PoolMoIDs wins over the older
+// singular PoolMoId, which is empty on a namespace spanning multiple ResourcePools.
+func azNamespacePoolMoID(nsInfo topologyv1.NamespaceInfo) string {
+	if len(nsInfo.PoolMoIDs) != 0 {
+		return nsInfo.PoolMoIDs[0]
+	}
+	return nsInfo.PoolMoId
 }

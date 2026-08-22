@@ -100,9 +100,8 @@ func GrantExtraPrivileges(
 		return noop, fmt.Errorf("role %q not found", baseRoleName)
 	}
 
-	// CreateOrUpdateRole resets tempRoleName to exactly baseRole's current privileges whether
-	// it is being created for the first time or left behind, possibly stale, by an interrupted
-	// run.
+	// CreateOrUpdateRole resets tempRoleName to exactly baseRole's current privileges,
+	// whether newly created or left stale by an interrupted run.
 	tempRoleID, err := CreateOrUpdateRole(ctx, vimClient, tempRoleName, baseRole.Privilege)
 	if err != nil {
 		return noop, fmt.Errorf("failed to create %q role: %w", tempRoleName, err)
@@ -114,7 +113,10 @@ func GrantExtraPrivileges(
 		for _, undo := range undos {
 			errs = append(errs, undo(ctx))
 		}
-		errs = append(errs, RemoveRole(ctx, vimClient, tempRoleID))
+		// failIfUsed=true: if an undo above failed, the permission still points at
+		// tempRoleID, and failIfUsed=false would have VC delete that permission along
+		// with the role -- erasing WCP's real grant instead of just leaking a temp role.
+		errs = append(errs, RemoveRole(ctx, vimClient, tempRoleID, true))
 		return errors.Join(errs...)
 	}
 
@@ -143,9 +145,9 @@ func GrantExtraPrivileges(
 	return restore, nil
 }
 
-// swapEntityPermissionRole finds the entity permission that currently grants fromRoleID and
-// re-points it at toRoleID, leaving the principal, group, and propagate settings unchanged.
-// It returns a func that reverts the entity's permission back to fromRoleID.
+// swapEntityPermissionRole finds the entity permissions that currently grant fromRoleID and
+// re-points them at toRoleID, leaving the principal, group, and propagate settings unchanged.
+// It returns a func that reverts those permissions back to fromRoleID.
 func swapEntityPermissionRole(
 	ctx context.Context,
 	vimClient *vim25.Client,
@@ -159,29 +161,45 @@ func swapEntityPermissionRole(
 		return nil, fmt.Errorf("failed to retrieve permissions on %s %s: %w", entity.Type, entity.Value, err)
 	}
 
-	i := slices.IndexFunc(perms, func(p types.Permission) bool { return p.RoleId == fromRoleID })
-	if i < 0 {
+	// Every permission granting fromRoleID is swapped, not just the first: WCP typically
+	// grants the role to a group, so the test account may reach the entity through any one
+	// of several group permissions. A permission already on toRoleID is a leftover from a
+	// run interrupted mid-swap; treat it as originally fromRoleID so the undo below still
+	// restores the pre-interruption state.
+	var originals, swapped []types.Permission
+	for _, p := range perms {
+		if p.RoleId != fromRoleID && p.RoleId != toRoleID {
+			continue
+		}
+
+		original := p
+		original.RoleId = fromRoleID
+		originals = append(originals, original)
+
+		s := p
+		s.RoleId = toRoleID
+		swapped = append(swapped, s)
+	}
+	if len(originals) == 0 {
 		return nil, fmt.Errorf("no permission granting role %d found on %s %s", fromRoleID, entity.Type, entity.Value)
 	}
 
-	original := perms[i]
-	swapped := original
-	swapped.RoleId = toRoleID
-
-	if err := authzManager.SetEntityPermissions(ctx, entity, []types.Permission{swapped}); err != nil {
+	if err := authzManager.SetEntityPermissions(ctx, entity, swapped); err != nil {
 		return nil, fmt.Errorf("failed to set role %d on %s %s: %w", toRoleID, entity.Type, entity.Value, err)
 	}
 
 	return func(ctx context.Context) error {
-		return authzManager.SetEntityPermissions(ctx, entity, []types.Permission{original})
+		return authzManager.SetEntityPermissions(ctx, entity, originals)
 	}, nil
 }
 
-// RemoveRole removes the role with specified id in VC.
-func RemoveRole(ctx context.Context, vimClient *vim25.Client, roleID int32) error {
+// RemoveRole removes the role with specified id in VC. When failIfUsed is true VC
+// rejects the removal if any permission still references the role; when false VC
+// deletes every permission that references it.
+func RemoveRole(ctx context.Context, vimClient *vim25.Client, roleID int32, failIfUsed bool) error {
 	authzManager := object.NewAuthorizationManager(vimClient)
 
-	err := authzManager.RemoveRole(ctx, roleID, false)
+	err := authzManager.RemoveRole(ctx, roleID, failIfUsed)
 	if err != nil {
 		return err
 	}

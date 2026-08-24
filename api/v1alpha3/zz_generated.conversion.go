@@ -218,11 +218,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha6.VMAffinitySpec)(nil), (*VMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(a.(*v1alpha6.VMAffinitySpec), b.(*VMAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VMAffinityTerm)(nil), (*v1alpha6.VMAffinityTerm)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VMAffinityTerm_To_v1alpha6_VMAffinityTerm(a.(*VMAffinityTerm), b.(*v1alpha6.VMAffinityTerm), scope)
 	}); err != nil {
@@ -235,11 +230,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*VMAntiAffinitySpec)(nil), (*v1alpha6.VMAntiAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VMAntiAffinitySpec_To_v1alpha6_VMAntiAffinitySpec(a.(*VMAntiAffinitySpec), b.(*v1alpha6.VMAntiAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha6.VMAntiAffinitySpec)(nil), (*VMAntiAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(a.(*v1alpha6.VMAntiAffinitySpec), b.(*VMAntiAffinitySpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -1143,6 +1133,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*v1alpha6.VMAffinitySpec)(nil), (*VMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(a.(*v1alpha6.VMAffinitySpec), b.(*VMAffinitySpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha6.VMAntiAffinitySpec)(nil), (*VMAntiAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(a.(*v1alpha6.VMAntiAffinitySpec), b.(*VMAntiAffinitySpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineAdvancedSpec)(nil), (*VirtualMachineAdvancedSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvancedSpec(a.(*v1alpha6.VirtualMachineAdvancedSpec), b.(*VirtualMachineAdvancedSpec), scope)
 	}); err != nil {
@@ -1252,8 +1252,24 @@ func RegisterConversions(s *runtime.Scheme) error {
 }
 
 func autoConvert_v1alpha3_AffinitySpec_To_v1alpha6_AffinitySpec(in *AffinitySpec, out *v1alpha6.AffinitySpec, s conversion.Scope) error {
-	out.VMAffinity = (*v1alpha6.VMAffinitySpec)(unsafe.Pointer(in.VMAffinity))
-	out.VMAntiAffinity = (*v1alpha6.VMAntiAffinitySpec)(unsafe.Pointer(in.VMAntiAffinity))
+	if in.VMAffinity != nil {
+		in, out := &in.VMAffinity, &out.VMAffinity
+		*out = new(v1alpha6.VMAffinitySpec)
+		if err := Convert_v1alpha3_VMAffinitySpec_To_v1alpha6_VMAffinitySpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.VMAffinity = nil
+	}
+	if in.VMAntiAffinity != nil {
+		in, out := &in.VMAntiAffinity, &out.VMAntiAffinity
+		*out = new(v1alpha6.VMAntiAffinitySpec)
+		if err := Convert_v1alpha3_VMAntiAffinitySpec_To_v1alpha6_VMAntiAffinitySpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.VMAntiAffinity = nil
+	}
 	return nil
 }
 
@@ -1263,8 +1279,24 @@ func Convert_v1alpha3_AffinitySpec_To_v1alpha6_AffinitySpec(in *AffinitySpec, ou
 }
 
 func autoConvert_v1alpha6_AffinitySpec_To_v1alpha3_AffinitySpec(in *v1alpha6.AffinitySpec, out *AffinitySpec, s conversion.Scope) error {
-	out.VMAffinity = (*VMAffinitySpec)(unsafe.Pointer(in.VMAffinity))
-	out.VMAntiAffinity = (*VMAntiAffinitySpec)(unsafe.Pointer(in.VMAntiAffinity))
+	if in.VMAffinity != nil {
+		in, out := &in.VMAffinity, &out.VMAffinity
+		*out = new(VMAffinitySpec)
+		if err := Convert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.VMAffinity = nil
+	}
+	if in.VMAntiAffinity != nil {
+		in, out := &in.VMAntiAffinity, &out.VMAntiAffinity
+		*out = new(VMAntiAffinitySpec)
+		if err := Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.VMAntiAffinity = nil
+	}
 	return nil
 }
 
@@ -1692,12 +1724,8 @@ func Convert_v1alpha3_VMAffinitySpec_To_v1alpha6_VMAffinitySpec(in *VMAffinitySp
 func autoConvert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(in *v1alpha6.VMAffinitySpec, out *VMAffinitySpec, s conversion.Scope) error {
 	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
 	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	// WARNING: in.RequiredDuringSchedulingRequiredDuringExecution requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(in *v1alpha6.VMAffinitySpec, out *VMAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha6_VMAffinitySpec_To_v1alpha3_VMAffinitySpec(in, out, s)
 }
 
 func autoConvert_v1alpha3_VMAffinityTerm_To_v1alpha6_VMAffinityTerm(in *VMAffinityTerm, out *v1alpha6.VMAffinityTerm, s conversion.Scope) error {
@@ -1736,12 +1764,8 @@ func Convert_v1alpha3_VMAntiAffinitySpec_To_v1alpha6_VMAntiAffinitySpec(in *VMAn
 func autoConvert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(in *v1alpha6.VMAntiAffinitySpec, out *VMAntiAffinitySpec, s conversion.Scope) error {
 	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
 	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	// WARNING: in.RequiredDuringSchedulingRequiredDuringExecution requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(in *v1alpha6.VMAntiAffinitySpec, out *VMAntiAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha6_VMAntiAffinitySpec_To_v1alpha3_VMAntiAffinitySpec(in, out, s)
 }
 
 func autoConvert_v1alpha3_VSphereClusterModuleStatus_To_v1alpha6_VSphereClusterModuleStatus(in *VSphereClusterModuleStatus, out *v1alpha6.VSphereClusterModuleStatus, s conversion.Scope) error {
@@ -4287,7 +4311,15 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha6_VirtualMachineSpec(in *
 	out.Image = (*v1alpha6.VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
-	out.Affinity = (*v1alpha6.AffinitySpec)(unsafe.Pointer(in.Affinity))
+	if in.Affinity != nil {
+		in, out := &in.Affinity, &out.Affinity
+		*out = new(v1alpha6.AffinitySpec)
+		if err := Convert_v1alpha3_AffinitySpec_To_v1alpha6_AffinitySpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Affinity = nil
+	}
 	if in.Crypto != nil {
 		in, out := &in.Crypto, &out.Crypto
 		*out = new(v1alpha6.VirtualMachineCryptoSpec)
@@ -4356,7 +4388,15 @@ func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type
-	out.Affinity = (*AffinitySpec)(unsafe.Pointer(in.Affinity))
+	if in.Affinity != nil {
+		in, out := &in.Affinity, &out.Affinity
+		*out = new(AffinitySpec)
+		if err := Convert_v1alpha6_AffinitySpec_To_v1alpha3_AffinitySpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Affinity = nil
+	}
 	if in.Crypto != nil {
 		in, out := &in.Crypto, &out.Crypto
 		*out = new(VirtualMachineCryptoSpec)

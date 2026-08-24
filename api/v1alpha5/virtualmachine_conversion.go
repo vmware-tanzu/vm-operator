@@ -36,6 +36,24 @@ func Convert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha5_VirtualMa
 	return autoConvert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha5_VirtualMachineNetworkInterfaceStatus(in, out, s)
 }
 
+// Convert_v1alpha6_VMAffinitySpec_To_v1alpha5_VMAffinitySpec drops fields
+// that do not exist in v1alpha5; they are preserved via MarshalData on
+// ConvertFrom.
+func Convert_v1alpha6_VMAffinitySpec_To_v1alpha5_VMAffinitySpec(
+	in *vmopv1.VMAffinitySpec, out *VMAffinitySpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VMAffinitySpec_To_v1alpha5_VMAffinitySpec(in, out, s)
+}
+
+// Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec drops
+// fields that do not exist in v1alpha5; they are preserved via MarshalData on
+// ConvertFrom.
+func Convert_v1alpha6_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec(
+	in *vmopv1.VMAntiAffinitySpec, out *VMAntiAffinitySpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec(in, out, s)
+}
+
 // Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec drops
 // fields that do not exist in v1alpha5; they are preserved via MarshalData on ConvertFrom.
 func Convert_v1alpha6_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(
@@ -193,6 +211,37 @@ func restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, src *vmopv1.VirtualMachi
 	dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced
 }
 
+// restore_v1alpha6_VirtualMachineAffinityRequiredDuringExecution restores the
+// RequiredDuringSchedulingRequiredDuringExecution field on VMAffinity and
+// VMAntiAffinity, which does not exist in v1alpha5.
+func restore_v1alpha6_VirtualMachineAffinityRequiredDuringExecution(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Affinity == nil {
+		return
+	}
+
+	if a := src.Spec.Affinity.VMAffinity; a != nil && len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+		if dst.Spec.Affinity == nil {
+			dst.Spec.Affinity = &vmopv1.AffinitySpec{}
+		}
+		if dst.Spec.Affinity.VMAffinity == nil {
+			dst.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{}
+		}
+		dst.Spec.Affinity.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution =
+			a.RequiredDuringSchedulingRequiredDuringExecution
+	}
+
+	if a := src.Spec.Affinity.VMAntiAffinity; a != nil && len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+		if dst.Spec.Affinity == nil {
+			dst.Spec.Affinity = &vmopv1.AffinitySpec{}
+		}
+		if dst.Spec.Affinity.VMAntiAffinity == nil {
+			dst.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{}
+		}
+		dst.Spec.Affinity.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution =
+			a.RequiredDuringSchedulingRequiredDuringExecution
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -216,6 +265,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineResources(dst, restored)
 	restore_v1alpha6_VirtualMachineCPUAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
+	restore_v1alpha6_VirtualMachineAffinityRequiredDuringExecution(dst, restored)
 
 	// END RESTORE
 

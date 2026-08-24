@@ -27,7 +27,7 @@ const (
 
 	// AnnotationServiceNSXHostnamesKey is the NSX LB annotation used to specify
 	// the FQDN for certificate generation.
-	AnnotationServiceNSXHostnamesKey = "nsx.vmware.com/hostname"
+	AnnotationServiceNSXHostnamesKey = "external-dns.alpha.kubernetes.io/hostname"
 )
 
 // LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer.
@@ -161,7 +161,7 @@ func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context
 		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = ""
 	}
 
-	// When nsx.vmware.com/hostnames is NOT present on the VirtualMachineService,
+	// When external-dns.alpha.kubernetes.io/hostname is NOT present on the VirtualMachineService,
 	// remove it from the Service as well.
 	if _, ok := vmService.Annotations[AnnotationServiceNSXHostnamesKey]; !ok {
 		res[AnnotationServiceNSXHostnamesKey] = ""

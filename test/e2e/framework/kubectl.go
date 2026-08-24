@@ -316,39 +316,25 @@ func WithArgs(args ...string) Option {
 }
 
 // Run executes the command and returns stdout, stderr and the error if there is any.
+//
+// Stdout/stderr are collected via plain io.Writer buffers (not StdoutPipe/StderrPipe) so that
+// os/exec copies both streams concurrently in its own goroutines. Draining one pipe fully via
+// io.ReadAll before starting the other -- as an explicit StdoutPipe/StderrPipe would require --
+// deadlocks if the command writes enough to the pipe we haven't started reading yet to fill its
+// OS buffer (64KB on Linux) before closing the one we're blocked on.
 func (c *Command) Run(ctx context.Context) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, c.Cmd, c.Args...) //nolint:gosec
 	if c.Stdin != nil {
 		cmd.Stdin = c.Stdin
 	}
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return stdout.Bytes(), stderr.Bytes(), err
 	}
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, nil, err
-	}
-
-	output, err := io.ReadAll(stdout)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	errout, err := io.ReadAll(stderr)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err := cmd.Wait(); err != nil {
-		return output, errout, err
-	}
-
-	return output, errout, nil
+	return stdout.Bytes(), stderr.Bytes(), nil
 }

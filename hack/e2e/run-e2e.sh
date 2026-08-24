@@ -52,17 +52,23 @@ fi
 # Ginkgo's report distinguishes a spec that was excluded by the label/focus
 # filter (State "skipped" with no Failure) from one that called Skip() with a
 # reason at runtime (State "skipped" with a non-empty Failure.Message) or was
-# declared PIt/PDescribe (State "pending"); this maps the former to "Not_Run"
-# and the latter two to "SKIPPED" so the callback payload distinguishes
-# "never attempted" from "test logic decided to skip". Failed specs also get
-# a "syndrome" carrying Failure.Message, the callback API's field for a short
-# failure synopsis. Failure.Message is Gomega's full failure output (often an
-# object diff or YAML dump running well past 1024 characters), so it is
-# truncated to the same 1024-character cap the callback API enforces on
-# "syndrome" fields — otherwise the callback POST is rejected outright.
+# declared PIt/PDescribe (State "pending"); the former never executed at all
+# and is out of scope for this run (e.g. a "core"-labeled spec when only
+# "smoke" was requested), so it is dropped entirely rather than reported as
+# "Not_Run" — including it would pad the denominator with specs this run
+# never intended to touch, making an intentionally-scoped run (e.g. smoke
+# only) look like most of the suite failed to execute. The latter two map to
+# "SKIPPED" since they were in scope but a runtime decision skipped them.
+# Failed specs also get a "syndrome" carrying Failure.Message, the callback
+# API's field for a short failure synopsis. Failure.Message is Gomega's full
+# failure output (often an object diff or YAML dump running well past 1024
+# characters), so it is truncated to the same 1024-character cap the
+# callback API enforces on "syndrome" fields — otherwise the callback POST
+# is rejected outright.
 parse_json_report() {
     local json_file="${1}"
     jq '[.[0].SpecReports[] |
+        select(.State != "skipped" or (.Failure != null and .Failure.Message != "")) |
         ((.ContainerHierarchyTexts + [.LeafNodeText]) | map(select(. != "")) | join(" ")) as $fulltext |
         ("[" + .LeafNodeType + "]" + (if $fulltext != "" then " " + $fulltext else "" end)
             + (if (.LeafNodeLabels | length) > 0 then " [" + (.LeafNodeLabels | join(", ")) + "]" else "" end)
@@ -73,8 +79,7 @@ parse_json_report() {
                 if .State == "failed" then "FAIL"
                 elif .State == "passed" then "PASS"
                 elif .State == "pending" then "SKIPPED"
-                elif .State == "skipped" then
-                    (if (.Failure != null and .Failure.Message != "") then "SKIPPED" else "Not_Run" end)
+                elif .State == "skipped" then "SKIPPED"
                 else "INVALID"
                 end
             )

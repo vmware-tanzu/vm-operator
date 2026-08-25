@@ -1,0 +1,805 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: virtualmachines.kube-vm.io
+spec:
+  group: kube-vm.io
+  names:
+    categories:
+    - kubevm
+    kind: VirtualMachine
+    listKind: VirtualMachineList
+    plural: virtualmachines
+    shortNames:
+    - vm
+    - vms
+    singular: virtualmachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.powerState
+      name: Power
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: string
+    - jsonPath: .status.providerID
+      name: Provider-ID
+      priority: 1
+      type: string
+    - jsonPath: .status.addresses[?(@.type=="InternalIP")].address
+      name: Primary-IP
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: VirtualMachine is a portable, provider-agnostic virtual machine.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              VirtualMachineSpec is the portable, provider-agnostic description of a
+              virtual machine.
+            properties:
+              bootDisk:
+                description: BootDisk describes the primary disk and the image it
+                  comes from.
+                properties:
+                  deleteOnTermination:
+                    description: |-
+                      DeleteOnTermination deletes the boot disk when the VM is deleted.
+
+                      Present here as well as on DiskSpec because every reference platform
+                      makes this settable on the boot disk specifically — GCE's
+                      disks[0].autoDelete, EC2's root BlockDeviceMappings[].Ebs
+                      .DeleteOnTermination — and retaining a boot disk after the machine is
+                      gone is an ordinary workflow: forensics, re-attaching it to a
+                      replacement, or capturing an image from it.
+                    type: boolean
+                  sizeGiB:
+                    description: |-
+                      SizeGiB grows the boot disk beyond the source's own size.
+
+                      Grow-only, and now enforced rather than only documented. Growth is not
+                      necessarily immediate: EC2 imposes a cooldown between successive
+                      modifications of one volume, and the guest filesystem must be extended
+                      separately. Providers report that lag through the UpToDate condition
+                      rather than by rejecting the edit.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                    x-kubernetes-validations:
+                    - message: boot disk size cannot be reduced
+                      rule: self >= oldSelf
+                  source:
+                    description: |-
+                      Source is the image or snapshot the boot disk is created from.
+
+                      Immutable. Once the disk exists it is a disk, not a reference to the
+                      artifact it was made from, so repointing this cannot mean anything short
+                      of replacing the machine. Every reference platform agrees: the image is
+                      a launch-time-only parameter.
+                    properties:
+                      blank:
+                        description: Blank requests an empty disk. Only meaningful
+                          for data disks.
+                        type: boolean
+                      image:
+                        description: |-
+                          Image references an entry in a provider-resolved image catalog. The
+                          generic layer carries the reference, not the platform's image identity,
+                          because a GCP image self-link is meaningless to vSphere. The referenced
+                          kind may be a portable image type or one the provider owns; the reference
+                          names it explicitly rather than assuming either.
+                        properties:
+                          apiGroup:
+                            description: |-
+                              APIGroup of the referent, as a fully qualified domain name — for example
+                              "kube-vm.io" or "infrastructure.vsphere.kube-vm.io".
+                            maxLength: 253
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            type: string
+                          kind:
+                            description: |-
+                              Kind of the referent — for example "VSphereVirtualMachine" or
+                              "VirtualMachineImage".
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                            type: string
+                          name:
+                            description: Name of the referent.
+                            maxLength: 253
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            type: string
+                        required:
+                        - apiGroup
+                        - kind
+                        - name
+                        type: object
+                      snapshot:
+                        description: Snapshot references a snapshot to clone from.
+                        properties:
+                          apiGroup:
+                            description: |-
+                              APIGroup of the referent, as a fully qualified domain name — for example
+                              "kube-vm.io" or "infrastructure.vsphere.kube-vm.io".
+                            maxLength: 253
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            type: string
+                          kind:
+                            description: |-
+                              Kind of the referent — for example "VSphereVirtualMachine" or
+                              "VirtualMachineImage".
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                            type: string
+                          name:
+                            description: Name of the referent.
+                            maxLength: 253
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            type: string
+                        required:
+                        - apiGroup
+                        - kind
+                        - name
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: boot disk source is immutable once the disk exists
+                      rule: self == oldSelf
+                  storageClass:
+                    description: |-
+                      StorageClass is a provider-interpreted storage selector — a vSphere
+                      storage policy, a GCP or EC2 disk type.
+                    type: string
+                required:
+                - source
+                type: object
+              bootstrap:
+                description: Bootstrap describes guest initialization.
+                properties:
+                  cloudInit:
+                    description: CloudInit is the portable bootstrap path.
+                    properties:
+                      networkData:
+                        description: NetworkData selects the cloud-init network-config
+                          document.
+                        properties:
+                          key:
+                            description: Key within the Secret's data.
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name of the Secret.
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      userData:
+                        description: UserData selects the cloud-init user-data document.
+                        properties:
+                          key:
+                            description: Key within the Secret's data.
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name of the Secret.
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                    type: object
+                type: object
+              disks:
+                description: Disks are additional data disks.
+                items:
+                  description: DiskSpec describes an additional (data) disk.
+                  properties:
+                    deleteOnTermination:
+                      description: DeleteOnTermination deletes this disk when the
+                        VM is deleted.
+                      type: boolean
+                    name:
+                      description: |-
+                        Name identifies this disk within the VirtualMachine. Must be unique
+                        among the VM's disks.
+                      minLength: 1
+                      type: string
+                    sizeGiB:
+                      description: SizeGiB is the requested disk size. Grow-only,
+                        as for the boot disk.
+                      format: int64
+                      minimum: 1
+                      type: integer
+                      x-kubernetes-validations:
+                      - message: disk size cannot be reduced
+                        rule: self >= oldSelf
+                    source:
+                      description: |-
+                        Source is the image, snapshot, or blank volume backing this disk.
+                        Immutable, for the same reason as BootDiskSpec.Source.
+                      properties:
+                        blank:
+                          description: Blank requests an empty disk. Only meaningful
+                            for data disks.
+                          type: boolean
+                        image:
+                          description: |-
+                            Image references an entry in a provider-resolved image catalog. The
+                            generic layer carries the reference, not the platform's image identity,
+                            because a GCP image self-link is meaningless to vSphere. The referenced
+                            kind may be a portable image type or one the provider owns; the reference
+                            names it explicitly rather than assuming either.
+                          properties:
+                            apiGroup:
+                              description: |-
+                                APIGroup of the referent, as a fully qualified domain name — for example
+                                "kube-vm.io" or "infrastructure.vsphere.kube-vm.io".
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                            kind:
+                              description: |-
+                                Kind of the referent — for example "VSphereVirtualMachine" or
+                                "VirtualMachineImage".
+                              maxLength: 63
+                              minLength: 1
+                              pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                              type: string
+                            name:
+                              description: Name of the referent.
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                          required:
+                          - apiGroup
+                          - kind
+                          - name
+                          type: object
+                        snapshot:
+                          description: Snapshot references a snapshot to clone from.
+                          properties:
+                            apiGroup:
+                              description: |-
+                                APIGroup of the referent, as a fully qualified domain name — for example
+                                "kube-vm.io" or "infrastructure.vsphere.kube-vm.io".
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                            kind:
+                              description: |-
+                                Kind of the referent — for example "VSphereVirtualMachine" or
+                                "VirtualMachineImage".
+                              maxLength: 63
+                              minLength: 1
+                              pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                              type: string
+                            name:
+                              description: Name of the referent.
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                          required:
+                          - apiGroup
+                          - kind
+                          - name
+                          type: object
+                      type: object
+                      x-kubernetes-validations:
+                      - message: disk source is immutable once the disk exists
+                        rule: self == oldSelf
+                    storageClass:
+                      description: StorageClass is a provider-interpreted storage
+                        selector.
+                      type: string
+                  required:
+                  - name
+                  - source
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              failureDomain:
+                description: |-
+                  FailureDomain pins the VM to a zone or availability zone. The value is
+                  an opaque, provider-interpreted string.
+                type: string
+              infrastructureRef:
+                description: |-
+                  InfrastructureRef points at the provider object that carries
+                  platform-specific configuration and acts as the duck-typed status
+                  source.
+
+                  Immutable. This reference is the machine's identity: it names the object
+                  holding the backend VM. Repointing it would abandon a running machine
+                  while claiming ownership of another, so replacing it means deleting this
+                  VirtualMachine and creating a new one.
+
+                  The user creates that object alongside this VirtualMachine; the core
+                  controller adopts it by setting an owner reference and manages its
+                  lifecycle. The core does not author the provider's spec.
+                properties:
+                  apiGroup:
+                    description: |-
+                      APIGroup of the referent, as a fully qualified domain name — for example
+                      "kube-vm.io" or "infrastructure.vsphere.kube-vm.io".
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent — for example "VSphereVirtualMachine" or
+                      "VirtualMachineImage".
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                    type: string
+                  name:
+                    description: Name of the referent.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: infrastructureRef is immutable
+                  rule: self == oldSelf
+              instanceType:
+                description: InstanceType selects compute sizing, including any accelerator.
+                properties:
+                  name:
+                    description: |-
+                      Name references a named sizing profile curated by an administrator — a
+                      VirtualMachineClass on vSphere, a machine type on GCP, an instance type
+                      on EC2.
+
+                      Accelerators are requested through this profile. A GPU-bearing profile
+                      yields a GPU-bearing VM. There is deliberately no separate accelerator
+                      field in this version of the API: on vSphere and EC2 the accelerator is
+                      inseparable from the class or instance type, so a standalone field would
+                      collapse back into profile selection for most providers. A portable
+                      per-VM accelerator field is expected once Dynamic Resource Allocation
+                      offers a shape that holds across providers.
+                    type: string
+                  resources:
+                    description: |-
+                      Resources describes inline, arbitrary sizing for providers that support
+                      it (for example GCP custom machine types).
+                    properties:
+                      cpus:
+                        description: CPUs is the number of virtual CPUs presented
+                          to the guest.
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      memory:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Memory is the guest-visible memory, for example
+                          "8Gi".
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    type: object
+                type: object
+              network:
+                description: |-
+                  Network describes the VM's guest network configuration: settings that
+                  apply to the guest as a whole, plus the per-interface list.
+                properties:
+                  hostName:
+                    description: |-
+                      HostName is the host name assigned to the guest. When omitted, the
+                      provider uses the VirtualMachine's name.
+
+                      Immutable. GCE fixes the instance host name at create time, and while
+                      vSphere can change it through guest customization, allowing the edit
+                      would make the field silently non-portable. Marked immutable for now
+                      because relaxing an immutability constraint later is a compatible
+                      change and adding one is not.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: hostName is immutable
+                      rule: self == oldSelf
+                  interfaces:
+                    description: |-
+                      Interfaces are the VM's network interfaces. When omitted, the provider
+                      attaches a single interface to the namespace's default network.
+                    items:
+                      description: |-
+                        NetworkInterfaceSpec describes one network interface.
+
+                        The shape of an interface is portable; the network it attaches to is not, so
+                        Network is a reference into whatever object the provider uses to model a
+                        network.
+                      properties:
+                        addresses:
+                          description: |-
+                            Addresses assigns specific IP addresses to this interface, as bare
+                            addresses without a prefix length — for example "10.0.1.5", not
+                            "10.0.1.5/24".
+
+                            The prefix is deliberately absent because on the cloud platforms it is a
+                            property of the attached network rather than of the interface: EC2 takes
+                            a bare PrivateIpAddress whose mask comes from the subnet, and GCE takes
+                            a bare networkIP that must fall inside the regional subnetwork. A
+                            caller-supplied prefix would be either redundant or contradictory.
+
+                            This is not mutually exclusive with the DHCP fields. On the cloud
+                            platforms an address set here is reserved through the platform API and
+                            then handed to the guest over DHCP, so the two operate together; a
+                            provider that instead configures the guest directly may ignore the DHCP
+                            fields. Whether an address is requested and how it reaches the guest are
+                            separate questions.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        dhcp4:
+                          description: |-
+                            DHCP4 requests an IPv4 address via DHCP. Defaults to true when no static
+                            IPv4 address is supplied.
+                          type: boolean
+                        dhcp6:
+                          description: DHCP6 requests an IPv6 address via DHCP.
+                          type: boolean
+                        name:
+                          description: |-
+                            Name identifies this interface within the VirtualMachine. Must be unique
+                            among the VM's interfaces.
+                          minLength: 1
+                          type: string
+                        network:
+                          description: |-
+                            Network references the provider's network object. When omitted, the
+                            provider selects a default network for the namespace.
+                          properties:
+                            apiGroup:
+                              description: |-
+                                APIGroup of the referent, as a fully qualified domain name — for example
+                                "kube-vm.io" or "infrastructure.vsphere.kube-vm.io".
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                            kind:
+                              description: |-
+                                Kind of the referent — for example "VSphereVirtualMachine" or
+                                "VirtualMachineImage".
+                              maxLength: 63
+                              minLength: 1
+                              pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                              type: string
+                            name:
+                              description: Name of the referent.
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                          required:
+                          - apiGroup
+                          - kind
+                          - name
+                          type: object
+                        publicIP:
+                          description: |-
+                            PublicIP requests an externally reachable address. A provider that
+                            cannot supply one rejects this at admission.
+                          type: boolean
+                      required:
+                      - name
+                      type: object
+                    maxItems: 10
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  nameservers:
+                    description: |-
+                      Nameservers is the list of DNS server addresses configured in the guest.
+                      It applies to every interface that does not specify its own. When
+                      omitted, resolvers come from whatever the attached networks supply,
+                      typically over DHCP.
+
+                      This pairs with an interface's Addresses field: a statically addressed
+                      interface receives no resolvers from DHCP, so a VM that sets Addresses
+                      generally has to set this too.
+                    items:
+                      type: string
+                    maxItems: 3
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  searchDomains:
+                    description: |-
+                      SearchDomains is the DNS search list configured in the guest. As with
+                      Nameservers, it applies to every interface that does not specify its own.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+              powerOffMode:
+                default: TrySoft
+                description: PowerOffMode controls whether a power-off or suspend
+                  involves the guest.
+                enum:
+                - Hard
+                - Soft
+                - TrySoft
+                type: string
+              powerState:
+                default: PoweredOn
+                description: |-
+                  PowerState is the desired power state. Providers reconcile toward it.
+
+                  Modeled as declarative desired state rather than as a run strategy,
+                  because that is the one power model shared by vSphere, GCP, and EC2.
+                  Automatic restart is intentionally not folded into this field.
+                enum:
+                - PoweredOn
+                - PoweredOff
+                - Suspended
+                type: string
+              scheduling:
+                description: Scheduling carries placement economics such as spot capacity.
+                properties:
+                  spot:
+                    description: |-
+                      Spot requests preemptible/spot capacity. A provider with no such notion
+                      rejects a true value at admission rather than silently running the VM at
+                      full price.
+                    type: boolean
+                type: object
+              sshPublicKeys:
+                description: |-
+                  SSHPublicKeys is inline public-key material that every provider can
+                  honor through cloud-init. A reference to a platform's named key-pair
+                  registry is provider-specific and belongs on the infrastructure object.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
+              tags:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Tags is a set of free-form, provider-interpreted key/value labels,
+                  mapped to the platform's own labelling mechanism: vSphere tags (which
+                  are category/tag pairs), EC2 resource tags, or GCP labels. Kubernetes
+                  labels remain the primary metadata channel for anything the control
+                  plane reads.
+
+                  Key/value rather than a bare list, because all three reference
+                  platforms model this as key/value and none as a flat list. A list would
+                  force every provider to synthesize keys, and on GCP a bare list is
+                  specifically the shape of network tags — the firewall target selector —
+                  which is not what this field means.
+
+                  This is not firewall attachment: security groups and firewall-targeting
+                  network tags are object-reference shaped and belong on the
+                  infrastructure object.
+
+                  Providers apply the stricter of their own constraints and reject values
+                  they cannot represent. Platform limits differ sharply — EC2 reserves the
+                  "aws:" key prefix and caps keys at 128 and values at 256 characters,
+                  while GCP labels must be lowercase RFC1035 — so a portable value is one
+                  that satisfies all of them.
+                maxProperties: 50
+                type: object
+            required:
+            - infrastructureRef
+            type: object
+          status:
+            description: |-
+              VirtualMachineStatus is the observed state of a virtual machine.
+
+              Every field here other than Conditions and ObservedGeneration is derived from
+              the infrastructure object through the duck-typed provider contract.
+            properties:
+              addresses:
+                description: Addresses are the VM's observed network addresses.
+                items:
+                  description: VirtualMachineAddress is an observed network address
+                    for a virtual machine.
+                  properties:
+                    address:
+                      description: Address is the IP address or DNS name.
+                      minLength: 1
+                      type: string
+                    type:
+                      description: Type describes the reachability scope of this address.
+                      enum:
+                      - InternalIP
+                      - ExternalIP
+                      - InternalDNS
+                      - ExternalDNS
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
+              conditions:
+                description: |-
+                  Conditions describes the VM's current state, including
+                  InfrastructureReady mirrored from the infrastructure object.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureMessage:
+                description: |-
+                  FailureMessage is a human-readable description of a provisioning
+                  failure. See FailureReason on why this is not a terminal state.
+                type: string
+              failureReason:
+                description: |-
+                  FailureReason is a terse, machine-readable cause for a provisioning
+                  failure.
+
+                  This is deliberately not documented as terminal. Several of the failures
+                  a provider reports here are retryable or even routine — EC2's
+                  InsufficientInstanceCapacity succeeds on retry in another zone, and a
+                  spot interruption is expected behavior rather than a fault — so treating
+                  the field as an absorbing state would be wrong. Whether a given failure
+                  is retryable belongs in Conditions, which can carry a reason and change
+                  back. Cluster API is removing its equivalent fields for the same reason,
+                  and these two may follow.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the spec generation most recently
+                  reconciled.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase is a portable lifecycle summary derived from the provider's
+                  reported instance state.
+                enum:
+                - Pending
+                - Provisioning
+                - Running
+                - Stopping
+                - Stopped
+                - Suspended
+                - Failed
+                - Deleting
+                type: string
+              powerState:
+                description: |-
+                  PowerState is the observed power state, which may differ from the
+                  desired state in spec while a change is converging.
+                enum:
+                - PoweredOn
+                - PoweredOff
+                - Suspended
+                type: string
+              providerID:
+                description: |-
+                  ProviderID is the platform-unique identifier for this VM, copied from
+                  the infrastructure object.
+                type: string
+              providerMetadata:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ProviderMetadata is a free-form, provider-authored map for observed
+                  facts that have no portable equivalent.
+
+                  This is the only unstructured field in the API, and it is deliberately
+                  on status rather than spec: providers can surface extra detail without
+                  negotiating a schema change, and the core controller never reads it back
+                  into a reconcile decision.
+                type: object
+              ready:
+                description: Ready mirrors the infrastructure object's readiness.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

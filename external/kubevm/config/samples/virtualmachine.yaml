@@ -1,0 +1,70 @@
+# A portable KubeVM VirtualMachine, paired with a provider object it points at.
+#
+# The user applies both: this portable object, and the provider object named by
+# spec.infrastructureRef. The core controller adopts the provider object by
+# setting an owner reference; it does not create it.
+#
+# Every reference below is the same shape — apiGroup, kind, name — and names its
+# group and kind explicitly. No version appears in a reference: the served
+# version is resolved at runtime, so a provider can roll its API forward without
+# every VirtualMachine that points at it having to be rewritten.
+apiVersion: kube-vm.io/v1alpha1
+kind: VirtualMachine
+metadata:
+  name: web-01
+  namespace: team-a
+spec:
+  powerState: PoweredOn
+
+  # Sizing, including any accelerator, comes from the named profile.
+  instanceType:
+    name: standard-4
+
+  bootDisk:
+    source:
+      image:
+        apiGroup: kube-vm.io
+        kind: VirtualMachineImage
+        name: ubuntu-2204
+    sizeGiB: 50
+    storageClass: fast
+
+  # Guest-wide network settings live alongside the interface list.
+  network:
+    # A fully qualified name. GCE requires the host name to be an FQDN with at
+    # least one dot, so a short name is not portable.
+    hostName: web-01.team-a.example.com
+    searchDomains:
+      - team-a.example.com
+    interfaces:
+      - name: eth0
+        network:
+          apiGroup: infrastructure.vsphere.kube-vm.io
+          kind: Network
+          name: app-net
+        dhcp4: true
+        publicIP: true
+
+  bootstrap:
+    cloudInit:
+      # A Secret reference, never inline plaintext.
+      userData:
+        name: web-01-userdata
+        key: user-data
+
+  sshPublicKeys:
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... admin@example.com"
+
+  failureDomain: zone-a
+
+  # Key/value, to match how every reference platform models labelling.
+  tags:
+    owner: team-a
+    environment: staging
+
+  # Change these two lines (group and kind) plus the provider object itself to
+  # retarget this VM at a different platform. The rest of the spec is portable.
+  infrastructureRef:
+    apiGroup: infrastructure.vsphere.kube-vm.io
+    kind: VSphereVirtualMachine
+    name: web-01

@@ -1,0 +1,30 @@
+# Mirrors the parent vm-operator repo's .markdownlintrc.
+#
+# Rules are opt-in rather than opt-out: the design docs in docs/ are long-form
+# prose with intentionally long lines, so enabling markdownlint's defaults would
+# produce hundreds of findings that say nothing about correctness.
+default: false
+
+# line_length
+MD013: false
+
+# no-inline-html
+MD033:
+  allowed_elements:
+  - details
+  - summary
+  - strong
+  - code
+  - a
+  - br
+  - table
+  - tbody
+  - tr
+  - td
+  - th
+  - em
+
+# no-hard-tabs
+MD010:
+  # Allow tabs in code blocks.
+  code_blocks: false

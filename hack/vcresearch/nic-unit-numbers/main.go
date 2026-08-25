@@ -17,6 +17,13 @@
 // test; the nil case is what every "no explicit unit number" experiment below
 // exercises.
 //
+// E16 (suspend/resume), E17 (vMotion), and E18 (hardware-version upgrade)
+// are not among the 15 experiments tasks.md T001 originally enumerated, and
+// their questions are not part of spec.md's Q1-Q8 set. They were added
+// after the initial research run, on request, to also characterise those
+// lifecycle transitions; treat their results as informational context
+// rather than a resolution of any spec.md open question.
+//
 // The program creates VMs, so point it at a scratch environment. Every VM it
 // creates is destroyed on exit unless -keep is passed.
 //
@@ -94,6 +101,14 @@ const (
 	e13OutOfBandAdd        = "E13"
 	e14SRIOV               = "E14"
 	e15HotAddExplicit      = "E15"
+
+	// E16, E17, and E18 are not in tasks.md T001's original 15-item list,
+	// and none of these lifecycle transitions appear in spec.md's Q1-Q8.
+	// Added to characterise VM lifecycle transitions the original scope
+	// omitted.
+	e16SuspendResume          = "E16"
+	e17VMotion                = "E17"
+	e18HardwareVersionUpgrade = "E18"
 )
 
 // Result statuses.
@@ -139,6 +154,22 @@ type config struct {
 	guestID         string
 	vmPrefix        string
 	supportMatrix   string
+
+	// e18StartVersion is the hardware version E18 explicitly requests at
+	// create time, before upgrading it. It must be older than whatever this
+	// environment's host(s) currently support, or E18 records a skip
+	// (AlreadyUpgraded) instead of an upgrade. A flag rather than a
+	// hardcoded constant because that "older than" requirement is
+	// environment-dependent — see e18HardwareVersionUpgradeDefault.
+	e18StartVersion string
+
+	// e18TargetVersions is the ordered, comma-separated list of hardware
+	// versions E18 upgrades the VM through, one UpgradeVM_Task per entry
+	// (each followed by a power-on/power-off cycle at that version before
+	// moving to the next). The literal token "max" stands in for
+	// UpgradeVM_Task's empty-string "upgrade to the host's latest
+	// supported" target.
+	e18TargetVersions string
 
 	only        string
 	skip        string
@@ -201,6 +232,14 @@ func registerFlags(fs *flag.FlagSet, cfg *config) {
 
 	fs.StringVar(&cfg.hardwareVersion, "hardware-version", "",
 		"VM hardware version, e.g. vmx-21; empty lets vCenter choose")
+	fs.StringVar(&cfg.e18StartVersion, "e18-start-version", e18HardwareVersionUpgradeDefault,
+		"hardware version E18 creates the VM at before upgrading it; must be "+
+			"older than the environment's max, or E18 records a skip; used by "+e18HardwareVersionUpgrade)
+	fs.StringVar(&cfg.e18TargetVersions, "e18-target-versions", "vmx-17,vmx-20,max",
+		"comma-separated, ordered hardware versions E18 upgrades the VM through, one "+
+			"UpgradeVM_Task and power-on/power-off cycle per entry; \"max\" (case-insensitive) "+
+			"means UpgradeVM_Task's empty-string \"host's latest supported\" target; used by "+
+			e18HardwareVersionUpgrade)
 	fs.StringVar(&cfg.guestID, "guest-id", "otherGuest64", "guest ID for the research VMs")
 	fs.StringVar(&cfg.vmPrefix, "vm-prefix", "nic-unit-research", "name prefix for the research VMs")
 	fs.StringVar(&cfg.supportMatrix, "support-matrix", "",
@@ -799,9 +838,20 @@ func (r *runner) hardware(
 
 	var moVM mo.VirtualMachine
 
-	err := vm.Properties(ctx, vm.Reference(), []string{"config.hardware.device"}, &moVM)
+	err := vm.Properties(ctx, vm.Reference(), []string{"config.hardware.device", "config.version"}, &moVM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch hardware for %s: %w", vm.Reference().Value, err)
+	}
+
+	// Record the hardware version vCenter actually assigned, not merely the
+	// one requested (R6). Only the first observation sticks, which means this
+	// records whichever experiment happens to run first's version, NOT
+	// necessarily every experiment's — e.g. an OVF deploy's VM can come up at
+	// the version the descriptor declares, which may differ from a directly
+	// created VM's default. If per-experiment version matters, read it from
+	// each experiment's own step rather than trusting this single field.
+	if moVM.Config != nil && r.env.HardwareVersion == "" {
+		r.env.HardwareVersion = moVM.Config.Version
 	}
 
 	if moVM.Config == nil {
@@ -1159,10 +1209,16 @@ func (r *runner) cleanup(ctx context.Context) {
 	}
 }
 
-// destroyVM powers off a VM if needed and destroys it.
+// destroyVM powers off a VM if needed and destroys it. Widened from a
+// PoweredOn-only check to any non-PoweredOff state so a VM E16 leaves
+// suspended (if it fails between its own suspend and resume steps) is also
+// powered off first — this path is defensive and was not exercised by any
+// run (E16 always resumed cleanly). PowerOff is best-effort here: a failure
+// is swallowed and Destroy is attempted anyway, so the worst case is a
+// leaked VM plus a logged warning from cleanup, not a wedged run.
 func destroyVM(ctx context.Context, vm *object.VirtualMachine) error {
 	state, err := vm.PowerState(ctx)
-	if err == nil && state == vimtypes.VirtualMachinePowerStatePoweredOn {
+	if err == nil && state != vimtypes.VirtualMachinePowerStatePoweredOff {
 		task, offErr := vm.PowerOff(ctx)
 		if offErr == nil {
 			_, _ = task.WaitForResultEx(ctx)
@@ -1757,10 +1813,28 @@ func (r *runner) runE06(ctx context.Context) *result {
 
 	newCard := findInfoAtUnit(s.Observed, targetUnit)
 	if newCard != nil {
+		// Don't assert the key changed without checking: on builds where the
+		// platform derives an ethernet card's key deterministically from its
+		// unit number (observed on vCenter 9.2.0: key == 4000+(unit-7)), a
+		// same-slot Remove+Add legitimately reproduces the same key, and a
+		// key-based check alone would misreport a genuine replacement as a
+		// no-op. MAC is the reliable signal here: the platform generates a
+		// fresh one for the new device.
+		changedKey := newCard.Key != removed.Key
+		changedMAC := newCard.MACAddress != removed.MACAddress
 		res.find("The device at unit %d after the task has key %d and MAC %q; the removed device "+
-			"had key %d and MAC %q. A changed key confirms the slot was genuinely reused by new "+
-			"hardware rather than the remove being ignored.",
-			targetUnit, newCard.Key, newCard.MACAddress, removed.Key, removed.MACAddress)
+			"had key %d and MAC %q (key changed: %v, MAC changed: %v). A changed MAC — and, on "+
+			"builds where the key is not derived from the unit number, a changed key — confirms "+
+			"the slot was genuinely reused by new hardware rather than the remove being ignored.",
+			targetUnit, newCard.Key, newCard.MACAddress, removed.Key, removed.MACAddress,
+			changedKey, changedMAC)
+
+		if !changedKey {
+			res.find("Key was UNCHANGED across the same-slot Remove+Add (both %d). This build "+
+				"appears to derive an ethernet card's Key deterministically from its unit number "+
+				"rather than from creation order; do not rely on a changed Key alone as replacement "+
+				"evidence on this platform.", newCard.Key)
+		}
 	}
 
 	return res
@@ -2485,6 +2559,534 @@ func (r *runner) runE15(ctx context.Context) *result {
 	return res
 }
 
+// runE16 confirms whether NIC unit numbers survive a suspend/resume cycle.
+// Not one of tasks.md T001's enumerated items, and not covered by any of
+// spec.md's Q1-Q8 — added to characterise a lifecycle transition the
+// original scope omitted. Like every other experiment in this program, it
+// observes VirtualDevice.UnitNumber from config.hardware.device — the
+// persisted VM hardware configuration, which is the field's only
+// representation in the vSphere API (see the file header). It therefore
+// answers "does suspend/resume rewrite the config" but says nothing about
+// guest-visible NIC enumeration, which this program does not check anywhere.
+func (r *runner) runE16(ctx context.Context) *result {
+	res := &result{
+		ID:    e16SuspendResume,
+		Title: "NIC unit numbers are stable across a suspend/resume cycle",
+	}
+
+	cards, err := r.newEthCards(ctx, r.network,
+		[]*int32{ptr.To(nicUnitNumberFirst), ptr.To(int32(9)), ptr.To(int32(12))})
+	if err != nil {
+		return res.fail(err)
+	}
+
+	spec := r.baseConfigSpec(r.vmName(res.ID, ""))
+	spec.DeviceChange = addSpec(cards...)
+
+	vm, err := r.createVM(ctx, spec)
+	if err != nil {
+		return res.fail(err)
+	}
+
+	if err := r.powerState(ctx, vm, true); err != nil {
+		return res.fail(err)
+	}
+
+	before := step{Name: "Units powered on, before suspend"}
+	r.observeInto(ctx, vm, &before)
+	res.Steps = append(res.Steps, before)
+
+	suspended := step{Name: "Units while suspended"}
+
+	if err := r.suspend(ctx, vm); err != nil {
+		suspended.Err = err.Error()
+		suspended.Faults = captureFaults(err)
+		res.Steps = append(res.Steps, suspended)
+
+		return res.fail(err)
+	}
+
+	r.observeInto(ctx, vm, &suspended)
+	res.Steps = append(res.Steps, suspended)
+
+	resumed := step{Name: "Units after resume"}
+
+	// Resuming a suspended VM is the same PowerOnVM_Task as a cold power-on.
+	if err := r.powerState(ctx, vm, true); err != nil {
+		resumed.Err = err.Error()
+		res.Steps = append(res.Steps, resumed)
+
+		return res.fail(err)
+	}
+
+	r.observeInto(ctx, vm, &resumed)
+	res.Steps = append(res.Steps, resumed)
+	res.Status = statusRecorded
+
+	beforeUnits := unitsOf(before.Observed)
+	suspendedUnits := unitsOf(suspended.Observed)
+	resumedUnits := unitsOf(resumed.Observed)
+
+	if slices.Equal(beforeUnits, suspendedUnits) && slices.Equal(beforeUnits, resumedUnits) {
+		res.find("Unit numbers were unchanged across suspend/resume: %v.", beforeUnits)
+
+		return res
+	}
+
+	res.find("Unit numbers CHANGED across suspend/resume: before %v, suspended %v, resumed %v. "+
+		"A unit number is not a stable identity across suspend/resume on this build and the "+
+		"matching design must account for it.", beforeUnits, suspendedUnits, resumedUnits)
+
+	return res
+}
+
+// runE17 confirms whether NIC unit numbers survive a vMotion — a host change
+// via MigrateVM_Task with no storage move — to a different host in the same
+// cluster as the VM's current host. Not one of tasks.md T001's enumerated
+// items, and not covered by any of spec.md's Q1-Q8 — added to characterise
+// a lifecycle transition the original scope omitted. Same scope caveat as
+// runE16: this observes VirtualDevice.UnitNumber from
+// config.hardware.device, so it answers "does vMotion rewrite the config",
+// not anything about guest-visible NIC enumeration. The host change itself
+// is independently confirmed via vm.HostSystem, so the migration genuinely
+// happened; only the "unit number" half of the claim is config-level.
+func (r *runner) runE17(ctx context.Context) *result {
+	res := &result{
+		ID:    e17VMotion,
+		Title: "NIC unit numbers are stable across vMotion to another host",
+	}
+
+	hosts, err := r.clusterHosts(ctx)
+	if err != nil {
+		return res.fail(err)
+	}
+
+	if len(hosts) < 2 {
+		return res.skip("fewer than two ESX hosts in the resource pool's cluster; vMotion needs " +
+			"a second host to migrate to")
+	}
+
+	cards, err := r.newEthCards(ctx, r.network,
+		[]*int32{ptr.To(nicUnitNumberFirst), ptr.To(int32(9)), ptr.To(int32(12))})
+	if err != nil {
+		return res.fail(err)
+	}
+
+	spec := r.baseConfigSpec(r.vmName(res.ID, ""))
+	spec.DeviceChange = addSpec(cards...)
+
+	vm, err := r.createVM(ctx, spec)
+	if err != nil {
+		return res.fail(err)
+	}
+
+	if err := r.powerState(ctx, vm, true); err != nil {
+		return res.fail(err)
+	}
+
+	before := step{Name: "Units before vMotion"}
+	r.observeInto(ctx, vm, &before)
+	res.Steps = append(res.Steps, before)
+
+	currentHost, err := vm.HostSystem(ctx)
+	if err != nil {
+		return res.fail(fmt.Errorf("failed to determine current host: %w", err))
+	}
+
+	var target *object.HostSystem
+
+	for _, h := range hosts {
+		if h.Reference().Value != currentHost.Reference().Value {
+			target = h
+
+			break
+		}
+	}
+
+	if target == nil {
+		return res.skip("no host distinct from the VM's current host was found in its cluster")
+	}
+
+	currentName := r.hostName(ctx, currentHost)
+	targetName := r.hostName(ctx, target)
+
+	migrateStep := step{Name: fmt.Sprintf("vMotion from %s to %s", currentName, targetName)}
+
+	migrateCtx, cancel := r.withTaskTimeout(ctx)
+
+	task, err := vm.Migrate(migrateCtx, nil, target, vimtypes.VirtualMachineMovePriorityDefaultPriority, "")
+	if err == nil {
+		_, err = task.WaitForResultEx(migrateCtx)
+	}
+
+	cancel()
+
+	if err != nil {
+		migrateStep.Err = fmt.Errorf("MigrateVM_Task failed: %w", err).Error()
+		migrateStep.Faults = captureFaults(err)
+		res.Steps = append(res.Steps, migrateStep)
+
+		return res.fail(err)
+	}
+
+	res.Steps = append(res.Steps, migrateStep)
+
+	after := step{Name: "Units after vMotion"}
+	r.observeInto(ctx, vm, &after)
+	res.Steps = append(res.Steps, after)
+	res.Status = statusRecorded
+
+	if newHost, hostErr := vm.HostSystem(ctx); hostErr == nil {
+		res.find("VM ran on host %q before, %q after.", currentName, r.hostName(ctx, newHost))
+	}
+
+	beforeUnits := unitsOf(before.Observed)
+	afterUnits := unitsOf(after.Observed)
+
+	if slices.Equal(beforeUnits, afterUnits) {
+		res.find("Unit numbers were unchanged across vMotion: %v.", beforeUnits)
+
+		return res
+	}
+
+	res.find("Unit numbers CHANGED across vMotion: before %v, after %v. A unit number is not a "+
+		"stable identity across vMotion on this build and the matching design must account "+
+		"for it.", beforeUnits, afterUnits)
+
+	return res
+}
+
+// e18HardwareVersionUpgradeDefault is the default for the -e18-start-version
+// flag. It is deliberately older than this environment's observed
+// create-time default (vmx-23, per E01) so UpgradeVM_Task has somewhere to
+// go. vmx-15 is already known-good here: it's the version the photon-5.0
+// OVF descriptor itself declares (E02's baseline step). A different
+// environment whose host floor is already at or above vmx-15 should pass
+// -e18-start-version explicitly rather than edit this constant.
+const e18HardwareVersionUpgradeDefault = "vmx-15"
+
+// runE18 confirms whether NIC unit numbers survive one or more
+// hardware-version (VM Compatibility) upgrades via UpgradeVM_Task, walking
+// through -e18-target-versions in order (e.g. an older intermediate version
+// like vmx-17 or vmx-20, not only the host's current maximum), and whether
+// powering the VM on at each new version disturbs them. Not one of
+// tasks.md T001's enumerated items, and not covered by any of spec.md's
+// Q1-Q8 — added to characterise lifecycle transitions the original scope
+// omitted. Same config-vs-guest-visible scope caveat as runE16/runE17: this
+// observes VirtualDevice.UnitNumber from config.hardware.device, not
+// anything a guest OS would report — a power-on here confirms the platform
+// re-derives the same config on boot, not that a guest OS enumerates the
+// NIC identically.
+func (r *runner) runE18(ctx context.Context) *result {
+	res := &result{
+		ID: e18HardwareVersionUpgrade,
+		Title: "NIC unit numbers are stable across hardware-version (VM Compatibility) upgrades, " +
+			"including after powering on at each new version",
+	}
+
+	targets := splitVersionList(r.cfg.e18TargetVersions)
+	if len(targets) == 0 {
+		return res.skip("no -e18-target-versions were configured")
+	}
+
+	cards, err := r.newEthCards(ctx, r.network,
+		[]*int32{ptr.To(nicUnitNumberFirst), ptr.To(int32(9)), ptr.To(int32(12))})
+	if err != nil {
+		return res.fail(err)
+	}
+
+	spec := r.baseConfigSpec(r.vmName(res.ID, ""))
+	spec.Version = r.cfg.e18StartVersion
+	spec.DeviceChange = addSpec(cards...)
+
+	vm, err := r.createVM(ctx, spec)
+	if err != nil {
+		return res.fail(err)
+	}
+
+	startVersion, err := r.vmHardwareVersion(ctx, vm)
+	if err != nil {
+		return res.fail(err)
+	}
+
+	initial := step{Name: fmt.Sprintf("Units at hardware version %s, before any upgrade", startVersion)}
+	r.observeInto(ctx, vm, &initial)
+	res.Steps = append(res.Steps, initial)
+
+	baselineUnits := unitsOf(initial.Observed)
+	finalUnits := baselineUnits
+	priorVersion := startVersion
+	priorUnits := baselineUnits
+	ranAnyUpgrade := false
+
+	for i, target := range targets {
+		requestedVersion := target
+		if strings.EqualFold(target, "max") {
+			// An empty version string means "upgrade to the most current
+			// virtual hardware the host supports" — the ordinary "upgrade
+			// compatibility" UI action, not a request for a specific
+			// version. "max" is this program's readable stand-in for it.
+			requestedVersion = ""
+		}
+
+		upgradeStep := step{Name: fmt.Sprintf(
+			"UpgradeVM_Task from %s toward %s", priorVersion, displayVersion(target))}
+
+		upgradeCtx, cancel := r.withTaskTimeout(ctx)
+
+		task, err := vm.UpgradeVM(upgradeCtx, requestedVersion)
+		if err == nil {
+			_, err = task.WaitForResultEx(upgradeCtx)
+		}
+
+		cancel()
+
+		if err != nil {
+			faults := captureFaults(err)
+			alreadyUpgraded := false
+
+			for _, f := range faults {
+				// Match by prefix, not equality: govmomi has both an
+				// AlreadyUpgraded fault-info type and a distinct
+				// AlreadyUpgradedFault wrapper type, and it was never
+				// observed which spelling a real vCenter sends back over
+				// this path since the fault never fired against this
+				// environment's targets.
+				if strings.HasPrefix(f.Type, "AlreadyUpgraded") {
+					alreadyUpgraded = true
+
+					break
+				}
+			}
+
+			if alreadyUpgraded {
+				upgradeStep.Notes = append(upgradeStep.Notes, fmt.Sprintf(
+					"VM was already at or beyond %s; skipping to the next target",
+					displayVersion(target)))
+				res.Steps = append(res.Steps, upgradeStep)
+
+				continue
+			}
+
+			upgradeStep.Err = fmt.Errorf("UpgradeVM_Task failed: %w", err).Error()
+			upgradeStep.Faults = faults
+			res.Steps = append(res.Steps, upgradeStep)
+
+			if !ranAnyUpgrade {
+				return res.fail(err)
+			}
+
+			// A later target in the list failed after at least one earlier
+			// upgrade in this same run already succeeded; keep the results
+			// already gathered instead of discarding them.
+			res.find("UpgradeVM_Task toward %s failed after %d earlier upgrade step(s) in this "+
+				"run succeeded: %v", displayVersion(target), i, err)
+
+			break
+		}
+
+		ranAnyUpgrade = true
+		res.Steps = append(res.Steps, upgradeStep)
+
+		afterUpgradeVersion, err := r.vmHardwareVersion(ctx, vm)
+		if err != nil {
+			return res.fail(err)
+		}
+
+		afterUpgrade := step{Name: fmt.Sprintf(
+			"Units at hardware version %s, powered off, right after upgrade", afterUpgradeVersion)}
+		r.observeInto(ctx, vm, &afterUpgrade)
+		res.Steps = append(res.Steps, afterUpgrade)
+
+		res.find("Hardware version was %q before this upgrade step, %q after.",
+			priorVersion, afterUpgradeVersion)
+
+		if priorVersion == afterUpgradeVersion {
+			res.find("UpgradeVM_Task toward %s reported success but the version string did not "+
+				"change; treat the unit-number result for this step cautiously since no real "+
+				"upgrade may have occurred.", displayVersion(target))
+		}
+
+		upgradeUnits := unitsOf(afterUpgrade.Observed)
+
+		if slices.Equal(priorUnits, upgradeUnits) {
+			res.find("Unit numbers were unchanged by the upgrade from %s to %q (still powered "+
+				"off): %v.", priorVersion, afterUpgradeVersion, upgradeUnits)
+		} else {
+			res.find("Unit numbers CHANGED by the upgrade from %s to %q, while still powered "+
+				"off: before %v, after %v. This upgrade step alone is not unit-number-safe on "+
+				"this build.", priorVersion, afterUpgradeVersion, priorUnits, upgradeUnits)
+		}
+
+		if err := r.powerState(ctx, vm, true); err != nil {
+			return res.fail(fmt.Errorf(
+				"failed to power on VM after upgrading to %s: %w", afterUpgradeVersion, err))
+		}
+
+		poweredOn := step{Name: fmt.Sprintf(
+			"Units at hardware version %s, powered ON after upgrade", afterUpgradeVersion)}
+		r.observeInto(ctx, vm, &poweredOn)
+		res.Steps = append(res.Steps, poweredOn)
+
+		poweredOnUnits := unitsOf(poweredOn.Observed)
+
+		if slices.Equal(upgradeUnits, poweredOnUnits) {
+			res.find("Unit numbers were unchanged by powering on at hardware version %q: %v.",
+				afterUpgradeVersion, poweredOnUnits)
+		} else {
+			res.find("Unit numbers CHANGED when the VM was powered on after the upgrade to %q: "+
+				"powered-off %v, powered-on %v. Powering on a freshly-upgraded VM is not "+
+				"unit-number-safe on this build.", afterUpgradeVersion, upgradeUnits, poweredOnUnits)
+		}
+
+		finalUnits = poweredOnUnits
+
+		// Power back off so the next target's UpgradeVM_Task (which requires
+		// a powered-off VM, same as the first one) has a clean precondition.
+		if err := r.powerState(ctx, vm, false); err != nil {
+			return res.fail(fmt.Errorf(
+				"failed to power off VM after observing it powered on at %s: %w",
+				afterUpgradeVersion, err))
+		}
+
+		priorVersion = afterUpgradeVersion
+		priorUnits = poweredOnUnits
+	}
+
+	if !ranAnyUpgrade {
+		return res.skip(fmt.Sprintf(
+			"VM was already at or beyond every requested target version (%s); no upgrade was "+
+				"available to test", r.cfg.e18TargetVersions))
+	}
+
+	res.Status = statusRecorded
+
+	if slices.Equal(baselineUnits, finalUnits) {
+		res.find("Unit numbers were unchanged end-to-end, from %s through every upgrade and "+
+			"power-cycle step above: %v.", startVersion, baselineUnits)
+
+		return res
+	}
+
+	res.find("Unit numbers CHANGED end-to-end: started at %s with %v, ended with %v after all "+
+		"upgrade and power-cycle steps above. A unit number is not a stable identity across a "+
+		"VM Compatibility upgrade on this build and the matching/backfill design must account "+
+		"for it.", startVersion, baselineUnits, finalUnits)
+
+	return res
+}
+
+// displayVersion renders the "max" sentinel back into something readable in
+// step names and findings, instead of the empty string UpgradeVM actually
+// receives for it.
+func displayVersion(target string) string {
+	if strings.EqualFold(target, "max") {
+		return "the host's maximum supported version"
+	}
+
+	return target
+}
+
+// splitVersionList parses a comma-separated hardware-version list for
+// -e18-target-versions, trimming whitespace and dropping empty entries.
+// Unlike splitIDs, it does not upper-case entries — hardware version
+// strings (e.g. "vmx-17") are passed to UpgradeVM verbatim. The "max"
+// sentinel is matched case-insensitively by its own callers (displayVersion,
+// runE18), not here.
+func splitVersionList(s string) []string {
+	parts := strings.Split(s, ",")
+	versions := make([]string, 0, len(parts))
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			versions = append(versions, p)
+		}
+	}
+
+	return versions
+}
+
+// vmHardwareVersion returns a VM's current hardware version (e.g. "vmx-15"),
+// read fresh from vCenter. Unlike hardware(), which updates the run's
+// recorded environment version as a side effect on its first call, this is
+// side-effect-free — E18 needs to observe the version changing across a
+// single VM's lifetime, which the once-only environment field can't express.
+func (r *runner) vmHardwareVersion(ctx context.Context, vm *object.VirtualMachine) (string, error) {
+	var moVM mo.VirtualMachine
+
+	err := vm.Properties(ctx, vm.Reference(), []string{"config.version"}, &moVM)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch hardware version for %s: %w", vm.Reference().Value, err)
+	}
+
+	if moVM.Config == nil {
+		return "", fmt.Errorf("VM %s has no config", vm.Reference().Value)
+	}
+
+	return moVM.Config.Version, nil
+}
+
+// suspend suspends a powered-on VM and waits for the task.
+func (r *runner) suspend(ctx context.Context, vm *object.VirtualMachine) error {
+	ctx, cancel := r.withTaskTimeout(ctx)
+	defer cancel()
+
+	task, err := vm.Suspend(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to submit SuspendVM_Task: %w", err)
+	}
+
+	_, err = task.WaitForResultEx(ctx)
+	if err != nil {
+		return fmt.Errorf("SuspendVM_Task failed: %w", err)
+	}
+
+	return nil
+}
+
+// clusterHosts returns every ESX host in the cluster (or standalone
+// compute resource) that owns the configured resource pool, so a vMotion
+// target is guaranteed to be a peer of the VM's current host rather than a
+// host in an unrelated cluster the finder happens to also see.
+func (r *runner) clusterHosts(ctx context.Context) ([]*object.HostSystem, error) {
+	var moPool mo.ResourcePool
+
+	err := r.resourcePool.Properties(ctx, r.resourcePool.Reference(), []string{"owner"}, &moPool)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve resource pool owner: %w", err)
+	}
+
+	cr := object.NewComputeResource(r.client.Client, moPool.Owner)
+
+	var moCR mo.ComputeResource
+
+	err = cr.Properties(ctx, cr.Reference(), []string{"host"}, &moCR)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list cluster hosts: %w", err)
+	}
+
+	hosts := make([]*object.HostSystem, 0, len(moCR.Host))
+	for _, ref := range moCR.Host {
+		hosts = append(hosts, object.NewHostSystem(r.client.Client, ref))
+	}
+
+	return hosts, nil
+}
+
+// hostName returns a host's name for display, falling back to its managed
+// object ID when the name can't be read.
+func (r *runner) hostName(ctx context.Context, host *object.HostSystem) string {
+	var moHost mo.HostSystem
+
+	err := host.Properties(ctx, host.Reference(), []string{"name"}, &moHost)
+	if err != nil || moHost.Name == "" {
+		return host.Reference().Value
+	}
+
+	return moHost.Name
+}
+
 // experiment pairs an ID with the function that runs it, so -only and -skip can
 // select without the runner knowing what each one does.
 type experiment struct {
@@ -2510,6 +3112,9 @@ func (r *runner) experiments() []experiment {
 		{e13OutOfBandAdd, r.runE13},
 		{e14SRIOV, r.runE14},
 		{e15HotAddExplicit, r.runE15},
+		{e16SuspendResume, r.runE16},
+		{e17VMotion, r.runE17},
+		{e18HardwareVersionUpgrade, r.runE18},
 	}
 }
 

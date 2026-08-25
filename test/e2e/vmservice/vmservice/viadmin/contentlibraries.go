@@ -61,7 +61,6 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 		// Therefore, we are not using the default namespace and creating a new one for each test spec.
 		nsContext, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs,
 			config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-			config.InfraConfig.ManagementClusterConfig.Resources.WorkerStorageClassName,
 			fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)),
 			input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")

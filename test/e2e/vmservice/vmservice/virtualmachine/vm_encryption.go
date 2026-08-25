@@ -126,7 +126,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
 
 		tmpNamespaceName = fmt.Sprintf("%s-ns-%s", specName, capiutil.RandomString(4))
-		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, clusterResources.WorkerStorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace %s", tmpNamespaceName)
 
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)

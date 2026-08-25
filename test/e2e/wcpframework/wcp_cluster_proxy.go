@@ -41,7 +41,7 @@ type WCPClusterProxyInterface interface {
 	framework.ClusterProxyInterface
 	CreateWCPNamespace(ctx context.Context, config framework.ConfigInterface,
 		vmsvcSpecs wcp.VMServiceSpecDetails,
-		scName, wscName, nsName, artifactFolder string) (NamespaceContext, error)
+		scName, nsName, artifactFolder string) (NamespaceContext, error)
 	UpdateNamespaceWithZones(ctx context.Context, namespaceName string, zones []string, svClusterClient ctrlclient.Client) (ZoneContext, error)
 	DeleteZonesFromNamespace(ctx context.Context, namespaceName string, zones []string, svClusterClient ctrlclient.Client) error
 	GetZonesBoundWithSupervisor(supervisorID string) (wcp.ZoneList, error)
@@ -51,7 +51,7 @@ type WCPClusterProxyInterface interface {
 	ListVSphereZones() (wcp.VSphereZoneList, error)
 	CreateWCPNamespaceWithNetwork(ctx context.Context, config framework.ConfigInterface,
 		vmsvcSpecs wcp.VMServiceSpecDetails,
-		scName, wscName, nsName, artifactFolder string, network wcp.NameSpaceNetworkInfo) (NamespaceContext, error)
+		scName, nsName, artifactFolder string, network wcp.NameSpaceNetworkInfo) (NamespaceContext, error)
 	CreateWCPNamespaceWithVMReservation(ctx context.Context, nsName, scName, zone, supervisorID string, vmsvcSpecs wcp.VMServiceSpecDetails, vmClassNameToReservedCount map[string]int) (NamespaceContext, error)
 	DeleteWCPNamespace(nsCtx NamespaceContext)
 }
@@ -93,21 +93,19 @@ func (w *WCPClusterProxy) GetWorkloadManagementAPI() wcp.WorkloadManagementAPI {
 // CreateWCPNamespace applies wcp api to create a namespace in wcp cluster with the given specs.
 func (w *WCPClusterProxy) CreateWCPNamespace(ctx context.Context, config framework.ConfigInterface,
 	vmsvcSpecs wcp.VMServiceSpecDetails,
-	scName, wscName, nsName, artifactFolder string) (NamespaceContext, error) {
+	scName, nsName, artifactFolder string) (NamespaceContext, error) {
 	// we need to create namespace with vm class and bind it
 	// the CR of vm class will get deleted if the namespace owning it gets deleted
 	// we can assume that vcenter has default vm classes names present
 	namespace, cancelNsWatches := wcp.CreateNamespace(ctx, wcp.NamespaceCreateInput{
-		SpecName:               nsName,
-		ClientSet:              w.ClusterProxyInterface.GetClientSet(),
-		Client:                 w.ClusterProxyInterface.GetClient(),
-		Kubeconfig:             w.ClusterProxyInterface.GetKubeconfigPath(),
-		StorageClassName:       scName,
-		WorkerStorageClassName: wscName,
-		Config:                 config,
-		WCPClient:              w.wcpAPI,
-		ArtifactFolder:         artifactFolder,
-		VMServiceSpec:          vmsvcSpecs,
+		SpecName:         nsName,
+		ClientSet:        w.ClusterProxyInterface.GetClientSet(),
+		Client:           w.ClusterProxyInterface.GetClient(),
+		Kubeconfig:       w.ClusterProxyInterface.GetKubeconfigPath(),
+		StorageClassName: scName,
+		WCPClient:        w.wcpAPI,
+		ArtifactFolder:   artifactFolder,
+		VMServiceSpec:    vmsvcSpecs,
 	})
 
 	return NamespaceContext{
@@ -235,22 +233,20 @@ func (w *WCPClusterProxy) DeleteZonesFromNamespace(ctx context.Context, nsName s
 // CreateWCPNamespaceWithNetwork applies wcp api to create a namespace in wcp cluster with the given specs.
 func (w *WCPClusterProxy) CreateWCPNamespaceWithNetwork(ctx context.Context, config framework.ConfigInterface,
 	vmsvcSpecs wcp.VMServiceSpecDetails,
-	scName, wscName, nsName, artifactFolder string, network wcp.NameSpaceNetworkInfo) (NamespaceContext, error) {
+	scName, nsName, artifactFolder string, network wcp.NameSpaceNetworkInfo) (NamespaceContext, error) {
 	// we need to create namespace with vm class and bind it
 	// the CR of vm class will get deleted if the namespace owning it gets deleted
 	// we can assume that vcenter has default vm classes names present
 	namespace, cancelNsWatches := wcp.CreateNamespace(ctx, wcp.NamespaceCreateInput{
-		SpecName:               nsName,
-		ClientSet:              w.ClusterProxyInterface.GetClientSet(),
-		Client:                 w.ClusterProxyInterface.GetClient(),
-		Kubeconfig:             w.ClusterProxyInterface.GetKubeconfigPath(),
-		StorageClassName:       scName,
-		WorkerStorageClassName: wscName,
-		Config:                 config,
-		WCPClient:              w.wcpAPI,
-		ArtifactFolder:         artifactFolder,
-		VMServiceSpec:          vmsvcSpecs,
-		Network:                &network,
+		SpecName:         nsName,
+		ClientSet:        w.ClusterProxyInterface.GetClientSet(),
+		Client:           w.ClusterProxyInterface.GetClient(),
+		Kubeconfig:       w.ClusterProxyInterface.GetKubeconfigPath(),
+		StorageClassName: scName,
+		WCPClient:        w.wcpAPI,
+		ArtifactFolder:   artifactFolder,
+		VMServiceSpec:    vmsvcSpecs,
+		Network:          &network,
 	})
 
 	return NamespaceContext{
@@ -342,7 +338,7 @@ func (s *SimulatedWCPClusterProxy) applyWithArgs(ctx context.Context, resources 
 // CreateWCPNamespace in simulatedwcpcluster type implements how to create a wcp namespace in kind cluster.
 func (s *SimulatedWCPClusterProxy) CreateWCPNamespaceWithNetwork(ctx context.Context, config framework.ConfigInterface,
 	vmsvcSpecs wcp.VMServiceSpecDetails,
-	scName, wscName, nsName, artifactFolder string, network wcp.NameSpaceNetworkInfo) (NamespaceContext, error) {
+	scName, nsName, artifactFolder string, network wcp.NameSpaceNetworkInfo) (NamespaceContext, error) {
 	return NamespaceContext{}, nil
 }
 
@@ -359,7 +355,7 @@ func (s *SimulatedWCPClusterProxy) CreateWCPNamespaceWithVMReservation(
 // CreateWCPNamespace in simulatedwcpcluster type implements how to create a wcp namespace in kind cluster.
 func (s *SimulatedWCPClusterProxy) CreateWCPNamespace(ctx context.Context, config framework.ConfigInterface,
 	vmsvcSpecs wcp.VMServiceSpecDetails,
-	scName, wscName, nsName, artifactFolder string) (NamespaceContext, error) {
+	scName, nsName, artifactFolder string) (NamespaceContext, error) {
 	namespace, cancelWatches := framework.CreateNamespaceAndWatchEvents(ctx, framework.CreateNamespaceAndWatchEventsInput{
 		Creator:   s.ClusterProxyInterface.GetClient(),
 		ClientSet: s.ClusterProxyInterface.GetClientSet(),

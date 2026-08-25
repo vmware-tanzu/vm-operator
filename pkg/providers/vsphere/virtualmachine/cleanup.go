@@ -17,6 +17,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 )
 
@@ -56,6 +57,12 @@ func CleanupVMServiceState(
 	// Remove tag associations
 	if pkgcfg.FromContext(vmCtx).Features.VSpherePolicies {
 		removeTagAssociations(moVM.Config, &configSpec)
+	}
+
+	// Clear the extension compatibility constraints VM Operator registered,
+	// since it no longer manages this VM.
+	if pkgcfg.FromContext(vmCtx).Features.ExtensionCompatConstraint {
+		ClearConfigSpecExtensionCompatibilityConstraint(moVM.Config, &configSpec)
 	}
 
 	// Apply the configuration changes
@@ -179,10 +186,22 @@ func reconfigureVM(
 	vcVM *object.VirtualMachine,
 	configSpec vimtypes.VirtualMachineConfigSpec) error {
 
-	// Check if there are any changes to apply
-	if len(configSpec.ExtraConfig) == 0 && configSpec.ManagedBy == nil && len(configSpec.TagSpecs) == 0 {
+	// Check if there are any changes to apply. This must stay above the
+	// bypass gate below: setting the skip flag unconditionally would turn
+	// every no-op cleanup call into a real reconfigure task.
+	if len(configSpec.ExtraConfig) == 0 && configSpec.ManagedBy == nil &&
+		len(configSpec.TagSpecs) == 0 && configSpec.ExtensionCompatibilityConstraint == nil {
 		// No changes to apply
 		return nil
+	}
+
+	// VM Operator registered these constraints on the VM (see CreateConfigSpec
+	// and the extension compat constraint reconciler), so its own reconfigures
+	// -- including this one, which unsets managedBy as part of releasing the
+	// VM -- must not be blocked by them. VM Operator holds the
+	// ExtensionCompat.Bypass privilege required for vpxd to honor this flag.
+	if pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint {
+		configSpec.SkipExtensionCompatibilityChecks = ptr.To(true)
 	}
 
 	task, err := vcVM.Reconfigure(ctx, configSpec)

@@ -9,8 +9,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	_ "github.com/vmware-tanzu/vm-operator/test/builder/log"
 )
 
 func TestSuite(t *testing.T) {

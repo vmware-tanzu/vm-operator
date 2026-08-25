@@ -10,6 +10,7 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 )
 
@@ -150,6 +151,83 @@ var _ = Describe("UpdateConfigSpecExtensionCompatibilityConstraint", func() {
 
 		It("does not modify the ConfigSpec", func() {
 			Expect(configSpec.ExtensionCompatibilityConstraint).To(BeNil())
+		})
+	})
+})
+
+var _ = Describe("ClearConfigSpecExtensionCompatibilityConstraint", func() {
+
+	var (
+		config     *vimtypes.VirtualMachineConfigInfo
+		configSpec *vimtypes.VirtualMachineConfigSpec
+	)
+
+	BeforeEach(func() {
+		config = &vimtypes.VirtualMachineConfigInfo{
+			ManagedBy: &vimtypes.ManagedByInfo{
+				ExtensionKey: vmopv1.ManagedByExtensionKey,
+				Type:         vmopv1.ManagedByExtensionType,
+			},
+			ExtensionCompatibilityConstraint: &vimtypes.VirtualMachineExtensionCompatibilityConstraintSet{
+				Constraint: []vimtypes.VirtualMachineExtensionCompatibilityConstraint{
+					{ConstraintType: string(vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeDEVICE)},
+				},
+			},
+		}
+		configSpec = &vimtypes.VirtualMachineConfigSpec{}
+	})
+
+	JustBeforeEach(func() {
+		virtualmachine.ClearConfigSpecExtensionCompatibilityConstraint(config, configSpec)
+	})
+
+	When("config is nil", func() {
+		BeforeEach(func() {
+			config = nil
+		})
+
+		It("does not modify the ConfigSpec", func() {
+			Expect(configSpec.ExtensionCompatibilityConstraint).To(BeNil())
+		})
+	})
+
+	When("config has no constraint set", func() {
+		BeforeEach(func() {
+			config.ExtensionCompatibilityConstraint = nil
+		})
+
+		It("does not modify the ConfigSpec", func() {
+			Expect(configSpec.ExtensionCompatibilityConstraint).To(BeNil())
+		})
+	})
+
+	When("config has a constraint set but is not managed by VM Operator", func() {
+		BeforeEach(func() {
+			config.ManagedBy = nil
+		})
+
+		It("does not modify the ConfigSpec", func() {
+			Expect(configSpec.ExtensionCompatibilityConstraint).To(BeNil())
+		})
+	})
+
+	When("config has a constraint set but is managed by a different extension", func() {
+		BeforeEach(func() {
+			config.ManagedBy = &vimtypes.ManagedByInfo{
+				ExtensionKey: "some.other.extension",
+				Type:         "someType",
+			}
+		})
+
+		It("does not modify the ConfigSpec", func() {
+			Expect(configSpec.ExtensionCompatibilityConstraint).To(BeNil())
+		})
+	})
+
+	When("config has a constraint set and is managed by VM Operator", func() {
+		It("sets a non-nil, empty constraint set on the ConfigSpec", func() {
+			Expect(configSpec.ExtensionCompatibilityConstraint).ToNot(BeNil())
+			Expect(configSpec.ExtensionCompatibilityConstraint.Constraint).To(BeEmpty())
 		})
 	})
 })

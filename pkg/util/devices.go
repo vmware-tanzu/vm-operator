@@ -312,6 +312,8 @@ type VirtualDiskInfo struct {
 	CryptoKey       *vimtypes.CryptoKeyId
 	Sharing         vimtypes.VirtualDiskSharing
 	DiskMode        vimtypes.VirtualDiskMode
+	ThinProvisioned *bool
+	EagerlyScrub    *bool
 	HasParent       bool
 	ControllerKey   int32
 	UnitNumber      *int32
@@ -372,6 +374,8 @@ func GetVirtualDiskInfo(
 		vdi.UUID = tb.Uuid
 		vdi.CryptoKey = tb.KeyId
 		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+		vdi.ThinProvisioned = tb.ThinProvisioned
+		vdi.EagerlyScrub = tb.EagerlyScrub
 		vdi.HasParent = tb.Parent != nil
 		vdi.BackingType = cnstypes.CnsVolumeBackingTypeFlatVer2BackingInfo
 		vdi.DiskMode = vimtypes.VirtualDiskMode(tb.DiskMode)
@@ -483,6 +487,22 @@ func GetVolumeSharingModeFromDiskSharing(diskSharing vimtypes.VirtualDiskSharing
 		return vmopv1.VolumeSharingModeNone, nil
 	default:
 		return "", fmt.Errorf("unsupported sharing mode: %s", diskSharing)
+	}
+}
+
+// GetVolumeProvisioningMode derives a Volume provisioning mode from a disk's
+// ThinProvisioned and EagerlyScrub backing properties.
+// Returns an empty mode if the provisioning mode cannot be determined.
+func GetVolumeProvisioningMode(thinProvisioned, eagerlyScrub *bool) vmopv1.VolumeProvisioningMode {
+	switch {
+	case thinProvisioned != nil && *thinProvisioned:
+		return vmopv1.VolumeProvisioningModeThin
+	case eagerlyScrub != nil && *eagerlyScrub:
+		return vmopv1.VolumeProvisioningModeThickEagerZero
+	case thinProvisioned != nil && !*thinProvisioned:
+		return vmopv1.VolumeProvisioningModeThick
+	default:
+		return ""
 	}
 }
 

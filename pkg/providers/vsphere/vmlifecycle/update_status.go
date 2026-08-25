@@ -1579,9 +1579,9 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 	}
 
 	// Update the status.
-	existingDisksInConfig := map[string]struct{}{}
+	existingDisksInConfig := make(map[string]pkgvol.VirtualDiskInfo, len(info.Disks))
 	for _, di := range info.Disks {
-		existingDisksInConfig[di.UUID] = struct{}{}
+		existingDisksInConfig[di.UUID] = di
 
 		if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
 			// The disk is already in the list of volume statuses, so update the
@@ -1600,6 +1600,9 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 					KeyID:      ddi.CryptoKey.KeyID,
 				}
 			}
+			// ProvisioningMode is set later in a single pass for all volumes
+			// (both classic and managed); DiskMode and SharingMode may also
+			// be overridden there if vSphere reports an explicit value.
 			// This is for a rare case when VM is upgraded from v1alpha3 to
 			// v1alpha4+. Since vm.status.volume.requested was introduced in
 			// v1alpha4. So we need to patch it if it's missing from status for
@@ -1683,6 +1686,9 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 					KeyID:      ddi.CryptoKey.KeyID,
 				}
 			}
+			// ProvisioningMode is set later in a single pass for all volumes
+			// (both classic and managed); DiskMode and SharingMode may also
+			// be overridden there if vSphere reports an explicit value.
 			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
 		}
 	}
@@ -1699,6 +1705,48 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				return false
 			}
 		})
+
+	// Update disk attachment properties for ALL volumes (classic and managed).
+	// This is done in a single pass, after both loops above, because managed
+	// volumes are populated separately by the volume/batch-attach controllers
+	// from CnsNodeVMBatchAttachment (or the legacy CnsNodeVmAttachment) status,
+	// neither of which includes DiskMode, SharingMode, or ProvisioningMode. We
+	// backfill those properties here by matching DiskUUID with vSphere disk
+	// info, reusing existingDisksInConfig built above.
+	for i := range vm.Status.Volumes {
+		vol := &vm.Status.Volumes[i]
+		if vol.DiskUUID == "" {
+			continue
+		}
+
+		di, ok := existingDisksInConfig[vol.DiskUUID]
+		if !ok {
+			vmCtx.Logger.V(4).Info("No disk info found for volume",
+				"volumeName", vol.Name,
+				"volumeType", vol.Type,
+				"diskUUID", vol.DiskUUID)
+			continue
+		}
+
+		// Populate disk attachment properties from vSphere disk info. Only
+		// override DiskMode/SharingMode when vSphere reports an explicit,
+		// non-empty value; an empty value here does not necessarily mean
+		// the disk is unset, and the AllDisksArePVCs/VMSharedDisks path
+		// above already defaults those cases to Persistent/None.
+		if di.DiskMode != "" {
+			if diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode); err == nil {
+				vol.DiskMode = diskMode
+			}
+		}
+		if di.Sharing != "" {
+			if sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing); err == nil {
+				vol.SharingMode = sharingMode
+			}
+		}
+		if provMode := pkgutil.GetVolumeProvisioningMode(di.ThinProvisioned, di.EagerlyScrub); provMode != "" {
+			vol.ProvisioningMode = provMode
+		}
+	}
 
 	// This sort order is consistent with the logic from the volumes controller.
 	vmopv1.SortVirtualMachineVolumeStatuses(vm.Status.Volumes)

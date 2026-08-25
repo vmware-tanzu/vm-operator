@@ -22,52 +22,18 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
-const (
-	// kubectlRetryInterval and kubectlRetryTimeout bound how long
-	// CreateWithArgs, DeleteWithArgs, and ApplyWithArgs will keep retrying a
-	// kubectl call that fails with a transient connectivity error -- e.g. the
-	// conversion webhook being briefly unreachable during a vm-operator pod
-	// rollout -- rather than a real admission/validation failure.
-	kubectlRetryInterval = 15 * time.Second
-	kubectlRetryTimeout  = 4 * time.Minute
-)
-
-// retryableKubectlErrSubstrings are lower-cased substrings of stdout/stderr/
-// error text that indicate a transient failure talking to the supervisor API
-// server, or a webhook it calls out to, rather than a real admission or
-// validation error that would just fail again. Only these are retried.
-var retryableKubectlErrSubstrings = []string{
-	"dial tcp",
-	"connection refused",
-	"connection reset by peer",
-	"i/o timeout",
-	"tls handshake timeout",
-	"unexpected eof",
-	"broken pipe",
-	"http2: server sent goaway",
-	"context deadline exceeded",
-	"no endpoints available for service",
-	"unable to connect to the server",
-	"error trying to reach service",
-	"the server is currently unable to handle the request",
-}
-
 // isRetryableKubectlError reports whether stdout/stderr/err look like a
 // transient connectivity failure worth retrying, as opposed to a real error
-// from kubectl or the API server.
+// from kubectl or the API server. Shares its classification (and retry
+// interval/timeout, see retryKubectlOnTransientError below) with the
+// controller-runtime client retry in framework.NewRetryableClient, so both
+// paths recognize the same class of outage.
 func isRetryableKubectlError(stdout, stderr []byte, err error) bool {
 	if err == nil {
 		return false
 	}
 
-	msg := strings.ToLower(string(stdout) + " " + string(stderr) + " " + err.Error())
-	for _, substr := range retryableKubectlErrSubstrings {
-		if strings.Contains(msg, substr) {
-			return true
-		}
-	}
-
-	return false
+	return framework.IsRetryableTransientErrString(string(stdout) + " " + string(stderr) + " " + err.Error())
 }
 
 // alreadySucceededFunc reports whether a retried write actually landed on a
@@ -92,10 +58,11 @@ func kubectlDeleteAlreadySucceeded(_, stderr []byte) bool {
 	return strings.Contains(s, "NotFound") || strings.Contains(s, "not found")
 }
 
-// retryKubectlOnTransientError runs fn, retrying every kubectlRetryInterval
-// for up to kubectlRetryTimeout, but only while fn's error is classified as
-// a transient connectivity failure by isRetryableKubectlError. Any other
-// error is returned immediately.
+// retryKubectlOnTransientError runs fn, retrying every
+// framework.TransientRetryInterval for up to framework.TransientRetryTimeout,
+// but only while fn's error is classified as a transient connectivity
+// failure by isRetryableKubectlError. Any other error is returned
+// immediately.
 //
 // succeeded, when non-nil, is checked on attempts after the first: if fn
 // fails but succeeded reports the write already landed (e.g. AlreadyExists
@@ -118,7 +85,7 @@ func retryKubectlOnTransientError(
 
 	start := time.Now()
 
-	pollErr := wait.PollUntilContextTimeout(ctx, kubectlRetryInterval, kubectlRetryTimeout, true,
+	pollErr := wait.PollUntilContextTimeout(ctx, framework.TransientRetryInterval, framework.TransientRetryTimeout, true,
 		func(pollCtx context.Context) (bool, error) {
 			attempt++
 
@@ -144,7 +111,7 @@ func retryKubectlOnTransientError(
 			}
 
 			e2eframework.Logf("kubectl %s: attempt %d failed with a transient error, retrying in %s (elapsed %s): %v\nstderr: %s",
-				op, attempt, kubectlRetryInterval, time.Since(start).Round(time.Second), err, string(stderr))
+				op, attempt, framework.TransientRetryInterval, time.Since(start).Round(time.Second), err, string(stderr))
 
 			return false, nil
 		})

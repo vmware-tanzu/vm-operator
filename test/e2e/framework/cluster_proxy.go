@@ -132,7 +132,12 @@ func (p *clusterProxy) GetScheme() *runtime.Scheme {
 	return p.scheme
 }
 
-// GetClient returns a controller-runtime client for the cluster.
+// GetClient returns a controller-runtime client for the cluster. The
+// returned client retries Get, Create, Update, Patch, Delete, and
+// DeleteAllOf on transient connectivity errors -- e.g. the conversion
+// webhook being briefly unreachable during a vm-operator pod rollout --
+// instead of failing an entire e2e spec on a single blip. See
+// NewRetryableClient.
 func (p *clusterProxy) GetClient() client.Client {
 	config := p.GetRESTConfig()
 
@@ -150,7 +155,7 @@ func (p *clusterProxy) GetClient() client.Client {
 		return c
 	}, 5*time.Minute, 10*time.Second).ShouldNot(BeNil(), "Failed to get controller-runtime client")
 
-	return c
+	return NewRetryableClient(c)
 }
 
 // GetClientSet returns a client-go client for the cluster.

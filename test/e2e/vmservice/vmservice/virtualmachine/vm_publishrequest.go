@@ -788,8 +788,9 @@ func setupNonAdminUserForTests(ctx context.Context, vimClient *vim25.Client, ssh
 	restCfg, err := clientcmd.BuildConfigFromFlags("", kubectlPlugin.KubeconfigPath())
 	Expect(err).NotTo(HaveOccurred())
 
-	nonAdminClient, err := ctrlclient.New(restCfg, ctrlclient.Options{Scheme: svClusterProxy.GetScheme()})
+	rawNonAdminClient, err := ctrlclient.New(restCfg, ctrlclient.Options{Scheme: svClusterProxy.GetScheme()})
 	Expect(err).NotTo(HaveOccurred())
+	nonAdminClient := framework.NewRetryableClient(rawNonAdminClient)
 
 	By("Checking if non-admin user kubeconfig is able to do basic operations")
 

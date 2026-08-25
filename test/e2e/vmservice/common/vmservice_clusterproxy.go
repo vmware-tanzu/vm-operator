@@ -332,6 +332,9 @@ func (p *VMServiceClusterProxy) NewAdminClusterProxy(ctx context.Context) (*VMSe
 	return proxy, nil
 }
 
+// GetAdminClient returns a controller-runtime client for the cluster using the
+// admin identity. Like GetClient, the returned client retries on transient
+// connectivity errors; see framework.NewRetryableClient.
 func (p *VMServiceClusterProxy) GetAdminClient() (client.Client, error) {
 	config := p.GetRESTConfig()
 
@@ -341,7 +344,12 @@ func (p *VMServiceClusterProxy) GetAdminClient() (client.Client, error) {
 	config.Insecure = true
 	config.CAData = nil
 
-	return client.New(config, client.Options{Scheme: p.GetScheme()})
+	c, err := client.New(config, client.Options{Scheme: p.GetScheme()})
+	if err != nil {
+		return nil, err
+	}
+
+	return framework.NewRetryableClient(c), nil
 }
 
 func (p *VMServiceClusterProxy) Dispose(ctx context.Context) {

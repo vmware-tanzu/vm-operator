@@ -32,6 +32,24 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 )
 
+// StatusOptimisticLocker is implemented by API types whose status may be
+// independently read-modify-written by more than one controller (e.g. a
+// list field like VirtualMachine.Status.Volumes, written by both the
+// virtualmachine and volumebatch/volume controllers). When an object
+// implements this interface, the status patch includes the object's
+// resourceVersion as a precondition, so a concurrent writer's change can't
+// be silently overwritten - the patch instead fails with a conflict,
+// triggering a normal reconcile requeue. Types that don't implement this
+// keep the default, conflict-free status patch: requiring every object's
+// status patch to tolerate a conflict isn't free (any concurrent write to
+// *any* part of the object - not just the field actually at risk - now
+// costs a requeue), so only opt in types that genuinely need it.
+type StatusOptimisticLocker interface {
+	// OptimisticallyLockStatus reports whether the status subresource patch
+	// should include the object's resourceVersion as a precondition.
+	OptimisticallyLockStatus() bool
+}
+
 // Helper is a utility for ensuring the proper patching of objects.
 type Helper struct {
 	client       client.Client
@@ -41,7 +59,8 @@ type Helper struct {
 	after        *unstructured.Unstructured
 	changes      map[string]bool
 
-	isConditionsSetter bool
+	isConditionsSetter   bool
+	statusOptimisticLock bool
 }
 
 // NewHelper returns an initialized Helper.
@@ -67,12 +86,18 @@ func NewHelper(obj client.Object, crClient client.Client) (*Helper, error) {
 	// Check if the object satisfies the Cluster API conditions contract.
 	_, canInterfaceConditions := obj.(conditions.Setter)
 
+	statusOptimisticLock := false
+	if locker, ok := obj.(StatusOptimisticLocker); ok {
+		statusOptimisticLock = locker.OptimisticallyLockStatus()
+	}
+
 	return &Helper{
-		client:             crClient,
-		gvk:                gvk,
-		before:             unstructuredObj,
-		beforeObject:       obj.DeepCopyObject().(client.Object),
-		isConditionsSetter: canInterfaceConditions,
+		client:               crClient,
+		gvk:                  gvk,
+		before:               unstructuredObj,
+		beforeObject:         obj.DeepCopyObject().(client.Object),
+		isConditionsSetter:   canInterfaceConditions,
+		statusOptimisticLock: statusOptimisticLock,
 	}, nil
 }
 
@@ -126,17 +151,21 @@ func (h *Helper) Patch(ctx context.Context, obj client.Object, opts ...Option) e
 	}
 
 	// Issue patches and return errors in an aggregate.
+	//
+	// h.patchStatus goes first: for a StatusOptimisticLocker, it sends
+	// h.beforeObject's resourceVersion as a precondition, so it must run
+	// before anything else that could itself succeed and bump the object's
+	// resourceVersion out from under that stale snapshot. h.patch
+	// (spec/metadata) carries no precondition, so it doesn't matter whether
+	// it runs before or after. h.patchStatusConditions goes last: unlike
+	// h.patchStatus, it already tolerates - and expects - a stale starting
+	// point, since its retry loop re-fetches the object before every
+	// attempt. (For objects that aren't a StatusOptimisticLocker, none of
+	// this ordering affects correctness - it's a no-op reshuffle.)
 	return apierrorsutil.NewAggregate([]error{
-		// Patch the conditions first.
-		//
-		// Given that we pass in metadata.resourceVersion to perform a 3-way-merge conflict resolution,
-		// patching conditions first avoids an extra loop if spec or status patch succeeds first
-		// given that causes the resourceVersion to mutate.
-		h.patchStatusConditions(ctx, obj, options.ForceOverwriteConditions, options.OwnedConditions),
-
-		// Then proceed to patch the rest of the object.
-		h.patch(ctx, obj),
 		h.patchStatus(ctx, obj),
+		h.patch(ctx, obj),
+		h.patchStatusConditions(ctx, obj, options.ForceOverwriteConditions, options.OwnedConditions),
 	})
 }
 
@@ -152,7 +181,13 @@ func (h *Helper) patch(ctx context.Context, obj client.Object) error {
 	return h.client.Patch(ctx, afterObject, client.MergeFrom(beforeObject))
 }
 
-// patchStatus issues a patch if the status has changed.
+// patchStatus issues a patch if the status has changed. For objects
+// implementing StatusOptimisticLocker, the patch includes the object's
+// resourceVersion as a precondition (optimistic locking), so a concurrent
+// status write from another controller causes this patch to fail with a
+// conflict (triggering a requeue) instead of silently replacing whatever
+// that other controller wrote in the meantime - see StatusOptimisticLocker's
+// doc comment for why this isn't the default for every type.
 func (h *Helper) patchStatus(ctx context.Context, obj client.Object) error {
 	if !h.shouldPatch("status") {
 		return nil
@@ -161,7 +196,37 @@ func (h *Helper) patchStatus(ctx context.Context, obj client.Object) error {
 	if err != nil {
 		return err
 	}
-	return h.client.Status().Patch(ctx, afterObject, client.MergeFrom(beforeObject))
+
+	if !h.statusOptimisticLock {
+		return h.client.Status().Patch(ctx, afterObject, client.MergeFrom(beforeObject))
+	}
+
+	// shouldPatch("status") is computed from the *unstripped* object, so a
+	// change that's entirely within status.conditions (handled separately by
+	// patchStatusConditions, and already excluded from beforeObject/
+	// afterObject above) still lands here with nothing left to send. Skip
+	// the patch in that case: MergeFromWithOptimisticLock embeds
+	// beforeObject's resourceVersion into the patch body regardless of
+	// whether there's any real content, so issuing it anyway would risk a
+	// spurious conflict for what is otherwise a no-op.
+	diff, err := client.MergeFrom(beforeObject).Data(afterObject)
+	if err != nil {
+		return err
+	}
+
+	var diffMap map[string]any
+
+	err = json.Unmarshal(diff, &diffMap)
+	if err != nil {
+		return err
+	}
+
+	if len(diffMap) == 0 {
+		return nil
+	}
+
+	return h.client.Status().Patch(ctx, afterObject,
+		client.MergeFromWithOptions(beforeObject, client.MergeFromWithOptimisticLock{}))
 }
 
 // patchStatusConditions issues a patch if there are any changes to the conditions slice under

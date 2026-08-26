@@ -1596,6 +1596,14 @@ func (vm *VirtualMachine) SetConditions(conditions []metav1.Condition) {
 	vm.Status.Conditions = conditions
 }
 
+// OptimisticallyLockStatus implements pkg/patch's StatusOptimisticLocker.
+// Status.Volumes is independently read-modify-written by the virtualmachine
+// controller and by the volumebatch/volume controllers, so a status patch
+// must fail on a concurrent write rather than silently overwrite it.
+func (vm *VirtualMachine) OptimisticallyLockStatus() bool {
+	return true
+}
+
 func (vm VirtualMachine) GetMemberKind() string {
 	return "VirtualMachine"
 }

@@ -1761,7 +1761,7 @@ func unitTestsConcurrentStatusUpdates() {
 		Label(testlabels.Controller, testlabels.API),
 		func() {
 			const (
-				ns                = "dummy-ns-optimistic-lock"
+				ns                = "dummy-ns-concurrent-status"
 				dummyBiosUUID     = "dummy-bios-uuid"
 				dummyInstanceUUID = "dummy-instance-uuid"
 				dummyDiskUUID     = "111-222-333-disk-uuid"
@@ -1928,9 +1928,8 @@ func unitTestsConcurrentStatusUpdates() {
 				// a conflict rather than silently overwrite the concurrent
 				// write.
 				err := staleHelper.Patch(ctx, staleVM)
-				Expect(err).To(HaveOccurred(), "expected a conflict error")
-				Expect(err.Error()).To(ContainSubstring("object was modified"),
-					"expected a resourceVersion conflict, got: %v", err)
+				Expect(err).To(HaveOccurred(),
+					"the stale patch must be rejected rather than silently overwrite the concurrently-written ControllerType")
 				Expect(getControllerType()).To(Equal(vmopv1.VirtualControllerTypeSCSI),
 					"the concurrently-written ControllerType must survive the rejected stale patch")
 

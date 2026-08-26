@@ -326,7 +326,7 @@ func checkVolumes(
 		// Ignore Attached status here since we will be checking again the
 		// hardware status directly.
 		if volStatus.DiskUUID != "" {
-			volNameByDiskUUID[volStatus.DiskUUID] = volStatus.Name
+			volNameByDiskUUID[strings.ToLower(volStatus.DiskUUID)] = volStatus.Name
 		}
 	}
 
@@ -338,7 +338,7 @@ func checkVolumes(
 	for _, diskPlacement := range hwInfo.Disks.UnsortedList() {
 		// Look up volume name by disk UUID
 		// diskPlacement.Key is the disk UUID (from BuildHardwareInfo)
-		if volName, found := volNameByDiskUUID[diskPlacement.Key]; found {
+		if volName, found := volNameByDiskUUID[strings.ToLower(diskPlacement.Key)]; found {
 			actual.Insert(pkgutil.DevicePlacement{
 				Key:                 volName, // Use volume name as the key
 				ControllerType:      diskPlacement.ControllerType,

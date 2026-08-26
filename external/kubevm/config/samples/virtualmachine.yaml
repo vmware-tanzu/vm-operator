@@ -27,7 +27,11 @@ spec:
         kind: VirtualMachineImage
         name: ubuntu-2204
     sizeGiB: 50
-    storageClass: fast
+    # Performance lives in an admin-published class, not in fields here, and
+    # the two class fields mirror PersistentVolumeClaim: the provisioning class
+    # is immutable, the attributes class is how QoS changes later.
+    storageClassName: fast
+    volumeAttributesClassName: gold-qos
 
   # Guest-wide network settings live alongside the interface list.
   network:

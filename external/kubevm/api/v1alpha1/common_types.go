@@ -15,10 +15,27 @@ package v1alpha1
 // server. Second, these spellings match VM Operator's existing
 // VirtualMachinePowerState, so the vSphere provider needs no value mapping.
 //
-// Suspended is a capability-gated value: vSphere and GCP can suspend, but EC2
-// only hibernates, and only for hibernation-enabled instances. A provider that
-// cannot honor Suspended must reject it at admission rather than silently
-// treating it as PoweredOff.
+// Suspended does not generalize cleanly, and is retained as a capability-gated
+// value rather than a universally supported one.
+//
+// The preconditions differ sharply. GCE can suspend, but not an instance with
+// attached accelerators, not one on Spot capacity, only where the guest
+// cooperates with ACPI S3, and only for a bounded period after which the
+// instance is terminated — while still billing for the preserved memory. EC2
+// does not suspend at all; it hibernates, only for instances created with
+// hibernation configured, and notably not on the GPU-bearing P and G families.
+// Azure draws a distinction this enum cannot express at all, between a stopped
+// instance that still holds its allocation and one that has been deallocated.
+//
+// A provider that cannot honor Suspended reports that through the UpToDate
+// condition with reason UnsupportedByProvider. It does not reject the write:
+// the generic API server cannot evaluate provider-dependent validity without
+// knowing which provider will service the object, and on EC2 the answer depends
+// on a field of the provider object that the portable object's webhook cannot
+// see. Note also that hibernation is not separately observable on EC2 — a
+// hibernated instance reports the stopped state with a distinguishing reason
+// code — so Suspended is not reliably reflected back through the status
+// contract either.
 type PowerState string
 
 const (
@@ -35,6 +52,20 @@ const (
 // +kubebuilder:validation:Enum=Hard;Soft;TrySoft
 
 // PowerOpMode describes how a power-off or suspend operation is performed.
+//
+// This does not generalize evenly, and the values are capability-gated rather
+// than universal. On GCE, TrySoft is the only implementable value: stopping an
+// instance always signals the guest and then forces after a fixed grace period,
+// there is no hard-only stop, and nothing surfaces a guest's refusal. On EC2,
+// TrySoft and Hard both map cleanly, but Soft — fail if the guest does not
+// comply — has no representation, because EC2 never reports that the guest
+// declined. vSphere implements all three.
+//
+// A related gap this field does not close: some platforms take arguments to the
+// power operation itself rather than to the machine. Stopping a GCE instance
+// with local SSDs requires answering whether that data is discarded, which is
+// destructive and irreversible, and a purely declarative desired state has
+// nowhere to carry it.
 type PowerOpMode string
 
 const (
@@ -49,21 +80,6 @@ const (
 )
 
 // +kubebuilder:validation:Enum=Pending;Provisioning;Running;Stopping;Stopped;Suspended;Failed;Deleting
-
-// VirtualMachinePhase is a portable, human-readable lifecycle summary derived
-// from the provider's reported instance state.
-type VirtualMachinePhase string
-
-const (
-	VirtualMachinePhasePending      VirtualMachinePhase = "Pending"
-	VirtualMachinePhaseProvisioning VirtualMachinePhase = "Provisioning"
-	VirtualMachinePhaseRunning      VirtualMachinePhase = "Running"
-	VirtualMachinePhaseStopping     VirtualMachinePhase = "Stopping"
-	VirtualMachinePhaseStopped      VirtualMachinePhase = "Stopped"
-	VirtualMachinePhaseSuspended    VirtualMachinePhase = "Suspended"
-	VirtualMachinePhaseFailed       VirtualMachinePhase = "Failed"
-	VirtualMachinePhaseDeleting     VirtualMachinePhase = "Deleting"
-)
 
 // Condition types reported on a VirtualMachine.
 //
@@ -165,10 +181,22 @@ const (
 //
 // Two deliberate omissions.
 //
-// There is no namespace field. A referent is always in the same namespace as
-// the referring VirtualMachine, so a VirtualMachine cannot reach across a
-// namespace boundary to adopt an object or read a catalog entry it was not
-// granted.
+// There is no namespace field, and the scope of a referent therefore follows
+// from its kind: a namespaced kind resolves in the VirtualMachine's own
+// namespace, and a cluster-scoped kind resolves globally. The infrastructure
+// object is namespaced, so a VirtualMachine cannot reach across a namespace
+// boundary to adopt one. A StorageClass is cluster-scoped, so naming one is not
+// a cross-namespace reference at all.
+//
+// What this shape cannot yet express is a reference to a namespaced object in a
+// *different* namespace, which is a real gap rather than a decision. Catalogs
+// are routinely shared: an EC2 AMI is regional and account-scoped, a GCE image
+// is global and commonly lives in another project entirely, and instance types
+// and network definitions are shared across workloads. Requiring a copy of
+// every such object in every namespace does not scale, and a cross-namespace
+// reference cannot be added without also deciding how the referent grants
+// permission — the problem ReferenceGrant solves in Gateway API. That decision
+// is open.
 //
 // There is no version field. Naming a version here would pin it into every
 // referring object, so a provider could not roll its API forward without
@@ -242,6 +270,13 @@ const (
 
 // VirtualMachineAddress is an observed network address for a virtual machine.
 type VirtualMachineAddress struct {
+	// +optional
+
+	// Interface names the entry in spec.network.interfaces this address belongs
+	// to, where the provider can attribute it. Empty when the provider reports
+	// addresses without per-interface attribution.
+	Interface string `json:"interface,omitempty"`
+
 	// +required
 
 	// Type describes the reachability scope of this address.

@@ -23,11 +23,11 @@ spec:
     - jsonPath: .status.powerState
       name: Power
       type: string
-    - jsonPath: .status.phase
-      name: Phase
-      type: string
-    - jsonPath: .status.ready
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
       type: string
     - jsonPath: .status.providerID
       name: Provider-ID
@@ -179,10 +179,62 @@ spec:
                     x-kubernetes-validations:
                     - message: boot disk source is immutable once the disk exists
                       rule: self == oldSelf
-                  storageClass:
+                  storageClassName:
                     description: |-
-                      StorageClass is a provider-interpreted storage selector — a vSphere
-                      storage policy, a GCP or EC2 disk type.
+                      StorageClassName names the storage.k8s.io StorageClass this disk is
+                      provisioned from.
+
+                      A named, administrator-published class rather than performance fields on
+                      this API, and that is deliberate. Disk performance knobs do not port:
+                      EC2 expresses gp3 and io2 performance as provisioned IOPS and throughput
+                      decoupled from size, GCE Hyperdisk does the same but gates it on machine
+                      family, and vSphere expresses the whole thing as an SPBM policy. Hoisting
+                      those into a portable schema would put platform-specific numbers with
+                      platform-specific limits into the one object meant to travel.
+
+                      Kubernetes already solves this. StorageClass carries opaque,
+                      provisioner-specific parameters, and the EBS and GCE PD CSI drivers
+                      already accept disk type, IOPS, and throughput there. It is also the same
+                      admin-curated-catalog-behind-a-stable-name pattern this API already uses
+                      for instance types and images, so disks are not a special case.
+
+                      A bare name rather than an object reference, matching
+                      PersistentVolumeClaim's storageClassName. Elsewhere this API requires an
+                      explicit group and kind so a provider can substitute its own type, but
+                      StorageClass is a standard cluster-scoped Kubernetes resource whose kind
+                      is never in question, and a reference here would invite pointing it
+                      somewhere it does not belong.
+
+                      Immutable, as on a PersistentVolumeClaim, and for a real reason: the disk
+                      type it selects is fixed at creation on at least one platform, since GCE
+                      cannot change a disk's type in place. Changing performance afterward is
+                      what VolumeAttributesClassName is for.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: storageClassName is immutable
+                      rule: self == oldSelf
+                  volumeAttributesClassName:
+                    description: |-
+                      VolumeAttributesClassName names the storage.k8s.io VolumeAttributesClass
+                      describing this disk's mutable quality of service.
+
+                      Where StorageClassName fixes what the disk is at creation, this is the
+                      knob that can be turned afterward. Repointing it asks the provider to
+                      change the disk's quality of service, which the EBS and GCE PD CSI
+                      drivers both support for type, IOPS, and throughput via ModifyVolume.
+                      This mirrors PersistentVolumeClaim exactly: an immutable provisioning
+                      class alongside a mutable attributes class.
+
+                      A change here is accepted rather than validated, because whether it can
+                      be applied now is a platform question. EC2 enforces a cooldown between
+                      successive modifications of one volume measured in hours, and the guest
+                      filesystem must be grown separately; that is reported through the
+                      UpToDate condition with reason RateLimited rather than by refusing the
+                      edit.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 required:
                 - source
@@ -227,7 +279,14 @@ spec:
                     type: object
                 type: object
               disks:
-                description: Disks are additional data disks.
+                description: |-
+                  Disks are additional data disks.
+
+                  Bounded because an unbounded list of objects carrying transition rules
+                  blows the API server's CEL cost budget, and because every platform has a
+                  ceiling anyway — 60 is vSphere's classic limit of four SCSI controllers
+                  at fifteen disks each. Raise it if a provider needs more; it is a
+                  validation limit, not a design position.
                 items:
                   description: DiskSpec describes an additional (data) disk.
                   properties:
@@ -239,6 +298,7 @@ spec:
                       description: |-
                         Name identifies this disk within the VirtualMachine. Must be unique
                         among the VM's disks.
+                      maxLength: 63
                       minLength: 1
                       type: string
                     sizeGiB:
@@ -328,14 +388,68 @@ spec:
                       x-kubernetes-validations:
                       - message: disk source is immutable once the disk exists
                         rule: self == oldSelf
-                    storageClass:
-                      description: StorageClass is a provider-interpreted storage
-                        selector.
+                    storageClassName:
+                      description: |-
+                        StorageClassName names the storage.k8s.io StorageClass this disk is
+                        provisioned from.
+
+                        A named, administrator-published class rather than performance fields on
+                        this API, and that is deliberate. Disk performance knobs do not port:
+                        EC2 expresses gp3 and io2 performance as provisioned IOPS and throughput
+                        decoupled from size, GCE Hyperdisk does the same but gates it on machine
+                        family, and vSphere expresses the whole thing as an SPBM policy. Hoisting
+                        those into a portable schema would put platform-specific numbers with
+                        platform-specific limits into the one object meant to travel.
+
+                        Kubernetes already solves this. StorageClass carries opaque,
+                        provisioner-specific parameters, and the EBS and GCE PD CSI drivers
+                        already accept disk type, IOPS, and throughput there. It is also the same
+                        admin-curated-catalog-behind-a-stable-name pattern this API already uses
+                        for instance types and images, so disks are not a special case.
+
+                        A bare name rather than an object reference, matching
+                        PersistentVolumeClaim's storageClassName. Elsewhere this API requires an
+                        explicit group and kind so a provider can substitute its own type, but
+                        StorageClass is a standard cluster-scoped Kubernetes resource whose kind
+                        is never in question, and a reference here would invite pointing it
+                        somewhere it does not belong.
+
+                        Immutable, as on a PersistentVolumeClaim, and for a real reason: the disk
+                        type it selects is fixed at creation on at least one platform, since GCE
+                        cannot change a disk's type in place. Changing performance afterward is
+                        what VolumeAttributesClassName is for.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: storageClassName is immutable
+                        rule: self == oldSelf
+                    volumeAttributesClassName:
+                      description: |-
+                        VolumeAttributesClassName names the storage.k8s.io VolumeAttributesClass
+                        describing this disk's mutable quality of service.
+
+                        Where StorageClassName fixes what the disk is at creation, this is the
+                        knob that can be turned afterward. Repointing it asks the provider to
+                        change the disk's quality of service, which the EBS and GCE PD CSI
+                        drivers both support for type, IOPS, and throughput via ModifyVolume.
+                        This mirrors PersistentVolumeClaim exactly: an immutable provisioning
+                        class alongside a mutable attributes class.
+
+                        A change here is accepted rather than validated, because whether it can
+                        be applied now is a platform question. EC2 enforces a cooldown between
+                        successive modifications of one volume measured in hours, and the guest
+                        filesystem must be grown separately; that is reported through the
+                        UpToDate condition with reason RateLimited rather than by refusing the
+                        edit.
+                      maxLength: 253
+                      minLength: 1
                       type: string
                   required:
                   - name
                   - source
                   type: object
+                maxItems: 60
                 type: array
                 x-kubernetes-list-map-keys:
                 - name
@@ -495,6 +609,7 @@ spec:
                           description: |-
                             Name identifies this interface within the VirtualMachine. Must be unique
                             among the VM's interfaces.
+                          maxLength: 63
                           minLength: 1
                           type: string
                         network:
@@ -531,8 +646,19 @@ spec:
                           type: object
                         publicIP:
                           description: |-
-                            PublicIP requests an externally reachable address. A provider that
-                            cannot supply one rejects this at admission.
+                            PublicIP requests an externally reachable address.
+
+                            Whether one can be supplied is generally not knowable at admission. On
+                            GCE it depends on an organization policy and on regional quota, and on
+                            EC2 on the subnet's configuration and the presence of an internet
+                            gateway — so the request can be accepted and still fail when the machine
+                            is created. Providers report that through conditions.
+
+                            A bool also under-models this. Both GCE and EC2 distinguish an
+                            ephemeral address, which is released and changes across a power cycle,
+                            from a reserved static one that is a separately billed resource. A VM
+                            that reports an external address today may report a different one after
+                            being stopped and started.
                           type: boolean
                       required:
                       - name
@@ -593,9 +719,18 @@ spec:
                 properties:
                   spot:
                     description: |-
-                      Spot requests preemptible/spot capacity. A provider with no such notion
-                      rejects a true value at admission rather than silently running the VM at
-                      full price.
+                      Spot requests preemptible or spot capacity.
+
+                      A provider with no such notion reports that through the UpToDate
+                      condition with reason UnsupportedByProvider rather than silently running
+                      the machine at full price. Note that acceptance is not a guarantee of
+                      capacity: both clouds can fail at create time when spot capacity is
+                      exhausted, which is reported with reason WaitingForCapacity and retried.
+
+                      A bool under-models this. It cannot carry a price ceiling, and it cannot
+                      say what should happen on reclamation — which matters, because on EC2 a
+                      spot machine created this way is terminated rather than stopped when
+                      reclaimed, taking its root volume with it.
                     type: boolean
                 type: object
               sshPublicKeys:
@@ -653,6 +788,12 @@ spec:
                     address:
                       description: Address is the IP address or DNS name.
                       minLength: 1
+                      type: string
+                    interface:
+                      description: |-
+                        Interface names the entry in spec.network.interfaces this address belongs
+                        to, where the provider can attribute it. Empty when the provider reports
+                        addresses without per-interface attribution.
                       type: string
                     type:
                       description: Type describes the reachability scope of this address.
@@ -754,20 +895,6 @@ spec:
                   reconciled.
                 format: int64
                 type: integer
-              phase:
-                description: |-
-                  Phase is a portable lifecycle summary derived from the provider's
-                  reported instance state.
-                enum:
-                - Pending
-                - Provisioning
-                - Running
-                - Stopping
-                - Stopped
-                - Suspended
-                - Failed
-                - Deleting
-                type: string
               powerState:
                 description: |-
                   PowerState is the observed power state, which may differ from the

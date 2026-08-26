@@ -14,7 +14,8 @@ import (
 // Exactly one of Name or Resources should be set. Name is the portable default,
 // because a named sizing profile is the one model every target platform has.
 // Resources is an optional provider capability for platforms that support
-// arbitrary sizing; a provider that cannot honor it rejects it at admission
+// arbitrary sizing; a provider that cannot honor it reports that through the
+// UpToDate condition with reason UnsupportedByProvider, rather than at admission
 // rather than silently rounding to a nearby profile.
 type InstanceTypeSpec struct {
 	// +optional
@@ -103,11 +104,62 @@ type BootDiskSpec struct {
 	// rather than by rejecting the edit.
 	SizeGiB *int64 `json:"sizeGiB,omitempty"`
 
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="storageClassName is immutable"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	// +optional
 
-	// StorageClass is a provider-interpreted storage selector — a vSphere
-	// storage policy, a GCP or EC2 disk type.
-	StorageClass string `json:"storageClass,omitempty"`
+	// StorageClassName names the storage.k8s.io StorageClass this disk is
+	// provisioned from.
+	//
+	// A named, administrator-published class rather than performance fields on
+	// this API, and that is deliberate. Disk performance knobs do not port:
+	// EC2 expresses gp3 and io2 performance as provisioned IOPS and throughput
+	// decoupled from size, GCE Hyperdisk does the same but gates it on machine
+	// family, and vSphere expresses the whole thing as an SPBM policy. Hoisting
+	// those into a portable schema would put platform-specific numbers with
+	// platform-specific limits into the one object meant to travel.
+	//
+	// Kubernetes already solves this. StorageClass carries opaque,
+	// provisioner-specific parameters, and the EBS and GCE PD CSI drivers
+	// already accept disk type, IOPS, and throughput there. It is also the same
+	// admin-curated-catalog-behind-a-stable-name pattern this API already uses
+	// for instance types and images, so disks are not a special case.
+	//
+	// A bare name rather than an object reference, matching
+	// PersistentVolumeClaim's storageClassName. Elsewhere this API requires an
+	// explicit group and kind so a provider can substitute its own type, but
+	// StorageClass is a standard cluster-scoped Kubernetes resource whose kind
+	// is never in question, and a reference here would invite pointing it
+	// somewhere it does not belong.
+	//
+	// Immutable, as on a PersistentVolumeClaim, and for a real reason: the disk
+	// type it selects is fixed at creation on at least one platform, since GCE
+	// cannot change a disk's type in place. Changing performance afterward is
+	// what VolumeAttributesClassName is for.
+	StorageClassName string `json:"storageClassName,omitempty"`
+
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+
+	// VolumeAttributesClassName names the storage.k8s.io VolumeAttributesClass
+	// describing this disk's mutable quality of service.
+	//
+	// Where StorageClassName fixes what the disk is at creation, this is the
+	// knob that can be turned afterward. Repointing it asks the provider to
+	// change the disk's quality of service, which the EBS and GCE PD CSI
+	// drivers both support for type, IOPS, and throughput via ModifyVolume.
+	// This mirrors PersistentVolumeClaim exactly: an immutable provisioning
+	// class alongside a mutable attributes class.
+	//
+	// A change here is accepted rather than validated, because whether it can
+	// be applied now is a platform question. EC2 enforces a cooldown between
+	// successive modifications of one volume measured in hours, and the guest
+	// filesystem must be grown separately; that is reported through the
+	// UpToDate condition with reason RateLimited rather than by refusing the
+	// edit.
+	VolumeAttributesClassName string `json:"volumeAttributesClassName,omitempty"`
 
 	// +optional
 
@@ -125,6 +177,7 @@ type BootDiskSpec struct {
 // DiskSpec describes an additional (data) disk.
 type DiskSpec struct {
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	// +required
 
 	// Name identifies this disk within the VirtualMachine. Must be unique
@@ -145,10 +198,62 @@ type DiskSpec struct {
 	// SizeGiB is the requested disk size. Grow-only, as for the boot disk.
 	SizeGiB *int64 `json:"sizeGiB,omitempty"`
 
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="storageClassName is immutable"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	// +optional
 
-	// StorageClass is a provider-interpreted storage selector.
-	StorageClass string `json:"storageClass,omitempty"`
+	// StorageClassName names the storage.k8s.io StorageClass this disk is
+	// provisioned from.
+	//
+	// A named, administrator-published class rather than performance fields on
+	// this API, and that is deliberate. Disk performance knobs do not port:
+	// EC2 expresses gp3 and io2 performance as provisioned IOPS and throughput
+	// decoupled from size, GCE Hyperdisk does the same but gates it on machine
+	// family, and vSphere expresses the whole thing as an SPBM policy. Hoisting
+	// those into a portable schema would put platform-specific numbers with
+	// platform-specific limits into the one object meant to travel.
+	//
+	// Kubernetes already solves this. StorageClass carries opaque,
+	// provisioner-specific parameters, and the EBS and GCE PD CSI drivers
+	// already accept disk type, IOPS, and throughput there. It is also the same
+	// admin-curated-catalog-behind-a-stable-name pattern this API already uses
+	// for instance types and images, so disks are not a special case.
+	//
+	// A bare name rather than an object reference, matching
+	// PersistentVolumeClaim's storageClassName. Elsewhere this API requires an
+	// explicit group and kind so a provider can substitute its own type, but
+	// StorageClass is a standard cluster-scoped Kubernetes resource whose kind
+	// is never in question, and a reference here would invite pointing it
+	// somewhere it does not belong.
+	//
+	// Immutable, as on a PersistentVolumeClaim, and for a real reason: the disk
+	// type it selects is fixed at creation on at least one platform, since GCE
+	// cannot change a disk's type in place. Changing performance afterward is
+	// what VolumeAttributesClassName is for.
+	StorageClassName string `json:"storageClassName,omitempty"`
+
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+
+	// VolumeAttributesClassName names the storage.k8s.io VolumeAttributesClass
+	// describing this disk's mutable quality of service.
+	//
+	// Where StorageClassName fixes what the disk is at creation, this is the
+	// knob that can be turned afterward. Repointing it asks the provider to
+	// change the disk's quality of service, which the EBS and GCE PD CSI
+	// drivers both support for type, IOPS, and throughput via ModifyVolume.
+	// This mirrors PersistentVolumeClaim exactly: an immutable provisioning
+	// class alongside a mutable attributes class.
+	//
+	// A change here is accepted rather than validated, because whether it can
+	// be applied now is a platform question. EC2 enforces a cooldown between
+	// successive modifications of one volume measured in hours, and the guest
+	// filesystem must be grown separately; that is reported through the
+	// UpToDate condition with reason RateLimited rather than by refusing the
+	// edit.
+	VolumeAttributesClassName string `json:"volumeAttributesClassName,omitempty"`
 
 	// +optional
 
@@ -226,6 +331,7 @@ type NetworkSpec struct {
 // network.
 type NetworkInterfaceSpec struct {
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	// +required
 
 	// Name identifies this interface within the VirtualMachine. Must be unique
@@ -272,8 +378,19 @@ type NetworkInterfaceSpec struct {
 
 	// +optional
 
-	// PublicIP requests an externally reachable address. A provider that
-	// cannot supply one rejects this at admission.
+	// PublicIP requests an externally reachable address.
+	//
+	// Whether one can be supplied is generally not knowable at admission. On
+	// GCE it depends on an organization policy and on regional quota, and on
+	// EC2 on the subnet's configuration and the presence of an internet
+	// gateway — so the request can be accepted and still fail when the machine
+	// is created. Providers report that through conditions.
+	//
+	// A bool also under-models this. Both GCE and EC2 distinguish an
+	// ephemeral address, which is released and changes across a power cycle,
+	// from a reserved static one that is a separately billed resource. A VM
+	// that reports an external address today may report a different one after
+	// being stopped and started.
 	PublicIP *bool `json:"publicIP,omitempty"`
 }
 
@@ -331,9 +448,18 @@ type BootstrapSpec struct {
 type SchedulingSpec struct {
 	// +optional
 
-	// Spot requests preemptible/spot capacity. A provider with no such notion
-	// rejects a true value at admission rather than silently running the VM at
-	// full price.
+	// Spot requests preemptible or spot capacity.
+	//
+	// A provider with no such notion reports that through the UpToDate
+	// condition with reason UnsupportedByProvider rather than silently running
+	// the machine at full price. Note that acceptance is not a guarantee of
+	// capacity: both clouds can fail at create time when spot capacity is
+	// exhausted, which is reported with reason WaitingForCapacity and retried.
+	//
+	// A bool under-models this. It cannot carry a price ceiling, and it cannot
+	// say what should happen on reclamation — which matters, because on EC2 a
+	// spot machine created this way is terminated rather than stopped when
+	// reclaimed, taking its root volume with it.
 	Spot *bool `json:"spot,omitempty"`
 }
 
@@ -383,11 +509,18 @@ type VirtualMachineSpec struct {
 	// BootDisk describes the primary disk and the image it comes from.
 	BootDisk *BootDiskSpec `json:"bootDisk,omitempty"`
 
+	// +kubebuilder:validation:MaxItems=60
 	// +optional
 	// +listType=map
 	// +listMapKey=name
 
 	// Disks are additional data disks.
+	//
+	// Bounded because an unbounded list of objects carrying transition rules
+	// blows the API server's CEL cost budget, and because every platform has a
+	// ceiling anyway — 60 is vSphere's classic limit of four SCSI controllers
+	// at fifteen disks each. Raise it if a provider needs more; it is a
+	// validation limit, not a design position.
 	Disks []DiskSpec `json:"disks,omitempty"`
 
 	// +optional
@@ -452,12 +585,6 @@ type VirtualMachineSpec struct {
 // Every field here other than Conditions and ObservedGeneration is derived from
 // the infrastructure object through the duck-typed provider contract.
 type VirtualMachineStatus struct {
-	// +optional
-
-	// Phase is a portable lifecycle summary derived from the provider's
-	// reported instance state.
-	Phase VirtualMachinePhase `json:"phase,omitempty"`
-
 	// +optional
 
 	// Ready mirrors the infrastructure object's readiness.
@@ -532,8 +659,8 @@ type VirtualMachineStatus struct {
 // +kubebuilder:storageversion
 // +kubebuilder:resource:shortName=vm;vms,categories=kubevm
 // +kubebuilder:printcolumn:name="Power",type=string,JSONPath=`.status.powerState`
-// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Provider-ID",type=string,priority=1,JSONPath=`.status.providerID`
 // +kubebuilder:printcolumn:name="Primary-IP",type=string,priority=1,JSONPath=`.status.addresses[?(@.type=="InternalIP")].address`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

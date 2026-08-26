@@ -1665,6 +1665,33 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				})
 			})
 
+			When("VM has a VirtualMachineSnapshot volume that is not found", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "my-snap-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   "missing-snapshot",
+									DiskID: "disk-1",
+								},
+							},
+						},
+					}
+					vm.Status.Volumes = nil
+				})
+				It("should not return an error but set volume status error", func() {
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					if err != nil {
+						Expect(err.Error()).To(ContainSubstring("bootstrap customized vm"))
+					}
+					
+					Expect(vmCtx.VM.Status.Volumes).To(HaveLen(1))
+					Expect(vmCtx.VM.Status.Volumes[0].Name).To(Equal("my-snap-vol"))
+					Expect(vmCtx.VM.Status.Volumes[0].Error).To(ContainSubstring("VirtualMachineSnapshot missing-snapshot not found"))
+				})
+			})
+
 			When("VM has a PVC that is not attached", func() {
 				BeforeEach(func() {
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{

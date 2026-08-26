@@ -860,6 +860,7 @@ func getDisksFromSnapshot(vmCtx pkgctx.VirtualMachineContext, vcVM *object.Virtu
 	}
 
 	var disks []vmopv1.VirtualMachineSnapshotDiskStatus
+	logger.Info("getDisksFromSnapshot called", "snapRef", snapRef.Value, "devices", len(moSnap.Config.Hardware.Device))
 	for _, dev := range moSnap.Config.Hardware.Device {
 		if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
 			var uuid, changeID string
@@ -895,6 +896,7 @@ func getDisksFromSnapshot(vmCtx pkgctx.VirtualMachineContext, vcVM *object.Virtu
 		}
 	}
 
+	logger.Info("getDisksFromSnapshot returning", "disks", disks)
 	return disks, nil
 }
 
@@ -1081,6 +1083,7 @@ func ReconcileCurrentSnapshot(
 	}
 
 	var disks []vmopv1.VirtualMachineSnapshotDiskStatus
+	logger.Info("Checking CSIBackupAPI feature", "CSIBackupAPI", pkgcfg.FromContext(vmCtx).Features.CSIBackupAPI)
 	if pkgcfg.FromContext(vmCtx).Features.CSIBackupAPI {
 		var err error
 		disks, err = getDisksFromSnapshot(vmCtx, vcVM, snapNode.Snapshot)
@@ -1088,6 +1091,7 @@ func ReconcileCurrentSnapshot(
 			return err
 		}
 	}
+	logger.Info("Disks after getDisksFromSnapshot", "disks", disks)
 
 	// Update the snapshot status with the successful result
 	if err = kubeutil.PatchSnapshotSuccessStatus(

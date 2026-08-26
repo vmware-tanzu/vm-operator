@@ -44,6 +44,10 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
+// SkipNameValidation is used for testing to allow multiple controllers with the
+// same name.
+var SkipNameValidation *bool
+
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
@@ -74,6 +78,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Reconciler:              r,
 		MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 		LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, &vmopv1.VirtualMachine{}, mgr.GetScheme()),
+		SkipNameValidation:      SkipNameValidation,
 	})
 	if err != nil {
 		return err
@@ -373,6 +378,30 @@ func (r *Reconciler) getAttachmentsForVM(ctx *pkgctx.VolumeContext) (map[string]
 	return attachments, nil
 }
 
+func isSnapshotVolume(vm *vmopv1.VirtualMachine, volName string) bool {
+	for _, vol := range vm.Spec.Volumes {
+		if vol.Name == volName && vol.VirtualMachineSnapshot != nil {
+			return true
+		}
+	}
+	// Also check if it's in the status but not in the spec (detaching)
+	for _, vol := range vm.Status.Volumes {
+		// If it's in status and has a diskUUID but no PVC, it's likely a snapshot volume.
+		// We don't have a direct way to know from status alone, but if it was in the spec before,
+		// it would have been handled by the virtualmachine controller.
+		// Actually, the virtualmachine controller removes it from status when it's detached.
+		// So if it's in status and not in spec, it's being detached.
+		// If we return true here, we preserve it in status until the virtualmachine controller removes it.
+		// Let's check if it's a snapshot volume by checking if it's NOT a vSphere volume.
+		// vSphere volumes are not managed by CNS either, but they don't have status.
+		// So if it has status and is VolumeTypeClassic, it's a snapshot volume.
+		if vol.Name == volName && vol.Type == vmopv1.VolumeTypeClassic && vol.Attached {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Reconciler) processAttachments(
 	ctx *pkgctx.VolumeContext,
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
@@ -382,7 +411,9 @@ func (r *Reconciler) processAttachments(
 	existingManagedVols := map[string]vmopv1.VirtualMachineVolumeStatus{}
 	for i := range ctx.VM.Status.Volumes {
 		vol := ctx.VM.Status.Volumes[i]
-		if vol.Type != vmopv1.VolumeTypeClassic {
+		// Treat VirtualMachineSnapshot volumes as classic volumes for status preservation purposes
+		// since they are managed by the virtualmachine controller, not CNS.
+		if vol.Type != vmopv1.VolumeTypeClassic || isSnapshotVolume(ctx.VM, vol.Name) {
 			existingManagedVols[vol.Name] = vol
 		}
 	}
@@ -402,9 +433,15 @@ func (r *Reconciler) processAttachments(
 	onlyAllowOnePendingAttachment := ctx.VM.Status.PowerState == "" || ctx.VM.Status.PowerState == vmopv1.VirtualMachinePowerStateOff
 
 	for _, volume := range ctx.VM.Spec.Volumes {
-		if volume.PersistentVolumeClaim == nil {
+		if volume.PersistentVolumeClaim == nil && volume.VirtualMachineSnapshot == nil {
 			// Don't process VsphereVolumes here. Note that we don't have Volume status
 			// for Vsphere volumes, so there is nothing to preserve here.
+			continue
+		}
+
+		// VirtualMachineSnapshot volumes are handled by the virtualmachine controller.
+		// We do not add them to volumeStatuses because they are preserved by slices.DeleteFunc below.
+		if volume.VirtualMachineSnapshot != nil {
 			continue
 		}
 
@@ -513,10 +550,9 @@ func (r *Reconciler) processAttachments(
 	volumeStatuses = append(volumeStatuses, r.preserveOrphanedAttachmentStatus(ctx, orphanedAttachments)...)
 
 	// Remove any managed volumes from the existing status.
-	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
-		func(e vmopv1.VirtualMachineVolumeStatus) bool {
-			return e.Type != vmopv1.VolumeTypeClassic
-		})
+	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes, func(e vmopv1.VirtualMachineVolumeStatus) bool {
+		return shouldDeleteVolumeStatus(ctx.VM, e)
+	})
 
 	// Update the existing status with the new list of managed volumes.
 	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, volumeStatuses...)
@@ -819,4 +855,22 @@ func updateVolumeStatusWithLimitAndRequest(
 	}
 
 	return nil
+}
+
+func shouldDeleteVolumeStatus(vm *vmopv1.VirtualMachine, e vmopv1.VirtualMachineVolumeStatus) bool {
+	if isSnapshotVolume(vm, e.Name) {
+		return false
+	}
+	if strings.HasSuffix(e.Name, ":detaching") {
+		originalName := strings.TrimSuffix(e.Name, ":detaching")
+		if isSnapshotVolume(vm, originalName) {
+			return false
+		}
+	}
+
+	if e.Type == vmopv1.VolumeTypeClassic {
+		return false
+	}
+
+	return true
 }

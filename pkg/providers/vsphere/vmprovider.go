@@ -534,7 +534,7 @@ func (vs *vSphereVMProvider) getOrComputeCPUMinFrequency(ctx context.Context) (u
 		minFreq, err = vs.computeCPUMinFrequency(ctx)
 		if err != nil {
 			// minFreq may be non-zero in case of partial success.
-			return minFreq, err
+			return minFreq, fmt.Errorf("from computeCPUMinFrequency: %w", err)
 		}
 
 		// Update value if not updated already.
@@ -581,11 +581,13 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx context.Context) (uint64
 		}
 
 		for _, moID := range moIDs {
+			fmt.Printf("DEBUG: computeCPUMinFrequency querying moID: %s\n", moID)
 			ccr := object.NewClusterComputeResource(client.VimClient(),
 				vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: moID})
 
 			freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
 			if err != nil {
+				fmt.Printf("DEBUG: computeCPUMinFrequency err for moID %s: %v\n", moID, err)
 				errs = append(errs, err)
 			} else if minFreq == 0 || freq < minFreq {
 				minFreq = freq
@@ -593,7 +595,11 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx context.Context) (uint64
 		}
 	}
 
-	return minFreq, apierrorsutil.NewAggregate(errs)
+	aggErr := apierrorsutil.NewAggregate(errs)
+	if aggErr != nil {
+		return minFreq, fmt.Errorf("from computeCPUMinFrequency Aggregate: %w", aggErr)
+	}
+	return minFreq, nil
 }
 
 func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, vm *vmopv1.VirtualMachine, actID string) (_ []vimtypes.TaskInfo, retErr error) {

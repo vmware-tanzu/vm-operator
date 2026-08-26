@@ -59,12 +59,17 @@ fi
 # never intended to touch, making an intentionally-scoped run (e.g. smoke
 # only) look like most of the suite failed to execute. The latter two map to
 # "SKIPPED" since they were in scope but a runtime decision skipped them.
-# Failed specs also get a "syndrome" carrying Failure.Message, the callback
-# API's field for a short failure synopsis. Failure.Message is Gomega's full
-# failure output (often an object diff or YAML dump running well past 1024
-# characters), so it is truncated to the same 1024-character cap the
-# callback API enforces on "syndrome" fields — otherwise the callback POST
-# is rejected outright.
+# Any spec with a non-empty Failure.Message also gets a "syndrome" on its
+# subtest_details entry — the callback API's per-subtest field for a short
+# synopsis of why it failed or was skipped. This covers both failed specs
+# (the assertion/error message) and runtime-skipped specs (the Skip()
+# reason, e.g. "feature flag XYZ disabled"), giving a skip a propagated
+# reason instead of a bare "SKIPPED" with no context. Failure.Message is
+# Gomega's/Ginkgo's full output (often an object diff or YAML dump running
+# well past 1024 characters), so it is truncated to 1024 characters as a
+# hygiene measure matching the top-level "syndrome" field's documented cap,
+# even though the per-subtest field itself has no server-enforced length
+# limit.
 parse_json_report() {
     local json_file="${1}"
     jq '[.[0].SpecReports[] |
@@ -83,7 +88,7 @@ parse_json_report() {
                 else "INVALID"
                 end
             )
-        } + (if .State == "failed" and (.Failure.Message // "") != ""
+        } + (if (.Failure.Message // "") != ""
              then {syndrome: (.Failure.Message[0:1024])}
              else {} end)
     ]' "${json_file}"

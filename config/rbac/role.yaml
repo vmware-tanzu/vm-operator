@@ -82,6 +82,12 @@ rules:
   - get
   - patch
 - apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
   - cns.vmware.com
   resources:
   - cnsnodevmattachments

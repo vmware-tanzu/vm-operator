@@ -41,6 +41,15 @@ func intgTests() {
 		),
 		intgTestsReconcile,
 	)
+	Describe(
+		"Snapshot Volume",
+		Label(
+			testlabels.Controller,
+			testlabels.EnvTest,
+			testlabels.VCSim,
+		),
+		snapshotVolumeIntgTests,
+	)
 }
 
 func intgTestsReconcile() {

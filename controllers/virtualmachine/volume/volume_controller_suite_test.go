@@ -29,7 +29,10 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	})
 
 func TestVolume(t *testing.T) {
-	suite.Register(t, "Volume controller suite", intgTests, unitTests)
+	suite.Register(t, "Volume controller suite", func() {
+		intgTests()
+		snapshotVolumeIntgTests()
+	}, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

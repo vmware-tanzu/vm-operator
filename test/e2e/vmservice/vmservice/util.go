@@ -1841,6 +1841,12 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 			Resource: "importoperations",
 			Verbs:    "create,update,patch,delete,get,list,watch",
 		},
+		{
+			Name:     "gce2e-virtualmachinesnapshots",
+			APIGroup: "vmoperator.vmware.com",
+			Resource: "virtualmachinesnapshots",
+			Verbs:    "get,list,watch",
+		},
 	}
 
 	kubeconfigPath := adminProxy.GetKubeconfigPath()

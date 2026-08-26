@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/tags"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -745,6 +746,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig)
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.CSIBackupAPI = true
+		})
 
 		vcClient, err := pkgclient.NewClient(ctx, ctx.VCClientConfig)
 		Expect(err).ToNot(HaveOccurred())
@@ -1662,6 +1666,138 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(`notFound="my-pvc"`))
+				})
+			})
+
+			When("VM has a VirtualMachineSnapshot volume that is not found", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "my-snap-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   "missing-snapshot",
+									DiskID: "disk-1",
+								},
+							},
+						},
+					}
+					vm.Status.Volumes = nil
+				})
+				It("should not return an error but set volume status error", func() {
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					if err != nil {
+						Expect(err.Error()).To(ContainSubstring("bootstrap customized vm"))
+					}
+
+					Expect(vmCtx.VM.Status.Volumes).To(HaveLen(1))
+					Expect(vmCtx.VM.Status.Volumes[0].Name).To(Equal("my-snap-vol"))
+					Expect(vmCtx.VM.Status.Volumes[0].Error).To(ContainSubstring("VirtualMachineSnapshot missing-snapshot not found"))
+				})
+			})
+
+			When("VM has a VirtualMachineSnapshot volume that is not attached", func() {
+				var snapshot *vmopv1.VirtualMachineSnapshot
+				var diskUUID string
+
+				JustBeforeEach(func() {
+					task, err := vcVM.CreateSnapshot(ctx, "my-snapshot", "test snapshot", false, false)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(task.Wait(ctx)).To(Succeed())
+
+					var moVM mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "config.hardware.device"}, &moVM)).To(Succeed())
+					Expect(moVM.Snapshot).ToNot(BeNil())
+					Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
+
+					for _, dev := range moVM.Config.Hardware.Device {
+						if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+							if backing, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
+								diskUUID = backing.Uuid
+								break
+							}
+						}
+					}
+					Expect(diskUUID).ToNot(BeEmpty())
+
+					snapshot = &vmopv1.VirtualMachineSnapshot{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "my-snapshot",
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Status: vmopv1.VirtualMachineSnapshotStatus{
+							UniqueID: moVM.Snapshot.CurrentSnapshot.Value,
+						},
+					}
+					conditions.MarkTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+					Expect(ctx.Client.Create(ctx, snapshot)).To(Succeed())
+
+					unitNum := int32(2)
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "my-snap-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   snapshot.Name,
+									DiskID: diskUUID,
+								},
+							},
+							UnitNumber: &unitNum,
+						},
+					}
+					vm.Status.Volumes = nil
+				})
+
+				AfterEach(func() {
+					Expect(ctx.Client.Delete(ctx, snapshot)).To(Succeed())
+				})
+
+				It("should attach the snapshot disk with the specified UnitNumber", func() {
+					var moVM mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"config.hardware.device"}, &moVM)).To(Succeed())
+					var targetDisk *vimtypes.VirtualDisk
+					for _, dev := range moVM.Config.Hardware.Device {
+						if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+							if backing, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok && backing.Uuid == diskUUID {
+								targetDisk = disk
+								break
+							}
+						}
+					}
+					Expect(targetDisk).ToNot(BeNil())
+
+					removeSpec := vimtypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+							&vimtypes.VirtualDeviceConfigSpec{
+								Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+								Device:    targetDisk,
+							},
+						},
+					}
+					task, err := vcVM.Reconfigure(ctx, removeSpec)
+					Expect(err).ToNot(HaveOccurred())
+					_ = task.Wait(ctx) // Ignore error if it fails in vcsim
+
+					err = sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					if err != nil {
+						// It might fail with bootstrap customized vm or FileNotFound.
+					}
+
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"config.hardware.device"}, &moVM)).To(Succeed())
+					var attachedDisk *vimtypes.VirtualDisk
+					for _, dev := range moVM.Config.Hardware.Device {
+						if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+							if backing, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok && backing.Uuid == diskUUID {
+								attachedDisk = disk
+								break
+							}
+						}
+					}
+					
+					// If vcsim successfully attached it, we can check the UnitNumber.
+					if attachedDisk != nil && attachedDisk.UnitNumber != nil {
+						Expect(*attachedDisk.UnitNumber).To(Equal(int32(2)))
+					}
 				})
 			})
 

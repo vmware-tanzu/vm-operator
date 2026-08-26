@@ -27,6 +27,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -303,31 +304,50 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					},
 				}
 
+				sourceVAppProperties := make(
+					[]vmopv1common.KeyValueOrSecretKeySelectorPair,
+					0,
+					len(expectedVAppProperties))
+				for _, p := range expectedVAppProperties {
+					sourceVAppProperties = append(sourceVAppProperties, vAppProp(p.Key, p.Value.Value))
+				}
+
+				// The source VM is built as a typed struct rather than rendered
+				// YAML because promoteDisksMode does not exist before v1alpha4,
+				// so the v1alpha2 fixture used elsewhere in this spec cannot set
+				// it -- the API server prunes fields absent from the requested
+				// version's schema.
 				sourceVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-src", capiutil.RandomString(4))
-				sourceVMBuilder := manifestbuilders.VirtualMachineYaml{
-					Namespace:        input.WCPNamespaceName,
-					Name:             sourceVMName,
-					ImageName:        sourceImageName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					ResourcePolicy:   clusterResources.VMResourcePolicyName,
-					PowerState:       "PoweredOn",
-					Annotations: map[string]string{
-						// Deploy full disk copies so no background PromoteDisks task
-						// can leave the OVF capture queued past the publish timeout.
-						// Disk provenance is irrelevant to the vAppConfig behavior under test here.
-						pkgconst.FastDeployAnnotationKey: fmt.Sprintf("%q", pkgconst.FastDeployModeDirect),
+				sourceVM := &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      sourceVMName,
+						Namespace: input.WCPNamespaceName,
 					},
-					Bootstrap: manifestbuilders.Bootstrap{
-						// LinuxPrep is needed here for the VM to get a valid IP address.
-						LinuxPrep: &manifestbuilders.LinuxPrep{},
-						VAppConfig: &manifestbuilders.VAppConfig{
-							Properties: &expectedVAppProperties,
+					Spec: vmopv1.VirtualMachineSpec{
+						ClassName:    clusterResources.VMClassName,
+						ImageName:    sourceImageName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1.VirtualMachinePowerStateOn,
+						Reserved: &vmopv1.VirtualMachineReservedSpec{
+							ResourcePolicyName: clusterResources.VMResourcePolicyName,
+						},
+						// Suppress disk promotion so no background PromoteDisks
+						// task can leave the OVF capture queued past this spec's
+						// publish timeout. Publish has no dependency on disk
+						// promotion, and disk provenance is irrelevant to the
+						// vAppConfig behavior under test here.
+						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
+						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+							// LinuxPrep is needed here for the VM to get a valid IP address.
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+								Properties: sourceVAppProperties,
+							},
 						},
 					},
 				}
-				sourceVMYaml := manifestbuilders.GetVirtualMachineYamlA2(sourceVMBuilder)
-				Expect(clusterProxy.CreateWithArgs(ctx, sourceVMYaml)).NotTo(HaveOccurred(), "failed to create source virtualmachine with vAppConfig", string(sourceVMYaml))
+				Expect(svClusterClient.Create(ctx, sourceVM)).To(Succeed(),
+					"failed to create source virtualmachine with vAppConfig %+v", sourceVM)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName)

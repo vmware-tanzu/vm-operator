@@ -6,6 +6,7 @@ defaults: &defaults
     - ".*_generated.deepcopy.go"
     - ".*_generated.conversion.go"
     - "config\\/crd\\/bases\\/.*"
+    - "config\\/crd\\/external-crds\\/.*"
     - "docs\\/ref\\/api\\/v.*.md"
     - "go.sum"
 

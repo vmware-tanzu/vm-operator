@@ -228,6 +228,18 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-SNAPSHOT-VOLUME", func() {
+			virtualmachine.VMSnapshotVolumeSpec(context.TODO(), func() virtualmachine.VMSnapshotVolumeSpecInput {
+				return virtualmachine.VMSnapshotVolumeSpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPClient:        wcpClient,
+					ArtifactFolder:   artifactFolder,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("VM-HARDWARE", func() {
 			virtualmachine.VMHardwareSpec(context.TODO(), func() virtualmachine.VMHardwareSpecInput {
 				return virtualmachine.VMHardwareSpecInput{

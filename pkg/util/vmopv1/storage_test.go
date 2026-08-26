@@ -8,9 +8,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -76,5 +78,91 @@ var _ = Describe("CnsNodeVMBatchAttachmentReportsCacheMiss", func() {
 			},
 		}
 		Expect(vmopv1util.CnsNodeVMBatchAttachmentReportsCacheMiss(ba)).To(BeFalse())
+	})
+})
+
+var _ = Describe("IsVMSnapshotDiskVolume", func() {
+	It("should return false for nil VM", func() {
+		Expect(vmopv1util.IsVMSnapshotDiskVolume(nil, "snap-vol")).To(BeFalse())
+	})
+
+	It("should return true when volume has VirtualMachineSnapshot in spec", func() {
+		vm := &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name: "snap-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+								Name: "my-snap",
+							},
+						},
+					},
+				},
+			},
+		}
+		Expect(vmopv1util.IsVMSnapshotDiskVolume(vm, "snap-vol")).To(BeTrue())
+		Expect(vmopv1util.IsVMSnapshotDiskVolume(vm, "other-vol")).To(BeFalse())
+	})
+
+	It("should return false when volume in spec is a PVC", func() {
+		vm := &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name: "pvc-vol",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "my-pvc",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		Expect(vmopv1util.IsVMSnapshotDiskVolume(vm, "pvc-vol")).To(BeFalse())
+	})
+
+	It("should return false when volume is only in status as classic volume but not in spec", func() {
+		vm := &vmopv1.VirtualMachine{
+			Status: vmopv1.VirtualMachineStatus{
+				Volumes: []vmopv1.VirtualMachineVolumeStatus{
+					{
+						Name:     "snap-vol",
+						Type:     vmopv1.VolumeTypeClassic,
+						Attached: true,
+					},
+				},
+			},
+		}
+		Expect(vmopv1util.IsVMSnapshotDiskVolume(vm, "snap-vol")).To(BeFalse())
+	})
+})
+
+var _ = Describe("IsUnmanagedVolumeStatus", func() {
+	It("should return true for classic volume", func() {
+		volStatus := vmopv1.VirtualMachineVolumeStatus{
+			Name: "classic-vol",
+			Type: vmopv1.VolumeTypeClassic,
+		}
+		Expect(vmopv1util.IsUnmanagedVolumeStatus(volStatus)).To(BeTrue())
+	})
+
+	It("should return true for snapshot disk volume", func() {
+		volStatus := vmopv1.VirtualMachineVolumeStatus{
+			Name: "snap-disk-vol",
+			Type: vmopv1.VolumeTypeVirtualMachineSnapshotDisk,
+		}
+		Expect(vmopv1util.IsUnmanagedVolumeStatus(volStatus)).To(BeTrue())
+	})
+
+	It("should return false for managed PVC volume", func() {
+		volStatus := vmopv1.VirtualMachineVolumeStatus{
+			Name: "pvc-vol",
+			Type: vmopv1.VolumeTypeManaged,
+		}
+		Expect(vmopv1util.IsUnmanagedVolumeStatus(volStatus)).To(BeFalse())
 	})
 })

@@ -1501,6 +1501,49 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) []error {
 	return errs
 }
 
+// isSnapshotVolumeSlotMatch checks whether a volume spec matches the hardware slot of di.
+// If the spec specifies controller type, bus number, or unit number, they must match di.
+// If the volume has already been recorded in status, its recorded slot must also match di.
+func isSnapshotVolumeSlotMatch(vol vmopv1.VirtualMachineVolume, di pkgvol.VirtualDiskInfo, vm *vmopv1.VirtualMachine) bool {
+	// 1. If target ID is specified in vol spec, it must match di.Target.
+	if tid := vmopv1util.GetTargetID(vol); tid != "" {
+		if tid != di.Target.String() {
+			return false
+		}
+	}
+
+	// 2. Check individual slot fields in spec.
+	if vol.UnitNumber != nil && !ptr.Equal(vol.UnitNumber, di.UnitNumber) {
+		return false
+	}
+	if vol.ControllerType != "" && !strings.EqualFold(string(vol.ControllerType), string(di.Target.ControllerType)) {
+		return false
+	}
+	if vol.ControllerBusNumber != nil && *vol.ControllerBusNumber != di.Target.ControllerBus {
+		return false
+	}
+
+	// 3. If the volume already has an entry in status, its slot must match di.
+	if vm != nil {
+		for _, statusVol := range vm.Status.Volumes {
+			if statusVol.Name == vol.Name {
+				if statusVol.UnitNumber != nil && !ptr.Equal(statusVol.UnitNumber, di.UnitNumber) {
+					return false
+				}
+				if statusVol.ControllerType != "" && !strings.EqualFold(string(statusVol.ControllerType), string(di.Target.ControllerType)) {
+					return false
+				}
+				if statusVol.ControllerBusNumber != nil && *statusVol.ControllerBusNumber != di.Target.ControllerBus {
+					return false
+				}
+				break
+			}
+		}
+	}
+
+	return true
+}
+
 func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 	var (
 		moVM        = vmCtx.MoVM
@@ -1529,20 +1572,64 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 	})
 
 	// Remove stale entries from the status.
-	existingDisksInStatus := map[string]int{}
+	// We map volume Name -> index in vm.Status.Volumes. Volume Name is always unique,
+	// unlike DiskUUID which can be duplicated (e.g. self-mounted snapshot disks).
+	existingVolumesInStatusByName := map[string]int{}
+	// Also keep a mapping of DiskUUID -> slice of indices for fallback lookups.
+	existingDisksInStatusByUUID := map[string][]int{}
 	for i := range vm.Status.Volumes {
-		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
-			existingDisksInStatus[vol.DiskUUID] = i
+		vol := vm.Status.Volumes[i]
+		if vol.Name != "" {
+			existingVolumesInStatusByName[vol.Name] = i
+		}
+		if vol.DiskUUID != "" {
+			existingDisksInStatusByUUID[vol.DiskUUID] = append(existingDisksInStatusByUUID[vol.DiskUUID], i)
 		}
 	}
+
+	// Helper to find existing status index for a disk info:
+	// 1. First by matching volSpec.Name
+	// 2. Fallback to matching by DiskUUID
+	findStatusIndexForDisk := func(di pkgvol.VirtualDiskInfo, volSpec *vmopv1.VirtualMachineVolume) (int, bool) {
+		if volSpec != nil {
+			if idx, ok := existingVolumesInStatusByName[volSpec.Name]; ok {
+				return idx, true
+			}
+		}
+		if indices, ok := existingDisksInStatusByUUID[di.UUID]; ok && len(indices) > 0 {
+			// Prefer an index where the status name matches the spec volume name
+			for _, idx := range indices {
+				if volSpec != nil && vm.Status.Volumes[idx].Name == volSpec.Name {
+					return idx, true
+				}
+			}
+			// When falling back by UUID, ensure slot matches if slot info is available
+			for _, idx := range indices {
+				statusVol := vm.Status.Volumes[idx]
+				// If statusVol already has slot information recorded, verify it matches di's slot.
+				if statusVol.UnitNumber != nil && !ptr.Equal(statusVol.UnitNumber, di.UnitNumber) {
+					continue
+				}
+				if statusVol.ControllerType != "" && !strings.EqualFold(string(statusVol.ControllerType), string(di.Target.ControllerType)) {
+					continue
+				}
+				if statusVol.ControllerBusNumber != nil && *statusVol.ControllerBusNumber != di.Target.ControllerBus {
+					continue
+				}
+				return idx, true
+			}
+		}
+		return -1, false
+	}
+
 	// Collect indices to delete first.
 	indicesToDelete := []int{}
 	for _, di := range info.Disks {
 		if volSpec, ok := info.Volumes[di.Target.String()]; ok {
-			if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
+			if diskIndex, ok := findStatusIndexForDisk(di, volSpec); ok {
 				if volSpec.Name != vm.Status.Volumes[diskIndex].Name {
 					indicesToDelete = append(indicesToDelete, diskIndex)
-					delete(existingDisksInStatus, di.UUID)
+					delete(existingVolumesInStatusByName, vm.Status.Volumes[diskIndex].Name)
 				}
 			}
 		}
@@ -1557,19 +1644,35 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			indicesToDelete[i]+1,
 		)
 	}
-	// Update existingDisksInStatus with new indexes.
+
+	// Update lookups with new indexes after deletion.
+	existingVolumesInStatusByName = map[string]int{}
+	existingDisksInStatusByUUID = map[string][]int{}
 	for i := range vm.Status.Volumes {
-		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
-			existingDisksInStatus[vol.DiskUUID] = i
+		vol := vm.Status.Volumes[i]
+		if vol.Name != "" {
+			existingVolumesInStatusByName[vol.Name] = i
+		}
+		if vol.DiskUUID != "" {
+			existingDisksInStatusByUUID[vol.DiskUUID] = append(existingDisksInStatusByUUID[vol.DiskUUID], i)
 		}
 	}
 
 	// Update the status.
+	// existingDisksInConfig maps unique hardware TargetID -> VirtualDiskInfo.
+	// We also maintain existingDisksInConfigByUUID to support legacy lookups when TargetID is unknown.
 	existingDisksInConfig := make(map[string]pkgvol.VirtualDiskInfo, len(info.Disks))
+	existingDisksInConfigByUUID := make(map[string][]pkgvol.VirtualDiskInfo, len(info.Disks))
 	for _, di := range info.Disks {
-		existingDisksInConfig[di.UUID] = di
+		existingDisksInConfig[di.Target.String()] = di
+		existingDisksInConfigByUUID[di.UUID] = append(existingDisksInConfigByUUID[di.UUID], di)
 
-		if diskIndex, ok := existingDisksInStatus[di.UUID]; ok {
+		var volSpec *vmopv1.VirtualMachineVolume
+		if spec, ok := info.Volumes[di.Target.String()]; ok {
+			volSpec = spec
+		}
+
+		if diskIndex, ok := findStatusIndexForDisk(di, volSpec); ok {
 			// The disk is already in the list of volume statuses, so update the
 			// existing status with the usage information.
 			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
@@ -1616,77 +1719,191 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 
 			// Classic disk should be converted to PVC in the end.
 			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
-				if di.FCD && vm.Status.Volumes[diskIndex].Type == vmopv1.VolumeTypeClassic {
+				if di.FCD && vm.Status.Volumes[diskIndex].Type == vmopv1.VolumeTypeClassic && !vmopv1util.IsVMSnapshotDiskVolume(vm, vm.Status.Volumes[diskIndex].Name) {
 					vm.Status.Volumes[diskIndex].Type = vmopv1.VolumeTypeManaged
 				}
 			}
 
-		} else if !di.FCD {
+			// For snapshot volumes, ensure attached is true and error is cleared
+			// Only do this if it's actually in config (which it is, since we are in existingDisksInStatus loop)
+			for _, vol := range vm.Spec.Volumes {
+				if vol.Name == vm.Status.Volumes[diskIndex].Name && vol.VirtualMachineSnapshotDisk != nil {
+					vm.Status.Volumes[diskIndex].Type = vmopv1.VolumeTypeVirtualMachineSnapshotDisk
+					vm.Status.Volumes[diskIndex].Attached = true
+					vm.Status.Volumes[diskIndex].Error = ""
+					// Ensure DiskUUID is set
+					vm.Status.Volumes[diskIndex].DiskUUID = di.UUID
+					break
+				}
+			}
+
+		} else {
 
 			var volName string
+			isSnapshot := false
 			if volSpec, ok := info.Volumes[di.Target.String()]; ok {
 				volName = volSpec.Name
+				if volSpec.VirtualMachineSnapshotDisk != nil {
+					isSnapshot = true
+				}
 			} else {
-				volName = pkgutil.GeneratePVCName("disk", di.UUID)
-			}
-
-			// The disk is a classic, non-FCD that must be added to the list
-			// of volume statuses.
-			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
-				vmCtx,
-				nil,         /* no client since props aren't re-fetched */
-				moVM,        /* use props from this object */
-				false,       /* do not refetch props */
-				snapEnabled, /* exclude disks related to snapshots */
-				di.UUID)
-
-			volStatus := vmopv1.VirtualMachineVolumeStatus{
-				Name:      volName,
-				Type:      vmopv1.VolumeTypeClassic,
-				Attached:  true,
-				DiskUUID:  di.UUID,
-				Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
-				Requested: kubeutil.BytesToResource(di.CapacityInBytes),
-				Used:      kubeutil.BytesToResource(ddi.UniqueSize),
-			}
-
-			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
-				pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
-
-				volStatus.UnitNumber = di.UnitNumber
-				if c, ok := info.Controllers[di.ControllerKey]; ok {
-					volStatus.ControllerBusNumber = &c.Bus
-					volStatus.ControllerType = c.Type
-				}
-				if diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode); err == nil {
-					volStatus.DiskMode = diskMode
-				}
-				if sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing); err == nil {
-					volStatus.SharingMode = sharingMode
+				// If it's not in info.Volumes, it might be a snapshot volume that was just attached
+				// Let's check the spec directly, ensuring slot matches to avoid misidentifying
+				// disks with identical UUIDs (e.g. boot disks cloned from the same base image).
+				for _, vol := range vm.Spec.Volumes {
+					if vol.VirtualMachineSnapshotDisk != nil && strings.EqualFold(vol.VirtualMachineSnapshotDisk.DiskID, di.UUID) {
+						if isSnapshotVolumeSlotMatch(vol, di, vm) {
+							volName = vol.Name
+							isSnapshot = true
+							break
+						}
+					}
 				}
 			}
 
-			if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
-				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
-					ProviderID: ddi.CryptoKey.ProviderID,
-					KeyID:      ddi.CryptoKey.KeyID,
+			if !di.FCD || isSnapshot {
+				if !isSnapshot && volName == "" {
+					volName = pkgutil.GeneratePVCName("disk", di.UUID)
+				}
+
+				// The disk is a classic, non-FCD that must be added to the list
+				// of volume statuses.
+				ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
+					vmCtx,
+					nil,         /* no client since props aren't re-fetched */
+					moVM,        /* use props from this object */
+					false,       /* do not refetch props */
+					snapEnabled, /* exclude disks related to snapshots */
+					di.UUID)
+
+				volType := vmopv1.VolumeTypeClassic
+				if isSnapshot {
+					volType = vmopv1.VolumeTypeVirtualMachineSnapshotDisk
+				}
+
+				volStatus := vmopv1.VirtualMachineVolumeStatus{
+					Name:      volName,
+					Type:      volType,
+					Attached:  true,
+					DiskUUID:  di.UUID,
+					Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
+					Requested: kubeutil.BytesToResource(di.CapacityInBytes),
+					Used:      kubeutil.BytesToResource(ddi.UniqueSize),
+				}
+
+				if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
+					pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+
+					volStatus.UnitNumber = di.UnitNumber
+					if c, ok := info.Controllers[di.ControllerKey]; ok {
+						volStatus.ControllerBusNumber = &c.Bus
+						volStatus.ControllerType = c.Type
+					}
+					if diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode); err == nil {
+						volStatus.DiskMode = diskMode
+					}
+					if sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing); err == nil {
+						volStatus.SharingMode = sharingMode
+					}
+				}
+
+				if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
+					volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
+						ProviderID: ddi.CryptoKey.ProviderID,
+						KeyID:      ddi.CryptoKey.KeyID,
+					}
+				}
+
+				// Only append if it's not a snapshot volume, as those are handled in session_vm_update.go
+				// But if it IS a snapshot volume, we still want to update the properties if they are already in the status
+				// AND we want to append it if it's NOT in the status, because it might have just been attached
+				if !isSnapshot {
+					vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
+				} else {
+					found := false
+					for i, existingVol := range vm.Status.Volumes {
+						if existingVol.Name == volName {
+							vm.Status.Volumes[i].Type = vmopv1.VolumeTypeVirtualMachineSnapshotDisk
+							vm.Status.Volumes[i].Limit = volStatus.Limit
+							vm.Status.Volumes[i].Requested = volStatus.Requested
+							vm.Status.Volumes[i].Used = volStatus.Used
+							vm.Status.Volumes[i].UnitNumber = volStatus.UnitNumber
+							vm.Status.Volumes[i].ControllerBusNumber = volStatus.ControllerBusNumber
+							vm.Status.Volumes[i].ControllerType = volStatus.ControllerType
+							vm.Status.Volumes[i].DiskMode = volStatus.DiskMode
+							vm.Status.Volumes[i].SharingMode = volStatus.SharingMode
+							vm.Status.Volumes[i].Crypto = volStatus.Crypto
+							vm.Status.Volumes[i].Attached = true
+							vm.Status.Volumes[i].DiskUUID = di.UUID
+							vm.Status.Volumes[i].Error = ""
+							found = true
+							break
+						}
+					}
+					if !found {
+						vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
+					}
 				}
 			}
-			// ProvisioningMode is set later in a single pass for all volumes
-			// (both classic and managed); DiskMode and SharingMode may also
-			// be overridden there if vSphere reports an explicit value.
-			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
 		}
 	}
 
-	// Remove any status entries for classic disks that no longer exist in
+	// Helper to find matching VirtualDiskInfo in config for a volume status:
+	// First checks by controller placement (ControllerType, BusNumber, UnitNumber).
+	// If placement is not set or not found, falls back to matching by DiskUUID.
+	findDiskInfoForStatus := func(vol *vmopv1.VirtualMachineVolumeStatus) (pkgvol.VirtualDiskInfo, bool) {
+		if vol.ControllerType != "" && vol.ControllerBusNumber != nil && vol.UnitNumber != nil {
+			targetKey := vmopv1util.TargetID{
+				ControllerType: vol.ControllerType,
+				ControllerBus:  *vol.ControllerBusNumber,
+				UnitNumber:     *vol.UnitNumber,
+			}.String()
+			if di, ok := existingDisksInConfig[targetKey]; ok {
+				return di, true
+			}
+		}
+		if dis, ok := existingDisksInConfigByUUID[vol.DiskUUID]; ok && len(dis) > 0 {
+			// If there are multiple disks with the same DiskUUID (e.g. self-mounted snapshot disk),
+			// match disk mode: snapshot disks have independent_nonpersistent
+			isSnap := vmopv1util.IsVMSnapshotDiskVolume(vm, vol.Name) || vol.DiskMode == vmopv1.VolumeDiskModeIndependentNonPersistent
+			for _, di := range dis {
+				isDiSnap := di.DiskMode == vimtypes.VirtualDiskModeIndependent_nonpersistent
+				if isSnap == isDiSnap {
+					return di, true
+				}
+			}
+			return dis[0], true
+		}
+		return pkgvol.VirtualDiskInfo{}, false
+	}
+
+	// Remove any status entries for classic or snapshot disks that no longer exist in
 	// config.hardware.device.
 	vm.Status.Volumes = slices.DeleteFunc(vm.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
 			switch e.Type {
 			case vmopv1.VolumeTypeClassic:
-				_, keep := existingDisksInConfig[e.DiskUUID]
+				// Classic disks are removed from status as soon as they no longer exist in hardware.
+				_, keep := findDiskInfoForStatus(&e)
 				return !keep
+
+			case vmopv1.VolumeTypeVirtualMachineSnapshotDisk:
+				// If it's a snapshot volume that is still in spec, keep it
+				// (snapshotdisk reconciler manages its attached and error state).
+				if vmopv1util.IsVMSnapshotDiskVolume(vm, e.Name) {
+					return false
+				}
+
+				// If it has been removed from spec, delete it if:
+				// - It is no longer present in hardware (!keep), OR
+				// - It has been marked detached (!e.Attached, e.g. pending VC task or in vcsim).
+				_, keep := findDiskInfoForStatus(&e)
+				if !keep || !e.Attached {
+					return true
+				}
+
+				return false
+
 			default:
 				return false
 			}
@@ -1705,7 +1922,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			continue
 		}
 
-		di, ok := existingDisksInConfig[vol.DiskUUID]
+		di, ok := findDiskInfoForStatus(vol)
 		if !ok {
 			vmCtx.Logger.V(4).Info("No disk info found for volume",
 				"volumeName", vol.Name,

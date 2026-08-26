@@ -37,6 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -185,6 +186,21 @@ func doValidateWithMsg(msgs ...string) func(admission.Response) {
 			ExpectWithOffset(1, reasons).To(ContainSubstring(m))
 		}
 	}
+}
+
+func createDummySnapshotWithDisk(ctx *unitValidatingWebhookContext, name, diskID string, isReady bool) {
+	snap := builder.DummyVirtualMachineSnapshot(ctx.vm.Namespace, name, ctx.vm.Name)
+	if isReady {
+		pkgcond.MarkTrue(snap, vmopv1.VirtualMachineSnapshotReadyCondition)
+	} else {
+		pkgcond.MarkFalse(snap, vmopv1.VirtualMachineSnapshotReadyCondition, "NotReady", "Snapshot is not ready")
+	}
+	if diskID != "" {
+		snap.Status.Disks = []vmopv1.VirtualMachineSnapshotDiskStatus{
+			{ID: diskID},
+		}
+	}
+	Expect(ctx.Client.Create(ctx, snap)).To(Succeed())
 }
 
 // doTestWithContext runs a table-style validating webhook test using the provided ctx.
@@ -432,6 +448,7 @@ func unitTestsValidateCreate() {
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.WorkloadDomainIsolation = true
 			config.Features.VMSharedDisks = true
+			config.Features.CSIBackupAPI = true
 			config.BuildVersion = testBuildVersion // Set to match test annotations
 		})
 
@@ -511,6 +528,184 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	Context("Volume Source", func() {
+		DescribeTable("create", doTest,
+			Entry("should deny Snapshot volume when CSIBackupAPI is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "my-snap",
+							DiskID: "my-disk",
+						}
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentNonPersistent
+						ctx.vm.Spec.Volumes[0].Removable = ptr.To(true)
+						pkgcfg.SetContext(ctx.Context, func(config *pkgcfg.Config) {
+							config.Features.CSIBackupAPI = false
+						})
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Forbidden(volPath.Index(0).Child("virtualMachineSnapshotDisk"), "VirtualMachineSnapshot volume source is not supported because CSIBackupAPI feature is disabled").Error(),
+					),
+				},
+			),
+			Entry("should deny volume with both PVC and Snapshot set",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "my-pvc",
+							},
+						}
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "my-snap",
+							DiskID: "my-disk",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Forbidden(volPath.Index(0), "only one of persistentVolumeClaim or virtualMachineSnapshotDisk can be specified").Error(),
+					),
+				},
+			),
+			Entry("should deny Snapshot volume with empty Name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "",
+							DiskID: "my-disk",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("virtualMachineSnapshotDisk", "name"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny Snapshot volume with empty DiskID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "my-snap",
+							DiskID: "",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Required(volPath.Index(0).Child("virtualMachineSnapshotDisk", "diskID"), "").Error(),
+					),
+				},
+			),
+			Entry("should deny Snapshot volume with invalid diskMode",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModePersistent
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "my-snap",
+							DiskID: "my-disk",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Invalid(volPath.Index(0).Child("diskMode"), vmopv1.VolumeDiskModePersistent, "diskMode must be IndependentNonPersistent when using a VirtualMachineSnapshot volume source").Error(),
+					),
+				},
+			),
+			Entry("should deny Snapshot volume with removable=false",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentNonPersistent
+						ctx.vm.Spec.Volumes[0].Removable = ptr.To(false)
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "my-snap",
+							DiskID: "my-disk",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Invalid(volPath.Index(0).Child("removable"), false, "removable must be true when using a VirtualMachineSnapshot volume source").Error(),
+					),
+				},
+			),
+			Entry("should allow Snapshot volume with Name and DiskID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createDummySnapshotWithDisk(ctx, "my-snap", "my-disk", true)
+
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentNonPersistent
+						ctx.vm.Spec.Volumes[0].Removable = ptr.To(true)
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "my-snap",
+							DiskID: "my-disk",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny Snapshot volume referencing non-existent VirtualMachineSnapshot",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentNonPersistent
+						ctx.vm.Spec.Volumes[0].Removable = ptr.To(true)
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "non-existent-snap",
+							DiskID: "my-disk",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.NotFound(volPath.Index(0).Child("virtualMachineSnapshotDisk", "name"), "non-existent-snap").Error(),
+					),
+				},
+			),
+			Entry("should deny Snapshot volume referencing VirtualMachineSnapshot that is not ready",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createDummySnapshotWithDisk(ctx, "unready-snap", "my-disk", false)
+
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentNonPersistent
+						ctx.vm.Spec.Volumes[0].Removable = ptr.To(true)
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "unready-snap",
+							DiskID: "my-disk",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Invalid(volPath.Index(0).Child("virtualMachineSnapshotDisk", "name"), "unready-snap", "VirtualMachineSnapshot unready-snap is not ready").Error(),
+					),
+				},
+			),
+			Entry("should deny Snapshot volume referencing diskID that does not appear in status.disks",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createDummySnapshotWithDisk(ctx, "snap-with-other-disk", "other-disk", true)
+
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+						ctx.vm.Spec.Volumes[0].DiskMode = vmopv1.VolumeDiskModeIndependentNonPersistent
+						ctx.vm.Spec.Volumes[0].Removable = ptr.To(true)
+						ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+							Name:   "snap-with-other-disk",
+							DiskID: "missing-disk-id",
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Invalid(volPath.Index(0).Child("virtualMachineSnapshotDisk", "diskID"), "missing-disk-id", "diskID missing-disk-id does not appear in status.disks of VirtualMachineSnapshot snap-with-other-disk").Error(),
+					),
+				},
+			),
+		)
+	})
 
 	Context("PVC Volume Controller Fields", func() {
 		DescribeTable("create", doTest,
@@ -5114,14 +5309,22 @@ func unitTestsValidateCreate() {
 				expectAllowed: true,
 			},
 		),
-		Entry("should allow volmes without any PVC",
+		Entry("should allow volumes without any PVC but with Snapshot",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
+					createDummySnapshotWithDisk(ctx, "snap-1", "disk-1", true)
 					ctx.oldVM = nil
 					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
-							Name:                       "new-volume",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{},
+							Name:      "new-volume",
+							DiskMode:  vmopv1.VolumeDiskModeIndependentNonPersistent,
+							Removable: ptr.To(true),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   "snap-1",
+									DiskID: "disk-1",
+								},
+							},
 						},
 					}
 				},
@@ -5291,6 +5494,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.VMSharedDisks = true
+			config.Features.CSIBackupAPI = true
 			config.BuildVersion = testBuildVersion // Set to match test annotations
 		})
 
@@ -8948,13 +9152,22 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			Entry("should allow when backfilled volume is unchanged",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						createDummySnapshotWithDisk(ctx, "snap-1", "disk-1", true)
+
 						// Create a backfilled volume in old VM
 						backfilledVol := vmopv1.VirtualMachineVolume{
 							Name:                "backfilled-vol",
 							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							ControllerBusNumber: ptr.To(int32(0)),
 							UnitNumber:          ptr.To(int32(1)),
-							// No PersistentVolumeClaim
+							DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+							Removable:           ptr.To(true),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   "snap-1",
+									DiskID: "disk-1",
+								},
+							},
 						}
 						ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, backfilledVol)
 
@@ -9532,9 +9745,11 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 			},
 		),
 
-		Entry("should allow new volume with empty PVC",
+		Entry("should allow new volume with Snapshot",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
+					createDummySnapshotWithDisk(ctx, "snap-1", "disk-1", true)
+
 					// Setup old VM with one volume.
 					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 						{
@@ -9549,7 +9764,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						},
 					}
 
-					// New VM adds a second volume without claim name
+					// New VM adds a second volume with Snapshot
 					ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
 					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes,
 						vmopv1.VirtualMachineVolume{
@@ -9558,10 +9773,87 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 							UnitNumber:          ptr.To(int32(10)),
 							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
 							ControllerBusNumber: ptr.To(int32(0)),
+							DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+							Removable:           ptr.To(true),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   "snap-1",
+									DiskID: "disk-1",
+								},
+							},
 						},
 					)
 				},
 				expectAllowed: true,
+			},
+		),
+		Entry("should deny changing Snapshot name",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					createDummySnapshotWithDisk(ctx, "snap-1", "disk-1", true)
+					createDummySnapshotWithDisk(ctx, "snap-2", "disk-1", true)
+
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name:                "existing-volume",
+							UnitNumber:          ptr.To(int32(10)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+							Removable:           ptr.To(true),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   "snap-1",
+									DiskID: "disk-1",
+								},
+							},
+						},
+					}
+
+					ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+					ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+						Name:   "snap-2",
+						DiskID: "disk-1",
+					}
+				},
+				expectAllowed: false,
+				validate: doValidateWithMsg(
+					field.Invalid(volPath.Index(0).Child("virtualMachineSnapshotDisk", "name"), "snap-2", "field is immutable").Error(),
+				),
+			},
+		),
+		Entry("should deny changing Snapshot diskID",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					createDummySnapshotWithDisk(ctx, "snap-3", "disk-1", true)
+
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name:                "existing-volume",
+							UnitNumber:          ptr.To(int32(10)),
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To(int32(0)),
+							DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+							Removable:           ptr.To(true),
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   "snap-3",
+									DiskID: "disk-1",
+								},
+							},
+						},
+					}
+
+					ctx.vm.Spec.Volumes = slices.Clone(ctx.oldVM.Spec.Volumes)
+					ctx.vm.Spec.Volumes[0].VirtualMachineSnapshotDisk = &vmopv1.VirtualMachineSnapshotDiskSpec{
+						Name:   "snap-3",
+						DiskID: "disk-2",
+					}
+				},
+				expectAllowed: false,
+				validate: doValidateWithMsg(
+					field.Invalid(volPath.Index(0).Child("virtualMachineSnapshotDisk", "diskID"), "disk-2", "field is immutable").Error(),
+				),
 			},
 		),
 	)

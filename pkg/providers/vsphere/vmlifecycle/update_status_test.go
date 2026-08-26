@@ -3274,6 +3274,70 @@ var _ = Describe("UpdateStatus", func() {
 					})
 				})
 			})
+
+			Context("snapshot volume matching by UUID requires slot match", func() {
+				When("spec has a snapshot volume with matching UUID but different slot", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "snap-vol",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+										DiskID: "100",
+									},
+								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To[int32](0),
+								UnitNumber:          ptr.To[int32](4), // Slot differs from disk 100 which has UnitNumber 3
+							},
+						}
+					})
+
+					Specify("disk 100 is not misidentified as snapshot volume and remains classic volume", func() {
+						var disk100 *vmopv1.VirtualMachineVolumeStatus
+						for i := range vmCtx.VM.Status.Volumes {
+							if vmCtx.VM.Status.Volumes[i].DiskUUID == "100" {
+								disk100 = &vmCtx.VM.Status.Volumes[i]
+								break
+							}
+						}
+						Expect(disk100).ToNot(BeNil())
+						Expect(disk100.Name).To(Equal(pkgutil.GeneratePVCName("disk", "100")))
+						Expect(disk100.Type).To(Equal(vmopv1.VolumeTypeClassic))
+					})
+				})
+
+				When("spec has a snapshot volume with matching UUID and matching slot", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "snap-vol",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+										DiskID: "100",
+									},
+								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To[int32](0),
+								UnitNumber:          ptr.To[int32](3), // Matches disk 100
+							},
+						}
+					})
+
+					Specify("disk 100 is identified as snapshot volume", func() {
+						var snapVol *vmopv1.VirtualMachineVolumeStatus
+						for i := range vmCtx.VM.Status.Volumes {
+							if vmCtx.VM.Status.Volumes[i].Name == "snap-vol" {
+								snapVol = &vmCtx.VM.Status.Volumes[i]
+								break
+							}
+						}
+						Expect(snapVol).ToNot(BeNil())
+						Expect(snapVol.DiskUUID).To(Equal("100"))
+						Expect(snapVol.Type).To(Equal(vmopv1.VolumeTypeVirtualMachineSnapshotDisk))
+					})
+				})
+			})
 		})
 	})
 

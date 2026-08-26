@@ -241,11 +241,11 @@ var _ = Describe(
 						Namespace: namespace,
 					}, vmSnapshot)).To(Succeed())
 					Expect(conditions.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)).To(Equal(isCreated))
-					if isCreated && pkgcfg.FromContext(ctx).Features.CSIBackupAPI {
-						// Note: Currently vcsim might not populate actual disks with UUIDs in the snapshot device list.
-						// Once govmomi (vcsim) supports this, we should add assertions here to check vmSnapshot.Status.Disks.
-						// Expect(vmSnapshot.Status.Disks).ToNot(BeEmpty())
-					}
+					// Note: Currently vcsim might not populate actual disks with UUIDs in the snapshot device list.
+					// Once govmomi (vcsim) supports this, we should add assertions here to check vmSnapshot.Status.Disks.
+					// if isCreated && pkgcfg.FromContext(ctx).Features.CSIBackupAPI {
+					// 	Expect(vmSnapshot.Status.Disks).ToNot(BeEmpty())
+					// }
 				}
 
 				verifyNoVcVMSnapshot = func() {

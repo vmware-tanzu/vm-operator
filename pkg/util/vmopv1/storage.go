@@ -9,6 +9,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 )
 
@@ -46,4 +47,25 @@ func batchAttachConditionsIncludeCacheMissMsg(
 		}
 	}
 	return false
+}
+
+// IsVMSnapshotDiskVolume reports whether the volume with the given name is a VirtualMachineSnapshot volume
+// specified in vm.Spec.Volumes.
+func IsVMSnapshotDiskVolume(vm *vmopv1.VirtualMachine, volName string) bool {
+	if vm == nil {
+		return false
+	}
+	for _, vol := range vm.Spec.Volumes {
+		if vol.Name == volName && vol.VirtualMachineSnapshotDisk != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// IsUnmanagedVolumeStatus reports whether the volume status entry represents
+// a non-managed volume (Classic or VirtualMachineSnapshotDisk) that should NOT be
+// removed or replaced during volume controller reconciliation of managed volumes.
+func IsUnmanagedVolumeStatus(e vmopv1.VirtualMachineVolumeStatus) bool {
+	return e.Type == vmopv1.VolumeTypeClassic || e.Type == vmopv1.VolumeTypeVirtualMachineSnapshotDisk
 }

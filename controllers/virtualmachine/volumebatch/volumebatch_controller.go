@@ -326,13 +326,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	}
 
 	// Get existing VM managed volumes status. Since we only update managed
-	// volumes here, we skip all classic volumes.
-	existingVMManagedVolStatus := map[string]vmopv1.VirtualMachineVolumeStatus{}
-	for _, vol := range ctx.VM.Status.Volumes {
-		if vol.Type != vmopv1.VolumeTypeClassic {
-			existingVMManagedVolStatus[vol.Name] = vol
-		}
-	}
+	// volumes here, we skip all classic volumes and snapshot volumes.
+	existingVMManagedVolStatus := getExistingVMManagedVolStatus(ctx.VM)
 
 	volumeSpecsForBatch, volumeSpecsForLegacy := categorizeVolumeSpecs(ctx, legacyAttachments)
 
@@ -363,13 +358,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	}
 
 	// Record the volumes currently in status so we can log what's removed.
-	beforeStatusVolumes := make(map[string]string, len(ctx.VM.Spec.Volumes))
-	for _, vol := range ctx.VM.Status.Volumes {
-		if vol.Type == vmopv1.VolumeTypeManaged {
-			name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
-			beforeStatusVolumes[name] = vol.DiskUUID
-		}
-	}
+	beforeStatusVolumes := getBeforeManagedStatusVolumes(ctx.VM)
 
 	volumeStatusesForBatch := r.getVMVolStatusesFromBatchAttachment(
 		ctx,
@@ -392,31 +381,64 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		volumeStatusesForLegacy,
 	)
 
-	if len(beforeStatusVolumes) > 0 {
-		for _, vol := range ctx.VM.Status.Volumes {
-			if vol.Type != vmopv1.VolumeTypeManaged {
-				continue
-			}
+	logDetachedVolumes(ctx, beforeStatusVolumes)
 
+	return errOrNoRequeueErr(deleteErr, processErr)
+}
+
+// getExistingVMManagedVolStatus returns the existing status of managed volumes for the VM.
+// Classic volumes and snapshot volumes are skipped because they are not managed by this controller.
+func getExistingVMManagedVolStatus(vm *vmopv1.VirtualMachine) map[string]vmopv1.VirtualMachineVolumeStatus {
+	existingVMManagedVolStatus := map[string]vmopv1.VirtualMachineVolumeStatus{}
+	for _, vol := range vm.Status.Volumes {
+		if !vmopv1util.IsUnmanagedVolumeStatus(vol) {
+			existingVMManagedVolStatus[vol.Name] = vol
+		}
+	}
+	return existingVMManagedVolStatus
+}
+
+// getBeforeManagedStatusVolumes records the managed volumes currently in status (mapped by trimmed name to DiskUUID)
+// before reconciliation updates status, allowing detection and logging of detached volumes.
+func getBeforeManagedStatusVolumes(vm *vmopv1.VirtualMachine) map[string]string {
+	beforeStatusVolumes := make(map[string]string, len(vm.Spec.Volumes))
+	for _, vol := range vm.Status.Volumes {
+		if vol.Type == vmopv1.VolumeTypeManaged {
 			name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
-			// Might not know the UUID before being attached, but also the volume
-			// spec can be updated with a different PVC. Remove entries with an
-			// empty UUID but we could just do this by name, with the potential
-			// for missing actual removals.
-			uuid, ok := beforeStatusVolumes[name]
-			if ok && (uuid == "" || uuid == vol.DiskUUID) {
-				delete(beforeStatusVolumes, name)
-			}
+			beforeStatusVolumes[name] = vol.DiskUUID
+		}
+	}
+	return beforeStatusVolumes
+}
+
+// logDetachedVolumes compares the VM status after reconciliation against the pre-reconcile status
+// and logs any managed volumes that were removed.
+func logDetachedVolumes(ctx *pkgctx.VolumeContext, beforeStatusVolumes map[string]string) {
+	if len(beforeStatusVolumes) == 0 {
+		return
+	}
+
+	for _, vol := range ctx.VM.Status.Volumes {
+		if vol.Type != vmopv1.VolumeTypeManaged {
+			continue
 		}
 
-		if len(beforeStatusVolumes) > 0 {
-			ctx.Logger.Info("Removing detached volumes from VM Status",
-				"removedCount", len(beforeStatusVolumes),
-				"removedVolumes", beforeStatusVolumes)
+		name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
+		// Might not know the UUID before being attached, but also the volume
+		// spec can be updated with a different PVC. Remove entries with an
+		// empty UUID but we could just do this by name, with the potential
+		// for missing actual removals.
+		uuid, ok := beforeStatusVolumes[name]
+		if ok && (uuid == "" || uuid == vol.DiskUUID) {
+			delete(beforeStatusVolumes, name)
 		}
 	}
 
-	return errOrNoRequeueErr(deleteErr, processErr)
+	if len(beforeStatusVolumes) > 0 {
+		ctx.Logger.Info("Removing detached volumes from VM Status",
+			"removedCount", len(beforeStatusVolumes),
+			"removedVolumes", beforeStatusVolumes)
+	}
 }
 
 // getBatchAttachmentForVM returns the CnsNodeVMBatchAttachment resource for the
@@ -792,7 +814,7 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 	// Target IDs of the classic disks in VM volume status.
 	existingClassicDiskTargetIDs := sets.New[string]()
 	for _, volStatus := range ctx.VM.Status.Volumes {
-		if volStatus.Type == vmopv1.VolumeTypeClassic {
+		if vmopv1util.IsUnmanagedVolumeStatus(volStatus) {
 			existingClassicDiskTargetIDs.Insert(vmopv1util.GetTargetID(volStatus))
 		}
 	}
@@ -1246,7 +1268,7 @@ func updateVMVolumeStatus(
 	// Remove any managed volumes from the existing status.
 	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
-			return e.Type != vmopv1.VolumeTypeClassic
+			return !vmopv1util.IsUnmanagedVolumeStatus(e)
 		})
 
 	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, v1...)

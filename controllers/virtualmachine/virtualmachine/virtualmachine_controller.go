@@ -437,9 +437,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			ctx,
 			vm.Namespace,
 			vm.Spec.StorageClass)
-
-		err := patchHelper.Patch(ctx, vm)
-		if err != nil {
+		if err := patchHelper.Patch(ctx, vm); err != nil {
 			if reterr == nil {
 				reterr = err
 			}

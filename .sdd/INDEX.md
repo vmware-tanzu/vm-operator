@@ -36,6 +36,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 003 | [compute-config-reconcile](specs/003-compute-config-reconcile/) | VM Compute Configuration Reconciliation | In Review | vmop-3388 |
 | 004 | [nic-extraconfig-reconcile](specs/004-nic-extraconfig-reconcile/) | NIC ExtraConfig Reconciler — E2E Coverage (`spec.md`/`plan.md` pending) | In Progress | vmop-3782 |
 | 005 | [ipv6-template-funcs](specs/005-ipv6-template-funcs/) | Differentiate IPv4/IPv6 vApp/Sysprep template functions (V1alpha6) | In Progress | vmop-1152 |
+| 006 | [veeam-e2e-backup-restore](specs/006-veeam-e2e-backup-restore/) | Use Veeam for Backup/Restore E2E Tests | Draft | vmop-4013 |
 
 ### Finding the right spec
 

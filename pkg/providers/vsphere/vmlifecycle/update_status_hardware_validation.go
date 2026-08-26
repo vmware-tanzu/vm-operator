@@ -312,7 +312,7 @@ func checkVolumes(
 		})
 	}
 
-	// Build mapping from disk UUID to volume name for attached PVC volumes.
+	// Build mapping from volume name or placement/UUID to volume name for attached PVC volumes.
 	// vm.Status.Volumes is reconciled by the volume batch controller, which
 	// runs as a separate reconciler from this one. This creates a potential
 	// race condition where vm.Status.Volumes may not be up-to-date when this
@@ -321,10 +321,15 @@ func checkVolumes(
 	// will be correct on subsequent reconciliation cycles. The volume batch
 	// reconciler will eventually be moved into the same reconciler to
 	// eliminate this race condition.
+	volNameByPlacement := make(map[string]string)
 	volNameByDiskUUID := make(map[string]string)
 	for _, volStatus := range vm.Status.Volumes {
 		// Ignore Attached status here since we will be checking again the
 		// hardware status directly.
+		if volStatus.ControllerType != "" && volStatus.ControllerBusNumber != nil && volStatus.UnitNumber != nil {
+			placementKey := fmt.Sprintf("%s:%d:%d", volStatus.ControllerType, *volStatus.ControllerBusNumber, *volStatus.UnitNumber)
+			volNameByPlacement[placementKey] = volStatus.Name
+		}
 		if volStatus.DiskUUID != "" {
 			volNameByDiskUUID[strings.ToLower(volStatus.DiskUUID)] = volStatus.Name
 		}
@@ -332,13 +337,20 @@ func checkVolumes(
 
 	// Build actual disks from hardware info.
 	// hwInfo.Disks uses disk UUID as the key (from BuildHardwareInfo).
-	// We need to map disk UUID to volume name to match against expected placements.
+	// We need to map disk UUID or placement to volume name to match against expected placements.
 	// The placementKey in DevicePlacement should be the volume name (from spec),
 	// not the disk UUID.
 	for _, diskPlacement := range hwInfo.Disks.UnsortedList() {
-		// Look up volume name by disk UUID
-		// diskPlacement.Key is the disk UUID (from BuildHardwareInfo)
-		if volName, found := volNameByDiskUUID[strings.ToLower(diskPlacement.Key)]; found {
+		// First try looking up volume name by placement (ControllerType:BusNumber:UnitNumber),
+		// which avoids conflicts when multiple disks share the same DiskUUID.
+		placementKey := fmt.Sprintf("%s:%d:%d", diskPlacement.ControllerType, diskPlacement.ControllerBusNumber, diskPlacement.UnitNumber)
+		volName, found := volNameByPlacement[placementKey]
+		if !found {
+			// Fall back to looking up volume name by disk UUID.
+			volName, found = volNameByDiskUUID[strings.ToLower(diskPlacement.Key)]
+		}
+
+		if found {
 			actual.Insert(pkgutil.DevicePlacement{
 				Key:                 volName, // Use volume name as the key
 				ControllerType:      diskPlacement.ControllerType,

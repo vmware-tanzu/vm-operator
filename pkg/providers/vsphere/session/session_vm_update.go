@@ -50,6 +50,7 @@ import (
 	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
 	vmconfnetworkextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
+	vmconfsnapshotdisk "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/snapshotdisk"
 	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
@@ -846,7 +847,11 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 	}
 
 	for _, volSpec := range vmCtx.VM.Spec.Volumes {
-		if pvc := volSpec.PersistentVolumeClaim; pvc != nil {
+		// Only PersistentVolumeClaims need to be checked before power on, because they are attached
+		// asynchronously by an external controller.
+		// Snapshot volumes are attached directly during the reconcile loop itself (in reconcileSnapshotDisks),
+		// and do not require external attachment or pre-existing status to allow power on.
+		if volSpec.PersistentVolumeClaim != nil {
 			if volStat, ok := volNameToStatus[volSpec.Name]; ok {
 				if !volStat.Attached {
 					// Allow unattached volumes through as long as they
@@ -1467,6 +1472,30 @@ func reconcileNetworkExtraConfig(
 		configSpec)
 }
 
+func reconcileSnapshotDisks(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling snapshot disks")
+
+	if err := vmconfsnapshotdisk.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec); err != nil {
+		pkglog.FromContextOrDefault(ctx).Error(err, "Failed to reconcile snapshot disks")
+		return err
+	}
+
+	return nil
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1525,6 +1554,17 @@ func doReconfigure(
 
 			return err
 		}
+	}
+
+	if err := reconcileSnapshotDisks(
+		ctx,
+		k8sClient,
+		vm,
+		vcVM,
+		moVM,
+		&configSpec); err != nil {
+
+		return err
 	}
 
 	if err := reconcileBootOptions(
@@ -1647,3 +1687,4 @@ func UpdateVMGuestIDReconfiguredCondition(
 
 	conditions.Delete(vm, vmopv1.GuestIDReconfiguredCondition)
 }
+

@@ -290,7 +290,6 @@ func ensureUnmanagedDisksConfigsAreUpdated(
 			var pid string
 			if info.Disks[i].StoragePolicyID == "" {
 				pid = sc2pol[info.Disks[i].StorageClass]
-				info.Disks[i].StoragePolicyID = pid
 			}
 
 			alreadyChanged := false
@@ -1017,6 +1016,10 @@ func cleanupVolumeStatus(vm *vmopv1.VirtualMachine) {
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
 			switch e.Type {
 			case vmopv1.VolumeTypeClassic:
+				// Never delete a snapshot volume status just because a Managed PVC shares its DiskUUID.
+				if vmopv1util.IsSnapshotVolume(vm, e.Name) {
+					return false
+				}
 				_, shouldDelete := ev[e.DiskUUID]
 				return shouldDelete
 			default:

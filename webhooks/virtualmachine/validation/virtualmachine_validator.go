@@ -42,6 +42,7 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -1595,7 +1596,7 @@ func (v validator) validateVolumes(
 			}
 		}
 
-		// Validate that no two volumes have the same PVC claim name.
+		// Validate that no two volumes have the same PVC claim name or same snapshot disk.
 		if pvc := vol.PersistentVolumeClaim; pvc != nil {
 			if claimName := pvc.ClaimName; claimName != "" {
 				if volumePVCNamesSet.Has(claimName) {
@@ -1724,9 +1725,21 @@ func (v validator) validateVolume(
 	volPath *field.Path) field.ErrorList {
 
 	var (
-		allErrs field.ErrorList
-		pvcPath = volPath.Child("persistentVolumeClaim")
+		allErrs  field.ErrorList
+		pvcPath  = volPath.Child("persistentVolumeClaim")
+		snapPath = volPath.Child("virtualMachineSnapshot")
 	)
+
+	hasPVC := vol.PersistentVolumeClaim != nil
+	hasSnap := vol.VirtualMachineSnapshot != nil
+
+	if hasPVC && hasSnap {
+		allErrs = append(allErrs, field.Forbidden(
+			volPath, "only one of persistentVolumeClaim or virtualMachineSnapshot can be specified"))
+	} else if !hasPVC && !hasSnap && !isBackfilledVolume(&vol) {
+		allErrs = append(allErrs, field.Required(
+			volPath, "one of persistentVolumeClaim or virtualMachineSnapshot must be specified"))
+	}
 
 	if pvc := vol.PersistentVolumeClaim; pvc != nil {
 		if pvc.ReadOnly {
@@ -1739,6 +1752,10 @@ func (v validator) validateVolume(
 		}
 	}
 
+	if snap := vol.VirtualMachineSnapshot; snap != nil {
+		allErrs = append(allErrs, v.validateSnapshotVolume(ctx, vm, vol, snap, volPath, snapPath)...)
+	}
+
 	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
 		!pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 
@@ -1747,7 +1764,7 @@ func (v validator) validateVolume(
 
 	if oldVol != nil && oldVol.Name == vol.Name {
 		allErrs = append(allErrs,
-			v.validateVolumeImmutableFields(vol, oldVol, *volPath)...,
+			v.validateVolumeImmutableFields(vm, vol, oldVol, *volPath)...,
 		)
 	}
 
@@ -1800,6 +1817,7 @@ func (v validator) validateVolume(
 }
 
 func (v validator) validateVolumeImmutableFields(
+	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	oldVol *vmopv1.VirtualMachineVolume,
 	volPath field.Path) field.ErrorList {
@@ -1834,6 +1852,29 @@ func (v validator) validateVolumeImmutableFields(
 		vol.UnitNumber,
 		oldVol.UnitNumber,
 		volPath.Child("unitNumber"))...)
+
+	// Check if the volume is attached.
+	attached := false
+	for _, statusVol := range vm.Status.Volumes {
+		if statusVol.Name == vol.Name && statusVol.Attached {
+			attached = true
+			break
+		}
+	}
+
+	if attached {
+		if vol.VirtualMachineSnapshot != nil && oldVol.VirtualMachineSnapshot != nil {
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.VirtualMachineSnapshot.Name,
+				oldVol.VirtualMachineSnapshot.Name,
+				volPath.Child("virtualMachineSnapshot", "name"))...)
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.VirtualMachineSnapshot.DiskID,
+				oldVol.VirtualMachineSnapshot.DiskID,
+				volPath.Child("virtualMachineSnapshot", "diskID"))...)
+		}
+	}
 
 	return allErrs
 }
@@ -2080,7 +2121,7 @@ func (v validator) validateBackfilledVolumesNotRemoved(
 // isBackfilledVolume checks if a volume is a backfilled volume from a classic disk.
 // Backfilled volumes have no PersistentVolumeClaim but have a target ID.
 func isBackfilledVolume(vol *vmopv1.VirtualMachineVolume) bool {
-	if vol.PersistentVolumeClaim != nil {
+	if vol.PersistentVolumeClaim != nil || vol.VirtualMachineSnapshot != nil {
 		return false
 	}
 
@@ -3671,4 +3712,84 @@ func isFirstClassNICAdvancedProperty(key string) bool {
 
 func isNetworkDeviceProperty(key string) bool {
 	return vmopv1util.IsEthernetDeviceKey(key)
+}
+
+func (v validator) validateSnapshotVolume(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+	snap *vmopv1.VirtualMachineSnapshotDiskSpec,
+	volPath, snapPath *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if !pkgcfg.FromContext(ctx).Features.CSIBackupAPI {
+		allErrs = append(allErrs, field.Forbidden(
+			snapPath, "VirtualMachineSnapshot volume source is not supported because CSIBackupAPI feature is disabled"))
+		return allErrs
+	}
+
+	if snap.Name == "" {
+		allErrs = append(allErrs, field.Required(
+			snapPath.Child("name"), ""))
+	}
+	if snap.DiskID == "" {
+		allErrs = append(allErrs, field.Required(
+			snapPath.Child("diskID"), ""))
+	}
+	if vol.DiskMode != vmopv1.VolumeDiskModeIndependentNonPersistent {
+		allErrs = append(allErrs, field.Invalid(
+			volPath.Child("diskMode"),
+			vol.DiskMode,
+			"diskMode must be IndependentNonPersistent when using a VirtualMachineSnapshot volume source"))
+	}
+	if vol.Removable != nil && !*vol.Removable {
+		allErrs = append(allErrs, field.Invalid(
+			volPath.Child("removable"),
+			*vol.Removable,
+			"removable must be true when using a VirtualMachineSnapshot volume source"))
+	}
+
+	if snap.Name == "" {
+		return allErrs
+	}
+
+	snapshot := &vmopv1.VirtualMachineSnapshot{}
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      snap.Name,
+	}, snapshot); err != nil {
+		if apierrors.IsNotFound(err) {
+			allErrs = append(allErrs, field.NotFound(
+				snapPath.Child("name"), snap.Name))
+			return allErrs
+		}
+		allErrs = append(allErrs, field.InternalError(snapPath.Child("name"), err))
+		return allErrs
+	}
+
+	if !pkgcond.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+		allErrs = append(allErrs, field.Invalid(
+			snapPath.Child("name"),
+			snap.Name,
+			fmt.Sprintf("VirtualMachineSnapshot %s is not ready", snap.Name),
+		))
+	} else if snap.DiskID != "" {
+		foundDisk := false
+		for _, disk := range snapshot.Status.Disks {
+			if strings.EqualFold(disk.ID, snap.DiskID) {
+				foundDisk = true
+				break
+			}
+		}
+		if !foundDisk {
+			allErrs = append(allErrs, field.Invalid(
+				snapPath.Child("diskID"),
+				snap.DiskID,
+				fmt.Sprintf("diskID %s does not appear in status.disks of VirtualMachineSnapshot %s", snap.DiskID, snap.Name),
+			))
+		}
+	}
+
+	return allErrs
 }

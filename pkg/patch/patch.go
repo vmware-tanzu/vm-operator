@@ -152,20 +152,34 @@ func (h *Helper) Patch(ctx context.Context, obj client.Object, opts ...Option) e
 
 	// Issue patches and return errors in an aggregate.
 	//
-	// h.patchStatus goes first: for a StatusOptimisticLocker, it sends
-	// h.beforeObject's resourceVersion as a precondition, so it must run
-	// before anything else that could itself succeed and bump the object's
-	// resourceVersion out from under that stale snapshot. h.patch
-	// (spec/metadata) carries no precondition, so it doesn't matter whether
-	// it runs before or after. h.patchStatusConditions goes last: unlike
-	// h.patchStatus, it already tolerates - and expects - a stale starting
-	// point, since its retry loop re-fetches the object before every
-	// attempt. (For objects that aren't a StatusOptimisticLocker, none of
-	// this ordering affects correctness - it's a no-op reshuffle.)
+	// h.patchStatusConditions normally goes first: its own retry loop
+	// re-fetches the object before every attempt, so it tolerates a stale
+	// starting point, but running it after a write from this same call
+	// would still cost a guaranteed conflict-and-retry the first time
+	// through (the object it re-fetches may not yet reflect that write, via
+	// a cache-backed client) for every caller, whether or not the type uses
+	// StatusOptimisticLocker. h.patch (spec/metadata) carries no
+	// precondition, so its position relative to the others doesn't matter.
+	//
+	// h.patchStatus only carries a precondition (h.beforeObject's
+	// resourceVersion) for a StatusOptimisticLocker, so only that path needs
+	// to run patchStatus before anything else in this call that could bump
+	// the object's resourceVersion out from under that stale snapshot -
+	// including patchStatusConditions. That reorder is scoped to
+	// h.statusOptimisticLock so every other type keeps the original,
+	// self-conflict-free ordering.
+	if h.statusOptimisticLock {
+		return apierrorsutil.NewAggregate([]error{
+			h.patchStatus(ctx, obj),
+			h.patch(ctx, obj),
+			h.patchStatusConditions(ctx, obj, options.ForceOverwriteConditions, options.OwnedConditions),
+		})
+	}
+
 	return apierrorsutil.NewAggregate([]error{
-		h.patchStatus(ctx, obj),
-		h.patch(ctx, obj),
 		h.patchStatusConditions(ctx, obj, options.ForceOverwriteConditions, options.OwnedConditions),
+		h.patch(ctx, obj),
+		h.patchStatus(ctx, obj),
 	})
 }
 

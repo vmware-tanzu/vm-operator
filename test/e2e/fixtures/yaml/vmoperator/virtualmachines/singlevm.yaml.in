@@ -28,6 +28,9 @@ spec:
   resourcePolicyName: {{.ResourcePolicy}}
   {{end}}
   powerState: {{.PowerState}}
+  {{if .PowerOffMode}}
+  powerOffMode: {{.PowerOffMode}}
+  {{end}}
   {{if or .ConfigMapName .SecretName .Transport}}
   vmMetadata:
     {{if .ConfigMapName}}

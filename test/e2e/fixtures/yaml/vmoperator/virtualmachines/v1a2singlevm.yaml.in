@@ -33,6 +33,9 @@ spec:
     resourcePolicyName: {{.ResourcePolicy}}
   {{end}}
   powerState: {{.PowerState}}
+  {{if .PowerOffMode}}
+  powerOffMode: {{.PowerOffMode}}
+  {{end}}
   {{if and .Bootstrap (or .Bootstrap.CloudInit .Bootstrap.Sysprep .Bootstrap.VAppConfig .Bootstrap.LinuxPrep)}}
   bootstrap:
     {{if .Bootstrap.CloudInit }}

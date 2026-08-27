@@ -8,16 +8,18 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	// Configure testing.
 	. "github.com/onsi/ginkgo/v2"
+	ginkgotypes "github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
 
 	// Configure logging.
 	logs "github.com/sirupsen/logrus"
-	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2"
 	_ "k8s.io/kubernetes/test/e2e/framework"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -61,11 +63,19 @@ var (
 	testSuiteName               string
 	wcpNamespaceName            string
 	windowsServerVMName         string
+	windowsInlineServerVMName   string
 	linuxVMName                 string
 	config                      *e2eConfig.E2EConfig
 	svClusterProxy              wcpframework.WCPClusterProxyInterface
 	wcpClient                   wcp.WorkloadManagementAPI
 	wcpNamespaceCtx             wcpframework.NamespaceContext
+
+	// windowsSysprepSpecsWillRun is computed from a Ginkgo spec preview
+	// before RunSpecs is called and records whether any spec labeled
+	// consts.WindowsSysprepLabel will actually be run given the current
+	// focus/skip/label-filter configuration. It gates the (expensive)
+	// Windows VM precreation in SynchronizedBeforeSuite below.
+	windowsSysprepSpecsWillRun bool
 )
 
 func init() {
@@ -99,6 +109,20 @@ func TestVMService(t *testing.T) {
 	logs.SetOutput(GinkgoWriter)
 
 	defer klog.Flush()
+
+	// Preview the filtered spec tree (honoring -ginkgo.focus/-skip/-label-filter)
+	// before any spec runs, so suite setup below can skip precreating the Windows
+	// VM when nothing that needs it will actually run. PreviewSpecs must be called
+	// before RunSpecs; it cannot be called once the suite is running.
+	for _, specReport := range PreviewSpecs("VM Service E2E suite").SpecReports {
+		if !specReport.State.Is(ginkgotypes.SpecStatePassed) {
+			continue
+		}
+		if slices.Contains(specReport.Labels(), consts.WindowsSysprepLabel) {
+			windowsSysprepSpecsWillRun = true
+			break
+		}
+	}
 
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "VM Service E2E suite")
@@ -214,9 +238,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		// We only deploy the VM here and not block to wait for it to be ready.
 		deployVMWithCloudInit(ctx, wcpNamespaceName, linuxVMName, photonVMIName)
 
-		if fssEnabled := utils.IsFssEnabled(ctx, svClusterProxy.GetClient(),
-			config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"),
-			config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSWindowsSysprep")); fssEnabled {
+		if windowsSysprepSpecsWillRun {
 			// The Windows VM deployment and customization could take a while to complete.
 			// We only deploy the VM here and skip checking the VM status.
 			// The actual verification will be done in vm_guestcustomization spec.
@@ -233,6 +255,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			// the format specified in RFC-1034, Section 3.5 for DNS labels.
 			windowsServerVMName = fmt.Sprintf("%s-%s", "windows", capiutil.RandomString(4))
 			deployWindowsVMWithSysprep(ctx, wcpNamespaceName, windowsServerVMName, windowsVMIName)
+
+			By("Deploying a Windows VM with inline Sysprep config")
+			windowsInlineServerVMName = fmt.Sprintf("%s-%s", "windows2", capiutil.RandomString(4))
+			deployWindowsVMWithInlineSysprep(ctx, wcpNamespaceName, windowsInlineServerVMName, windowsVMIName)
 		}
 	}
 
@@ -335,7 +361,6 @@ func createWCPNamespaceCtx(ctx context.Context, name, clName, vmClassName, stora
 }
 
 // deployWindowsVMWithSysprep deploys a Windows VM with the minimal Sysprep config passed.
-// If WCP_VMService_v1alpha2 is enabled, it additionally deploys a v1a2 Windows VM with the same Sysprep config.
 func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string) {
 	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
 	secretName := "sysprep-data"
@@ -366,22 +391,29 @@ func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string)
 		Transport:        "Sysprep",
 		SecretName:       secretName,
 		PowerState:       "poweredOn",
+		PowerOffMode:     "Hard",
 	}
 	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create v1alpha1 Windows VM", string(vmYaml))
+	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM", string(vmYaml))
+}
 
-	if utils.IsFssEnabled(ctx, svClusterProxy.GetClient(),
-		config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSV1alpha2")) {
-		secretName = "inline-sysprep-data"
-		secret = manifestbuilders.Secret{
-			Namespace: ns,
-			Name:      secretName,
-		}
-		secretYaml = manifestbuilders.GetSecretYamlInlineSysprepData(secret)
-		Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with Sysprep data", string(secretYaml))
+// deployWindowsVMWithInlineSysprep deploys a Windows VM whose Sysprep answer
+// file is specified inline in spec.bootstrap.sysprep.sysprep, rather than via
+// a Secret referenced through rawSysprep (see deployWindowsVMWithSysprep).
+// This exercises the v1alpha2 API and the inline-Sysprep-data path.
+func deployWindowsVMWithInlineSysprep(ctx context.Context, ns, vmName, vmiName string) {
+	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
 
-		inlinedSysprep := fmt.Sprintf(`
+	secretName := "inline-sysprep-data"
+	secret := manifestbuilders.Secret{
+		Namespace: ns,
+		Name:      secretName,
+	}
+
+	secretYaml := manifestbuilders.GetSecretYamlInlineSysprepData(secret)
+	Expect(vmsvcClusterProxy.ApplyWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with inline Sysprep data", string(secretYaml))
+
+	inlinedSysprep := fmt.Sprintf(`
         guiUnattended:
           autoLogon: true
           autoLogonCount: 1
@@ -401,24 +433,23 @@ func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string)
         userData:
           fullName: "First User"
           orgName: "Broadcom"`, secretName)
-		// Keep Windows VM name under 15 chars so hostName inherited from vmName can adhere to
-		// the format specified in RFC-1034, Section 3.5 for DNS labels.
-		v1a2vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        ns,
-			Name:             vmName + "-a2",
-			VMClassName:      config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
-			StorageClassName: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-			ImageName:        vmiName,
-			PowerState:       "PoweredOn",
-			Bootstrap: manifestbuilders.Bootstrap{
-				Sysprep: &manifestbuilders.Sysprep{
-					Sysprep: &inlinedSysprep,
-				},
+
+	vmParameters := manifestbuilders.VirtualMachineYaml{
+		Namespace:        ns,
+		Name:             vmName,
+		VMClassName:      config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
+		StorageClassName: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
+		ImageName:        vmiName,
+		PowerState:       "PoweredOn",
+		PowerOffMode:     "Hard",
+		Bootstrap: manifestbuilders.Bootstrap{
+			Sysprep: &manifestbuilders.Sysprep{
+				Sysprep: new(inlinedSysprep),
 			},
-		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(v1a2vmParameters)
-		Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create v1alpha2 Windows VM", string(vmYaml))
+		},
 	}
+	vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM with inline Sysprep", string(vmYaml))
 }
 
 // deployVMWithCloudInit deploys a VM with the default cloud-init config passed.

@@ -36,6 +36,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 003 | [compute-config-reconcile](specs/003-compute-config-reconcile/) | VM Compute Configuration Reconciliation | In Review | vmop-3388 |
 | 004 | [nic-extraconfig-reconcile](specs/004-nic-extraconfig-reconcile/) | NIC ExtraConfig Reconciler — E2E Coverage (`spec.md`/`plan.md` pending) | In Progress | vmop-3782 |
 | 005 | [ipv6-template-funcs](specs/005-ipv6-template-funcs/) | Differentiate IPv4/IPv6 vApp/Sysprep template functions (V1alpha6) | In Progress | vmop-1152 |
+| 006 | [tag-controller-for-affinity](specs/006-tag-controller-for-affinity/) | Tag CRD + Tag Controller for Affinity | In Progress | vmop-3882 |
 
 ### Finding the right spec
 

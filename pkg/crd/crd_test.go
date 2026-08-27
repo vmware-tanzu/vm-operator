@@ -90,10 +90,16 @@ var (
 		"virtualmachineguestoptions.vim.vmware.com",
 	}
 
+	externalVMEviction = []string{
+		"automaticvmevictionpolicies.vsphere.policy.vmware.com",
+		"besteffortrestartpolicies.vsphere.policy.vmware.com",
+	}
+
 	externalAll = slices.Concat(
 		externalBYOK,
 		externalVSpherePolicy,
 		externalVIMConfigPolicy,
+		externalVMEviction,
 		[]string{storagePoliciesCRD},
 	)
 )
@@ -409,6 +415,46 @@ var _ = Describe("Install", func() {
 				},
 				Entry("policies", "policies"),
 			)
+		})
+
+		When("VMEviction is enabled without vSphere policies", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMEviction = true
+				})
+			})
+			It("should not install the VM eviction policy crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
+			})
+		})
+
+		When("vSphere policies are enabled without VMEviction", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VSpherePolicies = true
+				})
+			})
+			It("should not install the VM eviction policy crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVSpherePolicy)...)
+			})
+		})
+
+		When("vSphere policies and VMEviction are enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VSpherePolicies = true
+					config.Features.VMEviction = true
+				})
+			})
+			It("should get the expected crds, including both VM eviction policy crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVSpherePolicy, externalVMEviction)...)
+			})
 		})
 
 		When("groups are enabled", func() {
@@ -744,6 +790,7 @@ var _ = Describe("Install", func() {
 					config.Features.VMGroups = true
 					config.Features.VMSnapshots = true
 					config.Features.VSpherePolicies = true
+					config.Features.VMEviction = true
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.TelcoVMServiceAPI = true
@@ -784,13 +831,14 @@ var _ = Describe("Install", func() {
 			Expect(pkgcrd.Install(
 				pkgcfg.WithConfig(pkgcfg.Config{
 					Features: pkgcfg.FeatureStates{
-						FastDeploy:                   true,
-						ImmutableClasses:             true,
-						VMGroups:                     true,
-						VMSnapshots:                  true,
-						VSpherePolicies:              true,
-						BringYourOwnEncryptionKey:    true,
-						VirtualMachineConfigPolicy:   true,
+						FastDeploy:                 true,
+						ImmutableClasses:           true,
+						VMGroups:                   true,
+						VMSnapshots:                true,
+						VSpherePolicies:            true,
+						VMEviction:                 true,
+						BringYourOwnEncryptionKey:  true,
+						VirtualMachineConfigPolicy: true,
 					},
 				}),
 				client,

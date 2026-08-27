@@ -135,6 +135,18 @@ func Install( //nolint:gocyclo
 
 				return err
 			}
+		case "AutomaticVMEvictionPolicy",
+			"BestEffortRestartPolicy":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				features.VSpherePolicies && features.VMEviction,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
 		case "StoragePolicy":
 			if err := updateOrDeleteUnstructured(
 				ctx,

@@ -395,6 +395,7 @@ rules:
 - apiGroups:
   - vsphere.policy.vmware.com
   resources:
+  - automatichostevacuationpolicies
   - computepolicies
   - tagpolicies
   verbs:
@@ -404,6 +405,7 @@ rules:
 - apiGroups:
   - vsphere.policy.vmware.com
   resources:
+  - automatichostevacuationpolicies/status
   - computepolicies/status
   - tagpolicies/status
   verbs:

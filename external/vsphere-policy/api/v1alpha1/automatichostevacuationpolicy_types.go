@@ -92,6 +92,22 @@ func (p *AutomaticHostEvacuationPolicy) SetConditions(conditions []metav1.Condit
 	p.Status.Conditions = conditions
 }
 
+// GetMatchSpec returns the policy's match criteria.
+func (p *AutomaticHostEvacuationPolicy) GetMatchSpec() *MatchSpec {
+	return p.Spec.Match
+}
+
+// GetEnforcementMode returns the policy's enforcement mode.
+func (p *AutomaticHostEvacuationPolicy) GetEnforcementMode() PolicyEnforcementMode {
+	return p.Spec.EnforcementMode
+}
+
+// GetPolicyTags returns the names of the TagPolicy objects associated with
+// this policy.
+func (p *AutomaticHostEvacuationPolicy) GetPolicyTags() []string {
+	return p.Spec.Tags
+}
+
 // GetConditions returns the conditions associated with the policy status.
 func (p *AutomaticHostEvacuationPolicyStatus) GetConditions() []metav1.Condition {
 	return p.Conditions

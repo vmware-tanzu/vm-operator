@@ -87,6 +87,7 @@ var _ = Describe("Reconcile", func() {
 			WithStatusSubresource(
 				&vspherepolv1.PolicyEvaluation{},
 				&vspherepolv1.ComputePolicy{},
+				&vspherepolv1.AutomaticHostEvacuationPolicy{},
 				&vspherepolv1.TagPolicy{},
 			).
 			WithObjects(withObjs...).
@@ -196,6 +197,209 @@ var _ = Describe("Reconcile", func() {
 					Expect(updated.Status.Policies[0].Name).To(Equal(computePolicy.Name))
 					Expect(updated.Status.Policies[0].Generation).To(Equal(computePolicy.Generation))
 					Expect(updated.Status.Policies[0].Tags).To(BeEmpty())
+				})
+			})
+
+			Context("with mandatory AutomaticHostEvacuationPolicy", func() {
+				var evacuationPolicy *vspherepolv1.AutomaticHostEvacuationPolicy
+
+				BeforeEach(func() {
+					ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMEvacuation = true
+					})
+
+					evacuationPolicy = &vspherepolv1.AutomaticHostEvacuationPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-evacuation-policy",
+							Namespace: namespace,
+						},
+						Spec: vspherepolv1.AutomaticHostEvacuationPolicySpec{
+							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+						},
+					}
+					withObjs = append(withObjs, evacuationPolicy)
+				})
+
+				It("should add matching policy to status", func() {
+					req := ctrl.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      obj.Name,
+							Namespace: obj.Namespace,
+						},
+					}
+
+					result, err := reconciler.Reconcile(ctx, req)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+
+					var updated vspherepolv1.PolicyEvaluation
+					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+					Expect(updated.Status.Policies).To(HaveLen(1))
+					Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+					Expect(updated.Status.Policies[0].Kind).To(Equal("AutomaticHostEvacuationPolicy"))
+					Expect(updated.Status.Policies[0].Name).To(Equal(evacuationPolicy.Name))
+					Expect(updated.Status.Policies[0].Generation).To(Equal(evacuationPolicy.Generation))
+					Expect(updated.Status.Policies[0].Tags).To(BeEmpty())
+				})
+
+				Context("when VMEvacuation feature is disabled", func() {
+					BeforeEach(func() {
+						ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMEvacuation = false
+						})
+					})
+
+					It("should not add the policy to status", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(BeEmpty())
+					})
+
+					Context("and explicitly referenced", func() {
+						BeforeEach(func() {
+							obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+								{
+									APIVersion: vspherepolv1.GroupVersion.String(),
+									Kind:       "AutomaticHostEvacuationPolicy",
+									Name:       evacuationPolicy.Name,
+								},
+							}
+						})
+
+						It("should skip it like an unknown policy kind, without error", func() {
+							req := ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      obj.Name,
+									Namespace: obj.Namespace,
+								},
+							}
+
+							result, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(result).To(Equal(ctrl.Result{}))
+
+							var updated vspherepolv1.PolicyEvaluation
+							Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+							Expect(updated.Status.Policies).To(BeEmpty())
+						})
+					})
+				})
+
+				Context("with explicit reference that does not match", func() {
+					BeforeEach(func() {
+						evacuationPolicy.Spec.Match = &vspherepolv1.MatchSpec{
+							Workload: &vspherepolv1.MatchWorkloadSpec{
+								Labels: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "env",
+										Operator: metav1.LabelSelectorOpIn,
+										Values:   []string{"prod"},
+									},
+								},
+							},
+						}
+
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "AutomaticHostEvacuationPolicy",
+								Name:       evacuationPolicy.Name,
+							},
+						}
+					})
+
+					It("should return an error", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("failed to add explicit policy of kind AutomaticHostEvacuationPolicy"))
+						Expect(err.Error()).To(ContainSubstring("does not match"))
+						Expect(result).To(Equal(ctrl.Result{}))
+					})
+				})
+
+				Context("with explicit reference that does not exist", func() {
+					BeforeEach(func() {
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "AutomaticHostEvacuationPolicy",
+								Name:       "does-not-exist",
+							},
+						}
+					})
+
+					It("should return an error", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("failed to add explicit policy of kind AutomaticHostEvacuationPolicy"))
+						Expect(err.Error()).To(ContainSubstring("failed to get policy of kind AutomaticHostEvacuationPolicy"))
+						Expect(result).To(Equal(ctrl.Result{}))
+					})
+				})
+
+				Context("with a mandatory ComputePolicy also matching", func() {
+					var computePolicy *vspherepolv1.ComputePolicy
+
+					BeforeEach(func() {
+						computePolicy = &vspherepolv1.ComputePolicy{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "mixed-kind-compute-policy",
+								Namespace: namespace,
+							},
+							Spec: vspherepolv1.ComputePolicySpec{
+								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+							},
+						}
+						withObjs = append(withObjs, computePolicy)
+					})
+
+					It("should surface both kinds in status.policies", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(HaveLen(2))
+
+						var kinds []string
+						for _, p := range updated.Status.Policies {
+							kinds = append(kinds, p.Kind)
+						}
+						Expect(kinds).To(ConsistOf("ComputePolicy", "AutomaticHostEvacuationPolicy"))
+					})
 				})
 			})
 
@@ -1046,7 +1250,7 @@ var _ = Describe("Reconcile", func() {
 
 					result, err := reconciler.Reconcile(ctx, req)
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("compute policy \"explicit-compute-policy\" does not match"))
+					Expect(err.Error()).To(ContainSubstring("policy of kind ComputePolicy \"explicit-compute-policy\" does not match"))
 					Expect(result).To(Equal(ctrl.Result{}))
 
 				})
@@ -1067,8 +1271,8 @@ var _ = Describe("Reconcile", func() {
 
 						result, err := reconciler.Reconcile(ctx, req)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("failed to add explicit compute policy"))
-						Expect(err.Error()).To(ContainSubstring("failed to get compute policy"))
+						Expect(err.Error()).To(ContainSubstring("failed to add explicit policy of kind ComputePolicy"))
+						Expect(err.Error()).To(ContainSubstring("failed to get policy of kind ComputePolicy"))
 						Expect(result).To(Equal(ctrl.Result{}))
 					})
 				})
@@ -1994,7 +2198,7 @@ var _ = Describe("Reconcile", func() {
 
 						result, err := reconciler.Reconcile(ctx, req)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory compute policies"))
+						Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory policies of kind ComputePolicy"))
 						Expect(result).To(Equal(ctrl.Result{}))
 					})
 				})
@@ -2078,7 +2282,7 @@ var _ = Describe("Reconcile", func() {
 
 				result, err := reconciler.Reconcile(ctx, req)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory compute policies"))
+				Expect(err.Error()).To(ContainSubstring("failed to reconcile mandatory policies of kind ComputePolicy"))
 				Expect(err.Error()).To(ContainSubstring("failed to list compute policies"))
 				Expect(result).To(Equal(ctrl.Result{}))
 			})

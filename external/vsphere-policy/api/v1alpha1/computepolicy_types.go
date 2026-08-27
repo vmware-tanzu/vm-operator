@@ -86,6 +86,22 @@ func (p *ComputePolicy) SetConditions(conditions []metav1.Condition) {
 	p.Status.Conditions = conditions
 }
 
+// GetMatchSpec returns the policy's match criteria.
+func (p *ComputePolicy) GetMatchSpec() *MatchSpec {
+	return p.Spec.Match
+}
+
+// GetEnforcementMode returns the policy's enforcement mode.
+func (p *ComputePolicy) GetEnforcementMode() PolicyEnforcementMode {
+	return p.Spec.EnforcementMode
+}
+
+// GetPolicyTags returns the names of the TagPolicy objects associated with
+// this policy.
+func (p *ComputePolicy) GetPolicyTags() []string {
+	return p.Spec.Tags
+}
+
 func (p ComputePolicyStatus) GetConditions() []metav1.Condition {
 	return p.Conditions
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/configpolicy"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/hostmaintenancepolicy"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachineservice"
@@ -242,6 +243,17 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 				return configpolicy.SpecInput{
 					ClusterProxy:     svClusterProxy,
 					Config:           config,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
+		Context("HOST-MAINTENANCE-MODE-POLICY", func() {
+			hostmaintenancepolicy.Spec(context.TODO(), func() hostmaintenancepolicy.SpecInput {
+				return hostmaintenancepolicy.SpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPClient:        wcpClient,
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})

@@ -25,6 +25,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -228,6 +229,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmGroupParameters)
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update VirtualMachineGroup power state:\n %s", string(vmgRootYaml))
 
+			groupPowerOnTime := getGroupPowerOnTime(ctx, svClusterClient, input.WCPNamespaceName, vmgRootName)
+
 			By("Waiting for all VMs to be powered on")
 
 			for _, vmName := range vmMemberNames {
@@ -265,7 +268,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				}
 			}
 
-			By("Verifying group member VMs were powered on with specified delays", func() {
+			By("Verifying group member VMs were powered on per their boot order schedule", func() {
 				vcClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				defer vcenter.LogoutVimClient(vcClient)
 
@@ -289,30 +292,15 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(vm2MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 				Expect(vm3MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 
-				// Verify boot times to be within the expected delays.
-				// VM1 should boot with no delay (VM1's boot order has no powerOnDelay).
-				// VM2 should boot ~30 seconds after VM1 is powered on (VM2's boot order has powerOnDelay set to 30s).
-				// VM3 should boot ~1 minute after VM2 is powered on (VM3's boot order has powerOnDelay set to 1m).
 				Expect(vm1MO.Runtime.BootTime).ToNot(BeNil())
 				Expect(vm2MO.Runtime.BootTime).ToNot(BeNil())
 				Expect(vm3MO.Runtime.BootTime).ToNot(BeNil())
-				vm1BootTime := *vm1MO.Runtime.BootTime
-				vm2BootTime := *vm2MO.Runtime.BootTime
-				vm3BootTime := *vm3MO.Runtime.BootTime
-				vm2DelayFromVM1 := vm2BootTime.Sub(vm1BootTime)
-				vm3DelayFromVM2 := vm3BootTime.Sub(vm2BootTime)
-				By(fmt.Sprintf("VM boot timing: VM1: %v, VM2: %v (delay from VM1: %v), VM3: %v (delay from VM2: %v)",
-					vm1BootTime, vm2BootTime, vm2DelayFromVM1, vm3BootTime, vm3DelayFromVM2))
 
-				// Allow some tolerance (±15 seconds) for VM controller to reconcile and actually power on the VMs.
-				// The measured delay is the gap between vCenter runtime.bootTime values, which reflects
-				// per-VM PowerOn task latency (placement, datastore, VMX startup) in addition to the
-				// configured PowerOnDelay, so it can legitimately land further from the configured value
-				// than the delay enforced between PowerOn requests.
-				Expect(vm2DelayFromVM1).To(BeNumerically(">=", 15*time.Second), "VM2 boot delay should be at least 15s from VM1")
-				Expect(vm2DelayFromVM1).To(BeNumerically("<=", 45*time.Second), "VM2 boot delay should be at most 45s from VM1")
-				Expect(vm3DelayFromVM2).To(BeNumerically(">=", 45*time.Second), "VM3 boot delay should be at least 45s from VM2")
-				Expect(vm3DelayFromVM2).To(BeNumerically("<=", 75*time.Second), "VM3 boot delay should be at most 75s from VM2")
+				// PowerOnDelay accumulates across the boot order groups, so
+				// VM1 is scheduled at T0, VM2 at T0+30s and VM3 at T0+30s+1m.
+				verifyBootTime(groupPowerOnTime, vm1Name, *vm1MO.Runtime.BootTime, 0)
+				verifyBootTime(groupPowerOnTime, vm2Name, *vm2MO.Runtime.BootTime, 30*time.Second)
+				verifyBootTime(groupPowerOnTime, vm3Name, *vm3MO.Runtime.BootTime, 90*time.Second)
 			})
 
 			By("Creating a new standalone VM4 with spec.groupName unset and spec.powerState set to PoweredOn")
@@ -688,13 +676,15 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgRootParameters)
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update root VirtualMachineGroup power state:\n %s", string(vmgRootYaml))
 
+			groupPowerOnTime := getGroupPowerOnTime(ctx, svClusterClient, input.WCPNamespaceName, vmgRootName)
+
 			By("Waiting for all VMs to be powered on")
 
 			for _, vmName := range vmMemberNames {
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 			}
 
-			By("Verifying group member VMs were powered on with specified delays", func() {
+			By("Verifying group member VMs were powered on per their boot order schedule", func() {
 				vcClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				defer vcenter.LogoutVimClient(vcClient)
 
@@ -714,20 +704,15 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(vm1MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 				Expect(vm2MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 
-				// Verify boot times to be within the expected delays.
-				// VM1 should boot with no delay (VM1's boot order has no powerOnDelay).
-				// VM2 should boot ~90 seconds after VM1 is powered on (VM2's boot order has 1m powerOnDelay in child group, which also has 30s powerOnDelay in root group).
 				Expect(vm1MO.Runtime.BootTime).ToNot(BeNil())
 				Expect(vm2MO.Runtime.BootTime).ToNot(BeNil())
-				vm1BootTime := *vm1MO.Runtime.BootTime
-				vm2BootTime := *vm2MO.Runtime.BootTime
-				vm2DelayFromVM1 := vm2BootTime.Sub(vm1BootTime)
-				By(fmt.Sprintf("VM boot timing: VM1: %v, VM2: %v (delay from VM1: %v)",
-					vm1BootTime, vm2BootTime, vm2DelayFromVM1))
 
-				// Allow some tolerance (±30 seconds from 90 seconds) for VM controller to reconcile nested groups and actually power on the VMs.
-				Expect(vm2DelayFromVM1).To(BeNumerically(">=", 60*time.Second), "VM2 boot delay should be at least 60s from VM1")
-				Expect(vm2DelayFromVM1).To(BeNumerically("<=", 120*time.Second), "VM2 boot delay should be at most 120s from VM1")
+				// PowerOnDelay accumulates across nested groups, so VM1 is
+				// scheduled at T0 and VM2 at T0+30s+1m: 30s from the child
+				// group's boot order in the root group, plus the 1m on VM2's
+				// boot order within the child group.
+				verifyBootTime(groupPowerOnTime, vm1Name, *vm1MO.Runtime.BootTime, 0)
+				verifyBootTime(groupPowerOnTime, vm2Name, *vm2MO.Runtime.BootTime, 90*time.Second)
 			})
 
 			By("Changing root VirtualMachineGroup spec.powerState to PoweredOff")
@@ -1814,6 +1799,76 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			})
 		})
 	})
+}
+
+// getGroupPowerOnTime returns the time at which the given group's power state
+// change was recorded.
+//
+// The mutation webhook stamps this annotation as part of the update that
+// changes spec.powerState, and the controller uses it as the base time from
+// which each boot order group's cumulative PowerOnDelay is measured. It is
+// therefore the only valid reference point for boot timing assertions.
+func getGroupPowerOnTime(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace, name string) time.Time {
+
+	var powerOnTime time.Time
+	Eventually(func(g Gomega) {
+		vmg, err := utils.GetVirtualMachineGroup(ctx, client, namespace, name)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		v := vmg.Annotations[pkgconst.LastUpdatedPowerStateTimeAnnotation]
+		g.Expect(v).ToNot(BeEmpty(), "annotation %s is not set",
+			pkgconst.LastUpdatedPowerStateTimeAnnotation)
+
+		powerOnTime, err = time.Parse(time.RFC3339Nano, v)
+		g.Expect(err).ToNot(HaveOccurred())
+	}, "1m", "1s").Should(Succeed(),
+		"Timed out determining when the power state change of group %q was recorded", name)
+
+	return powerOnTime
+}
+
+// verifyBootTime asserts that a group member booted no earlier than the time
+// its boot order group scheduled it to be powered on, and no later than a
+// generous budget after that. totalDelay is the sum of the PowerOnDelay values
+// leading up to the member, accumulated across boot order groups (including
+// nested ones) from groupPowerOnTime.
+//
+// Members are checked against their own scheduled time, never against each
+// other: PowerOnDelay controls when the PowerOn request is issued, not when a
+// VM finishes powering on, and per-VM power on latency (placement, datastore,
+// VMX startup) varies by tens of seconds. For the same reason the members are
+// not asserted to boot in order, since a slow first member can legitimately
+// finish powering on after a later one.
+func verifyBootTime(
+	groupPowerOnTime time.Time,
+	name string,
+	bootTime time.Time,
+	totalDelay time.Duration) {
+
+	const (
+		// Slack for clock skew between the Supervisor, which stamps the group
+		// annotation, and vCenter, which stamps runtime.bootTime.
+		clockSkew = 5 * time.Second
+
+		// Coarse net for a grossly wrong delay, not a measure of PowerOnDelay
+		// accuracy, so it is deliberately generous.
+		powerOnBudget = 90 * time.Second
+	)
+
+	scheduled := groupPowerOnTime.Add(totalDelay)
+
+	By(fmt.Sprintf("VM boot timing: %s scheduled at %v (group power on + %v), booted at %v (%v later)",
+		name, scheduled, totalDelay, bootTime, bootTime.Sub(scheduled)))
+
+	Expect(bootTime).To(BeTemporally(">=", scheduled.Add(-clockSkew)),
+		"%s booted at %v, before its scheduled power on time %v",
+		name, bootTime, scheduled)
+	Expect(bootTime).To(BeTemporally("<=", scheduled.Add(powerOnBudget)),
+		"%s booted at %v, more than %v after its scheduled power on time %v",
+		name, bootTime, powerOnBudget, scheduled)
 }
 
 // waitForVMPoweredOffTime polls the given VM's vCenter runtime power state at

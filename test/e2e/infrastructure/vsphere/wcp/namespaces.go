@@ -11,9 +11,8 @@ import (
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -70,7 +69,6 @@ type NamespaceCreateInput struct {
 	SpecName               string
 	Kubeconfig             string
 	ArtifactFolder         string
-	ClientSet              *kubernetes.Clientset
 	Client                 ctrlclient.Client
 	WCPClient              WorkloadManagementAPI
 	StorageClassName       string
@@ -148,10 +146,8 @@ func CreateNamespace(ctx context.Context, input NamespaceCreateInput) (*corev1.N
 
 	// Check the supervisor storage class, get the storage policy from it.
 	// Avoid name based lookups as the VC storage policy name can be transformed when it's being synced to the supervisor cluster.
-	svClientSet := input.ClientSet
-	storageClass, err := svClientSet.StorageV1().StorageClasses().Get(ctx, input.StorageClassName, metav1.GetOptions{})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(storageClass).NotTo(BeNil())
+	storageClass := storagev1.StorageClass{}
+	Expect(input.Client.Get(ctx, ctrlclient.ObjectKey{Name: input.StorageClassName}, &storageClass)).To(Succeed())
 	Expect(storageClass.Parameters).NotTo(BeNil())
 	policyID, ok := storageClass.Parameters["storagePolicyID"]
 	Expect(ok).To(BeTrue(), "supervisor storage class must have a corresponding storage policy ID")
@@ -160,16 +156,15 @@ func CreateNamespace(ctx context.Context, input NamespaceCreateInput) (*corev1.N
 
 	namespaceForTest := input.SpecName
 
-	network := input.Network
+	var err error
 	switch {
-	case network != nil:
-		err = wcpClient.CreateNamespaceWithNetwork(clusterID, namespaceForTest, storageSpec, input.VMServiceSpec, network)
+	case input.Network != nil:
+		err = wcpClient.CreateNamespaceWithNetwork(clusterID, namespaceForTest, storageSpec, input.VMServiceSpec, input.Network)
 	case len(input.ReservedVMClassToCount) > 0:
 		err = wcpClient.CreateNamespaceWithVMReservation(namespaceForTest, input.Zone, input.SupervisorID, storageSpec, input.VMServiceSpec, input.ReservedVMClassToCount)
 	default:
 		err = wcpClient.CreateNamespaceWithSpecs(clusterID, namespaceForTest, storageSpec, input.VMServiceSpec)
 	}
-
 	Expect(err).NotTo(HaveOccurred())
 	WaitForNamespaceReady(wcpClient, namespaceForTest)
 

@@ -94,7 +94,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			wcp.WaitForNamespaceReady(wcpClient, secondNamespaceName)
 		}
 
-		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
 		By("Create VMClass only one time")

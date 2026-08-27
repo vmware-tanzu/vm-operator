@@ -87,7 +87,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
-		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
@@ -102,7 +102,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 			vcenter.VCSSHPort, testbed.RootUsername, []ssh.AuthMethod{ssh.Password(testbed.RootPassword)})
 		isAsyncSvUpgradeEnabled, _ := util.IsFSSEnabled(sshCommandRunner, utils.SupervisorAsyncUpgradeFSS)
 		isVMMutableNetworksCapEnabled = utils.IsSupervisorCapabilityEnabled(ctx,
-			svClusterProxy.GetClientSet(), svClusterProxy.GetDynamicClient(), mutableNetworksCap, isAsyncSvUpgradeEnabled)
+			svClusterProxy.GetClient(), mutableNetworksCap, isAsyncSvUpgradeEnabled)
 	})
 
 	AfterEach(func() {

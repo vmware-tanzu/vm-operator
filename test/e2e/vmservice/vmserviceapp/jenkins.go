@@ -63,7 +63,7 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx,
 			[]string{config.GetVariable("VMOPNamespace")},
-			input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, jenkinsSpecName))
+			input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, jenkinsSpecName))
 		DeferCleanup(cancelPodWatches)
 
 		vmName = fmt.Sprintf("source-%s", capiutil.RandomString(4))

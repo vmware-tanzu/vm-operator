@@ -10,8 +10,7 @@ import (
 
 	"github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	storagev1 "k8s.io/api/storage/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -34,14 +33,12 @@ func EnsureE2EEncryptionStorageInNamespace(
 	ctx context.Context,
 	vCenterClient *vim25.Client,
 	wcpClient wcp.WorkloadManagementAPI,
-	svClientSet kubernetes.Interface,
 	svClusterClient ctrlclient.Client,
 	cfg config.E2EConfig,
 	namespace, baseStorageClassName string,
 ) error {
-	storageClass, err := svClientSet.StorageV1().StorageClasses().
-		Get(ctx, baseStorageClassName, metav1.GetOptions{})
-	if err != nil {
+	storageClass := storagev1.StorageClass{}
+	if err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: baseStorageClassName}, &storageClass); err != nil {
 		return fmt.Errorf("get storage class %q: %w", baseStorageClassName, err)
 	}
 

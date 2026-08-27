@@ -66,7 +66,7 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
 
-		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, vmWebConsoleSpecName))
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, vmWebConsoleSpecName))
 		DeferCleanup(cancelPodWatches)
 
 		webconsoleName = fmt.Sprintf("%s-%s", vmWebConsoleSpecName, capiutil.RandomString(4))

@@ -104,7 +104,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		vmSnapshotCancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,
 			[]string{vmSvcE2EConfig.GetVariable("VMOPNamespace")},
-			vmSvcClusterProxy.GetClientSet(),
+			vmSvcClusterProxy.GetRESTConfig(),
 			filepath.Join(vmSnapshotInput.ArtifactFolder, vmSnapshotSpecName))
 		DeferCleanup(vmSnapshotCancelPodWatches)
 

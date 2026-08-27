@@ -30,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"sigs.k8s.io/cluster-api/util"
@@ -42,19 +43,22 @@ type Creator interface {
 }
 
 type WatchNamespaceEventsInput struct {
-	ClientSet *kubernetes.Clientset
-	Name      string
-	LogFolder string
+	RESTConfig *rest.Config
+	Name       string
+	LogFolder  string
 }
 
 // WatchNamespaceEvents creates a watcher that streams namespace events into a file.
+// This relies on an informer, which has no controller-runtime client.Client
+// equivalent, so a client-go clientset is constructed here, confined to this
+// one call site, rather than threaded through the suite.
 // Example usage:
 //
 //	ctx, cancelWatches := context.WithCancel(context.Background())
 //	go func() {
 //		defer GinkgoRecover()
 //		framework.WatchNamespaceEvents(ctx, framework.WatchNamespaceEventsInput{
-//			ClientSet: clientSet,
+//			RESTConfig: restConfig,
 //			Name: namespace.Name,
 //			LogFolder:   logFolder,
 //		})
@@ -62,8 +66,11 @@ type WatchNamespaceEventsInput struct {
 //	defer cancelWatches()
 func WatchNamespaceEvents(ctx context.Context, input WatchNamespaceEventsInput) {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for WatchNamespaceEvents")
-	Expect(input.ClientSet).NotTo(BeNil(), "input.ClientSet is required for WatchNamespaceEvents")
+	Expect(input.RESTConfig).NotTo(BeNil(), "input.RESTConfig is required for WatchNamespaceEvents")
 	Expect(input.Name).NotTo(BeEmpty(), "input.Name is required for WatchNamespaceEvents")
+
+	cs, err := kubernetes.NewForConfig(input.RESTConfig)
+	Expect(err).NotTo(HaveOccurred(), "Failed to get client-go client")
 
 	logFile := filepath.Clean(path.Join(input.LogFolder, "resources", input.Name, "events.log"))
 	Expect(os.MkdirAll(filepath.Dir(logFile), 0750)).To(Succeed())
@@ -74,7 +81,7 @@ func WatchNamespaceEvents(ctx context.Context, input WatchNamespaceEventsInput) 
 	defer func() { _ = f.Close() }()
 
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(
-		input.ClientSet,
+		cs,
 		10*time.Minute,
 		informers.WithNamespace(input.Name),
 	)
@@ -150,18 +157,18 @@ func CreateNamespace(ctx context.Context, input CreateNamespaceInput, intervals 
 
 // CreateNamespaceAndWatchEventsInput is the input type for CreateNamespaceAndWatchEvents.
 type CreateNamespaceAndWatchEventsInput struct {
-	Creator   Creator
-	ClientSet *kubernetes.Clientset
-	Name      string
-	LogFolder string
+	Creator    Creator
+	RESTConfig *rest.Config
+	Name       string
+	LogFolder  string
 }
 
 // CreateNamespaceAndWatchEvents creates a namespace and setups a watch for the namespace events.
 func CreateNamespaceAndWatchEvents(ctx context.Context, input CreateNamespaceAndWatchEventsInput) (*corev1.Namespace, context.CancelFunc) {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for CreateNamespaceAndWatchEvents")
 	Expect(input.Creator).ToNot(BeNil(), "Invalid argument. input.Creator can't be nil when calling CreateNamespaceAndWatchEvents")
-	Expect(input.ClientSet).ToNot(BeNil(), "Invalid argument. input.ClientSet can't be nil when calling ClientSet")
-	Expect(input.Name).ToNot(BeEmpty(), "Invalid argument. input.Name can't be empty when calling ClientSet")
+	Expect(input.RESTConfig).ToNot(BeNil(), "Invalid argument. input.RESTConfig can't be nil when calling CreateNamespaceAndWatchEvents")
+	Expect(input.Name).ToNot(BeEmpty(), "Invalid argument. input.Name can't be empty when calling CreateNamespaceAndWatchEvents")
 	Expect(os.MkdirAll(input.LogFolder, 0750)).To(Succeed(), "Invalid argument. input.LogFolder can't be created in CreateNamespaceAndWatchEvents")
 
 	namespace := CreateNamespace(ctx, CreateNamespaceInput{Creator: input.Creator, Name: input.Name}, "40s", "10s")
@@ -175,9 +182,9 @@ func CreateNamespaceAndWatchEvents(ctx context.Context, input CreateNamespaceAnd
 		defer GinkgoRecover()
 
 		WatchNamespaceEvents(watchesCtx, WatchNamespaceEventsInput{
-			ClientSet: input.ClientSet,
-			Name:      namespace.Name,
-			LogFolder: input.LogFolder,
+			RESTConfig: input.RESTConfig,
+			Name:       namespace.Name,
+			LogFolder:  input.LogFolder,
 		})
 	}()
 

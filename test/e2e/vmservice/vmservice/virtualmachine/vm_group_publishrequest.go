@@ -189,7 +189,7 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 		vmGroupCancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,
 			[]string{vmSvcE2EConfig.GetVariable("VMOPNamespace")},
-			vmSvcClusterProxy.GetClientSet(),
+			vmSvcClusterProxy.GetRESTConfig(),
 			filepath.Join(vmGroupPubInput.ArtifactFolder, vmGroupPubSpecName))
 		DeferCleanup(vmGroupCancelPodWatches)
 

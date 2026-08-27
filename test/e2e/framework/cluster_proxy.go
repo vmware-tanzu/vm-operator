@@ -27,8 +27,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -62,12 +60,6 @@ type ClusterProxyInterface interface {
 
 	// GetClient returns a controller-runtime client to the Kubernetes cluster.
 	GetClient() client.Client
-
-	// GetDynamicClient returns a client-go dynamic client for the cluster.
-	GetDynamicClient() dynamic.Interface
-
-	// GetClientSet returns a client-go client to the Kubernetes cluster.
-	GetClientSet() *kubernetes.Clientset
 
 	// GetRESTConfig returns the REST config for direct use with client-go if needed.
 	GetRESTConfig() *rest.Config
@@ -158,16 +150,6 @@ func (p *clusterProxy) GetClient() client.Client {
 	return NewRetryableClient(c)
 }
 
-// GetClientSet returns a client-go client for the cluster.
-func (p *clusterProxy) GetClientSet() *kubernetes.Clientset {
-	restConfig := p.GetRESTConfig()
-
-	cs, err := kubernetes.NewForConfig(restConfig)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get client-go client")
-
-	return cs
-}
-
 // Apply wraps `kubectl apply` and prints the output so we can see what gets applied to the cluster.
 // Optional noRetryPatterns: if provided, doesn't retry on errors matching these patterns.
 func (p *clusterProxy) Apply(ctx context.Context, resources []byte, noRetryPatterns ...string) error {
@@ -229,16 +211,6 @@ func (p *clusterProxy) GetRESTConfig() *rest.Config {
 	restConfig.UserAgent = "e2e"
 
 	return restConfig
-}
-
-// GetDynamicClient returns a client-go dynamic client for the cluster.
-func (p *clusterProxy) GetDynamicClient() dynamic.Interface {
-	restConfig := p.GetRESTConfig()
-
-	ds, err := dynamic.NewForConfig(restConfig)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get client-go dynamic client")
-
-	return ds
 }
 
 // newFromAPIConfig returns a clusterProxy given a api.Config and the scheme defining the types hosted in the cluster.

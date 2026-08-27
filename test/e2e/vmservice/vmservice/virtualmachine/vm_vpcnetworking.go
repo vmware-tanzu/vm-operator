@@ -132,7 +132,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 
 		svClusterConfig = config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
-		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)

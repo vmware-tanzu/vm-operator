@@ -101,7 +101,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx,
 			[]string{config.GetVariable("VMOPNamespace")},
-			input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, packerSpecName))
+			input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, packerSpecName))
 		DeferCleanup(cancelPodWatches)
 
 		vmName = fmt.Sprintf("source-%s", capiutil.RandomString(4))

@@ -98,7 +98,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			svClusterClient = clusterProxy.GetClient()
 			skipper.SkipUnlessVMImageRegistryFSSEnabled(ctx, svClusterClient, config)
 
-			cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, vmPubSpecName))
+			cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, vmPubSpecName))
 			DeferCleanup(cancelPodWatches)
 		})
 

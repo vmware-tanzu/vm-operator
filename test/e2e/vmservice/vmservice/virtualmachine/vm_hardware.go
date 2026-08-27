@@ -366,9 +366,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 			svClusterClient = clusterProxy.GetClient()
-			svClientSet := clusterProxy.GetClientSet()
 
-			cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, svClientSet, filepath.Join(input.ArtifactFolder, specName))
+			cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 			DeferCleanup(cancelPodWatches)
 
 			linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
@@ -388,8 +387,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			allDisksArePVCapabilityEnabled = utils.IsSupervisorCapabilityEnabled(
 				ctx,
-				clusterProxy.GetClientSet(),
-				clusterProxy.GetDynamicClient(),
+				svClusterClient,
 				consts.AllDisksArePVCapabilityName,
 				asyncSupervisorFSSEnabled)
 
@@ -398,9 +396,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			By("Creating EZT storage policy for multi-writer PVCs")
 			// Get the base WCP storage class to extract its policy ID.
-			storageClass, err := svClientSet.StorageV1().StorageClasses().
-				Get(ctx, clusterResources.StorageClassName, metav1.GetOptions{})
-			Expect(err).NotTo(HaveOccurred(), "Failed to get storage class %s", clusterResources.StorageClassName)
+			storageClass := storagev1.StorageClass{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: clusterResources.StorageClassName}, &storageClass)).
+				To(Succeed(), "Failed to get storage class %s", clusterResources.StorageClassName)
 
 			basePolicyID := storageClass.Parameters["storagePolicyID"]
 			Expect(basePolicyID).NotTo(BeEmpty(), "Storage class %s does not have storagePolicyID parameter",
@@ -2397,7 +2395,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				DeferCleanup(vcenter.LogoutVimClient, vCenterClient)
 
 				Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient, wcpClient,
-					clusterProxy.GetClientSet(), svClusterClient, *config,
+					svClusterClient, *config,
 					vmSvcNamespace, clusterResources.StorageClassName)).To(Succeed(),
 					"failed to ensure encryption storage in namespace %s", vmSvcNamespace)
 			})
@@ -2602,9 +2600,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				wffcSCName = clusterResources.StorageClassName + "-latebinding"
 
 				By("Verifying the late-binding storage class exists and uses WaitForFirstConsumer mode")
-				svClientSet := clusterProxy.GetClientSet()
-				sc, err := svClientSet.StorageV1().StorageClasses().
-					Get(ctx, wffcSCName, metav1.GetOptions{})
+				sc := &storagev1.StorageClass{}
+				err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: wffcSCName}, sc)
 				if err != nil {
 					Skip(fmt.Sprintf("storage class %q not found — skipping WFFC late-binding test: %v",
 						wffcSCName, err))

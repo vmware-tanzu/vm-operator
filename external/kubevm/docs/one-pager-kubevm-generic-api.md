@@ -23,6 +23,9 @@ That is the gap KubeVM fills, and it is complementary to both.
 
 This document proposes **KubeVM**, a generic and vendor-neutral `VirtualMachine` API served under the `kube-vm.io` group, together with a provider model that lets hypervisors and cloud VM services expose their machines — and, critically, their accelerators — through one portable, Kubernetes-native interface.
 KubeVM is intended to complement KubeVirt, not to replace it: it addresses the hypervisor-native design point that the VM-as-Pod model leaves unaddressed.
+The `VirtualMachine` resource is the starting point rather than the whole proposal.
+Standardizing the machine is what makes a set, a service, a rolling deployment — and eventually a workload model spanning both VMs and Pods — something the ecosystem writes once instead of once per platform.
+That trajectory is described in *Beyond a single machine*, and it is where most of the long-term value of a generic API lies.
 
 ## Goals
 
@@ -319,6 +322,40 @@ The generic API and each provider version independently, so the design follows C
 A provider CRD advertises which contract version it satisfies through a well-known label — as CAPI infrastructure objects carry a version marker — and the generic controller reconciles any provider that satisfies a contract version it understands.
 Each API, generic and provider alike, serves multiple versions behind conversion webhooks, so the stored and served representations can differ across an upgrade, and a newer generic core can continue to drive an older provider (and the reverse) as long as both share a supported contract version.
 This lets the generic core, VM Operator, and the cloud providers upgrade on their own cadence, with the contract version — not a synchronized release train — as the compatibility gate.
+
+## Beyond a single machine
+
+A portable `VirtualMachine` is the substrate, not the destination.
+The reason to standardize the machine first is that everything layered above it can then be written once.
+A controller that maintains a set of machines, keeps them behind a stable network identity, or replaces them in waves during an image update needs to understand *a* machine — not vSphere's machine, EC2's machine, and GCE's machine as three separate problems.
+That is where the leverage of a generic API actually comes from, and it is not something a provider-specific CRD can offer at any level of polish.
+
+Kubernetes itself is the clearest precedent.
+`Pod` alone did not drive adoption; `Deployment`, `Service`, `Job`, and the controllers layered above `Pod` did, and they were only possible because `Pod` was first a stable, portable contract.
+Cluster API repeats the pattern: almost nobody authors a bare `Machine`, because the value lives in `MachineDeployment` and `MachineSet`, written once against a deliberately narrow portable object and reused by every infrastructure provider.
+Read that way, a narrow portable core is not a shortcoming of this proposal but the precondition for the useful part.
+
+The sequence below is ordered by dependency rather than ambition, since each step needs the one before it.
+
+| Horizon | Resources | Why it is credible, and what it needs first |
+|---|---|---|
+| **Owed by v1** | `VirtualMachineImage` | Already referenced by `bootDisk.source.image` but not yet defined. The catalog question — whether images are portable types or provider-owned — has to be answered before the boot path is complete. |
+| **Next** | `VirtualMachineTemplate`, `VirtualMachineSet` | A template is only worth its indirection once something fans out from it, so the two arrive together. `VirtualMachineSpec` is already a standalone, embeddable struct, so a template is additive rather than a restructuring — the same relationship `PodTemplateSpec` has to `PodSpec`. Providers need matching template kinds so a set can stamp out provider objects alongside portable ones. |
+| **Next** | `VirtualMachineService` | The least speculative item here: VM Operator already ships a `VirtualMachineService`, so the shape has been exercised in production. Generalizing it means expressing membership by label selector and publishing endpoints the way a `Service` does, so that existing Kubernetes tooling and load balancers apply unchanged. |
+| **Then** | `VirtualMachineDeployment` | Rolling replacement over a set. This is also where the strongest safety property of the Cluster API model becomes available: fields that cannot be changed on a live machine are handled by replacing the machine rather than by failing the edit, which a single hand-authored VM cannot do without destroying its disks. |
+| **Then** | A bootstrap and customization provider contract | A second provider contract alongside the infrastructure one, mirroring Cluster API's separation of bootstrap providers from infrastructure providers. There is already a concrete gap driving it: the API defines cloud-init as its only bootstrap path, which does not reach Windows guests on platforms that use a different mechanism. |
+| **Further out** | A workload model spanning VMs and Pods | Deliberately speculative. Once machines, sets, and services are portable, a higher-level workload composed of both virtual machines and Pods becomes expressible — an application whose database runs in a VM with passthrough storage and whose stateless tier runs in Pods, described and rolled out as one unit. This is the most valuable direction and the least specified; it is listed to show where the model leads, not as a commitment. |
+
+One boundary is worth stating plainly, because it is easy to misread.
+Everything above orchestrates *above* the machine and continues to delegate *below* it.
+A `VirtualMachineDeployment` replacing machines in waves is workload orchestration; it is not this API re-implementing live migration, high availability, or host-level placement, which remain the provider's to implement and are listed as non-goals for exactly that reason.
+The higher-level controllers add no new provider obligations beyond the machine contract itself.
+
+This trajectory also sharpens the agentic case that motivates the proposal.
+Workloads that create a sandbox per task need a set-shaped primitive, warm capacity, and fast replacement far more than they need any individual field on a single machine.
+Those are properties of the layer above the machine, which is another reason to get the machine's contract right first rather than widening it.
+
+None of this is part of the initial version, and the ordering is deliberate: each step assumes the contract beneath it is stable, and adding higher-level resources before the machine contract settles would bake today's open questions into more places than one.
 
 ## In this repository
 

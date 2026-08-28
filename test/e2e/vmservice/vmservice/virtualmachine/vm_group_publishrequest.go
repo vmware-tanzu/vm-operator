@@ -327,13 +327,14 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 // newGroupMemberVM returns a VirtualMachine that joins the named group.
 //
 // The VM is built as a typed struct rather than rendered YAML because
-// promoteDisksMode is not expressible through the shared v1alpha5 fixture, and
-// this spec needs it: the spec publishes the same VM twice, and after the first
-// publish's snapshot is removed a background PromoteDisks task starts on the
-// source VM. vCenter takes a snapshot internally to serve the second publish's
-// CreateOvf, that snapshot queues behind the promote, and on a loaded testbed
-// the publish call blocks for minutes before failing with
-// "Unable to create snapshot of VM". Disk provenance is irrelevant to the
+// promoteDisksMode is not a field on the shared VirtualMachineYaml fixture, and
+// this spec needs it: the spec publishes the same VM three times, and the
+// second and third publishes land in the window where a background PromoteDisks
+// task is running on the source VM. Observed on a loaded testbed: the first
+// group publish (issued before promotion starts) completes in well under a
+// minute, while the next one, issued roughly a minute after the VMs were
+// created, never reports Complete and the spec times out. Disabling promotion
+// removes that collision; disk provenance is irrelevant to the
 // subset-selection and publish-completion behavior under test here.
 //
 // Power state is intentionally left unset to match what the fixture rendered;

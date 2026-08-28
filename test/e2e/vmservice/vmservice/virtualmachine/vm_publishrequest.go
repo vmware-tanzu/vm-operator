@@ -298,14 +298,13 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 						Reserved: &vmopv1.VirtualMachineReservedSpec{
 							ResourcePolicyName: clusterResources.VMResourcePolicyName,
 						},
-						// Suppress disk promotion so no background PromoteDisks
-						// task competes with the guest's first boot. A VM
-						// deployed from a freshly published image promotes off
-						// the image's parent disks, and on a loaded testbed that
-						// online promotion can run for minutes, delaying the
-						// guest reporting an IP past the wait-virtual-machine-vmip
-						// timeout. Disk provenance is irrelevant to the publish
-						// behavior under test here.
+						// Disable disk promotion. This VM has timed out
+						// waiting for an IP on a loaded testbed, and a
+						// promote running against its first boot is the
+						// likeliest culprit, though the logs don't prove
+						// it. Nothing here cares where the disks came
+						// from, so there is no reason to leave promotion
+						// running.
 						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
 					},
 				}

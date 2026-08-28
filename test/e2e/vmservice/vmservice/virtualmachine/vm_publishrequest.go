@@ -278,10 +278,38 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				By("Deploying a new VM from the published image")
 				// Use the published the vmi to deploy a new VM should succeed with VM powered on and IP assigned.
+				//
+				// The VM is built as a typed struct rather than rendered YAML
+				// because promoteDisksMode does not exist before v1alpha4, so
+				// the v1alpha2 fixture used elsewhere in this spec cannot set
+				// it -- the API server prunes fields absent from the requested
+				// version's schema.
 				newVmName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vm", capiutil.RandomString(4))
-				newVMBuilder := generateVMBuilder(input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources)
-				newVmYaml := manifestbuilders.GetVirtualMachineYamlA2(newVMBuilder)
-				Expect(clusterProxy.CreateWithArgs(ctx, newVmYaml)).NotTo(HaveOccurred(), "failed to create virtualmachine from the published image", string(newVmYaml))
+				newVM := &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      newVmName,
+					},
+					Spec: vmopv1.VirtualMachineSpec{
+						ClassName:    clusterResources.VMClassName,
+						ImageName:    publishedImageCRName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1.VirtualMachinePowerStateOn,
+						Reserved: &vmopv1.VirtualMachineReservedSpec{
+							ResourcePolicyName: clusterResources.VMResourcePolicyName,
+						},
+						// Disable disk promotion. This VM has timed out
+						// waiting for an IP on a loaded testbed, and a
+						// promote running against its first boot is the
+						// likeliest culprit, though the logs don't prove
+						// it. Nothing here cares where the disks came
+						// from, so there is no reason to leave promotion
+						// running.
+						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
+					},
+				}
+				Expect(svClusterClient.Create(ctx, newVM)).To(Succeed(),
+					"failed to create virtualmachine from the published image %+v", newVM)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
 			})

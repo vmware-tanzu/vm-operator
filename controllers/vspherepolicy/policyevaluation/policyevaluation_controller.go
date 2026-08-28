@@ -119,6 +119,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=computepolicies/status,verbs=get
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=automatichostevacuationpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=automatichostevacuationpolicies/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=besteffortrestartpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=besteffortrestartpolicies/status,verbs=get
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies/status,verbs=get
 
@@ -243,6 +245,7 @@ type computePolicyKindDescriptor struct {
 const (
 	computePolicyKind                 = "ComputePolicy"
 	automaticHostEvacuationPolicyKind = "AutomaticHostEvacuationPolicy"
+	bestEffortRestartPolicyKind       = "BestEffortRestartPolicy"
 )
 
 // computePolicyKinds is the registry of compute-policy kinds this
@@ -268,6 +271,18 @@ var computePolicyKinds = []computePolicyKindDescriptor{
 		},
 		newList: func() ctrlclient.ObjectList {
 			return &vspherepolv1.AutomaticHostEvacuationPolicyList{}
+		},
+		enabled: func(ctx context.Context) bool {
+			return pkgcfg.FromContext(ctx).Features.VMEvacuation
+		},
+	},
+	{
+		kind: bestEffortRestartPolicyKind,
+		newObj: func() matchableComputePolicy {
+			return &vspherepolv1.BestEffortRestartPolicy{}
+		},
+		newList: func() ctrlclient.ObjectList {
+			return &vspherepolv1.BestEffortRestartPolicyList{}
 		},
 		enabled: func(ctx context.Context) bool {
 			return pkgcfg.FromContext(ctx).Features.VMEvacuation

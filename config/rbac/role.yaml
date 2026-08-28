@@ -396,6 +396,7 @@ rules:
   - vsphere.policy.vmware.com
   resources:
   - automatichostevacuationpolicies
+  - besteffortrestartpolicies
   - computepolicies
   - tagpolicies
   verbs:
@@ -406,6 +407,7 @@ rules:
   - vsphere.policy.vmware.com
   resources:
   - automatichostevacuationpolicies/status
+  - besteffortrestartpolicies/status
   - computepolicies/status
   - tagpolicies/status
   verbs:

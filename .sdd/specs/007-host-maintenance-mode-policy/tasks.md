@@ -35,12 +35,12 @@
 
 ## Phase 4 — User Story: Tenant opts into BestEffortRestartPolicy
 
-- [ ] T017 [US-tenant-admin] [vmop-4103, vmop-4104] Implement `matchablePolicy` on `BestEffortRestartPolicy` and add its `policyKindDescriptor` table entry, mirroring T013 — the registry from Phase 3 means this is the only reconciler change needed for this kind (no new watch, mandatory-func, or switch case to write by hand).
-- [ ] T018 [US-tenant-admin] [vmop-4104] Add the corresponding RBAC markers for `besteffortrestartpolicies`/`besteffortrestartpolicies/status`; regenerate `config/rbac/role.yaml`.
-- [ ] T019 [US-tenant-admin] [vmop-4103] Update the `Policies []PolicySpec` doc comment ("Valid policy types are: ...") in `api/v1alpha6/virtualmachine_types.go` to include `BestEffortRestartPolicy`; run `make generate-manifests` to propagate into generated CRD YAML doc strings.
-- [ ] T020 [P] [US-tenant-admin] [vmop-4104] Unit tests in `policyevaluation_controller_test.go` for `BestEffortRestartPolicy`: explicit-ref match/no-match/not-found, mandatory match, feature-disabled — mirroring T015.
-- [ ] T021 [US-tenant-admin] [vmop-4104] E2E: add a spec verifying explicit `spec.policies` reference to `BestEffortRestartPolicy` tags a matching VM and errors on a non-matching explicit reference (see `plan.md` Test strategy item 2).
-- [ ] T022 [P] [US-tenant-admin] [vmop-4104] E2E: add a spec verifying a VM matching both a Mandatory `AutomaticHostEvacuationPolicy` and an Optional `BestEffortRestartPolicy` surfaces both entries in `status.policies` (see `spec.md`'s resolved decision on multi-match surfacing).
+- [x] T017 [US-tenant-admin] [vmop-4103, vmop-4104] Implement `matchablePolicy` on `BestEffortRestartPolicy` and add its `policyKindDescriptor` table entry, mirroring T013 — the registry from Phase 3 means this is the only reconciler change needed for this kind (no new watch, mandatory-func, or switch case to write by hand).
+- [x] T018 [US-tenant-admin] [vmop-4104] Add the corresponding RBAC markers for `besteffortrestartpolicies`/`besteffortrestartpolicies/status`; regenerate `config/rbac/role.yaml`.
+- [x] T019 [US-tenant-admin] [vmop-4103] Update the `Policies []PolicySpec` doc comment ("Valid policy types are: ...") in `api/v1alpha6/virtualmachine_types.go` to include `BestEffortRestartPolicy`; run `make generate-manifests` to propagate into generated CRD YAML doc strings.
+- [x] T020 [P] [US-tenant-admin] [vmop-4104] Unit tests in `policyevaluation_controller_test.go` for `BestEffortRestartPolicy`: explicit-ref match/no-match/not-found, mandatory match, feature-disabled — mirroring T015.
+- [x] T021 [US-tenant-admin] [vmop-4104] E2E: add a spec verifying explicit `spec.policies` reference to `BestEffortRestartPolicy` tags a matching VM and errors on a non-matching explicit reference (see `plan.md` Test strategy item 2).
+- [x] T022 [P] [US-tenant-admin] [vmop-4104] E2E: add a spec verifying a VM matching both a Mandatory `AutomaticHostEvacuationPolicy` and an Optional `BestEffortRestartPolicy` surfaces both entries in `status.policies` (see `spec.md`'s resolved decision on multi-match surfacing).
 
 ## Phase 5 — User Story: Power-state-synced status signal for host maintenance
 

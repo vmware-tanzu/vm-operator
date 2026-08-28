@@ -88,6 +88,7 @@ var _ = Describe("Reconcile", func() {
 				&vspherepolv1.PolicyEvaluation{},
 				&vspherepolv1.ComputePolicy{},
 				&vspherepolv1.AutomaticHostEvacuationPolicy{},
+				&vspherepolv1.BestEffortRestartPolicy{},
 				&vspherepolv1.TagPolicy{},
 			).
 			WithObjects(withObjs...).
@@ -399,6 +400,240 @@ var _ = Describe("Reconcile", func() {
 							kinds = append(kinds, p.Kind)
 						}
 						Expect(kinds).To(ConsistOf("ComputePolicy", "AutomaticHostEvacuationPolicy"))
+					})
+				})
+			})
+
+			Context("with mandatory BestEffortRestartPolicy", func() {
+				var restartPolicy *vspherepolv1.BestEffortRestartPolicy
+
+				BeforeEach(func() {
+					ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMEvacuation = true
+					})
+
+					restartPolicy = &vspherepolv1.BestEffortRestartPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-restart-policy",
+							Namespace: namespace,
+						},
+						Spec: vspherepolv1.BestEffortRestartPolicySpec{
+							EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+						},
+					}
+					withObjs = append(withObjs, restartPolicy)
+				})
+
+				It("should add matching policy to status", func() {
+					req := ctrl.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      obj.Name,
+							Namespace: obj.Namespace,
+						},
+					}
+
+					result, err := reconciler.Reconcile(ctx, req)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+
+					var updated vspherepolv1.PolicyEvaluation
+					Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+					Expect(updated.Status.Policies).To(HaveLen(1))
+					Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+					Expect(updated.Status.Policies[0].Kind).To(Equal("BestEffortRestartPolicy"))
+					Expect(updated.Status.Policies[0].Name).To(Equal(restartPolicy.Name))
+					Expect(updated.Status.Policies[0].Generation).To(Equal(restartPolicy.Generation))
+					Expect(updated.Status.Policies[0].Tags).To(BeEmpty())
+				})
+
+				Context("when VMEvacuation feature is disabled", func() {
+					BeforeEach(func() {
+						ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMEvacuation = false
+						})
+					})
+
+					It("should not add the policy to status", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(BeEmpty())
+					})
+
+					Context("and explicitly referenced", func() {
+						BeforeEach(func() {
+							obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+								{
+									APIVersion: vspherepolv1.GroupVersion.String(),
+									Kind:       "BestEffortRestartPolicy",
+									Name:       restartPolicy.Name,
+								},
+							}
+						})
+
+						It("should skip it like an unknown policy kind, without error", func() {
+							req := ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      obj.Name,
+									Namespace: obj.Namespace,
+								},
+							}
+
+							result, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(result).To(Equal(ctrl.Result{}))
+
+							var updated vspherepolv1.PolicyEvaluation
+							Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+							Expect(updated.Status.Policies).To(BeEmpty())
+						})
+					})
+				})
+
+				Context("with explicit reference that matches", func() {
+					BeforeEach(func() {
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "BestEffortRestartPolicy",
+								Name:       restartPolicy.Name,
+							},
+						}
+					})
+
+					It("should add the policy to status", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(HaveLen(1))
+						Expect(updated.Status.Policies[0].Kind).To(Equal("BestEffortRestartPolicy"))
+						Expect(updated.Status.Policies[0].Name).To(Equal(restartPolicy.Name))
+					})
+				})
+
+				Context("with explicit reference that does not match", func() {
+					BeforeEach(func() {
+						restartPolicy.Spec.Match = &vspherepolv1.MatchSpec{
+							Workload: &vspherepolv1.MatchWorkloadSpec{
+								Labels: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "env",
+										Operator: metav1.LabelSelectorOpIn,
+										Values:   []string{"prod"},
+									},
+								},
+							},
+						}
+
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "BestEffortRestartPolicy",
+								Name:       restartPolicy.Name,
+							},
+						}
+					})
+
+					It("should return an error", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("failed to add explicit policy of kind BestEffortRestartPolicy"))
+						Expect(err.Error()).To(ContainSubstring("does not match"))
+						Expect(result).To(Equal(ctrl.Result{}))
+					})
+				})
+
+				Context("with explicit reference that does not exist", func() {
+					BeforeEach(func() {
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "BestEffortRestartPolicy",
+								Name:       "does-not-exist",
+							},
+						}
+					})
+
+					It("should return an error", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("failed to add explicit policy of kind BestEffortRestartPolicy"))
+						Expect(err.Error()).To(ContainSubstring("failed to get policy of kind BestEffortRestartPolicy"))
+						Expect(result).To(Equal(ctrl.Result{}))
+					})
+				})
+
+				Context("with a mandatory AutomaticHostEvacuationPolicy also matching", func() {
+					var evacuationPolicy *vspherepolv1.AutomaticHostEvacuationPolicy
+
+					BeforeEach(func() {
+						evacuationPolicy = &vspherepolv1.AutomaticHostEvacuationPolicy{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "mixed-kind-evacuation-policy",
+								Namespace: namespace,
+							},
+							Spec: vspherepolv1.AutomaticHostEvacuationPolicySpec{
+								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+							},
+						}
+						withObjs = append(withObjs, evacuationPolicy)
+					})
+
+					It("should surface both kinds in status.policies", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(HaveLen(2))
+
+						var kinds []string
+						for _, p := range updated.Status.Policies {
+							kinds = append(kinds, p.Kind)
+						}
+						Expect(kinds).To(ConsistOf("AutomaticHostEvacuationPolicy", "BestEffortRestartPolicy"))
 					})
 				})
 			})

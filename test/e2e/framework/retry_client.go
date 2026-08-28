@@ -49,6 +49,7 @@ var RetryableTransientErrSubstrings = []string{
 	"unexpected eof",
 	"broken pipe",
 	"http2: server sent goaway",
+	"http2: client connection lost",
 	"context deadline exceeded",
 	"no endpoints available for service",
 	"unable to connect to the server",

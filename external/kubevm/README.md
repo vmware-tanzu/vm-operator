@@ -40,6 +40,8 @@ it establishes, accepts a valid object, applies its defaults, renders its
 printer columns, and rejects invalid input (missing `infrastructureRef`,
 out-of-enum `powerState`, duplicate disk names).
 
+[`ROADMAP.md`](ROADMAP.md) covers what comes next.
+
 ## Layout
 
 ```text

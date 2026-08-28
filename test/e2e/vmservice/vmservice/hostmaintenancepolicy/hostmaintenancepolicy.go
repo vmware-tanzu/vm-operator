@@ -13,13 +13,17 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -260,8 +264,20 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				ctx, input, svClusterClient, clusterProxy, vmName, nonMatchingLabel, restartPolicy.Name)
 
 			By("Verifying an error is surfaced for the non-matching explicit reference")
-			verifyVMHasFailureEvent(ctx, svClusterClient, input.WCPNamespaceName, vmName,
-				fmt.Sprintf("%s\" does not match", restartPolicy.Name))
+			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,
+				metav1.Condition{
+					Type:   vmopv1.VirtualMachineConditionPlacementReady,
+					Status: metav1.ConditionFalse,
+					Reason: "NotReady",
+				})
+
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			Expect(err).ToNot(HaveOccurred(), "failed to get K8s VM CR")
+			cond := apimeta.FindStatusCondition(
+				vm.GetConditions(), vmopv1.VirtualMachineConditionPlacementReady)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Message).To(ContainSubstring(
+				fmt.Sprintf("%s\" does not match", restartPolicy.Name)))
 		})
 
 	It("Should surface both a Mandatory AutomaticHostEvacuationPolicy and an Optional "+
@@ -305,6 +321,75 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					restartPolicy.Name:    restartTagID,
 				},
 				[]string{evacuationPolicy.Name, restartPolicy.Name})
+		})
+
+	// TODO(vmop-4104): VC level AutomaticHostEvacuationPolicy is not yet available, add a test, once it is available.
+	// This test mimics the infraInMaintenance condition though vm_host_affinity ComputePolicy (see
+	// pinVMToHost). 
+	It("Should surface VirtualMachinePowerStateSynced=False with reason InfraInMaintenance while the VM's "+
+		"host is in maintenance mode, and revert once the host exits maintenance mode",
+		Label("core-functional", "experimental"),
+		func() {
+			By("Creating an Optional BestEffortRestartPolicy matching the test label")
+			restartTagID := createVSphereTag(input.WCPClient, tagManager, "host-maint-restart")
+			restartTagPolicy := createTagPolicy(ctx, adminClient, input.WCPNamespaceName,
+				fmt.Sprintf("host-maint-restart-tag-policy-%s", capiutil.RandomString(4)), []string{restartTagID})
+			DeferCleanup(func(cleanupCtx context.Context) { _ = adminClient.Delete(cleanupCtx, restartTagPolicy) })
+			restartPolicy = createBestEffortRestartPolicy(ctx, adminClient, input.WCPNamespaceName,
+				fmt.Sprintf("host-maint-restart-policy-%s", capiutil.RandomString(4)), matchLabel, []string{restartTagPolicy.Name})
+
+			// BestEffortRestartPolicy is Optional, so it is only applied to a
+			// VM that explicitly references it in spec.policies -- unlike a
+			// Mandatory policy, matching labels alone is not enough (see the
+			// "explicit reference" It above).
+			By("Creating a powered-on VM that explicitly references the BestEffortRestartPolicy")
+			vmYaml = createVMWithExplicitPolicy(ctx, input, svClusterClient, clusterProxy, vmName, matchLabel, restartPolicy.Name)
+			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,
+				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
+
+			By("Verifying the VM's status.policies includes the BestEffortRestartPolicy")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to get K8s VM CR")
+
+				var found bool
+				for _, policy := range vm.Status.Policies {
+					if policy.Name == restartPolicy.Name {
+						found = true
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), "BestEffortRestartPolicy should appear in VM's status.policies")
+			}, input.Config.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
+
+			hostMoRef := getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vmName)
+
+			By("Pinning the VM to its current host so DRS cannot evacuate it during maintenance")
+			pinVMToHost(ctx, input.WCPClient, tagManager, svClusterClient, input.Config,
+				input.WCPNamespaceName, vmName, hostMoRef, matchLabel, "host-maint")
+
+			By("Putting the VM's host into maintenance mode")
+			enterTask := enterHostMaintenanceMode(ctx, vCenterClient, hostMoRef)
+			DeferCleanup(func(cleanupCtx context.Context) {
+				exitHostMaintenanceMode(cleanupCtx, vCenterClient, hostMoRef, enterTask)
+			})
+
+			By("Verifying VirtualMachinePowerStateSynced becomes False with reason InfraInMaintenance")
+			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,
+				metav1.Condition{
+					Type:   vmopv1.VirtualMachinePowerStateSynced,
+					Status: metav1.ConditionFalse,
+					Reason: "InfraInMaintenance",
+				})
+
+			By("Taking the VM's host out of maintenance mode")
+			exitHostMaintenanceMode(ctx, vCenterClient, hostMoRef, enterTask)
+			enterTask = nil
+
+			By("Verifying VirtualMachinePowerStateSynced reverts to True once the VM is powered back on")
+			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,
+				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
 		})
 }
 
@@ -526,35 +611,168 @@ func createVMWithExplicitPolicy(
 	return vmYaml
 }
 
-// verifyVMHasFailureEvent waits for a Warning event on the given VM whose
-// message contains messageSubstring. Explicit policy-reference mismatches
-// surface as a reconcile error, which the VM controller records via
-// record.Recorder.EmitEvent as a Warning "UpdateFailure" event rather than a
-// status condition (see controllers/virtualmachine/virtualmachine).
-func verifyVMHasFailureEvent(
+// getVMHostMoRef returns the ManagedObjectReference of the ESX host
+// currently running the named VM.
+func getVMHostMoRef(
 	ctx context.Context,
+	vCenterClient *vim25.Client,
 	svClusterClient ctrlclient.Client,
-	namespace, vmName, messageSubstring string) {
+	namespace, vmName string) vimtypes.ManagedObjectReference {
 
 	GinkgoHelper()
 
-	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, namespace, vmName)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to get K8s VM CR")
+	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, namespace, vmName)
+	Expect(err).ToNot(HaveOccurred(), "failed to get K8s VM CR")
 
-		var events corev1.EventList
-		g.Expect(svClusterClient.List(ctx, &events, ctrlclient.InNamespace(namespace))).To(Succeed())
+	vmMoRef := vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID}
+
+	var vmMO mo.VirtualMachine
+	propCollector := property.DefaultCollector(vCenterClient)
+	Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"runtime.host"}, &vmMO)).To(Succeed())
+	Expect(vmMO.Runtime.Host).ToNot(BeNil(), "VM %q has no host in its runtime info", vmName)
+
+	return *vmMO.Runtime.Host
+}
+
+// pinVMToHost creates a real, mandatory vm_host_affinity ComputePolicy that
+// tags the given host and matching VMs, forcing DRS to keep vmName on
+// hostMoRef instead of relocating it. It waits for the resulting
+// PolicyEvaluation to report the VM as compliant, so callers can be sure the
+// real vSphere tag -- and therefore DRS's placement constraint -- is in
+// effect before relying on it.
+func pinVMToHost(
+	ctx context.Context,
+	wcpClient wcp.WorkloadManagementAPI,
+	tagManager *tags.Manager,
+	svClusterClient ctrlclient.Client,
+	config *e2eConfig.E2EConfig,
+	namespace, vmName string,
+	hostMoRef vimtypes.ManagedObjectReference,
+	matchLabel map[string]string,
+	prefix string) {
+
+	GinkgoHelper()
+
+	By("Creating a real vSphere host/VM tag pair for a VM/Host affinity ComputePolicy")
+	tagCategoryName := fmt.Sprintf("%s-category-%s", prefix, capiutil.RandomString(4))
+	tagCategoryID, err := wcpClient.CreateTagCategory(tagCategoryName, "e2e host maintenance policy test")
+	Expect(err).ToNot(HaveOccurred(), "failed to create tag category")
+	Expect(tagCategoryID).NotTo(BeEmpty(), "tag category ID should be returned")
+
+	hostTagID, err := wcpClient.CreateTag(
+		fmt.Sprintf("%s-host-tag-%s", prefix, capiutil.RandomString(4)), "e2e host maintenance policy test", tagCategoryID)
+	Expect(err).ToNot(HaveOccurred(), "failed to create host tag")
+	Expect(hostTagID).NotTo(BeEmpty(), "host tag ID should be returned")
+
+	vmTagID, err := wcpClient.CreateTag(
+		fmt.Sprintf("%s-vm-tag-%s", prefix, capiutil.RandomString(4)), "e2e host maintenance policy test", tagCategoryID)
+	Expect(err).ToNot(HaveOccurred(), "failed to create VM tag")
+	Expect(vmTagID).NotTo(BeEmpty(), "VM tag ID should be returned")
+
+	DeferCleanup(func(cleanupCtx context.Context) {
+		_ = tagManager.DeleteTag(cleanupCtx, &tags.Tag{ID: hostTagID})
+		_ = tagManager.DeleteTag(cleanupCtx, &tags.Tag{ID: vmTagID})
+		_ = tagManager.DeleteCategory(cleanupCtx, &tags.Category{ID: tagCategoryID})
+	})
+
+	By("Assigning the host tag to the VM's current host")
+	Expect(wcpClient.AssignTagsToHost([]string{hostTagID}, hostMoRef.Value)).
+		To(Succeed(), "failed to assign tag to host %q", hostMoRef.Value)
+
+	By("Creating a Mandatory VM/Host affinity ComputePolicy and InfraPolicy pinning the VM to its host")
+	computePolicyID, err := wcpClient.CreateComputePolicy(wcp.ComputePolicySpec{
+		Name:        fmt.Sprintf("%s-compute-policy-%s", prefix, capiutil.RandomString(4)),
+		Description: "pin VM to its host for e2e host maintenance policy test",
+		HostTagID:   hostTagID,
+		VMTagID:     vmTagID,
+		Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+	})
+	Expect(err).ToNot(HaveOccurred(), "failed to create compute policy")
+	Expect(computePolicyID).NotTo(BeEmpty(), "compute policy ID should be returned")
+
+	infraPolicyName := fmt.Sprintf("%s-infra-policy-%s", prefix, capiutil.RandomString(4))
+	Expect(wcpClient.CreateInfraPolicy(wcp.InfraPolicySpec{
+		Name:               infraPolicyName,
+		Description:        "pin VM to its host for e2e host maintenance policy test",
+		ComputePolicyID:    computePolicyID,
+		EnforcementMode:    wcp.InfraPolicyEnforcementModeMandatory,
+		MatchWorkloadLabel: matchLabel,
+	})).To(Succeed(), "failed to create infra policy")
+
+	Expect(wcpClient.UpdateNamespaceWithInfraPolicies(namespace, infraPolicyName)).
+		To(Succeed(), "failed to assign infra policy to namespace")
+
+	By("Waiting for the VM to be tagged compliant with the host affinity policy")
+	policyEvaluationName := fmt.Sprintf("vm-%s", vmName)
+	Eventually(func(g Gomega) {
+		var policyEvaluation vspherepolv1.PolicyEvaluation
+		g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: policyEvaluationName}, &policyEvaluation)).
+			To(Succeed(), "PolicyEvaluation object should exist")
 
 		var found bool
-		for _, e := range events.Items {
-			if e.InvolvedObject.UID == vm.UID &&
-				e.Type == corev1.EventTypeWarning &&
-				strings.Contains(e.Message, messageSubstring) {
+		for _, policy := range policyEvaluation.Status.Policies {
+			if strings.Contains(policy.Name, infraPolicyName) {
 				found = true
-				break
+				g.Expect(policy.Tags).To(ContainElement(vmTagID))
 			}
 		}
-		g.Expect(found).To(BeTrue(),
-			"expected a Warning event on VM %q containing %q", vmName, messageSubstring)
-	}).Should(Succeed())
+		g.Expect(found).To(BeTrue(), "host affinity policy should appear in PolicyEvaluation")
+
+		cond := apimeta.FindStatusCondition(policyEvaluation.Status.Conditions, vspherepolv1.ReadyConditionType)
+		g.Expect(cond).NotTo(BeNil(), "Ready condition should be present")
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "PolicyEvaluation should be compliant")
+	}, config.GetIntervals("default", "wait-policy-evaluation-compliant")...).Should(Succeed())
+}
+
+// enterHostMaintenanceMode starts putting the given host into maintenance
+// mode and returns the task once it has been submitted, without waiting for
+// it to complete. On real vCenter, a powered-on VM must be evacuated before
+// the host fully enters maintenance mode, so waiting here could hang
+// indefinitely if evacuation cannot proceed (e.g. no DRS/vMotion capacity).
+// The VM Operator side only needs the task to be in progress to observe the
+// transitioning InfraInMaintenance state. It is a no-op (returning nil) if
+// the host is already in maintenance mode. Callers must cancel the returned
+// task (if non-nil) before attempting to exit maintenance mode, since the
+// task may still be queued/running when it does so.
+func enterHostMaintenanceMode(ctx context.Context, vCenterClient *vim25.Client, hostMoRef vimtypes.ManagedObjectReference) *object.Task {
+	GinkgoHelper()
+
+	if isHostInMaintenanceMode(ctx, vCenterClient, hostMoRef) {
+		return nil
+	}
+
+	task, err := object.NewHostSystem(vCenterClient, hostMoRef).EnterMaintenanceMode(ctx, 0, false, nil)
+	Expect(err).ToNot(HaveOccurred(), "failed to start EnterMaintenanceMode task for host %q", hostMoRef.Value)
+	return task
+}
+
+// exitHostMaintenanceMode takes the given host out of maintenance mode,
+// waiting for the task to complete. If enterTask is non-nil, it is cancelled
+// first (best-effort) in case it is still queued/running from a prior,
+// non-waited call to enterHostMaintenanceMode. It is a no-op if the host is
+// not in maintenance mode.
+func exitHostMaintenanceMode(ctx context.Context, vCenterClient *vim25.Client, hostMoRef vimtypes.ManagedObjectReference, enterTask *object.Task) {
+	GinkgoHelper()
+
+	if enterTask != nil {
+		_ = enterTask.Cancel(ctx)
+	}
+
+	if !isHostInMaintenanceMode(ctx, vCenterClient, hostMoRef) {
+		return
+	}
+
+	task, err := object.NewHostSystem(vCenterClient, hostMoRef).ExitMaintenanceMode(ctx, 0)
+	Expect(err).ToNot(HaveOccurred(), "failed to start ExitMaintenanceMode task for host %q", hostMoRef.Value)
+	Expect(task.Wait(ctx)).To(Succeed(), "ExitMaintenanceMode task failed for host %q", hostMoRef.Value)
+}
+
+func isHostInMaintenanceMode(ctx context.Context, vCenterClient *vim25.Client, hostMoRef vimtypes.ManagedObjectReference) bool {
+	GinkgoHelper()
+
+	var hostMO mo.HostSystem
+	propCollector := property.DefaultCollector(vCenterClient)
+	Expect(propCollector.RetrieveOne(ctx, hostMoRef, []string{"runtime.inMaintenanceMode"}, &hostMO)).To(Succeed())
+
+	return hostMO.Runtime.InMaintenanceMode
 }

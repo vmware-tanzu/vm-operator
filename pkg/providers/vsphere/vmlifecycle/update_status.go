@@ -402,7 +402,7 @@ func reconcileComputeConfigSynced(
 func reconcileStatusPowerState(
 	vmCtx pkgctx.VirtualMachineContext,
 	_ ctrlclient.Client,
-	_ *object.VirtualMachine,
+	vcVM *object.VirtualMachine,
 	_ ReconcileStatusData) []error { //nolint:unparam
 
 	vmCtx.VM.Status.PowerState = vmopv1util.ConvertPowerState(vmCtx.Logger,
@@ -413,14 +413,33 @@ func reconcileStatusPowerState(
 		c.Reason = "Synced"
 		c.Message = string(vmCtx.VM.Spec.PowerState)
 		conditions.Set(vmCtx.VM, c)
-	} else {
-		conditions.MarkFalse(
-			vmCtx.VM,
-			vmopv1.VirtualMachinePowerStateSynced,
-			"NotSynced",
-			"spec.powerState=%s != status.powerState=%s",
-			vmCtx.VM.Spec.PowerState, vmCtx.VM.Status.PowerState)
+		return nil
 	}
+
+	if pkgcfg.FromContext(vmCtx).Features.VMEvacuation {
+		if host := vmCtx.MoVM.Runtime.Host; host != nil {
+			state, err := vcenter.GetHostMaintenanceState(vmCtx, vcVM.Client(), *host)
+			if err != nil {
+				pkglog.FromContextOrDefault(vmCtx).Error(
+					err, "failed to get host maintenance state", "host", host.Value)
+			}
+			if err == nil && (state.InMaintenanceMode || state.TransitioningMaintenanceMode) {
+				conditions.MarkFalse(
+					vmCtx.VM,
+					vmopv1.VirtualMachinePowerStateSynced,
+					"InfraInMaintenance",
+					"the VM's host is in or transitioning into/out of maintenance mode")
+				return nil
+			}
+		}
+	}
+
+	conditions.MarkFalse(
+		vmCtx.VM,
+		vmopv1.VirtualMachinePowerStateSynced,
+		"NotSynced",
+		"spec.powerState=%s != status.powerState=%s",
+		vmCtx.VM.Spec.PowerState, vmCtx.VM.Status.PowerState)
 
 	return nil
 }

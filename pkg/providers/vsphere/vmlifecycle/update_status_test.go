@@ -3464,6 +3464,93 @@ var _ = Describe("UpdateStatus", func() {
 					})
 				})
 			})
+
+			Context("host maintenance mode", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+					vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				})
+
+				enterHostMaintenanceMode := func() {
+					host := vmCtx.MoVM.Runtime.Host
+					Expect(host).ToNot(BeNil())
+					task, err := object.NewHostSystem(vcVM.Client(), *host).
+						EnterMaintenanceMode(ctx, 0, false, nil)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(task.Wait(ctx)).To(Succeed())
+				}
+
+				When("VMEvacuation feature is disabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.Features.VMEvacuation = false
+						})
+					})
+
+					When("the VM's host is in maintenance mode", func() {
+						BeforeEach(func() {
+							enterHostMaintenanceMode()
+						})
+
+						It("should set VirtualMachinePowerStateSynced condition to False with reason NotSynced", func() {
+							cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+							Expect(cond).ToNot(BeNil())
+							Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+							Expect(cond.Reason).To(Equal("NotSynced"))
+						})
+					})
+				})
+
+				When("VMEvacuation feature is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.Features.VMEvacuation = true
+						})
+					})
+
+					When("the VM's host is not in maintenance mode", func() {
+						It("should set VirtualMachinePowerStateSynced condition to False with reason NotSynced", func() {
+							cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+							Expect(cond).ToNot(BeNil())
+							Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+							Expect(cond.Reason).To(Equal("NotSynced"))
+						})
+					})
+
+					When("the VM's host is in maintenance mode", func() {
+						BeforeEach(func() {
+							enterHostMaintenanceMode()
+						})
+
+						It("should set VirtualMachinePowerStateSynced condition to False with reason InfraInMaintenance", func() {
+							cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+							Expect(cond).ToNot(BeNil())
+							Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+							Expect(cond.Reason).To(Equal("InfraInMaintenance"))
+						})
+
+						It("should not include host-identifying text in the message", func() {
+							cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+							Expect(cond).ToNot(BeNil())
+							Expect(cond.Message).ToNot(ContainSubstring(vmCtx.MoVM.Runtime.Host.Value))
+						})
+					})
+
+					When("the VM's power state is already synced", func() {
+						BeforeEach(func() {
+							vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+							enterHostMaintenanceMode()
+						})
+
+						It("should set VirtualMachinePowerStateSynced condition to True", func() {
+							cond := conditions.Get(vmCtx.VM, vmopv1.VirtualMachinePowerStateSynced)
+							Expect(cond).ToNot(BeNil())
+							Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+							Expect(cond.Reason).To(Equal("Synced"))
+						})
+					})
+				})
+			})
 		})
 	})
 

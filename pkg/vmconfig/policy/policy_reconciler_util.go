@@ -205,12 +205,18 @@ func getPolicyEvaluationResults(
 			"spec", obj.Spec)
 
 		// The object is still being processed.
+		msg := pkgcond.GetMessage(obj, vspherepolv1.ReadyConditionType)
+		if msg != "" {
+			msg = ": " + msg
+		}
+
 		return fmt.Errorf(
 			"VM %[1]s/%[2]s "+
-				"PolicyEvaluation %[1]s/vm-%[2]s still being evaluated: %[3]w",
+				"PolicyEvaluation %[1]s/vm-%[2]s still being evaluated: %[3]w%[4]s",
 			vm.Namespace,
 			vm.Name,
-			ErrPolicyNotReady)
+			ErrPolicyNotReady,
+			msg)
 	}
 
 	switch result {

@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -122,8 +123,21 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 	}
 
 	createVMs := func() {
-		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vm1Name, vmChildGroupName, nil)
-		vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vm0Name, vmGroupName, nil)
+		imageName := vmoperator.WaitForVirtualMachineImageName(
+			ctx,
+			&vmSvcE2EConfig.Config,
+			vmSvcClusterProxy.GetClient(),
+			vmSvcNamespace,
+			vmservice.GetDefaultImageDisplayName(vmSvcClusterResources))
+
+		for _, vm := range []*vmopv1.VirtualMachine{
+			newGroupMemberVM(vmSvcNamespace, vm1Name, vmChildGroupName, imageName, *vmSvcClusterResources),
+			newGroupMemberVM(vmSvcNamespace, vm0Name, vmGroupName, imageName, *vmSvcClusterResources),
+		} {
+			By(fmt.Sprintf("Creating VirtualMachine %s/%s in group %s", vm.Namespace, vm.Name, vm.Spec.GroupName))
+			Expect(vmSvcClusterProxy.GetClient().Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %+v", vm)
+		}
+
 		vmoperator.VerifyVirtualMachineGroupLinked(ctx, vmSvcE2EConfig, vmSvcClusterProxy.GetClient(), vmSvcNamespace, vmGroupName, sets.New([]vmopv1.GroupMember{
 			{Kind: "VirtualMachine", Name: vm0Name},
 			{Kind: "VirtualMachineGroup", Name: vmChildGroupName},
@@ -308,4 +322,37 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 		By("Deleting non admin user")
 		vcenter.DeleteUserOrFail(user)
 	})
+}
+
+// newGroupMemberVM returns a VirtualMachine that joins the named group.
+//
+// The VM is built as a typed struct rather than rendered YAML because
+// promoteDisksMode is not expressible through the shared v1alpha5 fixture, and
+// this spec needs it: the spec publishes the same VM twice, and after the first
+// publish's snapshot is removed a background PromoteDisks task starts on the
+// source VM. vCenter takes a snapshot internally to serve the second publish's
+// CreateOvf, that snapshot queues behind the promote, and on a loaded testbed
+// the publish call blocks for minutes before failing with
+// "Unable to create snapshot of VM". Disk provenance is irrelevant to the
+// subset-selection and publish-completion behavior under test here.
+//
+// Power state is intentionally left unset to match what the fixture rendered;
+// the API defaults it to PoweredOn on create.
+func newGroupMemberVM(
+	namespace, name, groupName, imageName string,
+	clusterResources e2eConfig.Resources) *vmopv1.VirtualMachine {
+
+	return &vmopv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: vmopv1.VirtualMachineSpec{
+			GroupName:        groupName,
+			ClassName:        clusterResources.VMClassName,
+			StorageClass:     clusterResources.StorageClassName,
+			ImageName:        imageName,
+			PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
+		},
+	}
 }

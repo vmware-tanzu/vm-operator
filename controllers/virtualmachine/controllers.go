@@ -9,6 +9,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	vmmetrics "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/metrics"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/storagepolicyusage"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
@@ -24,6 +25,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 	if err := storagepolicyusage.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize virtualmachine storagepolicyusage controller: %w", err)
+	}
+	if err := vmmetrics.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize virtualmachine metrics controller: %w", err)
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {

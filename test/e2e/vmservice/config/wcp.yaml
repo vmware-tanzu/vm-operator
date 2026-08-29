@@ -53,6 +53,7 @@ intervals:
   default/wait-virtual-machine-service-endpoints: ["2m", "5s"]
   default/wait-virtual-machine-image-creation: ["10m", "5s"]
   default/consistent-virtual-machine-condition: ["30s", "5s"]
+  default/consistent-config-policy-spec: ["30s", "5s"]
   default/wait-virtual-machine-annotation-update: ["30s", "5s"]
   default/wait-virtual-machine-group-deletion: [ "60s", "5s" ]
   default/wait-virtual-machine-group-condition-update: [ "6m", "5s" ]
@@ -81,6 +82,7 @@ intervals:
   default/wait-policy-evaluation-update: ["3m", "10s"]
 
   default/wait-config-target-condition-update: ["5m", "10s"]
+  default/wait-config-policy-condition-update: ["5m", "10s"]
   default/wait-vm-config-options-creation: ["5m", "10s"]
   default/wait-vm-config-options-condition-update: ["5m", "10s"]
   default/wait-vm-guest-options-condition-update: ["5m", "10s"]

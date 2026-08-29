@@ -16,6 +16,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigoptions"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigpolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegrouppublishrequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimagecache"
@@ -101,6 +102,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 		if err := virtualmachineconfigoptions.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineConfigOptions controller: %w", err)
+		}
+		if err := virtualmachineconfigpolicy.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineConfigPolicy controller: %w", err)
 		}
 	}
 

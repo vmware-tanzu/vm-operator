@@ -242,10 +242,27 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 			}
 		}
 
+		// The PVCs are included so that the recommendation accounts for their
+		// storage policies, but their disk paths are not resolved: group
+		// placement uses PlaceVmsXCluster, and a real multi-VM batch call of
+		// this exact shape -- several VmPlacementSpecs, HostRecommRequired
+		// true -- was measured against real DRS to substitute the same host
+		// and datastore for every VM in the batch, ignoring each one's disk
+		// backing entirely. The same ConfigSpecs sent through PlaceVm instead
+		// derived the correct host and datastore for every volume, confirming
+		// this is specific to PlaceVmsXCluster rather than an ambiguity in
+		// what a disk backing means. Host derivation for host-local storage
+		// therefore does not work here the way it does in vmCreateDoPlacement,
+		// which uses PlaceVm for that reason.
+		//
+		// TODO(CRM-4964): RFE filed with DRS to honor ConfigSpec disk
+		// backings in PlaceVmsXCluster, or to accept a per-VM host constraint.
+		// Revisit once that lands.
 		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			createArgs.ConfigSpec,
-			createArgs.Storage.StorageClassToPolicyID)
+			createArgs.Storage,
+			nil)
 		if err != nil {
 			return nil, err
 		}

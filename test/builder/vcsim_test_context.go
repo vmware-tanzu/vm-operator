@@ -100,6 +100,13 @@ type VCSimTestConfig struct {
 	// NumDatastores is the number of datastores.
 	NumDatastores int
 
+	// NumClusterHosts is the number of ESXi hosts per cluster. Defaults to 2.
+	//
+	// Set this to 1 for tests that constrain PlacementSpec.Hosts to a single
+	// host: vcsim's PlaceVm indexes that list with a bound taken from the
+	// cluster's own host list, so a shorter list panics.
+	NumClusterHosts int
+
 	// WithContentLibrary configures a Content Library, populated with one image's
 	// name available in the TestContextForVCSim.ContentLibraryImageName.
 	WithContentLibrary bool
@@ -644,6 +651,9 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	vcModel.Host = 0
 	vcModel.Cluster = c.ZoneCount * c.ClustersPerZone
 	vcModel.ClusterHost = 2
+	if config.NumClusterHosts > 0 {
+		vcModel.ClusterHost = config.NumClusterHosts
+	}
 	vcModel.Portgroup = len(c.networkConfig)
 	vcModel.Datastore = max(config.NumDatastores, 1)
 

@@ -976,6 +976,8 @@ func errOrReconcileErr(reconcileErr, err error) error {
 //  10. Reconcile config
 //  11. Reconcile power state
 //  12. Reconcile snapshot create
+//
+//nolint:gocyclo
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -998,7 +1000,34 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 2. Get the recent tasks.
+	// 2. Reconcile host-local storage
+	//
+	//    This publishes the host the VM was actually created on to any of its
+	//    host-local PVCs that are not yet provisioned, so that CNS provisions
+	//    their volumes on that same host.
+	//
+	//    It runs this early, immediately after the VM's host is known, because
+	//    later steps depend on those volumes existing. Reconciling config, in
+	//    particular, fails while a PVC is still pending, and publishing after
+	//    that point would never be reached: the volume would wait for a host
+	//    that the VM would never get around to telling it.
+	//
+	//    It deliberately does not happen during placement either, since the
+	//    host must not be committed to anywhere until the VM really exists on
+	//    it. Running every reconcile makes it recover on its own if an earlier
+	//    attempt failed.
+	//
+	if pkgcfg.FromContext(vmCtx).Features.HostLocalStorage {
+		if err := vs.reconcileHostLocalStorage(vmCtx); err != nil {
+			if pkgerr.IsNoRequeueError(err) {
+				return errOrReconcileErr(reconcileErr, err)
+			}
+			reconcileErr = getReconcileErr("host-local storage", reconcileErr, err)
+		}
+	}
+
+	//
+	// 3. Get the recent tasks.
 	//
 	ctxWithRecentTaskInfo, err := vs.getRecentTaskInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1007,7 +1036,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
-	// 3. Get the attached tags.
+	// 4. Get the attached tags.
 	//
 	ctxWithAttachedTags, err := vs.getTags(vmCtx, vcClient)
 	if err != nil {
@@ -1016,7 +1045,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithAttachedTags
 
 	//
-	// 4. Get the volume info.
+	// 5. Get the volume info.
 	//
 	ctxWithVolumeInfo, err := vs.getVolumeInfo(vmCtx, vcClient)
 	if err != nil {
@@ -1025,7 +1054,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithVolumeInfo
 
 	//
-	// 5. Reconcile status
+	// 6. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1035,7 +1064,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 6. Reconcile location
+	// 7. Reconcile location
 	//
 	if err := vs.reconcileLocation(vmCtx, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1045,7 +1074,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 7. Reconcile schema upgrade
+	// 8. Reconcile schema upgrade
 	//
 	//    It is important that this step occurs *after* the status is
 	//    reconciled. This is because reconciling the status builds information
@@ -1059,7 +1088,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 8. Reconcile backup state (VKS nodes excluded)
+	// 9. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1069,7 +1098,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 9. Reconcile snapshot revert
+	// 10. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
@@ -1081,7 +1110,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 10. Reconcile config
+	// 11. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1111,7 +1140,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 11. Reconcile power state
+	// 12. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1121,7 +1150,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 12. Reconcile snapshot create
+	// 13. Reconcile snapshot create
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
@@ -1783,10 +1812,30 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		}
 	}
 
+	var needHostLocalPlacement bool
+	if pkgcfg.FromContext(vmCtx).Features.HostLocalStorage {
+		need, err := hostLocalPlacementNeeded(
+			vmCtx, vs.k8sClient, createArgs.Storage)
+		if err != nil {
+			return err
+		}
+		needHostLocalPlacement = need
+	}
+
+	// Naming each provisioned volume's disk by its real datastore path is what
+	// lets DRS work out the host, so no host or datastore has to be passed to
+	// placement.
+	diskPaths, err := pvcDiskPaths(
+		vmCtx, vcClient.VimClient(), vs.k8sClient, createArgs.Storage.PVCs)
+	if err != nil {
+		return err
+	}
+
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		createArgs.ConfigSpec,
-		createArgs.Storage.StorageClassToPolicyID)
+		createArgs.Storage,
+		diskPaths)
 	if err != nil {
 		return err
 	}
@@ -1799,8 +1848,9 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	}
 
 	constraints := placement.Constraints{
-		ChildRPName: createArgs.ChildResourcePoolName,
-		Zones:       pvcZones,
+		ChildRPName:            createArgs.ChildResourcePoolName,
+		Zones:                  pvcZones,
+		NeedHostLocalPlacement: needHostLocalPlacement,
 	}
 
 	result, err := placement.Placement(
@@ -2004,6 +2054,17 @@ func processPlacementResult(
 		}
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = hostFQDN
+	}
+
+	if result.HostLocalPlacement && createArgs.HostMoID == "" {
+		// Nothing is recorded on the VM here. The host chosen for a pending
+		// host-local volume is only a candidate until the VM is actually
+		// created on it, and placement may be re-entered several times before
+		// then. It is stamped onto the VM's host-local PVCs after a successful
+		// create instead, which is both the handoff to CNS and how a later
+		// reconcile recovers the decision.
+		return fmt.Errorf(
+			"placement result missing host required for host-local storage")
 	}
 
 	return nil

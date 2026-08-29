@@ -6,6 +6,7 @@ package datastore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/vmware/govmomi/find"
@@ -38,4 +39,11 @@ func GetDatastoreURLFromDatastorePath(
 	}
 
 	return datastore.NewURL(dsPath.Path).String(), nil
+}
+
+// IsNotFound returns true if err is a Datastore.Stat() not-found error.
+func IsNotFound(err error) bool {
+	var noSuchFile object.DatastoreNoSuchFileError
+	var noSuchDir object.DatastoreNoSuchDirectoryError
+	return errors.As(err, &noSuchFile) || errors.As(err, &noSuchDir)
 }

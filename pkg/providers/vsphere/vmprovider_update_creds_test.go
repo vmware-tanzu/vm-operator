@@ -40,8 +40,9 @@ var _ = Describe("UpdateVcCreds", func() {
 	When("New Credentials", func() {
 
 		It("VC Client is logged out", func() {
-			vcClient, err := vmProvider.VSphereClient(ctx)
+			vcClient, release, err := vmProvider.VSphereClient(ctx)
 			Expect(err).NotTo(HaveOccurred())
+			defer release()
 			Expect(vcClient).NotTo(BeNil())
 			session, err := vcClient.RestClient().Session(ctx)
 			Expect(err).NotTo(HaveOccurred())
@@ -63,8 +64,9 @@ var _ = Describe("UpdateVcCreds", func() {
 	When("Same Credentials", func() {
 
 		It("VC Client is not logged out", func() {
-			vcClient, err := vmProvider.VSphereClient(ctx)
+			vcClient, release, err := vmProvider.VSphereClient(ctx)
 			Expect(err).NotTo(HaveOccurred())
+			defer release()
 			Expect(vcClient).NotTo(BeNil())
 			session, err := vcClient.RestClient().Session(ctx)
 			Expect(err).NotTo(HaveOccurred())
@@ -76,8 +78,9 @@ var _ = Describe("UpdateVcCreds", func() {
 			}
 			Expect(vmProvider.UpdateVcCreds(ctx, data)).To(Succeed())
 			By("VC Client is the same", func() {
-				vcClient2, err := vmProvider.VSphereClient(ctx)
+				vcClient2, release2, err := vmProvider.VSphereClient(ctx)
 				Expect(err).NotTo(HaveOccurred())
+				defer release2()
 				Expect(vcClient2).To(BeIdenticalTo(vcClient))
 
 				session, err := vcClient.RestClient().Session(ctx)

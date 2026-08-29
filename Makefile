@@ -107,6 +107,11 @@ IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
+# Claude image
+IMAGE_CLAUDE ?= vmop-claude
+IMAGE_CLAUDE_TAG ?= latest
+IMAGE_CLAUDE_INFILE := Dockerfile.claude
+
 # E2E test image configuration
 E2E_BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
 E2E_IMAGE ?= vmoperator-e2e
@@ -195,6 +200,7 @@ endif
 IMAGE_VERSION ?= $(subst +,-,$(BUILD_VERSION))
 
 IMAGE_FILE ?= $(abspath $(ARTIFACTS_DIR))/$(IMAGE)-$(GOOS)_$(GOARCH).tar
+IMAGE_CLAUDE_OUTFILE ?= $(abspath $(ARTIFACTS_DIR))/$(IMAGE_CLAUDE)-$(GOOS)_$(GOARCH).tar
 
 export BUILD_BRANCH
 export BUILD_COMMIT
@@ -913,6 +919,31 @@ image-remove: ## Remove container image
 docker-build: image-build
 docker-push: image-push
 docker-remove: image-remove
+
+NPM_CONFIG_REGISTRY ?= https://packages.vcfd.broadcom.net/api/npm/npm-remote/
+
+.PHONY: image-build-claude
+image-build-claude: ## Build claude-cli image
+	ADDITIONAL_CRI_BUILD_FLAGS="--env NPM_CONFIG_REGISTRY=$(NPM_CONFIG_REGISTRY)" \
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" hack/build-container.sh \
+	  -i "$(IMAGE_CLAUDE)" \
+	  -t "$(IMAGE_CLAUDE_TAG)" \
+	  -f "$(IMAGE_CLAUDE_INFILE)"
+
+IMAGE_RUN_CLAUDE_DIR ?= $(abspath .)
+
+.PHONY: image-run-claude
+image-run-claude: ## Run claude-cli image
+	@mkdir -p "$(HOME)/.claude-in-container/claude"
+	@if [ ! -f "$(HOME)/.claude-in-container/claude.json" ]; then \
+	  echo "{}" >"$(HOME)/.claude-in-container/claude.json"; \
+	fi
+	$(CRI_BIN) run -it --rm \
+	  -v "$(HOME)/.claude-in-container/claude:/home/claude/.claude" \
+	  -v "$(HOME)/.claude-in-container/claude.json:/home/claude/.claude.json" \
+	  -v "$(HOME)/.gitconfig:/home/claude/.gitconfig" \
+	  -v "$(IMAGE_RUN_CLAUDE_DIR):/work" \
+	  $(IMAGE_CLAUDE):$(IMAGE_CLAUDE_TAG)
 
 ## --------------------------------------
 ## Vulnerability Checks

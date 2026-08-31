@@ -14,6 +14,7 @@ resources:
 - ../crd/external-crds/vsphere.policy.vmware.com_policyevaluations.yaml
 - ../crd/external-crds/vsphere.policy.vmware.com_requiredduringexecutionvmplacementpolicies.yaml
 - ../crd/external-crds/vsphere.policy.vmware.com_tagpolicies.yaml
+- ../crd/external-crds/vsphere.policy.vmware.com_tags.yaml
 - ../crd/external-crds/infra.vmware.com_storagepolicies.yaml
 - ../crd/external-crds/vim.vmware.com_configtargets.yaml
 - ../crd/external-crds/vim.vmware.com_virtualmachineconfigoptions.yaml

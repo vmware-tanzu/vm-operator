@@ -139,6 +139,11 @@ const (
 	// extension compatibility constraint mechanism. It gates VM Operator
 	// registering INVARIANT constraints on VMs it creates.
 	CapabilityKeyExtensionCompatConstraint = "supports_extension_compat_constraint"
+
+	// CapabilityKeyVMHardAffinityDuringExecution is the name of the
+	// capability key defined in the Supervisor capabilities CRD. It gates
+	// the TaggingAPI feature, i.e. the Tag CRD, controller, and webhook.
+	CapabilityKeyVMHardAffinityDuringExecution = "supports_vm_service_vm_hard_affinity_during_execution"
 )
 
 var (
@@ -317,6 +322,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		case CapabilityKeyExtensionCompatConstraint:
 			fs.ExtensionCompatConstraint = capStatus.Activated
+		case CapabilityKeyVMHardAffinityDuringExecution:
+			fs.TaggingAPI = capStatus.Activated
 		}
 
 	}

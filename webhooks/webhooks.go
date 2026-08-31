@@ -27,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinewebconsolerequest"
+	"github.com/vmware-tanzu/vm-operator/webhooks/vspherepolicy/tag"
 )
 
 // AddToManager adds all webhooks and a certificate manager to the provided controller manager.
@@ -64,6 +65,13 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 
 	if err := unifiedstoragequota.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize UnifiedStorageQuota webhooks: %w", err)
+	}
+
+	if pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		err := tag.AddToManager(ctx, mgr)
+		if err != nil {
+			return fmt.Errorf("failed to initialize Tag webhook: %w", err)
+		}
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VMGroups {

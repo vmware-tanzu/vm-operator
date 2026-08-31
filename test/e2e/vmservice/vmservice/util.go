@@ -1144,7 +1144,13 @@ func VerifyPostRegisterVM(
 
 	By("Verify that the restored VM IP matches the IP in the corresponding network provider resource")
 
-	newIP := vmoperator.GetVirtualMachineNetworkProviderIP(ctx, config, svClusterClient, vmNamespace, vmName)
+	// Poll rather than list-once: RegisterVM recreates the VM's
+	// network-interface object as part of the restore, and the
+	// network-provider controller (net-operator/NCP/NSX Operator) can take a
+	// moment to recreate it after the VM is powered back on.
+	networkProviderInfo := vmoperator.WaitForVMNetworkProviderInfo(ctx, config, svClusterClient, vmNamespace, vmName)
+	Expect(networkProviderInfo).ToNot(BeEmpty(), "no network provider info found for restored VirtualMachine %s/%s", vmNamespace, vmName)
+	newIP := networkProviderInfo[0].IPv4
 	// In some cases, a restored VM could keep old IP until GOSC runs again to update the guest network with new IP.
 	// Wait for the VM to have the new IP set in the guest network.
 	Eventually(func() bool {

@@ -379,11 +379,18 @@ func findBootDiskVolume(volumes []vmopv1.VirtualMachineVolume) *vmopv1.VirtualMa
 // spec.volumes until the boot disk (ControllerBusNumber 0, UnitNumber 0) has a
 // non-empty PersistentVolumeClaim.ClaimName. Returns the boot-disk volume name.
 // Only call this when the AllDisksArePVCs capability is enabled.
+//
+// specName selects the "wait-virtual-machine-condition-update" interval via
+// config.GetIntervals(specName, ...), which falls back to the "default"
+// interval when no "<specName>/wait-virtual-machine-condition-update" entry
+// exists. Pass "default" unless a specific spec needs a longer budget for
+// boot-disk promotion (e.g. because it is known to trigger a live Storage
+// vMotion) without affecting every other caller of this function.
 func WaitForBootDiskPVC(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,
-	ns, vmName string,
+	ns, vmName, specName string,
 ) (string, *vmopv1.VirtualMachine) {
 	By("Waiting on virtual machine conditions to become true")
 
@@ -418,7 +425,7 @@ func WaitForBootDiskPVC(
 		g.Expect(bootDiskVol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty(),
 			"Expected boot disk PVC to have a claim name")
 		bootDiskVolName = bootDiskVol.Name
-	}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+	}, config.GetIntervals(specName, "wait-virtual-machine-condition-update")...).
 		Should(Succeed(), "Timed out waiting for boot disk to be found in spec.volumes")
 
 	return bootDiskVolName, vm

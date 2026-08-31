@@ -45,6 +45,11 @@ intervals:
   default/wait-virtual-machine-creation: ["5m", "3s"]
   default/wait-virtual-machine-deletion: ["5m", "3s"]
   default/wait-virtual-machine-condition-update: ["5m", "3s"]
+  # Boot-disk promotion for this spec is a live Storage vMotion (VM home on
+  # nfsDatastore, child disk vSAN-backed) and has been observed taking well
+  # over 4 minutes under datastore/NFC contention; give it more headroom than
+  # "default" without loosening the timeout for every other caller.
+  register-vm-restore-disk-only/wait-virtual-machine-condition-update: ["12m", "5s"]
   default/wait-virtual-machine-powerstate: ["5m", "3s"]
   default/wait-virtual-machine-resize: ["5m", "3s"]
   default/wait-virtual-machine-moid: ["5m", "3s"]

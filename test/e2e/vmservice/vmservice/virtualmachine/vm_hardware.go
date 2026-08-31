@@ -1874,7 +1874,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, vmName, []string{})
 
-				bootDiskVolName, currentVM := vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+				bootDiskVolName, currentVM := vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, "default")
 				volumeNames := make([]string, 0, len(currentVM.Spec.Volumes))
 				for _, vol := range currentVM.Spec.Volumes {
 					volumeNames = append(volumeNames, vol.Name)

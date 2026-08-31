@@ -91,6 +91,10 @@ var (
 		"tagpolicies.vsphere.policy.vmware.com",
 	}
 
+	externalTagAPI = []string{
+		"tags.vsphere.policy.vmware.com",
+	}
+
 	externalVIMConfigPolicy = []string{
 		"configtargets.vim.vmware.com",
 		"virtualmachineconfigoptions.vim.vmware.com",
@@ -110,6 +114,7 @@ var (
 	externalAll = slices.Concat(
 		externalBYOK,
 		externalVSpherePolicy,
+		externalTagAPI,
 		externalVIMConfigPolicy,
 		externalVMEviction,
 		externalControlledRebalancing,
@@ -511,6 +516,19 @@ var _ = Describe("Install", func() {
 			})
 		})
 
+		When("TaggingAPI is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.TaggingAPI = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalTagAPI)...)
+			})
+		})
+
 		When("groups are enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -864,6 +882,7 @@ var _ = Describe("Install", func() {
 					config.Features.TelcoVMServiceAPI = true
 					config.Features.VirtualMachineConfigPolicy = true
 					config.Features.K8sWorkloadMgmtAPI = true
+					config.Features.TaggingAPI = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -910,6 +929,7 @@ var _ = Describe("Install", func() {
 						BringYourOwnEncryptionKey:   true,
 						VirtualMachineConfigPolicy:  true,
 						K8sWorkloadMgmtAPI:          true,
+						TaggingAPI:                  true,
 					},
 				}),
 				client,

@@ -38,7 +38,7 @@ Introduce a namespace-scoped `Tag` resource in the `vsphere.policy.vmware.com/v1
 | Controllers for other API groups not directly in `controllers/` | OK | `controllers/vspherepolicy/tag/`, registered from `controllers/vspherepolicy/controllers.go`. |
 | Webhooks for other API groups not directly in `webhooks/` | OK | `webhooks/vspherepolicy/tag/validation/`. (Note: `webhooks/configtarget/` is a pre-existing divergence for `vim.vmware.com`; this feature follows the rule, not that precedent.) |
 | Webhook validation logic in an unexported validator type, shared with unit tests | OK | `type validator struct` in the validation package, per the repository pattern. |
-| CEL preferred for simple structural rules; Go for complex/cross-field | OK | Immutability is a cross-field transition rule and the privileged-account rule cannot be expressed in CEL, so a Go validator handles all of them together (D8). |
+| CEL preferred for simple structural rules; Go for complex/cross-field | OK | Immutability of `spec.key`/`spec.value` is an unconditional transition rule, so CEL (`self == oldSelf`) enforces it; the privileged-account rule cannot be expressed in CEL, so a Go validator handles it together with label syntax and name derivation (D8). |
 | RBAC documented with kubebuilder markers | OK | See `model.md` "RBAC". |
 | One test file per package (`<package>_test.go`), one suite bootstrap | OK | Every new package gets exactly `<x>_test.go` + `<x>_suite_test.go`; no `_unit_test.go`/`_intg_test.go` split. |
 | Labels from `pkg/constants/testlabels` on top-level `Describe` | OK | See "Test strategy". |

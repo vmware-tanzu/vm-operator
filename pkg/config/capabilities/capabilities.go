@@ -162,6 +162,11 @@ const (
 	// defined in the Supervisor capabilities CRD for the VirtualMachineReplicaSet
 	// controller, webhooks, and CRD.
 	CapabilityKeyK8sWorkloadMgmtAPI = "supports_k8s_workload_mgmt_api"
+
+	// CapabilityKeyVMHardAffinityDuringExecution is the name of the
+	// capability key defined in the Supervisor capabilities CRD. It gates
+	// the TaggingAPI feature, i.e. the Tag CRD, controller, and webhook.
+	CapabilityKeyVMHardAffinityDuringExecution = "supports_vm_service_vm_hard_affinity_during_execution"
 )
 
 var (
@@ -348,6 +353,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMNetworkUnitNumbers = capStatus.Activated
 		case CapabilityKeyK8sWorkloadMgmtAPI:
 			fs.K8sWorkloadMgmtAPI = capStatus.Activated
+		case CapabilityKeyVMHardAffinityDuringExecution:
+			fs.TaggingAPI = capStatus.Activated
 		}
 
 	}

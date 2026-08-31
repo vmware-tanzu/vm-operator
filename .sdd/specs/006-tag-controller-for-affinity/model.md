@@ -70,7 +70,7 @@ status:
 | `Value` | `value` | `string` | `+required` | The label **value** the tag represents (e.g. `nginx`). Immutable after create. Mirrored into `metadata.labels[spec.key]`. An empty value is legal (see "Empty label value" below), so **no** `MinLength`. |
 | `Type` | `type,omitempty` | `TagType` | `+optional`, `Enum=System`, `default=System` | Describes the origin/category of this Tag. Currently a single-valued enum (`System`, the default); not consumed by any controller, webhook, or provider code in this feature — reserved for forward-compatibility. |
 
-`spec.key` and `spec.value` together are the resource's identity: they determine the resource name (see "Name derivation"), so a change to either would make the name wrong. Both are enforced immutable by the validating webhook.
+`spec.key` and `spec.value` together are the resource's identity: they determine the resource name (see "Name derivation"), so a change to either would make the name wrong. Both are enforced immutable by CEL transition rules (`self == oldSelf`) on the CRD.
 
 ### `TagStatus`
 
@@ -162,7 +162,7 @@ The resource is designed so that "does a `Tag` for this label exist?" and "give 
    |------------|---------------|---------|
    | `metadata.ownerReferences.uid` | one entry per owner UID | which `Tag`s does this VM own |
 
-   There is deliberately no index for the exact key/value pair. Validation V5 pins `metadata.name` to `TagResourceName(spec.key, spec.value)` on create, and V3/V4 make both fields immutable on update, so a pair is always resolvable by the keyed `Get` in (1) — the name can never drift from the pair it encodes.
+   There is deliberately no index for the exact key/value pair. Validation V5 pins `metadata.name` to `TagResourceName(spec.key, spec.value)` on create, and the CEL immutability rules make both fields immutable on update, so a pair is always resolvable by the keyed `Get` in (1) — the name can never drift from the pair it encodes.
 
    The reverse direction — "which VMs carry this `Tag`'s label?", which the `Tag` controller asks on every create, ownership change, and delete — is indexed on the **VM** side rather than recorded on the `Tag`: a multi-valued field index `metadata.labels.keyValue` on `vmopv1.VirtualMachine`. See `plan.md` "Field indexes and query patterns". Nothing about the tagged-VM set is persisted on the `Tag` itself, which is what keeps the resource free of a second source of truth that could drift from the VMs' actual labels.
 
@@ -200,10 +200,9 @@ Neither predicate is a subset or superset of the other in general: a VM can own 
 | Type | Status | Reason | Meaning |
 |------|--------|--------|---------|
 | `Ready` | `True` | `Ready` | The `Tag` has been observed at its current generation, its label mirror matches its spec, and its owner set is non-empty. |
-| `Ready` | `False` | `NoOwners` | The owner-reference list is empty and the `Tag` is being deleted. Set in-memory after the `Delete` call; because deletion is atomic (no finalizer), the object is usually gone before this is ever persisted, so this condition is rarely observed on a real read — it is best-effort, not a guaranteed transient state. |
 | `Ready` | `False` | `DeleteFailed` | The owner-reference list is empty but the `Delete` failed with something other than `NotFound` — typically the `ResourceVersion` precondition rejecting the delete because a VM added an owner reference concurrently. The reconcile returns the error, and the next one re-reads the fresh state. |
 
-`Ready` is required by the constitution ("Controllers must track `status.observedGeneration` and set a `Ready` condition"). The condition type constant is the pre-existing `vspherepolv1.ReadyConditionType` in `common_types.go`; `TagReadyReason` and `TagNoOwnersReason` are new constants declared in `tag_types.go`, and `DeleteFailed` is a private constant in the controller package since nothing outside it can observe that state.
+`Ready` is required by the constitution ("Controllers must track `status.observedGeneration` and set a `Ready` condition"). The condition type constant is the pre-existing `vspherepolv1.ReadyConditionType` in `common_types.go`; the `True` status sets no reason of its own (`conditions.MarkTrue` supplies the default), and `TagDeleteFailedReason` is declared in `tag_types.go` alongside the other API constants. A `Tag` with no owners is deleted outright and the reconcile returns without mutating it, so no condition is written for that case: deletion is atomic (no finalizer) and a patch would target an object that no longer exists.
 
 There is no condition for a label-mirror failure. Mirror correction writes `metadata.labels[spec.key]` on the in-memory object and the reconcile's deferred patch persists it, so a failure surfaces as that patch's error rather than as a distinct reason.
 
@@ -217,8 +216,6 @@ Located at `webhooks/vspherepolicy/tag/validation/tag_validator.go` (D8). Verbs:
 |---|------|-----------|-------|
 | V1 | `spec.key` MUST be non-empty and a valid Kubernetes label key | CREATE, UPDATE | `field.Invalid(spec.key, …)` |
 | V2 | `spec.value` MUST be a valid Kubernetes label value (empty permitted) | CREATE, UPDATE | `field.Invalid(spec.value, …)` |
-| V3 | `spec.key` MUST NOT change | UPDATE | `field.Forbidden(spec.key, "field is immutable")` |
-| V4 | `spec.value` MUST NOT change | UPDATE | `field.Forbidden(spec.value, "field is immutable")` |
 | V5 | `metadata.name` MUST equal the derived name for `spec.key`/`spec.value` | CREATE | `field.Invalid(metadata.name, …)` |
 | V6 | Only privileged accounts, or the system service accounts allow-listed below, may create, update, or delete a `Tag` | CREATE, UPDATE, DELETE | `field.Forbidden(…, "only privileged users may …")` |
 

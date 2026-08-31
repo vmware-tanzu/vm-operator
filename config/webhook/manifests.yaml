@@ -163,6 +163,28 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /default-validate-vsphere-policy-vmware-com-v1alpha1-tag
+  failurePolicy: Fail
+  name: default.validating.tag.v1alpha1.vsphere.policy.vmware.com
+  rules:
+  - apiGroups:
+    - vsphere.policy.vmware.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - tags
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine
   failurePolicy: Fail
   name: default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com

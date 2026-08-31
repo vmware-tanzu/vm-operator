@@ -25,7 +25,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
-	"github.com/vmware-tanzu/vm-operator/controllers/vspherepolicy"
+	"github.com/vmware-tanzu/vm-operator/controllers/vspherepolicy/policyevaluation"
+	"github.com/vmware-tanzu/vm-operator/controllers/vspherepolicy/tag"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
@@ -88,8 +89,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
-		if err := vspherepolicy.AddToManager(ctx, mgr); err != nil {
-			return fmt.Errorf("failed to initialize vSphere Policy controllers: %w", err)
+		if err := policyevaluation.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize vSphere policy evaluation controller: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		if err := tag.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize vSphere Policy Tag controllers: %w", err)
 		}
 	}
 

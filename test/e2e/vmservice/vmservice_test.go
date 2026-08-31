@@ -10,6 +10,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/configpolicy"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
+	tagcr "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/tag"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachineservice"
@@ -279,6 +280,16 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					WCPClient:        wcpClient,
 					ArtifactFolder:   artifactFolder,
 					SkipCleanup:      skipCleanup,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
+		Context("TAG-CR", func() {
+			tagcr.Spec(context.TODO(), func() tagcr.SpecInput {
+				return tagcr.SpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})

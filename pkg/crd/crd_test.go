@@ -83,6 +83,10 @@ var (
 		"tagpolicies.vsphere.policy.vmware.com",
 	}
 
+	externalTagAPI = []string{
+		"tags.vsphere.policy.vmware.com",
+	}
+
 	externalVIMConfigPolicy = []string{
 		"configtargets.vim.vmware.com",
 		"virtualmachineconfigoptions.vim.vmware.com",
@@ -93,6 +97,7 @@ var (
 	externalAll = slices.Concat(
 		externalBYOK,
 		externalVSpherePolicy,
+		externalTagAPI,
 		externalVIMConfigPolicy,
 		[]string{storagePoliciesCRD},
 	)
@@ -409,6 +414,19 @@ var _ = Describe("Install", func() {
 				},
 				Entry("policies", "policies"),
 			)
+		})
+
+		When("TaggingAPI is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.TaggingAPI = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalTagAPI)...)
+			})
 		})
 
 		When("groups are enabled", func() {
@@ -748,6 +766,7 @@ var _ = Describe("Install", func() {
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.TelcoVMServiceAPI = true
 					config.Features.VirtualMachineConfigPolicy = true
+					config.Features.TaggingAPI = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -784,13 +803,14 @@ var _ = Describe("Install", func() {
 			Expect(pkgcrd.Install(
 				pkgcfg.WithConfig(pkgcfg.Config{
 					Features: pkgcfg.FeatureStates{
-						FastDeploy:                   true,
-						ImmutableClasses:             true,
-						VMGroups:                     true,
-						VMSnapshots:                  true,
-						VSpherePolicies:              true,
-						BringYourOwnEncryptionKey:    true,
-						VirtualMachineConfigPolicy:   true,
+						FastDeploy:                 true,
+						ImmutableClasses:           true,
+						VMGroups:                   true,
+						VMSnapshots:                true,
+						VSpherePolicies:            true,
+						BringYourOwnEncryptionKey:  true,
+						VirtualMachineConfigPolicy: true,
+						TaggingAPI:                 true,
 					},
 				}),
 				client,

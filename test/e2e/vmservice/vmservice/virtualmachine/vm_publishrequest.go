@@ -284,7 +284,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
 			})
 
-			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional", "experimental"), func() {
+			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional"), func() {
 				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
 
 				By("Attaching the target content library to the namespace as writable")

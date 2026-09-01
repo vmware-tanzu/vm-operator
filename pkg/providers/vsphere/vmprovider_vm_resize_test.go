@@ -668,7 +668,7 @@ func vmResizeTests() {
 		})
 	})
 
-	Context("Class configuration synced", func() {
+	Context("Overrides", func() {
 
 		var (
 			vm         *vmopv1.VirtualMachine
@@ -703,12 +703,41 @@ func vmResizeTests() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 		})
 
+		Context("ChangeBlockTracking", func() {
+			It("Overrides", func() {
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					ChangeBlockTracking: vimtypes.NewBool(true),
+				}
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
+
+				assertExpectedResizedClassFields(vm, vmClass)
+			})
+		})
+
 		Context("VM Class does not exist", func() {
-			It("Marks the condition unknown", func() {
+			BeforeEach(func() {
+				configSpec.ChangeTrackingEnabled = vimtypes.NewBool(false)
+			})
+
+			It("Still applies overrides", func() {
 				Expect(ctx.Client.Delete(ctx, vmClass)).To(Succeed())
 
-				_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					ChangeBlockTracking: vimtypes.NewBool(true),
+				}
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
 
 				// BMV: TBD exactly what we should do in this case.
 				// Expect(vm.Status.Class).To(BeNil())
@@ -721,11 +750,22 @@ func vmResizeTests() {
 		})
 
 		Context("VM Classless VMs", func() {
-			It("Does not set the condition", func() {
-				vm.Spec.ClassName = ""
+			BeforeEach(func() {
+				configSpec.ChangeTrackingEnabled = vimtypes.NewBool(false)
+			})
 
-				_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			It("Still applies overrides", func() {
+				vm.Spec.ClassName = ""
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					ChangeBlockTracking: vimtypes.NewBool(true),
+				}
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
 
 				Expect(vm.Status.Class).To(BeNil())
 				Expect(conditions.Get(vm, vmopv1.VirtualMachineClassConfigurationSynced)).To(BeNil())

@@ -1013,6 +1013,16 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 	}
 
+	// Change block tracking is not part of the class-based resize diff, but it
+	// is a spec field that must still be applied while the VM is powered off.
+	// Without this, a CBT change would not take effect until the VM is next
+	// powered on and reconciled through the update path.
+	UpdateConfigSpecChangeBlockTracking(
+		vmCtx,
+		moVM.Config,
+		&configSpec,
+		vmCtx.VM.Spec)
+
 	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
 		vmCtx,
 		*vmCtx.VM,

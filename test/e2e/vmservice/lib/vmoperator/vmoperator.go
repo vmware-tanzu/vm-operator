@@ -726,6 +726,57 @@ func VerifyVirtualMachinePublishRequestCondition(
 	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-condition")...).Should(Succeed(), "Timed out waiting for Condition: %+v on VirtualMachinePublishRequest: %s", expectedCondition, vmPubName)
 }
 
+// VerifyVirtualMachinePublishRequestUploaded waits, on its own generous
+// budget, until the VirtualMachinePublishRequest reports Uploaded=True.
+// Publishing to an Inventory content library backs Uploaded by a vSphere
+// CloneVM_Task cloning the source VM as a template, which can take far
+// longer than the Complete condition that follows it (a fast, in-cluster
+// VirtualMachineImage lookup). Waiting on Uploaded separately keeps that
+// slow, VC-side clone from having to fit inside the same short budget used
+// for Complete.
+func VerifyVirtualMachinePublishRequestUploaded(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	ns, vmPubName string) {
+	Eventually(func(g Gomega) {
+		vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, client, ns, vmPubName)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		actualCondition := meta.FindStatusCondition(vmPub.GetConditions(), vmopv1.VirtualMachinePublishRequestConditionUploaded)
+		g.Expect(actualCondition).ToNot(BeNil())
+		g.Expect(actualCondition.Status).Should(Equal(metav1.ConditionTrue))
+	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-upload-condition")...).Should(Succeed(), "Timed out waiting for Uploaded=True on VirtualMachinePublishRequest: %s", vmPubName)
+}
+
+// VerifyVirtualMachineGroupPublishRequestImagesUploaded waits, on the same
+// generous budget as VerifyVirtualMachinePublishRequestUploaded, until every
+// VirtualMachinePublishRequest child tracked in status.images reports
+// Uploaded=True. Publishing to an Inventory content library backs Uploaded
+// by a vSphere CloneVM_Task per VM, which can take far longer than the
+// group's Complete condition that follows (a fast, in-cluster
+// VirtualMachineImage lookup for each child). Waiting on Uploaded here keeps
+// that slow, VC-side clone from having to fit inside the short budget used
+// for Complete.
+func VerifyVirtualMachineGroupPublishRequestImagesUploaded(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	ns, name string) {
+	Eventually(func(g Gomega) {
+		vmGroupPub, err := utils.GetVirtualMachineGroupPublishRequest(ctx, client, ns, name)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(vmGroupPub.Status.Images).ToNot(BeEmpty())
+		for _, image := range vmGroupPub.Status.Images {
+			actualCondition := meta.FindStatusCondition(image.Conditions, vmopv1.VirtualMachinePublishRequestConditionUploaded)
+			g.Expect(actualCondition).ToNot(BeNil(), "no Uploaded condition yet for %s", image.PublishRequestName)
+			g.Expect(actualCondition.Status).Should(Equal(metav1.ConditionTrue), "Uploaded not true yet for %s", image.PublishRequestName)
+		}
+	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-upload-condition")...).Should(Succeed(),
+		"Timed out waiting for Uploaded=True on all VirtualMachineGroupPublishRequest images: %s", name)
+}
+
 // VerifyVirtualMachineGroupPublishRequestCompleted waits until the completed condition is true.
 func VerifyVirtualMachineGroupPublishRequestCompleted(
 	ctx context.Context,

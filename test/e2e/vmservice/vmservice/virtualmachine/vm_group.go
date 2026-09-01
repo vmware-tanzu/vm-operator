@@ -111,14 +111,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmgRootName, vmgKind)
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmgChildName, vmgKind)
-
-			for _, vmName := range vmMemberNames {
-				vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, vmKind)
-			}
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName)
 
 		// Delete the root VirtualMachineGroup if created.
 		if len(vmgRootYaml) > 0 {
@@ -867,6 +860,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		AfterEach(func() {
 			if tmpNamespaceName != "" {
+				vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), tmpNamespaceName)
 				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
 				tmpNamespaceName = ""
 			}
@@ -1472,6 +1466,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		AfterEach(func() {
 			if tmpNamespaceName != "" {
+				vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), tmpNamespaceName)
 				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
 				tmpNamespaceName = ""
 			}

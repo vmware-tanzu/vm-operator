@@ -145,9 +145,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), tmpNamespaceName, vmName, "vm")
-		}
+		vmoperator.DescribeObjectsOnFailure(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), tmpNamespaceName)
 		// Delete the virtual machine if it was created.
 		if len(vmYaml) > 0 {
 			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")

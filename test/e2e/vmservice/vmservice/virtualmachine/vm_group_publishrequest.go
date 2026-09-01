@@ -237,6 +237,8 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 	}
 
 	AfterEach(func() {
+		vmoperator.DescribeObjectsOnFailure(ctx, vmSvcClusterProxy.GetClient(), vmSvcClusterProxy.GetKubeconfigPath(), vmSvcNamespace)
+
 		if skipCleanup {
 			return
 		}

@@ -88,6 +88,17 @@ func deleteRegisteredVMAndPVCs(
 				pvcNames = append(pvcNames, vol.PersistentVolumeClaim.ClaimName)
 			}
 		}
+
+		// The spec pauses the VM before invoking RegisterVM, and nothing
+		// downstream is guaranteed to clear that annotation. The controller's
+		// ReconcileDelete unconditionally skips deletion while it's paused, so
+		// leaving it set here would make the delete below block until this
+		// DeferCleanup's own NodeTimeout fires instead of actually cleaning up.
+		if _, paused := vm.Annotations[vmopv1.PauseAnnotation]; paused {
+			base := vm.DeepCopy()
+			delete(vm.Annotations, vmopv1.PauseAnnotation)
+			_ = svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))
+		}
 	}
 
 	_ = clusterProxy.DeleteWithArgs(ctx, vmYaml)
@@ -110,6 +121,15 @@ type VIAdminRegisterVMSpecInput struct {
 func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegisterVMSpecInput) {
 	const (
 		specName = "register-vm"
+
+		// restoreDiskOnlyIntervalSpec selects a longer
+		// "wait-virtual-machine-condition-update" interval (see wcp.yaml /
+		// kind.yaml) for the "Restore disk only" spec, whose boot-disk
+		// promotion is a live Storage vMotion and has been observed taking
+		// well over the "default" interval's budget under datastore
+		// contention. Only that spec's WaitForBackupToComplete call uses
+		// this; every other caller keeps using "default".
+		restoreDiskOnlyIntervalSpec = "register-vm-restore-disk-only"
 	)
 
 	var (
@@ -311,7 +331,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before reading the backup data.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config)
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
 
 			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
 			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
@@ -456,7 +476,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before reading the backup data.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config)
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
 
 			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
 			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
@@ -665,7 +685,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before reading the backup data.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config)
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
 
 			// Delete the VM Service VM CR, keeping the vCenter VM in inventory.
 			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
@@ -905,7 +925,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before powering off the VM.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config)
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config,
+				&vmoperator.IntervalOptions{Spec: ptr.To(restoreDiskOnlyIntervalSpec)})
 
 			vmMoID := existingVM.Status.UniqueID
 
@@ -1047,7 +1068,14 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Create "new" disk
 			dstPath := object.DatastorePath{Datastore: vmPath.Datastore, Path: path.Join(vmHome, path.Base(datastorePath.Path))}
 			Expect(fileManager.Copy(ctx, datastorePath.Path, dstPath.String())).To(Succeed())
-			Expect(fileManager.Delete(ctx, datastorePath.Path)).To(Succeed())
+
+			// RemoveDevice's reconfigure task can report done before vSphere
+			// actually releases the file lock on the original vmdk, so an
+			// immediate Delete can fail with a FileFault ("...vmdk attached to
+			// vm-<id>"). Retry briefly to absorb that lock-release lag.
+			Eventually(func(g Gomega) {
+				g.Expect(fileManager.Delete(ctx, datastorePath.Path)).To(Succeed())
+			}, 30*time.Second, 3*time.Second).Should(Succeed())
 
 			// Expect to fail w/ orphaned FCD
 			_, err = fcdManager.Retrieve(ctx, ds, disk.VDiskId.Id)

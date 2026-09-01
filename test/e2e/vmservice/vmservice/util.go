@@ -816,17 +816,22 @@ func decodeGzipBase64(encoded string) (string, error) {
 // WaitForBackupToComplete waits for the VM backup process to complete by verifying
 // that all PVCs in the VM spec have corresponding entries in the backup data stored
 // in the VM's ExtraConfig.
+//
+// intervalOpts is forwarded to vmoperator.WaitForBootDiskPVC to select a
+// spec-specific "wait-virtual-machine-condition-update" interval; pass nil
+// unless the caller needs a longer boot-disk-promotion budget.
 func WaitForBackupToComplete(
 	ctx context.Context,
 	vmName string,
 	vmNamespace string,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
+	intervalOpts *vmoperator.IntervalOptions,
 ) *vmopv1.VirtualMachine {
 	By("Waiting for backup to complete for all PVCs")
 
 	var vm *vmopv1.VirtualMachine
-	_, vm = vmoperator.WaitForBootDiskPVC(ctx, config, clusterProxy.GetClient(), vmNamespace, vmName)
+	_, vm = vmoperator.WaitForBootDiskPVC(ctx, config, clusterProxy.GetClient(), vmNamespace, vmName, intervalOpts)
 
 	// Get list of PVC names from VM spec
 	expectedPVCNames := make(map[string]struct{})
@@ -1008,7 +1013,7 @@ func DeleteVMResource(
 	// Wait for backup to complete before powering off and deleting the VM.
 	// Capture the MoID now while the VM CR still exists; it is returned to
 	// the caller so RegisterVM can re-register the vSphere VM after deletion.
-	vm := WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config)
+	vm := WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config, nil)
 	vmMoID := vm.Status.UniqueID
 
 	// When AllDisksArePVCs is enabled, the CSI driver takes a VM snapshot
@@ -1139,7 +1144,13 @@ func VerifyPostRegisterVM(
 
 	By("Verify that the restored VM IP matches the IP in the corresponding network provider resource")
 
-	newIP := vmoperator.GetVirtualMachineNetworkProviderIP(ctx, config, svClusterClient, vmNamespace, vmName)
+	// Poll rather than list-once: RegisterVM recreates the VM's
+	// network-interface object as part of the restore, and the
+	// network-provider controller (net-operator/NCP/NSX Operator) can take a
+	// moment to recreate it after the VM is powered back on.
+	networkProviderInfo := vmoperator.WaitForVMNetworkProviderInfo(ctx, config, svClusterClient, vmNamespace, vmName)
+	Expect(networkProviderInfo).ToNot(BeEmpty(), "no network provider info found for restored VirtualMachine %s/%s", vmNamespace, vmName)
+	newIP := networkProviderInfo[0].IPv4
 	// In some cases, a restored VM could keep old IP until GOSC runs again to update the guest network with new IP.
 	// Wait for the VM to have the new IP set in the guest network.
 	Eventually(func() bool {

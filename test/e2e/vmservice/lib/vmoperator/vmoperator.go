@@ -374,16 +374,41 @@ func findBootDiskVolume(volumes []vmopv1.VirtualMachineVolume) *vmopv1.VirtualMa
 	return nil
 }
 
+// IntervalOptions customizes which config-file interval entry a wait helper
+// uses. A nil *IntervalOptions, or one with a nil Spec, selects the
+// "default" interval; passing a non-nil Spec looks up "<Spec>/<key>" first
+// and falls back to "default/<key>" (see config.GetIntervals). Use this when
+// a specific spec needs a different budget than every other caller of the
+// same helper.
+type IntervalOptions struct {
+	Spec *string
+}
+
+// spec returns the interval spec to use, defaulting to "default" for a nil
+// receiver or a nil Spec field.
+func (o *IntervalOptions) spec() string {
+	if o == nil || o.Spec == nil {
+		return "default"
+	}
+	return *o.Spec
+}
+
 // WaitForBootDiskPVC waits for the VirtualMachineUnmanagedVolumesBackfilled and
 // VirtualMachineUnmanagedVolumesRegistered conditions to become true, then polls
 // spec.volumes until the boot disk (ControllerBusNumber 0, UnitNumber 0) has a
 // non-empty PersistentVolumeClaim.ClaimName. Returns the boot-disk volume name.
 // Only call this when the AllDisksArePVCs capability is enabled.
+//
+// opts selects the "wait-virtual-machine-condition-update" interval; pass
+// nil unless a specific spec needs a longer budget for boot-disk promotion
+// (e.g. because it is known to trigger a live Storage vMotion) without
+// affecting every other caller of this function.
 func WaitForBootDiskPVC(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,
 	ns, vmName string,
+	opts *IntervalOptions,
 ) (string, *vmopv1.VirtualMachine) {
 	By("Waiting on virtual machine conditions to become true")
 
@@ -418,7 +443,7 @@ func WaitForBootDiskPVC(
 		g.Expect(bootDiskVol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty(),
 			"Expected boot disk PVC to have a claim name")
 		bootDiskVolName = bootDiskVol.Name
-	}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+	}, config.GetIntervals(opts.spec(), "wait-virtual-machine-condition-update")...).
 		Should(Succeed(), "Timed out waiting for boot disk to be found in spec.volumes")
 
 	return bootDiskVolName, vm
@@ -858,70 +883,6 @@ func GetVirtualMachinePublishRequestTargetItemName(ctx context.Context, config *
 	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-condition")...).Should(Succeed(), "failed to get vmpub %s target item name", vmPubName)
 
 	return vmPubTargetItemName, nil
-}
-
-// GetVirtualMachineNetworkProviderIP returns the IP address of the network provider for the given VM.
-// For VDS topology, it returns the IP address of the network interface from net-operator.
-// For NSX topology, it returns the IP address of the virtual network interface from ncp.
-// For VPC topology, it returns the IP address of the subnetport from nsx operator.
-func GetVirtualMachineNetworkProviderIP(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) string {
-	if framework.NetworkTopologyIs(config.InfraConfig.NetworkingTopology, consts.VDS) {
-		By("Getting VM network provider IP from Net-Operator's networkinterfaces in VDS")
-
-		networkIfList := &netopv1alpha1.NetworkInterfaceList{}
-		Expect(client.List(ctx, networkIfList, ctrlclient.InNamespace(ns))).To(Succeed())
-		Expect(networkIfList.Items).ToNot(BeEmpty(), "no NetworkInterfaces found in namespace %s", ns)
-
-		for _, networkIf := range networkIfList.Items {
-			for _, ownerRef := range networkIf.OwnerReferences {
-				if ownerRef.Kind == virtualMachineKind && ownerRef.Name == vmName {
-					Expect(networkIf.Status.IPConfigs).ToNot(BeEmpty())
-					return networkIf.Status.IPConfigs[0].IP
-				}
-			}
-		}
-	}
-
-	if framework.NetworkTopologyIs(config.InfraConfig.NetworkingTopology, consts.NSX) {
-		if IsNetworkNsxtVPC(ctx, client, config) {
-			By("Getting VM network provider IP from NSX Operator's SubnetPort in NSX")
-
-			subnetPortList := &vpcv1alpha1.SubnetPortList{}
-			Expect(client.List(ctx, subnetPortList, ctrlclient.InNamespace(ns))).To(Succeed())
-			Expect(subnetPortList.Items).ToNot(BeEmpty(), "no SubnetPort found in namespace %s", ns)
-
-			for _, subnetPort := range subnetPortList.Items {
-				for _, ownerRef := range subnetPort.OwnerReferences {
-					if ownerRef.Kind == virtualMachineKind && ownerRef.Name == vmName {
-						Expect(subnetPort.Status.NetworkInterfaceConfig.IPAddresses).ToNot(BeEmpty())
-						// Note SubnetPort provides IPAddress with CIDR format.
-						cidr := subnetPort.Status.NetworkInterfaceConfig.IPAddresses[0].IPAddress
-						ip, _, err := net.ParseCIDR(cidr)
-						Expect(err).ToNot(HaveOccurred(), "failed to parse CIDR from SubnetPort IPAddress %s", cidr)
-
-						return ip.String()
-					}
-				}
-			}
-		} else {
-			By("Getting VM network provider IP from NCP's VirtualNetworkInterfaces in NSX")
-
-			vnetIfList := &ncpv1alpha1.VirtualNetworkInterfaceList{}
-			Expect(client.List(ctx, vnetIfList, ctrlclient.InNamespace(ns))).To(Succeed())
-			Expect(vnetIfList.Items).ToNot(BeEmpty(), "no VirtualNetworkInterfaces found in namespace %s", ns)
-
-			for _, vnetIf := range vnetIfList.Items {
-				for _, ownerRef := range vnetIf.OwnerReferences {
-					if ownerRef.Kind == virtualMachineKind && ownerRef.Name == vmName {
-						Expect(vnetIf.Status.IPAddresses).ToNot(BeEmpty())
-						return vnetIf.Status.IPAddresses[0].IP
-					}
-				}
-			}
-		}
-	}
-
-	return ""
 }
 
 func waitForVDSNetworkIf(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) []NetworkProviderInfo {

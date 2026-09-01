@@ -79,8 +79,6 @@ const (
 	PowerOpModeTrySoft PowerOpMode = "TrySoft"
 )
 
-// +kubebuilder:validation:Enum=Pending;Provisioning;Running;Stopping;Stopped;Suspended;Failed;Deleting
-
 // Condition types reported on a VirtualMachine.
 //
 // Conditions are where provider-dependent outcomes are reported, and this is a

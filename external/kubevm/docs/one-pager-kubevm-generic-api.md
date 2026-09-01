@@ -53,7 +53,8 @@ KubeVM is intended to complement KubeVirt, not to replace it: it addresses the h
 The proposal introduces a new API group, `kube-vm.io`, whose central resource is a `VirtualMachine` supported by a small set of companion types for sizing, images, networking, and snapshots.
 The design deliberately places the common surface — everything that is shared across backends — in the generic API, so that a provider needs to contribute only the settings that are unique to its platform.
 A machine is bound to its backend through a Cluster-API-style `spec.infrastructureRef`, and the generic layer observes the backend exclusively through a duck-typed status contract: a small, fixed set of well-known status fields — provider identifier, readiness, and network addresses — that the contract *requires* each provider to surface at agreed field paths.
-The generic core reads only those paths and imports no provider code; a provider whose native status differs (VM Operator, for instance, exposes equivalent information under its own field names today) satisfies the contract through a thin status adapter rather than by changing the core.
+The generic core reads only those paths and imports no provider code, so it needs no per-provider translation and does not change when a provider is added.
+A provider whose native status already carries the same information under its own field names — as VM Operator does today — publishes the contract fields on its own object alongside them.
 Settling the exact contract — the canonical `providerID` form in particular — is part of defining the API.
 A generic controller reconciles the `VirtualMachine` against its provider object, and each provider contributes a controller that translates the resolved intent into calls against its platform.
 To keep the generic API from degenerating into the union of every vendor's feature set, a field is promoted into the portable core only once at least two providers converge on a common shape for it; until then it stays on the provider object where it originated.
@@ -280,7 +281,9 @@ Note that this leaves a real gap rather than a theoretical one: Windows guests o
 ### Controllers
 
 The generic controller reconciles the `VirtualMachine` against its provider object.
-It drives the desired state onto that object, reads the backend's observed state through the duck-typed status contract — a fixed set of well-known fields the contract requires each provider to surface at agreed paths, mapped by a thin per-provider adapter where the provider's native status uses different names (as VM Operator's does today) — and rolls the provider identifier, readiness, and network addresses up into the generic machine's status.
+It does not write the provider object's spec.
+Configuration reaches the platform because the provider reads the generic object it is linked to, which keeps platform-specific translation on the provider side where the platform knowledge already is.
+The generic controller resolves the reference, adopts the object, reads the backend's observed state through the duck-typed status contract — a fixed set of well-known fields each provider surfaces at agreed paths on its own object — and rolls the provider identifier, readiness, and network addresses up into the generic machine's status.
 It also owns the lifecycle concerns that belong to the portable object, including finalizers, status conditions, and backoff on transient failure.
 Because it interacts with the backend solely through the infrastructure reference and the status contract, the generic controller imports no provider code, and each provider evolves independently behind that contract.
 
@@ -301,7 +304,9 @@ It was architected to be provider-agnostic from the outset — all vSphere-speci
 One reconciliation to be explicit about, because it differs from the illustrative examples above.
 Those examples show a bespoke, capability-only `VSphereVirtualMachine` provider object for clarity.
 The vSphere realization is expected to differ: the provider object would be **VM Operator's own `vmoperator.vmware.com/VirtualMachine` CRD, reused directly** — a full-featured, and therefore *thick*, object — rather than a slim bespoke type.
-Reusing the native CRD buys day-one parity with everything VM Operator already does, at the cost of a thick provider object managed through a layered-override model, where the generic object supplies a baseline and the provider object may override it.
+Reusing the native CRD buys day-one parity with everything VM Operator already does, at the cost of a thick provider object.
+Fields the generic API owns are resolved by VM Operator from the generic object and persisted into its own spec: those that are immutable once set are resolved when the machine is created, and power state is kept in step on every reconcile.
+The generic object is authoritative for those fields, so a direct edit to them on the provider object is reverted on the next reconcile, in the same way an edit to a Pod owned by a Deployment is.
 In other words, "thin provider object" is the aspiration the generic API is built toward and is realistic for greenfield cloud providers; a mature platform's provider may reasonably trade thinness for parity.
 This is also the strongest argument that the design generalizes: it has to accommodate a provider whose native API is richer than the portable core, not only providers built to fit it.
 

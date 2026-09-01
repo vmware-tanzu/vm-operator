@@ -627,7 +627,7 @@ func generateVMBuilder(
 }
 
 // createVMWithPromotionDisabled creates a VirtualMachine with disk promotion
-// disabled and returns it once creation succeeds.
+// disabled once creation succeeds.
 //
 // The VM is built as a typed struct rather than rendered YAML because
 // PromoteDisksMode does not exist before v1alpha4, so the v1alpha2 fixture
@@ -643,7 +643,7 @@ func createVMWithPromotionDisabled(
 	svClusterClient ctrlclient.Client,
 	namespace, name, imageName string,
 	clusterResources e2eConfig.Resources,
-	bootstrap *vmopv1.VirtualMachineBootstrapSpec) *vmopv1.VirtualMachine {
+	bootstrap *vmopv1.VirtualMachineBootstrapSpec) {
 	vm := &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
@@ -663,7 +663,6 @@ func createVMWithPromotionDisabled(
 	}
 	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 		"failed to create virtualmachine %q with disk promotion disabled", name)
-	return vm
 }
 
 func generateVMPublishRequestBuilder(

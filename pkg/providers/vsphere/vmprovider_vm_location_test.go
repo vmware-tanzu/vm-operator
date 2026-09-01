@@ -11,7 +11,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -19,13 +18,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -44,63 +39,25 @@ func vmLocationTests() {
 	)
 
 	BeforeEach(func() {
-		parentCtx = pkgcfg.NewContextWithDefaultConfig()
-		parentCtx = ctxop.WithContext(parentCtx)
-		parentCtx = ovfcache.WithContext(parentCtx)
-		parentCtx = cource.WithContext(parentCtx)
-		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-			config.AsyncCreateEnabled = false
-			config.AsyncSignalEnabled = false
-		})
-		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-		}
+		parentCtx = newVMTestParentContext()
+		testConfig = newVMTestConfig()
 
-		vmClass = builder.DummyVirtualMachineClassGenName()
-		vm = builder.DummyBasicVirtualMachine("test-vm", "")
-		if vm.Spec.Network == nil {
-			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-		}
-		vm.Spec.Network.Disabled = true
+		vmClass, vm = newVMTestObjects("test-vm")
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSimWithParentContext(
-			parentCtx, testConfig, initObjects...)
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.MaxDeployThreadsOnProvider = 1
-		})
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(
-			ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
+		ctx, vmProvider, nsInfo = setupVMTest(
+			parentCtx, testConfig, vmClass, vm, initObjects...)
 
-		vmClass.Namespace = nsInfo.Namespace
-		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
-
-		clusterVMI1 := &vmopv1.ClusterVirtualMachineImage{}
-		Expect(ctx.Client.Get(
-			ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name},
-			clusterVMI1)).To(Succeed())
-
-		vm.Namespace = nsInfo.Namespace
-		vm.Spec.ClassName = vmClass.Name
-		vm.Spec.ImageName = clusterVMI1.Name
-		vm.Spec.Image.Kind = cvmiKind
-		vm.Spec.Image.Name = clusterVMI1.Name
-		vm.Spec.StorageClass = ctx.StorageClassName
-
-		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-
-		zoneName := ctx.GetFirstZoneName()
-		vm.Labels[corev1.LabelTopologyZone] = zoneName
-		Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+		pinVMToFirstZone(ctx, vm)
 	})
 
 	AfterEach(func() {
+		vmTestAfterEach(ctx, vm)
+
 		vmClass = nil
 		vm = nil
 
-		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
 		vmProvider = nil

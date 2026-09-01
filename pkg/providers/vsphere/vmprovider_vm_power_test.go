@@ -29,12 +29,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
-	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
@@ -47,89 +44,32 @@ func vmPowerStateTests() {
 		testConfig  builder.VCSimTestConfig
 		ctx         *builder.TestContextForVCSim
 		vmProvider  providers.VirtualMachineProviderInterface
-		nsInfo      builder.WorkloadNamespaceInfo
 
 		vm      *vmopv1.VirtualMachine
 		vmClass *vmopv1.VirtualMachineClass
 	)
 
 	BeforeEach(func() {
-		parentCtx = pkgcfg.NewContextWithDefaultConfig()
-		parentCtx = ctxop.WithContext(parentCtx)
-		parentCtx = ovfcache.WithContext(parentCtx)
-		parentCtx = cource.WithContext(parentCtx)
-		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-			config.AsyncCreateEnabled = false
-			config.AsyncSignalEnabled = false
-		})
-		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-		}
+		parentCtx = newVMTestParentContext()
+		testConfig = newVMTestConfig()
 
-		vmClass = builder.DummyVirtualMachineClassGenName()
-		vm = builder.DummyBasicVirtualMachine("test-vm", "")
-
-		if vm.Spec.Network == nil {
-			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-		}
-		vm.Spec.Network.Disabled = true
+		vmClass, vm = newVMTestObjects("test-vm")
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSimWithParentContext(
-			parentCtx, testConfig, initObjects...)
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.MaxDeployThreadsOnProvider = 1
-		})
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(
-			ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
-
-		vmClass.Namespace = nsInfo.Namespace
-		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
-
-		clusterVMI1 := &vmopv1.ClusterVirtualMachineImage{}
-
-		if testConfig.WithContentLibrary {
-			Expect(ctx.Client.Get(
-				ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name},
-				clusterVMI1)).To(Succeed())
-		} else {
-			vsphere.SkipVMImageCLProviderCheck = true
-			clusterVMI1 = builder.DummyClusterVirtualMachineImage("DC0_C0_RP0_VM0")
-			Expect(ctx.Client.Create(ctx, clusterVMI1)).To(Succeed())
-			conditions.MarkTrue(clusterVMI1, vmopv1.ReadyConditionType)
-			Expect(ctx.Client.Status().Update(ctx, clusterVMI1)).To(Succeed())
-		}
-
-		vm.Namespace = nsInfo.Namespace
-		vm.Spec.ClassName = vmClass.Name
-		vm.Spec.ImageName = clusterVMI1.Name
-		vm.Spec.Image.Kind = cvmiKind
-		vm.Spec.Image.Name = clusterVMI1.Name
-		vm.Spec.StorageClass = ctx.StorageClassName
-
-		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+		ctx, vmProvider, _ = setupVMTest(
+			parentCtx, testConfig, vmClass, vm, initObjects...)
 	})
 
 	AfterEach(func() {
-		vsphere.SkipVMImageCLProviderCheck = false
-
-		if vm != nil &&
-			!pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
-			By("Assert vm.Status.Crypto is nil when BYOK is disabled", func() {
-				Expect(vm.Status.Crypto).To(BeNil())
-			})
-		}
+		vmTestAfterEach(ctx, vm)
 
 		vmClass = nil
 		vm = nil
 
-		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
 		vmProvider = nil
-		nsInfo = builder.WorkloadNamespaceInfo{}
 	})
 
 	getLastRestartTime := func(moVM mo.VirtualMachine) string {
@@ -636,19 +576,33 @@ func vmPowerStateTests() {
 			})
 
 			const (
-				oldDiskSizeBytes = int64(31457280)
 				newDiskSizeGi    = 20
 				newDiskSizeBytes = int64(newDiskSizeGi * 1024 * 1024 * 1024)
 			)
 
+			// deployedDiskSizeBytes is the boot disk's capacity as deployed. It
+			// is read from the VM rather than asserted against a constant,
+			// because the two deploy paths size the boot disk differently: Fast
+			// Deploy links it to the image's cached disk and inherits that
+			// disk's capacity, whereas the content library deploy applies the
+			// size the OVF descriptor declares.
+			var deployedDiskSizeBytes int64
+
+			// readBootDiskSizeBytes returns the capacity of the VM's only disk.
+			readBootDiskSizeBytes := func() int64 {
+				vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+				disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+				ExpectWithOffset(1, disks).To(HaveLen(1))
+				ExpectWithOffset(1, disks[0]).To(
+					BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+				return disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+			}
+
 			When("the boot disk size is changed for non-ISO VMs", func() {
 				JustBeforeEach(func() {
-					vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
-					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-					Expect(disks).To(HaveLen(1))
-					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-					Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+					Expect(readBootDiskSizeBytes()).To(
+						BeNumerically("<", newDiskSizeBytes),
+						"the VM must start smaller than the requested size")
 
 					q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
 					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
@@ -664,12 +618,7 @@ func vmPowerStateTests() {
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
-					vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
-					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-					Expect(disks).To(HaveLen(1))
-					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-					Expect(diskCapacityBytes).To(Equal(newDiskSizeBytes))
+					Expect(readBootDiskSizeBytes()).To(Equal(newDiskSizeBytes))
 				})
 			})
 
@@ -858,12 +807,10 @@ func vmPowerStateTests() {
 				When("the boot disk size is changed for VM with CD-ROM", func() {
 
 					JustBeforeEach(func() {
-						vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
-						disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-						Expect(disks).To(HaveLen(1))
-						Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-						diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-						Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+						deployedDiskSizeBytes = readBootDiskSizeBytes()
+						Expect(deployedDiskSizeBytes).To(
+							BeNumerically("<", newDiskSizeBytes),
+							"the VM must start smaller than the requested size")
 
 						q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
 						vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
@@ -876,12 +823,7 @@ func vmPowerStateTests() {
 						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
 
-						vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
-						disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-						Expect(disks).To(HaveLen(1))
-						Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-						diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-						Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+						Expect(readBootDiskSizeBytes()).To(Equal(deployedDiskSizeBytes))
 					})
 				})
 			})

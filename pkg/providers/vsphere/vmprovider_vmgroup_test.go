@@ -5,6 +5,8 @@
 package vsphere_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -19,7 +21,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -29,6 +30,7 @@ var _ = Describe(
 	Label(testlabels.Group), func() {
 
 		var (
+			parentCtx   context.Context
 			initObjects []client.Object
 			testConfig  builder.VCSimTestConfig
 			ctx         *builder.TestContextForVCSim
@@ -42,9 +44,8 @@ var _ = Describe(
 		)
 
 		BeforeEach(func() {
-			testConfig = builder.VCSimTestConfig{
-				WithContentLibrary: true,
-			}
+			parentCtx = newVMTestParentContext()
+			testConfig = newVMTestConfig()
 
 			vm1 = builder.DummyBasicVirtualMachine("group-placement-vm-1", "")
 			vm2 = builder.DummyBasicVirtualMachine("group-placement-vm-2", "")
@@ -64,16 +65,14 @@ var _ = Describe(
 		})
 
 		JustBeforeEach(func() {
-			ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
-			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.FastDeploy = true
-			})
-			vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-			nsInfo = ctx.CreateWorkloadNamespace()
+			ctx, vmProvider, nsInfo = newVMTestContext(parentCtx, testConfig, initObjects...)
+			ctx.MarkImageCacheReady(ctx.ContentLibraryItem1Cache)
 
 			vmClass.Namespace = nsInfo.Namespace
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 			Expect(ctx.Client.Status().Update(ctx, vmClass)).To(Succeed())
+
+			vmGroup.Namespace = nsInfo.Namespace
 
 			initVM := func(vm *vmopv1.VirtualMachine) {
 				vm.Namespace = nsInfo.Namespace
@@ -86,73 +85,6 @@ var _ = Describe(
 			}
 			initVM(vm1)
 			initVM(vm2)
-
-			vmGroup.Namespace = nsInfo.Namespace
-
-			{
-				// TODO: Put this test builder to reduce duplication.
-
-				vmic := vmopv1.VirtualMachineImageCache{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-						Name:      pkgutil.VMIName(ctx.ContentLibraryItem1ID),
-					},
-				}
-				Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
-
-				vmicm := corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: vmic.Namespace,
-						Name:      vmic.Name,
-					},
-					Data: map[string]string{
-						"value": ctx.ContentLibraryItem1YAML,
-					},
-				}
-				Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
-
-				vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
-					OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
-						ConfigMapName:   vmic.Name,
-						ProviderVersion: ctx.ContentLibraryItem1Version,
-					},
-					Conditions: []metav1.Condition{
-						{
-							Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
-							Status: metav1.ConditionTrue,
-						},
-					},
-				}
-				Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
-
-				pkgcond.MarkTrue(
-					&vmic,
-					vmopv1.VirtualMachineImageCacheConditionFilesReady)
-				vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
-					{
-						DatacenterID: ctx.Datacenter.Reference().Value,
-						DatastoreID:  ctx.Datastore.Reference().Value,
-						Files: []vmopv1.VirtualMachineImageCacheFileStatus{
-							{
-								ID:       ctx.ContentLibraryItem1Disk1Path,
-								Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
-								DiskType: vmopv1.VolumeTypeClassic,
-							},
-							{
-								ID:   ctx.ContentLibraryItem1NVRAMPath,
-								Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
-							},
-						},
-						Conditions: []metav1.Condition{
-							{
-								Type:   vmopv1.ReadyConditionType,
-								Status: metav1.ConditionTrue,
-							},
-						},
-					},
-				}
-				Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
-			}
 		})
 
 		AfterEach(func() {

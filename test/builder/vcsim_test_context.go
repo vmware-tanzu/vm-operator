@@ -30,6 +30,13 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/vmware/govmomi"
 	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/find"
@@ -43,12 +50,6 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	// Blank import to make govmomi client aware of these bindings.
 	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
@@ -75,6 +76,7 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
@@ -157,6 +159,40 @@ type VCSimTestConfig struct {
 	WithWorkloadIPv6 bool
 }
 
+// VCSimImageCacheFile is a file belonging to a content library item that a
+// VirtualMachineImageCache reports as cached on a datastore.
+type VCSimImageCacheFile struct {
+	// Name is how the item's descriptor refers to the file, for example the OVF
+	// disk href "disk0.vmdk". The Fast Deploy create path looks a disk's cached
+	// path up by this name. It is empty for a file the descriptor does not name,
+	// such as the item's NVRAM.
+	Name string
+
+	// Path is the file's datastore path.
+	Path string
+
+	// Disk is true when the file is a virtual disk.
+	Disk bool
+}
+
+// VCSimImageCacheItem describes the content library item that
+// MarkImageCacheReady builds a VirtualMachineImageCache for.
+type VCSimImageCacheItem struct {
+	// ID is the library item's ID, which is what an image reports as its
+	// status.providerItemID.
+	ID string
+
+	// Version is the library item's content version.
+	Version string
+
+	// OVFYAML is the marshaled OVF envelope stored in the cache's ConfigMap. It
+	// is empty for an ISO item, which has no OVF.
+	OVFYAML string
+
+	// Files are the item's cached files.
+	Files []VCSimImageCacheFile
+}
+
 // VCSimNetworkConfig describes the type and configuration of a network
 // to configure on vcsim.
 type VCSimNetworkConfig struct {
@@ -213,6 +249,12 @@ type TestContextForVCSim struct {
 	ContentLibraryIsoImageName   string
 	ContentLibraryIsoItemID      string
 	ContentLibraryIsoItemVersion string
+
+	// Descriptors for building a ready VirtualMachineImageCache for each
+	// content library item. See MarkImageCacheReady.
+	ContentLibraryItem1Cache   VCSimImageCacheItem
+	ContentLibraryItem2Cache   VCSimImageCacheItem
+	ContentLibraryIsoItemCache VCSimImageCacheItem
 
 	// When WithoutStorageClass is false:
 	StorageClassName          string
@@ -1073,6 +1115,131 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	conditions.MarkTrue(clusterVMI3, vmopv1.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMI3)).To(Succeed())
 
+	c.ContentLibraryItem1Cache = VCSimImageCacheItem{
+		ID:      c.ContentLibraryItem1ID,
+		Version: c.ContentLibraryItem1Version,
+		OVFYAML: c.ContentLibraryItem1YAML,
+		Files: []VCSimImageCacheFile{
+			{Name: "disk0.vmdk", Path: c.ContentLibraryItem1Disk1Path, Disk: true},
+			{Path: c.ContentLibraryItem1NVRAMPath},
+		},
+	}
+
+	c.ContentLibraryItem2Cache = VCSimImageCacheItem{
+		ID:      c.ContentLibraryItem2ID,
+		Version: c.ContentLibraryItem2Version,
+		OVFYAML: c.ContentLibraryItem2YAML,
+		Files: []VCSimImageCacheFile{
+			{Name: "disk0.vmdk", Path: c.ContentLibraryItem2Disk1Path, Disk: true},
+			{Name: "disk1.vmdk", Path: c.ContentLibraryItem2Disk2Path, Disk: true},
+			{Name: "disk2.vmdk", Path: c.ContentLibraryItem2Disk3Path, Disk: true},
+			{Path: c.ContentLibraryItem2NVRAMPath},
+		},
+	}
+
+	// An ISO item has no OVF and no disks; the CD-ROM is backed by the library
+	// item directly.
+	c.ContentLibraryIsoItemCache = VCSimImageCacheItem{
+		ID:      c.ContentLibraryIsoItemID,
+		Version: c.ContentLibraryIsoItemVersion,
+	}
+}
+
+// MarkImageCacheReady creates the VirtualMachineImageCache resource that the
+// Fast Deploy create path consults to locate an image's cached files, along
+// with the ConfigMap holding the item's OVF envelope. The cache is marked
+// hardware-ready and files-ready at the test context's datacenter and
+// datastore, for both the plain and the encrypted storage profile, since a spec
+// may deploy from either storage class and the provider only accepts a location
+// whose profile matches the VM's.
+//
+// The library item is synced so that the files the cache names actually exist
+// on the datastore: the provider verifies each one with DatastoreFileExists
+// before it will use the cache.
+//
+// A spec exercising the cache-not-ready paths should build the
+// VirtualMachineImageCache itself rather than call this.
+func (c *TestContextForVCSim) MarkImageCacheReady(
+	item VCSimImageCacheItem) *vmopv1.VirtualMachineImageCache {
+
+	ExpectWithOffset(1, item.ID).ToNot(BeEmpty())
+
+	obj := &vmopv1.VirtualMachineImageCache{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: pkgcfg.FromContext(c).PodNamespace,
+			Name:      pkgutil.VMIName(item.ID),
+		},
+		Spec: vmopv1.VirtualMachineImageCacheSpec{
+			ProviderID:      item.ID,
+			ProviderVersion: item.Version,
+		},
+	}
+	ExpectWithOffset(1, c.Client.Create(c, obj)).To(Succeed())
+
+	if item.OVFYAML != "" {
+		ExpectWithOffset(1, c.Client.Create(c, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: obj.Namespace,
+				Name:      obj.Name,
+			},
+			Data: map[string]string{"value": item.OVFYAML},
+		})).To(Succeed())
+
+		obj.Status.OVF = &vmopv1.VirtualMachineImageCacheOVFStatus{
+			ConfigMapName:   obj.Name,
+			ProviderVersion: item.Version,
+		}
+	}
+
+	conditions.MarkTrue(obj, vmopv1.VirtualMachineImageCacheConditionHardwareReady)
+	conditions.MarkTrue(obj, vmopv1.VirtualMachineImageCacheConditionFilesReady)
+
+	files := make([]vmopv1.VirtualMachineImageCacheFileStatus, len(item.Files))
+	for i := range item.Files {
+		f := item.Files[i]
+		ExpectWithOffset(1, f.Path).ToNot(BeEmpty())
+
+		files[i] = vmopv1.VirtualMachineImageCacheFileStatus{
+			ID:   f.Path,
+			Name: f.Name,
+			Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
+		}
+		if f.Disk {
+			files[i].Type = vmopv1.VirtualMachineImageCacheFileTypeDisk
+			files[i].DiskType = vmopv1.VolumeTypeClassic
+		}
+	}
+
+	for _, profileID := range []string{
+		c.StorageProfileID,
+		c.EncryptedStorageProfileID,
+	} {
+		if profileID == "" {
+			continue
+		}
+		obj.Status.Locations = append(
+			obj.Status.Locations,
+			vmopv1.VirtualMachineImageCacheLocationStatus{
+				DatacenterID: c.Datacenter.Reference().Value,
+				DatastoreID:  c.Datastore.Reference().Value,
+				ProfileID:    profileID,
+				Files:        files,
+				Conditions: []metav1.Condition{
+					{
+						Type:   vmopv1.ReadyConditionType,
+						Status: metav1.ConditionTrue,
+					},
+				},
+			})
+	}
+	ExpectWithOffset(1, c.Client.Status().Update(c, obj)).To(Succeed())
+
+	// The subscribed library is on-demand, so the item must be synced for its
+	// files to exist on the datastore.
+	libMgr := library.NewManager(c.RestClient)
+	ExpectWithOffset(1, libMgr.SyncLibraryItem(c, &library.Item{ID: item.ID}, true)).To(Succeed())
+
+	return obj
 }
 
 func (c *TestContextForVCSim) SimulatorContext() *simulator.Context {
@@ -1338,6 +1505,32 @@ func (c *TestContextForVCSim) setupAZs() {
 		Expect(c.Client.Create(c, az)).To(Succeed())
 		c.ZoneNames = append(c.ZoneNames, az.Name)
 		c.azCCRs[az.Name] = clusters
+	}
+}
+
+// GroupPlacementDatastores returns the datastore recommendations to store on a
+// VirtualMachineGroup member's placement status, describing the test context's
+// datastore as the home for the VM.
+//
+// In production the group placement controller records these alongside the
+// zone, node, and pool. A Fast Deploy create needs them, because it builds the
+// VM's files on the recommended datastore itself rather than handing the whole
+// job to the content library.
+func (c *TestContextForVCSim) GroupPlacementDatastores() []vmopv1.VirtualMachineGroupPlacementDatastoreStatus {
+	var props mo.Datastore
+	Expect(c.Datastore.Properties(
+		c,
+		c.Datastore.Reference(),
+		[]string{"name", "summary"},
+		&props)).To(Succeed())
+
+	return []vmopv1.VirtualMachineGroupPlacementDatastoreStatus{
+		{
+			Name:                             props.Name,
+			ID:                               c.Datastore.Reference().Value,
+			URL:                              props.Summary.Url,
+			TopLevelDirectoryCreateSupported: true,
+		},
 	}
 }
 
